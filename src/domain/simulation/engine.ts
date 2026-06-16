@@ -604,6 +604,7 @@ function snapshot(
       y: s.y,
       vx: s.velX,
       vy: s.velY,
+      facing: s.facing,
       structure: s.structure,
       shield: s.shield,
       alive: s.alive,
