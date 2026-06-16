@@ -17,7 +17,7 @@ import type { ShipStats } from "@/domain/stats";
  * Helper duplicated so this file is self-contained.
  */
 
-function weapon(over: Partial<WeaponEffect>): WeaponEffect {
+function weapon(over: Partial<WeaponEffect> = {}): WeaponEffect {
   return {
     kind: "weapon",
     weaponType: "beam",
@@ -71,7 +71,7 @@ function makeShip(opts: {
     position: { x: opts.x, y: opts.y },
     facing: opts.facing ?? 0,
     orders: { ...defaultOrders, ...opts.orders },
-    classification: (opts.classification ?? "frigate") as ShipClassification,
+    classification: (opts.classification ?? "frigate"),
   };
 }
 
