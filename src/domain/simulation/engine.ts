@@ -59,10 +59,29 @@ const SIM = {
     cruiser: 40,
     dreadnought: 100,
   },
-  /** Black-hole gravity strength and lethal proximity. */
-  blackHolePull: 0.9,
+  /**
+   * Black-hole gravity. `blackHoleStrength` is the G·M product: the
+   * gravitational acceleration at distance r is `strength / r^2`,
+   * directed toward the centre. Applied as a force to velocity (not
+   * a position teleport) so momentum is preserved and the
+   * equivalence principle holds — heavy and light ships accelerate
+   * the same. The acceleration is softened to zero at the lethal
+   * radius to avoid a singularity.
+   */
+  blackHoleStrength: 5000,
+  /** Inside this radius a ship is torn apart by tidal forces. */
   blackHoleLethalRadius: 24,
-  blackHoleDamage: 12,
+  /** Per-tick structural damage at the centre of the well. */
+  blackHoleLethalDamage: 12,
+  /**
+   * Outside the lethal radius but inside this zone, a ship takes
+   * damage proportional to 1/r^3 — the leading-order tidal force
+   * across a body of finite size. "Spaghettification".
+   */
+  blackHoleTidalRadius: 48,
+  /** Coefficient for the 1/r^3 tidal damage; tuned so the tidal edge
+   *  shreds a typical ship in a handful of ticks. */
+  blackHoleTidalDamageScale: 200000,
   /** Nebula dampens shield regeneration and projectile tracking. */
   nebulaRegenFactor: 0.5,
   nebulaTrackingFactor: 0.5,
@@ -403,14 +422,35 @@ function moveShips(
   for (const ship of ships) {
     if (!ship.alive) continue;
 
-    // Black-hole gravity pulls every ship toward the arena centre.
+    // Black-hole gravity: a real 1/r^2 acceleration toward the centre,
+    // applied to velocity (not position) so momentum is preserved and the
+    // ship's own velocity still carries it forward. The acceleration
+    // is mass-independent (the equivalence principle), so heavy and
+    // light ships fall the same way.
     if (anomaly === "blackHole") {
       const dist = Math.hypot(ship.x, ship.y);
-      const pull = SIM.blackHolePull * (1 + 200 / Math.max(dist, 1));
-      ship.x += (0 - ship.x) / Math.max(dist, 1) * pull;
-      ship.y += (0 - ship.y) / Math.max(dist, 1) * pull;
-      if (Math.hypot(ship.x, ship.y) < SIM.blackHoleLethalRadius) {
-        ship.structure -= SIM.blackHoleDamage;
+      if (dist > 0) {
+        // Soften the singularity at r → 0 by clamping the effective r
+        // to the lethal radius, so the acceleration stays finite.
+        const effectiveR = Math.max(dist, SIM.blackHoleLethalRadius);
+        const accelMag = SIM.blackHoleStrength / (effectiveR * effectiveR);
+        ship.velX += (-ship.x / dist) * accelMag;
+        ship.velY += (-ship.y / dist) * accelMag;
+        // Tidal damage outside the lethal zone: the differential pull
+        // across a body scales as 1/r^3, so the closer you get, the
+        // faster you get torn apart. Ships far outside the tidal zone
+        // are unaffected.
+        if (dist < SIM.blackHoleTidalRadius && dist >= SIM.blackHoleLethalRadius) {
+          ship.structure -= SIM.blackHoleTidalDamageScale / (dist * dist * dist);
+          if (ship.structure <= 0) {
+            ship.structure = 0;
+            ship.alive = false;
+          }
+        }
+      }
+      // Lethal zone: the event horizon. Instant tidal destruction.
+      if (dist < SIM.blackHoleLethalRadius) {
+        ship.structure -= SIM.blackHoleLethalDamage;
         if (ship.structure <= 0) {
           ship.structure = 0;
           ship.alive = false;
@@ -556,6 +596,21 @@ function updateProjectiles(
         const steered = steer(current, desired, p.tracking * trackingFactor);
         p.vx = Math.cos(steered) * speed;
         p.vy = Math.sin(steered) * speed;
+      }
+    }
+
+    // Black-hole gravity bends projectiles too. The same 1/r^2
+    // acceleration applied to the projectile's velocity; a fast
+    // projectile traverses the strong-field region in fewer ticks and
+    // so accumulates less deflection — the "mass" of a projectile
+    // (its speed) is what determines how much it bends.
+    if (anomaly === "blackHole") {
+      const pDist = Math.hypot(p.x, p.y);
+      if (pDist > 0) {
+        const pEffectiveR = Math.max(pDist, SIM.blackHoleLethalRadius);
+        const pAccelMag = SIM.blackHoleStrength / (pEffectiveR * pEffectiveR);
+        p.vx += (-p.x / pDist) * pAccelMag;
+        p.vy += (-p.y / pDist) * pAccelMag;
       }
     }
 
