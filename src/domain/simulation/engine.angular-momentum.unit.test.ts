@@ -19,22 +19,6 @@ import type { ShipStats } from "@/domain/stats";
  * Helper duplicated so this file is self-contained.
  */
 
-function weapon(over: Partial<WeaponEffect>): WeaponEffect {
-  return {
-    kind: "weapon",
-    weaponType: "beam",
-    damage: 10,
-    range: 300,
-    cooldown: 10,
-    projectileSpeed: 0,
-    tracking: 0,
-    shieldPiercing: 0,
-    armourPiercing: 0,
-    spread: 0,
-    ...over,
-  };
-}
-
 function makeShip(opts: {
   id: string;
   side: "attacker" | "defender";
@@ -72,7 +56,7 @@ function makeShip(opts: {
     position: { x: opts.x, y: opts.y },
     facing: opts.facing ?? 0,
     orders: defaultOrders,
-    classification: (opts.classification ?? "frigate") as ShipClassification,
+    classification: (opts.classification ?? "frigate"),
   };
 }
 

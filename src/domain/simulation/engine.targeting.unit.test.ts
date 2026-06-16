@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
-import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { CombatShip, BattleInputs } from "@/domain/simulation/types";
 import { defaultOrders } from "@/schema/fleet";
 import type { ShipClassification } from "@/schema/hull";
@@ -16,7 +15,7 @@ import type { ShipStats } from "@/domain/stats";
  * Helper duplicated so this file is self-contained.
  */
 
-function weapon(over: Partial<WeaponEffect>): WeaponEffect {
+function weapon(over: Partial<WeaponEffect> = {}): WeaponEffect {
   return {
     kind: "weapon",
     weaponType: "beam",
@@ -72,7 +71,7 @@ function makeShip(opts: {
     position: { x: opts.x, y: opts.y },
     facing: opts.facing ?? 0,
     orders: { ...defaultOrders, ...opts.orders },
-    classification: (opts.classification ?? "frigate") as ShipClassification,
+    classification: (opts.classification ?? "frigate"),
   };
 }
 
@@ -92,13 +91,8 @@ function firstHitTarget(
   result: ReturnType<typeof runBattle>,
   defenderIds: readonly string[],
 ): string | undefined {
-  const first = result.frames.find(
-    (f) =>
-      f.projectiles.length > 0 ||
-      f.ships.some((s) => defenderIds.includes(s.instanceId) && s.structure < 100),
-  );
-  // Check structure drops: compare to the initial frame's structure for
-  // each defender and find the first to drop.
+  // Compare each frame's structure to the initial frame and return the
+  // first defender whose structure dropped.
   const init = result.frames[0];
   if (init === undefined) return undefined;
   for (const frame of result.frames) {
