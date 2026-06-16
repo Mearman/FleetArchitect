@@ -126,4 +126,21 @@ describe("battle pipeline (resolve -> runBattle)", () => {
     const last = result.frames.at(-1);
     expect(last).toBeDefined();
   });
+
+  it("places the defender on the opposite side of the arena from the attacker", () => {
+    const design = armedFighter(createId("design"));
+    const attacker = fleet(createId("fleet"), design.id);
+    const defender = fleet(createId("fleet"), design.id);
+    const designs = new Map([[design.id, design]]);
+
+    const attackers = resolveFleetToCombatShips(attacker, designs, catalog(), "attacker");
+    const defenders = resolveFleetToCombatShips(defender, designs, catalog(), "defender");
+
+    // The attacker keeps its authored positions (left side, negative x).
+    expect(attackers.every((s) => s.position.x < 0)).toBe(true);
+    // The defender is mirrored to the opposite side (positive x).
+    expect(defenders.every((s) => s.position.x > 0)).toBe(true);
+    // And turned to face the attacker.
+    expect(defenders.every((s) => Math.abs(s.facing - Math.PI) < 1e-9)).toBe(true);
+  });
 });
