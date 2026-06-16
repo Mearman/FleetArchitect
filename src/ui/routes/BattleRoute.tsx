@@ -69,6 +69,7 @@ export function BattleRoute() {
   const [speed, setSpeed] = useState(1);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [canvasSize, setCanvasSize] = useState<{ width: number; height: number } | null>(null);
 
   const fleetOptions = useMemo(
     () => (fleets ?? []).map((f) => ({ value: f.id, label: f.name })),
@@ -120,14 +121,38 @@ export function BattleRoute() {
     return map;
   }, [result]);
 
-  // Size the canvas backing store once, for crisp rendering on hi-dpi screens.
+  // Keep the canvas backing store matched to its CSS display size, with a DPR
+  // multiplier for crisp lines. Without this the backing is the HTML default
+  // 300×150 regardless of how big the canvas renders, and the browser scales
+  // that tiny bitmap up to fill the box — a blurry smear. The effect depends
+  // on `result` so it (re)runs when the canvas first mounts on a new battle.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (canvas === null) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = W * dpr;
-    canvas.height = H * dpr;
-  }, []);
+    const setBacking = () => {
+      const cw = canvas.clientWidth;
+      const ch = canvas.clientHeight;
+      if (cw === 0 || ch === 0) return;
+      const desiredW = cw * dpr;
+      const desiredH = ch * dpr;
+      // Only resize the backing when it actually changed — assigning to
+      // canvas.width clears the bitmap, so guarding avoids a blank flash
+      // when a new battle reuses the same-sized canvas element.
+      if (canvas.width !== desiredW) canvas.width = desiredW;
+      if (canvas.height !== desiredH) canvas.height = desiredH;
+    };
+    setBacking();
+    const observer = new ResizeObserver(() => {
+      setBacking();
+      const cw = canvas.clientWidth;
+      const ch = canvas.clientHeight;
+      if (cw === 0 || ch === 0) return;
+      setCanvasSize({ width: cw, height: ch });
+    });
+    observer.observe(canvas);
+    return () => observer.disconnect();
+  }, [result]);
 
   // Playback loop: advance the playhead through frames at the chosen speed.
   useEffect(() => {
@@ -165,12 +190,22 @@ export function BattleRoute() {
 
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, W, H);
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
+    if (width === 0 || height === 0) return;
+    ctx.clearRect(0, 0, width, height);
 
-    const sx = (wx: number) =>
-      PAD + ((wx - bounds.minX) / (bounds.maxX - bounds.minX)) * (W - PAD * 2);
-    const sy = (wy: number) =>
-      PAD + ((wy - bounds.minY) / (bounds.maxY - bounds.minY)) * (H - PAD * 2);
+    // Uniform world-to-display scale that letterboxes to preserve the
+    // world's aspect ratio. Independent x/y scales would stretch ships
+    // whenever the canvas aspect doesn't match the battle's.
+    const rangeX = Math.max(bounds.maxX - bounds.minX, 1);
+    const rangeY = Math.max(bounds.maxY - bounds.minY, 1);
+    const scale = Math.min((width - PAD * 2) / rangeX, (height - PAD * 2) / rangeY);
+    const offsetX = (width - rangeX * scale) / 2;
+    const offsetY = (height - rangeY * scale) / 2;
+
+    const sx = (wx: number) => offsetX + (wx - bounds.minX) * scale;
+    const sy = (wy: number) => offsetY + (wy - bounds.minY) * scale;
 
     for (const p of frame.projectiles) {
       const colour = PROJECTILE_COLOUR[p.kind];
@@ -221,7 +256,7 @@ export function BattleRoute() {
         frac > 0.5 ? "#7bd88f" : frac > 0.25 ? "#ffcc5a" : "#ff5a5a";
       ctx.fillRect(px - barW / 2, py + 10, barW * frac, 3);
     }
-  }, [result, tick, bounds, maxHp]);
+  }, [result, tick, bounds, maxHp, canvasSize]);
 
   if (fleets === undefined || designs === undefined) {
     return <Text c="dimmed">Loading…</Text>;
