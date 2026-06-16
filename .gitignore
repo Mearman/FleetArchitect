@@ -9,3 +9,4 @@ coverage
 !.env.example
 .vite
 *.tsbuildinfo
+.playwright-mcp
