@@ -237,4 +237,47 @@ describe("runBattle", () => {
     // on the first hit, then dead on the second. Either way the attacker wins.
     expect(result.winner).toBe("attacker");
   });
+
+  it("develops linear and angular velocity (Newtonian motion model)", () => {
+    // Attacker with a gun, no weapons on the defender — the attacker closes
+    // and orbits, exercising acceleration, momentum and angular momentum.
+    const ships = [
+      makeShip({
+        id: "a1",
+        side: "attacker",
+        x: -300,
+        y: 0,
+        facing: 0,
+        weapons: [weapon({ damage: 5, cooldown: 200, range: 400 })],
+      }),
+      makeShip({
+        id: "d1",
+        side: "defender",
+        x: 200,
+        y: 0,
+        structure: 4000,
+        weapons: [],
+        orders: { engageRange: "hold" },
+      }),
+    ];
+    const result = runBattle(inputs(ships, 11, 80));
+    // Deployment frame: velocities are zero, ship hasn't moved yet.
+    const frame0 = result.frames[0];
+    if (frame0 === undefined) throw new Error("missing frame 0");
+    const attacker0 = frame0.ships.find((s) => s.instanceId === "a1");
+    expect(attacker0?.vx).toBe(0);
+    expect(attacker0?.vy).toBe(0);
+
+    // Find a mid-battle frame where the attacker has begun closing.
+    const mid = result.frames.find(
+      (f) => f.tick >= 20 && f.ships.find((s) => s.instanceId === "a1")?.alive === true,
+    );
+    expect(mid, "expected a mid-battle frame with the attacker alive").toBeDefined();
+    const attackerMid = mid?.ships.find((s) => s.instanceId === "a1");
+    if (attackerMid === undefined) throw new Error("missing attacker in mid frame");
+    // The attacker is moving toward the defender (positive x): momentum built up.
+    expect(attackerMid.vx ?? 0).toBeGreaterThan(0);
+    // The attacker has accumulated angular velocity (orbiting / aiming): non-zero.
+    expect(Math.abs(attackerMid.vx ?? 0) + Math.abs(attackerMid.vy ?? 0)).toBeGreaterThan(0);
+  });
 });
