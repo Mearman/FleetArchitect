@@ -249,6 +249,28 @@ export function BattleRoute() {
       ctx.arc(px, py, 7, 0, Math.PI * 2);
       ctx.fill();
 
+      // Heading indicator: a short line along the ship's velocity vector,
+      // so direction and momentum are visible. Length scales with speed,
+      // capped so very fast ships don't get a huge line.
+      if (s.vx !== undefined && s.vy !== undefined) {
+        const vx = s.vx;
+        const vy = s.vy;
+        const vLen = Math.hypot(vx, vy);
+        if (vLen > 0.01) {
+          const lineLen = Math.min(20, 4 + vLen * 8);
+          const ux = vx / vLen;
+          const uy = vy / vLen;
+          ctx.strokeStyle = base;
+          ctx.globalAlpha = 0.85;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(px + ux * 9, py + uy * 9);
+          ctx.lineTo(px + ux * (9 + lineLen), py + uy * (9 + lineLen));
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+        }
+      }
+
       const maxStructure = max?.structure ?? s.structure;
       const frac = maxStructure > 0 ? Math.max(0, s.structure / maxStructure) : 0;
       const barW = 18;
