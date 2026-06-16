@@ -11,9 +11,10 @@ import {
   Stack,
   Text,
   Title,
+  Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconPlayerPause, IconPlayerPlay, IconRefresh, IconSwords } from "@tabler/icons-react";
+import { IconArrowsShuffle, IconPlayerPause, IconPlayerPlay, IconRefresh, IconSwords } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { resolveFleetToCombatShips } from "@/domain/resolve";
 import { runBattle } from "@/domain/simulation/engine";
@@ -23,6 +24,7 @@ import { useFleets, useShipDesigns } from "@/ui/hooks/storage";
 import { storage } from "@/storage/db";
 import { BattleAnomaly } from "@/schema/battle";
 import type { BattleAnomaly as BattleAnomalyType, BattleResult } from "@/schema/battle";
+import type { Fleet } from "@/schema/fleet";
 import type { WeaponType } from "@/schema/module";
 
 /** Logical canvas resolution (CSS pixels before device-pixel-ratio scaling). */
@@ -264,17 +266,17 @@ export function BattleRoute() {
   const allFleets = fleets;
   const allDesigns = designs;
 
-  function engage() {
-    const attacker = allFleets.find((f) => f.id === attackerId);
-    const defender = allFleets.find((f) => f.id === defenderId);
-    if (attacker === undefined || defender === undefined) {
-      notifications.show({
-        title: "Pick both fleets",
-        message: "Choose an attacker and a defender before engaging.",
-        color: "red",
-      });
-      return;
-    }
+  /**
+   * Resolve the chosen fleets, run the engine, and start the replay. The
+   * caller passes fleet objects directly so both the manual and auto-rolled
+   * code paths can drive the same pipeline without going through state.
+   */
+  function startBattle(
+    attacker: Fleet,
+    defender: Fleet,
+    chosenAnomaly: BattleAnomalyType,
+    chosenSeed: number,
+  ): void {
     const designMap = new Map(allDesigns.map((d) => [d.id, d]));
     const attackers = resolveFleetToCombatShips(attacker, designMap, catalog(), "attacker");
     const defenders = resolveFleetToCombatShips(defender, designMap, catalog(), "defender");
@@ -290,14 +292,72 @@ export function BattleRoute() {
       ships: [...attackers, ...defenders],
       attackerFleetId: attacker.id,
       defenderFleetId: defender.id,
-      anomaly,
-      seed,
+      anomaly: chosenAnomaly,
+      seed: chosenSeed,
       maxTicks: DEFAULT_MAX_TICKS,
     });
     void storage().battles.save(battle);
     setResult(battle);
     setTick(0);
     setPlaying(true);
+  }
+
+  function engage() {
+    const attacker = allFleets.find((f) => f.id === attackerId);
+    const defender = allFleets.find((f) => f.id === defenderId);
+    if (attacker === undefined || defender === undefined) {
+      notifications.show({
+        title: "Pick both fleets",
+        message: "Choose an attacker and a defender before engaging.",
+        color: "red",
+      });
+      return;
+    }
+    startBattle(attacker, defender, anomaly, seed);
+  }
+
+  /**
+   * Auto-roll a matchup: pick two (different, when possible) fleets, a random
+   * anomaly, and a random seed, reflect the picks in the setup UI, and start
+   * the battle. This is the "AI vs AI" mode — both sides are commanded by
+   * their doctrine and the player is a spectator.
+   */
+  function randomBattle() {
+    if (allFleets.length === 0) {
+      notifications.show({
+        title: "No fleets to roll",
+        message: "Build or import a fleet first.",
+        color: "red",
+      });
+      return;
+    }
+    const ai = Math.floor(Math.random() * allFleets.length);
+    let di: number;
+    if (allFleets.length === 1) {
+      di = ai;
+    } else {
+      di = Math.floor(Math.random() * (allFleets.length - 1));
+      if (di >= ai) di += 1;
+    }
+    const attacker = allFleets[ai];
+    const defender = allFleets[di];
+    if (attacker === undefined || defender === undefined) return;
+
+    const anomalies = BattleAnomaly.options;
+    const chosenAnomaly = anomalies[Math.floor(Math.random() * anomalies.length)];
+    if (chosenAnomaly === undefined) return;
+    const chosenSeed = Math.floor(Math.random() * 0xffffffff);
+
+    setAttackerId(attacker.id);
+    setDefenderId(defender.id);
+    setAnomaly(chosenAnomaly);
+    setSeed(chosenSeed);
+    startBattle(attacker, defender, chosenAnomaly, chosenSeed);
+    notifications.show({
+      title: "AI vs AI",
+      message: `${attacker.name} vs ${defender.name} on ${ANOMALY_LABEL[chosenAnomaly] ?? chosenAnomaly}.`,
+      color: "indigo",
+    });
   }
 
   const winnerColour =
@@ -378,6 +438,18 @@ export function BattleRoute() {
             >
               Engage
             </Button>
+
+            <Tooltip label="Auto-roll attacker, defender, anomaly and seed, then watch.">
+              <Button
+                variant="light"
+                fullWidth
+                leftSection={<IconArrowsShuffle size={16} />}
+                onClick={randomBattle}
+                disabled={allFleets.length === 0}
+              >
+                AI vs AI
+              </Button>
+            </Tooltip>
 
             {result !== null && (
               <Group justify="space-between">
