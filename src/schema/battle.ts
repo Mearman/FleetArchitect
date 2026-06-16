@@ -34,6 +34,9 @@ export const ShipSnapshot = z.object({
    *  compatibility with replays saved before the Newtonian movement model. */
   vx: z.number().optional(),
   vy: z.number().optional(),
+  /** Heading in radians (the direction the ship is pointing, not necessarily
+   *  its direction of travel). Optional for the same backward-compat reason. */
+  facing: z.number().optional(),
   structure: z.number(),
   shield: z.number(),
   alive: z.boolean(),
