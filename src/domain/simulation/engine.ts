@@ -47,6 +47,18 @@ const SIM = {
     cruiser: 26,
     dreadnought: 38,
   },
+  /**
+   * Base structural mass of each hull class, added to the sum of installed
+   * module masses to give a ship's total mass. Acceleration is
+   * `thrust / mass`, so heavier ships build speed more slowly even
+   * though their top speed (set by `thrust`) is unchanged.
+   */
+  hullMass: {
+    fighter: 5,
+    frigate: 15,
+    cruiser: 40,
+    dreadnought: 100,
+  },
   /** Black-hole gravity strength and lethal proximity. */
   blackHolePull: 0.9,
   blackHoleLethalRadius: 24,
@@ -56,6 +68,14 @@ const SIM = {
   nebulaTrackingFactor: 0.5,
   /** Per-tick chance an asteroid field destroys a passing projectile. */
   asteroidDeflectChance: 0.01,
+  /**
+   * Per-tick multiplicative drag on linear and angular velocity. A small drag
+   * is a gameplay compromise: real space is frictionless (ships would coast
+   * forever), but unbounded drift makes battles unreadable. 0.97 ≈ 0.5 s
+   * half-life at 30 ticks/s — momentum is felt, but ships settle.
+   */
+  linearDamping: 0.97,
+  angularDamping: 0.9,
 };
 
 /** Mutable per-ship runtime state carried across ticks. */
@@ -66,6 +86,11 @@ interface SimShip {
   x: number;
   y: number;
   facing: number;
+  /** Linear velocity (world units per tick). Persists across ticks — momentum. */
+  velX: number;
+  velY: number;
+  /** Angular velocity (radians per tick). Persists — angular momentum. */
+  angVel: number;
   structure: number;
   maxStructure: number;
   shield: number;
@@ -76,6 +101,8 @@ interface SimShip {
   armourReduction: number;
   thrust: number;
   turnRate: number;
+  /** Total ship mass (hull base + installed modules). Drives acceleration. */
+  mass: number;
   radius: number;
   cost: number;
   weapons: readonly WeaponEffect[];
@@ -146,6 +173,9 @@ function toSimShip(ship: CombatShip, rng: () => number): SimShip {
     x: ship.position.x,
     y: ship.position.y,
     facing: ship.facing,
+    velX: 0,
+    velY: 0,
+    angVel: 0,
     structure: ship.stats.structure,
     maxStructure: ship.stats.structure,
     shield: ship.stats.shieldCapacity,
@@ -156,6 +186,7 @@ function toSimShip(ship: CombatShip, rng: () => number): SimShip {
     armourReduction: ship.stats.damageReduction,
     thrust: ship.stats.thrust,
     turnRate: ship.stats.turnRate,
+    mass: SIM.hullMass[ship.classification] + ship.stats.mass,
     radius: radiusFor(ship.classification),
     cost: ship.stats.cost,
     weapons,
@@ -396,35 +427,74 @@ function moveShips(
     const dist = Math.hypot(dx, dy);
 
     let desiredFacing: number;
-    let shouldMove: boolean;
+    let shouldThrust: boolean;
+    let reverse = false;
     if (isRetreating(ship)) {
       // Turn tail and flee; retreating ships do not fire.
       desiredFacing = Math.atan2(-dy, -dx);
-      shouldMove = true;
+      shouldThrust = true;
     } else if (ship.orders.engageRange === "hold") {
       desiredFacing = Math.atan2(dy, dx);
-      shouldMove = false;
+      shouldThrust = false;
     } else {
       const want = desiredRange(ship.orders, ship.weapons);
       if (dist > want * SIM.rangeBand) {
         desiredFacing = Math.atan2(dy, dx);
-        shouldMove = true;
+        shouldThrust = true;
       } else if (dist < want * SIM.rangeBand * 0.6) {
-        desiredFacing = Math.atan2(-dy, -dx);
-        shouldMove = true;
+        // Too close — face the target and reverse-thrust to back off while
+        // keeping guns on it. A Newtonian kiting maneuver that decelerates
+        // instead of just turning tail.
+        desiredFacing = Math.atan2(dy, dx);
+        shouldThrust = true;
+        reverse = true;
       } else {
         desiredFacing = Math.atan2(dy, dx);
-        shouldMove = false;
+        shouldThrust = false;
       }
     }
 
-    const error = Math.abs(angleDifference(ship.facing, desiredFacing));
-    ship.facing = steer(ship.facing, desiredFacing, ship.turnRate);
-    if (shouldMove) {
-      const speed = ship.thrust * Math.max(0, Math.cos(error));
-      ship.x += Math.cos(ship.facing) * speed;
-      ship.y += Math.sin(ship.facing) * speed;
+    // Angular: apply torque toward desiredFacing (capped by turnRate as an
+    // angular-acceleration cap). angVel persists, with mild damping so the
+    // ship settles on aim.
+    const angError = angleDifference(ship.facing, desiredFacing);
+    const maxTurn = ship.turnRate;
+    const angAccel = Math.abs(angError) <= maxTurn ? angError : Math.sign(angError) * maxTurn;
+    ship.angVel += angAccel;
+    ship.angVel *= SIM.angularDamping;
+    ship.facing += ship.angVel;
+
+    // Linear: thrust accelerates velocity toward the desired velocity vector
+    // (facing * maxSpeed forward, or -facing * maxSpeed for a reverse burn).
+    // `thrust` is the engine force; the per-tick acceleration cap is
+    // `thrust / mass` (F = m·a), so heavier ships are sluggish to build
+    // speed. `maxSpeed` (also `thrust`) caps the cruise ceiling. When not
+    // thrusting, desired velocity is zero so the ship bleeds off speed
+    // and comes to rest.
+    const maxSpeed = ship.thrust;
+    const accel = ship.thrust / Math.max(ship.mass, 1);
+    const dir = reverse ? -1 : 1;
+    const desiredVX = shouldThrust ? dir * Math.cos(ship.facing) * maxSpeed : 0;
+    const desiredVY = shouldThrust ? dir * Math.sin(ship.facing) * maxSpeed : 0;
+    const dvx = desiredVX - ship.velX;
+    const dvy = desiredVY - ship.velY;
+    const dvLen = Math.hypot(dvx, dvy);
+    if (dvLen > 0) {
+      const step = Math.min(dvLen, accel);
+      ship.velX += (dvx / dvLen) * step;
+      ship.velY += (dvy / dvLen) * step;
     }
+    const speed = Math.hypot(ship.velX, ship.velY);
+    if (speed > maxSpeed) {
+      const k = maxSpeed / speed;
+      ship.velX *= k;
+      ship.velY *= k;
+    }
+    ship.velX *= SIM.linearDamping;
+    ship.velY *= SIM.linearDamping;
+
+    ship.x += ship.velX;
+    ship.y += ship.velY;
   }
 }
 
@@ -532,6 +602,8 @@ function snapshot(
       side: s.side,
       x: s.x,
       y: s.y,
+      vx: s.velX,
+      vy: s.velY,
       structure: s.structure,
       shield: s.shield,
       alive: s.alive,
