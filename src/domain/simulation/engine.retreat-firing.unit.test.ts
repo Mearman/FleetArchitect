@@ -70,7 +70,7 @@ function makeShip(opts: {
     position: { x: opts.x, y: opts.y },
     facing: opts.facing ?? 0,
     orders: { ...defaultOrders, ...opts.orders },
-    classification: (opts.classification ?? "frigate") as ShipClassification,
+    classification: (opts.classification ?? "frigate"),
   };
 }
 
