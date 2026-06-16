@@ -30,7 +30,8 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["src/**/*.test.ts"],
+    // Tests follow the foo.[unit,integration,e2e].test.ts convention.
+    include: ["src/**/*.{unit,integration,e2e}.test.ts"],
     coverage: {
       include: ["src/domain/**/*.ts", "src/sharing/**/*.ts"],
     },
