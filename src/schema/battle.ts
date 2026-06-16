@@ -30,6 +30,10 @@ export const ShipSnapshot = z.object({
   side: z.enum(["attacker", "defender"]),
   x: z.number(),
   y: z.number(),
+  /** Linear velocity in world units per tick. Optional for backward
+   *  compatibility with replays saved before the Newtonian movement model. */
+  vx: z.number().optional(),
+  vy: z.number().optional(),
   structure: z.number(),
   shield: z.number(),
   alive: z.boolean(),
