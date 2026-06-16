@@ -4,14 +4,22 @@ import type { Fleet } from "@/schema/fleet";
 import type { ShipDesign } from "@/schema/ship";
 import type { Repository, Storage } from "./contract";
 
+/** Internal key-value record, used for one-time boot tasks like seeding. */
+export interface MetaRecord {
+  key: string;
+  value: unknown;
+}
+
 /**
  * Dexie-backed IndexedDB database. The schema version lives here; bump it and
- * add a `.version(n).upgrade()` step when the stored shape changes.
+ * add a `.version(n).upgrade()` step when the stored shape changes. Stores not
+ * mentioned in a newer version are inherited unchanged.
  */
 class FleetArchitectDatabase extends Dexie {
   ships!: Table<ShipDesign, string>;
   fleets!: Table<Fleet, string>;
   battles!: Table<BattleResult, string>;
+  meta!: Table<MetaRecord, string>;
 
   constructor() {
     super("fleet-architect");
@@ -20,7 +28,20 @@ class FleetArchitectDatabase extends Dexie {
       fleets: "id, name, updatedAt",
       battles: "id, playedAt",
     });
+    // Adds the meta key-value store for boot-time bookkeeping.
+    this.version(2).stores({
+      meta: "key",
+    });
   }
+}
+
+let db: FleetArchitectDatabase | undefined;
+
+function database(): FleetArchitectDatabase {
+  if (db === undefined) {
+    db = new FleetArchitectDatabase();
+  }
+  return db;
 }
 
 function makeRepository<T extends { id: string }>(
@@ -39,11 +60,11 @@ function makeRepository<T extends { id: string }>(
 }
 
 export function createStorage(): Storage {
-  const db = new FleetArchitectDatabase();
+  const instance = database();
   return {
-    ships: makeRepository(db.ships),
-    fleets: makeRepository(db.fleets),
-    battles: makeRepository(db.battles),
+    ships: makeRepository(instance.ships),
+    fleets: makeRepository(instance.fleets),
+    battles: makeRepository(instance.battles),
   };
 }
 
@@ -55,4 +76,16 @@ export function storage(): Storage {
     singleton = createStorage();
   }
   return singleton;
+}
+
+/** Read a meta value, or undefined if the key has never been set. Callers
+ *  narrow the `unknown` value with a type guard — meta stores untyped flags. */
+export async function getMeta(key: string): Promise<unknown> {
+  const record = await database().meta.get(key);
+  return record?.value;
+}
+
+/** Write a meta value. */
+export async function setMeta(key: string, value: unknown): Promise<void> {
+  await database().meta.put({ key, value });
 }
