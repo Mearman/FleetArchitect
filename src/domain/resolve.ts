@@ -72,6 +72,7 @@ function resolveModules(
       y: slot.position.y,
       maxHp: baseHpFor(moduleDef.effect.kind),
       mass: moduleDef.mass,
+      powerDraw: moduleDef.powerDraw,
       effect: moduleDef.effect,
     });
   }

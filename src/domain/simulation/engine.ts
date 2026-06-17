@@ -157,10 +157,18 @@ interface SimModule {
   hp: number;
   maxHp: number;
   mass: number;
+  /** Power drawn from the reactor each tick when running. */
+  powerDraw: number;
   effect: ModuleEffect;
   /** Weapon: ticks until next fire. Shield regen is pooled at ship level. */
   cooldown: number;
   alive: boolean;
+  /**
+   * Whether the power grid can sustain this module this tick. Reactors
+   * supply a finite output; when total draw exceeds it, power-hungry
+   * modules (weapons, then shields) go offline until supply recovers.
+   */
+  powered: boolean;
 }
 
 /** Mutable in-flight projectile. */
@@ -276,10 +284,12 @@ function toSimModule(m: ResolvedModule, rng: () => number): SimModule {
     hp: m.maxHp,
     maxHp: m.maxHp,
     mass: m.mass,
+    powerDraw: m.powerDraw,
     effect,
     // Stagger weapon cooldowns so they don't all fire on tick 0.
     cooldown: isWeapon ? Math.floor(rng() * (effect.cooldown + 1)) : 0,
     alive: true,
+    powered: true,
   };
 }
 
@@ -304,13 +314,61 @@ function sumWeaponTurn(ship: CombatShip): number {
 }
 
 /**
- * Recompute a ship's aggregate combat stats from its alive modules. The
- * movement, firing, and shield-regen code reads these fields, so keeping
- * them in sync with module destruction means a destroyed engine actually
- * reduces thrust, a destroyed shield actually reduces capacity, etc.
+ * Resolve the power grid, then recompute the ship's aggregate combat stats
+ * from the alive — and powered — module set.
+ *
+ * Power grid: reactors (power modules) supply a finite output each tick;
+ * every other module draws from it. When total draw exceeds supply, the
+ * most power-hungry modules go offline — weapons first, then shields —
+ * until the budget balances. An unpowered weapon can't fire; an unpowered
+ * shield stops regenerating. So a destroyed or inadequate reactor
+ * actually degrades the ship's offence and defence.
+ *
+ * Keeping the aggregates in sync with module destruction and brownout
+ * means the movement, firing, and shield-regen code reads live values.
  */
 function recomputeAggregates(ship: SimShip): void {
   if (ship.modules === undefined) return;
+
+  // 1. Supply from alive reactors.
+  let supply = 0;
+  for (const m of ship.modules) {
+    if (m.alive && m.effect.kind === "power") {
+      supply += m.effect.output;
+    }
+  }
+
+  // 2. Start every alive module powered; we'll disable the hungriest to
+  //    fit the budget. Reactors themselves draw nothing.
+  for (const m of ship.modules) {
+    m.powered = m.alive && m.effect.kind !== "power";
+  }
+
+  // 3. Demand from powered consumers. If it exceeds supply, take the
+  //    hungriest offline — weapons first, then shields — rechecking each
+  //    time, until demand ≤ supply (or nothing is left to cut).
+  const demandOf = (m: SimModule): number => (m.powered ? m.powerDraw : 0);
+  let demand = 0;
+  for (const m of ship.modules) demand += demandOf(m);
+
+  while (demand > supply) {
+    // Candidates to cut: powered weapons, else powered shields.
+    let victim: SimModule | undefined;
+    let bestDraw = -1;
+    for (const m of ship.modules) {
+      if (!m.powered) continue;
+      if (m.effect.kind !== "weapon" && m.effect.kind !== "shield") continue;
+      if (m.powerDraw > bestDraw) {
+        bestDraw = m.powerDraw;
+        victim = m;
+      }
+    }
+    if (victim === undefined) break; // nothing power-hungry left to cut
+    victim.powered = false;
+    demand -= victim.powerDraw;
+  }
+
+  // 4. Build aggregates from alive + powered modules.
   let thrust = ship.hullBaseThrust ?? 0;
   let turnRate = ship.hullBaseTurnRate ?? 0;
   let mass = SIM.hullMass[ship.classification];
@@ -322,8 +380,12 @@ function recomputeAggregates(ship: SimShip): void {
   const cooldowns: number[] = [];
 
   for (const m of ship.modules) {
-    if (!m.alive) continue;
+    if (!m.alive) {
+      mass += 0; // destroyed modules contribute neither mass nor function
+      continue;
+    }
     mass += m.mass;
+    if (!m.powered) continue; // unpowered modules are present but inert
     const effect = m.effect;
     switch (effect.kind) {
       case "weapon":
@@ -800,15 +862,18 @@ function fireWeapons(
 
     // Per-module path: iterate the ship's own weapon modules, reading and
     // writing each module's cooldown (so destruction is reflected live and
-    // recomputeAggregates can't clobber in-flight cooldowns).
+    // recomputeAggregates can't clobber in-flight cooldowns). An unpowered
+    // weapon is inert — it can't fire — but its cooldown still ticks down,
+    // so the moment the power grid recovers it fires on its next cycle.
     if (ship.modules !== undefined) {
       for (const m of ship.modules) {
         if (!m.alive || m.effect.kind !== "weapon") continue;
-        const weapon = m.effect;
         if (m.cooldown > 0) {
           m.cooldown -= 1;
           continue;
         }
+        if (!m.powered) continue; // reactor can't sustain this weapon this tick
+        const weapon = m.effect;
         if (dist > weapon.range || facingError > SIM.firingArc) continue;
         m.cooldown = weapon.cooldown;
         fireOne(ship, weapon, target, rng, fired);
