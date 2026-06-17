@@ -80,6 +80,8 @@ function moduleOf(
     shieldFacing: 0,
     facing: 0,
     weaponFacing: 0,
+    turretArc: 0,
+    turretTurnRate: 0,
   };
 }
 

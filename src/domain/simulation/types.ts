@@ -89,6 +89,15 @@ export interface ResolvedModule {
    * modules; harmless on other kinds (default 0).
    */
   weaponFacing: number;
+  /**
+   * Turret traverse half-arc (radians, ship-local) about `weaponFacing`, and
+   * slew speed (radians per tick). A `turretTurnRate` of 0 is a fixed mount:
+   * the barrel never leaves `weaponFacing`. Copied off the weapon effect by
+   * the resolver so the engine doesn't re-derive them from the effect each
+   * tick. Both default to 0 on non-turret weapons and on non-weapon modules.
+   */
+  turretArc: number;
+  turretTurnRate: number;
 }
 
 /** Everything the simulator needs to run a deterministic battle. */
