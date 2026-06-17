@@ -4,6 +4,7 @@ import {
   Button,
   Center,
   Group,
+  Loader,
   NativeSelect,
   NumberInput,
   Paper,
@@ -19,8 +20,8 @@ import { notifications } from "@mantine/notifications";
 import { IconArrowsShuffle, IconPlayerPause, IconPlayerPlay, IconRefresh, IconSwords } from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { resolveFleetToCombatShips } from "@/domain/resolve";
-import { runBattle } from "@/domain/simulation/engine";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
+import { battleRunner } from "@/ui/battleRunner";
 import { catalog } from "@/data/catalog";
 import { useFleets, useShipDesigns } from "@/ui/hooks/storage";
 import { storage } from "@/storage/db";
@@ -163,6 +164,7 @@ export function BattleRoute() {
 
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
+  const [computing, setComputing] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [canvasSize, setCanvasSize] = useState<{ width: number; height: number } | null>(null);
@@ -468,12 +470,12 @@ export function BattleRoute() {
    * caller passes fleet objects directly so both the manual and auto-rolled
    * code paths can drive the same pipeline without going through state.
    */
-  function startBattle(
+  async function startBattle(
     attacker: Fleet,
     defender: Fleet,
     chosenAnomaly: BattleAnomalyType,
     chosenSeed: number,
-  ): void {
+  ): Promise<void> {
     const designMap = new Map(allDesigns.map((d) => [d.id, d]));
     const attackers = resolveFleetToCombatShips(attacker, designMap, catalog(), "attacker");
     const defenders = resolveFleetToCombatShips(defender, designMap, catalog(), "defender");
@@ -485,20 +487,36 @@ export function BattleRoute() {
       });
       return;
     }
-    const battle = runBattle({
-      ships: [...attackers, ...defenders],
-      attackerFleetId: attacker.id,
-      defenderFleetId: defender.id,
-      anomaly: chosenAnomaly,
-      seed: chosenSeed,
-      maxTicks: DEFAULT_MAX_TICKS,
-    });
-    void storage().battles.save(battle);
-    setResult(battle);
-    // Reset the playback clock to the start.
-    playbackTimeRef.current = 0;
-    setPlaybackTime(0);
-    setPlaying(true);
+    // Compute off the main thread via the BattleRunner contract, so the engine
+    // no longer blocks the UI. The replay below is unchanged: it still drives
+    // off the precomputed frames once the result arrives, on the wall-clock
+    // playback timeline.
+    setComputing(true);
+    setPlaying(false);
+    try {
+      const battle = await battleRunner.run({
+        ships: [...attackers, ...defenders],
+        attackerFleetId: attacker.id,
+        defenderFleetId: defender.id,
+        anomaly: chosenAnomaly,
+        seed: chosenSeed,
+        maxTicks: DEFAULT_MAX_TICKS,
+      });
+      void storage().battles.save(battle);
+      setResult(battle);
+      // Reset the playback clock to the start.
+      playbackTimeRef.current = 0;
+      setPlaybackTime(0);
+      setPlaying(true);
+    } catch (error) {
+      notifications.show({
+        title: "Battle failed to compute",
+        message: error instanceof Error ? error.message : "The simulation worker did not return a result.",
+        color: "red",
+      });
+    } finally {
+      setComputing(false);
+    }
   }
 
   function engage() {
@@ -512,7 +530,7 @@ export function BattleRoute() {
       });
       return;
     }
-    startBattle(attacker, defender, anomaly, seed);
+    void startBattle(attacker, defender, anomaly, seed);
   }
 
   /**
@@ -551,7 +569,7 @@ export function BattleRoute() {
     setDefenderId(defender.id);
     setAnomaly(chosenAnomaly);
     setSeed(chosenSeed);
-    startBattle(attacker, defender, chosenAnomaly, chosenSeed);
+    void startBattle(attacker, defender, chosenAnomaly, chosenSeed);
     notifications.show({
       title: "AI vs AI",
       message: `${attacker.name} vs ${defender.name} on ${ANOMALY_LABEL[chosenAnomaly] ?? chosenAnomaly}.`,
@@ -645,6 +663,7 @@ export function BattleRoute() {
               size="md"
               leftSection={<IconSwords size={18} />}
               onClick={engage}
+              loading={computing}
             >
               Engage
             </Button>
@@ -655,7 +674,7 @@ export function BattleRoute() {
                 fullWidth
                 leftSection={<IconArrowsShuffle size={16} />}
                 onClick={randomBattle}
-                disabled={allFleets.length === 0}
+                disabled={allFleets.length === 0 || computing}
               >
                 AI vs AI
               </Button>
@@ -680,10 +699,17 @@ export function BattleRoute() {
           {result === null ? (
             <Paper p="xl" withBorder>
               <Center h={360}>
-                <Stack align="center" gap="xs">
-                  <IconSwords size={40} color="#6b7280" />
-                  <Text c="dimmed">Pick two fleets and engage to watch the battle.</Text>
-                </Stack>
+                {computing ? (
+                  <Stack align="center" gap="xs">
+                    <Loader />
+                    <Text c="dimmed">Computing battle…</Text>
+                  </Stack>
+                ) : (
+                  <Stack align="center" gap="xs">
+                    <IconSwords size={40} color="#6b7280" />
+                    <Text c="dimmed">Pick two fleets and engage to watch the battle.</Text>
+                  </Stack>
+                )}
               </Center>
             </Paper>
           ) : (
