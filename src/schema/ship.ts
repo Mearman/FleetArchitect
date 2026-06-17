@@ -1,23 +1,19 @@
 import { z } from "zod";
 import { EntityId, IsoTimestamp } from "./primitives";
-
-/** A module installed into a specific hull slot. */
-export const ModulePlacement = z.object({
-  slotId: EntityId,
-  moduleId: EntityId,
-});
-export type ModulePlacement = z.infer<typeof ModulePlacement>;
+import { TileGrid } from "./grid";
 
 /**
- * A player-designed ship: a hull plus the set of modules installed into its
- * slots. This is the unit of persistence and sharing for individual ships.
+ * A player-designed ship: an authoritative 2D tile grid of hull and module
+ * cells. The grid is the single source of truth for the ship's shape, mass,
+ * connectivity, and the position of every module — there is no separate hull
+ * id or slot/placement list. This is the unit of persistence and sharing for
+ * individual ships.
  */
 export const ShipDesign = z.object({
   id: EntityId,
   name: z.string().min(1),
-  hullId: EntityId,
   faction: z.string().min(1),
-  placements: z.array(ModulePlacement),
+  grid: TileGrid,
   createdAt: IsoTimestamp,
   updatedAt: IsoTimestamp,
 });

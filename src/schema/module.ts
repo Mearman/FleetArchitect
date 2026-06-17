@@ -1,18 +1,6 @@
 import { z } from "zod";
 import { EntityId } from "./primitives";
 
-/**
- * The kind of hull slot a module may occupy. A hull lays out slots of these
- * types; a module declares which slot type it fits into.
- */
-export const ModuleSlotType = z.enum([
-  "weapon",
-  "general",
-  "engine",
-  "system",
-]);
-export type ModuleSlotType = z.infer<typeof ModuleSlotType>;
-
 /** How a weapon delivers damage; drives projectile behaviour in the sim. */
 export const WeaponType = z.enum([
   "beam",
@@ -190,7 +178,6 @@ export const ModuleDefinition = z.object({
   name: z.string().min(1),
   description: z.string(),
   category: z.enum(["weapon", "defence", "propulsion", "system", "crew"]),
-  slotType: ModuleSlotType,
   mass: z.number().min(0),
   cost: z.number().min(0),
   /** Power required to run this module (always >= 0). Supply comes from the effect. */
