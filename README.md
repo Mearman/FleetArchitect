@@ -15,8 +15,8 @@ data URLs.
 
 ## Roadmap
 
-The simulation is moving from a slot-based ship model toward a Cosmoteer-style
-tile grid, with the physical model and gameplay parity layered on top.
+The ship model is a Cosmoteer-style tile grid, with the physical model and
+gameplay parity layered on top. The simulation runs off the main thread.
 
 | Feature | Status |
 |---------|--------|
@@ -26,14 +26,14 @@ tile grid, with the physical model and gameplay parity layered on top.
 | Tile-grid ship model (cells: empty / hull-tile / module) — the keystone | Shipped |
 | Tile-painting Ship Designer | Shipped |
 | Grid-exact break-apart adjacency (4-connected) | Shipped |
-| Break-apart with conserved linear + angular momentum | Now |
-| Cell-precise hits (a shot strikes a cell; penetration carries to the cell behind) | Now |
-| Cell-level collision (ships are solid at cell granularity; impulse response) | Now |
-| Simulation in a Web Worker behind an async runner contract | Now |
-| Playback speed, simulation tick rate, and display refresh fully independent | Now |
-| Independently-rotating turrets (track targets off the ship's facing) | Now |
-| Tactical order system (formation, stance, focus-fire, range-keeping) | Now |
-| Faction / race part sets | Now |
+| Break-apart with conserved linear + angular momentum | Shipped |
+| Cell-precise hits (a shot strikes a cell; penetration carries to the cell behind) | Shipped |
+| Cell-level collision (ships are solid at cell granularity; impulse response) | Shipped |
+| Simulation in a Web Worker behind an async runner contract | Shipped |
+| Playback speed, simulation tick rate, and display refresh fully independent | Shipped |
+| Independently-rotating turrets (track targets off the ship's facing) | Shipped |
+| Tactical order system (formation, stance, focus-fire, range-keeping) | Shipped |
+| Faction / race part sets | Shipped |
 | Async online challenges (submit a fleet, others fight it) — needs a sync server | Future |
 | Campaign / career progression (economy, bounties, unlocks) | Future |
 | Crew as physical entities (corridor pathfinding, manned stations) — needs the grid | Maybe |
