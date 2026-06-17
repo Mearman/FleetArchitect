@@ -38,7 +38,21 @@ function moduleOf(
   mass = 5,
   powerDraw = 0,
 ): ResolvedModule {
-  return { slotId, moduleId: `mod-${slotId}`, kind: effect.kind, x, y, maxHp, mass, powerDraw, effect, command, repairRate: 0 };
+  return {
+    slotId,
+    moduleId: `mod-${slotId}`,
+    kind: effect.kind,
+    x,
+    y,
+    maxHp,
+    mass,
+    powerDraw,
+    effect,
+    command,
+    repairRate: 0,
+    shieldArc: Math.PI * 2,
+    shieldFacing: 0,
+  };
 }
 
 /** An immobile target dummy with huge structure and no weapons. Serves as

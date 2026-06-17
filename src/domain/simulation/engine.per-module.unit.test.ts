@@ -38,7 +38,21 @@ function moduleOf(
   mass = 5,
   powerDraw = 0,
 ): ResolvedModule {
-  return { slotId, moduleId: `mod-${slotId}`, kind: effect.kind, x, y, maxHp, mass, powerDraw, effect, command: false, repairRate: 0 };
+  return {
+    slotId,
+    moduleId: `mod-${slotId}`,
+    kind: effect.kind,
+    x,
+    y,
+    maxHp,
+    mass,
+    powerDraw,
+    effect,
+    command: false,
+    repairRate: 0,
+    shieldArc: Math.PI * 2,
+    shieldFacing: 0,
+  };
 }
 
 /** A legacy (non-modular) ship, used as the hammer that degrades a modular

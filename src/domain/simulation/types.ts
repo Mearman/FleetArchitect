@@ -54,6 +54,14 @@ export interface ResolvedModule {
    * re-derive it from the effect.
    */
   repairRate: number;
+  /**
+   * For directional shields: the arc (radians) within which the shield
+   * intercepts incoming fire. Defaults to 2π (full sphere, omnidirectional).
+   * Only meaningful for shield modules; harmless on other kinds.
+   */
+  shieldArc: number;
+  /** For directional shields: the direction the arc points (radians). */
+  shieldFacing: number;
 }
 
 /** Everything the simulator needs to run a deterministic battle. */

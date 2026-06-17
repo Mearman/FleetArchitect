@@ -174,5 +174,16 @@ export const ModuleDefinition = z.object({
    * — modules whose effect is not point-defence should leave it false.
    */
   pointDefense: z.boolean().optional(),
+  /**
+   * Optional directional shield arc in radians. When present (and less than 2π)
+   * this shield module only protects the ship against hits coming from within
+   * `shieldFacing ± shieldArc/2`. When absent or 2π, the shield is omnidirectional
+   * (covers the full sphere), preserving the default behaviour for existing
+   * shield modules.
+   */
+  shieldArc: z.number().min(0).max(Math.PI * 2).optional(),
+  /** Direction the shield points, in radians. Only meaningful when shieldArc is
+   *  set and less than 2π. Default 0 (pointing along the ship's +x). */
+  shieldFacing: z.number().optional(),
 });
 export type ModuleDefinition = z.infer<typeof ModuleDefinition>;

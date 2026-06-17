@@ -72,6 +72,8 @@ function moduleOf(
     effect,
     command,
     repairRate: 0,
+    shieldArc: Math.PI * 2,
+    shieldFacing: 0,
   };
 }
 

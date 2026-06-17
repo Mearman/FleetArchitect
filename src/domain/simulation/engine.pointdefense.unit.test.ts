@@ -60,6 +60,7 @@ function moduleOf(
     slotId,
     moduleId: `mod-${slotId}`,
     kind: effect.kind,
+    repairRate: 0,
     x,
     y,
     maxHp,
@@ -67,6 +68,8 @@ function moduleOf(
     powerDraw,
     effect,
     command,
+    shieldArc: Math.PI * 2,
+    shieldFacing: 0,
   };
 }
 

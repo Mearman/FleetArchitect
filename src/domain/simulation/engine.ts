@@ -197,6 +197,10 @@ interface SimModule {
    * every non-repair module. Read by the per-tick repair step.
    */
   repairRate: number;
+  /** Directional shield arc in radians; 2π means omnidirectional. */
+  shieldArc: number;
+  /** Direction (radians) the directional shield points. */
+  shieldFacing: number;
 }
 
 /** Mutable in-flight projectile. */
@@ -329,6 +333,8 @@ function toSimModule(m: ResolvedModule, rng: () => number): SimModule {
     powered: true,
     command: m.command,
     repairRate: m.repairRate,
+    shieldArc: m.shieldArc,
+    shieldFacing: m.shieldFacing,
   };
 }
 
@@ -524,9 +530,18 @@ function pickTarget(ship: SimShip, enemies: readonly SimShip[]): SimShip | undef
  *    reduced by armour; or
  *  - legacy aggregated ship: hits structure directly, reduced by armour.
  *
+ * When the ship carries directional shield modules (an alive shield whose
+ * `shieldArc < 2π`), the incoming shot direction is tested against each
+ * shield's arc. A directional shield whose arc covers the shot absorbs the
+ * hit using its module HP (in addition to the pooled shield pool above),
+ * before any structural module is touched. If the directional shield is
+ * destroyed, the leftover spills onward to the next-nearest module.
+ *
  * `impactX/impactY` are the world-space hit location (a projectile's
- * position, or for hitscan the target's edge facing the shooter). They're
- * only used to select the module on a per-module ship.
+ * position, or for hitscan the target's edge facing the shooter). When
+ * provided we use the projectile's velocity direction as the shot angle;
+ * otherwise we fall back to the direction from the target toward the
+ * attacker (or 0 if no attacker is known).
  */
 function applyDamage(
   ship: SimShip,
@@ -535,6 +550,7 @@ function applyDamage(
   armourPiercing: number,
   impactX?: number,
   impactY?: number,
+  shotAngle?: number,
 ): void {
   const bypass = damage * shieldPiercing;
   const toShield = damage - bypass;
@@ -547,7 +563,7 @@ function applyDamage(
   const rawStructure = bypass + spill;
 
   if (ship.modules !== undefined) {
-    applyModuleDamage(ship, rawStructure, armourPiercing, impactX, impactY);
+    applyModuleDamage(ship, rawStructure, armourPiercing, impactX, impactY, shotAngle);
     return;
   }
 
@@ -561,9 +577,11 @@ function applyDamage(
 
 /**
  * Per-module damage: `amount` strikes the nearest alive module to the impact
- * point. The module's HP absorbs it; if the module is destroyed, the leftover
- * spills to the next-nearest module, and finally to hull structure (armour-
- * reduced). A ship with no alive modules takes the full amount to structure.
+ * point, but a directional shield module whose arc covers the shot direction
+ * intercepts the hit first (using its own HP as the shield pool). If the
+ * directional shield is destroyed, the leftover spills onward to the next-
+ * nearest module, and finally to hull structure (armour-reduced). A ship
+ * with no alive modules takes the full amount to structure.
  */
 function applyModuleDamage(
   ship: SimShip,
@@ -571,6 +589,7 @@ function applyModuleDamage(
   armourPiercing: number,
   impactX?: number,
   impactY?: number,
+  shotAngle?: number,
 ): void {
   let remaining = amount;
   // Transform the world-space impact point into ship-local (design)
@@ -578,7 +597,7 @@ function applyModuleDamage(
   const local = worldToLocal(ship, impactX, impactY);
 
   while (remaining > 0) {
-    const target = nearestAliveModule(ship, local);
+    const target = nearestAbsorber(ship, local, shotAngle);
     if (target === undefined) {
       // No modules left — everything goes to the hull.
       const reduction = ship.armourReduction * (1 - armourPiercing);
@@ -598,6 +617,57 @@ function applyModuleDamage(
     target.hp = 0;
     target.alive = false;
   }
+}
+
+/**
+ * Pick the module that should absorb the next spill of damage. If the ship
+ * has alive directional shields whose arc covers `shotAngle`, the closest
+ * one (by HP distance to the impact point) intercepts the hit. Otherwise
+ * fall back to the nearest-alive-module heuristic.
+ */
+function nearestAbsorber(
+  ship: SimShip,
+  local: { x: number; y: number } | undefined,
+  shotAngle: number | undefined,
+): SimModule | undefined {
+  if (ship.modules === undefined) return undefined;
+  const alive = ship.modules.filter((m) => m.alive);
+  if (alive.length === 0) return undefined;
+
+  // Directional shields cover the shot: pick the one whose arc contains it.
+  // Each shield's coverage is a cone centred on `shieldFacing` with half-arc
+  // `shieldArc/2`. shotAngle is in world coordinates, so we rotate it into
+  // the ship's local frame before testing.
+  if (shotAngle !== undefined) {
+    const localShot = normaliseAngle(shotAngle - ship.facing);
+    let candidate: SimModule | undefined;
+    let bestScore = -Infinity;
+    for (const m of alive) {
+      if (m.effect.kind !== "shield") continue;
+      if (m.shieldArc >= Math.PI * 2) continue; // omnidirectional, use fallback
+      const halfArc = m.shieldArc / 2;
+      const offset = Math.abs(angleDifference(m.shieldFacing, localShot));
+      if (offset > halfArc) continue; // shot is outside this shield's arc
+      // Prefer the shield with the most remaining HP — so two front shields
+      // share hits rather than the first one being chewed apart.
+      const score = m.hp;
+      if (score > bestScore) {
+        bestScore = score;
+        candidate = m;
+      }
+    }
+    if (candidate !== undefined) return candidate;
+  }
+
+  return nearestAliveModule(ship, local);
+}
+
+/** Wrap an angle to the (-π, π] interval so `angleDifference` works on it. */
+function normaliseAngle(a: number): number {
+  let x = a;
+  while (x > Math.PI) x -= Math.PI * 2;
+  while (x < -Math.PI) x += Math.PI * 2;
+  return x;
 }
 
 /** Rotate a world point into the ship's local frame (design coordinates). */
@@ -1011,10 +1081,12 @@ function fireOne(
 ): void {
   if (weapon.projectileSpeed <= 0) {
     // Hitscan: the beam strikes the target's edge nearest the shooter.
+    // The shot angle (used by directional shields) is the shooter's bearing
+    // relative to the target, i.e. the direction the energy is travelling.
     const angle = Math.atan2(target.y - ship.y, target.x - ship.x);
     const ix = target.x + Math.cos(angle) * target.radius;
     const iy = target.y + Math.sin(angle) * target.radius;
-    applyDamage(target, weapon.damage, weapon.shieldPiercing, weapon.armourPiercing, ix, iy);
+    applyDamage(target, weapon.damage, weapon.shieldPiercing, weapon.armourPiercing, ix, iy, angle);
   } else {
     fired.push(spawnProjectile(ship, weapon, target, rng));
   }
@@ -1154,7 +1226,10 @@ function updateProjectiles(
       }
     }
     if (hit !== undefined) {
-      applyDamage(hit, p.damage, p.shieldPiercing, p.armourPiercing, p.x, p.y);
+      // The projectile's velocity gives the shot direction; that's what
+      // directional shields see.
+      const shotAngle = Math.atan2(p.vy, p.vx);
+      applyDamage(hit, p.damage, p.shieldPiercing, p.armourPiercing, p.x, p.y, shotAngle);
       continue;
     }
     survivors.push(p);
