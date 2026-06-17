@@ -354,6 +354,17 @@ export function BattleRoute() {
               ctx.moveTo(mx + 3, my - 3);
               ctx.lineTo(mx - 3, my + 3);
               ctx.stroke();
+            } else if (m.turretAngle !== undefined) {
+              // Turreted weapon: a short barrel along the live world angle
+              // (ship heading plus the turret's slewed local angle), so a
+              // turret visibly tracks its target independently of the hull.
+              const world = s.facing + m.turretAngle;
+              ctx.strokeStyle = colour;
+              ctx.lineWidth = 1.5;
+              ctx.beginPath();
+              ctx.moveTo(mx, my);
+              ctx.lineTo(mx + Math.cos(world) * 7, my + Math.sin(world) * 7);
+              ctx.stroke();
             }
           }
           ctx.globalAlpha = 1;
