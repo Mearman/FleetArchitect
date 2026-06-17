@@ -268,6 +268,21 @@ interface SimModule {
    * Only meaningful for weapon modules; default 0 is harmless elsewhere.
    */
   weaponFacing: number;
+  /**
+   * Turret traverse half-arc (radians, ship-local) about `weaponFacing` and
+   * slew speed (radians per tick). `turretTurnRate === 0` is a fixed mount.
+   */
+  turretArc: number;
+  turretTurnRate: number;
+  /**
+   * Live barrel angle (radians, ship-local) for a turret weapon. Slews toward
+   * the target bearing each tick at `turretTurnRate`, clamped to
+   * `[weaponFacing - turretArc, weaponFacing + turretArc]`. Firing direction
+   * and recoil use this live angle, not the static `weaponFacing`. On a fixed
+   * mount it stays equal to `weaponFacing` for the ship's whole life, so the
+   * firing path can read it unconditionally.
+   */
+  turretAngle: number;
 }
 
 /** Mutable in-flight projectile. */
@@ -328,6 +343,51 @@ function steer(facing: number, target: number, maxStep: number): number {
   const diff = angleDifference(facing, target);
   if (Math.abs(diff) <= maxStep) return target;
   return facing + Math.sign(diff) * maxStep;
+}
+
+/** Clamp a ship-local angle to the turret's traverse window
+ *  `[weaponFacing - turretArc, weaponFacing + turretArc]`. Both the target
+ *  offset and the limit are measured relative to the mount direction so the
+ *  wrap-around is handled once, in `angleDifference`. */
+function clampToArc(weaponFacing: number, turretArc: number, desired: number): number {
+  const offset = angleDifference(weaponFacing, desired);
+  const clamped = Math.max(-turretArc, Math.min(turretArc, offset));
+  return weaponFacing + clamped;
+}
+
+/**
+ * Slew a turret's live barrel angle one tick toward a target and report
+ * whether it can fire. A fixed mount (`turretTurnRate === 0`) leaves the
+ * barrel on its mount direction and never gets here — the caller handles it
+ * with the ship-facing firing arc. For a real turret:
+ *
+ *  - the desired barrel angle is the world bearing to the target brought into
+ *    the ship's local frame and clamped to the traverse window about
+ *    `weaponFacing`;
+ *  - the live angle rotates toward that by at most `turretTurnRate`;
+ *  - the turret may fire only once the barrel has slewed to within
+ *    `SIM.firingArc` of the (clamped) desired angle — so a turret still
+ *    swinging onto a fast-moving target holds fire until it bears.
+ *
+ * Returns the new live angle and the can-fire flag; the caller writes the
+ * angle back onto the module (mutating `turretAngle`) and uses it for both
+ * the shot direction and the recoil lever arm.
+ */
+function slewTurret(
+  m: SimModule,
+  ship: SimShip,
+  target: SimShip,
+): { angle: number; canFire: boolean } {
+  const worldBearing = Math.atan2(target.y - ship.y, target.x - ship.x);
+  const localBearing = normaliseAngle(worldBearing - ship.facing);
+  const desired = clampToArc(m.weaponFacing, m.turretArc, localBearing);
+  const angle = steer(m.turretAngle, desired, m.turretTurnRate);
+  const onTarget = Math.abs(angleDifference(angle, desired)) <= SIM.firingArc;
+  // A target outside the traverse window can never be borne on, even with the
+  // barrel at the arc limit: the desired angle is clamped, so the residual
+  // bearing error tells us the shot is unreachable.
+  const reachable = Math.abs(angleDifference(desired, localBearing)) <= SIM.firingArc;
+  return { angle, canFire: onTarget && reachable };
 }
 
 function toSimShip(ship: CombatShip, rng: () => number): SimShip {
@@ -421,6 +481,11 @@ function toSimModule(m: ResolvedModule, rng: () => number): SimModule {
     shieldFacing: m.shieldFacing,
 facing: m.facing,
     weaponFacing: m.weaponFacing,
+    turretArc: m.turretArc,
+    turretTurnRate: m.turretTurnRate,
+    // The barrel starts aligned with its mount direction; a turret slews it
+    // toward the target from there each tick, a fixed mount leaves it.
+    turretAngle: m.weaponFacing,
   };
 }
 
@@ -1541,18 +1606,35 @@ function fireWeapons(
       if (!hasAliveCommand(ship)) continue;
       for (const m of ship.modules) {
         if (!m.alive || m.effect.kind !== "weapon") continue;
+        const weapon = m.effect;
+        const isTurret = m.turretTurnRate > 0;
+        // Slew the turret every tick, even while cooling or unpowered, so the
+        // barrel keeps tracking and is on-target the moment it can fire again.
+        // A fixed mount leaves its barrel on the mount direction.
+        let turretCanBear = true;
+        if (isTurret) {
+          const slew = slewTurret(m, ship, target);
+          m.turretAngle = slew.angle;
+          turretCanBear = slew.canFire;
+        }
         if (m.cooldown > 0) {
           m.cooldown -= 1;
           continue;
         }
         if (!m.powered) continue; // reactor can't sustain it this tick
-        const weapon = m.effect;
-        if (dist > weapon.range || facingError > SIM.firingArc) continue;
+        if (dist > weapon.range) continue;
+        // Fire gate: a turret fires when its slewed barrel bears on the target
+        // (independent of where the ship is pointing); a fixed mount fires
+        // only when the ship's own heading brings the target into the forward
+        // firing arc, exactly as before turrets existed.
+        if (isTurret ? !turretCanBear : facingError > SIM.firingArc) continue;
         if (m.ammo <= 0) continue; // out of ammo; no resupply yet
-        // A genuine, in-range shot: spend a round and reset the cycle.
+        // A genuine, in-range shot: spend a round and reset the cycle. Firing
+        // direction and recoil use the live barrel angle (which equals the
+        // mount facing on a fixed mount), not the static mount direction.
         m.ammo -= 1;
         m.cooldown = weapon.cooldown;
-        fireOne(ship, weapon, m.weaponFacing, m.x, m.y, target, rng, fired);
+        fireOne(ship, weapon, m.turretAngle, m.x, m.y, target, rng, fired);
       }
       continue;
     }
@@ -1807,6 +1889,11 @@ function snapshot(
           hp: m.hp,
           maxHp: m.maxHp,
           alive: m.alive,
+          // Emit the live barrel angle for turrets so the renderer can draw
+          // the barrel tracking the target. Omitted on fixed mounts and
+          // non-weapon cells (their barrel always points along the mount
+          // facing) to keep legacy replays byte-compatible.
+          ...(m.turretTurnRate > 0 ? { turretAngle: m.turretAngle } : {}),
         })),
       };
     }),
