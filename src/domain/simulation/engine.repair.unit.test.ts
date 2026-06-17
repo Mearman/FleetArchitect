@@ -45,6 +45,8 @@ function moduleOf(
     slotId,
     moduleId: `mod-${slotId}`,
     kind: effect.kind,
+    col: Math.round(x),
+    row: Math.round(y),
     x,
     y,
     maxHp,
@@ -66,6 +68,7 @@ function hammerShip(id: string, x: number): CombatShip {
   const weapon = beam({ damage: 4, range: 500, cooldown: 1 });
   const stats: ShipStats = {
     mass: 10,
+    massCapacity: 100,
     cost: 100,
     powerDraw: 0,
     powerOutput: 0,
@@ -119,6 +122,7 @@ function modularDefender(id: string, x: number, repairRate: number): CombatShip 
   ];
   const stats: ShipStats = {
     mass: 10,
+    massCapacity: 100,
     cost: 100,
     powerDraw: 0,
     powerOutput: 0,

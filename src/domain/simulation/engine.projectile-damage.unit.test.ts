@@ -49,6 +49,7 @@ function makeShip(opts: {
   const weapons = opts.weapons ?? [];
   const stats: ShipStats = {
     mass: 10,
+    massCapacity: 100,
     cost: 100,
     powerDraw: 0,
     powerOutput: 0,
