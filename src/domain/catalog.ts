@@ -1,29 +1,30 @@
-import type { HullDefinition } from "@/schema/hull";
+import type { HullTileDefinition } from "@/schema/hull";
+import type { HullTileType } from "@/schema/grid";
 import type { ModuleDefinition } from "@/schema/module";
 import type { EntityId } from "@/schema/primitives";
 
 /**
- * Read-only lookup over the bundled module and hull catalog. The catalog is
- * static and ships with the app, so ship designs and fleets reference entries
- * by id rather than embedding them.
+ * Read-only lookup over the bundled module and hull-tile catalog. The catalog
+ * is static and ships with the app, so ship grids reference modules by id and
+ * hull cells by tile type rather than embedding their stats.
  */
 export interface Catalog {
-  hull(id: EntityId): HullDefinition | undefined;
   module(id: EntityId): ModuleDefinition | undefined;
-  allHulls(): readonly HullDefinition[];
   allModules(): readonly ModuleDefinition[];
+  hullTile(type: HullTileType): HullTileDefinition | undefined;
+  allHullTiles(): readonly HullTileDefinition[];
 }
 
 export function createCatalog(
-  hulls: readonly HullDefinition[],
   modules: readonly ModuleDefinition[],
+  hullTiles: readonly HullTileDefinition[],
 ): Catalog {
-  const hullMap = new Map(hulls.map((h) => [h.id, h]));
   const moduleMap = new Map(modules.map((m) => [m.id, m]));
+  const hullTileMap = new Map(hullTiles.map((t) => [t.type, t]));
   return {
-    hull: (id) => hullMap.get(id),
     module: (id) => moduleMap.get(id),
-    allHulls: () => hulls,
     allModules: () => modules,
+    hullTile: (type) => hullTileMap.get(type),
+    allHullTiles: () => hullTiles,
   };
 }
