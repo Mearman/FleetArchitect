@@ -20,6 +20,8 @@ function describe(fault: DesignFault): string {
       return `Power deficit of ${Math.abs(fault.net).toFixed(0)} — add a reactor.`;
     case "crewDeficit":
       return `Crew shortfall of ${Math.abs(fault.net).toFixed(0)} — add crew quarters.`;
+    case "crossFaction":
+      return `Mixed factions — this design is ${fault.expected} but contains parts from: ${fault.found.join(", ")}.`;
   }
 }
 

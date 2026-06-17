@@ -27,7 +27,7 @@ import { ShipDesign } from "@/schema/ship";
 /** Fixed timestamp: presets are built-in content, not user-authored records. */
 const PRESET_TIME = "2026-06-16T00:00:00.000Z";
 
-/** Single-character tokens for the ASCII grid authoring map. */
+/** Single-character tokens for the ASCII grid authoring map — Terran parts. */
 const TOKENS: Record<string, GridCell> = {
   ".": { kind: "empty" },
   "#": { kind: "hull", tile: "block" },
@@ -43,10 +43,30 @@ const TOKENS: Record<string, GridCell> = {
   "C": { kind: "module", moduleId: "mod-crew-quarters", facing: 0 },
 };
 
-/** Parse an ASCII map (one string per row) into a row-major TileGrid. Every
- *  row must be the same length; an unknown token throws so a typo in a preset
- *  fails loudly at module load. */
-function gridFromMap(rows: readonly string[]): TileGrid {
+/** Single-character tokens for the ASCII grid authoring map — Swarm parts.
+ *  Distinct set so a Swarm grid can be authored without ambiguity. */
+const SWARM_TOKENS: Record<string, GridCell> = {
+  ".": { kind: "empty" },
+  "#": { kind: "hull", tile: "block" },
+  "p": { kind: "module", moduleId: "swm-spore-launcher", facing: 0 },
+  "a": { kind: "module", moduleId: "swm-acid-sprayer", facing: 0 },
+  "n": { kind: "module", moduleId: "swm-neural-sting", facing: 0 },
+  "r": { kind: "module", moduleId: "swm-regen-membrane", facing: 0 },
+  "c": { kind: "module", moduleId: "swm-carapace-plating", facing: 0 },
+  "j": { kind: "module", moduleId: "swm-flagellum-drive", facing: Math.PI },
+  "u": { kind: "module", moduleId: "swm-pulse-jet", facing: Math.PI },
+  "g": { kind: "module", moduleId: "swm-neural-ganglion", facing: 0 },
+  "m": { kind: "module", moduleId: "swm-metabolic-core", facing: 0 },
+  "s": { kind: "module", moduleId: "swm-spore-cloud", facing: 0 },
+};
+
+/** Parse an ASCII map (one string per row) into a row-major TileGrid using the
+ *  provided token map. Every row must be the same length; an unknown token
+ *  throws so a typo in a preset fails loudly at module load. */
+function gridFromMapWith(
+  rows: readonly string[],
+  tokens: Record<string, GridCell>,
+): TileGrid {
   const firstRow = rows[0];
   if (firstRow === undefined) throw new Error("preset grid has no rows");
   const cols = firstRow.length;
@@ -56,12 +76,22 @@ function gridFromMap(rows: readonly string[]): TileGrid {
       throw new Error(`preset grid row "${row}" is not ${cols} cells wide`);
     }
     for (const ch of row) {
-      const cell = TOKENS[ch];
+      const cell = tokens[ch];
       if (cell === undefined) throw new Error(`unknown grid token "${ch}"`);
       cells.push(cell);
     }
   }
   return { cols, rows: rows.length, cells };
+}
+
+/** Parse an ASCII map using the Terran token set. */
+function gridFromMap(rows: readonly string[]): TileGrid {
+  return gridFromMapWith(rows, TOKENS);
+}
+
+/** Parse an ASCII map using the Swarm token set. */
+function swarmGrid(rows: readonly string[]): TileGrid {
+  return gridFromMapWith(rows, SWARM_TOKENS);
 }
 
 const designData: ShipDesign[] = [
@@ -130,6 +160,49 @@ const designData: ShipDesign[] = [
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
   },
+
+  // ---------------------------------------------------------------------------
+  // Swarm designs — bio-organic insectoid ships. Fast, numerous, regenerating.
+  // ---------------------------------------------------------------------------
+  {
+    id: "preset-ship-drone",
+    name: "Drone Skimmer",
+    faction: "Swarm",
+    // Fighter: a spore launcher forward, a neural ganglion (command + power),
+    // a flagellum drive aft — the most basic Swarm combat unit.
+    grid: swarmGrid(["jgp"]),
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+  },
+  {
+    id: "preset-ship-ravager",
+    name: "Ravager Assault Ship",
+    faction: "Swarm",
+    // Frigate: twin acid sprayers over a regenerating hull, a metabolic core
+    // (command + heavy power), two flagellum drives.
+    grid: swarmGrid([
+      "jga",
+      "jra",
+    ]),
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+  },
+  {
+    id: "preset-ship-hive-lord",
+    name: "Hive Lord",
+    faction: "Swarm",
+    // Cruiser: a neural sting battery flanked by acid sprayers, carapace plating
+    // amidships, a metabolic core, spore cloud point defences, pulse jets, and
+    // regeneration membranes along the spine.
+    grid: swarmGrid([
+      "jm#n",
+      "umsn",
+      "jrcn",
+      "uram",
+    ]),
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+  },
 ];
 
 const swarmOrders: Orders = {
@@ -157,6 +230,14 @@ const strikeOrders: Orders = {
   engageRange: "medium",
   retreatThreshold: 0.15,
   rangeKeepingBand: 0.3,
+};
+/** Orders for Swarm fleets: extremely aggressive, close-range pack hunters. */
+const hiveOrders: Orders = {
+  ...defaultOrders,
+  stance: "aggressive",
+  targetPriority: "nearest",
+  engageRange: "short",
+  retreatThreshold: 0,
 };
 
 const fleetData: Fleet[] = [
@@ -196,6 +277,37 @@ const fleetData: Fleet[] = [
       { designId: "preset-ship-sabre", position: { x: -360, y: -150 }, facing: 0, orders: strikeOrders },
       { designId: "preset-ship-sabre", position: { x: -360, y: 0 }, facing: 0, orders: strikeOrders },
       { designId: "preset-ship-sabre", position: { x: -360, y: 150 }, facing: 0, orders: strikeOrders },
+    ],
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+  },
+  // Swarm fleets
+  {
+    id: "preset-fleet-drone-swarm",
+    name: "Drone Swarm",
+    faction: "Swarm",
+    ships: [
+      { designId: "preset-ship-drone", position: { x: -340, y: -120 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-drone", position: { x: -340, y: -60 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-drone", position: { x: -360, y: 0 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-drone", position: { x: -340, y: 60 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-drone", position: { x: -340, y: 120 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-drone", position: { x: -320, y: -90 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-drone", position: { x: -320, y: 90 }, facing: 0, orders: hiveOrders },
+    ],
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+  },
+  {
+    id: "preset-fleet-hive-assault",
+    name: "Hive Assault",
+    faction: "Swarm",
+    ships: [
+      { designId: "preset-ship-hive-lord", position: { x: -300, y: 0 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-ravager", position: { x: -360, y: -80 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-ravager", position: { x: -360, y: 80 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-drone", position: { x: -400, y: -160 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-drone", position: { x: -400, y: 160 }, facing: 0, orders: hiveOrders },
     ],
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,

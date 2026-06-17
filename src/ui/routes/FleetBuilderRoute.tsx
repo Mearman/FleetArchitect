@@ -81,15 +81,21 @@ export function FleetBuilderRoute() {
   const designs = useShipDesigns();
   const [working, setWorking] = useState<WorkingFleet>(blankFleet);
   const [addDesignId, setAddDesignId] = useState<string | null>(null);
+  const factions = catalog().factions();
 
   const designMap = useMemo(
     () => new Map((designs ?? []).map((d) => [d.id, d])),
     [designs],
   );
 
+  /** Only show designs that match the fleet's faction in the picker, so
+   *  a player can't accidentally mix faction parts across a fleet. */
   const designOptions = useMemo(
-    () => (designs ?? []).map((d) => ({ value: d.id, label: d.name })),
-    [designs],
+    () =>
+      (designs ?? [])
+        .filter((d) => d.faction === working.faction)
+        .map((d) => ({ value: d.id, label: d.name })),
+    [designs, working.faction],
   );
 
   const pointBreakdown = useMemo(() => {
@@ -208,12 +214,13 @@ export function FleetBuilderRoute() {
           }
           placeholder="e.g. 3rd Strike Wing"
         />
-        <TextInput
+        <Select
           label="Faction"
+          data={factions.map((f) => ({ value: f, label: f }))}
           value={working.faction}
-          onChange={(e) =>
-            setWorking((prev) => ({ ...prev, faction: e.target.value }))
-          }
+          onChange={(f) => {
+            if (f !== null) setWorking((prev) => ({ ...prev, faction: f }));
+          }}
         />
       </Group>
 

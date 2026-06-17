@@ -137,12 +137,15 @@ function brushLabel(brush: Brush): string {
 
 export function ShipDesignerRoute() {
   const designs = useShipDesigns();
-  const moduleDefs = catalog().allModules();
+  const factions = catalog().factions();
   const [working, setWorking] = useState<WorkingDesign>(() => blankDesign());
   const [brush, setBrush] = useState<Brush>({ kind: "hull", tile: "block" });
   const [selected, setSelected] = useState<{ col: number; row: number } | null>(
     null,
   );
+
+  /** Modules available for the current design's faction. */
+  const moduleDefs = catalog().modulesForFaction(working.faction);
 
   const analysis = useMemo(() => {
     const design: ShipDesign = {
@@ -303,12 +306,25 @@ export function ShipDesignerRoute() {
                 }
                 placeholder="e.g. Sabre Mk II"
               />
-              <TextInput
+              <Select
                 label="Faction"
+                data={factions.map((f) => ({ value: f, label: f }))}
                 value={working.faction}
-                onChange={(e) =>
-                  setWorking((prev) => ({ ...prev, faction: e.target.value }))
-                }
+                onChange={(f) => {
+                  if (f !== null) {
+                    // Switching faction clears the brush if it's a module from
+                    // the old faction — avoid leaving an invalid brush selected.
+                    setBrush((prev) => {
+                      if (prev.kind !== "module") return prev;
+                      const mod = catalog().module(prev.moduleId);
+                      if (mod === undefined || mod.faction !== f) {
+                        return { kind: "hull", tile: "block" };
+                      }
+                      return prev;
+                    });
+                    setWorking((prev) => ({ ...prev, faction: f }));
+                  }
+                }}
               />
             </Group>
 
