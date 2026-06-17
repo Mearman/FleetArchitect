@@ -117,11 +117,11 @@ function ModuleStatusPanel({ frame }: { frame: BattleFrame }) {
                 {s.modules?.map((m) => {
                   const frac = m.maxHp > 0 ? Math.max(0, m.hp / m.maxHp) : 0;
                   return (
-                    <Tooltip label={`${MODULE_LABEL[m.kind] ?? m.kind}: ${Math.round(m.hp)}/${m.maxHp}`}>
-                      <Box
-                        style={{ width: 34 }}
-                        key={m.slotId}
-                      >
+                    <Tooltip
+                      key={m.slotId}
+                      label={`${MODULE_LABEL[m.kind] ?? m.kind}: ${Math.round(m.hp)}/${m.maxHp}`}
+                    >
+                      <Box style={{ width: 34 }}>
                         <Progress
                           size={5}
                           value={m.alive ? frac * 100 : 0}
