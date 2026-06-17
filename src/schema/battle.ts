@@ -53,6 +53,7 @@ export const ShipSnapshot = z.object({
           "engine",
           "power",
           "crew",
+          "pointDefense",
         ]),
         /** Position in ship-local (design) coordinates, for rendering. */
         x: z.number(),
