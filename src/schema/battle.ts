@@ -63,6 +63,16 @@ export const ShipSnapshot = z.object({
         hp: z.number(),
         maxHp: z.number(),
         alive: z.boolean(),
+        /**
+         * For weapon modules with a turret: the live barrel angle in
+         * radians, ship-local — the direction the turret has slewed to this
+         * tick. The renderer draws the barrel along `ship.facing + turretAngle`
+         * so a turret visibly tracks its target. Absent on fixed mounts and
+         * non-weapon modules (their barrel always points along the module's
+         * mount facing). Optional for backward compatibility with older
+         * replays.
+         */
+        turretAngle: z.number().optional(),
       }),
     )
     .optional(),

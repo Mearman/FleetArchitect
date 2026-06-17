@@ -38,6 +38,24 @@ export const WeaponEffect = z.object({
    *  (fires along ship heading) so existing modules that never declared it
    *  behave exactly as before. */
   facing: z.number().optional(),
+  /**
+   * Turret traverse: the half-arc (radians, ship-local) the mount can swing
+   * either side of its mount direction (`facing`). A weapon with
+   * `turretTurnRate > 0` slews a live barrel angle toward its target each
+   * tick, clamped to `[facing - turretArc, facing + turretArc]`, and fires
+   * (and recoils) along that live angle — independent of the ship's heading.
+   * A value of π gives a full 360° turret. Default 0 (a fixed mount that
+   * always points along `facing`). Only meaningful on weapon modules.
+   */
+  turretArc: z.number().min(0).max(Math.PI).optional(),
+  /**
+   * Turret slew speed in radians per tick. The live barrel angle rotates
+   * toward the target bearing by at most this much each tick. `0` (the
+   * default) is a fixed mount: the barrel never leaves `facing` and the
+   * weapon fires only when the ship's own heading brings the target into
+   * the forward firing arc, exactly as before turrets existed.
+   */
+  turretTurnRate: z.number().min(0).optional(),
 });
 
 /** Default ammo for weapons that omit the field. Large enough that a weapon
