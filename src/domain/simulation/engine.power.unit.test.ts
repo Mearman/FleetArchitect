@@ -29,6 +29,7 @@ function beam(over: Partial<WeaponEffect> = {}): WeaponEffect {
     shieldPiercing: 0,
     armourPiercing: 0,
     spread: 0,
+    facing: 0,
     ...over,
   };
 }
@@ -46,6 +47,7 @@ function cannon(over: Partial<WeaponEffect> = {}): WeaponEffect {
     shieldPiercing: 0,
     armourPiercing: 0,
     spread: 0,
+    facing: 0,
     ...over,
   };
 }
@@ -74,6 +76,7 @@ function moduleOf(
     repairRate: 0,
     shieldArc: Math.PI * 2,
     shieldFacing: 0,
+    weaponFacing: 0,
   };
 }
 

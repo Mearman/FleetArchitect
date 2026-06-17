@@ -62,6 +62,16 @@ export interface ResolvedModule {
   shieldArc: number;
   /** For directional shields: the direction the arc points (radians). */
   shieldFacing: number;
+  /**
+   * For weapon modules: the direction (radians, ship-local) the weapon fires
+   * relative to the host ship's heading. Defaults to 0 (fires along +x in
+   * ship-local space, i.e. forward). A side-mounted weapon has facing π/2
+   * (left) or -π/2 (right); a rear-mounted weapon has facing π. The engine
+   * adds this offset to the ship's world heading when spawning a projectile
+   * or computing a hitscan shot direction. Only meaningful for weapon
+   * modules; harmless on other kinds (default 0).
+   */
+  weaponFacing: number;
 }
 
 /** Everything the simulator needs to run a deterministic battle. */

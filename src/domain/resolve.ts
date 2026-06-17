@@ -82,6 +82,10 @@ function resolveModules(
       // never declared these fields are unaffected.
       shieldArc: moduleDef.shieldArc ?? Math.PI * 2,
       shieldFacing: moduleDef.shieldFacing ?? 0,
+      // Per-module weapon facing (Cosmoteer-style mount direction). Defaults
+      // to 0 (fires along ship heading) so legacy modules without an explicit
+      // mount angle behave exactly as before.
+      weaponFacing: weaponFacingFor(moduleDef.effect),
     });
   }
   return out;
@@ -114,6 +118,15 @@ function baseHpFor(kind: ResolvedModule["kind"]): number {
  *  have one; every other kind contributes 0. */
 function repairRateFor(effect: ModuleEffect): number {
   if (effect.kind === "repair") return effect.repairRate;
+  return 0;
+}
+
+/** Read the ship-local fire direction off a module's effect. Only weapon
+ *  modules carry a facing; everything else returns 0 (the default — harmless
+ *  for non-weapon kinds). A weapon that omits `facing` fires along the ship's
+ *  heading, preserving legacy behaviour. */
+function weaponFacingFor(effect: ModuleEffect): number {
+  if (effect.kind === "weapon") return effect.facing ?? 0;
   return 0;
 }
 

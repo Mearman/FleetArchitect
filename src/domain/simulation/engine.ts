@@ -207,6 +207,15 @@ interface SimModule {
   shieldArc: number;
   /** Direction (radians) the directional shield points. */
   shieldFacing: number;
+  /**
+   * Ship-local direction (radians) the weapon fires relative to the host
+   * ship's heading. 0 fires along +x in ship-local space (forward); π/2
+   * fires left, -π/2 fires right, π fires backward. Copied off the
+   * resolved module's `weaponFacing` so the per-tick firing step can add it
+   * to the ship's world heading without re-deriving it from the effect.
+   * Only meaningful for weapon modules; default 0 is harmless elsewhere.
+   */
+  weaponFacing: number;
 }
 
 /** Mutable in-flight projectile. */
@@ -341,6 +350,7 @@ function toSimModule(m: ResolvedModule, rng: () => number): SimModule {
     repairRate: m.repairRate,
     shieldArc: m.shieldArc,
     shieldFacing: m.shieldFacing,
+    weaponFacing: m.weaponFacing,
   };
 }
 
@@ -937,14 +947,22 @@ function makeChunkShip(
 function spawnProjectile(
   owner: SimShip,
   weapon: WeaponEffect,
+  weaponFacing: number,
   target: SimShip,
   rng: () => number,
 ): SimProjectile {
   const aimAngle = Math.atan2(target.y - owner.y, target.x - owner.x);
+  // The weapon's mount direction (ship-local) is added to the ship's world
+  // heading so a side-mounted weapon fires sideways regardless of where the
+  // ship is pointed. `aimAngle` keeps the projectile on-target (homing will
+  // take over from there if `tracking > 0`); the spread still perturbs the
+  // aim — a side-mounted weapon is just as accurate as a forward one,
+  // measured against its own muzzle direction.
+  const mountAngle = owner.facing + weaponFacing;
   const spread = weapon.spread > 0 ? ranged(rng, -weapon.spread, weapon.spread) : 0;
   const angle = aimAngle + spread;
-  const muzzleX = owner.x + Math.cos(owner.facing) * SIM.muzzleOffset;
-  const muzzleY = owner.y + Math.sin(owner.facing) * SIM.muzzleOffset;
+  const muzzleX = owner.x + Math.cos(mountAngle) * SIM.muzzleOffset;
+  const muzzleY = owner.y + Math.sin(mountAngle) * SIM.muzzleOffset;
   const ttl = Math.ceil((weapon.range + 40) / Math.max(weapon.projectileSpeed, 1));
   return {
     x: muzzleX,
@@ -1318,7 +1336,7 @@ function fireWeapons(
         // A genuine, in-range shot: spend a round and reset the cycle.
         m.ammo -= 1;
         m.cooldown = weapon.cooldown;
-        fireOne(ship, weapon, target, rng, fired);
+        fireOne(ship, weapon, m.weaponFacing, target, rng, fired);
       }
       continue;
     }
@@ -1337,17 +1355,21 @@ function fireWeapons(
       if (facingError > SIM.firingArc) continue;
 
       ship.weaponCooldowns[i] = weapon.cooldown;
-      fireOne(ship, weapon, target, rng, fired);
+      // Legacy aggregated path reads facing off the weapon effect (default 0).
+      fireOne(ship, weapon, weapon.facing ?? 0, target, rng, fired);
     }
   }
   return fired;
 }
 
 /** Fire a single weapon: hitscan applies damage immediately at a synthesised
- *  impact point on the target's facing edge; otherwise spawn a projectile. */
+ *  impact point on the target's facing edge; otherwise spawn a projectile.
+ *  `weaponFacing` is the weapon's mount direction (radians, ship-local); the
+ *  ship adds it to its own heading to figure out the muzzle position. */
 function fireOne(
   ship: SimShip,
   weapon: WeaponEffect,
+  weaponFacing: number,
   target: SimShip,
   rng: () => number,
   fired: SimProjectile[],
@@ -1361,7 +1383,7 @@ function fireOne(
     const iy = target.y + Math.sin(angle) * target.radius;
     applyDamage(target, weapon.damage, weapon.shieldPiercing, weapon.armourPiercing, ix, iy, angle);
   } else {
-    fired.push(spawnProjectile(ship, weapon, target, rng));
+    fired.push(spawnProjectile(ship, weapon, weaponFacing, target, rng));
   }
 }
 
