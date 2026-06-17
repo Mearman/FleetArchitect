@@ -117,6 +117,10 @@ function applyModule(
     case "crew":
       stats.crewCapacity += effect.capacity;
       break;
+    case "hull":
+      // Hull sections are pure connectivity anchors: they contribute mass
+      // and cost (applied above) but no combat stats.
+      break;
   }
 }
 

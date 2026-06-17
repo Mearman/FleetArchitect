@@ -126,6 +126,21 @@ export const RepairEffect = z.object({
 export type RepairEffect = z.infer<typeof RepairEffect>;
 
 /**
+ * Effect payload for a hull section. Hull modules are pure connectivity
+ * anchors: they contribute no combat behaviour, but they define the
+ * adjacency graph the break-apart logic uses to decide when a damaged
+ * modular ship splits into independent chunks. A hull module with a
+ * large HP pool is the structural backbone of the ship — destroying
+ * it can sever the graph into disconnected components, each of which
+ * becomes its own rigid body with its own momentum, modules, and
+ * weapons.
+ */
+export const HullEffect = z.object({
+  kind: z.literal("hull"),
+});
+export type HullEffect = z.infer<typeof HullEffect>;
+
+/**
  * Discriminated union of all module effects. New module kinds extend this.
  */
 export const ModuleEffect = z.discriminatedUnion("kind", [
@@ -137,6 +152,7 @@ export const ModuleEffect = z.discriminatedUnion("kind", [
   CrewEffect,
   PointDefenseEffect,
   RepairEffect,
+  HullEffect,
 ]);
 export type ModuleEffect = z.infer<typeof ModuleEffect>;
 

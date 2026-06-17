@@ -156,6 +156,12 @@ interface SimShip {
    *  when modules are present. */
   hullBaseThrust?: number;
   hullBaseTurnRate?: number;
+  /**
+   * True on the tick this ship was created as a break-away chunk from a
+   * parent ship. Cleared by snapshot so the flag highlights only the
+   * split frame, not every frame the chunk exists.
+   */
+  brokeOff?: boolean;
 }
 
 /**
@@ -461,6 +467,7 @@ function recomputeAggregates(ship: SimShip): void {
       case "crew":
       case "pointDefense":
       case "repair":
+      case "hull":
         break;
     }
   }
@@ -707,6 +714,226 @@ function nearestAliveModule(
   return best;
 }
 
+/**
+ * Break-apart: when the alive modules on a modular ship no longer form a
+ * single connected graph (Chebyshev distance ≤ 1 between adjacent cells),
+ * each disconnected component becomes its own rigid body. The largest
+ * component stays with the original SimShip (keeping its `instanceId` and
+ * side); every smaller component is split off as a fresh SimShip with a
+ * fresh id, inheriting the parent's velocity.
+ *
+ * Connectivity is defined purely on alive modules — dead modules are gone
+ * for all purposes including graph connectivity. A non-modular ship (no
+ * `modules` array) never splits: the legacy aggregated path stays whole.
+ *
+ * The split happens at most once per ship per tick. After splitting, the
+ * original ship's modules array is mutated so that every module belonging
+ * to a non-primary component is marked `alive: false`. The chunk SimShips
+ * carry their own copies of those modules (alive: true), re-derived
+ * aggregates, and a fresh instanceId from `nextChunkId`.
+ *
+ * The function returns the list of new chunk ships to be added to the
+ * simulation's ship list. Returns an empty array when no split happens.
+ */
+function splitBreakApart(
+  ship: SimShip,
+  currentTick: number,
+  nextChunkId: (parentId: string, tick: number) => string,
+): SimShip[] {
+  if (ship.modules === undefined) return [];
+  const alive = ship.modules.filter((m) => m.alive);
+  if (alive.length === 0) return [];
+  // Hull modules are the connectivity anchor for break-apart. A ship
+  // whose module set doesn't include any hull cell at all never splits:
+  // it's a single rigid body regardless of how far apart its modules
+  // sit. This matches the design intent that break-apart is a feature
+  // of hull-segmented ships, not a side effect of module distance in
+  // ship designs that haven't adopted hull cells. A destroyed hull
+  // cell still anchors the ship — the ship was designed with a hull,
+  // it just happens to be a destroyed hull cell now.
+  const hasAnyHull = ship.modules.some((m) => m.effect.kind === "hull");
+  if (!hasAnyHull) return [];
+
+  // Union-Find over alive modules, grouped by Chebyshev adjacency.
+  // Only alive modules are nodes: a destroyed hull cell no longer
+  // bridges two weapon cells, so the graph can split apart when an
+  // anchor module dies. Non-modular ships (no `modules` array) never
+  // split; the legacy aggregated path stays whole.
+  const parent = new Map<SimModule, SimModule>();
+  for (const m of alive) parent.set(m, m);
+  const find = (m: SimModule): SimModule => {
+    let root = m;
+    while (parent.get(root) !== root) {
+      const next = parent.get(root);
+      if (next === undefined) break;
+      root = next;
+    }
+    return root;
+  };
+  const union = (a: SimModule, b: SimModule): void => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent.set(ra, rb);
+  };
+
+  // 8-neighbourhood adjacency: |dx| ≤ 1 and |dy| ≤ 1 (Chebyshev distance).
+  // We bucket alive modules by an integer-rounded cell so the O(n²) scan
+  // degrades gracefully on wide grids without losing correctness.
+  const bucketOf = (m: SimModule): string => `${Math.round(m.x)},${Math.round(m.y)}`;
+  const byBucket = new Map<string, SimModule[]>();
+  for (const m of alive) {
+    const key = bucketOf(m);
+    const list = byBucket.get(key);
+    if (list === undefined) byBucket.set(key, [m]);
+    else list.push(m);
+  }
+  const neighbours = (m: SimModule): SimModule[] => {
+    const cx = Math.round(m.x);
+    const cy = Math.round(m.y);
+    const out: SimModule[] = [];
+    for (let dx = -1; dx <= 1; dx += 1) {
+      for (let dy = -1; dy <= 1; dy += 1) {
+        if (dx === 0 && dy === 0) continue;
+        const list = byBucket.get(`${cx + dx},${cy + dy}`);
+        if (list !== undefined) out.push(...list);
+      }
+    }
+    return out;
+  };
+
+  // Drive the union pass. Two alive modules in adjacent buckets (which
+  // include same-cell duplicates) get unioned.
+  const seen = new Set<string>();
+  for (const m of alive) {
+    const key = `${m.slotId}@${bucketOf(m)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    for (const n of neighbours(m)) {
+      union(m, n);
+    }
+  }
+
+  // Group alive modules by their component root.
+  const components = new Map<SimModule, SimModule[]>();
+  for (const m of alive) {
+    const r = find(m);
+    const list = components.get(r);
+    if (list === undefined) components.set(r, [m]);
+    else list.push(m);
+  }
+  if (components.size <= 1) return []; // connected — no split
+
+
+  // Pick the largest component as the survivor. Ties broken by string
+  // comparison on the root slotId so the choice is fully deterministic.
+  let survivorRoot: SimModule | undefined;
+  let survivorModules: SimModule[] = [];
+  for (const [, list] of components) {
+    if (
+      list.length > survivorModules.length ||
+      (list.length === survivorModules.length &&
+        survivorRoot !== undefined &&
+        list[0] !== undefined &&
+        survivorRoot.slotId > list[0].slotId)
+    ) {
+      survivorRoot = list[0];
+      survivorModules = list;
+    }
+  }
+  if (survivorRoot === undefined) return [];
+
+  // Build chunk SimShips for every non-survivor component. Each chunk
+  // inherits the parent's world position, facing, and velocity, but gets
+  // a fresh instanceId. The chunk carries its own copies of the migrated
+  // SimModules so subsequent ticks treat it as an independent ship.
+  const survivorSet = new Set(survivorModules);
+  const chunks: SimShip[] = [];
+  for (const [, list] of components) {
+    if (list === survivorModules) continue;
+    const chunk = makeChunkShip(ship, list, nextChunkId(ship.instanceId, currentTick));
+    chunks.push(chunk);
+    // Mark the migrated modules as gone on the original ship so its
+    // hit-selection and aggregate recompute ignore them from now on.
+    for (const m of list) {
+      if (!survivorSet.has(m)) {
+        m.alive = false;
+        m.hp = 0;
+      }
+    }
+  }
+  return chunks;
+}
+
+/**
+ * Build a fresh SimShip for a disconnected chunk of modules. The chunk
+ * inherits the parent's world position, facing, and velocity verbatim.
+ * Aggregates are recomputed from the chunk's own module set so the chunk
+ * participates in subsequent ticks' movement, firing, and damage.
+ *
+ * The chunk's structure field is reset to the parent's remaining
+ * structure scaled by the fraction of modules it carries — so a chunk
+ * with half the modules takes roughly half the structural damage before
+ * dying. This is a v1 simplification: a more faithful model would
+ * partition the hull HP by component, but per-module hull HP isn't
+ * tracked on the aggregated ship.
+ *
+ * `instanceId` is supplied by the caller so two runs with identical
+ * inputs deterministically produce the same chunk ids. The id is built
+ * from the parent's id, the tick the split happened on, and a per-tick
+ * counter — together those uniquely identify the chunk within a battle.
+ */
+function makeChunkShip(
+  parent: SimShip,
+  modules: readonly SimModule[],
+  instanceId: string,
+): SimShip {
+  const totalAlive = parent.modules === undefined ? 1 : parent.modules.filter((m) => m.alive).length;
+  const fraction = totalAlive === 0 ? 1 : modules.length / totalAlive;
+  const chunkStructure = Math.max(1, parent.structure * fraction);
+  // Independent copies of the modules: mutations on one ship must not
+  // bleed into the other.
+  const chunkModules: SimModule[] = modules.map((m) => ({ ...m }));
+  const chunk: SimShip = {
+    instanceId,
+    side: parent.side,
+    classification: parent.classification,
+    x: parent.x,
+    y: parent.y,
+    facing: parent.facing,
+    velX: parent.velX,
+    velY: parent.velY,
+    angVel: parent.angVel,
+    structure: chunkStructure,
+    maxStructure: chunkStructure,
+    shield: 0,
+    maxShield: 0,
+    shieldRechargeRate: 0,
+    shieldRechargeDelay: 0,
+    shieldRegenCountdown: 0,
+    armourReduction: 0,
+    thrust: 0,
+    turnRate: 0,
+    mass: SIM.hullMass[parent.classification],
+    radius: parent.radius,
+    cost: 0,
+    weapons: [],
+    weaponCooldowns: [],
+    orders: parent.orders,
+    target: undefined,
+    alive: true,
+    modules: chunkModules,
+    hullBaseThrust: parent.hullBaseThrust,
+    hullBaseTurnRate: parent.hullBaseTurnRate,
+  };
+  // Force a clean recompute so chunk aggregates match its own modules.
+  recomputeAggregates(chunk);
+  // A chunk's shield pool resets to zero — it has no recharge, and the
+  // parent's pooled shield doesn't carry over.
+  chunk.shield = 0;
+  chunk.maxShield = 0;
+  return chunk;
+}
+
 function spawnProjectile(
   owner: SimShip,
   weapon: WeaponEffect,
@@ -752,6 +979,12 @@ export function runBattle(inputs: BattleInputs): BattleResult {
   const defenders = ships.filter((s) => s.side === "defender");
   const byId = new Map(ships.map((s) => [s.instanceId, s]));
   let projectiles: SimProjectile[] = [];
+  // Deterministic counter for break-away chunk ids. Each split consumes
+  // one tick + one chunk-index slot so two battles with the same seed
+  // produce the same chunk ids. Counter is private to this run.
+  let chunkSeq = 0;
+  const nextChunkId = (parentId: string, tick: number): string =>
+    `${parentId}#chunk#${tick}#${chunkSeq += 1}`;
 
   const frames: BattleFrame[] = [snapshot(0, ships, projectiles)];
 
@@ -794,6 +1027,46 @@ export function runBattle(inputs: BattleInputs): BattleResult {
     //     and carried into the next tick's movement and firing.
     for (const ship of ships) {
       if (ship.modules !== undefined) recomputeAggregates(ship);
+    }
+
+    // 4c. Break-apart: if the alive modules on a modular ship no longer
+    //     form a single connected graph, split the disconnected pieces
+    //     into fresh SimShips. Each chunk gets its own `brokeOff` flag
+    //     for the UI to highlight the split. Done after aggregates so
+    //     chunks inherit their own recomputed stats.
+    const newChunks: SimShip[] = [];
+    for (const ship of ships) {
+      if (!ship.alive || ship.modules === undefined) continue;
+      const chunks = splitBreakApart(ship, tick, nextChunkId);
+      if (chunks.length === 0) continue; // connected — nothing to do
+      for (const chunk of chunks) {
+        chunk.brokeOff = true;
+        newChunks.push(chunk);
+      }
+      // A modular ship whose split drained it of all alive modules on
+      // the survivor side is structurally dead — alive: false stops it
+      // from being targeted, firing, or being checked for termination.
+      if (ship.modules.every((m) => !m.alive)) {
+        ship.alive = false;
+        ship.structure = 0;
+      } else {
+        // Re-run aggregates on the survivor since some modules flipped
+        // to dead during the split (they were migrated to chunks).
+        recomputeAggregates(ship);
+      }
+    }
+    if (newChunks.length > 0) {
+      for (const chunk of newChunks) {
+        ships.push(chunk);
+        byId.set(chunk.instanceId, chunk);
+      }
+      // Refresh side lists so termination checks below see new arrivals.
+      attackers.length = 0;
+      defenders.length = 0;
+      for (const s of ships) {
+        if (s.side === "attacker") attackers.push(s);
+        else defenders.push(s);
+      }
     }
 
     // 5. Shield regeneration.
@@ -1256,7 +1529,11 @@ function snapshot(
         structure: s.structure,
         shield: s.shield,
         alive: s.alive,
+        // Record the split frame, then clear so subsequent snapshots
+        // don't carry a stale "freshly broken" marker.
+        ...(s.brokeOff === true ? { brokeOff: true } : {}),
       };
+      if (s.brokeOff === true) s.brokeOff = false;
       if (s.modules === undefined) return base;
       return {
         ...base,
