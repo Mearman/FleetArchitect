@@ -40,6 +40,25 @@ export const ShipSnapshot = z.object({
   structure: z.number(),
   shield: z.number(),
   alive: z.boolean(),
+  /** Per-module state, present when the ship runs the per-module damage
+   *  model. Optional for backward compatibility with older replays. */
+  modules: z
+    .array(
+      z.object({
+        slotId: EntityId,
+        kind: z.enum([
+          "weapon",
+          "shield",
+          "armour",
+          "engine",
+          "power",
+          "crew",
+        ]),
+        hp: z.number(),
+        alive: z.boolean(),
+      }),
+    )
+    .optional(),
 });
 export type ShipSnapshot = z.infer<typeof ShipSnapshot>;
 
