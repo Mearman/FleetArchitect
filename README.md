@@ -23,8 +23,10 @@ tile grid, with the physical model and gameplay parity layered on top.
 | Per-module damage, power grid, ammo, point-defence, repair, shields | Shipped |
 | Structural break-apart, directional thrusters, module facing | Shipped |
 | Rigid-body physics (centre of mass, moment of inertia, recoil, hit impulse) | Shipped |
-| Tile-grid ship model (cells: empty / hull-tile / module) — the keystone | Now |
-| Grid-exact break-apart with conserved linear + angular momentum | Now |
+| Tile-grid ship model (cells: empty / hull-tile / module) — the keystone | Shipped |
+| Tile-painting Ship Designer | Shipped |
+| Grid-exact break-apart adjacency (4-connected) | Shipped |
+| Break-apart with conserved linear + angular momentum | Now |
 | Cell-precise hits (a shot strikes a cell; penetration carries to the cell behind) | Now |
 | Cell-level collision (ships are solid at cell granularity; impulse response) | Now |
 | Simulation in a Web Worker behind an async runner contract | Now |
