@@ -2,9 +2,9 @@ import { createId, nowIso } from "@/domain/id";
 import { mulberry32, ranged } from "@/domain/simulation/rng";
 import type { BattleFrame, BattleResult, BattleSide } from "@/schema/battle";
 import type { ShipClassification } from "@/schema/hull";
-import type { WeaponEffect, WeaponType } from "@/schema/module";
+import type { ModuleEffect, WeaponEffect, WeaponType } from "@/schema/module";
 import type { Orders } from "@/schema/fleet";
-import type { BattleInputs, CombatShip } from "./types";
+import type { BattleInputs, CombatShip, ResolvedModule } from "./types";
 
 /**
  * Deterministic battle simulator. Given resolved combat ships, an anomaly, and
@@ -129,6 +129,38 @@ interface SimShip {
   orders: Orders;
   target: string | undefined;
   alive: boolean;
+  /**
+   * Per-module instances when the ship was built from a ShipDesign with
+   * per-module data. Each module has its own hit points and can be
+   * destroyed independently; the aggregate fields above are recomputed
+   * from the alive set each tick (`recomputeAggregates`). Undefined
+   * means the legacy aggregated path is in use.
+   */
+  modules?: SimModule[];
+  /** Hull base thrust/turn-rate, used by recomputeAggregates. Set only
+   *  when modules are present. */
+  hullBaseThrust?: number;
+  hullBaseTurnRate?: number;
+}
+
+/**
+ * Mutable per-module runtime state. Built from a `ResolvedModule` in
+ * `toSimShip`; aggregates are recomputed from the alive set each tick.
+ */
+interface SimModule {
+  slotId: string;
+  moduleId: string;
+  kind: ModuleEffect["kind"];
+  /** Position in ship-local (design) coordinates, for hit selection. */
+  x: number;
+  y: number;
+  hp: number;
+  maxHp: number;
+  mass: number;
+  effect: ModuleEffect;
+  /** Weapon: ticks until next fire. Shield regen is pooled at ship level. */
+  cooldown: number;
+  alive: boolean;
 }
 
 /** Mutable in-flight projectile. */
@@ -185,7 +217,7 @@ function steer(facing: number, target: number, maxStep: number): number {
 
 function toSimShip(ship: CombatShip, rng: () => number): SimShip {
   const weapons = ship.stats.weapons.map((w) => w.effect);
-  return {
+  const base: SimShip = {
     instanceId: ship.instanceId,
     side: ship.side,
     classification: ship.classification,
@@ -215,6 +247,117 @@ function toSimShip(ship: CombatShip, rng: () => number): SimShip {
     target: undefined,
     alive: true,
   };
+
+  // Per-module path: build SimModule[] from the resolved modules and let
+  // recomputeAggregates derive the live combat stats from the alive set.
+  if (ship.modules !== undefined && ship.modules.length > 0) {
+    base.modules = ship.modules.map((m) => toSimModule(m, rng));
+    base.hullBaseThrust = ship.stats.thrust - sumWeaponThrust(ship);
+    base.hullBaseTurnRate = ship.stats.turnRate - sumWeaponTurn(ship);
+    recomputeAggregates(base);
+    // Shield starts full at the (recomputed) capacity; structure is the
+    // hull's base integrity, independent of module HP.
+    base.shield = base.maxShield;
+    base.structure = ship.stats.structure;
+    base.maxStructure = ship.stats.structure;
+  }
+  return base;
+}
+
+function toSimModule(m: ResolvedModule, rng: () => number): SimModule {
+  const effect = m.effect;
+  const isWeapon = effect.kind === "weapon";
+  return {
+    slotId: m.slotId,
+    moduleId: m.moduleId,
+    kind: m.kind,
+    x: m.x,
+    y: m.y,
+    hp: m.maxHp,
+    maxHp: m.maxHp,
+    mass: m.mass,
+    effect,
+    // Stagger weapon cooldowns so they don't all fire on tick 0.
+    cooldown: isWeapon ? Math.floor(rng() * (effect.cooldown + 1)) : 0,
+    alive: true,
+  };
+}
+
+/** Thrust contributed by engine modules (subtracted from the aggregate to
+ *  recover the hull base, since stats.thrust already sums them in). */
+function sumWeaponThrust(ship: CombatShip): number {
+  if (ship.modules === undefined) return 0;
+  let sum = 0;
+  for (const m of ship.modules) {
+    if (m.effect.kind === "engine") sum += m.effect.thrust;
+  }
+  return sum;
+}
+
+function sumWeaponTurn(ship: CombatShip): number {
+  if (ship.modules === undefined) return 0;
+  let sum = 0;
+  for (const m of ship.modules) {
+    if (m.effect.kind === "engine") sum += m.effect.turnRate;
+  }
+  return sum;
+}
+
+/**
+ * Recompute a ship's aggregate combat stats from its alive modules. The
+ * movement, firing, and shield-regen code reads these fields, so keeping
+ * them in sync with module destruction means a destroyed engine actually
+ * reduces thrust, a destroyed shield actually reduces capacity, etc.
+ */
+function recomputeAggregates(ship: SimShip): void {
+  if (ship.modules === undefined) return;
+  let thrust = ship.hullBaseThrust ?? 0;
+  let turnRate = ship.hullBaseTurnRate ?? 0;
+  let mass = SIM.hullMass[ship.classification];
+  let armourReduction = 0;
+  let shieldCapacity = 0;
+  let shieldRechargeRate = 0;
+  let shieldRechargeDelay = 0;
+  const weapons: WeaponEffect[] = [];
+  const cooldowns: number[] = [];
+
+  for (const m of ship.modules) {
+    if (!m.alive) continue;
+    mass += m.mass;
+    const effect = m.effect;
+    switch (effect.kind) {
+      case "weapon":
+        weapons.push(effect);
+        cooldowns.push(m.cooldown);
+        break;
+      case "shield":
+        shieldCapacity += effect.capacity;
+        shieldRechargeRate += effect.rechargeRate;
+        shieldRechargeDelay = Math.max(shieldRechargeDelay, effect.rechargeDelay);
+        break;
+      case "armour":
+        armourReduction = Math.max(armourReduction, effect.damageReduction);
+        break;
+      case "engine":
+        thrust += effect.thrust;
+        turnRate += effect.turnRate;
+        break;
+      case "power":
+      case "crew":
+        break;
+    }
+  }
+
+  ship.thrust = thrust;
+  ship.turnRate = turnRate;
+  ship.mass = mass;
+  ship.armourReduction = armourReduction;
+  ship.maxShield = shieldCapacity;
+  ship.shieldRechargeRate = shieldRechargeRate;
+  ship.shieldRechargeDelay = shieldRechargeDelay;
+  ship.shield = Math.min(ship.shield, shieldCapacity);
+  ship.weapons = weapons;
+  ship.weaponCooldowns = cooldowns;
 }
 
 function pickTarget(ship: SimShip, enemies: readonly SimShip[]): SimShip | undefined {
@@ -248,16 +391,27 @@ function pickTarget(ship: SimShip, enemies: readonly SimShip[]): SimShip | undef
 }
 
 /**
- * Apply incoming weapon damage to a ship's shields then structure. Shields
- * absorb the non-pierced fraction first; whatever spills over hits structure,
- * reduced by armour (itself weakened by armour piercing). Any shield contact
- * resets the shield regeneration delay.
+ * Apply incoming weapon damage. Shields absorb the non-pierced fraction
+ * first; any shield contact resets the shield-regeneration delay.
+ *
+ * What gets past the shields (`rawStructure`) then either:
+ *  - per-module ship: strikes the alive module whose cell is nearest the
+ *    world-space impact point (transformed into ship-local coordinates),
+ *    destroying it if its HP runs out; overflow spills to hull structure,
+ *    reduced by armour; or
+ *  - legacy aggregated ship: hits structure directly, reduced by armour.
+ *
+ * `impactX/impactY` are the world-space hit location (a projectile's
+ * position, or for hitscan the target's edge facing the shooter). They're
+ * only used to select the module on a per-module ship.
  */
 function applyDamage(
   ship: SimShip,
   damage: number,
   shieldPiercing: number,
   armourPiercing: number,
+  impactX?: number,
+  impactY?: number,
 ): void {
   const bypass = damage * shieldPiercing;
   const toShield = damage - bypass;
@@ -268,13 +422,96 @@ function applyDamage(
   }
   const spill = toShield - shieldAbsorbed;
   const rawStructure = bypass + spill;
+
+  if (ship.modules !== undefined) {
+    applyModuleDamage(ship, rawStructure, armourPiercing, impactX, impactY);
+    return;
+  }
+
   const effectiveReduction = ship.armourReduction * (1 - armourPiercing);
-  const finalStructure = rawStructure * (1 - effectiveReduction);
-  ship.structure -= finalStructure;
+  ship.structure -= rawStructure * (1 - effectiveReduction);
   if (ship.structure <= 0) {
     ship.structure = 0;
     ship.alive = false;
   }
+}
+
+/**
+ * Per-module damage: `amount` strikes the nearest alive module to the impact
+ * point. The module's HP absorbs it; if the module is destroyed, the leftover
+ * spills to the next-nearest module, and finally to hull structure (armour-
+ * reduced). A ship with no alive modules takes the full amount to structure.
+ */
+function applyModuleDamage(
+  ship: SimShip,
+  amount: number,
+  armourPiercing: number,
+  impactX?: number,
+  impactY?: number,
+): void {
+  let remaining = amount;
+  // Transform the world-space impact point into ship-local (design)
+  // coordinates so it lines up with module.x/module.y.
+  const local = worldToLocal(ship, impactX, impactY);
+
+  while (remaining > 0) {
+    const target = nearestAliveModule(ship, local);
+    if (target === undefined) {
+      // No modules left — everything goes to the hull.
+      const reduction = ship.armourReduction * (1 - armourPiercing);
+      ship.structure -= remaining * (1 - reduction);
+      if (ship.structure <= 0) {
+        ship.structure = 0;
+        ship.alive = false;
+      }
+      return;
+    }
+    target.hp -= remaining;
+    if (target.hp > 0) {
+      return; // module absorbed the whole hit
+    }
+    // Module destroyed; leftover spills onward.
+    remaining = -target.hp;
+    target.hp = 0;
+    target.alive = false;
+  }
+}
+
+/** Rotate a world point into the ship's local frame (design coordinates). */
+function worldToLocal(
+  ship: SimShip,
+  x?: number,
+  y?: number,
+): { x: number; y: number } | undefined {
+  if (x === undefined || y === undefined) return undefined;
+  const cos = Math.cos(-ship.facing);
+  const sin = Math.sin(-ship.facing);
+  return {
+    x: (x - ship.x) * cos - (y - ship.y) * sin,
+    y: (x - ship.x) * sin + (y - ship.y) * cos,
+  };
+}
+
+/** The alive module whose cell is nearest the given local point (or the
+ *  centroid of alive modules when there's no impact point). */
+function nearestAliveModule(
+  ship: SimShip,
+  local: { x: number; y: number } | undefined,
+): SimModule | undefined {
+  if (ship.modules === undefined) return undefined;
+  const alive = ship.modules.filter((m) => m.alive);
+  if (alive.length === 0) return undefined;
+  if (local === undefined) return alive[0];
+  let best: SimModule | undefined;
+  let bestDist = Infinity;
+  for (const m of alive) {
+    const d = (m.x - local.x) ** 2 + (m.y - local.y) ** 2;
+    if (d < bestDist) {
+      bestDist = d;
+      best = m;
+    }
+  }
+  return best;
 }
 
 function spawnProjectile(
@@ -344,6 +581,14 @@ export function runBattle(inputs: BattleInputs): BattleResult {
 
     // 4. Projectile travel, homing, asteroid deflection, and collision.
     projectiles = updateProjectiles(projectiles, byId, inputs.anomaly, rng);
+
+    // 4b. Recompute aggregate stats from the alive module set, so a module
+    //     destroyed this tick (hitscan or projectile) is reflected in the
+    //     shield pool, thrust, and weapon list before regen and the snapshot,
+    //     and carried into the next tick's movement and firing.
+    for (const ship of ships) {
+      if (ship.modules !== undefined) recomputeAggregates(ship);
+    }
 
     // 5. Shield regeneration.
     const regenFactor = inputs.anomaly === "nebula" ? SIM.nebulaRegenFactor : 1;
@@ -551,7 +796,27 @@ function fireWeapons(
 
     const toTarget = Math.atan2(target.y - ship.y, target.x - ship.x);
     const facingError = Math.abs(angleDifference(ship.facing, toTarget));
+    const dist = Math.hypot(target.x - ship.x, target.y - ship.y);
 
+    // Per-module path: iterate the ship's own weapon modules, reading and
+    // writing each module's cooldown (so destruction is reflected live and
+    // recomputeAggregates can't clobber in-flight cooldowns).
+    if (ship.modules !== undefined) {
+      for (const m of ship.modules) {
+        if (!m.alive || m.effect.kind !== "weapon") continue;
+        const weapon = m.effect;
+        if (m.cooldown > 0) {
+          m.cooldown -= 1;
+          continue;
+        }
+        if (dist > weapon.range || facingError > SIM.firingArc) continue;
+        m.cooldown = weapon.cooldown;
+        fireOne(ship, weapon, target, rng, fired);
+      }
+      continue;
+    }
+
+    // Legacy aggregated path.
     for (let i = 0; i < ship.weapons.length; i++) {
       const weapon = ship.weapons[i];
       if (weapon === undefined) continue;
@@ -561,19 +826,34 @@ function fireWeapons(
         ship.weaponCooldowns[i] = cooldown - 1;
         continue;
       }
-      const dist = Math.hypot(target.x - ship.x, target.y - ship.y);
       if (dist > weapon.range) continue;
       if (facingError > SIM.firingArc) continue;
 
       ship.weaponCooldowns[i] = weapon.cooldown;
-      if (weapon.projectileSpeed <= 0) {
-        applyDamage(target, weapon.damage, weapon.shieldPiercing, weapon.armourPiercing);
-      } else {
-        fired.push(spawnProjectile(ship, weapon, target, rng));
-      }
+      fireOne(ship, weapon, target, rng, fired);
     }
   }
   return fired;
+}
+
+/** Fire a single weapon: hitscan applies damage immediately at a synthesised
+ *  impact point on the target's facing edge; otherwise spawn a projectile. */
+function fireOne(
+  ship: SimShip,
+  weapon: WeaponEffect,
+  target: SimShip,
+  rng: () => number,
+  fired: SimProjectile[],
+): void {
+  if (weapon.projectileSpeed <= 0) {
+    // Hitscan: the beam strikes the target's edge nearest the shooter.
+    const angle = Math.atan2(target.y - ship.y, target.x - ship.x);
+    const ix = target.x + Math.cos(angle) * target.radius;
+    const iy = target.y + Math.sin(angle) * target.radius;
+    applyDamage(target, weapon.damage, weapon.shieldPiercing, weapon.armourPiercing, ix, iy);
+  } else {
+    fired.push(spawnProjectile(ship, weapon, target, rng));
+  }
 }
 
 function updateProjectiles(
@@ -637,7 +917,7 @@ function updateProjectiles(
       }
     }
     if (hit !== undefined) {
-      applyDamage(hit, p.damage, p.shieldPiercing, p.armourPiercing);
+      applyDamage(hit, p.damage, p.shieldPiercing, p.armourPiercing, p.x, p.y);
       continue;
     }
     survivors.push(p);
@@ -652,18 +932,30 @@ function snapshot(
 ): BattleFrame {
   return {
     tick,
-    ships: ships.map((s) => ({
-      instanceId: s.instanceId,
-      side: s.side,
-      x: s.x,
-      y: s.y,
-      vx: s.velX,
-      vy: s.velY,
-      facing: s.facing,
-      structure: s.structure,
-      shield: s.shield,
-      alive: s.alive,
-    })),
+    ships: ships.map((s) => {
+      const base = {
+        instanceId: s.instanceId,
+        side: s.side,
+        x: s.x,
+        y: s.y,
+        vx: s.velX,
+        vy: s.velY,
+        facing: s.facing,
+        structure: s.structure,
+        shield: s.shield,
+        alive: s.alive,
+      };
+      if (s.modules === undefined) return base;
+      return {
+        ...base,
+        modules: s.modules.map((m) => ({
+          slotId: m.slotId,
+          kind: m.kind,
+          hp: m.hp,
+          alive: m.alive,
+        })),
+      };
+    }),
     projectiles: projectiles.map((p) => ({ x: p.x, y: p.y, kind: p.kind })),
   };
 }
