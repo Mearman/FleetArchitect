@@ -60,6 +60,7 @@ function moduleOf(
     repairRate: 0,
     shieldArc,
     shieldFacing,
+    facing: 0,
   };
 }
 
