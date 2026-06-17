@@ -1,7 +1,12 @@
 import { z } from "zod";
-import { EntityId, Vec2 } from "./primitives";
-import { ModuleSlotType } from "./module";
+import { HullTileType } from "./grid";
 
+/**
+ * A ship's size tier. No longer authored: it is derived from the number of
+ * occupied cells in the ship's grid (see `deriveClassification`). Kept as a
+ * value for UI labelling, targeting flavour, and the engine's per-class
+ * collision-radius and base-mass tables for the legacy aggregated path.
+ */
 export const ShipClassification = z.enum([
   "fighter",
   "frigate",
@@ -11,38 +16,19 @@ export const ShipClassification = z.enum([
 export type ShipClassification = z.infer<typeof ShipClassification>;
 
 /**
- * A slot on a hull where a module of the matching type can be installed.
- * `position` is relative to the hull centre, used both for rendering and to
- * derive weapon firing arcs / engine placement in the sim.
+ * A structural hull-tile type. A ship is built from these in its grid; each
+ * type contributes `mass` to the ship's total and `hp` as its break-apart
+ * anchor strength. The four shapes (corner, edge, strut, block) differ only
+ * in their stats and render metadata — the grid records which type sits in a
+ * cell, the catalog defines what that type weighs and how much punishment it
+ * takes.
  */
-export const HullSlot = z.object({
-  id: EntityId,
-  type: ModuleSlotType,
-  position: Vec2,
-});
-export type HullSlot = z.infer<typeof HullSlot>;
-
-/** Outline polygon (relative coordinates) for rendering the hull silhouette. */
-export const HullShape = z.object({
-  outline: z.array(Vec2).min(3),
-});
-export type HullShape = z.infer<typeof HullShape>;
-
-/**
- * A hull as it appears in the catalog: the chassis a ship design is built on.
- * Hulls carry base structure and base mobility; modules add to or modify these.
- */
-export const HullDefinition = z.object({
-  id: EntityId,
+export const HullTileDefinition = z.object({
+  type: HullTileType,
   name: z.string().min(1),
-  faction: z.string().min(1),
-  classification: ShipClassification,
-  massCapacity: z.number().min(0),
-  baseCost: z.number().min(0),
-  baseStructure: z.number().min(0),
-  baseSpeed: z.number().min(0),
-  baseTurnRate: z.number().min(0),
-  slots: z.array(HullSlot).min(1),
-  shape: HullShape,
+  /** Structural mass contributed by one tile of this type. */
+  mass: z.number().min(0),
+  /** Hit points of one tile of this type — its break-apart anchor strength. */
+  hp: z.number().min(0),
 });
-export type HullDefinition = z.infer<typeof HullDefinition>;
+export type HullTileDefinition = z.infer<typeof HullTileDefinition>;
