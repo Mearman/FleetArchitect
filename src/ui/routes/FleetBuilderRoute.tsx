@@ -95,12 +95,11 @@ export function FleetBuilderRoute() {
     const costs: { rowId: string; cost: number; missing: boolean }[] = [];
     for (const row of working.rows) {
       const design = designMap.get(row.designId);
-      const hull = design ? catalog().hull(design.hullId) : undefined;
-      if (design === undefined || hull === undefined) {
+      if (design === undefined) {
         costs.push({ rowId: row.rowId, cost: 0, missing: true });
         continue;
       }
-      const { stats } = analyseShipDesign(design, hull, catalog());
+      const { stats } = analyseShipDesign(design, catalog());
       costs.push({ rowId: row.rowId, cost: stats.cost, missing: false });
     }
     return costs;

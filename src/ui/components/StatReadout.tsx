@@ -3,8 +3,6 @@ import type { ShipStats } from "@/domain/stats";
 
 interface StatReadoutProps {
   stats: ShipStats;
-  /** Hull mass capacity, to show mass as a fraction of the budget. */
-  massCapacity: number;
 }
 
 interface CellProps {
@@ -32,7 +30,8 @@ function StatCell({ label, children, tone = "normal" }: CellProps) {
  * Compact read-out of a resolved ship's aggregate stats. Power and crew nets go
  * red when the ship cannot sustain itself; mass shows against the hull budget.
  */
-export function StatReadout({ stats, massCapacity }: StatReadoutProps) {
+export function StatReadout({ stats }: StatReadoutProps) {
+  const massCapacity = stats.massCapacity;
   const massFraction = Math.min(1, stats.mass / Math.max(massCapacity, 1));
   const massTone: CellProps["tone"] =
     stats.mass > massCapacity ? "bad" : "normal";

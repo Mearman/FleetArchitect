@@ -4,16 +4,18 @@ import type { DesignFault } from "@/domain/stats";
 
 function describe(fault: DesignFault): string {
   switch (fault.kind) {
-    case "unknownSlot":
-      return `Slot ${fault.slotId} does not exist on this hull.`;
+    case "empty":
+      return "The grid is empty — lay down at least one hull or module cell.";
+    case "disconnected":
+      return "Cells are not all connected — every cell must share an edge with the rest.";
+    case "noCommand":
+      return "No command module — add a reactor (it doubles as the bridge).";
     case "unknownModule":
-      return `Slot ${fault.slotId} references an unknown module (${fault.moduleId}).`;
-    case "slotTypeMismatch":
-      return `Slot ${fault.slotId} is a ${fault.hullSlotType} slot but holds a ${fault.moduleSlotType} module.`;
-    case "duplicateSlot":
-      return `Slot ${fault.slotId} has more than one module assigned.`;
+      return `Cell (${fault.col}, ${fault.row}) references an unknown module (${fault.moduleId}).`;
+    case "unknownHullTile":
+      return `Cell (${fault.col}, ${fault.row}) uses an unknown hull tile (${fault.tile}).`;
     case "massExceeded":
-      return `Mass ${fault.mass.toFixed(0)} exceeds hull capacity ${fault.capacity}.`;
+      return `Mass ${fault.mass.toFixed(0)} exceeds the grid budget ${fault.capacity}.`;
     case "powerDeficit":
       return `Power deficit of ${Math.abs(fault.net).toFixed(0)} — add a reactor.`;
     case "crewDeficit":
