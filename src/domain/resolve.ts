@@ -66,7 +66,7 @@ function resolveModules(
     if (moduleDef === undefined || slot === undefined) continue;
     out.push({
       slotId: placement.slotId,
-      moduleId: placement.moduleId,
+      moduleId: moduleDef.id,
       kind: moduleDef.effect.kind,
       x: slot.position.x,
       y: slot.position.y,
@@ -75,6 +75,11 @@ function resolveModules(
       powerDraw: moduleDef.powerDraw,
       effect: moduleDef.effect,
       command: moduleDef.command === true,
+      // Directional shield defaults: a missing arc means a full-sphere shield,
+      // a missing facing defaults to 0 (along +x). Existing modules that
+      // never declared these fields are unaffected.
+      shieldArc: moduleDef.shieldArc ?? Math.PI * 2,
+      shieldFacing: moduleDef.shieldFacing ?? 0,
     });
   }
   return out;

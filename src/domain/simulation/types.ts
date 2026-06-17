@@ -47,6 +47,14 @@ export interface ResolvedModule {
   effect: ModuleEffect;
   /** Whether this module is a bridge / command module. */
   command: boolean;
+  /**
+   * For directional shields: the arc (radians) within which the shield
+   * intercepts incoming fire. Defaults to 2π (full sphere, omnidirectional).
+   * Only meaningful for shield modules; harmless on other kinds.
+   */
+  shieldArc: number;
+  /** For directional shields: the direction the arc points (radians). */
+  shieldFacing: number;
 }
 
 /** Everything the simulator needs to run a deterministic battle. */

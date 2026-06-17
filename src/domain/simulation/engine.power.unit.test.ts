@@ -71,6 +71,8 @@ function moduleOf(
     powerDraw,
     effect,
     command,
+    shieldArc: Math.PI * 2,
+    shieldFacing: 0,
   };
 }
 
