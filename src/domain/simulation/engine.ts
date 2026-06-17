@@ -1,5 +1,7 @@
 import { createId, nowIso } from "@/domain/id";
+import { CELL_SIZE } from "@/domain/grid";
 import { mulberry32, ranged } from "@/domain/simulation/rng";
+import { SpatialHash, cellWorldPosition } from "@/domain/simulation/spatial-hash";
 import type { BattleFrame, BattleResult, BattleSide } from "@/schema/battle";
 import type { ShipClassification } from "@/schema/hull";
 import { DEFAULT_WEAPON_AMMO } from "@/schema/module";
@@ -301,6 +303,25 @@ function radiusFor(classification: ShipClassification): number {
   return SIM.radius[classification];
 }
 
+/**
+ * Broad-phase bounding radius of a modular ship's cells about the ship origin:
+ * the distance to the farthest alive cell centre plus half a cell, so the disc
+ * encloses the whole footprint. Recomputed when modules change (cells die or a
+ * chunk splits off) so the collision bound never lags the actual ship. Dead
+ * modules are excluded — a stripped hulk has a smaller silhouette. Mirrors the
+ * pure `deriveRadius` over the grid, but works on the resolved cell set the
+ * engine already holds. Returns half a cell as a floor so even a single
+ * surviving cell has a non-zero bound. */
+function gridRadius(modules: readonly SimModule[]): number {
+  let maxDistSq = 0;
+  for (const m of modules) {
+    if (!m.alive) continue;
+    const distSq = m.x * m.x + m.y * m.y;
+    if (distSq > maxDistSq) maxDistSq = distSq;
+  }
+  return Math.sqrt(maxDistSq) + CELL_SIZE / 2;
+}
+
 function maxWeaponRange(weapons: readonly WeaponEffect[]): number {
   if (weapons.length === 0) return SIM.defaultRange;
   let max = 0;
@@ -377,6 +398,10 @@ function toSimShip(ship: CombatShip, rng: () => number): SimShip {
     base.hullBaseThrust = ship.stats.thrust - sumWeaponThrust(ship);
     base.hullBaseTurnRate = ship.stats.turnRate - sumWeaponTurn(ship);
     recomputeAggregates(base);
+    // Broad-phase radius is the grid bounding radius (the farthest cell
+    // centre plus half a cell), derived from the module cells rather than a
+    // per-class lookup, so the collision bound tracks the actual footprint.
+    base.radius = gridRadius(base.modules);
     // Shield starts full at the (recomputed) capacity; structure is the
     // hull's base integrity, independent of module HP.
     base.shield = base.maxShield;
@@ -510,7 +535,11 @@ function recomputeAggregates(ship: SimShip): void {
   // 4. Build aggregates from alive + powered modules.
   let thrust = ship.hullBaseThrust ?? 0;
   let turnRate = ship.hullBaseTurnRate ?? 0;
-  let mass = SIM.hullMass[ship.classification];
+  // Grid-derived mass: the sum of every alive cell's mass. The hull is no
+  // longer a per-class base point mass — a ship *is* its grid, so its mass is
+  // exactly the mass of the cells it is built from. The legacy aggregated
+  // path (no modules) keeps the per-class hull mass via toSimShip.
+  let mass = 0;
   let armourReduction = 0;
   let shieldCapacity = 0;
   let shieldRechargeRate = 0;
@@ -563,26 +592,27 @@ function recomputeAggregates(ship: SimShip): void {
   ship.weapons = weapons;
   ship.weaponCooldowns = cooldowns;
 
-  // Centre of mass and moment of inertia derived from the module mass
-  // distribution. Both run over ALL modules — alive and dead — because
-  // destroyed hull still contributes structural mass: the pivot of a
-  // ship with a hole in it doesn't snap to the survivor centroid, it
-  // shifts gradually as mass is lost. The hull base mass is treated as
-  // a point at the origin (0, 0) so legacy designs without explicit hull
-  // modules still centre the CoM on the ship position.
-  const hullMass = SIM.hullMass[ship.classification];
-  let massSum = hullMass;
+  // Centre of mass and moment of inertia derived purely from the alive cells'
+  // mass distribution — the grid is the single source of truth for mass, so a
+  // destroyed cell is gone for CoM and MoI just as it is for mass. The pivot
+  // sits at the mass-weighted centroid of the surviving cells; as cells are
+  // shot away the CoM shifts toward what is left, and a chunk that splits off
+  // carries exactly its own cells' CoM. No hull-base point mass is added — the
+  // ship has no mass beyond its cells.
+  let massSum = 0;
   let mx = 0;
   let my = 0;
   for (const m of ship.modules) {
+    if (!m.alive) continue;
     massSum += m.mass;
     mx += m.mass * m.x;
     my += m.mass * m.y;
   }
   const comX = massSum > 0 ? mx / massSum : 0;
   const comY = massSum > 0 ? my / massSum : 0;
-  let moi = hullMass * (comX * comX + comY * comY);
+  let moi = 0;
   for (const m of ship.modules) {
+    if (!m.alive) continue;
     const dx = m.x - comX;
     const dy = m.y - comY;
     moi += m.mass * (dx * dx + dy * dy);
@@ -592,6 +622,9 @@ function recomputeAggregates(ship: SimShip): void {
   // Floor MoI so a stripped-down ship still has some rotational inertia
   // and we never divide by zero in the angular-acceleration step.
   ship.momentOfInertia = Math.max(moi, 1);
+  // Keep the broad-phase bound in step with the alive footprint: a ship that
+  // has lost its outer cells has a smaller silhouette.
+  ship.radius = gridRadius(ship.modules);
 }
 
 /** Whether the ship has at least one alive command (bridge) module. Ships
@@ -668,6 +701,15 @@ function applyDamage(
   impactX?: number,
   impactY?: number,
   shotAngle?: number,
+  /**
+   * Ordered penetration path: the modules the shot passes through, frontmost
+   * first, as resolved by the broad-phase cell lookup. When supplied (a
+   * projectile-vs-cell hit) structural damage strikes the frontmost cell and
+   * any overflow carries to the next cell behind along the travel direction.
+   * When omitted (hitscan / legacy) the spill falls back to the nearest-alive
+   * heuristic so beams and the aggregated path are unchanged.
+   */
+  path?: readonly SimModule[],
 ): void {
   const bypass = damage * shieldPiercing;
   const toShield = damage - bypass;
@@ -680,7 +722,7 @@ function applyDamage(
   const rawStructure = bypass + spill;
 
   if (ship.modules !== undefined) {
-    applyModuleDamage(ship, rawStructure, armourPiercing, impactX, impactY, shotAngle);
+    applyModuleDamage(ship, rawStructure, armourPiercing, impactX, impactY, shotAngle, path);
     return;
   }
 
@@ -693,12 +735,24 @@ function applyDamage(
 }
 
 /**
- * Per-module damage: `amount` strikes the nearest alive module to the impact
- * point, but a directional shield module whose arc covers the shot direction
- * intercepts the hit first (using its own HP as the shield pool). If the
- * directional shield is destroyed, the leftover spills onward to the next-
- * nearest module, and finally to hull structure (armour-reduced). A ship
- * with no alive modules takes the full amount to structure.
+ * Per-module damage.
+ *
+ * A directional shield module whose arc covers the shot direction always
+ * intercepts first (using its own HP as the shield pool); if it is destroyed,
+ * the leftover spills onward.
+ *
+ * The structural hit then resolves one of two ways:
+ *  - **cell path** (projectile-vs-cell): when `path` is supplied, the shot
+ *    strikes the frontmost cell it passed through and any overflow carries to
+ *    the next cell behind along the travel direction, in order, until the
+ *    damage is spent or the path is exhausted. This is the exact cell hit the
+ *    broad-phase resolved, not a Euclidean nearest guess.
+ *  - **nearest fallback** (hitscan / no path): the shot strikes the nearest
+ *    alive module to the impact point and spills to the next nearest.
+ *
+ * In both cases, overflow past the last available module falls through to the
+ * hull structure, armour-reduced. A ship with no alive modules takes the full
+ * amount to structure.
  */
 function applyModuleDamage(
   ship: SimShip,
@@ -707,76 +761,97 @@ function applyModuleDamage(
   impactX?: number,
   impactY?: number,
   shotAngle?: number,
+  path?: readonly SimModule[],
 ): void {
-  let remaining = amount;
   // Transform the world-space impact point into ship-local (design)
   // coordinates so it lines up with module.x/module.y.
   const local = worldToLocal(ship, impactX, impactY);
 
+  // A directional shield covering the shot intercepts before any structural
+  // cell is touched, regardless of which routing the structure uses.
+  let remaining = amount;
+  const shield = directionalShieldFor(ship, shotAngle);
+  if (shield !== undefined) {
+    shield.hp -= remaining;
+    if (shield.hp > 0) return; // shield absorbed the whole hit
+    remaining = -shield.hp;
+    shield.hp = 0;
+    shield.alive = false;
+  }
+
+  if (path !== undefined) {
+    // Cell-path penetration: spill through the resolved cells in order. Skip
+    // the intercepting shield if it appears in the path (already resolved).
+    for (const cell of path) {
+      if (remaining <= 0) return;
+      if (!cell.alive || cell === shield) continue;
+      cell.hp -= remaining;
+      if (cell.hp > 0) return; // this cell absorbed the rest
+      remaining = -cell.hp;
+      cell.hp = 0;
+      cell.alive = false;
+    }
+    // Overflow past the last cell on the path falls to the hull structure.
+    if (remaining > 0) spillToStructure(ship, remaining, armourPiercing);
+    return;
+  }
+
+  // Nearest-alive fallback (hitscan / legacy).
   while (remaining > 0) {
-    const target = nearestAbsorber(ship, local, shotAngle);
+    const target = nearestAliveModule(ship, local);
     if (target === undefined) {
-      // No modules left — everything goes to the hull.
-      const reduction = ship.armourReduction * (1 - armourPiercing);
-      ship.structure -= remaining * (1 - reduction);
-      if (ship.structure <= 0) {
-        ship.structure = 0;
-        ship.alive = false;
-      }
+      spillToStructure(ship, remaining, armourPiercing);
       return;
     }
     target.hp -= remaining;
-    if (target.hp > 0) {
-      return; // module absorbed the whole hit
-    }
-    // Module destroyed; leftover spills onward.
+    if (target.hp > 0) return; // module absorbed the whole hit
     remaining = -target.hp;
     target.hp = 0;
     target.alive = false;
   }
 }
 
+/** Apply leftover structural damage to the hull, armour-reduced, and kill the
+ *  ship if its integrity runs out. */
+function spillToStructure(ship: SimShip, amount: number, armourPiercing: number): void {
+  const reduction = ship.armourReduction * (1 - armourPiercing);
+  ship.structure -= amount * (1 - reduction);
+  if (ship.structure <= 0) {
+    ship.structure = 0;
+    ship.alive = false;
+  }
+}
+
 /**
- * Pick the module that should absorb the next spill of damage. If the ship
- * has alive directional shields whose arc covers `shotAngle`, the closest
- * one (by HP distance to the impact point) intercepts the hit. Otherwise
- * fall back to the nearest-alive-module heuristic.
+ * The alive directional shield module whose arc covers `shotAngle`, or
+ * undefined if none does. Each shield's coverage is a cone centred on
+ * `shieldFacing` with half-arc `shieldArc/2`; an omnidirectional shield
+ * (arc ≥ 2π) is handled by the pooled shield, not here. `shotAngle` is in
+ * world coordinates, so it is rotated into the ship's local frame before the
+ * arc test. When two shields cover the shot the one with the most remaining
+ * HP intercepts, so a pair of front shields share hits rather than the first
+ * being chewed apart.
  */
-function nearestAbsorber(
+function directionalShieldFor(
   ship: SimShip,
-  local: { x: number; y: number } | undefined,
   shotAngle: number | undefined,
 ): SimModule | undefined {
-  if (ship.modules === undefined) return undefined;
-  const alive = ship.modules.filter((m) => m.alive);
-  if (alive.length === 0) return undefined;
-
-  // Directional shields cover the shot: pick the one whose arc contains it.
-  // Each shield's coverage is a cone centred on `shieldFacing` with half-arc
-  // `shieldArc/2`. shotAngle is in world coordinates, so we rotate it into
-  // the ship's local frame before testing.
-  if (shotAngle !== undefined) {
-    const localShot = normaliseAngle(shotAngle - ship.facing);
-    let candidate: SimModule | undefined;
-    let bestScore = -Infinity;
-    for (const m of alive) {
-      if (m.effect.kind !== "shield") continue;
-      if (m.shieldArc >= Math.PI * 2) continue; // omnidirectional, use fallback
-      const halfArc = m.shieldArc / 2;
-      const offset = Math.abs(angleDifference(m.shieldFacing, localShot));
-      if (offset > halfArc) continue; // shot is outside this shield's arc
-      // Prefer the shield with the most remaining HP — so two front shields
-      // share hits rather than the first one being chewed apart.
-      const score = m.hp;
-      if (score > bestScore) {
-        bestScore = score;
-        candidate = m;
-      }
+  if (ship.modules === undefined || shotAngle === undefined) return undefined;
+  const localShot = normaliseAngle(shotAngle - ship.facing);
+  let candidate: SimModule | undefined;
+  let bestScore = -Infinity;
+  for (const m of ship.modules) {
+    if (!m.alive || m.effect.kind !== "shield") continue;
+    if (m.shieldArc >= Math.PI * 2) continue; // omnidirectional, use the pool
+    const halfArc = m.shieldArc / 2;
+    const offset = Math.abs(angleDifference(m.shieldFacing, localShot));
+    if (offset > halfArc) continue; // shot is outside this shield's arc
+    if (m.hp > bestScore) {
+      bestScore = m.hp;
+      candidate = m;
     }
-    if (candidate !== undefined) return candidate;
   }
-
-  return nearestAliveModule(ship, local);
+  return candidate;
 }
 
 /** Wrap an angle to the (-π, π] interval so `angleDifference` works on it. */
@@ -1008,9 +1083,10 @@ function makeChunkShip(
     armourReduction: 0,
     thrust: 0,
     turnRate: 0,
-    mass: SIM.hullMass[parent.classification],
-    // Placeholder; recomputeAggregates derives the real CoM and MoI from
-    // the chunk's own module set immediately after construction.
+    // Placeholders; recomputeAggregates derives the real mass, CoM, MoI, and
+    // broad-phase radius from the chunk's own module set immediately after
+    // construction.
+    mass: 0,
     comX: 0,
     comY: 0,
     momentOfInertia: 1,
@@ -1136,6 +1212,216 @@ function isRetreating(ship: SimShip): boolean {
   );
 }
 
+/** A ship cell placed in the broad-phase: the owning ship, the cell, and its
+ *  world-space centre at the moment the hash was built. */
+interface ShipCell {
+  ship: SimShip;
+  module: SimModule;
+  wx: number;
+  wy: number;
+}
+
+/**
+ * Build a uniform spatial hash over every alive ship's occupied cells in world
+ * space. Each alive module on a modular ship contributes one entry at its
+ * world-space cell centre (the ship's pose composed with the cell's ship-local
+ * centre). Legacy aggregated ships have no cells, so they don't participate in
+ * the cell-level broad-phase — they keep the centre-based behaviour. The hash
+ * backs both projectile-vs-cell hits and ship-vs-ship collision so the two
+ * agree on where every cell is.
+ */
+function buildShipCellHash(ships: readonly SimShip[]): SpatialHash<ShipCell> {
+  const hash = new SpatialHash<ShipCell>();
+  for (const ship of ships) {
+    if (!ship.alive || ship.modules === undefined) continue;
+    for (const m of ship.modules) {
+      if (!m.alive) continue;
+      const { wx, wy } = cellWorldPosition(ship.x, ship.y, ship.facing, m.x, m.y);
+      hash.insert({ ship, module: m, wx, wy }, wx, wy);
+    }
+  }
+  return hash;
+}
+
+/**
+ * Two cells overlap when their world-space centres are within one cell size of
+ * each other — each cell is treated as a disc of radius `CELL_SIZE/2`, so the
+ * discs intersect when the centre distance is below `CELL_SIZE`. The contact
+ * depth is how far the discs overlap; used for positional separation.
+ */
+const CELL_CONTACT_DISTANCE = CELL_SIZE;
+
+/**
+ * Ship-vs-ship collision at cell granularity. All ships are solid bodies —
+ * enemies and friendlies alike — so no two ships may interpenetrate. Cells from
+ * different ships that overlap (centre distance below `CELL_CONTACT_DISTANCE`)
+ * register a contact for that ship pair; per pair, the deepest contact's normal
+ * and point drive the response:
+ *
+ *  - **Elastic impulse** along the contact normal, scaled by the relative
+ *    velocity of the two contact points (including each ship's spin), the
+ *    reduced mass, and the lever arms about each CoM — delivered through the
+ *    existing `applyImpulse` so the linear push and the torque are consistent
+ *    with the rest of the rigid-body model. Approaching pairs exchange
+ *    momentum; pairs already separating are left alone so a resolved contact
+ *    doesn't get pulled back together.
+ *  - **Positional separation** pushing the two ships apart along the normal by
+ *    the penetration depth, split between them in inverse proportion to mass,
+ *    so the cells stop overlapping this tick rather than drifting through.
+ *
+ * Each ordered ship pair is resolved at most once per tick. Legacy aggregated
+ * ships (no cells) don't appear in the hash and so never collide at the cell
+ * level — they keep passing through, matching the pre-grid behaviour.
+ */
+function resolveShipCollisions(hash: SpatialHash<ShipCell>): void {
+  // Deepest contact per unordered ship pair.
+  interface Contact {
+    a: SimShip;
+    b: SimShip;
+    // Contact point in world space (midpoint of the two cell centres).
+    px: number;
+    py: number;
+    // Unit normal from a toward b.
+    nx: number;
+    ny: number;
+    depth: number;
+  }
+  const contacts = new Map<string, Contact>();
+
+  for (const entry of hash.entries()) {
+    const { ship: a, wx, wy } = entry.payload;
+    for (const other of hash.candidates(wx, wy, CELL_CONTACT_DISTANCE)) {
+      const b = other.payload.ship;
+      if (a === b) continue;
+      // Resolve each unordered pair once: only consider a < b by instanceId.
+      if (a.instanceId >= b.instanceId) continue;
+      const dx = other.wx - wx;
+      const dy = other.wy - wy;
+      const distSq = dx * dx + dy * dy;
+      if (distSq >= CELL_CONTACT_DISTANCE * CELL_CONTACT_DISTANCE) continue;
+      const dist = Math.sqrt(distSq);
+      const depth = CELL_CONTACT_DISTANCE - dist;
+      // Normal from a's cell toward b's cell. When two cells sit exactly on
+      // top of each other, fall back to the line between ship centres so the
+      // push is still well-defined.
+      let nx: number;
+      let ny: number;
+      if (dist > 1e-9) {
+        nx = dx / dist;
+        ny = dy / dist;
+      } else {
+        const cdx = b.x - a.x;
+        const cdy = b.y - a.y;
+        const cdist = Math.hypot(cdx, cdy);
+        if (cdist > 1e-9) {
+          nx = cdx / cdist;
+          ny = cdy / cdist;
+        } else {
+          nx = 1;
+          ny = 0;
+        }
+      }
+      const key = `${a.instanceId}|${b.instanceId}`;
+      const existing = contacts.get(key);
+      if (existing === undefined || depth > existing.depth) {
+        contacts.set(key, {
+          a,
+          b,
+          px: (wx + other.wx) / 2,
+          py: (wy + other.wy) / 2,
+          nx,
+          ny,
+          depth,
+        });
+      }
+    }
+  }
+
+  for (const contact of contacts.values()) {
+    resolveContact(contact.a, contact.b, contact.px, contact.py, contact.nx, contact.ny, contact.depth);
+  }
+}
+
+/**
+ * Resolve a single ship-vs-ship contact: an elastic impulse along the normal
+ * plus positional separation. `(px, py)` is the contact point in world space,
+ * `(nx, ny)` the unit normal from `a` toward `b`, and `depth` the penetration.
+ */
+function resolveContact(
+  a: SimShip,
+  b: SimShip,
+  px: number,
+  py: number,
+  nx: number,
+  ny: number,
+  depth: number,
+): void {
+  const ma = Math.max(a.mass, 1);
+  const mb = Math.max(b.mass, 1);
+
+  // Lever arms from each ship's CoM to the contact point, in world space. The
+  // CoM is stored in ship-local coordinates, so rotate it into world space and
+  // add the ship position to get the world-space pivot.
+  const aCom = localPointToWorld(a, a.comX, a.comY);
+  const bCom = localPointToWorld(b, b.comX, b.comY);
+  const rax = px - aCom.x;
+  const ray = py - aCom.y;
+  const rbx = px - bCom.x;
+  const rby = py - bCom.y;
+
+  // Velocity of each contact point = linear velocity + ω × r (2D: ω × r =
+  // (-ω·ry, ω·rx)).
+  const vax = a.velX - a.angVel * ray;
+  const vay = a.velY + a.angVel * rax;
+  const vbx = b.velX - b.angVel * rby;
+  const vby = b.velY + b.angVel * rbx;
+
+  // Relative velocity of b's contact point with respect to a's, projected
+  // onto the normal. Negative means the points are approaching.
+  const rvx = vbx - vax;
+  const rvy = vby - vay;
+  const approach = rvx * nx + rvy * ny;
+
+  if (approach < 0) {
+    // Elastic (restitution 1) impulse magnitude along the normal. The
+    // rotational terms (r × n)²/I add the contact's resistance to spin into
+    // the effective mass, so a glancing hit off-centre transfers less linear
+    // momentum and more spin — consistent with the rigid-body model.
+    const ia = a.momentOfInertia > 0 ? a.momentOfInertia : Infinity;
+    const ib = b.momentOfInertia > 0 ? b.momentOfInertia : Infinity;
+    const raCrossN = rax * ny - ray * nx;
+    const rbCrossN = rbx * ny - rby * nx;
+    const invEffectiveMass =
+      1 / ma + 1 / mb + (raCrossN * raCrossN) / ia + (rbCrossN * rbCrossN) / ib;
+    const restitution = 1;
+    const j = (-(1 + restitution) * approach) / invEffectiveMass;
+    // Equal and opposite impulses at the shared contact point. applyImpulse
+    // wants the impulse in world coordinates and the application point in the
+    // ship's local frame, so convert the world contact point per ship.
+    const aLocal = worldToLocal(a, px, py);
+    const bLocal = worldToLocal(b, px, py);
+    if (aLocal !== undefined) applyImpulse(a, -j * nx, -j * ny, aLocal.x, aLocal.y);
+    if (bLocal !== undefined) applyImpulse(b, j * nx, j * ny, bLocal.x, bLocal.y);
+  }
+
+  // Positional separation: push the ships apart along the normal by the
+  // penetration depth, split inversely to mass so the lighter ship moves more.
+  const totalInvMass = 1 / ma + 1 / mb;
+  const aShare = (1 / ma) / totalInvMass;
+  const bShare = (1 / mb) / totalInvMass;
+  a.x -= nx * depth * aShare;
+  a.y -= ny * depth * aShare;
+  b.x += nx * depth * bShare;
+  b.y += ny * depth * bShare;
+}
+
+/** Rotate a ship-local point into world space (the inverse of `worldToLocal`). */
+function localPointToWorld(ship: SimShip, lx: number, ly: number): { x: number; y: number } {
+  const c = Math.cos(ship.facing);
+  const s = Math.sin(ship.facing);
+  return { x: ship.x + lx * c - ly * s, y: ship.y + lx * s + ly * c };
+}
+
 export function runBattle(inputs: BattleInputs): BattleResult {
   const rng = mulberry32(inputs.seed >>> 0);
   const ships = inputs.ships.map((s) => toSimShip(s, rng));
@@ -1165,6 +1451,12 @@ export function runBattle(inputs: BattleInputs): BattleResult {
 
     // 2. Movement + facing.
     moveShips(ships, byId, inputs.anomaly);
+
+    // 2b. Ship-vs-ship collision at cell granularity. After movement, any two
+    //     ships whose cells now overlap are pushed apart with an elastic
+    //     impulse plus positional separation, so ships can't drive through each
+    //     other. All sides are solid — friendlies collide too.
+    resolveShipCollisions(buildShipCellHash(ships));
 
     // 3. Weapon firing (creates projectiles; hitscan applies damage at once).
     projectiles = projectiles.concat(fireWeapons(ships, byId, rng));
@@ -1673,6 +1965,40 @@ function tryPointDefenseIntercept(
   return rng() < capped;
 }
 
+/**
+ * Penetration path for a projectile-vs-cell hit: the alive cells of the struck
+ * ship that lie on the projectile's line, ordered front to back along its
+ * travel direction. The frontmost cell is the one the broad-phase found; cells
+ * behind it (further along `(vx, vy)`) and within half a cell of the line of
+ * fire follow, so armour-piercing overflow carries straight through the hull
+ * rather than scattering to whichever module happens to be nearest. The
+ * direction must be a unit vector.
+ */
+function penetrationPath(
+  ship: SimShip,
+  hitWx: number,
+  hitWy: number,
+  dirX: number,
+  dirY: number,
+): SimModule[] {
+  if (ship.modules === undefined) return [];
+  // Projection of the hit point along the travel direction; the path is every
+  // cell at or beyond it, within half a cell laterally.
+  const hitAlong = hitWx * dirX + hitWy * dirY;
+  const onLine: { module: SimModule; along: number }[] = [];
+  for (const m of ship.modules) {
+    if (!m.alive) continue;
+    const { wx, wy } = cellWorldPosition(ship.x, ship.y, ship.facing, m.x, m.y);
+    const along = wx * dirX + wy * dirY;
+    if (along < hitAlong - CELL_SIZE / 2) continue; // in front of the entry cell
+    const perp = Math.abs((wx - hitWx) * -dirY + (wy - hitWy) * dirX);
+    if (perp > CELL_SIZE / 2) continue; // off the line of fire
+    onLine.push({ module: m, along });
+  }
+  onLine.sort((l, r) => l.along - r.along);
+  return onLine.map((e) => e.module);
+}
+
 function updateProjectiles(
   projectiles: readonly SimProjectile[],
   byId: Map<string, SimShip>,
@@ -1681,6 +2007,11 @@ function updateProjectiles(
 ): SimProjectile[] {
   const survivors: SimProjectile[] = [];
   const trackingFactor = anomaly === "nebula" ? SIM.nebulaTrackingFactor : 1;
+  // Broad-phase over every alive ship's cells in world space. Projectile hits
+  // query this for the frontmost occupied cell on the path instead of scanning
+  // every ship. Built once per tick from the post-movement, post-collision
+  // positions so a projectile strikes a cell where it actually is.
+  const cellHash = buildShipCellHash([...byId.values()]);
 
   for (const p of projectiles) {
     // Point-defence intercept: PD modules on the opposing side get a chance
@@ -1732,23 +2063,53 @@ function updateProjectiles(
     // Asteroid fields randomly destroy in-flight ordnance.
     if (anomaly === "asteroidField" && rng() < SIM.asteroidDeflectChance) continue;
 
-    // Collision with the nearest living enemy ship.
+    // Collision with an enemy ship. For modular ships the broad-phase finds
+    // the frontmost occupied cell on the projectile's path and the hit strikes
+    // THAT cell, with armour-piercing overflow carrying to the cell behind.
+    // Legacy aggregated ships have no cells in the hash, so they keep the
+    // centre-distance test against their radius.
     const enemySide = p.ownerSide === "attacker" ? "defender" : "attacker";
+    const speed = Math.hypot(p.vx, p.vy);
+    const dirX = speed > 1e-9 ? p.vx / speed : 1;
+    const dirY = speed > 1e-9 ? p.vy / speed : 0;
+
+    // Modular ships: nearest enemy cell within the cell contact distance is
+    // the frontmost cell struck.
+    const cellHit = cellHash.nearestWithin(
+      p.x,
+      p.y,
+      CELL_CONTACT_DISTANCE,
+      (c) => c.ship.alive && c.ship.side === enemySide,
+    );
+
     let hit: SimShip | undefined;
-    let bestDist = Infinity;
-    for (const [, ship] of byId) {
-      if (!ship.alive || ship.side !== enemySide) continue;
-      const d = Math.hypot(ship.x - p.x, ship.y - p.y);
-      if (d < ship.radius && d < bestDist) {
-        bestDist = d;
-        hit = ship;
+    let hitWx = p.x;
+    let hitWy = p.y;
+    let path: readonly SimModule[] | undefined;
+    if (cellHit !== undefined) {
+      hit = cellHit.payload.ship;
+      hitWx = cellHit.wx;
+      hitWy = cellHit.wy;
+      path = penetrationPath(hit, hitWx, hitWy, dirX, dirY);
+    } else {
+      // Legacy fallback: nearest living enemy ship without cells.
+      let bestDist = Infinity;
+      for (const [, ship] of byId) {
+        if (!ship.alive || ship.side !== enemySide) continue;
+        if (ship.modules !== undefined) continue; // modular ships use the hash
+        const d = Math.hypot(ship.x - p.x, ship.y - p.y);
+        if (d < ship.radius && d < bestDist) {
+          bestDist = d;
+          hit = ship;
+        }
       }
     }
+
     if (hit !== undefined) {
       // The projectile's velocity gives the shot direction; that's what
       // directional shields see.
       const shotAngle = Math.atan2(p.vy, p.vx);
-      applyDamage(hit, p.damage, p.shieldPiercing, p.armourPiercing, p.x, p.y, shotAngle);
+      applyDamage(hit, p.damage, p.shieldPiercing, p.armourPiercing, hitWx, hitWy, shotAngle, path);
       // Hit impulse: the target absorbs the projectile's remaining momentum
       // at the impact point. delta_v = +m_p * v_p / M_target; the lever arm
       // is the impact point (in ship-local) relative to the CoM. Applied
@@ -1758,8 +2119,8 @@ function updateProjectiles(
       // the target's facing.
       const c = Math.cos(-hit.facing);
       const s = Math.sin(-hit.facing);
-      const localX = (p.x - hit.x) * c - (p.y - hit.y) * s;
-      const localY = (p.x - hit.x) * s + (p.y - hit.y) * c;
+      const localX = (hitWx - hit.x) * c - (hitWy - hit.y) * s;
+      const localY = (hitWx - hit.x) * s + (hitWy - hit.y) * c;
       applyImpulse(hit, p.mass * p.vx, p.mass * p.vy, localX, localY);
       continue;
     }
