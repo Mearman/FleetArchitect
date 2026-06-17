@@ -17,7 +17,7 @@ import {
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconArrowsShuffle, IconPlayerPause, IconPlayerPlay, IconRefresh, IconSwords } from "@tabler/icons-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { resolveFleetToCombatShips } from "@/domain/resolve";
 import { runBattle } from "@/domain/simulation/engine";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
@@ -28,13 +28,19 @@ import { BattleAnomaly } from "@/schema/battle";
 import type { BattleAnomaly as BattleAnomalyType, BattleFrame, BattleResult } from "@/schema/battle";
 import type { Fleet } from "@/schema/fleet";
 import type { WeaponType } from "@/schema/module";
+import { interpolateFrame } from "@/ui/interpolateFrame";
 
 /** Logical canvas resolution (CSS pixels before device-pixel-ratio scaling). */
 const W = 960;
 const H = 600;
 const PAD = 40;
-/** Replay playback rate at 1x speed, in simulated ticks per second. */
-const BASE_TICKS_PER_SECOND = 30;
+
+/**
+ * The simulation's fixed tick rate. Playback time (seconds) × this value gives
+ * the fractional sim-tick position for interpolation. Sim tick rate, playback
+ * speed, and display refresh are all independent of one another.
+ */
+const TICKS_PER_SECOND = 30;
 
 const PROJECTILE_COLOUR: Record<WeaponType, string> = {
   beam: "#ffe066",
@@ -141,7 +147,20 @@ export function BattleRoute() {
   const [anomaly, setAnomaly] = useState<BattleAnomalyType>("none");
   const [seed, setSeed] = useState(1);
   const [result, setResult] = useState<BattleResult | null>(null);
-  const [tick, setTick] = useState(0);
+
+  /**
+   * Playback clock: elapsed playback-time in seconds, independent of rAF rate
+   * and display refresh. Fractional sim-tick = playbackTime × TICKS_PER_SECOND.
+   * Stored in a ref so the rAF callback reads the live value without needing a
+   * re-render on every frame. Updated in effects only (never during render).
+   */
+  const playbackTimeRef = useRef(0);
+  /**
+   * playbackTime mirrored as state so the seeker Slider and tick counter stay
+   * in sync with the playback clock without an additional ref-to-state dance.
+   */
+  const [playbackTime, setPlaybackTime] = useState(0);
+
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
 
@@ -231,163 +250,212 @@ export function BattleRoute() {
     return () => observer.disconnect();
   }, [result]);
 
-  // Playback loop: advance the playhead through frames at the chosen speed.
-  useEffect(() => {
-    if (!playing || result === null) return;
-    let raf = 0;
-    let last = performance.now();
-    let acc = 0;
-    const loop = (now: number) => {
-      const dt = (now - last) / 1000;
-      last = now;
-      acc += dt * speed * BASE_TICKS_PER_SECOND;
-      if (acc >= 1) {
-        const steps = Math.floor(acc);
-        acc -= steps;
-        setTick((t) => {
-          const next = Math.min(result.ticks, t + steps);
-          if (next >= result.ticks) setPlaying(false);
-          return next;
-        });
-      }
-      raf = requestAnimationFrame(loop);
-    };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
-  }, [playing, result, speed]);
+  /**
+   * Pure draw function: renders `frame` onto the canvas. Separated from the
+   * clock-advance so resize events and seek operations can redraw without
+   * advancing the playback clock.
+   *
+   * Closes over `bounds` and `maxHp` from the enclosing render scope. Both are
+   * stable for a given `result` (they're derived from it), so `drawFrame` is
+   * re-created only when those values change.
+   */
+  const drawFrame = useCallback(
+    (frame: BattleFrame) => {
+      const canvas = canvasRef.current;
+      if (canvas === null) return;
+      const ctx = canvas.getContext("2d");
+      if (ctx === null) return;
 
-  // Render the current frame whenever the playhead, result, or framing moves.
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (canvas === null || result === null) return;
-    const ctx = canvas.getContext("2d");
-    if (ctx === null) return;
-    const frame = result.frames[tick];
-    if (frame === undefined) return;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+      if (width === 0 || height === 0) return;
+      ctx.clearRect(0, 0, width, height);
 
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const width = canvas.clientWidth;
-    const height = canvas.clientHeight;
-    if (width === 0 || height === 0) return;
-    ctx.clearRect(0, 0, width, height);
+      // Uniform world-to-display scale that letterboxes to preserve the
+      // world's aspect ratio. Independent x/y scales would stretch ships
+      // whenever the canvas aspect doesn't match the battle's.
+      const rangeX = Math.max(bounds.maxX - bounds.minX, 1);
+      const rangeY = Math.max(bounds.maxY - bounds.minY, 1);
+      const scale = Math.min((width - PAD * 2) / rangeX, (height - PAD * 2) / rangeY);
+      const offsetX = (width - rangeX * scale) / 2;
+      const offsetY = (height - rangeY * scale) / 2;
 
-    // Uniform world-to-display scale that letterboxes to preserve the
-    // world's aspect ratio. Independent x/y scales would stretch ships
-    // whenever the canvas aspect doesn't match the battle's.
-    const rangeX = Math.max(bounds.maxX - bounds.minX, 1);
-    const rangeY = Math.max(bounds.maxY - bounds.minY, 1);
-    const scale = Math.min((width - PAD * 2) / rangeX, (height - PAD * 2) / rangeY);
-    const offsetX = (width - rangeX * scale) / 2;
-    const offsetY = (height - rangeY * scale) / 2;
+      const sx = (wx: number) => offsetX + (wx - bounds.minX) * scale;
+      const sy = (wy: number) => offsetY + (wy - bounds.minY) * scale;
 
-    const sx = (wx: number) => offsetX + (wx - bounds.minX) * scale;
-    const sy = (wy: number) => offsetY + (wy - bounds.minY) * scale;
-
-    for (const p of frame.projectiles) {
-      const colour = PROJECTILE_COLOUR[p.kind];
-      if (colour === undefined) continue;
-      ctx.fillStyle = colour;
-      ctx.fillRect(sx(p.x) - 1, sy(p.y) - 1, 2.5, 2.5);
-    }
-
-    for (const s of frame.ships) {
-      const px = sx(s.x);
-      const py = sy(s.y);
-      const base = s.side === "attacker" ? "#ff6b5a" : "#5ab0ff";
-      const max = maxHp.get(s.instanceId);
-
-      if (!s.alive) {
-        ctx.globalAlpha = 0.2;
-        ctx.fillStyle = base;
-        ctx.beginPath();
-        ctx.arc(px, py, 5, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.globalAlpha = 1;
-        continue;
+      for (const p of frame.projectiles) {
+        const colour = PROJECTILE_COLOUR[p.kind];
+        if (colour === undefined) continue;
+        ctx.fillStyle = colour;
+        ctx.fillRect(sx(p.x) - 1, sy(p.y) - 1, 2.5, 2.5);
       }
 
-      const maxShield = max?.shield ?? s.shield;
-      if (maxShield > 0) {
-        const frac = Math.max(0, s.shield / maxShield);
-        if (frac > 0) {
-          ctx.strokeStyle = "rgba(120,200,255,0.65)";
-          ctx.lineWidth = 2;
+      for (const s of frame.ships) {
+        const px = sx(s.x);
+        const py = sy(s.y);
+        const base = s.side === "attacker" ? "#ff6b5a" : "#5ab0ff";
+        const max = maxHp.get(s.instanceId);
+
+        if (!s.alive) {
+          ctx.globalAlpha = 0.2;
+          ctx.fillStyle = base;
           ctx.beginPath();
-          ctx.arc(px, py, 11, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac);
-          ctx.stroke();
+          ctx.arc(px, py, 5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.globalAlpha = 1;
+          continue;
         }
-      }
 
-      ctx.fillStyle = base;
-      ctx.beginPath();
-      ctx.arc(px, py, 7, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Per-module parts: each placed module drawn at its world position
-      // (ship centre + the module's local cell rotated by the ship's facing),
-      // coloured by kind. Destroyed parts go dark — the ship visibly comes
-      // apart system by system as the battle wears on.
-      if (s.modules !== undefined && s.facing !== undefined) {
-        const cos = Math.cos(s.facing);
-        const sin = Math.sin(s.facing);
-        for (const m of s.modules) {
-          const wx = s.x + m.x * cos - m.y * sin;
-          const wy = s.y + m.x * sin + m.y * cos;
-          const mx = sx(wx);
-          const my = sy(wy);
-          const colour = MODULE_COLOUR[m.kind];
-          if (colour === undefined) continue;
-          ctx.globalAlpha = m.alive ? 1 : 0.2;
-          ctx.fillStyle = colour;
-          ctx.fillRect(mx - 2, my - 2, 4, 4);
-          if (!m.alive) {
-            // Destroyed: a dark cross to read as a hole / wreckage.
-            ctx.strokeStyle = "rgba(255,255,255,0.25)";
-            ctx.lineWidth = 1;
+        const maxShield = max?.shield ?? s.shield;
+        if (maxShield > 0) {
+          const frac = Math.max(0, s.shield / maxShield);
+          if (frac > 0) {
+            ctx.strokeStyle = "rgba(120,200,255,0.65)";
+            ctx.lineWidth = 2;
             ctx.beginPath();
-            ctx.moveTo(mx - 3, my - 3);
-            ctx.lineTo(mx + 3, my + 3);
-            ctx.moveTo(mx + 3, my - 3);
-            ctx.lineTo(mx - 3, my + 3);
+            ctx.arc(px, py, 11, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac);
             ctx.stroke();
           }
         }
-        ctx.globalAlpha = 1;
-      }
 
-      // Heading indicator: a short line along the ship's velocity vector,
-      // so direction and momentum are visible. Length scales with speed,
-      // capped so very fast ships don't get a huge line.
-      if (s.vx !== undefined && s.vy !== undefined) {
-        const vx = s.vx;
-        const vy = s.vy;
-        const vLen = Math.hypot(vx, vy);
-        if (vLen > 0.01) {
-          const lineLen = Math.min(20, 4 + vLen * 8);
-          const ux = vx / vLen;
-          const uy = vy / vLen;
-          ctx.strokeStyle = base;
-          ctx.globalAlpha = 0.85;
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.moveTo(px + ux * 9, py + uy * 9);
-          ctx.lineTo(px + ux * (9 + lineLen), py + uy * (9 + lineLen));
-          ctx.stroke();
+        ctx.fillStyle = base;
+        ctx.beginPath();
+        ctx.arc(px, py, 7, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Per-module parts: each placed module drawn at its world position
+        // (ship centre + the module's local cell rotated by the ship's facing),
+        // coloured by kind. Destroyed parts go dark — the ship visibly comes
+        // apart system by system as the battle wears on.
+        if (s.modules !== undefined && s.facing !== undefined) {
+          const cos = Math.cos(s.facing);
+          const sin = Math.sin(s.facing);
+          for (const m of s.modules) {
+            const wx = s.x + m.x * cos - m.y * sin;
+            const wy = s.y + m.x * sin + m.y * cos;
+            const mx = sx(wx);
+            const my = sy(wy);
+            const colour = MODULE_COLOUR[m.kind];
+            if (colour === undefined) continue;
+            ctx.globalAlpha = m.alive ? 1 : 0.2;
+            ctx.fillStyle = colour;
+            ctx.fillRect(mx - 2, my - 2, 4, 4);
+            if (!m.alive) {
+              // Destroyed: a dark cross to read as a hole / wreckage.
+              ctx.strokeStyle = "rgba(255,255,255,0.25)";
+              ctx.lineWidth = 1;
+              ctx.beginPath();
+              ctx.moveTo(mx - 3, my - 3);
+              ctx.lineTo(mx + 3, my + 3);
+              ctx.moveTo(mx + 3, my - 3);
+              ctx.lineTo(mx - 3, my + 3);
+              ctx.stroke();
+            }
+          }
           ctx.globalAlpha = 1;
+        }
+
+        // Heading indicator: a short line along the ship's velocity vector,
+        // so direction and momentum are visible. Length scales with speed,
+        // capped so very fast ships don't get a huge line.
+        if (s.vx !== undefined && s.vy !== undefined) {
+          const vx = s.vx;
+          const vy = s.vy;
+          const vLen = Math.hypot(vx, vy);
+          if (vLen > 0.01) {
+            const lineLen = Math.min(20, 4 + vLen * 8);
+            const ux = vx / vLen;
+            const uy = vy / vLen;
+            ctx.strokeStyle = base;
+            ctx.globalAlpha = 0.85;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(px + ux * 9, py + uy * 9);
+            ctx.lineTo(px + ux * (9 + lineLen), py + uy * (9 + lineLen));
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+          }
+        }
+
+        const maxStructure = max?.structure ?? s.structure;
+        const frac = maxStructure > 0 ? Math.max(0, s.structure / maxStructure) : 0;
+        const barW = 18;
+        ctx.fillStyle = "rgba(255,255,255,0.15)";
+        ctx.fillRect(px - barW / 2, py + 10, barW, 3);
+        ctx.fillStyle =
+          frac > 0.5 ? "#7bd88f" : frac > 0.25 ? "#ffcc5a" : "#ff5a5a";
+        ctx.fillRect(px - barW / 2, py + 10, barW * frac, 3);
+      }
+    },
+    [bounds, maxHp],
+  );
+
+  /**
+   * Main rAF loop: advances the playback clock by the real wall-clock delta
+   * (multiplied by the speed factor), derives the fractional sim-tick position,
+   * interpolates between the two bracketing frames, and draws on every rAF
+   * regardless of display refresh rate.
+   *
+   * Pausing, seeking, and stepping all operate on `playbackTimeRef` directly;
+   * this loop runs regardless of `playing` so that seek/resize redraws work.
+   */
+  useEffect(() => {
+    if (result === null) return;
+
+    let rafId = 0;
+    let lastTimestamp: number | null = null;
+
+    const loop = (now: number) => {
+      if (lastTimestamp !== null) {
+        const realDt = (now - lastTimestamp) / 1000;
+        // Guard against very large dt values from hidden-tab pauses (browser
+        // suspends rAF; on resume the first dt can be seconds). Clamp to 200 ms.
+        const clampedDt = Math.min(realDt, 0.2);
+
+        if (playing) {
+          const maxTime = result.ticks / TICKS_PER_SECOND;
+          const newTime = playbackTimeRef.current + clampedDt * speed;
+          if (newTime >= maxTime) {
+            playbackTimeRef.current = maxTime;
+            setPlaybackTime(maxTime);
+            setPlaying(false);
+          } else {
+            playbackTimeRef.current = newTime;
+            setPlaybackTime(newTime);
+          }
         }
       }
 
-      const maxStructure = max?.structure ?? s.structure;
-      const frac = maxStructure > 0 ? Math.max(0, s.structure / maxStructure) : 0;
-      const barW = 18;
-      ctx.fillStyle = "rgba(255,255,255,0.15)";
-      ctx.fillRect(px - barW / 2, py + 10, barW, 3);
-      ctx.fillStyle =
-        frac > 0.5 ? "#7bd88f" : frac > 0.25 ? "#ffcc5a" : "#ff5a5a";
-      ctx.fillRect(px - barW / 2, py + 10, barW * frac, 3);
-    }
-  }, [result, tick, bounds, maxHp, canvasSize]);
+      lastTimestamp = now;
+
+      // Draw on every rAF regardless of whether the clock advanced.
+      const fractionalTick = playbackTimeRef.current * TICKS_PER_SECOND;
+      const frame = interpolateFrame(result.frames, fractionalTick);
+      drawFrame(frame);
+
+      rafId = requestAnimationFrame(loop);
+    };
+
+    rafId = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(rafId);
+  // Restart the loop when: a new battle lands, playing toggles, speed changes,
+  // or drawFrame is recreated (bounds/maxHp changed). All of these are
+  // legitimate reasons to reset `lastTimestamp` so the first dt after each
+  // change is not inflated.
+  }, [result, playing, speed, drawFrame]);
+
+  // Redraw when the canvas is resized (canvasSize changes). The draw itself is
+  // purely a side-effect of the current playbackTime; no clock advance needed.
+  // The rAF loop above handles the drawing during normal playback; this covers
+  // the paused-then-resize case.
+  useEffect(() => {
+    if (result === null) return;
+    const fractionalTick = playbackTimeRef.current * TICKS_PER_SECOND;
+    const frame = interpolateFrame(result.frames, fractionalTick);
+    drawFrame(frame);
+  }, [canvasSize, result, drawFrame]);
 
   if (fleets === undefined || designs === undefined) {
     return <Text c="dimmed">Loading…</Text>;
@@ -427,7 +495,9 @@ export function BattleRoute() {
     });
     void storage().battles.save(battle);
     setResult(battle);
-    setTick(0);
+    // Reset the playback clock to the start.
+    playbackTimeRef.current = 0;
+    setPlaybackTime(0);
     setPlaying(true);
   }
 
@@ -495,6 +565,17 @@ export function BattleRoute() {
       : result?.winner === "defender"
         ? "#5ab0ff"
         : "gray";
+
+  // Derive the integer tick for the Slider and tick counter from playbackTime.
+  const currentTick = result !== null
+    ? Math.min(result.ticks, Math.floor(playbackTime * TICKS_PER_SECOND))
+    : 0;
+
+  // The status panel uses the discrete-nearest frame since it shows system HP
+  // values, not positions — there is no meaningful interpolation for HP.
+  const statusFrame = result !== null
+    ? (result.frames[currentTick] ?? result.frames[result.frames.length - 1])
+    : null;
 
   return (
     <Stack gap="lg">
@@ -625,18 +706,23 @@ export function BattleRoute() {
                     playing ? <IconPlayerPause size={16} /> : <IconPlayerPlay size={16} />
                   }
                   onClick={() => {
-                    if (tick >= result.ticks) setTick(0);
+                    if (currentTick >= result.ticks) {
+                      // Rewind to start before playing again.
+                      playbackTimeRef.current = 0;
+                      setPlaybackTime(0);
+                    }
                     setPlaying((p) => !p);
                   }}
                 >
                   {playing ? "Pause" : "Play"}
                 </Button>
                 <Text size="sm" c="dimmed" style={{ flex: 1 }}>
-                  Tick {tick} / {result.ticks}
+                  Tick {currentTick} / {result.ticks}
                 </Text>
                 <SegmentedControl
                   size="xs"
                   data={[
+                    { value: "0.25", label: "0.25x" },
                     { value: "0.5", label: "0.5x" },
                     { value: "1", label: "1x" },
                     { value: "2", label: "2x" },
@@ -648,17 +734,21 @@ export function BattleRoute() {
               <Slider
                 min={0}
                 max={result.ticks}
-                value={tick}
+                value={currentTick}
                 onChange={(val) => {
                   setPlaying(false);
-                  setTick(val);
+                  const newTime = val / TICKS_PER_SECOND;
+                  playbackTimeRef.current = newTime;
+                  setPlaybackTime(newTime);
+                  // Redraw immediately at the new position without waiting for
+                  // the next rAF, so seeking feels instant.
+                  const frame = interpolateFrame(result.frames, val);
+                  drawFrame(frame);
                 }}
               />
-              {(() => {
-                const frame = result.frames[tick];
-                if (frame === undefined) return null;
-                return <ModuleStatusPanel frame={frame} />;
-              })()}
+              {statusFrame !== null && statusFrame !== undefined && (
+                <ModuleStatusPanel frame={statusFrame} />
+              )}
             </>
           )}
         </Stack>
