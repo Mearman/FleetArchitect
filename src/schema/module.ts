@@ -89,6 +89,28 @@ export const CrewEffect = z.object({
 export type CrewEffect = z.infer<typeof CrewEffect>;
 
 /**
+ * Effect payload for a point-defence weapon. Fires at incoming missiles and
+ * torpedoes instead of at enemy ships; short range, low per-shot damage, but
+ * fast refire so a battery quickly shreds an incoming volley. Ammo is
+ * intentionally unlimited — PD is the cheap CIWS-style defence that should
+ * never dry up before the ship itself is destroyed.
+ */
+export const PointDefenseEffect = z.object({
+  kind: z.literal("pointDefense"),
+  /** Damage per intercept; the projectile is destroyed on any successful hit. */
+  damage: z.number().min(0),
+  /** Range (battle units) at which a PD module can reach a passing projectile. */
+  range: z.number().min(0),
+  /** Ticks between intercept attempts; 0 means every tick. */
+  cooldown: z.number().int().min(0),
+  /** Per-tick hit chance against a single in-range projectile (0..1). */
+  hitChance: zeroToOne,
+  /** Steering accuracy; 0 means fixed, >0 lets the PD lead its target. */
+  tracking: z.number().min(0),
+});
+export type PointDefenseEffect = z.infer<typeof PointDefenseEffect>;
+
+/**
  * Discriminated union of all module effects. New module kinds extend this.
  */
 export const ModuleEffect = z.discriminatedUnion("kind", [
@@ -98,6 +120,7 @@ export const ModuleEffect = z.discriminatedUnion("kind", [
   EngineEffect,
   PowerPlantEffect,
   CrewEffect,
+  PointDefenseEffect,
 ]);
 export type ModuleEffect = z.infer<typeof ModuleEffect>;
 
@@ -127,5 +150,13 @@ export const ModuleDefinition = z.object({
    * compatibility — modules that omit it are not command modules.
    */
   command: z.boolean().optional(),
+  /**
+   * Marks a module as a point-defence weapon. The engine already identifies
+   * point-defence modules by `effect.kind === "pointDefense"`; this flag is a
+   * redundant authoring hint for catalog tools that want to group PD modules
+   * without inspecting the effect payload. Optional for backward compatibility
+   * — modules whose effect is not point-defence should leave it false.
+   */
+  pointDefense: z.boolean().optional(),
 });
 export type ModuleDefinition = z.infer<typeof ModuleDefinition>;

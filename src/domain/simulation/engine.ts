@@ -3,7 +3,12 @@ import { mulberry32, ranged } from "@/domain/simulation/rng";
 import type { BattleFrame, BattleResult, BattleSide } from "@/schema/battle";
 import type { ShipClassification } from "@/schema/hull";
 import { DEFAULT_WEAPON_AMMO } from "@/schema/module";
-import type { ModuleEffect, WeaponEffect, WeaponType } from "@/schema/module";
+import type {
+  ModuleEffect,
+  PointDefenseEffect,
+  WeaponEffect,
+  WeaponType,
+} from "@/schema/module";
 import type { Orders } from "@/schema/fleet";
 import type { BattleInputs, CombatShip, ResolvedModule } from "./types";
 
@@ -96,6 +101,15 @@ const SIM = {
    */
   linearDamping: 0.97,
   angularDamping: 0.9,
+  /**
+   * Per-PD-module per-tick chance of intercepting a single in-range missile
+   * or torpedo. Multiple PD modules stack their chances (1 - (1-p)^n) but
+   * the cumulative chance is capped here so a screen of PD modules can never
+   * be a 100% certainty.
+   */
+  pdHitChancePerModule: 0.4,
+  /** Upper bound on the stacked PD intercept probability per projectile. */
+  pdMaxStackedChance: 0.95,
 };
 
 /** Mutable per-ship runtime state carried across ticks. */
@@ -284,6 +298,7 @@ function toSimShip(ship: CombatShip, rng: () => number): SimShip {
 function toSimModule(m: ResolvedModule, rng: () => number): SimModule {
   const effect = m.effect;
   const isWeapon = effect.kind === "weapon";
+  const isPD = effect.kind === "pointDefense";
   return {
     slotId: m.slotId,
     moduleId: m.moduleId,
@@ -295,10 +310,15 @@ function toSimModule(m: ResolvedModule, rng: () => number): SimModule {
     mass: m.mass,
     powerDraw: m.powerDraw,
     effect,
-    // Stagger weapon cooldowns so they don't all fire on tick 0.
-    cooldown: isWeapon ? Math.floor(rng() * (effect.cooldown + 1)) : 0,
+    // Stagger weapon cooldowns so they don't all fire on tick 0. PD modules
+    // tick at their own cadence; everything else has no inter-tick timer.
+    cooldown:
+      isWeapon ? Math.floor(rng() * (effect.cooldown + 1)) :
+      isPD ? Math.floor(rng() * (effect.cooldown + 1)) :
+      0,
     // Weapons with finite ammo carry it through; without an explicit value
-    // they get a large default so they effectively never run dry.
+    // they get a large default so they effectively never run dry. PD is
+    // unlimited by design — see PointDefenseEffect.
     ammo: isWeapon ? effect.ammo ?? DEFAULT_WEAPON_AMMO : 0,
     alive: true,
     powered: true,
@@ -358,19 +378,27 @@ function recomputeAggregates(ship: SimShip): void {
   }
 
   // 3. Demand from powered consumers. If it exceeds supply, take the
-  //    hungriest offline — weapons first, then shields — rechecking each
-  //    time, until demand ≤ supply (or nothing is left to cut).
+  //    hungriest offline — weapons and PD first (PD is an active defence
+  //    system, same priority class as offensive weapons), then shields —
+  //    rechecking each time, until demand ≤ supply (or nothing is left to
+  //    cut).
   const demandOf = (m: SimModule): number => (m.powered ? m.powerDraw : 0);
   let demand = 0;
   for (const m of ship.modules) demand += demandOf(m);
 
   while (demand > supply) {
-    // Candidates to cut: powered weapons, else powered shields.
+    // Candidates to cut: powered weapons or PD modules, else powered shields.
     let victim: SimModule | undefined;
     let bestDraw = -1;
     for (const m of ship.modules) {
       if (!m.powered) continue;
-      if (m.effect.kind !== "weapon" && m.effect.kind !== "shield") continue;
+      if (
+        m.effect.kind !== "weapon" &&
+        m.effect.kind !== "pointDefense" &&
+        m.effect.kind !== "shield"
+      ) {
+        continue;
+      }
       if (m.powerDraw > bestDraw) {
         bestDraw = m.powerDraw;
         victim = m;
@@ -419,6 +447,7 @@ function recomputeAggregates(ship: SimShip): void {
         break;
       case "power":
       case "crew":
+      case "pointDefense":
         break;
     }
   }
@@ -665,6 +694,19 @@ export function runBattle(inputs: BattleInputs): BattleResult {
 
     // 3. Weapon firing (creates projectiles; hitscan applies damage at once).
     projectiles = projectiles.concat(fireWeapons(ships, byId, rng));
+
+    // 3b. PD cooldowns tick down so a battery that just fired can fire again
+    //     the next tick. Tick here (before projectile resolution) so a PD
+    //     module that's about to be online can intercept in-flight ordnance
+    //     on this same tick if its cooldown just hit 0.
+    for (const ship of ships) {
+      if (!ship.alive || ship.modules === undefined) continue;
+      for (const m of ship.modules) {
+        if (!m.alive) continue;
+        if (m.effect.kind !== "pointDefense") continue;
+        if (m.cooldown > 0) m.cooldown -= 1;
+      }
+    }
 
     // 4. Projectile travel, homing, asteroid deflection, and collision.
     projectiles = updateProjectiles(projectiles, byId, inputs.anomaly, rng);
@@ -953,6 +995,68 @@ function fireOne(
   }
 }
 
+/**
+ * Roll for a point-defence intercept. Returns true if the projectile was
+ * shot down. PD modules on ships on the opposing side that are alive,
+ * powered, not on cooldown, and within range of the projectile each get an
+ * independent hit roll; the per-module chance stacks as
+ * 1 - (1 - p)^n, capped at SIM.pdMaxStackedChance.
+ *
+ * Only ships with the per-module path (`ship.modules` defined) carry PD.
+ * The legacy aggregated path is unaffected. PD requires the defending
+ * ship to have an alive command module — coordination matters, same rule
+ * as offensive weapons.
+ */
+function tryPointDefenseIntercept(
+  p: SimProjectile,
+  byId: Map<string, SimShip>,
+  rng: () => number,
+): boolean {
+  const enemySide: BattleSide = p.ownerSide === "attacker" ? "defender" : "attacker";
+  // Walk every alive defending ship; count how many in-range, online PD
+  // modules can fire this tick. A single rng draw resolves the stacked
+  // chance — keeps the random stream the same length regardless of how
+  // many PD modules are present, so a destroyer with two PDs and a cruiser
+  // with one see the same determinism behaviour modulo the count.
+  let pdCount = 0;
+  for (const [, ship] of byId) {
+    if (!ship.alive || ship.side !== enemySide) continue;
+    if (ship.modules === undefined) continue; // legacy ships don't run PD
+    if (!hasAliveCommand(ship)) continue; // no bridge → no coordination
+    for (const m of ship.modules) {
+      if (!m.alive || !m.powered) continue;
+      if (m.cooldown > 0) continue;
+      if (m.effect.kind !== "pointDefense") continue;
+      const effect: PointDefenseEffect = m.effect;
+      const dx = ship.x - p.x;
+      const dy = ship.y - p.y;
+      if (Math.hypot(dx, dy) <= effect.range) pdCount += 1;
+    }
+  }
+  if (pdCount === 0) return false;
+  const perModule = SIM.pdHitChancePerModule;
+  const stacked = 1 - Math.pow(1 - perModule, pdCount);
+  const capped = Math.min(stacked, SIM.pdMaxStackedChance);
+  // Consume one cycle on every contributing module regardless of outcome —
+  // a PD battery firing into the sky should still pay its cooldown, so
+  // salvos are spaced out across ticks rather than back-to-back.
+  for (const [, ship] of byId) {
+    if (!ship.alive || ship.side !== enemySide) continue;
+    if (ship.modules === undefined) continue;
+    if (!hasAliveCommand(ship)) continue;
+    for (const m of ship.modules) {
+      if (!m.alive || !m.powered) continue;
+      if (m.effect.kind !== "pointDefense") continue;
+      if (m.cooldown > 0) continue;
+      const dx = ship.x - p.x;
+      const dy = ship.y - p.y;
+      if (Math.hypot(dx, dy) > m.effect.range) continue;
+      m.cooldown = m.effect.cooldown;
+    }
+  }
+  return rng() < capped;
+}
+
 function updateProjectiles(
   projectiles: readonly SimProjectile[],
   byId: Map<string, SimShip>,
@@ -963,6 +1067,17 @@ function updateProjectiles(
   const trackingFactor = anomaly === "nebula" ? SIM.nebulaTrackingFactor : 1;
 
   for (const p of projectiles) {
+    // Point-defence intercept: PD modules on the opposing side get a chance
+    // to shoot down the projectile before it moves on this tick. Only
+    // missiles and torpedoes are PD-able; beams and plasma travel too fast
+    // to intercept. Multiple PD modules within range stack their per-tick
+    // hit chance (1 - (1-p)^n) up to `pdMaxStackedChance`. An unpowered,
+    // cooling, or destroyed PD module contributes nothing. PD requires the
+    // defending ship to have an alive command module — coordination matters.
+    if (p.kind === "missile" || p.kind === "torpedo") {
+      if (tryPointDefenseIntercept(p, byId, rng)) continue;
+    }
+
     // Homing: steer velocity toward the (living) target's current position.
     if (p.tracking > 0) {
       const target = byId.get(p.targetId);
