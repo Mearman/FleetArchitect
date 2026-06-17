@@ -90,6 +90,8 @@ function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] 
         shieldFacing: 0,
         facing: 0,
         weaponFacing: 0,
+        turretArc: 0,
+        turretTurnRate: 0,
       });
       continue;
     }
@@ -119,6 +121,10 @@ function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] 
         // engines thrust along it, weapons fire along it.
         facing: engineFacingFor(moduleDef.effect, cell),
         weaponFacing: weaponFacingFor(moduleDef.effect, cell),
+        // Turret traverse comes off the weapon effect; non-turret and
+        // non-weapon modules carry 0 (a fixed mount).
+        turretArc: turretArcFor(moduleDef.effect),
+        turretTurnRate: turretTurnRateFor(moduleDef.effect),
       });
     }
   }
@@ -167,6 +173,18 @@ function engineFacingFor(effect: ModuleEffect, cell: GridCell): number {
 function weaponFacingFor(effect: ModuleEffect, cell: GridCell): number {
   if (effect.kind !== "weapon") return 0;
   return cell.kind === "module" ? cell.facing : 0;
+}
+
+/** Turret traverse half-arc (radians) for a weapon; 0 (fixed mount) otherwise. */
+function turretArcFor(effect: ModuleEffect): number {
+  if (effect.kind !== "weapon") return 0;
+  return effect.turretArc ?? 0;
+}
+
+/** Turret slew speed (radians per tick) for a weapon; 0 (fixed) otherwise. */
+function turretTurnRateFor(effect: ModuleEffect): number {
+  if (effect.kind !== "weapon") return 0;
+  return effect.turretTurnRate ?? 0;
 }
 
 /** Reflect a deployment across the y-axis: negate x, add π to facing. */
