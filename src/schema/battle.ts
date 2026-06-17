@@ -55,6 +55,7 @@ export const ShipSnapshot = z.object({
           "crew",
           "pointDefense",
           "repair",
+          "hull",
         ]),
         /** Position in ship-local (design) coordinates, for rendering. */
         x: z.number(),
@@ -65,6 +66,13 @@ export const ShipSnapshot = z.object({
       }),
     )
     .optional(),
+  /**
+   * True when this ship was spawned as a break-away chunk from a parent
+   * ship on the frame it first appeared. The flag clears the next frame
+   * so the UI can highlight the split moment without needing a separate
+   * event log. Optional for backward compatibility with older replays.
+   */
+  brokeOff: z.boolean().optional(),
 });
 export type ShipSnapshot = z.infer<typeof ShipSnapshot>;
 
