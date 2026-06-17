@@ -43,6 +43,8 @@ export interface ResolvedModule {
   mass: number;
   /** The module's effect (weapon/shield/armour/engine/power/crew). */
   effect: ModuleEffect;
+  /** Whether this module is a bridge / command module. */
+  command: boolean;
 }
 
 /** Everything the simulator needs to run a deterministic battle. */

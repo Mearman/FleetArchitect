@@ -73,6 +73,7 @@ function resolveModules(
       maxHp: baseHpFor(moduleDef.effect.kind),
       mass: moduleDef.mass,
       effect: moduleDef.effect,
+      command: moduleDef.command === true,
     });
   }
   return out;

@@ -321,6 +321,7 @@ const moduleData: ModuleDefinition[] = [
     crewRequired: 1,
     techLevel: 1,
     effect: { kind: "power", output: 40 },
+    command: true,
   },
   {
     id: "mod-reactor-antimatter",
@@ -334,6 +335,7 @@ const moduleData: ModuleDefinition[] = [
     crewRequired: 2,
     techLevel: 3,
     effect: { kind: "power", output: 90 },
+    command: true,
   },
   // --- Crew ---
   {

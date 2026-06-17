@@ -111,5 +111,12 @@ export const ModuleDefinition = z.object({
   crewRequired: z.number().min(0),
   effect: ModuleEffect,
   techLevel: z.number().int().min(1).max(5),
+  /**
+   * Whether this module serves as the ship's bridge / command module. A ship
+   * needs at least one alive command module to coordinate its weapons; destroy
+   * every command module and the ship can no longer fire. Optional for backward
+   * compatibility — modules that omit it are not command modules.
+   */
+  command: z.boolean().optional(),
 });
 export type ModuleDefinition = z.infer<typeof ModuleDefinition>;

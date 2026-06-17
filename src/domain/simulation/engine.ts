@@ -161,6 +161,8 @@ interface SimModule {
   /** Weapon: ticks until next fire. Shield regen is pooled at ship level. */
   cooldown: number;
   alive: boolean;
+  /** Whether this module serves as the ship's bridge / command module. */
+  command: boolean;
 }
 
 /** Mutable in-flight projectile. */
@@ -280,6 +282,7 @@ function toSimModule(m: ResolvedModule, rng: () => number): SimModule {
     // Stagger weapon cooldowns so they don't all fire on tick 0.
     cooldown: isWeapon ? Math.floor(rng() * (effect.cooldown + 1)) : 0,
     alive: true,
+    command: m.command,
   };
 }
 
@@ -358,6 +361,18 @@ function recomputeAggregates(ship: SimShip): void {
   ship.shield = Math.min(ship.shield, shieldCapacity);
   ship.weapons = weapons;
   ship.weaponCooldowns = cooldowns;
+}
+
+/** Whether the ship has at least one alive command (bridge) module. Ships
+ *  without any command module cannot fire. A module at 0 hp counts as
+ *  destroyed even before its `alive` flag is flipped, since destruction is
+ *  hp-driven. */
+function hasAliveCommand(ship: SimShip): boolean {
+  if (ship.modules === undefined) return true;
+  for (const m of ship.modules) {
+    if (m.command && m.alive && m.hp > 0) return true;
+  }
+  return false;
 }
 
 function pickTarget(ship: SimShip, enemies: readonly SimShip[]): SimShip | undefined {
@@ -800,8 +815,12 @@ function fireWeapons(
 
     // Per-module path: iterate the ship's own weapon modules, reading and
     // writing each module's cooldown (so destruction is reflected live and
-    // recomputeAggregates can't clobber in-flight cooldowns).
+    // recomputeAggregates can't clobber in-flight cooldowns). A ship with no
+    // alive command (bridge) module cannot coordinate its weapons, so the
+    // entire per-module firing path is skipped — destroying the bridge
+    // disarms the ship.
     if (ship.modules !== undefined) {
+      if (!hasAliveCommand(ship)) continue;
       for (const m of ship.modules) {
         if (!m.alive || m.effect.kind !== "weapon") continue;
         const weapon = m.effect;

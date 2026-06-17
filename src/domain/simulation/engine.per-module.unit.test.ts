@@ -37,7 +37,7 @@ function moduleOf(
   maxHp: number,
   mass = 5,
 ): ResolvedModule {
-  return { slotId, moduleId: `mod-${slotId}`, kind: effect.kind, x, y, maxHp, mass, effect };
+  return { slotId, moduleId: `mod-${slotId}`, kind: effect.kind, x, y, maxHp, mass, effect, command: false };
 }
 
 /** A legacy (non-modular) ship, used as the hammer that degrades a modular
