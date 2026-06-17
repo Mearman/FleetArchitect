@@ -1,27 +1,28 @@
 import { createId } from "@/domain/id";
 import { analyseShipDesign } from "@/domain/stats";
+import { cellToLocal, deriveClassification, footprint } from "@/domain/grid";
 import type { Catalog } from "@/domain/catalog";
 import type { CombatShip, ResolvedModule } from "@/domain/simulation/types";
 import type { Fleet, FleetShip } from "@/schema/fleet";
+import type { GridCell } from "@/schema/grid";
 import type { ModuleEffect } from "@/schema/module";
 import type { ShipDesign } from "@/schema/ship";
-import type { HullDefinition } from "@/schema/hull";
 
 /**
  * Resolve a fleet's deployed ships into combat-ready ships. The caller supplies
  * the saved designs keyed by id (typically loaded from storage). A deployed
- * ship whose design or hull cannot be found is skipped — it has nothing to
- * fight with — so callers should validate fleet completeness beforehand.
+ * ship whose design cannot be found is skipped — it has nothing to fight with —
+ * so callers should validate fleet completeness beforehand.
  *
  * Fleets are authored in "attacker" coordinates (left side of the arena,
  * facing right). When a fleet is used as the defender we mirror it to the
  * opposite side — negating x and rotating facing by π — so the two sides
  * actually meet across the map instead of stacking up.
  *
- * Each resolved ship also carries the per-module instances (with initial hit
- * points and the module effect) so the engine can run the per-module
- * damage / fire / regen model — the foundation for power, ammo, the
- * bridge, and crew.
+ * Each resolved ship carries the per-cell module instances (with initial hit
+ * points and the module effect) and its classification, derived from the grid,
+ * so the engine can run the per-module damage / fire / regen model and the
+ * grid-exact break-apart.
  */
 export function resolveFleetToCombatShips(
   fleet: Fleet,
@@ -33,11 +34,9 @@ export function resolveFleetToCombatShips(
   for (const deployed of fleet.ships) {
     const design = designs.get(deployed.designId);
     if (design === undefined) continue;
-    const hull = catalog.hull(design.hullId);
-    if (hull === undefined) continue;
-    const { stats } = analyseShipDesign(design, hull, catalog);
+    const { stats } = analyseShipDesign(design, catalog);
     const placement = side === "defender" ? mirrorPlacement(deployed) : deployed;
-    const modules = resolveModules(design, hull, catalog);
+    const modules = resolveModules(design, catalog);
     ships.push({
       instanceId: createId("ship"),
       designId: design.id,
@@ -46,51 +45,82 @@ export function resolveFleetToCombatShips(
       position: placement.position,
       facing: placement.facing,
       orders: placement.orders,
-      classification: hull.classification,
+      classification: deriveClassification(design.grid),
       ...(modules.length > 0 ? { modules } : {}),
     });
   }
   return ships;
 }
 
-/** Build the per-module instances for a ship design. */
-function resolveModules(
-  design: ShipDesign,
-  hull: HullDefinition,
-  catalog: Catalog,
-): ResolvedModule[] {
-  const slotById = new Map(hull.slots.map((s) => [s.id, s]));
+/**
+ * Build the per-cell module instances for a ship design. Every occupied cell
+ * becomes a `ResolvedModule`: hull cells resolve to kind "hull" with the tile's
+ * mass and hp; module cells resolve to their catalog module. Empty cells are
+ * skipped. Each module's `(x, y)` is the cell's ship-local centre from
+ * `cellToLocal`, and its integer `(col, row)` are carried through so break-apart
+ * can union over exact 4-connected neighbours.
+ */
+function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] {
+  const grid = design.grid;
   const out: ResolvedModule[] = [];
-  for (const placement of design.placements) {
-    const moduleDef = catalog.module(placement.moduleId);
-    const slot = slotById.get(placement.slotId);
-    if (moduleDef === undefined || slot === undefined) continue;
-    out.push({
-      slotId: placement.slotId,
-      moduleId: moduleDef.id,
-      kind: moduleDef.effect.kind,
-      x: slot.position.x,
-      y: slot.position.y,
-      maxHp: baseHpFor(moduleDef.effect.kind),
-      mass: moduleDef.mass,
-      powerDraw: moduleDef.powerDraw,
-      effect: moduleDef.effect,
-      command: moduleDef.command === true,
-      repairRate: repairRateFor(moduleDef.effect),
-      // Directional shield defaults: a missing arc means a full-sphere shield,
-      // a missing facing defaults to 0 (along +x). Existing modules that
-      // never declared these fields are unaffected.
-      shieldArc: moduleDef.shieldArc ?? Math.PI * 2,
-      shieldFacing: moduleDef.shieldFacing ?? 0,
-      // Directional thruster default: an engine without an explicit facing
-      // thrusts along the ship's +x axis (forward), which is the legacy
-      // behaviour and what every shipped engine module currently declares.
-      facing: engineFacingFor(moduleDef.effect),
-      // Per-module weapon facing (Cosmoteer-style mount direction). Defaults
-      // to 0 (fires along ship heading) so legacy modules without an explicit
-      // mount angle behave exactly as before.
-      weaponFacing: weaponFacingFor(moduleDef.effect),
-    });
+  for (const { col, row } of footprint(grid)) {
+    const cell = grid.cells[row * grid.cols + col];
+    if (cell === undefined) continue;
+    const local = cellToLocal(col, row, grid);
+    const slotId = `cell-${col}-${row}`;
+
+    if (cell.kind === "hull") {
+      const tile = catalog.hullTile(cell.tile);
+      if (tile === undefined) continue;
+      out.push({
+        slotId,
+        moduleId: `hull-${cell.tile}`,
+        kind: "hull",
+        col,
+        row,
+        x: local.x,
+        y: local.y,
+        maxHp: tile.hp,
+        mass: tile.mass,
+        powerDraw: 0,
+        effect: { kind: "hull" },
+        command: false,
+        repairRate: 0,
+        shieldArc: Math.PI * 2,
+        shieldFacing: 0,
+        facing: 0,
+        weaponFacing: 0,
+      });
+      continue;
+    }
+
+    if (cell.kind === "module") {
+      const moduleDef = catalog.module(cell.moduleId);
+      if (moduleDef === undefined) continue;
+      out.push({
+        slotId,
+        moduleId: moduleDef.id,
+        kind: moduleDef.effect.kind,
+        col,
+        row,
+        x: local.x,
+        y: local.y,
+        maxHp: baseHpFor(moduleDef.effect.kind),
+        mass: moduleDef.mass,
+        powerDraw: moduleDef.powerDraw,
+        effect: moduleDef.effect,
+        command: moduleDef.command === true,
+        repairRate: repairRateFor(moduleDef.effect),
+        // Directional shield defaults: a missing arc means a full-sphere
+        // shield, a missing facing defaults to 0 (along +x).
+        shieldArc: moduleDef.shieldArc ?? Math.PI * 2,
+        shieldFacing: moduleDef.shieldFacing ?? 0,
+        // The cell's facing is the module's mount direction (ship-local):
+        // engines thrust along it, weapons fire along it.
+        facing: engineFacingFor(moduleDef.effect, cell),
+        weaponFacing: weaponFacingFor(moduleDef.effect, cell),
+      });
+    }
   }
   return out;
 }
@@ -125,22 +155,18 @@ function repairRateFor(effect: ModuleEffect): number {
   return 0;
 }
 
-/** Read the engine's thrust direction (radians, ship-local). Only engine
- *  modules have a meaningful value; every other kind contributes 0 (its
- *  `facing` field is unused by the engine). A missing `facing` on the
- *  effect defaults to 0 (forward), preserving legacy behaviour. */
-function engineFacingFor(effect: ModuleEffect): number {
+/** Engine thrust direction (radians, ship-local): the cell's facing for an
+ *  engine, 0 for everything else (their facing is unused by the engine). */
+function engineFacingFor(effect: ModuleEffect, cell: GridCell): number {
   if (effect.kind !== "engine") return 0;
-  return effect.facing ?? 0;
+  return cell.kind === "module" ? cell.facing : 0;
 }
 
-/** Read the ship-local fire direction off a module's effect. Only weapon
- *  modules carry a facing; everything else returns 0 (the default — harmless
- *  for non-weapon kinds). A weapon that omits `facing` fires along the ship's
- *  heading, preserving legacy behaviour. */
-function weaponFacingFor(effect: ModuleEffect): number {
-  if (effect.kind === "weapon") return effect.facing ?? 0;
-  return 0;
+/** Weapon fire direction (radians, ship-local): the cell's facing for a
+ *  weapon, 0 for everything else. */
+function weaponFacingFor(effect: ModuleEffect, cell: GridCell): number {
+  if (effect.kind !== "weapon") return 0;
+  return cell.kind === "module" ? cell.facing : 0;
 }
 
 /** Reflect a deployment across the y-axis: negate x, add π to facing. */
