@@ -5,6 +5,7 @@ import {
   encodeShareable,
 } from "@/sharing/data-url";
 import { createId, nowIso } from "@/domain/id";
+import { defaultOrders } from "@/schema/fleet";
 import type { Fleet } from "@/schema/fleet";
 import type { ShipDesign } from "@/schema/ship";
 
@@ -49,12 +50,7 @@ describe("sharing round-trip", () => {
           designId: createId("design"),
           position: { x: 10, y: 20 },
           facing: 0,
-          orders: {
-            stance: "balanced",
-            targetPriority: "nearest",
-            engageRange: "medium",
-            retreatThreshold: 0,
-          },
+          orders: { ...defaultOrders },
         },
       ],
       createdAt: nowIso(),

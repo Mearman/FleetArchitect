@@ -2,6 +2,7 @@ import {
   ActionIcon,
   Badge,
   Button,
+  Checkbox,
   Group,
   NumberInput,
   Paper,
@@ -444,6 +445,96 @@ export function FleetBuilderRoute() {
                               onChange={(val) =>
                                 updateOrders(row.rowId, {
                                   retreatThreshold: val,
+                                })
+                              }
+                            />
+                          </Stack>
+
+                          <Checkbox
+                            size="xs"
+                            label="Focus fire (concentrate fleet on one target)"
+                            checked={row.orders.focusFire}
+                            onChange={(e) =>
+                              updateOrders(row.rowId, {
+                                focusFire: e.currentTarget.checked,
+                              })
+                            }
+                          />
+
+                          <Stack gap={4}>
+                            <Group justify="space-between">
+                              <Text size="xs" c="dimmed">
+                                Vulnerable target weight
+                              </Text>
+                              <Text size="xs" c="dimmed">
+                                {Math.round(
+                                  row.orders.vulnerableTargetWeight * 100,
+                                )}
+                                %
+                              </Text>
+                            </Group>
+                            <Slider
+                              size="xs"
+                              min={0}
+                              max={1}
+                              step={0.05}
+                              value={row.orders.vulnerableTargetWeight}
+                              onChange={(val) =>
+                                updateOrders(row.rowId, {
+                                  vulnerableTargetWeight: val,
+                                })
+                              }
+                            />
+                          </Stack>
+
+                          <Stack gap={4}>
+                            <Group justify="space-between">
+                              <Text size="xs" c="dimmed">
+                                Formation keeping
+                              </Text>
+                              <Text size="xs" c="dimmed">
+                                {Math.round(
+                                  row.orders.formationKeeping * 100,
+                                )}
+                                %
+                              </Text>
+                            </Group>
+                            <Slider
+                              size="xs"
+                              min={0}
+                              max={1}
+                              step={0.05}
+                              value={row.orders.formationKeeping}
+                              onChange={(val) =>
+                                updateOrders(row.rowId, {
+                                  formationKeeping: val,
+                                })
+                              }
+                            />
+                          </Stack>
+
+                          <Stack gap={4}>
+                            <Group justify="space-between">
+                              <Text size="xs" c="dimmed">
+                                Range-keeping band
+                              </Text>
+                              <Text size="xs" c="dimmed">
+                                ±
+                                {Math.round(
+                                  row.orders.rangeKeepingBand * 50,
+                                )}
+                                %
+                              </Text>
+                            </Group>
+                            <Slider
+                              size="xs"
+                              min={0.1}
+                              max={0.9}
+                              step={0.05}
+                              value={row.orders.rangeKeepingBand}
+                              onChange={(val) =>
+                                updateOrders(row.rowId, {
+                                  rangeKeepingBand: val,
                                 })
                               }
                             />
