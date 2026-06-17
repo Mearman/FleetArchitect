@@ -22,10 +22,14 @@ export type ShipClassification = z.infer<typeof ShipClassification>;
  * in their stats and render metadata — the grid records which type sits in a
  * cell, the catalog defines what that type weighs and how much punishment it
  * takes.
+ *
+ * `faction` identifies which race's part set this tile belongs to. A valid
+ * design uses tiles and modules from exactly one faction.
  */
 export const HullTileDefinition = z.object({
   type: HullTileType,
   name: z.string().min(1),
+  faction: z.string().min(1),
   /** Structural mass contributed by one tile of this type. */
   mass: z.number().min(0),
   /** Hit points of one tile of this type — its break-apart anchor strength. */
