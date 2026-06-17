@@ -3,6 +3,7 @@ import { analyseShipDesign } from "@/domain/stats";
 import type { Catalog } from "@/domain/catalog";
 import type { CombatShip, ResolvedModule } from "@/domain/simulation/types";
 import type { Fleet, FleetShip } from "@/schema/fleet";
+import type { ModuleEffect } from "@/schema/module";
 import type { ShipDesign } from "@/schema/ship";
 import type { HullDefinition } from "@/schema/hull";
 
@@ -75,6 +76,7 @@ function resolveModules(
       powerDraw: moduleDef.powerDraw,
       effect: moduleDef.effect,
       command: moduleDef.command === true,
+      repairRate: repairRateFor(moduleDef.effect),
     });
   }
   return out;
@@ -96,7 +98,16 @@ function baseHpFor(kind: ResolvedModule["kind"]): number {
       return 15;
     case "pointDefense":
       return 20;
+    case "repair":
+      return 25;
   }
+}
+
+/** Read the per-tick HP-heal rate off a module's effect. Only repair modules
+ *  have one; every other kind contributes 0. */
+function repairRateFor(effect: ModuleEffect): number {
+  if (effect.kind === "repair") return effect.repairRate;
+  return 0;
 }
 
 /** Reflect a deployment across the y-axis: negate x, add π to facing. */
