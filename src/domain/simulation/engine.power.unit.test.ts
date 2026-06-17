@@ -71,6 +71,7 @@ function moduleOf(
     powerDraw,
     effect,
     command,
+    repairRate: 0,
   };
 }
 

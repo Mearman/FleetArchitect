@@ -111,6 +111,21 @@ export const PointDefenseEffect = z.object({
 export type PointDefenseEffect = z.infer<typeof PointDefenseEffect>;
 
 /**
+ * Effect payload for a damage-control / repair bay. Each tick, every alive
+ * repair module on a ship heals the HP of one damaged alive module on the
+ * same ship by `repairRate` (capped at the target's max HP). A repair module
+ * with a `repairRate` of 0 is inert; v1 keeps repair module-driven and does
+ * not depend on crew. A typical value is around 2 HP/tick — small per tick,
+ * so a single bay can't undo a salvo in one frame but stacks with others
+ * and lets the ship stay in the fight longer than it otherwise would.
+ */
+export const RepairEffect = z.object({
+  kind: z.literal("repair"),
+  repairRate: z.number().min(0),
+});
+export type RepairEffect = z.infer<typeof RepairEffect>;
+
+/**
  * Discriminated union of all module effects. New module kinds extend this.
  */
 export const ModuleEffect = z.discriminatedUnion("kind", [
@@ -121,6 +136,7 @@ export const ModuleEffect = z.discriminatedUnion("kind", [
   PowerPlantEffect,
   CrewEffect,
   PointDefenseEffect,
+  RepairEffect,
 ]);
 export type ModuleEffect = z.infer<typeof ModuleEffect>;
 

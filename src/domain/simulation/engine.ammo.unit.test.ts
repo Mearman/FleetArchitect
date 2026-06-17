@@ -38,7 +38,7 @@ function moduleOf(
   powerDraw = 0,
   command = false,
 ): ResolvedModule {
-  return { slotId, moduleId: `mod-${slotId}`, kind: effect.kind, x, y, maxHp, mass, powerDraw, effect, command };
+  return { slotId, moduleId: `mod-${slotId}`, kind: effect.kind, x, y, maxHp, mass, powerDraw, effect, command, repairRate: 0 };
 }
 
 /** A modular attacker whose single weapon has a small, finite magazine. */
