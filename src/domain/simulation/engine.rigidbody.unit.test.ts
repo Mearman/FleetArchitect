@@ -192,11 +192,11 @@ describe("engine.rigidbody — centre of mass", () => {
 
   it("an asymmetric modular ship has its CoM offset toward the heavier side", () => {
     // Modules: command (mass 5 at origin), h1 (mass 5 at x=-10), h2
-    // (mass 50 at x=+10). The ship's hull base mass (frigate: 15) sits
-    // at the origin as a point mass. So:
-    //   Σ m_i * x_i = 15*0 + 5*0 + 5*(-10) + 50*10 = -50 + 500 = 450
-    //   Σ m_i       = 15 + 5 + 5 + 50 = 75
-    //   CoM_x       = 450 / 75 = 6
+    // (mass 50 at x=+10). A ship's mass is now exactly the sum of its cell
+    // masses — there is no per-class hull base point mass — so:
+    //   Σ m_i * x_i = 5*0 + 5*(-10) + 50*10 = -50 + 500 = 450
+    //   Σ m_i       = 5 + 5 + 50 = 60
+    //   CoM_x       = 450 / 60 = 7.5
     const ship = modularShip("s1", "attacker", { x: 0, y: 0 }, 0, [
       moduleOf("h1", { kind: "hull" }, -10, 0, 100, 5),
       moduleOf("h2", { kind: "hull" }, 10, 0, 100, 50),
@@ -205,7 +205,7 @@ describe("engine.rigidbody — centre of mass", () => {
     const f0 = result.frames[0];
     if (f0 === undefined) throw new Error("no frame 0");
     const s = findShip(f0, "s1");
-    expect(s.comX ?? 0).toBeCloseTo(6, 5);
+    expect(s.comX ?? 0).toBeCloseTo(7.5, 5);
     expect(s.comY ?? 0).toBeCloseTo(0, 5);
   });
 });
@@ -223,6 +223,10 @@ describe("engine.rigidbody — firing recoil", () => {
     // We use cooldown 1 with a fixed seed so the weapon's first fire
     // happens at a deterministic tick, then scan for the first frame
     // where the shooter's x-velocity has changed.
+    //
+    // Mass is the sum of cell masses (no per-class hull base): command (5) +
+    // weapon (5) = 10, so the per-shot delta_v = -m_p * v_p / M =
+    // -(0.5 * 4) / 10 = -0.2.
     const ship = modularShip("a1", "attacker", { x: 0, y: 0 }, 0, [
       moduleOf("w1", cannon({ cooldown: 1 }), 12, 0, 100, 5),
     ]);
@@ -241,11 +245,11 @@ describe("engine.rigidbody — firing recoil", () => {
     if (firedFrame === undefined) throw new Error("shooter never fired");
     const v = vxOf(firedFrame, "a1");
     expect(v, "forward shot must push shooter backward (-x)").toBeLessThan(-1e-4);
-    // Expected impulse magnitude is m_p * v_p / M = 0.5 * 4 / 25 = 0.08.
+    // Expected impulse magnitude is m_p * v_p / M = 0.5 * 4 / 10 = 0.2.
     // Damping may reduce the recorded value slightly but the magnitude
     // is the right order.
     expect(Math.abs(v)).toBeGreaterThan(0.005);
-    expect(Math.abs(v)).toBeLessThan(0.1);
+    expect(Math.abs(v)).toBeLessThan(0.25);
     // Perpendicular recoil is zero (weapon mounted on the centreline).
     expect(Math.abs(vyOf(firedFrame, "a1"))).toBeCloseTo(0, 5);
   });
@@ -495,13 +499,13 @@ describe("engine.rigidbody — break-apart chunks", () => {
     if (splitFrame === undefined) throw new Error("ship never split");
     const chunks = splitFrame.ships.filter((s) => s.instanceId.includes("chunk"));
     expect(chunks.length, "expected at least one chunk after split").toBeGreaterThanOrEqual(1);
-    // Each chunk carries one hull cell at (-14, ±1) plus the frigate's
-    // hull base mass (15) as a point at the origin. So:
-    //   CoM_x = (15*0 + 5*(-14)) / (15+5) = -70/20 = -3.5
-    //   CoM_y = (15*0 + 5*(±1)) / 20     = ±5/20 = ±0.25
+    // Each chunk carries one hull cell at (-14, ±1). A ship's mass is now
+    // exactly its cells' mass — no hull base point — so a single-cell chunk's
+    // CoM sits at that cell:
+    //   CoM_x = -14, CoM_y = ±1
     for (const c of chunks) {
-      expect(c.comX ?? 0, "chunk CoM_x must reflect its single cell's x").toBeCloseTo(-3.5, 5);
-      expect(Math.abs(c.comY ?? 0), "chunk CoM_y must reflect its single cell's y").toBeCloseTo(0.25, 5);
+      expect(c.comX ?? 0, "chunk CoM_x must reflect its single cell's x").toBeCloseTo(-14, 5);
+      expect(Math.abs(c.comY ?? 0), "chunk CoM_y must reflect its single cell's y").toBeCloseTo(1, 5);
     }
   });
 });
