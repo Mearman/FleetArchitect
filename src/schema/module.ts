@@ -172,11 +172,15 @@ export type ModuleEffect = z.infer<typeof ModuleEffect>;
  * A module as it appears in the catalog: a fixed, shareable definition.
  * Ship designs reference modules by id; the catalog is bundled with the app
  * and versioned with it, so it is never stored per-design.
+ *
+ * `faction` identifies which race's part set this module belongs to. A valid
+ * design uses modules (and hull tiles) from exactly one faction.
  */
 export const ModuleDefinition = z.object({
   id: EntityId,
   name: z.string().min(1),
   description: z.string(),
+  faction: z.string().min(1),
   category: z.enum(["weapon", "defence", "propulsion", "system", "crew"]),
   mass: z.number().min(0),
   cost: z.number().min(0),

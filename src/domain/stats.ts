@@ -46,7 +46,10 @@ export type DesignFault =
   | { kind: "unknownHullTile"; col: number; row: number; tile: string }
   | { kind: "massExceeded"; mass: number; capacity: number }
   | { kind: "powerDeficit"; net: number }
-  | { kind: "crewDeficit"; net: number };
+  | { kind: "crewDeficit"; net: number }
+  /** Parts from more than one faction are present on this design. A valid
+   *  ship uses tiles and modules exclusively from the design's own faction. */
+  | { kind: "crossFaction"; expected: string; found: string[] };
 
 export interface ShipDesignAnalysis {
   stats: ShipStats;
@@ -135,11 +138,36 @@ function applyModule(
 
 /** Mass of a single grid cell: a hull tile's mass, a module's mass, or 0 for
  *  an empty cell or a reference the catalog doesn't know (which is reported as
- *  a fault separately, so a zero-mass contribution there is harmless). */
-export function cellMass(cell: GridCell, catalog: Catalog): number {
-  if (cell.kind === "hull") return catalog.hullTile(cell.tile)?.mass ?? 0;
+ *  a fault separately, so a zero-mass contribution there is harmless).
+ *
+ *  Pass the design's faction so the faction-specific tile variant (with its
+ *  correct mass) is used rather than any arbitrary faction's variant. */
+export function cellMass(cell: GridCell, catalog: Catalog, faction?: string): number {
+  if (cell.kind === "hull") {
+    const tile = faction !== undefined
+      ? (catalog.hullTileFor(faction, cell.tile) ?? catalog.hullTile(cell.tile))
+      : catalog.hullTile(cell.tile);
+    return tile?.mass ?? 0;
+  }
   if (cell.kind === "module") return catalog.module(cell.moduleId)?.mass ?? 0;
   return 0;
+}
+
+/** Collect the set of faction names used by module cells in the grid.
+ *  Hull tile cells only record a tile _type_ (block/edge/corner/strut) which is
+ *  shared across factions; the faction is resolved from the catalog at render/
+ *  stat time using the design's declared faction. Cross-faction violations are
+ *  therefore only detectable through explicitly-identified modules.
+ *  Unknown modules are skipped (those are reported as separate faults). */
+function partFactions(grid: ShipDesign["grid"], catalog: Catalog): Set<string> {
+  const factions = new Set<string>();
+  for (const cell of grid.cells) {
+    if (cell.kind === "module") {
+      const mod = catalog.module(cell.moduleId);
+      if (mod !== undefined) factions.add(mod.faction);
+    }
+  }
+  return factions;
 }
 
 /**
@@ -167,7 +195,10 @@ export function analyseShipDesign(
     const slotId = `cell-${col}-${row}`;
 
     if (cell.kind === "hull") {
-      const tile = catalog.hullTile(cell.tile);
+      // Use the faction-aware lookup so Swarm tiles use Swarm stats, not Terran.
+      const tile =
+        catalog.hullTileFor(design.faction, cell.tile) ??
+        catalog.hullTile(cell.tile);
       if (tile === undefined) {
         faults.push({ kind: "unknownHullTile", col, row, tile: cell.tile });
         continue;
@@ -188,7 +219,7 @@ export function analyseShipDesign(
     }
   }
 
-  stats.mass = deriveMass(grid, (cell) => cellMass(cell, catalog));
+  stats.mass = deriveMass(grid, (cell) => cellMass(cell, catalog, design.faction));
   stats.powerNet = stats.powerOutput - stats.powerDraw;
   stats.crewNet = stats.crewCapacity - stats.crewRequired;
 
@@ -208,6 +239,18 @@ export function analyseShipDesign(
   }
   if (stats.crewNet < 0) {
     faults.push({ kind: "crewDeficit", net: stats.crewNet });
+  }
+
+  // Validate faction purity: every part on this design must belong to the
+  // design's declared faction. Parts from other factions produce a fault.
+  const usedFactions = partFactions(grid, catalog);
+  const wrongFactions = [...usedFactions].filter((f) => f !== design.faction);
+  if (wrongFactions.length > 0) {
+    faults.push({
+      kind: "crossFaction",
+      expected: design.faction,
+      found: wrongFactions,
+    });
   }
 
   return { stats, faults, valid: faults.length === 0 };
