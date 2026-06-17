@@ -54,7 +54,11 @@ export const ShipSnapshot = z.object({
           "power",
           "crew",
         ]),
+        /** Position in ship-local (design) coordinates, for rendering. */
+        x: z.number(),
+        y: z.number(),
         hp: z.number(),
+        maxHp: z.number(),
         alive: z.boolean(),
       }),
     )
