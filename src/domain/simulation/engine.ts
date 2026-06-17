@@ -46,8 +46,6 @@ const SIM = {
     defensive: 1.15,
     evasive: 1.4,
   },
-  /** Once within this fraction of the desired range, a ship stops closing. */
-  rangeBand: 0.85,
   /** Approximate collision radius per hull classification, in battle units. */
   radius: {
     fighter: 9,
@@ -753,34 +751,161 @@ function hasAliveCommand(ship: SimShip): boolean {
   return false;
 }
 
-function pickTarget(ship: SimShip, enemies: readonly SimShip[]): SimShip | undefined {
+/**
+ * Score a single enemy for targeting purposes, from `ship`'s perspective.
+ * Higher scores are preferred. The raw priority score is blended with a
+ * vulnerability score when `vulnerableTargetWeight > 0`:
+ *
+ *   finalScore = (1 − w) * priorityScore_normalised + w * vulnerabilityScore
+ *
+ * Priority scores are normalised to the range [0, 1] across the living set
+ * so the blend is dimensionally consistent — otherwise a cost-based score in
+ * the thousands would swamp a distance-based score near −1.
+ *
+ * Vulnerability is `1 − (structure + shield) / (maxStructure + maxShield)`,
+ * so a freshly spawned enemy scores 0 and a nearly dead one scores near 1.
+ * When maxStructure + maxShield is zero the score is treated as 0.
+ */
+function scoreEnemy(
+  ship: SimShip,
+  enemy: SimShip,
+  living: readonly SimShip[],
+): number {
+  // Raw priority score (higher = better target for this priority).
+  const distSq = (enemy.x - ship.x) ** 2 + (enemy.y - ship.y) ** 2;
+  let rawScore: number;
+  switch (ship.orders.targetPriority) {
+    case "nearest":
+      rawScore = -distSq;
+      break;
+    case "weakest":
+      rawScore = -(enemy.structure + enemy.shield);
+      break;
+    case "strongest":
+      rawScore = enemy.structure + enemy.shield;
+      break;
+    case "highestCost":
+      rawScore = enemy.cost;
+      break;
+  }
+
+  const w = ship.orders.vulnerableTargetWeight;
+  if (w <= 0) return rawScore; // fast path: no blending needed
+
+  // Normalise priority score to [0, 1] across the living set so the blend
+  // with the vulnerability score (already in [0,1]) is dimensionally consistent.
+  let minRaw = rawScore;
+  let maxRaw = rawScore;
+  for (const e of living) {
+    const dSq = (e.x - ship.x) ** 2 + (e.y - ship.y) ** 2;
+    let s: number;
+    switch (ship.orders.targetPriority) {
+      case "nearest":
+        s = -dSq;
+        break;
+      case "weakest":
+        s = -(e.structure + e.shield);
+        break;
+      case "strongest":
+        s = e.structure + e.shield;
+        break;
+      case "highestCost":
+        s = e.cost;
+        break;
+    }
+    if (s < minRaw) minRaw = s;
+    if (s > maxRaw) maxRaw = s;
+  }
+  const range = maxRaw - minRaw;
+  const normPriority = range > 0 ? (rawScore - minRaw) / range : 1;
+
+  // Vulnerability: fraction of max HP already lost.
+  const maxTotal = enemy.maxStructure + enemy.maxShield;
+  const curTotal = enemy.structure + enemy.shield;
+  const vulnerability = maxTotal > 0 ? 1 - curTotal / maxTotal : 0;
+
+  return (1 - w) * normPriority + w * vulnerability;
+}
+
+/**
+ * Pick the best target for `ship` from `enemies`.
+ *
+ * When `focusTargetId` is defined (non-undefined), the ship is part of a
+ * focus-fire group and must pick that target if it is still alive. This lets
+ * an entire side concentrate fire on one enemy at a time rather than spreading
+ * damage across the fleet.
+ *
+ * Otherwise the ship scores each living enemy with `scoreEnemy` and picks the
+ * highest. `vulnerableTargetWeight` blends vulnerability into that score.
+ */
+function pickTarget(
+  ship: SimShip,
+  enemies: readonly SimShip[],
+  focusTargetId: string | undefined,
+): SimShip | undefined {
   const living = enemies.filter((e) => e.alive);
   if (living.length === 0) return undefined;
+
+  // Focus-fire: override individual preference with the fleet-agreed target.
+  if (ship.orders.focusFire && focusTargetId !== undefined) {
+    const focus = living.find((e) => e.instanceId === focusTargetId);
+    if (focus !== undefined) return focus;
+    // Fleet target is dead — fall through to individual scoring.
+  }
+
   let best: SimShip | undefined;
   let bestScore = -Infinity;
   for (const enemy of living) {
-    const distSq = (enemy.x - ship.x) ** 2 + (enemy.y - ship.y) ** 2;
-    let score: number;
-    switch (ship.orders.targetPriority) {
-      case "nearest":
-        score = -distSq;
-        break;
-      case "weakest":
-        score = -(enemy.structure + enemy.shield);
-        break;
-      case "strongest":
-        score = enemy.structure + enemy.shield;
-        break;
-      case "highestCost":
-        score = enemy.cost;
-        break;
-    }
+    const score = scoreEnemy(ship, enemy, living);
     if (score > bestScore) {
       bestScore = score;
       best = enemy;
     }
   }
   return best;
+}
+
+/**
+ * Elect the fleet-agreed focus-fire target for a side. All living ships on
+ * the side with `focusFire = true` vote by scoring each enemy; the enemy with
+ * the highest aggregate score wins. Returns `undefined` when no ships have
+ * focus-fire enabled or there are no living enemies.
+ *
+ * Using an aggregate vote rather than a single ship's score makes the choice
+ * stable even as ships are destroyed: the fleet converges on the same answer
+ * regardless of which ships are alive, as long as at least one focus-fire ship
+ * remains on the side.
+ */
+function electFocusTarget(
+  side: "attacker" | "defender",
+  ships: readonly SimShip[],
+  enemies: readonly SimShip[],
+): string | undefined {
+  const living = enemies.filter((e) => e.alive);
+  if (living.length === 0) return undefined;
+  const voters = ships.filter(
+    (s) => s.alive && s.side === side && s.orders.focusFire,
+  );
+  if (voters.length === 0) return undefined;
+
+  // Aggregate score: sum each voter's scoreEnemy across living enemies.
+  const totals = new Map<string, number>();
+  for (const voter of voters) {
+    for (const enemy of living) {
+      const s = scoreEnemy(voter, enemy, living);
+      totals.set(enemy.instanceId, (totals.get(enemy.instanceId) ?? 0) + s);
+    }
+  }
+
+  let bestId: string | undefined;
+  let bestTotal = -Infinity;
+  for (const [id, total] of totals) {
+    if (total > bestTotal) {
+      bestTotal = total;
+      bestId = id;
+    }
+  }
+  return bestId;
 }
 
 /**
@@ -1638,10 +1763,19 @@ export function runBattle(inputs: BattleInputs): BattleResult {
 
   for (let tick = 1; tick <= inputs.maxTicks; tick++) {
     // 1. Targeting.
+    // Elect focus-fire targets once per tick per side. A ship with
+    // focusFire=true defers to this fleet-agreed target; all others pick
+    // independently. Computing the election outside the per-ship loop keeps
+    // determinism: every ship on a side sees the same fleet target for this
+    // tick, not a target that shifts as earlier ships set their own.
+    const attackerFocusTarget = electFocusTarget("attacker", ships, defenders);
+    const defenderFocusTarget = electFocusTarget("defender", ships, attackers);
     for (const ship of ships) {
       if (!ship.alive) continue;
       const enemies = ship.side === "attacker" ? defenders : attackers;
-      ship.target = pickTarget(ship, enemies)?.instanceId;
+      const focusTarget =
+        ship.side === "attacker" ? attackerFocusTarget : defenderFocusTarget;
+      ship.target = pickTarget(ship, enemies, focusTarget)?.instanceId;
     }
 
     // 2. Movement + facing.
@@ -1845,11 +1979,37 @@ function rotateLocal(facing: number, lx: number, ly: number): { x: number; y: nu
   return { x: lx * c - ly * s, y: lx * s + ly * c };
 }
 
+/**
+ * Compute the centroid of all alive ships on a given side. Used by
+ * formation-keeping to pull ships toward their fleet's centre of mass.
+ * Returns `undefined` when no alive ships are present.
+ */
+function fleetCentroid(
+  ships: readonly SimShip[],
+  side: "attacker" | "defender",
+): { x: number; y: number } | undefined {
+  let cx = 0;
+  let cy = 0;
+  let count = 0;
+  for (const s of ships) {
+    if (!s.alive || s.side !== side) continue;
+    cx += s.x;
+    cy += s.y;
+    count += 1;
+  }
+  return count > 0 ? { x: cx / count, y: cy / count } : undefined;
+}
+
 function moveShips(
   ships: readonly SimShip[],
   byId: Map<string, SimShip>,
   anomaly: BattleInputs["anomaly"],
 ): void {
+  // Pre-compute fleet centroids once per tick so formation-keeping blends
+  // each ship's desired heading toward a stable reference point, not one
+  // that shifts mid-loop as individual ships move.
+  const centroidAttacker = fleetCentroid(ships, "attacker");
+  const centroidDefender = fleetCentroid(ships, "defender");
   for (const ship of ships) {
     if (!ship.alive) continue;
 
@@ -1900,6 +2060,13 @@ function moveShips(
     let desiredFacing: number;
     let shouldThrust: boolean;
     let reverse = false;
+    // Each ship's rangeKeepingBand determines how wide the "at range" dead-zone
+    // is. A wider band means the ship tolerates being further from its ideal
+    // range before correcting — cautious captains set wide bands, aggressive
+    // ones set narrow ones so they close quickly. The inner edge of the dead-
+    // zone is `1 - rangeKeepingBand` of `want`; the outer edge is `want`
+    // itself (outside `want` always closes).
+    const band = ship.orders.rangeKeepingBand;
     if (isRetreating(ship)) {
       // Turn tail and flee; retreating ships do not fire.
       desiredFacing = Math.atan2(-dy, -dx);
@@ -1909,10 +2076,10 @@ function moveShips(
       shouldThrust = false;
     } else {
       const want = desiredRange(ship.orders, ship.weapons);
-      if (dist > want * SIM.rangeBand) {
+      if (dist > want) {
         desiredFacing = Math.atan2(dy, dx);
         shouldThrust = true;
-      } else if (dist < want * SIM.rangeBand * 0.6) {
+      } else if (dist < want * (1 - band)) {
         // Too close — face the target and reverse-thrust to back off while
         // keeping guns on it. A Newtonian kiting maneuver that decelerates
         // instead of just turning tail.
@@ -1923,6 +2090,30 @@ function moveShips(
         desiredFacing = Math.atan2(dy, dx);
         shouldThrust = false;
       }
+    }
+
+    // Formation-keeping: when formationKeeping > 0, blend the desired facing
+    // with the direction toward the fleet's centroid. The blend is a weighted
+    // average of the two bearings using the angular difference, so the ship
+    // steers somewhere between "toward my target" and "toward my fleet's
+    // centre". At formationKeeping=0 this is a no-op; at 1 it overrides the
+    // target-facing entirely (useful only for pure escort/formation flying).
+    // Only applied when the ship is not retreating and has a formation to join.
+    const centroid =
+      ship.side === "attacker" ? centroidAttacker : centroidDefender;
+    if (
+      !isRetreating(ship) &&
+      ship.orders.formationKeeping > 0 &&
+      centroid !== undefined
+    ) {
+      const formationFacing = Math.atan2(
+        centroid.y - ship.y,
+        centroid.x - ship.x,
+      );
+      const fk = ship.orders.formationKeeping;
+      // Blend using the angular difference to avoid wrapping artefacts.
+      const angDiff = angleDifference(desiredFacing, formationFacing);
+      desiredFacing = desiredFacing + angDiff * fk;
     }
 
     // Angular: apply torque toward desiredFacing (capped by turnRate as an
