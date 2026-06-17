@@ -2,6 +2,7 @@ import { createId, nowIso } from "@/domain/id";
 import { mulberry32, ranged } from "@/domain/simulation/rng";
 import type { BattleFrame, BattleResult, BattleSide } from "@/schema/battle";
 import type { ShipClassification } from "@/schema/hull";
+import { DEFAULT_WEAPON_AMMO } from "@/schema/module";
 import type { ModuleEffect, WeaponEffect, WeaponType } from "@/schema/module";
 import type { Orders } from "@/schema/fleet";
 import type { BattleInputs, CombatShip, ResolvedModule } from "./types";
@@ -162,6 +163,12 @@ interface SimModule {
   effect: ModuleEffect;
   /** Weapon: ticks until next fire. Shield regen is pooled at ship level. */
   cooldown: number;
+  /**
+   * Weapon: remaining magazine. Decremented by 1 per shot; a weapon at 0
+   * cannot fire. Always present on weapon modules; initialised from the
+   * effect's `ammo` (defaulting to DEFAULT_WEAPON_AMMO when undefined).
+   */
+  ammo: number;
   alive: boolean;
   /**
    * Whether the power grid can sustain this module this tick. Reactors
@@ -288,6 +295,9 @@ function toSimModule(m: ResolvedModule, rng: () => number): SimModule {
     effect,
     // Stagger weapon cooldowns so they don't all fire on tick 0.
     cooldown: isWeapon ? Math.floor(rng() * (effect.cooldown + 1)) : 0,
+    // Weapons with finite ammo carry it through; without an explicit value
+    // they get a large default so they effectively never run dry.
+    ammo: isWeapon ? effect.ammo ?? DEFAULT_WEAPON_AMMO : 0,
     alive: true,
     powered: true,
   };
@@ -861,10 +871,10 @@ function fireWeapons(
     const dist = Math.hypot(target.x - ship.x, target.y - ship.y);
 
     // Per-module path: iterate the ship's own weapon modules, reading and
-    // writing each module's cooldown (so destruction is reflected live and
-    // recomputeAggregates can't clobber in-flight cooldowns). An unpowered
-    // weapon is inert — it can't fire — but its cooldown still ticks down,
-    // so the moment the power grid recovers it fires on its next cycle.
+    // writing each module's cooldown and ammo (so destruction is reflected
+    // live and recomputeAggregates can't clobber in-flight state). An
+    // unpowered or dry weapon is inert — but its cooldown still ticks, so
+    // it fires the moment the grid recovers or the magazine is restored.
     if (ship.modules !== undefined) {
       for (const m of ship.modules) {
         if (!m.alive || m.effect.kind !== "weapon") continue;
@@ -872,9 +882,12 @@ function fireWeapons(
           m.cooldown -= 1;
           continue;
         }
-        if (!m.powered) continue; // reactor can't sustain this weapon this tick
+        if (!m.powered) continue; // reactor can't sustain it this tick
         const weapon = m.effect;
         if (dist > weapon.range || facingError > SIM.firingArc) continue;
+        if (m.ammo <= 0) continue; // out of ammo; no resupply yet
+        // A genuine, in-range shot: spend a round and reset the cycle.
+        m.ammo -= 1;
         m.cooldown = weapon.cooldown;
         fireOne(ship, weapon, target, rng, fired);
       }

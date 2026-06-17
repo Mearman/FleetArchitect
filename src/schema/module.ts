@@ -25,7 +25,9 @@ export type WeaponType = z.infer<typeof WeaponType>;
 
 const zeroToOne = z.number().min(0).max(1);
 
-/** Effect payload for an offensive module. `projectileSpeed: 0` means hitscan. */
+/** Effect payload for an offensive module. `projectileSpeed: 0` means hitscan.
+ *  `ammo` is the finite magazine; when omitted the weapon gets a large default
+ *  (`DEFAULT_WEAPON_AMMO`) and effectively never runs dry. */
 export const WeaponEffect = z.object({
   kind: z.literal("weapon"),
   weaponType: WeaponType,
@@ -37,7 +39,14 @@ export const WeaponEffect = z.object({
   shieldPiercing: zeroToOne,
   armourPiercing: zeroToOne,
   spread: z.number().min(0),
+  /** Finite magazine; consumes 1 per shot and cannot fire at 0. */
+  ammo: z.number().int().min(0).optional(),
 });
+
+/** Default ammo for weapons that omit the field. Large enough that a weapon
+ *  without an explicit magazine effectively never runs dry in a normal battle,
+ *  while still capping pathological infinite-fire loops. */
+export const DEFAULT_WEAPON_AMMO = 9999;
 export type WeaponEffect = z.infer<typeof WeaponEffect>;
 
 /** Effect payload for a shield generator. */
