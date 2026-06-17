@@ -178,6 +178,11 @@ interface SimModule {
   powered: boolean;
   /** Whether this module serves as the ship's bridge / command module. */
   command: boolean;
+  /**
+   * HP healed to one damaged module on the same ship per tick. Zero for
+   * every non-repair module. Read by the per-tick repair step.
+   */
+  repairRate: number;
 }
 
 /** Mutable in-flight projectile. */
@@ -303,6 +308,7 @@ function toSimModule(m: ResolvedModule, rng: () => number): SimModule {
     alive: true,
     powered: true,
     command: m.command,
+    repairRate: m.repairRate,
   };
 }
 
@@ -419,6 +425,7 @@ function recomputeAggregates(ship: SimShip): void {
         break;
       case "power":
       case "crew":
+      case "repair":
         break;
     }
   }
@@ -688,6 +695,24 @@ export function runBattle(inputs: BattleInputs): BattleResult {
           ship.maxShield,
           ship.shield + ship.shieldRechargeRate * regenFactor,
         );
+      }
+    }
+
+    // 5b. Module repair (per-module ships only). Each alive repair module on
+    //     a living ship picks the first damaged alive module in array order
+    //     and heals it by `repairRate`, capped at maxHp. A repair module can
+    //     heal itself (a bay patching its own systems); multiple repair
+    //     modules each heal one module per tick; if there's nothing damaged
+    //     yet, they idle. A repair module destroyed mid-battle can't run
+    //     any more. Aggregated ships have no modules to repair, so the step
+    //     is skipped for them.
+    for (const ship of ships) {
+      if (!ship.alive || ship.modules === undefined) continue;
+      for (const healer of ship.modules) {
+        if (!healer.alive || healer.repairRate <= 0) continue;
+        const target = ship.modules.find((m) => m.alive && m.hp < m.maxHp);
+        if (target === undefined) continue;
+        target.hp = Math.min(target.maxHp, target.hp + healer.repairRate);
       }
     }
 

@@ -43,10 +43,17 @@ export interface ResolvedModule {
   mass: number;
   /** Power drawn from the reactor each tick to run this module. */
   powerDraw: number;
-  /** The module's effect (weapon/shield/armour/engine/power/crew). */
+  /** The module's effect (weapon/shield/armour/engine/power/crew/repair). */
   effect: ModuleEffect;
   /** Whether this module is a bridge / command module. */
   command: boolean;
+  /**
+   * Per-tick HP healed to one damaged module on the same ship. Non-zero only
+   * for repair modules; every other kind reads it as 0. Copied off the
+   * module definition by the resolver so the per-tick loop doesn't have to
+   * re-derive it from the effect.
+   */
+  repairRate: number;
 }
 
 /** Everything the simulator needs to run a deterministic battle. */
