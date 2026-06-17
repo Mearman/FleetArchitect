@@ -94,6 +94,8 @@ function baseHpFor(kind: ResolvedModule["kind"]): number {
       return 20;
     case "crew":
       return 15;
+    case "pointDefense":
+      return 20;
   }
 }
 
