@@ -56,6 +56,7 @@ function moduleOf(
     shieldArc: Math.PI * 2,
     shieldFacing: 0,
     facing: effect.kind === "engine" ? effect.facing ?? 0 : 0,
+    weaponFacing: 0,
   };
 }
 
