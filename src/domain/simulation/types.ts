@@ -31,10 +31,19 @@ export interface CombatShip {
 
 /** Per-module initial state, built from a ShipDesign by the resolver. */
 export interface ResolvedModule {
+  /** Stable per-cell identifier, derived from the grid coordinates
+   *  (`cell-<col>-<row>`). Used by the engine and snapshots to track a cell
+   *  across ticks; not a hull slot any more. */
   slotId: string;
   moduleId: string;
   kind: ModuleEffect["kind"];
-  /** Position on the hull (from the slot) for hit selection and UI. */
+  /** Integer grid coordinates of the cell this module occupies. Carried
+   *  through to break-apart so 4-connected adjacency is exact, with no
+   *  rounding of the ship-local world position. */
+  col: number;
+  row: number;
+  /** Ship-local centre position of the cell (from `cellToLocal`) for hit
+   *  selection, muzzle offsets, and rendering. */
   x: number;
   y: number;
   /** Starting (and maximum) hit points. */

@@ -55,6 +55,8 @@ function moduleOf(
     slotId,
     moduleId: `mod-${slotId}`,
     kind: effect.kind,
+    col: Math.round(x),
+    row: Math.round(y),
     x,
     y,
     maxHp,
@@ -73,6 +75,7 @@ function moduleOf(
 function stats(over: Partial<ShipStats> = {}): ShipStats {
   return {
     mass: 10,
+    massCapacity: 100,
     cost: 100,
     powerDraw: 0,
     powerOutput: 0,
@@ -249,25 +252,20 @@ describe("engine.rigidbody — firing recoil", () => {
 
   it("a side-mounted weapon on a stationary ship produces both linear and angular recoil", () => {
     // Ship at origin facing +x. Layout (all Chebyshev-adjacent through
-    // the command cell at the origin):
+    // an L-shape so every cell is 4-connected (edge-sharing) and the weapon
+    // sits off the firing axis:
     //   - command (mass 5) at (0, 0)
-    //   - weapon  (mass 5) at (1, 1)   ← offset diagonally
-    //   - hull    (mass 5) at (-1, -1) ← counter-weight, keeps CoM at origin
-    // CoM = (15*0 + 5*0 + 5*1 + 5*(-1)) / 30 = 0 (x and y both).
+    //   - hull    (mass 5) at (1, 0)  ← bridges the command to the weapon
+    //   - weapon  (mass 5) at (1, 1)  ← off the x-axis, so its recoil torques
     //
-    // The weapon fires along +x (weaponFacing 0). Recoil impulse on the
-    // ship is (-m_p * v_p, 0) at the weapon's local position (1, 1).
-    // Lever arm from CoM: (1, 1). Torque = r × F = 1*0 - 1*(-F) = +F.
-    // Wait — the impulse vector is in world coords; we rotate it into
-    // the local frame (ship.facing = 0, so local == world) and compute
-    // r × F_local = (1)*(0) - (1)*(-F) = +F. That's a counter-clockwise
-    // torque, so the ship's facing should drift positive.
-    //
-    // Symmetric mass layout (counter-weight) keeps the CoM at the origin
-    // so the lever arm has a clean geometric interpretation.
+    // The weapon fires along +x (weaponFacing 0). Its recoil impulse is
+    // (-m_p * v_p, 0) at a cell with a non-zero y offset from the CoM, so the
+    // cross product r × F is non-zero — the ship both slides backward (−x) and
+    // spins. (The cells form a connected L; under 4-connectivity a diagonal
+    // layout would instead break apart, which is exactly the new rule.)
     const ship = modularShip("a1", "attacker", { x: 0, y: 0 }, 0, [
+      moduleOf("h1", { kind: "hull" }, 1, 0, 100, 5),
       moduleOf("w1", cannon({ cooldown: 1 }), 1, 1, 100, 5),
-      moduleOf("h1", { kind: "hull" }, -1, -1, 100, 5),
     ]);
     const target = modularShip("d1", "defender", { x: 50, y: 0 }, 0, []);
     const result = runBattle(inputs([ship, target]));
@@ -471,9 +469,11 @@ describe("engine.rigidbody — break-apart chunks", () => {
     };
     // Defender faces π so its local -x edge faces the attacker. Modules
     // all carry mass 5; hull HP is 1 so the first hit tears it apart.
-    // Modules sit at local x = -15 (hull, central) and (-14, ±1). The
-    // hull cell is adjacent (Chebyshev dist 1) to both side cells, but
-    // the side cells are |dy| = 2 apart so killing the hull splits them.
+    // The three cells form a vertical column at local x = -14: the central
+    // hull cell at row 0 and two side cells at rows ±1. The hull is edge-
+    // adjacent (4-connected) to both side cells, but the side cells are two
+    // rows apart, so killing the central hull severs them into two single-
+    // cell chunks. CoM uses x = -14, y = ±1 for each surviving side cell.
     const defender: CombatShip = {
       instanceId: "d1",
       designId: "d-d1",
@@ -484,7 +484,7 @@ describe("engine.rigidbody — break-apart chunks", () => {
       orders: { ...defaultOrders, engageRange: "hold" },
       classification: "frigate",
       modules: [
-        moduleOf("h1", { kind: "hull" }, -15, 0, 1, 5, true),
+        moduleOf("h1", { kind: "hull" }, -14, 0, 1, 5, true),
         moduleOf("s1", { kind: "hull" }, -14, -1, 100, 5),
         moduleOf("s2", { kind: "hull" }, -14, 1, 100, 5),
       ],
