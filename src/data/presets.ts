@@ -1,5 +1,6 @@
 import { Fleet } from "@/schema/fleet";
 import type { Orders } from "@/schema/fleet";
+import type { GridCell, TileGrid } from "@/schema/grid";
 import { ShipDesign } from "@/schema/ship";
 
 /**
@@ -8,110 +9,124 @@ import { ShipDesign } from "@/schema/ship";
  *
  * Designs and fleets are authored as plain objects and validated against the
  * schema at load time (same pattern as the catalog). Every design is a valid
- * build — mass within capacity, power and crew in surplus, slot types matching
- * — which `presets.test.ts` asserts, so a catalog change that breaks a preset
- * fails loudly rather than shipping a broken starter ship.
+ * build — cells 4-connected, a command module present, mass within the
+ * cell-derived budget — which `presets.unit.test.ts` asserts, so a catalog
+ * change that breaks a preset fails loudly rather than shipping a broken
+ * starter ship.
  *
  * Preset ids are stable ("preset-*"); seeding is idempotent and version-gated
- * (see src/storage/seed.ts), so a player who deletes a preset doesn't get it
- * re-added until the preset set itself changes.
+ * (see src/storage/seed.ts).
+ *
+ * Grids are authored as a small ASCII map for legibility: each string is a
+ * grid row, each token a cell. `.` is empty space, `#` is a hull block, and
+ * the remaining tokens map to module ids via `TOKENS`. The map is parsed
+ * row-major into a `TileGrid`; every module cell faces forward (0 rad) — the
+ * Designer lets a player change that per cell.
  */
 
 /** Fixed timestamp: presets are built-in content, not user-authored records. */
 const PRESET_TIME = "2026-06-16T00:00:00.000Z";
 
+/** Single-character tokens for the ASCII grid authoring map. */
+const TOKENS: Record<string, GridCell> = {
+  ".": { kind: "empty" },
+  "#": { kind: "hull", tile: "block" },
+  "L": { kind: "module", moduleId: "mod-pulse-laser", facing: 0 },
+  "R": { kind: "module", moduleId: "mod-railgun", facing: 0 },
+  "M": { kind: "module", moduleId: "mod-missile-rack", facing: 0 },
+  "T": { kind: "module", moduleId: "mod-plasma-torpedo", facing: 0 },
+  "S": { kind: "module", moduleId: "mod-shield-mk2", facing: 0 },
+  "A": { kind: "module", moduleId: "mod-armour-titanium", facing: 0 },
+  "E": { kind: "module", moduleId: "mod-engine-ion", facing: Math.PI },
+  "F": { kind: "module", moduleId: "mod-reactor-fusion", facing: 0 },
+  "X": { kind: "module", moduleId: "mod-reactor-antimatter", facing: 0 },
+  "C": { kind: "module", moduleId: "mod-crew-quarters", facing: 0 },
+};
+
+/** Parse an ASCII map (one string per row) into a row-major TileGrid. Every
+ *  row must be the same length; an unknown token throws so a typo in a preset
+ *  fails loudly at module load. */
+function gridFromMap(rows: readonly string[]): TileGrid {
+  const firstRow = rows[0];
+  if (firstRow === undefined) throw new Error("preset grid has no rows");
+  const cols = firstRow.length;
+  const cells: GridCell[] = [];
+  for (const row of rows) {
+    if (row.length !== cols) {
+      throw new Error(`preset grid row "${row}" is not ${cols} cells wide`);
+    }
+    for (const ch of row) {
+      const cell = TOKENS[ch];
+      if (cell === undefined) throw new Error(`unknown grid token "${ch}"`);
+      cells.push(cell);
+    }
+  }
+  return { cols, rows: rows.length, cells };
+}
+
 const designData: ShipDesign[] = [
   {
     id: "preset-ship-sabre",
     name: "Sabre Interceptor",
-    hullId: "hull-wasp",
     faction: "Terran",
-    placements: [
-      { slotId: "wasp-weapon-1", moduleId: "mod-pulse-laser" },
-      { slotId: "wasp-system-1", moduleId: "mod-reactor-fusion" },
-      { slotId: "wasp-general-1", moduleId: "mod-crew-quarters" },
-    ],
+    // Fighter: a forward pulse laser, a fusion reactor (the bridge), an ion
+    // engine, all on one connected spine.
+    grid: gridFromMap(["EFL", "..C"]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
   },
   {
     id: "preset-ship-gunship",
     name: "Vanguard Gunship",
-    hullId: "hull-vanguard",
     faction: "Terran",
-    placements: [
-      { slotId: "vanguard-weapon-1", moduleId: "mod-railgun" },
-      { slotId: "vanguard-weapon-2", moduleId: "mod-pulse-laser" },
-      { slotId: "vanguard-weapon-3", moduleId: "mod-pulse-laser" },
-      { slotId: "vanguard-engine-1", moduleId: "mod-engine-ion" },
-      { slotId: "vanguard-engine-2", moduleId: "mod-engine-ion" },
-      { slotId: "vanguard-system-1", moduleId: "mod-reactor-fusion" },
-      { slotId: "vanguard-system-2", moduleId: "mod-reactor-fusion" },
-      { slotId: "vanguard-general-1", moduleId: "mod-crew-quarters" },
-      { slotId: "vanguard-general-2", moduleId: "mod-crew-quarters" },
-    ],
+    // Frigate: a railgun nose flanked by pulse lasers, twin reactors and
+    // engines, crew amidships.
+    grid: gridFromMap([
+      "EFLR",
+      "EFLC",
+    ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
   },
   {
     id: "preset-ship-bulwark",
     name: "Bulwark Escort",
-    hullId: "hull-vanguard",
     faction: "Terran",
-    placements: [
-      { slotId: "vanguard-weapon-1", moduleId: "mod-pulse-laser" },
-      { slotId: "vanguard-weapon-2", moduleId: "mod-pulse-laser" },
-      { slotId: "vanguard-weapon-3", moduleId: "mod-pulse-laser" },
-      { slotId: "vanguard-engine-1", moduleId: "mod-engine-ion" },
-      { slotId: "vanguard-engine-2", moduleId: "mod-engine-ion" },
-      { slotId: "vanguard-system-1", moduleId: "mod-reactor-fusion" },
-      { slotId: "vanguard-system-2", moduleId: "mod-reactor-fusion" },
-      { slotId: "vanguard-general-1", moduleId: "mod-shield-mk2" },
-      { slotId: "vanguard-general-2", moduleId: "mod-crew-quarters" },
-    ],
+    // Frigate: three pulse lasers behind a shield bank, triple reactors and
+    // engines, crew, a hull strut amidships.
+    grid: gridFromMap([
+      "EFCL",
+      "ESFL",
+      "EF#L",
+    ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
   },
   {
     id: "preset-ship-torpedo",
     name: "Vanguard Torpedo Boat",
-    hullId: "hull-vanguard",
     faction: "Terran",
-    placements: [
-      { slotId: "vanguard-weapon-1", moduleId: "mod-plasma-torpedo" },
-      { slotId: "vanguard-weapon-2", moduleId: "mod-missile-rack" },
-      { slotId: "vanguard-engine-1", moduleId: "mod-engine-ion" },
-      { slotId: "vanguard-system-1", moduleId: "mod-reactor-fusion" },
-      { slotId: "vanguard-system-2", moduleId: "mod-reactor-fusion" },
-      { slotId: "vanguard-general-1", moduleId: "mod-crew-quarters" },
-      { slotId: "vanguard-general-2", moduleId: "mod-armour-titanium" },
-    ],
+    // Frigate: a plasma torpedo and a missile rack forward, armour amidships,
+    // twin reactors, an engine and crew aft.
+    grid: gridFromMap([
+      "EFAT",
+      "EFCM",
+    ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
   },
   {
     id: "preset-ship-leviathan",
     name: "Leviathan Battleship",
-    hullId: "hull-leviathan",
     faction: "Terran",
-    placements: [
-      { slotId: "lev-weapon-1", moduleId: "mod-plasma-torpedo" },
-      { slotId: "lev-weapon-2", moduleId: "mod-plasma-torpedo" },
-      { slotId: "lev-weapon-3", moduleId: "mod-railgun" },
-      { slotId: "lev-weapon-4", moduleId: "mod-railgun" },
-      { slotId: "lev-weapon-5", moduleId: "mod-pulse-laser" },
-      { slotId: "lev-weapon-6", moduleId: "mod-pulse-laser" },
-      { slotId: "lev-engine-1", moduleId: "mod-engine-ion" },
-      { slotId: "lev-engine-2", moduleId: "mod-engine-ion" },
-      { slotId: "lev-engine-3", moduleId: "mod-engine-ion" },
-      { slotId: "lev-system-1", moduleId: "mod-reactor-antimatter" },
-      { slotId: "lev-system-2", moduleId: "mod-reactor-antimatter" },
-      { slotId: "lev-system-3", moduleId: "mod-reactor-antimatter" },
-      { slotId: "lev-general-1", moduleId: "mod-crew-quarters" },
-      { slotId: "lev-general-2", moduleId: "mod-crew-quarters" },
-      { slotId: "lev-general-3", moduleId: "mod-crew-quarters" },
-      { slotId: "lev-general-4", moduleId: "mod-shield-mk2" },
-    ],
+    // Cruiser: a heavy battery (torpedoes, railguns, lasers) over a hull
+    // spine, triple antimatter reactors, triple engines, crew, a shield bank.
+    grid: gridFromMap([
+      "EX#TL",
+      "EXSRL",
+      "EXCTL",
+      "EXCRC",
+    ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
   },

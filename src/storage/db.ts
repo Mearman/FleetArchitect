@@ -32,6 +32,14 @@ class FleetArchitectDatabase extends Dexie {
     this.version(2).stores({
       meta: "key",
     });
+    // Grid model: ShipDesign is now an authoritative tile grid (no hullId /
+    // placements). The stored indexes are unchanged (id / name / updatedAt),
+    // so this bump only marks the record-shape change. No data migration —
+    // old slot-based records are abandoned (acceptable in alpha) and new
+    // designs are written in the grid shape.
+    this.version(3).stores({
+      ships: "id, name, updatedAt",
+    });
   }
 }
 

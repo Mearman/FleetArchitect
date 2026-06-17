@@ -7,11 +7,7 @@ import { presetDesigns, presetFleets } from "@/data/presets";
 describe("bundled presets", () => {
   it("ships every preset design as a valid build with no faults", () => {
     for (const design of presetDesigns) {
-      const hull = catalog().hull(design.hullId);
-      if (hull === undefined) {
-        throw new Error(`preset ${design.id} references unknown hull ${design.hullId}`);
-      }
-      const { valid, faults } = analyseShipDesign(design, hull, catalog());
+      const { valid, faults } = analyseShipDesign(design, catalog());
       expect(valid, `${design.name} (${design.id}) has faults: ${JSON.stringify(faults)}`).toBe(true);
     }
   });
@@ -28,9 +24,7 @@ describe("bundled presets", () => {
       const armed = fleet.ships.some((ship) => {
         const design = presetDesigns.find((d) => d.id === ship.designId);
         if (design === undefined) return false;
-        const hull = catalog().hull(design.hullId);
-        if (hull === undefined) return false;
-        return analyseShipDesign(design, hull, catalog()).stats.weapons.length > 0;
+        return analyseShipDesign(design, catalog()).stats.weapons.length > 0;
       });
       expect(armed, `${fleet.name} has no armed ships`).toBe(true);
     }
@@ -39,9 +33,8 @@ describe("bundled presets", () => {
   it("keeps every preset fleet within the point budget", () => {
     const costOf = (designId: string): number => {
       const design = presetDesigns.find((d) => d.id === designId);
-      const hull = design ? catalog().hull(design.hullId) : undefined;
-      if (design === undefined || hull === undefined) return 0;
-      return analyseShipDesign(design, hull, catalog()).stats.cost;
+      if (design === undefined) return 0;
+      return analyseShipDesign(design, catalog()).stats.cost;
     };
 
     for (const fleet of presetFleets) {

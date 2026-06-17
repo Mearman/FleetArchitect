@@ -12,9 +12,16 @@ function sampleDesign(): ShipDesign {
   return {
     id: createId("design"),
     name: "Shared Fighter",
-    hullId: "hull-wasp",
     faction: "Terran",
-    placements: [{ slotId: "wasp-weapon-1", moduleId: "mod-pulse-laser" }],
+    grid: {
+      cols: 3,
+      rows: 1,
+      cells: [
+        { kind: "module", moduleId: "mod-pulse-laser", facing: 0 },
+        { kind: "module", moduleId: "mod-reactor-fusion", facing: 0 },
+        { kind: "hull", tile: "block" },
+      ],
+    },
     createdAt: nowIso(),
     updatedAt: nowIso(),
   };

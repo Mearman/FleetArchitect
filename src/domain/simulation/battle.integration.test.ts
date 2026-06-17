@@ -16,16 +16,21 @@ import type { ShipDesign } from "@/schema/ship";
  */
 
 function armedFighter(id: string): ShipDesign {
+  // A pulse laser, a fusion reactor (command + power), and crew quarters on a
+  // single connected row — the grid equivalent of the old wasp loadout.
   return {
     id,
     name: id,
-    hullId: "hull-wasp",
     faction: "Terran",
-    placements: [
-      { slotId: "wasp-weapon-1", moduleId: "mod-pulse-laser" },
-      { slotId: "wasp-system-1", moduleId: "mod-reactor-fusion" },
-      { slotId: "wasp-general-1", moduleId: "mod-crew-quarters" },
-    ],
+    grid: {
+      cols: 3,
+      rows: 1,
+      cells: [
+        { kind: "module", moduleId: "mod-pulse-laser", facing: 0 },
+        { kind: "module", moduleId: "mod-reactor-fusion", facing: 0 },
+        { kind: "module", moduleId: "mod-crew-quarters", facing: 0 },
+      ],
+    },
     createdAt: nowIso(),
     updatedAt: nowIso(),
   };
