@@ -233,6 +233,7 @@ const strikeOrders: Orders = {
 };
 /** Orders for Swarm fleets: extremely aggressive, close-range pack hunters. */
 const hiveOrders: Orders = {
+  ...defaultOrders,
   stance: "aggressive",
   targetPriority: "nearest",
   engageRange: "short",
