@@ -82,6 +82,10 @@ function resolveModules(
       // never declared these fields are unaffected.
       shieldArc: moduleDef.shieldArc ?? Math.PI * 2,
       shieldFacing: moduleDef.shieldFacing ?? 0,
+      // Directional thruster default: an engine without an explicit facing
+      // thrusts along the ship's +x axis (forward), which is the legacy
+      // behaviour and what every shipped engine module currently declares.
+      facing: engineFacingFor(moduleDef.effect),
     });
   }
   return out;
@@ -115,6 +119,15 @@ function baseHpFor(kind: ResolvedModule["kind"]): number {
 function repairRateFor(effect: ModuleEffect): number {
   if (effect.kind === "repair") return effect.repairRate;
   return 0;
+}
+
+/** Read the engine's thrust direction (radians, ship-local). Only engine
+ *  modules have a meaningful value; every other kind contributes 0 (its
+ *  `facing` field is unused by the engine). A missing `facing` on the
+ *  effect defaults to 0 (forward), preserving legacy behaviour. */
+function engineFacingFor(effect: ModuleEffect): number {
+  if (effect.kind !== "engine") return 0;
+  return effect.facing ?? 0;
 }
 
 /** Reflect a deployment across the y-axis: negate x, add π to facing. */

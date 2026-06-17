@@ -102,6 +102,18 @@ const SIM = {
   linearDamping: 0.97,
   angularDamping: 0.9,
   /**
+   * Moment of inertia per unit mass for the per-cell thrust model.
+   * Treated as a uniform disc of radius `sqrt(mass)/2` would give MoI =
+   * m·r²/2; we instead use the simpler `MoI = mass * cellthrustMoI` so a
+   * single constant governs the relative weight of linear vs angular
+   * acceleration. Larger values make the ship harder to spin (more
+   * "stubborn"); smaller values make off-axis thrust twitchy. 5 is a
+   * gameplay-tuned middle ground: a single rear-mounted engine produces
+   * zero torque, but two side engines at the corners produce a visible
+   * spin within a few ticks.
+   */
+  cellthrustMoI: 5,
+  /**
    * Per-PD-module per-tick chance of intercepting a single in-range missile
    * or torpedo. Multiple PD modules stack their chances (1 - (1-p)^n) but
    * the cumulative chance is capped here so a screen of PD modules can never
@@ -207,6 +219,14 @@ interface SimModule {
   shieldArc: number;
   /** Direction (radians) the directional shield points. */
   shieldFacing: number;
+  /**
+   * For directional thrusters: the direction the engine thrusts, in
+   * radians, ship-local. Default 0 (forward, +x). Mirrors
+   * `ResolvedModule.facing`; carried on `SimModule` so the per-tick
+   * movement loop can read each engine's force vector and lever arm
+   * without re-walking the resolver.
+   */
+  facing: number;
 }
 
 /** Mutable in-flight projectile. */
@@ -341,6 +361,7 @@ function toSimModule(m: ResolvedModule, rng: () => number): SimModule {
     repairRate: m.repairRate,
     shieldArc: m.shieldArc,
     shieldFacing: m.shieldFacing,
+    facing: m.facing,
   };
 }
 
@@ -1156,6 +1177,39 @@ function leadingSide(
   return "draw";
 }
 
+/** Sum the per-engine force (in ship-local axes) and the resulting torque
+ *  (z-component of the cross product `r × F`, in ship-local units) for a
+ *  modular ship. Engines that are not alive contribute nothing — a
+ *  destroyed thruster stops thrusting. The returned force is in ship-local
+ *  coordinates; the caller rotates it into world space using the ship's
+ *  facing. */
+function cellThrustForceAndTorque(ship: SimShip): { fx: number; fy: number; torque: number } {
+  if (ship.modules === undefined) return { fx: 0, fy: 0, torque: 0 };
+  let fx = 0;
+  let fy = 0;
+  let torque = 0;
+  for (const m of ship.modules) {
+    if (!m.alive || m.effect.kind !== "engine") continue;
+    const t = m.effect.thrust;
+    if (t <= 0) continue;
+    const lx = Math.cos(m.facing) * t;
+    const ly = Math.sin(m.facing) * t;
+    fx += lx;
+    fy += ly;
+    // 2D cross product (z-component): r × F = rx*fy − ry*fx. A positive
+    // value rotates the ship counter-clockwise (toward +y from +x).
+    torque += m.x * ly - m.y * lx;
+  }
+  return { fx, fy, torque };
+}
+
+/** Rotate a local (ship-frame) vector into world coordinates by `facing`. */
+function rotateLocal(facing: number, lx: number, ly: number): { x: number; y: number } {
+  const c = Math.cos(facing);
+  const s = Math.sin(facing);
+  return { x: lx * c - ly * s, y: lx * s + ly * c };
+}
+
 function moveShips(
   ships: readonly SimShip[],
   byId: Map<string, SimShip>,
@@ -1246,34 +1300,64 @@ function moveShips(
     ship.angVel *= SIM.angularDamping;
     ship.facing += ship.angVel;
 
-    // Linear: thrust accelerates velocity toward the desired velocity vector
-    // (facing * maxSpeed forward, or -facing * maxSpeed for a reverse burn).
-    // `thrust` is the engine force; the per-tick acceleration cap is
-    // `thrust / mass` (F = m·a), so heavier ships are sluggish to build
-    // speed. `maxSpeed` (also `thrust`) caps the cruise ceiling. When not
-    // thrusting, desired velocity is zero so the ship bleeds off speed
-    // and comes to rest.
-    const maxSpeed = ship.thrust;
-    const accel = ship.thrust / Math.max(ship.mass, 1);
-    const dir = reverse ? -1 : 1;
-    const desiredVX = shouldThrust ? dir * Math.cos(ship.facing) * maxSpeed : 0;
-    const desiredVY = shouldThrust ? dir * Math.sin(ship.facing) * maxSpeed : 0;
-    const dvx = desiredVX - ship.velX;
-    const dvy = desiredVY - ship.velY;
-    const dvLen = Math.hypot(dvx, dvy);
-    if (dvLen > 0) {
-      const step = Math.min(dvLen, accel);
-      ship.velX += (dvx / dvLen) * step;
-      ship.velY += (dvy / dvLen) * step;
+    // Linear: thrust accelerates velocity.
+    //
+    // Modular ships (per-cell thrust): each alive engine contributes a
+    // force vector F_local = (cos(facing) * thrust, sin(facing) * thrust).
+    // We sum those forces, rotate the net into world space by `ship.facing`,
+    // and add F/m to velocity. Engines at the ship's centre contribute no
+    // torque; off-centre engines contribute r × F. The reverse flag flips
+    // the sign of every engine's contribution (a kiting ship reverses every
+    // thruster at once), so the ship thrusts away from the target. No
+    // explicit maxSpeed clamp — the only thing limiting speed is the
+    // accumulated engine force, which is the realistic behaviour: a heavily
+    // engineered ship accelerates faster than a stripped-down one, and
+    // once engines shut off, linear damping bleeds the velocity to zero.
+    //
+    // Aggregated (legacy) ships keep the scalar-thrust model: force points
+    // along ship.facing (or opposite), magnitude is `thrust`. The
+    // per-tick acceleration cap is `thrust / mass` (F = m·a) and the speed
+    // is clamped to `thrust` so heavier ships are sluggish to build speed
+    // and have the same top speed as lighter ones.
+    if (ship.modules !== undefined) {
+      const { fx, fy, torque } = cellThrustForceAndTorque(ship);
+      const dir = reverse ? -1 : 1;
+      const lx = shouldThrust ? dir * fx : 0;
+      const ly = shouldThrust ? dir * fy : 0;
+      const world = rotateLocal(ship.facing, lx, ly);
+      const invMass = 1 / Math.max(ship.mass, 1);
+      ship.velX += world.x * invMass;
+      ship.velY += world.y * invMass;
+      ship.velX *= SIM.linearDamping;
+      ship.velY *= SIM.linearDamping;
+      // Angular kick from off-centre thrusters. Moment of inertia is
+      // `mass * cellthrustMoI` — a uniform-disc-like scaling that gives
+      // a single tunable constant for the linear-vs-angular trade-off.
+      const moi = Math.max(ship.mass, 1) * SIM.cellthrustMoI;
+      ship.angVel += (shouldThrust ? torque * invMass : 0) / moi;
+    } else {
+      const maxSpeed = ship.thrust;
+      const accel = ship.thrust / Math.max(ship.mass, 1);
+      const dir = reverse ? -1 : 1;
+      const desiredVX = shouldThrust ? dir * Math.cos(ship.facing) * maxSpeed : 0;
+      const desiredVY = shouldThrust ? dir * Math.sin(ship.facing) * maxSpeed : 0;
+      const dvx = desiredVX - ship.velX;
+      const dvy = desiredVY - ship.velY;
+      const dvLen = Math.hypot(dvx, dvy);
+      if (dvLen > 0) {
+        const step = Math.min(dvLen, accel);
+        ship.velX += (dvx / dvLen) * step;
+        ship.velY += (dvy / dvLen) * step;
+      }
+      const speed = Math.hypot(ship.velX, ship.velY);
+      if (speed > maxSpeed) {
+        const k = maxSpeed / speed;
+        ship.velX *= k;
+        ship.velY *= k;
+      }
+      ship.velX *= SIM.linearDamping;
+      ship.velY *= SIM.linearDamping;
     }
-    const speed = Math.hypot(ship.velX, ship.velY);
-    if (speed > maxSpeed) {
-      const k = maxSpeed / speed;
-      ship.velX *= k;
-      ship.velY *= k;
-    }
-    ship.velX *= SIM.linearDamping;
-    ship.velY *= SIM.linearDamping;
 
     ship.x += ship.velX;
     ship.y += ship.velY;

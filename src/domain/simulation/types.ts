@@ -62,6 +62,14 @@ export interface ResolvedModule {
   shieldArc: number;
   /** For directional shields: the direction the arc points (radians). */
   shieldFacing: number;
+  /**
+   * For directional thrusters: the direction the engine thrusts, in
+   * radians, ship-local. Default 0 (forward, +x). Each alive engine
+   * contributes its force vector at its lever arm; the net force drives
+   * linear acceleration and the net torque about the ship's centre drives
+   * angular acceleration.
+   */
+  facing: number;
 }
 
 /** Everything the simulator needs to run a deterministic battle. */

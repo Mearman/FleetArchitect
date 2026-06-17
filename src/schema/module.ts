@@ -66,11 +66,26 @@ export const ArmourEffect = z.object({
 });
 export type ArmourEffect = z.infer<typeof ArmourEffect>;
 
-/** Effect payload for a propulsion module. */
+/**
+ * Effect payload for a propulsion module.
+ *
+ * `facing` (radians, ship-local) is the direction the engine points relative
+ * to the ship's forward axis. A rear-facing engine on a forward-facing ship
+ * therefore has `facing` ≈ π and thrusts the ship along its heading; a
+ * side-mounted engine has facing ≈ ±π/2 and strafes perpendicular to the
+ * heading. Unbalanced placement of asymmetric engines produces a non-zero
+ * net torque about the ship's centre and spins the ship.
+ *
+ * The field defaults to 0 (forward) when omitted so existing module
+ * definitions and legacy designs continue to behave like a single
+ * rear-mounted thruster — i.e. a force pointing along the ship's +x axis.
+ */
 export const EngineEffect = z.object({
   kind: z.literal("engine"),
   thrust: z.number().min(0),
   turnRate: z.number().min(0),
+  /** Direction the engine thrusts, in radians, ship-local. Default 0 = forward. */
+  facing: z.number().optional(),
 });
 export type EngineEffect = z.infer<typeof EngineEffect>;
 

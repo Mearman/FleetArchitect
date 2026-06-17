@@ -54,6 +54,7 @@ function moduleOf(
     repairRate,
     shieldArc: Math.PI * 2,
     shieldFacing: 0,
+    facing: 0,
   };
 }
 
