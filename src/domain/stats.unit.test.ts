@@ -1,81 +1,95 @@
 import { describe, expect, it } from "vitest";
-import { catalog, hulls } from "@/data/catalog";
+import { catalog } from "@/data/catalog";
 import { createId, nowIso } from "@/domain/id";
 import { analyseShipDesign } from "@/domain/stats";
-import type { HullDefinition } from "@/schema/hull";
-import type { ModulePlacement, ShipDesign } from "@/schema/ship";
+import type { GridCell, TileGrid } from "@/schema/grid";
+import type { ShipDesign } from "@/schema/ship";
 
-function requireHull(id: string): HullDefinition {
-  const hull = hulls.find((h) => h.id === id);
-  if (hull === undefined) throw new Error(`fixture: ${id} missing from catalog`);
-  return hull;
+/** Authoring helper: parse a one-string-per-row ASCII map into a TileGrid.
+ *  `.` empty, `#` hull block, `L` pulse laser, `F` fusion reactor (command),
+ *  `C` crew quarters — enough tokens to build the fixtures below. */
+const TOKENS: Record<string, GridCell> = {
+  ".": { kind: "empty" },
+  "#": { kind: "hull", tile: "block" },
+  "L": { kind: "module", moduleId: "mod-pulse-laser", facing: 0 },
+  "F": { kind: "module", moduleId: "mod-reactor-fusion", facing: 0 },
+  "C": { kind: "module", moduleId: "mod-crew-quarters", facing: 0 },
+};
+
+function grid(rows: readonly string[]): TileGrid {
+  const cols = rows[0]?.length ?? 0;
+  const cells: GridCell[] = [];
+  for (const row of rows) {
+    for (const ch of row) {
+      const cell = TOKENS[ch];
+      if (cell === undefined) throw new Error(`bad token ${ch}`);
+      cells.push(cell);
+    }
+  }
+  return { cols, rows: rows.length, cells };
 }
 
-const wasp = requireHull("hull-wasp");
-
-function design(placements: ModulePlacement[]): ShipDesign {
+function design(g: TileGrid): ShipDesign {
   return {
     id: createId("design"),
     name: "Test",
-    hullId: wasp.id,
     faction: "Terran",
-    placements,
+    grid: g,
     createdAt: nowIso(),
     updatedAt: nowIso(),
   };
 }
 
-function place(slotId: string, moduleId: string): ModulePlacement {
-  return { slotId, moduleId };
-}
-
 describe("analyseShipDesign", () => {
-  it("treats an empty hull as valid with base stats", () => {
-    const { stats, faults, valid } = analyseShipDesign(design([]), wasp, catalog());
-    expect(valid).toBe(true);
-    expect(faults).toEqual([]);
-    expect(stats.structure).toBe(wasp.baseStructure);
-    expect(stats.cost).toBe(wasp.baseCost);
-    expect(stats.weapons).toHaveLength(0);
+  it("flags an empty grid as invalid", () => {
+    const { valid, faults } = analyseShipDesign(design(grid(["."])), catalog());
+    expect(valid).toBe(false);
+    expect(faults.some((f) => f.kind === "empty")).toBe(true);
   });
 
-  it("flags power and crew deficits for an under-supplied weapon", () => {
-    const { valid, faults } = analyseShipDesign(
-      design([place("wasp-weapon-1", "mod-pulse-laser")]),
-      wasp,
+  it("validates a fully supplied armed fighter and sums cost", () => {
+    // Pulse laser + fusion reactor (command + power) + crew quarters, all
+    // edge-connected in a row.
+    const { valid, stats, faults } = analyseShipDesign(
+      design(grid(["LFC"])),
       catalog(),
     );
+    expect(valid, JSON.stringify(faults)).toBe(true);
+    expect(stats.weapons).toHaveLength(1);
+    expect(stats.powerNet).toBeGreaterThanOrEqual(0);
+    expect(stats.crewNet).toBeGreaterThanOrEqual(0);
+    // pulse laser(40) + fusion reactor(80) + crew quarters(30)
+    expect(stats.cost).toBe(40 + 80 + 30);
+  });
+
+  it("flags a power and crew deficit for a lone weapon with no reactor", () => {
+    // A single pulse laser: no power, no command module, no crew supply.
+    const { valid, faults } = analyseShipDesign(design(grid(["L"])), catalog());
     expect(valid).toBe(false);
     const kinds = faults.map((f) => f.kind);
     expect(kinds).toContain("powerDeficit");
     expect(kinds).toContain("crewDeficit");
+    expect(kinds).toContain("noCommand");
   });
 
-  it("validates a fully supplied armed fighter and sums cost", () => {
-    const { valid, stats } = analyseShipDesign(
-      design([
-        place("wasp-weapon-1", "mod-pulse-laser"),
-        place("wasp-system-1", "mod-reactor-fusion"),
-        place("wasp-general-1", "mod-crew-quarters"),
-      ]),
-      wasp,
-      catalog(),
-    );
-    expect(valid).toBe(true);
-    expect(stats.weapons).toHaveLength(1);
-    expect(stats.powerNet).toBeGreaterThanOrEqual(0);
-    expect(stats.crewNet).toBeGreaterThanOrEqual(0);
-    // base + pulse laser(40) + fusion reactor(80) + crew quarters(30)
-    expect(stats.cost).toBe(wasp.baseCost + 40 + 80 + 30);
-  });
-
-  it("flags a module placed in the wrong slot type", () => {
-    const { valid, faults } = analyseShipDesign(
-      design([place("wasp-general-1", "mod-pulse-laser")]),
-      wasp,
-      catalog(),
-    );
+  it("flags a design with no command module", () => {
+    // Crew quarters keep crew positive, but nothing is a command module, and
+    // there's no power supply.
+    const { valid, faults } = analyseShipDesign(design(grid(["#C"])), catalog());
     expect(valid).toBe(false);
-    expect(faults.some((f) => f.kind === "slotTypeMismatch")).toBe(true);
+    expect(faults.some((f) => f.kind === "noCommand")).toBe(true);
+  });
+
+  it("flags a disconnected grid", () => {
+    // Two occupied cells with an empty gap between them: not 4-connected.
+    const { valid, faults } = analyseShipDesign(design(grid(["F.L"])), catalog());
+    expect(valid).toBe(false);
+    expect(faults.some((f) => f.kind === "disconnected")).toBe(true);
+  });
+
+  it("derives a mass budget that scales with the occupied-cell count", () => {
+    const small = analyseShipDesign(design(grid(["LFC"])), catalog());
+    const big = analyseShipDesign(design(grid(["LFC", "L#C"])), catalog());
+    expect(big.stats.massCapacity).toBeGreaterThan(small.stats.massCapacity);
   });
 });

@@ -1,9 +1,11 @@
-import type { HullDefinition } from "@/schema/hull";
-import type {
-  ModuleDefinition,
-  ModuleSlotType,
-  WeaponEffect,
-} from "@/schema/module";
+import {
+  deriveMass,
+  footprint,
+  isConnected4,
+  occupiedCount,
+} from "@/domain/grid";
+import type { GridCell } from "@/schema/grid";
+import type { ModuleDefinition, WeaponEffect } from "@/schema/module";
 import type { ShipDesign } from "@/schema/ship";
 import type { EntityId } from "@/schema/primitives";
 import type { Catalog } from "./catalog";
@@ -16,6 +18,8 @@ export interface ResolvedWeapon {
 /** Aggregated, derived stats for a fully-resolved ship design. */
 export interface ShipStats {
   mass: number;
+  /** Mass budget for this grid, derived from the number of occupied cells. */
+  massCapacity: number;
   cost: number;
   powerDraw: number;
   powerOutput: number;
@@ -35,15 +39,11 @@ export interface ShipStats {
 
 /** A reason a ship design cannot be built as-is. */
 export type DesignFault =
-  | { kind: "unknownSlot"; slotId: EntityId }
-  | { kind: "unknownModule"; slotId: EntityId; moduleId: EntityId }
-  | {
-      kind: "slotTypeMismatch";
-      slotId: EntityId;
-      moduleSlotType: ModuleSlotType;
-      hullSlotType: ModuleSlotType;
-    }
-  | { kind: "duplicateSlot"; slotId: EntityId }
+  | { kind: "empty" }
+  | { kind: "disconnected" }
+  | { kind: "noCommand" }
+  | { kind: "unknownModule"; col: number; row: number; moduleId: EntityId }
+  | { kind: "unknownHullTile"; col: number; row: number; tile: string }
   | { kind: "massExceeded"; mass: number; capacity: number }
   | { kind: "powerDeficit"; net: number }
   | { kind: "crewDeficit"; net: number };
@@ -58,23 +58,33 @@ interface MutableStats extends Omit<ShipStats, "weapons"> {
   weapons: ResolvedWeapon[];
 }
 
-function emptyStats(hull: HullDefinition): MutableStats {
+/**
+ * Mass budget per occupied cell, in mass units. A grid's total budget scales
+ * with how many cells it uses, so larger hulls legitimately carry more mass;
+ * a design that overstuffs its cells with the heaviest modules exceeds it.
+ * Tuned so a typical mixed loadout fits comfortably while an all-heavy build
+ * does not.
+ */
+export const MASS_BUDGET_PER_CELL = 18;
+
+function emptyStats(massCapacity: number): MutableStats {
   return {
     mass: 0,
-    cost: hull.baseCost,
+    massCapacity,
+    cost: 0,
     powerDraw: 0,
     powerOutput: 0,
     powerNet: 0,
     crewRequired: 0,
     crewCapacity: 0,
     crewNet: 0,
-    structure: hull.baseStructure,
+    structure: 0,
     damageReduction: 0,
     shieldCapacity: 0,
     shieldRechargeRate: 0,
     shieldRechargeDelay: 0,
-    thrust: hull.baseSpeed,
-    turnRate: hull.baseTurnRate,
+    thrust: 0,
+    turnRate: 0,
     weapons: [],
   };
 }
@@ -84,7 +94,6 @@ function applyModule(
   moduleDef: ModuleDefinition,
   slotId: EntityId,
 ): void {
-  stats.mass += moduleDef.mass;
   stats.cost += moduleDef.cost;
   stats.powerDraw += moduleDef.powerDraw;
   stats.crewRequired += moduleDef.crewRequired;
@@ -117,67 +126,82 @@ function applyModule(
     case "crew":
       stats.crewCapacity += effect.capacity;
       break;
+    case "pointDefense":
+    case "repair":
     case "hull":
-      // Hull sections are pure connectivity anchors: they contribute mass
-      // and cost (applied above) but no combat stats.
       break;
   }
 }
 
+/** Mass of a single grid cell: a hull tile's mass, a module's mass, or 0 for
+ *  an empty cell or a reference the catalog doesn't know (which is reported as
+ *  a fault separately, so a zero-mass contribution there is harmless). */
+export function cellMass(cell: GridCell, catalog: Catalog): number {
+  if (cell.kind === "hull") return catalog.hullTile(cell.tile)?.mass ?? 0;
+  if (cell.kind === "module") return catalog.module(cell.moduleId)?.mass ?? 0;
+  return 0;
+}
+
 /**
- * Resolve a ship design against a hull and the catalog, producing aggregated
- * stats and any build-constraint faults. Pure and deterministic.
+ * Resolve a ship design against the catalog, producing aggregated stats and any
+ * build-constraint faults. Pure and deterministic. The grid is the source of
+ * truth: mass, structure, thrust, and the rest are summed over its occupied
+ * cells. A valid design has all occupied cells 4-connected, at least one
+ * command module, mass within the cell-derived budget, and a non-negative
+ * power and crew balance.
  */
 export function analyseShipDesign(
   design: ShipDesign,
-  hull: HullDefinition,
   catalog: Catalog,
 ): ShipDesignAnalysis {
+  const grid = design.grid;
   const faults: DesignFault[] = [];
-  const usedSlots = new Set<EntityId>();
-  const stats = emptyStats(hull);
-  const hullSlots = new Map(hull.slots.map((slot) => [slot.id, slot]));
+  const cellCount = occupiedCount(grid);
+  const massCapacity = cellCount * MASS_BUDGET_PER_CELL;
+  const stats = emptyStats(massCapacity);
 
-  for (const placement of design.placements) {
-    const slot = hullSlots.get(placement.slotId);
-    if (slot === undefined) {
-      faults.push({ kind: "unknownSlot", slotId: placement.slotId });
-      continue;
-    }
-    if (usedSlots.has(placement.slotId)) {
-      faults.push({ kind: "duplicateSlot", slotId: placement.slotId });
-      continue;
-    }
-    usedSlots.add(placement.slotId);
+  let hasCommand = false;
+  for (const { col, row } of footprint(grid)) {
+    const cell = grid.cells[row * grid.cols + col];
+    if (cell === undefined) continue;
+    const slotId = `cell-${col}-${row}`;
 
-    const moduleDef = catalog.module(placement.moduleId);
-    if (moduleDef === undefined) {
-      faults.push({
-        kind: "unknownModule",
-        slotId: placement.slotId,
-        moduleId: placement.moduleId,
-      });
+    if (cell.kind === "hull") {
+      const tile = catalog.hullTile(cell.tile);
+      if (tile === undefined) {
+        faults.push({ kind: "unknownHullTile", col, row, tile: cell.tile });
+        continue;
+      }
+      // Hull tiles are pure structure: they contribute mass and hull HP.
+      stats.structure += tile.hp;
       continue;
     }
 
-    if (moduleDef.slotType !== slot.type) {
-      faults.push({
-        kind: "slotTypeMismatch",
-        slotId: placement.slotId,
-        moduleSlotType: moduleDef.slotType,
-        hullSlotType: slot.type,
-      });
-      continue;
+    if (cell.kind === "module") {
+      const moduleDef = catalog.module(cell.moduleId);
+      if (moduleDef === undefined) {
+        faults.push({ kind: "unknownModule", col, row, moduleId: cell.moduleId });
+        continue;
+      }
+      if (moduleDef.command === true) hasCommand = true;
+      applyModule(stats, moduleDef, slotId);
     }
-
-    applyModule(stats, moduleDef, placement.slotId);
   }
 
+  stats.mass = deriveMass(grid, (cell) => cellMass(cell, catalog));
   stats.powerNet = stats.powerOutput - stats.powerDraw;
   stats.crewNet = stats.crewCapacity - stats.crewRequired;
 
-  if (stats.mass > hull.massCapacity) {
-    faults.push({ kind: "massExceeded", mass: stats.mass, capacity: hull.massCapacity });
+  if (cellCount === 0) {
+    faults.push({ kind: "empty" });
+  } else if (!isConnected4(grid)) {
+    faults.push({ kind: "disconnected" });
+  }
+  if (cellCount > 0 && !hasCommand) {
+    faults.push({ kind: "noCommand" });
+  }
+  if (stats.mass > massCapacity) {
+    faults.push({ kind: "massExceeded", mass: stats.mass, capacity: massCapacity });
   }
   if (stats.powerNet < 0) {
     faults.push({ kind: "powerDeficit", net: stats.powerNet });
