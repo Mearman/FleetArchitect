@@ -4,9 +4,10 @@ import {
   Button,
   Grid,
   Group,
-  NativeSelect,
+  NumberInput,
   Paper,
   ScrollArea,
+  SegmentedControl,
   Select,
   Stack,
   Text,
@@ -15,176 +16,201 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconBucketDroplet, IconPlus, IconTrash } from "@tabler/icons-react";
+import { IconDeviceFloppy, IconPlus, IconTrash } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 import { analyseShipDesign } from "@/domain/stats";
 import { createId, nowIso } from "@/domain/id";
 import { catalog } from "@/data/catalog";
+import { cellAt } from "@/domain/grid";
 import { FaultList } from "@/ui/components/FaultList";
 import { ShareButton } from "@/ui/components/ShareButton";
 import { StatReadout } from "@/ui/components/StatReadout";
 import { useShipDesigns } from "@/ui/hooks/storage";
 import { storage } from "@/storage/db";
-import type { ModulePlacement, ShipDesign } from "@/schema/ship";
-import type { HullDefinition } from "@/schema/hull";
-import type { ModuleSlotType } from "@/schema/module";
+import type { GridCell, HullTileType, TileGrid } from "@/schema/grid";
+import type { ShipDesign } from "@/schema/ship";
+import {
+  cellInner,
+  facingTick,
+  gridBoard,
+  gridCell as gridCellClass,
+} from "./ShipDesignerRoute.css";
+
+const DEFAULT_COLS = 5;
+const DEFAULT_ROWS = 5;
+const MAX_DIM = 12;
 
 interface WorkingDesign {
   id: string | null;
   createdAt: string | null;
   name: string;
-  hullId: string;
   faction: string;
-  placements: ModulePlacement[];
+  grid: TileGrid;
 }
 
-function blankDesign(firstHullId: string): WorkingDesign {
+/** A blank grid of the given size, with a fusion reactor (the command module)
+ *  in the centre so a fresh design starts from something that can grow into a
+ *  valid ship. */
+function blankGrid(cols: number, rows: number): TileGrid {
+  const cells: GridCell[] = Array.from({ length: cols * rows }, () => ({
+    kind: "empty",
+  }));
+  const centre = Math.floor(rows / 2) * cols + Math.floor(cols / 2);
+  cells[centre] = { kind: "module", moduleId: "mod-reactor-fusion", facing: 0 };
+  return { cols, rows, cells };
+}
+
+function blankDesign(): WorkingDesign {
   return {
     id: null,
     createdAt: null,
     name: "",
-    hullId: firstHullId,
     faction: "Terran",
-    placements: [],
+    grid: blankGrid(DEFAULT_COLS, DEFAULT_ROWS),
   };
 }
 
-function moduleInSlot(
-  placements: readonly ModulePlacement[],
-  slotId: string,
-): string | undefined {
-  return placements.find((p) => p.slotId === slotId)?.moduleId;
+/** The thing the user is painting with. `empty` clears a cell; `hull` paints a
+ *  hull tile of the chosen type; `module` paints a module cell. */
+type Brush =
+  | { kind: "empty" }
+  | { kind: "hull"; tile: HullTileType }
+  | { kind: "module"; moduleId: string };
+
+const HULL_TILES: HullTileType[] = ["block", "edge", "corner", "strut"];
+
+/** Display colour per cell kind for the board. */
+function cellColour(cell: GridCell): string {
+  switch (cell.kind) {
+    case "empty":
+      return "transparent";
+    case "hull":
+      return "#8794b8";
+    case "module":
+      return "#6ea8ff";
+  }
 }
 
-function setModuleInSlot(
-  placements: ModulePlacement[],
-  slotId: string,
-  moduleId: string | undefined,
-): ModulePlacement[] {
-  const without = placements.filter((p) => p.slotId !== slotId);
-  return moduleId === undefined ? without : [...without, { slotId, moduleId }];
+/** Short label drawn inside a cell. */
+function cellLabel(cell: GridCell): string {
+  if (cell.kind === "empty") return "";
+  if (cell.kind === "hull") return cell.tile.charAt(0).toUpperCase();
+  const mod = catalog().module(cell.moduleId);
+  return mod === undefined ? "?" : mod.name.charAt(0).toUpperCase();
 }
 
-/** Schematic of the hull: outline polygon plus a dot per slot, lit when fitted. */
-function HullMap({
-  hull,
-  placements,
-}: {
-  hull: HullDefinition;
-  placements: readonly ModulePlacement[];
-}) {
-  const points = [...hull.shape.outline, ...hull.slots.map((s) => s.position)];
-  const xs = points.map((p) => p.x);
-  const ys = points.map((p) => p.y);
-  const minX = Math.min(...xs);
-  const maxX = Math.max(...xs);
-  const minY = Math.min(...ys);
-  const maxY = Math.max(...ys);
-  const pad = 12;
-  const width = maxX - minX + pad * 2;
-  const height = maxY - minY + pad * 2;
+/** The four cardinal facings, in radians, ship-local (0 = forward / +x). */
+const FACINGS: { value: string; label: string }[] = [
+  { value: "0", label: "Fwd" },
+  { value: `${Math.PI / 2}`, label: "Down" },
+  { value: `${Math.PI}`, label: "Aft" },
+  { value: `${-Math.PI / 2}`, label: "Up" },
+];
 
-  const slotColour: Record<ModuleSlotType, string> = {
-    weapon: "#ff8c5a",
-    general: "#6ea8ff",
-    engine: "#7bd88f",
-    system: "#c792ff",
-  };
-
-  const outline = hull.shape.outline
-    .map(
-      (p, i) =>
-        `${i === 0 ? "M" : "L"} ${p.x - minX + pad} ${p.y - minY + pad}`,
-    )
-    .join(" ");
-
-  return (
-    <svg
-      viewBox={`0 0 ${width} ${height}`}
-      width="100%"
-      style={{ maxHeight: 240 }}
-    >
-      <path
-        d={outline}
-        fill="rgba(80,100,160,0.12)"
-        stroke="rgba(140,160,220,0.5)"
-        strokeWidth={1}
-      />
-      {hull.slots.map((slot) => {
-        const filled = moduleInSlot(placements, slot.id) !== undefined;
-        return (
-          <circle
-            key={slot.id}
-            cx={slot.position.x - minX + pad}
-            cy={slot.position.y - minY + pad}
-            r={filled ? 4 : 3}
-            fill={filled ? slotColour[slot.type] : "transparent"}
-            stroke={slotColour[slot.type]}
-            strokeWidth={1.5}
-          />
-        );
-      })}
-    </svg>
-  );
+/** Convert the active brush to the cell it paints. */
+function brushToCell(brush: Brush): GridCell {
+  switch (brush.kind) {
+    case "empty":
+      return { kind: "empty" };
+    case "hull":
+      return { kind: "hull", tile: brush.tile };
+    case "module":
+      return { kind: "module", moduleId: brush.moduleId, facing: 0 };
+  }
 }
 
-const SLOT_TYPE_LABEL: Record<ModuleSlotType, string> = {
-  weapon: "Weapon",
-  general: "General",
-  engine: "Engine",
-  system: "System",
-};
+/** Clamp a NumberInput value (which may be a string while typing) to a valid
+ *  integer dimension, falling back to the previous value on a blank field. */
+function clampDim(value: string | number, fallback: number): number {
+  const n = typeof value === "number" ? value : Number.parseInt(value, 10);
+  if (!Number.isFinite(n) || n < 1) return fallback;
+  return Math.min(n, MAX_DIM);
+}
+
+function brushLabel(brush: Brush): string {
+  if (brush.kind === "module") {
+    return catalog().module(brush.moduleId)?.name ?? "module";
+  }
+  if (brush.kind === "hull") return `hull (${brush.tile})`;
+  return "empty";
+}
 
 export function ShipDesignerRoute() {
   const designs = useShipDesigns();
-  const hulls = catalog().allHulls();
-  const firstHullId = hulls[0]?.id;
-  const [working, setWorking] = useState<WorkingDesign>(() =>
-    blankDesign(firstHullId ?? "hull-wasp"),
-  );
-
-  const hull = useMemo(
-    () => catalog().hull(working.hullId),
-    [working.hullId],
+  const moduleDefs = catalog().allModules();
+  const [working, setWorking] = useState<WorkingDesign>(() => blankDesign());
+  const [brush, setBrush] = useState<Brush>({ kind: "hull", tile: "block" });
+  const [selected, setSelected] = useState<{ col: number; row: number } | null>(
+    null,
   );
 
   const analysis = useMemo(() => {
-    if (hull === undefined) return null;
     const design: ShipDesign = {
       id: working.id ?? "draft",
       name: working.name || "Draft",
-      hullId: working.hullId,
       faction: working.faction || "Unaligned",
-      placements: working.placements,
+      grid: working.grid,
       createdAt: nowIso(),
       updatedAt: nowIso(),
     };
-    return analyseShipDesign(design, hull, catalog());
-  }, [working, hull]);
+    return analyseShipDesign(design, catalog());
+  }, [working]);
 
-  if (designs === undefined || firstHullId === undefined) {
+  if (designs === undefined) {
     return <Text c="dimmed">Loading…</Text>;
   }
-  const firstHull: string = firstHullId;
+
+  function paint(col: number, row: number) {
+    setWorking((prev) => {
+      const idx = row * prev.grid.cols + col;
+      const cells = prev.grid.cells.slice();
+      cells[idx] = brushToCell(brush);
+      return { ...prev, grid: { ...prev.grid, cells } };
+    });
+    setSelected({ col, row });
+  }
+
+  function setSelectedFacing(facing: number) {
+    if (selected === null) return;
+    setWorking((prev) => {
+      const idx = selected.row * prev.grid.cols + selected.col;
+      const cell = prev.grid.cells[idx];
+      if (cell === undefined || cell.kind !== "module") return prev;
+      const cells = prev.grid.cells.slice();
+      cells[idx] = { ...cell, facing };
+      return { ...prev, grid: { ...prev.grid, cells } };
+    });
+  }
+
+  function resize(cols: number, rows: number) {
+    setWorking((prev) => {
+      const cells: GridCell[] = [];
+      for (let r = 0; r < rows; r += 1) {
+        for (let c = 0; c < cols; c += 1) {
+          const existing =
+            c < prev.grid.cols && r < prev.grid.rows
+              ? prev.grid.cells[r * prev.grid.cols + c]
+              : undefined;
+          cells.push(existing ?? { kind: "empty" });
+        }
+      }
+      return { ...prev, grid: { cols, rows, cells } };
+    });
+    setSelected(null);
+  }
 
   async function save() {
-    if (hull === undefined || analysis === null) return;
     const now = nowIso();
     const design: ShipDesign = {
       id: working.id ?? createId("design"),
       name: working.name.trim() || "Untitled Design",
-      hullId: working.hullId,
       faction: working.faction.trim() || "Unaligned",
-      placements: working.placements,
+      grid: working.grid,
       createdAt: working.createdAt ?? now,
       updatedAt: now,
     };
     await storage().ships.save(design);
-    setWorking((prev) => ({
-      ...prev,
-      id: design.id,
-      createdAt: design.createdAt,
-    }));
+    setWorking((prev) => ({ ...prev, id: design.id, createdAt: design.createdAt }));
     notifications.show({
       title: "Design saved",
       message: `${design.name} is in your roster.`,
@@ -194,9 +220,7 @@ export function ShipDesignerRoute() {
 
   async function remove(id: string) {
     await storage().ships.remove(id);
-    if (working.id === id) {
-      setWorking(blankDesign(firstHull));
-    }
+    if (working.id === id) setWorking(blankDesign());
     notifications.show({ message: "Design deleted", color: "gray" });
   }
 
@@ -205,17 +229,21 @@ export function ShipDesignerRoute() {
       id: design.id,
       createdAt: design.createdAt,
       name: design.name,
-      hullId: design.hullId,
       faction: design.faction,
-      placements: [...design.placements],
+      grid: design.grid,
     });
+    setSelected(null);
   }
+
+  const grid = working.grid;
+  const selectedCell =
+    selected === null ? undefined : cellAt(selected.col, selected.row, grid);
 
   return (
     <Stack gap="lg">
       <Title order={2}>Ship Designer</Title>
 
-      <Grid gap="lg">
+      <Grid>
         <Grid.Col span={{ base: 12, md: 4 }}>
           <Paper p="md" withBorder>
             <Group justify="space-between" mb="sm">
@@ -224,7 +252,7 @@ export function ShipDesignerRoute() {
                 size="xs"
                 variant="light"
                 leftSection={<IconPlus size={14} />}
-                onClick={() => setWorking(blankDesign(firstHull))}
+                onClick={() => setWorking(blankDesign())}
               >
                 New
               </Button>
@@ -237,11 +265,7 @@ export function ShipDesignerRoute() {
                   </Text>
                 ) : (
                   designs.map((design) => (
-                    <Group
-                      key={design.id}
-                      justify="space-between"
-                      wrap="nowrap"
-                    >
+                    <Group key={design.id} justify="space-between" wrap="nowrap">
                       <Button
                         variant={design.id === working.id ? "filled" : "subtle"}
                         size="xs"
@@ -269,139 +293,192 @@ export function ShipDesignerRoute() {
         </Grid.Col>
 
         <Grid.Col span={{ base: 12, md: 8 }}>
-          {hull === undefined || analysis === null ? (
-            <Text c="dimmed">Pick a hull to begin.</Text>
-          ) : (
-            <Stack gap="md">
-              <Group grow align="flex-start">
-                <TextInput
-                  label="Name"
-                  value={working.name}
-                  onChange={(e) =>
-                    setWorking((prev) => ({ ...prev, name: e.target.value }))
-                  }
-                  placeholder="e.g. Sabre Mk II"
-                />
-                <NativeSelect
-                  label="Hull"
-                  value={working.hullId}
-                  onChange={(e) =>
-                    setWorking((prev) => ({
-                      ...prev,
-                      hullId: e.target.value,
-                      placements: [],
-                    }))
-                  }
-                >
-                  {hulls.map((h) => (
-                    <option key={h.id} value={h.id}>
-                      {h.name} ({h.classification})
-                    </option>
-                  ))}
-                </NativeSelect>
-                <TextInput
-                  label="Faction"
-                  value={working.faction}
-                  onChange={(e) =>
-                    setWorking((prev) => ({ ...prev, faction: e.target.value }))
-                  }
-                />
-              </Group>
+          <Stack gap="md">
+            <Group grow align="flex-start">
+              <TextInput
+                label="Name"
+                value={working.name}
+                onChange={(e) =>
+                  setWorking((prev) => ({ ...prev, name: e.target.value }))
+                }
+                placeholder="e.g. Sabre Mk II"
+              />
+              <TextInput
+                label="Faction"
+                value={working.faction}
+                onChange={(e) =>
+                  setWorking((prev) => ({ ...prev, faction: e.target.value }))
+                }
+              />
+            </Group>
 
-              <Grid gap="md">
-                <Grid.Col span={{ base: 12, lg: 5 }}>
-                  <Paper p="md" withBorder>
-                    <HullMap hull={hull} placements={working.placements} />
-                  </Paper>
-                </Grid.Col>
-                <Grid.Col span={{ base: 12, lg: 7 }}>
+            <Group grow>
+              <NumberInput
+                label="Columns"
+                min={1}
+                max={MAX_DIM}
+                value={grid.cols}
+                onChange={(v) => resize(clampDim(v, grid.cols), grid.rows)}
+              />
+              <NumberInput
+                label="Rows"
+                min={1}
+                max={MAX_DIM}
+                value={grid.rows}
+                onChange={(v) => resize(grid.cols, clampDim(v, grid.rows))}
+              />
+            </Group>
+
+            <Grid>
+              <Grid.Col span={{ base: 12, lg: 6 }}>
+                <Paper p="md" withBorder>
+                  <Text size="sm" fw={600} mb="xs">
+                    Grid
+                  </Text>
+                  <GridBoard grid={grid} selected={selected} onPaint={paint} />
+                  {selectedCell !== undefined && selectedCell.kind === "module" ? (
+                    <Stack gap={4} mt="sm">
+                      <Text size="xs" c="dimmed">
+                        Facing of selected module cell
+                      </Text>
+                      <SegmentedControl
+                        size="xs"
+                        data={FACINGS}
+                        value={`${selectedCell.facing}`}
+                        onChange={(v) => setSelectedFacing(Number(v))}
+                      />
+                    </Stack>
+                  ) : null}
+                </Paper>
+              </Grid.Col>
+
+              <Grid.Col span={{ base: 12, lg: 6 }}>
+                <Paper p="md" withBorder>
+                  <Text size="sm" fw={600} mb="xs">
+                    Palette
+                  </Text>
                   <Stack gap="xs">
-                    <Text size="sm" fw={600}>
-                      Modules
-                    </Text>
-                    {hull.slots.map((slot) => {
-                      const options = catalog()
-                        .allModules()
-                        .filter((m) => m.slotType === slot.type)
-                        .map((m) => ({
-                          value: m.id,
-                          label: `${m.name} — ${m.cost} pts`,
-                        }));
-                      const value = moduleInSlot(working.placements, slot.id);
-                      return (
-                        <Select
-                          key={slot.id}
-                          label={
-                            <Group gap={6}>
-                              <Badge
-                                size="xs"
-                                variant="light"
-                                color="indigo"
-                              >
-                                {SLOT_TYPE_LABEL[slot.type]}
-                              </Badge>
-                              <Text size="xs" c="dimmed">
-                                {slot.id}
-                              </Text>
-                            </Group>
+                    <Button
+                      size="xs"
+                      variant={brush.kind === "empty" ? "filled" : "light"}
+                      color="gray"
+                      onClick={() => setBrush({ kind: "empty" })}
+                    >
+                      Erase (empty)
+                    </Button>
+                    <Group gap={4}>
+                      {HULL_TILES.map((tile) => (
+                        <Button
+                          key={tile}
+                          size="xs"
+                          variant={
+                            brush.kind === "hull" && brush.tile === tile
+                              ? "filled"
+                              : "light"
                           }
-                          data={options}
-                          value={value ?? null}
-                          onChange={(moduleId) =>
-                            setWorking((prev) => ({
-                              ...prev,
-                              placements: setModuleInSlot(
-                                prev.placements,
-                                slot.id,
-                                moduleId ?? undefined,
-                              ),
-                            }))
-                          }
-                          placeholder="Empty"
-                          clearable
-                          searchable
-                        />
-                      );
-                    })}
+                          onClick={() => setBrush({ kind: "hull", tile })}
+                        >
+                          {tile}
+                        </Button>
+                      ))}
+                    </Group>
+                    <Select
+                      label="Module"
+                      placeholder="Pick a module to paint"
+                      data={moduleDefs.map((m) => ({
+                        value: m.id,
+                        label: `${m.name} — ${m.cost} pts`,
+                      }))}
+                      value={brush.kind === "module" ? brush.moduleId : null}
+                      onChange={(moduleId) =>
+                        moduleId !== null && setBrush({ kind: "module", moduleId })
+                      }
+                      searchable
+                    />
+                    <Badge variant="light" color="indigo">
+                      Brush: {brushLabel(brush)}
+                    </Badge>
                   </Stack>
-                </Grid.Col>
-              </Grid>
+                </Paper>
+              </Grid.Col>
+            </Grid>
 
-              <Paper p="md" withBorder>
-                <StatReadout
-                  stats={analysis.stats}
-                  massCapacity={hull.massCapacity}
-                />
-              </Paper>
+            <Paper p="md" withBorder>
+              <StatReadout stats={analysis.stats} />
+            </Paper>
 
-              <FaultList faults={analysis.faults} />
+            <FaultList faults={analysis.faults} />
 
-              <Group justify="space-between">
-                <ShareButton
-                  shareable={{
-                    kind: "shipDesign",
-                    value: {
-                      id: working.id ?? "draft",
-                      name: working.name || "Untitled",
-                      hullId: working.hullId,
-                      faction: working.faction || "Unaligned",
-                      placements: working.placements,
-                      createdAt: working.createdAt ?? nowIso(),
-                      updatedAt: nowIso(),
-                    },
-                  }}
-                />
-                <Button
-                  onClick={save}
-                  leftSection={<IconBucketDroplet size={16} />}
-                >
-                  Save design
-                </Button>
-              </Group>
-            </Stack>
-          )}
+            <Group justify="space-between">
+              <ShareButton
+                shareable={{
+                  kind: "shipDesign",
+                  value: {
+                    id: working.id ?? "draft",
+                    name: working.name || "Untitled",
+                    faction: working.faction || "Unaligned",
+                    grid: working.grid,
+                    createdAt: working.createdAt ?? nowIso(),
+                    updatedAt: nowIso(),
+                  },
+                }}
+              />
+              <Button onClick={save} leftSection={<IconDeviceFloppy size={16} />}>
+                Save design
+              </Button>
+            </Group>
+          </Stack>
         </Grid.Col>
       </Grid>
     </Stack>
+  );
+}
+
+function GridBoard({
+  grid,
+  selected,
+  onPaint,
+}: {
+  grid: TileGrid;
+  selected: { col: number; row: number } | null;
+  onPaint: (col: number, row: number) => void;
+}) {
+  return (
+    <div
+      className={gridBoard}
+      style={{ gridTemplateColumns: `repeat(${grid.cols}, 1fr)` }}
+    >
+      {grid.cells.map((cell, idx) => {
+        const col = idx % grid.cols;
+        const row = Math.floor(idx / grid.cols);
+        const isSelected =
+          selected !== null && selected.col === col && selected.row === row;
+        return (
+          <button
+            key={`${col}-${row}`}
+            type="button"
+            className={gridCellClass}
+            onClick={() => onPaint(col, row)}
+            style={{
+              background: cellColour(cell),
+              outline: isSelected ? "2px solid #ffd86e" : "none",
+            }}
+            aria-label={`cell ${col},${row}`}
+          >
+            <span className={cellInner}>
+              {cell.kind === "module" ? (
+                <span
+                  className={facingTick}
+                  style={{
+                    transform: `rotate(${cell.facing + Math.PI / 2}rad)`,
+                  }}
+                />
+              ) : null}
+              {cellLabel(cell)}
+            </span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
