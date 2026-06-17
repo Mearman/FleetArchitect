@@ -47,8 +47,8 @@ const moduleData: ModuleDefinition[] = [
   },
   {
     id: "mod-railgun",
-    name: "Railgun",
-    description: "High-velocity kinetic slug. Strong range and armour penetration, slow refire.",
+    name: "Railgun Turret",
+    description: "High-velocity kinetic slug on a powered mount that tracks across a wide arc. Strong range and armour penetration, slow refire.",
     category: "weapon",
     mass: 12,
     cost: 90,
@@ -66,12 +66,15 @@ const moduleData: ModuleDefinition[] = [
       shieldPiercing: 0.2,
       armourPiercing: 0.5,
       spread: 0.02,
+      // A 90° (±π/2) turret that slews briskly to bear on its target.
+      turretArc: Math.PI / 2,
+      turretTurnRate: 0.08,
     },
   },
   {
     id: "mod-missile-rack",
-    name: "Missile Rack",
-    description: "Homing missiles that track their target. Great damage, easily defeated by point defences.",
+    name: "Missile Turret",
+    description: "Homing missiles on a fully-rotating launcher that can engage targets in any direction. Great damage, easily defeated by point defences.",
     category: "weapon",
     mass: 14,
     cost: 110,
@@ -89,6 +92,9 @@ const moduleData: ModuleDefinition[] = [
       shieldPiercing: 0,
       armourPiercing: 0.3,
       spread: 0.4,
+      // A full 360° launcher (±π) that slews slowly.
+      turretArc: Math.PI,
+      turretTurnRate: 0.05,
     },
   },
   {

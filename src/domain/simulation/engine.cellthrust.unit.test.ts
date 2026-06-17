@@ -59,6 +59,8 @@ function moduleOf(
     shieldFacing: 0,
     facing: effect.kind === "engine" ? effect.facing ?? 0 : 0,
     weaponFacing: 0,
+    turretArc: 0,
+    turretTurnRate: 0,
   };
 }
 
