@@ -73,6 +73,15 @@ export const ShipSnapshot = z.object({
    * event log. Optional for backward compatibility with older replays.
    */
   brokeOff: z.boolean().optional(),
+  /**
+   * Ship-local centre of mass (relative to the ship's position). When the
+   * ship runs the per-module model the CoM is derived from the mass
+   * distribution of its modules; rotation pivots about this point and
+   * forces are lever-armed against it. Optional for backward compatibility
+   * with older replays; absent (or 0,0) on legacy non-modular ships.
+   */
+  comX: z.number().optional(),
+  comY: z.number().optional(),
 });
 export type ShipSnapshot = z.infer<typeof ShipSnapshot>;
 

@@ -102,17 +102,26 @@ const SIM = {
   linearDamping: 0.97,
   angularDamping: 0.9,
   /**
-   * Moment of inertia per unit mass for the per-cell thrust model.
-   * Treated as a uniform disc of radius `sqrt(mass)/2` would give MoI =
-   * m·r²/2; we instead use the simpler `MoI = mass * cellthrustMoI` so a
-   * single constant governs the relative weight of linear vs angular
-   * acceleration. Larger values make the ship harder to spin (more
-   * "stubborn"); smaller values make off-axis thrust twitchy. 5 is a
-   * gameplay-tuned middle ground: a single rear-mounted engine produces
-   * zero torque, but two side engines at the corners produce a visible
-   * spin within a few ticks.
+   * Moment of inertia per unit mass for legacy (non-modular) ships, which
+   * have no module distribution to derive one from. Treated as a uniform
+   * disc of radius `sqrt(mass)/2` would give MoI = m·r²/2; we use the
+   * simpler `MoI = mass * legacyMoI` so a single constant governs the
+   * relative weight of linear vs angular acceleration. Larger values
+   * make the ship harder to spin (more "stubborn"); smaller values make
+   * off-axis thrust twitchy. Modular ships ignore this constant — their
+   * moment of inertia is derived from their module mass distribution
+   * about the centre of mass each time aggregates recompute.
    */
-  cellthrustMoI: 5,
+  legacyMoI: 5,
+  /**
+   * Mass of a single spawned projectile, in the same mass units as ship
+   * modules. The recoil a firing ship feels is `m_p * v_p / M_ship` and
+   * the impulse a target absorbs on hit is the same — a small fixed
+   * projectile mass keeps the recoil visible (a stationary ship firing a
+   * fast round kicks backward) without destabilising the movement model
+   * for slow, heavy projectiles like torpedoes.
+   */
+  projectileMass: 0.5,
   /**
    * Per-PD-module per-tick chance of intercepting a single in-range missile
    * or torpedo. Multiple PD modules stack their chances (1 - (1-p)^n) but
@@ -149,6 +158,24 @@ interface SimShip {
   turnRate: number;
   /** Total ship mass (hull base + installed modules). Drives acceleration. */
   mass: number;
+  /**
+   * Ship-local centre of mass (relative to ship.x/ship.y). On modular
+   * ships this is the mass-weighted centroid of every module (alive and
+   * dead — destroyed hull still contributes structural mass until it is
+   * excluded by a recompute). On legacy non-modular ships it stays at
+   * (0, 0) — the ship's position is its centre of mass. Rotation pivots
+   * about this point; linear forces are lever-armed against it for the
+   * torque calculation.
+   */
+  comX: number;
+  comY: number;
+  /**
+   * Scalar moment of inertia about the z-axis through the centre of
+   * mass. On modular ships it is derived as `Σ m_i · |r_i − r_com|²`;
+   * on legacy ships it falls back to `mass * legacyMoI`. Drives how
+   * readily off-centre forces spin the ship.
+   */
+  momentOfInertia: number;
   radius: number;
   cost: number;
   weapons: readonly WeaponEffect[];
@@ -245,6 +272,14 @@ interface SimProjectile {
   vx: number;
   vy: number;
   kind: WeaponType;
+  /** Projectile mass — carried so the hit-impulse step knows the momentum
+   *  to transfer without re-deriving it from the owning weapon. */
+  mass: number;
+  /** Ship-local position of the muzzle that fired this projectile, relative
+   *  to the firing ship's centre. Used by the firing-recoil step to compute
+   *  the lever arm against the firing ship's CoM. */
+  muzzleLocalX: number;
+  muzzleLocalY: number;
   damage: number;
   tracking: number;
   shieldPiercing: number;
@@ -313,6 +348,13 @@ function toSimShip(ship: CombatShip, rng: () => number): SimShip {
     thrust: ship.stats.thrust,
     turnRate: ship.stats.turnRate,
     mass: SIM.hullMass[ship.classification] + ship.stats.mass,
+    // Non-modular ships default to a CoM at their position pivot and the
+    // legacy scalar moment of inertia. recomputeAggregates overrides both
+    // for modular ships (the only path that calls it).
+    comX: 0,
+    comY: 0,
+    momentOfInertia:
+      (SIM.hullMass[ship.classification] + ship.stats.mass) * SIM.legacyMoI,
     radius: radiusFor(ship.classification),
     cost: ship.stats.cost,
     weapons,
@@ -513,6 +555,36 @@ function recomputeAggregates(ship: SimShip): void {
   ship.shield = Math.min(ship.shield, shieldCapacity);
   ship.weapons = weapons;
   ship.weaponCooldowns = cooldowns;
+
+  // Centre of mass and moment of inertia derived from the module mass
+  // distribution. Both run over ALL modules — alive and dead — because
+  // destroyed hull still contributes structural mass: the pivot of a
+  // ship with a hole in it doesn't snap to the survivor centroid, it
+  // shifts gradually as mass is lost. The hull base mass is treated as
+  // a point at the origin (0, 0) so legacy designs without explicit hull
+  // modules still centre the CoM on the ship position.
+  const hullMass = SIM.hullMass[ship.classification];
+  let massSum = hullMass;
+  let mx = 0;
+  let my = 0;
+  for (const m of ship.modules) {
+    massSum += m.mass;
+    mx += m.mass * m.x;
+    my += m.mass * m.y;
+  }
+  const comX = massSum > 0 ? mx / massSum : 0;
+  const comY = massSum > 0 ? my / massSum : 0;
+  let moi = hullMass * (comX * comX + comY * comY);
+  for (const m of ship.modules) {
+    const dx = m.x - comX;
+    const dy = m.y - comY;
+    moi += m.mass * (dx * dx + dy * dy);
+  }
+  ship.comX = comX;
+  ship.comY = comY;
+  // Floor MoI so a stripped-down ship still has some rotational inertia
+  // and we never divide by zero in the angular-acceleration step.
+  ship.momentOfInertia = Math.max(moi, 1);
 }
 
 /** Whether the ship has at least one alive command (bridge) module. Ships
@@ -945,6 +1017,11 @@ function makeChunkShip(
     thrust: 0,
     turnRate: 0,
     mass: SIM.hullMass[parent.classification],
+    // Placeholder; recomputeAggregates derives the real CoM and MoI from
+    // the chunk's own module set immediately after construction.
+    comX: 0,
+    comY: 0,
+    momentOfInertia: 1,
     radius: parent.radius,
     cost: 0,
     weapons: [],
@@ -969,6 +1046,8 @@ function spawnProjectile(
   owner: SimShip,
   weapon: WeaponEffect,
   weaponFacing: number,
+  muzzleLocalX: number,
+  muzzleLocalY: number,
   target: SimShip,
   rng: () => number,
 ): SimProjectile {
@@ -985,12 +1064,24 @@ function spawnProjectile(
   const muzzleX = owner.x + Math.cos(mountAngle) * SIM.muzzleOffset;
   const muzzleY = owner.y + Math.sin(mountAngle) * SIM.muzzleOffset;
   const ttl = Math.ceil((weapon.range + 40) / Math.max(weapon.projectileSpeed, 1));
+  const vx = Math.cos(angle) * weapon.projectileSpeed;
+  const vy = Math.sin(angle) * weapon.projectileSpeed;
+  // Recoil: the firing ship absorbs the projectile's momentum in equal and
+  // opposite measure. delta_v_ship = -m_p * v_p / M_ship; the angular kick
+  // is the lever arm (muzzle − CoM) cross the projectile's linear momentum,
+  // divided by the ship's moment of inertia. Applied before the projectile
+  // enters the world so the first tick of travel already reflects the
+  // ship's post-recoil velocity.
+  applyImpulse(owner, -SIM.projectileMass * vx, -SIM.projectileMass * vy, muzzleLocalX, muzzleLocalY);
   return {
     x: muzzleX,
     y: muzzleY,
-    vx: Math.cos(angle) * weapon.projectileSpeed,
-    vy: Math.sin(angle) * weapon.projectileSpeed,
+    vx,
+    vy,
     kind: weapon.weaponType,
+    mass: SIM.projectileMass,
+    muzzleLocalX,
+    muzzleLocalY,
     damage: weapon.damage,
     tracking: weapon.tracking,
     shieldPiercing: weapon.shieldPiercing,
@@ -1002,6 +1093,48 @@ function spawnProjectile(
     ownerSide: owner.side,
     targetId: target.instanceId,
   };
+}
+
+/**
+ * Apply an instantaneous impulse to a ship: a linear momentum change
+ * (deltaPx, deltaPy) in world coordinates, delivered at the ship-local
+ * point (localX, localY) relative to the ship origin. The ship's CoM
+ * absorbs the linear part (`delta_v = deltaP / M`) and the offset from
+ * the CoM produces a torque (`tau = r × deltaP`) which becomes an angular
+ * velocity change (`delta_omega = tau / I`). Used for both firing recoil
+ * (impulse = -m_p * v_p, applied at the muzzle) and hit impulses
+ * (impulse = +m_p * v_p, applied at the impact point).
+ *
+ * The local point is in ship-local coordinates (un-rotated design frame),
+ * so the lever arm is `(localX − comX, localY − comY)` regardless of the
+ * ship's world heading. The impulse itself is in world coordinates because
+ * that's the frame the projectile's velocity lives in; we rotate it back
+ * into the local frame only to compute the cross product for torque.
+ */
+function applyImpulse(
+  ship: SimShip,
+  deltaPx: number,
+  deltaPy: number,
+  localX: number,
+  localY: number,
+): void {
+  if (!ship.alive) return;
+  const invMass = 1 / Math.max(ship.mass, 1);
+  ship.velX += deltaPx * invMass;
+  ship.velY += deltaPy * invMass;
+  // Torque = r × F where r is measured from the CoM and F is the impulse
+  // expressed in the ship's local frame. Rotate the world impulse by
+  // -ship.facing to bring it into the local frame.
+  const c = Math.cos(-ship.facing);
+  const s = Math.sin(-ship.facing);
+  const localImpulseX = deltaPx * c - deltaPy * s;
+  const localImpulseY = deltaPx * s + deltaPy * c;
+  const rx = localX - ship.comX;
+  const ry = localY - ship.comY;
+  const torque = rx * localImpulseY - ry * localImpulseX;
+  if (ship.momentOfInertia > 0) {
+    ship.angVel += torque / ship.momentOfInertia;
+  }
 }
 
 function isRetreating(ship: SimShip): boolean {
@@ -1200,7 +1333,9 @@ function leadingSide(
  *  modular ship. Engines that are not alive contribute nothing — a
  *  destroyed thruster stops thrusting. The returned force is in ship-local
  *  coordinates; the caller rotates it into world space using the ship's
- *  facing. */
+ *  facing. Torque is computed about the ship's centre of mass: the lever
+ *  arm is `(engine_pos − com)`, so an engine mounted exactly at the CoM
+ *  produces pure linear thrust and zero spin regardless of its facing. */
 function cellThrustForceAndTorque(ship: SimShip): { fx: number; fy: number; torque: number } {
   if (ship.modules === undefined) return { fx: 0, fy: 0, torque: 0 };
   let fx = 0;
@@ -1214,9 +1349,12 @@ function cellThrustForceAndTorque(ship: SimShip): { fx: number; fy: number; torq
     const ly = Math.sin(m.facing) * t;
     fx += lx;
     fy += ly;
-    // 2D cross product (z-component): r × F = rx*fy − ry*fx. A positive
-    // value rotates the ship counter-clockwise (toward +y from +x).
-    torque += m.x * ly - m.y * lx;
+    // 2D cross product (z-component): r × F = rx*fy − ry*fx, where r is
+    // measured from the centre of mass. A positive value rotates the ship
+    // counter-clockwise (toward +y from +x).
+    const rx = m.x - ship.comX;
+    const ry = m.y - ship.comY;
+    torque += rx * ly - ry * lx;
   }
   return { fx, fy, torque };
 }
@@ -1348,11 +1486,13 @@ function moveShips(
       ship.velY += world.y * invMass;
       ship.velX *= SIM.linearDamping;
       ship.velY *= SIM.linearDamping;
-      // Angular kick from off-centre thrusters. Moment of inertia is
-      // `mass * cellthrustMoI` — a uniform-disc-like scaling that gives
-      // a single tunable constant for the linear-vs-angular trade-off.
-      const moi = Math.max(ship.mass, 1) * SIM.cellthrustMoI;
-      ship.angVel += (shouldThrust ? torque * invMass : 0) / moi;
+      // Angular kick from off-centre thrusters. Torque is measured about
+      // the CoM and moment of inertia is the scalar I = Σ m·|r−com|², so
+      // angular acceleration is `alpha = torque / I` (Newton's second law
+      // for rotation). Clamped to a sane per-tick cap so a tiny I can't
+      // spin a stripped-down ship to absurd angular speeds in one tick.
+      const angularAccel = ship.momentOfInertia > 0 ? torque / ship.momentOfInertia : 0;
+      ship.angVel += shouldThrust ? angularAccel : 0;
     } else {
       const maxSpeed = ship.thrust;
       const accel = ship.thrust / Math.max(ship.mass, 1);
@@ -1420,7 +1560,7 @@ function fireWeapons(
         // A genuine, in-range shot: spend a round and reset the cycle.
         m.ammo -= 1;
         m.cooldown = weapon.cooldown;
-        fireOne(ship, weapon, m.weaponFacing, target, rng, fired);
+        fireOne(ship, weapon, m.weaponFacing, m.x, m.y, target, rng, fired);
       }
       continue;
     }
@@ -1440,7 +1580,9 @@ function fireWeapons(
 
       ship.weaponCooldowns[i] = weapon.cooldown;
       // Legacy aggregated path reads facing off the weapon effect (default 0).
-      fireOne(ship, weapon, weapon.facing ?? 0, target, rng, fired);
+      // No per-module muzzle position, so the recoil lever arm is the ship's
+      // origin (0, 0) — the legacy CoM.
+      fireOne(ship, weapon, weapon.facing ?? 0, 0, 0, target, rng, fired);
     }
   }
   return fired;
@@ -1449,11 +1591,17 @@ function fireWeapons(
 /** Fire a single weapon: hitscan applies damage immediately at a synthesised
  *  impact point on the target's facing edge; otherwise spawn a projectile.
  *  `weaponFacing` is the weapon's mount direction (radians, ship-local); the
- *  ship adds it to its own heading to figure out the muzzle position. */
+ *  ship adds it to its own heading to figure out the muzzle position.
+ *  `muzzleLocalX/Y` is the weapon's position in ship-local coordinates —
+ *  the lever arm against the ship's CoM for firing recoil. On the legacy
+ *  aggregated path it defaults to (0, 0) (the ship's origin), matching the
+ *  pre-rigid-body behaviour where every weapon sat at the pivot. */
 function fireOne(
   ship: SimShip,
   weapon: WeaponEffect,
   weaponFacing: number,
+  muzzleLocalX: number,
+  muzzleLocalY: number,
   target: SimShip,
   rng: () => number,
   fired: SimProjectile[],
@@ -1467,7 +1615,7 @@ function fireOne(
     const iy = target.y + Math.sin(angle) * target.radius;
     applyDamage(target, weapon.damage, weapon.shieldPiercing, weapon.armourPiercing, ix, iy, angle);
   } else {
-    fired.push(spawnProjectile(ship, weapon, weaponFacing, target, rng));
+    fired.push(spawnProjectile(ship, weapon, weaponFacing, muzzleLocalX, muzzleLocalY, target, rng));
   }
 }
 
@@ -1609,6 +1757,18 @@ function updateProjectiles(
       // directional shields see.
       const shotAngle = Math.atan2(p.vy, p.vx);
       applyDamage(hit, p.damage, p.shieldPiercing, p.armourPiercing, p.x, p.y, shotAngle);
+      // Hit impulse: the target absorbs the projectile's remaining momentum
+      // at the impact point. delta_v = +m_p * v_p / M_target; the lever arm
+      // is the impact point (in ship-local) relative to the CoM. Applied
+      // after damage so a kill shot still transfers momentum to the
+      // (now-dead) hulk, matching conservation. The impact point's local
+      // coordinates are derived by un-rotating the world hit position by
+      // the target's facing.
+      const c = Math.cos(-hit.facing);
+      const s = Math.sin(-hit.facing);
+      const localX = (p.x - hit.x) * c - (p.y - hit.y) * s;
+      const localY = (p.x - hit.x) * s + (p.y - hit.y) * c;
+      applyImpulse(hit, p.mass * p.vx, p.mass * p.vy, localX, localY);
       continue;
     }
     survivors.push(p);
@@ -1638,6 +1798,10 @@ function snapshot(
         // Record the split frame, then clear so subsequent snapshots
         // don't carry a stale "freshly broken" marker.
         ...(s.brokeOff === true ? { brokeOff: true } : {}),
+        // Centre of mass in ship-local coordinates. Omitted when at the
+        // origin so legacy replays stay byte-compatible with pre-rigid-body
+        // recordings; modular ships with offset CoM always emit it.
+        ...(s.comX !== 0 || s.comY !== 0 ? { comX: s.comX, comY: s.comY } : {}),
       };
       if (s.brokeOff === true) s.brokeOff = false;
       if (s.modules === undefined) return base;
