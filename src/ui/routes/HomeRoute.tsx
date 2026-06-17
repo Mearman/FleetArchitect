@@ -14,7 +14,7 @@ const features = [
   {
     to: "/ships",
     title: "Design ships",
-    body: "Pick a hull and pack it with weapons, shields, armour, engines and power. Balance mass, power and crew against the build budget.",
+    body: "Build a ship cell by cell on a tile grid: lay hull tiles, then place weapons, shields, armour, engines and power. Balance mass, power and crew against the build budget.",
   },
   {
     to: "/fleets",
