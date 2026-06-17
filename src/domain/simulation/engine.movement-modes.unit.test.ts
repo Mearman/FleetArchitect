@@ -97,8 +97,8 @@ function attackerAt(result: ReturnType<typeof runBattle>, tick: number, id: stri
 
 describe("engine.movement-modes", () => {
   it("closing: a far attacker accelerates toward the target", () => {
-    // With weapon range 300 and medium/balanced, want ≈ 165, so the closing
-    // threshold is want*0.85 ≈ 140. Place the defender at x=300 (well beyond).
+    // With weapon range 300 and medium/balanced, want ≈ 165 (outer edge of the
+    // at-range band). Place the defender at x=300 (well beyond want).
     const result = runBattle(
       inputs([
         makeShip({
@@ -117,7 +117,9 @@ describe("engine.movement-modes", () => {
   });
 
   it("in-range band: the attacker holds position and aims at the target", () => {
-    // want ≈ 165, band 84..140. Place the defender at x=110.
+    // want ≈ 165 (range 300 * medium fraction 0.55). With defaultOrders
+    // rangeKeepingBand=0.3, the at-range zone is [want*(1-0.3), want]
+    // = [115.5, 165]. Place the defender at x=140 (inside the dead-zone).
     const result = runBattle(
       inputs([
         makeShip({
@@ -128,7 +130,7 @@ describe("engine.movement-modes", () => {
           facing: 0,
           weapons: [weapon()],
         }),
-        makeShip({ id: "d1", side: "defender", x: 110, y: 0, structure: 99999 }),
+        makeShip({ id: "d1", side: "defender", x: 140, y: 0, structure: 99999 }),
       ]),
     );
     // In the band, shouldThrust=false → velocity decays to ~0, so position
@@ -137,7 +139,8 @@ describe("engine.movement-modes", () => {
   });
 
   it("too close: the attacker faces the target and reverse-thrusts (kite)", () => {
-    // want ≈ 165, too-close threshold ≈ 84. Place the defender at x=50.
+    // want ≈ 165, too-close threshold = want*(1−band) ≈ 115.5. Place the
+    // defender at x=50 (well inside the reverse-thrust zone).
     const result = runBattle(
       inputs([
         makeShip({
