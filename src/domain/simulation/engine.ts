@@ -951,7 +951,10 @@ function snapshot(
         modules: s.modules.map((m) => ({
           slotId: m.slotId,
           kind: m.kind,
+          x: m.x,
+          y: m.y,
           hp: m.hp,
+          maxHp: m.maxHp,
           alive: m.alive,
         })),
       };

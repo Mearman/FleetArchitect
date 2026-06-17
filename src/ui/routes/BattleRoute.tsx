@@ -1,11 +1,13 @@
 import {
   Badge,
+  Box,
   Button,
   Center,
   Group,
   NativeSelect,
   NumberInput,
   Paper,
+  Progress,
   SegmentedControl,
   Slider,
   Stack,
@@ -23,7 +25,7 @@ import { catalog } from "@/data/catalog";
 import { useFleets, useShipDesigns } from "@/ui/hooks/storage";
 import { storage } from "@/storage/db";
 import { BattleAnomaly } from "@/schema/battle";
-import type { BattleAnomaly as BattleAnomalyType, BattleResult } from "@/schema/battle";
+import type { BattleAnomaly as BattleAnomalyType, BattleFrame, BattleResult } from "@/schema/battle";
 import type { Fleet } from "@/schema/fleet";
 import type { WeaponType } from "@/schema/module";
 
@@ -42,6 +44,16 @@ const PROJECTILE_COLOUR: Record<WeaponType, string> = {
   plasma: "#e06bff",
 };
 
+/** Per-module part colour, by module kind, for the battle canvas. */
+const MODULE_COLOUR: Record<string, string> = {
+  weapon: "#ff8c5a",
+  shield: "#6ea8ff",
+  armour: "#b0b0c0",
+  engine: "#7bd88f",
+  power: "#ffe066",
+  crew: "#c792ff",
+};
+
 interface Bounds {
   minX: number;
   maxX: number;
@@ -57,6 +69,69 @@ const ANOMALY_LABEL: Record<BattleAnomalyType, string> = {
   nebula: "Nebula",
   blackHole: "Black hole",
 };
+
+const MODULE_LABEL: Record<string, string> = {
+  weapon: "Weapon",
+  shield: "Shield",
+  armour: "Armour",
+  engine: "Engine",
+  power: "Power",
+  crew: "Crew",
+};
+
+/**
+ * Per-module status readout for the current frame: each ship's modules as a
+ * row of HP bars, so you can watch systems fail as the battle wears on.
+ */
+function ModuleStatusPanel({ frame }: { frame: BattleFrame }) {
+  const withModules = frame.ships.filter((s) => s.modules !== undefined && s.modules.length > 0);
+  if (withModules.length === 0) return null;
+  return (
+    <Paper p="sm" withBorder>
+      <Stack gap={6}>
+        <Text size="xs" c="dimmed" fw={600}>
+          Modules
+        </Text>
+        {withModules.map((s) => {
+          const sideColour = s.side === "attacker" ? "#ff6b5a" : "#5ab0ff";
+          return (
+            <Group key={s.instanceId} gap="xs" wrap="nowrap" align="center">
+              <Box
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  background: s.alive ? sideColour : "transparent",
+                  border: `1px solid ${sideColour}`,
+                  flex: "0 0 auto",
+                }}
+              />
+              <Group gap={4} wrap="wrap" style={{ flex: 1 }}>
+                {s.modules?.map((m) => {
+                  const frac = m.maxHp > 0 ? Math.max(0, m.hp / m.maxHp) : 0;
+                  return (
+                    <Tooltip label={`${MODULE_LABEL[m.kind] ?? m.kind}: ${Math.round(m.hp)}/${m.maxHp}`}>
+                      <Box
+                        style={{ width: 34 }}
+                        key={m.slotId}
+                      >
+                        <Progress
+                          size={5}
+                          value={m.alive ? frac * 100 : 0}
+                          color={m.alive ? "teal" : "gray"}
+                        />
+                      </Box>
+                    </Tooltip>
+                  );
+                })}
+              </Group>
+            </Group>
+          );
+        })}
+      </Stack>
+    </Paper>
+  );
+}
 
 export function BattleRoute() {
   const fleets = useFleets();
@@ -248,6 +323,38 @@ export function BattleRoute() {
       ctx.beginPath();
       ctx.arc(px, py, 7, 0, Math.PI * 2);
       ctx.fill();
+
+      // Per-module parts: each placed module drawn at its world position
+      // (ship centre + the module's local cell rotated by the ship's facing),
+      // coloured by kind. Destroyed parts go dark — the ship visibly comes
+      // apart system by system as the battle wears on.
+      if (s.modules !== undefined && s.facing !== undefined) {
+        const cos = Math.cos(s.facing);
+        const sin = Math.sin(s.facing);
+        for (const m of s.modules) {
+          const wx = s.x + m.x * cos - m.y * sin;
+          const wy = s.y + m.x * sin + m.y * cos;
+          const mx = sx(wx);
+          const my = sy(wy);
+          const colour = MODULE_COLOUR[m.kind];
+          if (colour === undefined) continue;
+          ctx.globalAlpha = m.alive ? 1 : 0.2;
+          ctx.fillStyle = colour;
+          ctx.fillRect(mx - 2, my - 2, 4, 4);
+          if (!m.alive) {
+            // Destroyed: a dark cross to read as a hole / wreckage.
+            ctx.strokeStyle = "rgba(255,255,255,0.25)";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(mx - 3, my - 3);
+            ctx.lineTo(mx + 3, my + 3);
+            ctx.moveTo(mx + 3, my - 3);
+            ctx.lineTo(mx - 3, my + 3);
+            ctx.stroke();
+          }
+        }
+        ctx.globalAlpha = 1;
+      }
 
       // Heading indicator: a short line along the ship's velocity vector,
       // so direction and momentum are visible. Length scales with speed,
@@ -547,6 +654,11 @@ export function BattleRoute() {
                   setTick(val);
                 }}
               />
+              {(() => {
+                const frame = result.frames[tick];
+                if (frame === undefined) return null;
+                return <ModuleStatusPanel frame={frame} />;
+              })()}
             </>
           )}
         </Stack>
