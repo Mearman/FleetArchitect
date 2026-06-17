@@ -36,8 +36,9 @@ function moduleOf(
   maxHp: number,
   mass = 5,
   powerDraw = 0,
+  command = false,
 ): ResolvedModule {
-  return { slotId, moduleId: `mod-${slotId}`, kind: effect.kind, x, y, maxHp, mass, powerDraw, effect };
+  return { slotId, moduleId: `mod-${slotId}`, kind: effect.kind, x, y, maxHp, mass, powerDraw, effect, command };
 }
 
 /** A modular attacker whose single weapon has a small, finite magazine. */
@@ -45,7 +46,9 @@ function modularShooter(id: string, x: number, ammo: number): CombatShip {
   const weapon = beam({ damage: 25, cooldown: 1, ammo });
   const modules: ResolvedModule[] = [
     moduleOf("w1", weapon, 12, 0, 50),
-    moduleOf("p1", { kind: "power", output: 40 }, 0, -12, 20),
+    // The reactor doubles as the command module (as it does in the catalog),
+    // so the ship satisfies both the power-grid and bridge firing rules.
+    moduleOf("p1", { kind: "power", output: 40 }, 0, -12, 20, 5, 0, true),
   ];
   const stats: ShipStats = {
     mass: 10,
