@@ -86,6 +86,10 @@ function resolveModules(
       // thrusts along the ship's +x axis (forward), which is the legacy
       // behaviour and what every shipped engine module currently declares.
       facing: engineFacingFor(moduleDef.effect),
+      // Per-module weapon facing (Cosmoteer-style mount direction). Defaults
+      // to 0 (fires along ship heading) so legacy modules without an explicit
+      // mount angle behave exactly as before.
+      weaponFacing: weaponFacingFor(moduleDef.effect),
     });
   }
   return out;
@@ -128,6 +132,15 @@ function repairRateFor(effect: ModuleEffect): number {
 function engineFacingFor(effect: ModuleEffect): number {
   if (effect.kind !== "engine") return 0;
   return effect.facing ?? 0;
+}
+
+/** Read the ship-local fire direction off a module's effect. Only weapon
+ *  modules carry a facing; everything else returns 0 (the default — harmless
+ *  for non-weapon kinds). A weapon that omits `facing` fires along the ship's
+ *  heading, preserving legacy behaviour. */
+function weaponFacingFor(effect: ModuleEffect): number {
+  if (effect.kind === "weapon") return effect.facing ?? 0;
+  return 0;
 }
 
 /** Reflect a deployment across the y-axis: negate x, add π to facing. */

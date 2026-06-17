@@ -63,13 +63,23 @@ export interface ResolvedModule {
   /** For directional shields: the direction the arc points (radians). */
   shieldFacing: number;
   /**
-   * For directional thrusters: the direction the engine thrusts, in
+* For directional thrusters: the direction the engine thrusts, in
    * radians, ship-local. Default 0 (forward, +x). Each alive engine
    * contributes its force vector at its lever arm; the net force drives
    * linear acceleration and the net torque about the ship's centre drives
    * angular acceleration.
    */
   facing: number;
+  /**
+   * For weapon modules: the direction (radians, ship-local) the weapon fires
+   * relative to the host ship's heading. Defaults to 0 (fires along +x in
+   * ship-local space, i.e. forward). A side-mounted weapon has facing π/2
+   * (left) or -π/2 (right); a rear-mounted weapon has facing π. The engine
+   * adds this offset to the ship's world heading when spawning a projectile
+   * or computing a hitscan shot direction. Only meaningful for weapon
+   * modules; harmless on other kinds (default 0).
+   */
+  weaponFacing: number;
 }
 
 /** Everything the simulator needs to run a deterministic battle. */
