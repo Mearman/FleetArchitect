@@ -458,6 +458,57 @@ function sumWeaponTurn(ship: CombatShip): number {
  * Keeping the aggregates in sync with module destruction and brownout
  * means the movement, firing, and shield-regen code reads live values.
  */
+/**
+ * Ship-local centre of mass of a module set, treating the hull base mass as
+ * a point at the origin (0, 0). Used both by recomputeAggregates (over a
+ * ship's own modules) and by the break-apart momentum split (over a
+ * fragment's modules), so the two stay in lockstep.
+ */
+function localCentreOfMass(
+  modules: readonly SimModule[],
+  hullMass: number,
+): { x: number; y: number } {
+  let massSum = hullMass;
+  let mx = 0;
+  let my = 0;
+  for (const m of modules) {
+    massSum += m.mass;
+    mx += m.mass * m.x;
+    my += m.mass * m.y;
+  }
+  if (massSum <= 0) return { x: 0, y: 0 };
+  return { x: mx / massSum, y: my / massSum };
+}
+
+/**
+ * The world-frame velocity a point gains from rigid-body spin: the parent's
+ * linear velocity plus `ω × (pointCoM − parentCoM)`. The CoM offset is
+ * ship-local, so it is rotated by the ship facing into world axes (matching
+ * the world frame of velX/velY) before the 2D cross product
+ * `ω × (rx, ry) = (−ω·ry, ω·rx)`.
+ *
+ * Exported for the break-apart momentum-conservation test: this is the exact
+ * formula every fragment's linear velocity is built from, and conserving total
+ * linear and angular momentum across a split is its defining property.
+ */
+export function comTangentialVelocity(
+  facing: number,
+  omega: number,
+  parentVelX: number,
+  parentVelY: number,
+  offsetLocalX: number,
+  offsetLocalY: number,
+): { vx: number; vy: number } {
+  const c = Math.cos(facing);
+  const s = Math.sin(facing);
+  const offsetWorldX = offsetLocalX * c - offsetLocalY * s;
+  const offsetWorldY = offsetLocalX * s + offsetLocalY * c;
+  return {
+    vx: parentVelX + -omega * offsetWorldY,
+    vy: parentVelY + omega * offsetWorldX,
+  };
+}
+
 function recomputeAggregates(ship: SimShip): void {
   if (ship.modules === undefined) return;
 
@@ -571,16 +622,9 @@ function recomputeAggregates(ship: SimShip): void {
   // a point at the origin (0, 0) so legacy designs without explicit hull
   // modules still centre the CoM on the ship position.
   const hullMass = SIM.hullMass[ship.classification];
-  let massSum = hullMass;
-  let mx = 0;
-  let my = 0;
-  for (const m of ship.modules) {
-    massSum += m.mass;
-    mx += m.mass * m.x;
-    my += m.mass * m.y;
-  }
-  const comX = massSum > 0 ? mx / massSum : 0;
-  const comY = massSum > 0 ? my / massSum : 0;
+  const com = localCentreOfMass(ship.modules, hullMass);
+  const comX = com.x;
+  const comY = com.y;
   let moi = hullMass * (comX * comX + comY * comY);
   for (const m of ship.modules) {
     const dx = m.x - comX;
@@ -937,10 +981,21 @@ function splitBreakApart(
   }
   if (survivorRoot === undefined) return [];
 
+  // Snapshot the parent's pre-split centre of mass before any module
+  // migration shifts it. Every fragment's tangential kick is measured
+  // relative to this single CoM so total linear and angular momentum are
+  // conserved across the split (each cell keeps the world velocity it had
+  // as part of the spinning whole; see makeChunkShip).
+  const parentComX = ship.comX;
+  const parentComY = ship.comY;
+  const parentVelX = ship.velX;
+  const parentVelY = ship.velY;
+
   // Build chunk SimShips for every non-survivor component. Each chunk
-  // inherits the parent's world position, facing, and velocity, but gets
-  // a fresh instanceId. The chunk carries its own copies of the migrated
-  // SimModules so subsequent ticks treat it as an independent ship.
+  // inherits the parent's world position, facing, and angular velocity, but
+  // gets a fresh instanceId and a CoM-tangential linear velocity. The chunk
+  // carries its own copies of the migrated SimModules so subsequent ticks
+  // treat it as an independent ship.
   const survivorSet = new Set(survivorModules);
   const chunks: SimShip[] = [];
   for (const [, list] of components) {
@@ -956,12 +1011,64 @@ function splitBreakApart(
       }
     }
   }
+
+  // The surviving fragment's centre of mass shifts once the migrated modules
+  // are gone. Apply the same tangential split to it so it, too, keeps the
+  // world velocity its new CoM had under the parent's spin. recomputeAggregates
+  // (run by the caller after this returns) derives the survivor's new CoM, so
+  // do it here directly from the survivor module set with the same convention.
+  applyMomentumSplitToSurvivor(
+    ship,
+    survivorModules,
+    parentComX,
+    parentComY,
+    parentVelX,
+    parentVelY,
+  );
   return chunks;
 }
 
 /**
+ * Apply the CoM-tangential momentum split to the surviving fragment in place.
+ * Mirrors the fragment treatment in makeChunkShip: the survivor's new centre
+ * of mass (over its remaining modules, with the hull base mass as a point at
+ * the origin) gains the tangential velocity it had under the parent's spin —
+ * `v_parent + ω × (survivorCoM − parentCoM)`, with the local CoM offset rotated
+ * by the ship facing into world axes. Angular velocity is unchanged.
+ */
+function applyMomentumSplitToSurvivor(
+  ship: SimShip,
+  survivorModules: readonly SimModule[],
+  parentComX: number,
+  parentComY: number,
+  parentVelX: number,
+  parentVelY: number,
+): void {
+  const survivorCom = localCentreOfMass(survivorModules, SIM.hullMass[ship.classification]);
+  const split = comTangentialVelocity(
+    ship.facing,
+    ship.angVel,
+    parentVelX,
+    parentVelY,
+    survivorCom.x - parentComX,
+    survivorCom.y - parentComY,
+  );
+  ship.velX = split.vx;
+  ship.velY = split.vy;
+}
+
+/**
  * Build a fresh SimShip for a disconnected chunk of modules. The chunk
- * inherits the parent's world position, facing, and velocity verbatim.
+ * inherits the parent's world position and facing verbatim, and a
+ * physically correct momentum split: it keeps the parent's angular
+ * velocity ω, and its linear velocity is the parent's linear velocity
+ * plus the tangential velocity the chunk's centre of mass already had
+ * due to the parent's spin — `v_parent + ω × (chunkCoM − parentCoM)`.
+ * The CoM offset is ship-local, so it is rotated by the parent's facing
+ * into world axes before the cross product, matching the world frame of
+ * `velX/velY`. Per-cell masses make each fragment's mass sum correct on
+ * recompute, so total linear and angular momentum are conserved across
+ * the split (the parent's surviving fragment carries the complement).
  * Aggregates are recomputed from the chunk's own module set so the chunk
  * participates in subsequent ticks' movement, firing, and damage.
  *
@@ -995,8 +1102,13 @@ function makeChunkShip(
     x: parent.x,
     y: parent.y,
     facing: parent.facing,
+    // Linear velocity starts at the parent's; the tangential term from the
+    // parent's spin is added below, once recomputeAggregates has derived the
+    // chunk's own centre of mass.
     velX: parent.velX,
     velY: parent.velY,
+    // Angular velocity is conserved verbatim — a rigid fragment leaves the
+    // parent spinning at the same rate it was spinning as part of the whole.
     angVel: parent.angVel,
     structure: chunkStructure,
     maxStructure: chunkStructure,
@@ -1026,7 +1138,20 @@ function makeChunkShip(
     hullBaseTurnRate: parent.hullBaseTurnRate,
   };
   // Force a clean recompute so chunk aggregates match its own modules.
+  // This derives the chunk's own ship-local centre of mass (comX/comY).
   recomputeAggregates(chunk);
+  // Momentum split: set the chunk's linear velocity to the parent's plus the
+  // tangential velocity the chunk's CoM had under the parent's spin.
+  const split = comTangentialVelocity(
+    parent.facing,
+    parent.angVel,
+    parent.velX,
+    parent.velY,
+    chunk.comX - parent.comX,
+    chunk.comY - parent.comY,
+  );
+  chunk.velX = split.vx;
+  chunk.velY = split.vy;
   // A chunk's shield pool resets to zero — it has no recharge, and the
   // parent's pooled shield doesn't carry over.
   chunk.shield = 0;
