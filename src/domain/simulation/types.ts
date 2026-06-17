@@ -41,6 +41,8 @@ export interface ResolvedModule {
   maxHp: number;
   /** Mass contributed to the ship's total mass. */
   mass: number;
+  /** Power drawn from the reactor each tick to run this module. */
+  powerDraw: number;
   /** The module's effect (weapon/shield/armour/engine/power/crew). */
   effect: ModuleEffect;
 }
