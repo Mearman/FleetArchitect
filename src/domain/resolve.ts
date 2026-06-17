@@ -74,6 +74,7 @@ function resolveModules(
       mass: moduleDef.mass,
       powerDraw: moduleDef.powerDraw,
       effect: moduleDef.effect,
+      command: moduleDef.command === true,
     });
   }
   return out;
