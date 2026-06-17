@@ -61,6 +61,8 @@ function moduleOf(
     slotId,
     moduleId: `mod-${slotId}`,
     kind: effect.kind,
+    col: Math.round(x),
+    row: Math.round(y),
     repairRate: 0,
     x,
     y,
@@ -85,6 +87,7 @@ function modularAttacker(id: string): CombatShip {
   ];
   const stats: ShipStats = {
     mass: 10,
+    massCapacity: 100,
     cost: 100,
     powerDraw: 0,
     powerOutput: 0,
@@ -125,6 +128,7 @@ function modularDefender(id: string, withPd: boolean): CombatShip {
   }
   const stats: ShipStats = {
     mass: 10,
+    massCapacity: 100,
     cost: 100,
     powerDraw: 0,
     powerOutput: 0,

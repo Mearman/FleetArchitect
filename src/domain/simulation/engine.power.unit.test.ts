@@ -66,6 +66,8 @@ function moduleOf(
     slotId,
     moduleId: `mod-${slotId}`,
     kind: effect.kind,
+    col: Math.round(x),
+    row: Math.round(y),
     x,
     y,
     maxHp,
@@ -99,6 +101,7 @@ function modularAttacker(
   ];
   const stats: ShipStats = {
     mass: 10,
+    massCapacity: 100,
     cost: 100,
     powerDraw: 0,
     powerOutput: 0,
@@ -133,6 +136,7 @@ function toughTarget(id: string, x: number): CombatShip {
   const weapon = beam();
   const stats: ShipStats = {
     mass: 10,
+    massCapacity: 100,
     cost: 100,
     powerDraw: 0,
     powerOutput: 0,
@@ -237,6 +241,7 @@ describe("engine.per-module power grid", () => {
       const weapon = cannon({ damage: 25, range: 500 });
       const stats: ShipStats = {
         mass: 10,
+        massCapacity: 100,
         cost: 100,
         powerDraw: 0,
         powerOutput: 0,

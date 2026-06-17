@@ -45,6 +45,8 @@ function moduleOf(
     slotId,
     moduleId: `mod-${slotId}`,
     kind: effect.kind,
+    col: Math.round(x),
+    row: Math.round(y),
     x,
     y,
     maxHp,
@@ -73,6 +75,7 @@ function modularShip(
 ): CombatShip {
   const stats: ShipStats = {
     mass: 10,
+    massCapacity: 100,
     cost: 100,
     powerDraw: 0,
     powerOutput: 0,
@@ -110,6 +113,7 @@ function modularShip(
 function dummy(id: string, x: number, y = 0): CombatShip {
   const stats: ShipStats = {
     mass: 10,
+    massCapacity: 100,
     cost: 100,
     powerDraw: 0,
     powerOutput: 0,
