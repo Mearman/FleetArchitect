@@ -11,7 +11,32 @@ architect the fleet and set the orders.
 
 Alpha. Ship designer, fleet builder, and a deterministic battle simulator with
 replay. Designs and fleets are saved in your browser (IndexedDB) and shared via
-data URLs; a sync server is planned.
+data URLs.
+
+## Roadmap
+
+The simulation is moving from a slot-based ship model toward a Cosmoteer-style
+tile grid, with the physical model and gameplay parity layered on top.
+
+| Feature | Status |
+|---------|--------|
+| Per-module damage, power grid, ammo, point-defence, repair, shields | Shipped |
+| Structural break-apart, directional thrusters, module facing | Shipped |
+| Rigid-body physics (centre of mass, moment of inertia, recoil, hit impulse) | Shipped |
+| Tile-grid ship model (cells: empty / hull-tile / module) — the keystone | Now |
+| Grid-exact break-apart with conserved linear + angular momentum | Now |
+| Cell-precise hits (a shot strikes a cell; penetration carries to the cell behind) | Now |
+| Cell-level collision (ships are solid at cell granularity; impulse response) | Now |
+| Simulation in a Web Worker behind an async runner contract | Now |
+| Playback speed, simulation tick rate, and display refresh fully independent | Now |
+| Independently-rotating turrets (track targets off the ship's facing) | Now |
+| Tactical order system (formation, stance, focus-fire, range-keeping) | Now |
+| Faction / race part sets | Now |
+| Async online challenges (submit a fleet, others fight it) — needs a sync server | Future |
+| Campaign / career progression (economy, bounties, unlocks) | Future |
+| Crew as physical entities (corridor pathfinding, manned stations) — needs the grid | Maybe |
+| Manual / direct control (WASD flight, aim and fire) | Maybe |
+| Boarding / capture / salvage — needs crew | Maybe |
 
 ## Develop
 
