@@ -1,4 +1,4 @@
-import { Fleet } from "@/schema/fleet";
+import { Fleet, defaultOrders } from "@/schema/fleet";
 import type { Orders } from "@/schema/fleet";
 import type { GridCell, TileGrid } from "@/schema/grid";
 import { ShipDesign } from "@/schema/ship";
@@ -133,22 +133,30 @@ const designData: ShipDesign[] = [
 ];
 
 const swarmOrders: Orders = {
+  ...defaultOrders,
   stance: "aggressive",
   targetPriority: "nearest",
   engageRange: "short",
   retreatThreshold: 0,
+  focusFire: true,
+  rangeKeepingBand: 0.2,
 };
 const lineOrders: Orders = {
+  ...defaultOrders,
   stance: "defensive",
   targetPriority: "strongest",
   engageRange: "long",
   retreatThreshold: 0.3,
+  focusFire: true,
+  rangeKeepingBand: 0.5,
 };
 const strikeOrders: Orders = {
+  ...defaultOrders,
   stance: "balanced",
   targetPriority: "nearest",
   engageRange: "medium",
   retreatThreshold: 0.15,
+  rangeKeepingBand: 0.3,
 };
 
 const fleetData: Fleet[] = [
