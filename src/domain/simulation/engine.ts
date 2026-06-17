@@ -211,6 +211,11 @@ interface SimModule {
   slotId: string;
   moduleId: string;
   kind: ModuleEffect["kind"];
+  /** Integer grid coordinates of the cell this module occupies. Break-apart
+   *  unions over exact 4-connected (edge-sharing) neighbours on these, with no
+   *  rounding of the ship-local world position. */
+  col: number;
+  row: number;
   /** Position in ship-local (design) coordinates, for hit selection. */
   x: number;
   y: number;
@@ -389,6 +394,8 @@ function toSimModule(m: ResolvedModule, rng: () => number): SimModule {
     slotId: m.slotId,
     moduleId: m.moduleId,
     kind: m.kind,
+    col: m.col,
+    row: m.row,
     x: m.x,
     y: m.y,
     hp: m.maxHp,
@@ -819,7 +826,7 @@ function nearestAliveModule(
 
 /**
  * Break-apart: when the alive modules on a modular ship no longer form a
- * single connected graph (Chebyshev distance ≤ 1 between adjacent cells),
+ * single 4-connected graph (sharing a grid edge between adjacent cells),
  * each disconnected component becomes its own rigid body. The largest
  * component stays with the original SimShip (keeping its `instanceId` and
  * side); every smaller component is split off as a fresh SimShip with a
@@ -857,11 +864,11 @@ function splitBreakApart(
   const hasAnyHull = ship.modules.some((m) => m.effect.kind === "hull");
   if (!hasAnyHull) return [];
 
-  // Union-Find over alive modules, grouped by Chebyshev adjacency.
-  // Only alive modules are nodes: a destroyed hull cell no longer
-  // bridges two weapon cells, so the graph can split apart when an
-  // anchor module dies. Non-modular ships (no `modules` array) never
-  // split; the legacy aggregated path stays whole.
+  // Union-Find over alive modules, grouped by exact 4-connected (edge-sharing)
+  // grid adjacency. Only alive modules are nodes: a destroyed hull cell no
+  // longer bridges its neighbours, so the graph can split apart when an anchor
+  // cell dies. Non-modular ships (no `modules` array) never split; the legacy
+  // aggregated path stays whole.
   const parent = new Map<SimModule, SimModule>();
   for (const m of alive) parent.set(m, m);
   const find = (m: SimModule): SimModule => {
@@ -879,40 +886,25 @@ function splitBreakApart(
     if (ra !== rb) parent.set(ra, rb);
   };
 
-  // 8-neighbourhood adjacency: |dx| ≤ 1 and |dy| ≤ 1 (Chebyshev distance).
-  // We bucket alive modules by an integer-rounded cell so the O(n²) scan
-  // degrades gracefully on wide grids without losing correctness.
-  const bucketOf = (m: SimModule): string => `${Math.round(m.x)},${Math.round(m.y)}`;
-  const byBucket = new Map<string, SimModule[]>();
-  for (const m of alive) {
-    const key = bucketOf(m);
-    const list = byBucket.get(key);
-    if (list === undefined) byBucket.set(key, [m]);
-    else list.push(m);
-  }
-  const neighbours = (m: SimModule): SimModule[] => {
-    const cx = Math.round(m.x);
-    const cy = Math.round(m.y);
-    const out: SimModule[] = [];
-    for (let dx = -1; dx <= 1; dx += 1) {
-      for (let dy = -1; dy <= 1; dy += 1) {
-        if (dx === 0 && dy === 0) continue;
-        const list = byBucket.get(`${cx + dx},${cy + dy}`);
-        if (list !== undefined) out.push(...list);
-      }
-    }
-    return out;
-  };
+  // Index alive modules by their integer cell so each cell can find its four
+  // edge neighbours in O(1). Cells are unique per grid position, so the map is
+  // one module per (col, row).
+  const cellKey = (col: number, row: number): string => `${col},${row}`;
+  const byCell = new Map<string, SimModule>();
+  for (const m of alive) byCell.set(cellKey(m.col, m.row), m);
 
-  // Drive the union pass. Two alive modules in adjacent buckets (which
-  // include same-cell duplicates) get unioned.
-  const seen = new Set<string>();
+  // 4-connected adjacency: a cell unions with the alive module directly above,
+  // below, left, and right of it. Diagonal cells are NOT connected — the
+  // structural "bolted together" test is a shared edge, not a shared corner.
   for (const m of alive) {
-    const key = `${m.slotId}@${bucketOf(m)}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    for (const n of neighbours(m)) {
-      union(m, n);
+    const edgeNeighbours = [
+      byCell.get(cellKey(m.col - 1, m.row)),
+      byCell.get(cellKey(m.col + 1, m.row)),
+      byCell.get(cellKey(m.col, m.row - 1)),
+      byCell.get(cellKey(m.col, m.row + 1)),
+    ];
+    for (const n of edgeNeighbours) {
+      if (n !== undefined) union(m, n);
     }
   }
 

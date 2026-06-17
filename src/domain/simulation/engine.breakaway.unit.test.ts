@@ -8,22 +8,22 @@ import type { ShipStats } from "@/domain/stats";
 
 /**
  * Structural break-apart: when a modular ship's alive modules are no longer
- * connected, each connected component (under Chebyshev adjacency) becomes its
- * own rigid body. The largest component keeps the original ship's
- * `instanceId`; the smaller ones split off as fresh ships with their own
- * `instanceId`, inheriting the parent's momentum and a copy of their
+ * connected, each connected component (under 4-connected, edge-sharing
+ * adjacency) becomes its own rigid body. The largest component keeps the
+ * original ship's `instanceId`; the smaller ones split off as fresh ships with
+ * their own `instanceId`, inheriting the parent's momentum and a copy of their
  * carried modules.
  *
- * Layout under test: a small hull cell at the impact edge of the defender
- * with two weapon cells diagonally behind it. The hull sits at x = -15,
- * the weapons at (-14, -1) and (-14, +1) — all three Chebyshev-adjacent to
- * the hull. The hull is the first thing the attacker (firing down +x from
- * the left) hits; destroying it severs the two weapon cells, which are not
- * Chebyshev-adjacent to each other (|dy| = 2 > 1), so the ship splits into
- * two single-weapon chunks.
+ * Layout under test: a vertical three-cell column in grid column 0 — a weapon
+ * cell at row 0, a hull cell at row 1, a weapon cell at row 2. The hull is the
+ * middle cell, edge-adjacent to both weapons (row diff 1). The two weapons are
+ * NOT adjacent to each other (row diff 2), so they are only held together
+ * through the hull. The hull sits at the centre of the impact edge facing the
+ * attacker, so the beam (fired along +x from the left) lands nearest the hull
+ * cell. Destroying it severs the column into two single-weapon components.
  *
- * Connectivity rule: every alive module is a node; two nodes are adjacent
- * iff Chebyshev distance ≤ 1 (i.e. sharing an edge or a corner cell).
+ * Connectivity rule: two cells are adjacent iff they share a grid edge
+ * (4-connected). Diagonal cells do not connect.
  */
 
 function beam(over: Partial<WeaponEffect> = {}): WeaponEffect {
@@ -46,6 +46,8 @@ function beam(over: Partial<WeaponEffect> = {}): WeaponEffect {
 function moduleOf(
   slotId: string,
   effect: ModuleEffect,
+  col: number,
+  row: number,
   x: number,
   y: number,
   maxHp: number,
@@ -57,6 +59,8 @@ function moduleOf(
     slotId,
     moduleId: `mod-${slotId}`,
     kind: effect.kind,
+    col,
+    row,
     x,
     y,
     maxHp,
@@ -78,6 +82,7 @@ function hammerShip(id: string, x: number): CombatShip {
   const weapon = beam({ damage: 50, range: 500, cooldown: 1 });
   const stats: ShipStats = {
     mass: 10,
+    massCapacity: 100,
     cost: 100,
     powerDraw: 0,
     powerOutput: 0,
@@ -106,21 +111,25 @@ function hammerShip(id: string, x: number): CombatShip {
   };
 }
 
-/** A modular defender with a hull cell at the impact edge and two weapon
- *  cells diagonally behind it. The hull's HP is `hullHp`; setting it to 1
- *  lets a single hammer hit tear it apart. The hull cell at x = -15 is the
- *  closest module to the impact point (a beam from the attacker's left hits
- *  the defender's left edge at ship-local x = -16); destroying it severs
- *  the two weapons, which sit at (-14, ±1) and are not Chebyshev-adjacent
- *  to each other (|dy| = 2). */
-function threeCellShip(id: string, x: number, hullHp: number): CombatShip {
+/**
+ * A modular defender: a vertical column of three cells in grid column 0 — a
+ * weapon at (col 0, row 0), a hull cell at (col 0, row 1), a weapon at
+ * (col 0, row 2). The hull's HP is `hullHp`; setting it to 1 lets a single
+ * hammer hit tear it apart. The hull cell sits at ship-local (−14, 0) — the
+ * centre of the left edge facing the attacker — so the beam strikes it first.
+ * The two weapons sit at (−14, −12) and (−14, +12); they are edge-adjacent to
+ * the hull (row diff 1) but not to each other (row diff 2), so destroying the
+ * hull severs the column into two single-weapon components.
+ */
+function columnShip(id: string, x: number, hullHp: number): CombatShip {
   const modules: ResolvedModule[] = [
-    moduleOf("wL", beam({ damage: 1, range: 50 }), -14, -1, 50, 5, 0, true),
-    moduleOf("h1", { kind: "hull" }, -15, 0, hullHp, 5),
-    moduleOf("wR", beam({ damage: 1, range: 50 }), -14, 1, 50, 5, 0, false),
+    moduleOf("wU", beam({ damage: 1, range: 50 }), 0, 0, -14, -12, 50, 5, 0, true),
+    moduleOf("h1", { kind: "hull" }, 0, 1, -14, 0, hullHp, 5),
+    moduleOf("wD", beam({ damage: 1, range: 50 }), 0, 2, -14, 12, 50, 5, 0, false),
   ];
   const stats: ShipStats = {
     mass: 10,
+    massCapacity: 100,
     cost: 100,
     powerDraw: 0,
     powerOutput: 0,
@@ -163,9 +172,9 @@ function inputs(ships: CombatShip[]): BattleInputs {
 
 describe("engine.breakaway", () => {
   it("a modular ship splits when its only hull cell is destroyed", () => {
-    // Hull HP = 1: the first hit tears the central cell apart, severing
-    // the graph into two single-cell chunks (one weapon each).
-    const result = runBattle(inputs([hammerShip("a1", 0), threeCellShip("d1", 80, 1)]));
+    // Hull HP = 1: the first hit tears the central cell apart, severing the
+    // column into two single-cell chunks (one weapon each).
+    const result = runBattle(inputs([hammerShip("a1", 0), columnShip("d1", 80, 1)]));
 
     // Find a frame where the original `d1` still exists but a chunk
     // has broken off (some ship in the frame has `brokeOff: true`).
@@ -183,7 +192,7 @@ describe("engine.breakaway", () => {
     if (chunk === undefined) return;
 
     // The chunk is alive and carries exactly one alive weapon — it kept
-    // the weapon module from one end of the severed row.
+    // the weapon module from one end of the severed column.
     expect(chunk.alive).toBe(true);
     const aliveChunkModules = chunk.modules?.filter((m) => m.alive) ?? [];
     expect(aliveChunkModules.length).toBe(1);
@@ -199,7 +208,7 @@ describe("engine.breakaway", () => {
   it("a modular ship with an intact hull cell does not split", () => {
     // Hull HP huge: no amount of hammer fire in one battle destroys it,
     // so the graph stays connected and no chunk ever appears.
-    const result = runBattle(inputs([hammerShip("a1", 0), threeCellShip("d1", 80, 1_000_000)]));
+    const result = runBattle(inputs([hammerShip("a1", 0), columnShip("d1", 80, 1_000_000)]));
     const anyChunk = result.frames.some((f) => f.ships.some((s) => s.brokeOff === true));
     expect(anyChunk, "an intact hull should not split").toBe(false);
   });
@@ -209,7 +218,7 @@ describe("engine.breakaway", () => {
     // is zero at this stage (the defender is stationary). The chunk's
     // own velocity should also be zero, and it should keep flying along
     // with the parent as the battle continues.
-    const result = runBattle(inputs([hammerShip("a1", 0), threeCellShip("d1", 80, 1)]));
+    const result = runBattle(inputs([hammerShip("a1", 0), columnShip("d1", 80, 1)]));
     const splitFrame = result.frames.find((f) =>
       f.ships.some((s) => s.brokeOff === true),
     );
@@ -228,7 +237,7 @@ describe("engine.breakaway", () => {
   });
 
   it("split behaviour is deterministic", () => {
-    const mk = () => runBattle(inputs([hammerShip("a1", 0), threeCellShip("d1", 80, 1)]));
+    const mk = () => runBattle(inputs([hammerShip("a1", 0), columnShip("d1", 80, 1)]));
     const a = mk();
     const b = mk();
     expect(b.frames).toEqual(a.frames);
