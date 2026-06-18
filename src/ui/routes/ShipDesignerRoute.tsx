@@ -9,6 +9,7 @@ import {
   ScrollArea,
   SegmentedControl,
   Select,
+  Slider,
   Stack,
   Text,
   TextInput,
@@ -27,7 +28,8 @@ import { ShareButton } from "@/ui/components/ShareButton";
 import { StatReadout } from "@/ui/components/StatReadout";
 import { useShipDesigns } from "@/ui/hooks/storage";
 import { storage } from "@/storage/db";
-import type { GridCell, HullTileType, TileGrid } from "@/schema/grid";
+import type { GridCell, HullTileType, ModuleCell, TileGrid } from "@/schema/grid";
+import type { CommsEffect } from "@/schema/module";
 import type { ShipDesign } from "@/schema/ship";
 import {
   cellInner,
@@ -81,15 +83,20 @@ type Brush =
 
 const HULL_TILES: HullTileType[] = ["block", "edge", "corner", "strut"];
 
-/** Display colour per cell kind for the board. */
+/** Display colour per cell kind for the board. Sensor and comms modules get
+ *  distinct colours so they stand out from generic modules at a glance. */
 function cellColour(cell: GridCell): string {
   switch (cell.kind) {
     case "empty":
       return "transparent";
     case "hull":
       return "#8794b8";
-    case "module":
+    case "module": {
+      const mod = catalog().module(cell.moduleId);
+      if (mod?.effect.kind === "sensor") return "#4ecb9e";   // teal-green
+      if (mod?.effect.kind === "comms")  return "#b87fff";   // purple
       return "#6ea8ff";
+    }
     case "floor":
       // Warm amber-tan: visually distinct from the steel-blue hull and the
       // bright-blue module, clearly readable at small cell sizes.
@@ -97,13 +104,17 @@ function cellColour(cell: GridCell): string {
   }
 }
 
-/** Short label drawn inside a cell. */
+/** Short label drawn inside a cell. Sensor cells get "S", comms cells get
+ *  "K" (for communications) to distinguish them from generic module cells. */
 function cellLabel(cell: GridCell): string {
   if (cell.kind === "empty") return "";
   if (cell.kind === "hull") return cell.tile.charAt(0).toUpperCase();
   if (cell.kind === "floor") return "~";
   const mod = catalog().module(cell.moduleId);
-  return mod === undefined ? "?" : mod.name.charAt(0).toUpperCase();
+  if (mod === undefined) return "?";
+  if (mod.effect.kind === "sensor") return "S";
+  if (mod.effect.kind === "comms") return "K";
+  return mod.name.charAt(0).toUpperCase();
 }
 
 /** The four cardinal facings, in radians, ship-local (0 = forward / +x). */
@@ -195,6 +206,45 @@ export function ShipDesignerRoute() {
     });
   }
 
+  /** Write the per-instance channel override for the selected comms cell. */
+  function setSelectedCommsChannel(channel: number) {
+    if (selected === null) return;
+    setWorking((prev) => {
+      const idx = selected.row * prev.grid.cols + selected.col;
+      const cell = prev.grid.cells[idx];
+      if (cell === undefined || cell.kind !== "module") return prev;
+      const cells = prev.grid.cells.slice();
+      cells[idx] = { ...cell, channel };
+      return { ...prev, grid: { ...prev.grid, cells } };
+    });
+  }
+
+  /** Write the per-instance bearing override for directional/laser comms cells. */
+  function setSelectedCommsBearing(commsBearing: number) {
+    if (selected === null) return;
+    setWorking((prev) => {
+      const idx = selected.row * prev.grid.cols + selected.col;
+      const cell = prev.grid.cells[idx];
+      if (cell === undefined || cell.kind !== "module") return prev;
+      const cells = prev.grid.cells.slice();
+      cells[idx] = { ...cell, commsBearing };
+      return { ...prev, grid: { ...prev.grid, cells } };
+    });
+  }
+
+  /** Write the per-instance range setting for variable-type comms cells. */
+  function setSelectedCommsRange(commsRange: number) {
+    if (selected === null) return;
+    setWorking((prev) => {
+      const idx = selected.row * prev.grid.cols + selected.col;
+      const cell = prev.grid.cells[idx];
+      if (cell === undefined || cell.kind !== "module") return prev;
+      const cells = prev.grid.cells.slice();
+      cells[idx] = { ...cell, commsRange };
+      return { ...prev, grid: { ...prev.grid, cells } };
+    });
+  }
+
   function resize(cols: number, rows: number) {
     setWorking((prev) => {
       const cells: GridCell[] = [];
@@ -251,6 +301,11 @@ export function ShipDesignerRoute() {
   const grid = working.grid;
   const selectedCell =
     selected === null ? undefined : cellAt(selected.col, selected.row, grid);
+  // Resolved definition for the selected module cell (undefined if no module selected).
+  const selectedModuleDef =
+    selectedCell?.kind === "module"
+      ? catalog().module(selectedCell.moduleId)
+      : undefined;
 
   return (
     <Stack gap="lg">
@@ -374,6 +429,17 @@ export function ShipDesignerRoute() {
                         onChange={(v) => setSelectedFacing(Number(v))}
                       />
                     </Stack>
+                  ) : null}
+                  {selectedCell !== undefined &&
+                  selectedCell.kind === "module" &&
+                  selectedModuleDef?.effect.kind === "comms" ? (
+                    <CommsConfig
+                      cell={selectedCell}
+                      effect={selectedModuleDef.effect}
+                      onChannelChange={setSelectedCommsChannel}
+                      onBearingChange={setSelectedCommsBearing}
+                      onRangeChange={setSelectedCommsRange}
+                    />
                   ) : null}
                 </Paper>
               </Grid.Col>
@@ -515,5 +581,110 @@ function GridBoard({
         );
       })}
     </div>
+  );
+}
+
+/**
+ * Per-instance comms configuration panel for a selected comms module cell.
+ * Shows a channel selector always; a bearing control for directional/laser
+ * units; and a range slider for variable units.
+ */
+function CommsConfig({
+  cell,
+  effect,
+  onChannelChange,
+  onBearingChange,
+  onRangeChange,
+}: {
+  cell: ModuleCell;
+  effect: CommsEffect;
+  onChannelChange: (channel: number) => void;
+  onBearingChange: (bearing: number) => void;
+  onRangeChange: (range: number) => void;
+}) {
+  // Effective per-instance values, falling back to the module definition's defaults.
+  const effectiveChannel = cell.channel ?? effect.channel;
+  const effectiveBearing = cell.commsBearing ?? effect.bearing;
+  const effectiveRange = cell.commsRange ?? effect.range;
+
+  const showBearing =
+    effect.commsType === "directional" ||
+    effect.commsType === "dish" ||
+    effect.commsType === "laser";
+  const showRange = effect.commsType === "variable";
+
+  // Bearing expressed as degrees for display, stored as radians.
+  const bearingDeg = Math.round((effectiveBearing * 180) / Math.PI);
+
+  // Channel options: 0–7 is a reasonable range for the designer.
+  const CHANNEL_OPTIONS: { value: string; label: string }[] = Array.from(
+    { length: 8 },
+    (_, i) => ({ value: `${i}`, label: `Ch ${i}` }),
+  );
+
+  // Bearing options: the four cardinal directions plus diagonals (0°, 45°, …, 315°).
+  const BEARING_OPTIONS: { value: string; label: string }[] = [
+    { value: "0",    label: "Fwd (0°)" },
+    { value: "45",   label: "45°" },
+    { value: "90",   label: "Stbd (90°)" },
+    { value: "135",  label: "135°" },
+    { value: "180",  label: "Aft (180°)" },
+    { value: "225",  label: "225°" },
+    { value: "270",  label: "Port (270°)" },
+    { value: "315",  label: "315°" },
+  ];
+
+  const rangeMin = effect.minRange ?? 0;
+  const rangeMax = effect.maxRange ?? effect.range;
+
+  return (
+    <Stack gap={6} mt="sm">
+      <Text size="xs" c="dimmed">
+        Comms configuration
+      </Text>
+
+      {/* Channel selector — always shown for comms cells */}
+      <Select
+        label="Channel"
+        size="xs"
+        data={CHANNEL_OPTIONS}
+        value={`${effectiveChannel}`}
+        onChange={(v) => {
+          if (v !== null) onChannelChange(Number.parseInt(v, 10));
+        }}
+      />
+
+      {/* Fixed bearing — directional, dish, and laser units */}
+      {showBearing ? (
+        <Select
+          label={`Bearing (current: ${bearingDeg}°)`}
+          size="xs"
+          data={BEARING_OPTIONS}
+          value={`${bearingDeg}`}
+          onChange={(v) => {
+            if (v !== null) {
+              const deg = Number.parseInt(v, 10);
+              onBearingChange((deg * Math.PI) / 180);
+            }
+          }}
+        />
+      ) : null}
+
+      {/* Range slider — variable units only */}
+      {showRange ? (
+        <Stack gap={2}>
+          <Text size="xs">
+            Range: {effectiveRange.toFixed(0)} units
+          </Text>
+          <Slider
+            size="xs"
+            min={rangeMin}
+            max={rangeMax}
+            value={effectiveRange}
+            onChange={onRangeChange}
+          />
+        </Stack>
+      ) : null}
+    </Stack>
   );
 }
