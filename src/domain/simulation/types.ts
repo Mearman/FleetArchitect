@@ -105,6 +105,29 @@ export interface ResolvedModule {
    */
   turretArc: number;
   turretTurnRate: number;
+  /**
+   * Comms channel for a comms module: the per-instance `channel` override from
+   * the grid cell when present, else the comms effect's own `channel`. Two
+   * comms units link only on a matching channel. Carried here so the engine's
+   * awareness phase never has to reach back into the grid. On non-comms modules
+   * this is 0 and is never read.
+   */
+  channel: number;
+  /**
+   * Mount bearing (radians, ship-local) a comms module's antenna points along:
+   * the per-instance `commsBearing` override from the grid cell when present,
+   * else the comms effect's `bearing`. Combined with the ship's facing to give
+   * the world-space arc the unit covers (a steerable dish overrides this with a
+   * live auto-aimed angle each tick). On non-comms modules this is 0 and unused.
+   */
+  commsBearing: number;
+  /**
+   * Per-instance range setting for a `variable`-type comms module (world units),
+   * from the grid cell. Undefined when the cell did not set one (or the module
+   * is not a variable comms unit); the engine then derives the effective range
+   * from the effect's own bounds. Only meaningful for variable comms modules.
+   */
+  commsRange?: number;
 }
 
 /**
