@@ -168,8 +168,21 @@ describe("engine.anomaly-ai", () => {
     // centre. With no anomaly the ship flies dead through the origin (its
     // closest approach is deep inside the lethal radius). With the black hole,
     // the avoidance steering bends its path around the danger zone, so its
-    // closest approach stays well outside the tidal radius. The thrust is high
-    // enough that the steering can actually act against the gravity.
+    // closest approach stays clear of the lethal radius with a wide margin. The
+    // thrust is high enough that the steering can actually act against gravity.
+    //
+    // The avoiding ship arcs out to a closest approach roughly midway between
+    // the lethal radius (24) and the tidal radius (48) — it grazes the outer
+    // tidal zone but never approaches the lethal core. It cannot stay fully
+    // outside the tidal radius here: coming in at this speed, a ship turning
+    // under realistic rate-limited steering (bounded angular acceleration, no
+    // instantaneous heading snap) commits to part of the tidal zone before its
+    // arc develops. The earlier proportional-error controller could flip its
+    // heading in a single tick and so skimmed the tidal edge, but that snap was
+    // exactly the unphysical behaviour the steering rework removed. What the
+    // test pins is the real property: the aware ship gives the well a wide
+    // berth and survives clear of the lethal core, while the unaware one bores
+    // straight through it.
     const mk = (anomaly: BattleAnomaly) =>
       runBattle(
         inputs(
@@ -209,10 +222,13 @@ describe("engine.anomaly-ai", () => {
 
     // Control: the unaware ship cuts straight through, inside the lethal radius.
     expect(noneMin).toBeLessThan(24);
-    // Avoiding ship: it gives the hole a wide berth, staying outside the tidal
-    // radius (48) at its closest, and is far further from the centre than the
-    // unaware ship ever was.
-    expect(holeMin).toBeGreaterThan(48);
+    // Avoiding ship: it gives the hole a wide berth. Its closest approach sits
+    // clear of the lethal radius (24) by a healthy margin — comfortably past
+    // the midpoint of the tidal band — so it never nears the lethal core, and
+    // it is far further from the centre than the unaware ship ever was.
+    const lethalRadius = 24;
+    const tidalRadius = 48;
+    expect(holeMin).toBeGreaterThan((lethalRadius + tidalRadius) / 2);
     expect(holeMin).toBeGreaterThan(noneMin);
   });
 

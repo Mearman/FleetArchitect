@@ -2,7 +2,7 @@ import type { ShipStats } from "@/domain/stats";
 import type { Orders } from "@/schema/fleet";
 import type { ShipClassification } from "@/schema/hull";
 import type { ModuleEffect } from "@/schema/module";
-import type { BattleAnomaly } from "@/schema/battle";
+import type { BattleAnomaly, BattleSide } from "@/schema/battle";
 import type { Vec2 } from "@/schema/primitives";
 
 /**
@@ -191,5 +191,23 @@ export interface BattleInputs {
   maxTicks: number;
 }
 
-/** Safety cap so a stalemated battle terminates. ~3 min at 20 ticks/sec. */
+/**
+ * Canonical fixed sim tick rate. The engine produces exactly one BattleFrame
+ * per tick; the UI maps playback-seconds to ticks through this constant.
+ */
+export const TICKS_PER_SECOND = 30;
+
+/** Safety cap so a stalemated battle terminates. ~2 min at TICKS_PER_SECOND. */
 export const DEFAULT_MAX_TICKS = 3600;
+
+/**
+ * Frame batch size for streaming. Roughly one second of playback per streamed
+ * frame batch (matches TICKS_PER_SECOND to align batch boundaries with seconds).
+ */
+export const FRAMES_PER_BATCH = TICKS_PER_SECOND;
+
+/** Terminal value produced by the streaming generator: battle outcome and duration. */
+export interface BattleSummary {
+  winner: BattleSide;
+  ticks: number;
+}

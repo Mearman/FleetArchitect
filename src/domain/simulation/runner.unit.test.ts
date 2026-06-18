@@ -10,6 +10,7 @@ import type { BattleInputs, CombatShip } from "@/domain/simulation/types";
 import { defaultOrders } from "@/schema/fleet";
 import type { WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
+import type { BattleFrame } from "@/schema/battle";
 
 function weapon(): WeaponEffect {
   return {
@@ -84,9 +85,34 @@ describe("DirectBattleRunner", () => {
     const runner = new DirectBattleRunner();
     const controller = new AbortController();
     controller.abort();
-    await expect(runner.run(fixedInputs(), controller.signal)).rejects.toBeInstanceOf(
+    await expect(runner.run(fixedInputs(), { signal: controller.signal })).rejects.toBeInstanceOf(
       BattleAbortError,
     );
+  });
+
+  it("invokes onFrames with all frames and the result is unchanged", async () => {
+    const runner = new DirectBattleRunner();
+    const inputs = fixedInputs();
+    const capturedBatches: { frames: readonly BattleFrame[]; ticks: number }[] = [];
+
+    const result = await runner.run(inputs, {
+      onFrames: (frames, computedTicks) => {
+        capturedBatches.push({ frames, ticks: computedTicks });
+      },
+    });
+
+    // onFrames is called at least once on the direct (synchronous) path.
+    expect(capturedBatches.length).toBeGreaterThan(0);
+
+    // The frames handed to onFrames are exactly the frames in the resolved result.
+    const allCaptured = capturedBatches.flatMap((b) => b.frames);
+    expect(allCaptured).toStrictEqual(result.frames);
+
+    // The resolved BattleResult is identical to what runBattle produces directly.
+    const viaEngine = runBattle(inputs);
+    expect(result.winner).toBe(viaEngine.winner);
+    expect(result.ticks).toBe(viaEngine.ticks);
+    expect(result.frames).toStrictEqual(viaEngine.frames);
   });
 });
 
@@ -103,9 +129,9 @@ describe("WorkerBattleRunner", () => {
     });
     const controller = new AbortController();
     controller.abort();
-    await expect(runner.run(fixedInputs(), controller.signal)).rejects.toBeInstanceOf(
-      BattleAbortError,
-    );
+    await expect(
+      runner.run(fixedInputs(), { signal: controller.signal }),
+    ).rejects.toBeInstanceOf(BattleAbortError);
     expect(factoryCalled).toBe(false);
   });
 });

@@ -62,6 +62,12 @@ function stats(opts: {
     thrust: opts.thrust ?? 50,
     turnRate: 0.2,
     weapons: weapons.map((w, i) => ({ slotId: `slot-${i}`, effect: w })),
+    // These tests exercise the order system (focus fire, target selection,
+    // stance range-keeping, range-keeping band), all of which require ships to
+    // have already detected each other at the test geometry (up to 400 units
+    // apart). Give them a long sensor reach so detection isn't the variable
+    // under test; faithful fog of war is covered by the awareness suite.
+    sensorRange: 1000,
   };
 }
 
@@ -413,6 +419,13 @@ describe("engine.orders / stance range-keeping", () => {
    *
    * Ships start at x = ±200 (distance 400) so they need to close a little.
    * High thrust (50) ensures they settle well within 200 ticks.
+   *
+   * The defender holds station (`engageRange: "hold"`) so the attacker has a
+   * fixed point to range-keep against and genuinely *settles* at its stance
+   * range. A weaponless defender on default orders has a desired range of zero
+   * and so chases the attacker forever — there is no settled distance to
+   * measure, only a moving pursuit gap whose value depends on the turn
+   * dynamics rather than on the stance, which is not what this test is about.
    */
   it("aggressive stance settles closer to the enemy than evasive stance", () => {
     const aggressiveResult = runBattle(
@@ -425,7 +438,14 @@ describe("engine.orders / stance range-keeping", () => {
           weapons: [weapon({ range: 400 })],
           orders: { stance: "aggressive", engageRange: "medium" },
         }),
-        makeShip({ id: "d1", side: "defender", x: 200, y: 0, structure: 999999 }),
+        makeShip({
+          id: "d1",
+          side: "defender",
+          x: 200,
+          y: 0,
+          structure: 999999,
+          orders: { engageRange: "hold" },
+        }),
       ]),
     );
 
@@ -439,7 +459,14 @@ describe("engine.orders / stance range-keeping", () => {
           weapons: [weapon({ range: 400 })],
           orders: { stance: "evasive", engageRange: "medium" },
         }),
-        makeShip({ id: "d1", side: "defender", x: 200, y: 0, structure: 999999 }),
+        makeShip({
+          id: "d1",
+          side: "defender",
+          x: 200,
+          y: 0,
+          structure: 999999,
+          orders: { engageRange: "hold" },
+        }),
       ]),
     );
 
