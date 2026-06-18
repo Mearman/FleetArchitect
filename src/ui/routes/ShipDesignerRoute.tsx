@@ -71,11 +71,13 @@ function blankDesign(): WorkingDesign {
 }
 
 /** The thing the user is painting with. `empty` clears a cell; `hull` paints a
- *  hull tile of the chosen type; `module` paints a module cell. */
+ *  hull tile of the chosen type; `module` paints a module cell; `floor` paints
+ *  walkable interior decking (corridor or crew-quarters space). */
 type Brush =
   | { kind: "empty" }
   | { kind: "hull"; tile: HullTileType }
-  | { kind: "module"; moduleId: string };
+  | { kind: "module"; moduleId: string }
+  | { kind: "floor" };
 
 const HULL_TILES: HullTileType[] = ["block", "edge", "corner", "strut"];
 
@@ -89,7 +91,9 @@ function cellColour(cell: GridCell): string {
     case "module":
       return "#6ea8ff";
     case "floor":
-      return "#4a5568";
+      // Warm amber-tan: visually distinct from the steel-blue hull and the
+      // bright-blue module, clearly readable at small cell sizes.
+      return "#c9a84c";
   }
 }
 
@@ -97,7 +101,7 @@ function cellColour(cell: GridCell): string {
 function cellLabel(cell: GridCell): string {
   if (cell.kind === "empty") return "";
   if (cell.kind === "hull") return cell.tile.charAt(0).toUpperCase();
-  if (cell.kind === "floor") return "F";
+  if (cell.kind === "floor") return "~";
   const mod = catalog().module(cell.moduleId);
   return mod === undefined ? "?" : mod.name.charAt(0).toUpperCase();
 }
@@ -119,6 +123,8 @@ function brushToCell(brush: Brush): GridCell {
       return { kind: "hull", tile: brush.tile };
     case "module":
       return { kind: "module", moduleId: brush.moduleId, facing: 0 };
+    case "floor":
+      return { kind: "floor" };
   }
 }
 
@@ -135,6 +141,7 @@ function brushLabel(brush: Brush): string {
     return catalog().module(brush.moduleId)?.name ?? "module";
   }
   if (brush.kind === "hull") return `hull (${brush.tile})`;
+  if (brush.kind === "floor") return "floor / corridor";
   return "empty";
 }
 
@@ -400,6 +407,15 @@ export function ShipDesignerRoute() {
                           {tile}
                         </Button>
                       ))}
+                      <Button
+                        size="xs"
+                        variant={brush.kind === "floor" ? "filled" : "light"}
+                        color="yellow"
+                        onClick={() => setBrush({ kind: "floor" })}
+                        title="Paint walkable interior decking — corridors and crew space"
+                      >
+                        floor / corridor
+                      </Button>
                     </Group>
                     <Select
                       label="Module"

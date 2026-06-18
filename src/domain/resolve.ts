@@ -55,10 +55,12 @@ export function resolveFleetToCombatShips(
 /**
  * Build the per-cell module instances for a ship design. Every occupied cell
  * becomes a `ResolvedModule`: hull cells resolve to kind "hull" with the tile's
- * mass and hp; module cells resolve to their catalog module. Empty cells are
- * skipped. Each module's `(x, y)` is the cell's ship-local centre from
- * `cellToLocal`, and its integer `(col, row)` are carried through so break-apart
- * can union over exact 4-connected neighbours.
+ * mass and hp; module cells resolve to their catalog module. Empty cells and
+ * floor cells are skipped — floor is walkable interior decking that contributes
+ * to the walkable path graph (read directly from the grid by the crew engine)
+ * but has no module behaviour of its own. Each module's `(x, y)` is the cell's
+ * ship-local centre from `cellToLocal`, and its integer `(col, row)` are carried
+ * through so break-apart can union over exact 4-connected neighbours.
  */
 function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] {
   const grid = design.grid;

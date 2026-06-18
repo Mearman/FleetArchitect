@@ -6,8 +6,12 @@ import { getMeta, setMeta, storage } from "@/storage/db";
  * older than this, any preset whose id is not already present is inserted; the
  * version is then recorded. A player who deleted a preset keeps it deleted
  * until the preset set itself changes and this version bumps.
+ *
+ * Version 3: Phase D — floor/corridor cells and munitions magazines added to
+ * all ships with finite-ammo weapons; new reachability faults added to the
+ * design validator.
  */
-const PRESETS_VERSION = 2;
+const PRESETS_VERSION = 3;
 const VERSION_KEY = "presetsVersion";
 
 /**

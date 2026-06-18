@@ -22,6 +22,10 @@ function describe(fault: DesignFault): string {
       return `Crew shortfall of ${Math.abs(fault.net).toFixed(0)} — add crew quarters.`;
     case "crossFaction":
       return `Mixed factions — this design is ${fault.expected} but contains parts from: ${fault.found.join(", ")}.`;
+    case "unreachableStation":
+      return `Station at (${fault.col}, ${fault.row}) is not walkable-reachable from any crew quarters — add a floor corridor connecting them.`;
+    case "noAmmoSource":
+      return `Weapon at (${fault.col}, ${fault.row}) has no reachable magazine — add a Munitions Magazine (or Ammon Sac) connected to this weapon.`;
   }
 }
 
