@@ -1141,6 +1141,23 @@ function ammoShortfall(weapon: SimModule): number {
   return Math.max(0, cap - weapon.ammo);
 }
 
+/**
+ * Reset a crew member's task after a break-apart so it re-plans within its new
+ * fragment next tick. A member's target or haul route may now live on a
+ * different fragment, so the safe, deterministic move is to clear the
+ * assignment and let the next updateCrew re-derive it from the fragment's own
+ * topology. Position is untouched, so a member standing on a station still mans
+ * it (manning is position-based) and is simply re-assigned to it next tick.
+ */
+function resetCrewForFragment(crew: SimCrew): void {
+  crew.job = "idle";
+  crew.targetSlotId = undefined;
+  crew.haulSinkSlotId = undefined;
+  crew.carrying = undefined;
+  crew.carryAmount = undefined;
+  crew.path = [];
+}
+
 /** Release a crew member from any haul assignment, returning it to idle. Any
  *  rounds still in hand are dropped — only happens when a sink or route has been
  *  destroyed, so the loss models cargo lost with the wreckage. */
@@ -2126,6 +2143,27 @@ function splitBreakApart(
   const parentVelX = ship.velX;
   const parentVelY = ship.velY;
 
+  // Partition crew by the component their current cell belongs to. Each cell is
+  // unique per component, so a crew member's (col, row) maps it to exactly one
+  // fragment; a member mid-path is assigned by where it currently stands. Crew
+  // whose cell is in no alive component (it died this tick) are dropped — but
+  // updateCrew already removed crew on freshly-dead cells before break-apart, so
+  // in practice every member maps to a fragment. The lookup is keyed by cell so
+  // the split is deterministic regardless of map iteration order.
+  const componentOfCell = new Map<string, SimModule[]>();
+  for (const [, list] of components) {
+    for (const m of list) componentOfCell.set(cellKey(m.col, m.row), list);
+  }
+  const crewOfComponent = new Map<SimModule[], SimCrew[]>();
+  const parentCrew = ship.crew ?? [];
+  for (const c of parentCrew) {
+    const list = componentOfCell.get(cellKey(c.col, c.row));
+    if (list === undefined) continue; // on a dead cell — killed
+    const bucket = crewOfComponent.get(list);
+    if (bucket === undefined) crewOfComponent.set(list, [c]);
+    else bucket.push(c);
+  }
+
   // Build chunk SimShips for every non-survivor component. Each chunk
   // inherits the parent's world position, facing, and angular velocity, but
   // gets a fresh instanceId and a CoM-tangential linear velocity. The chunk
@@ -2135,7 +2173,8 @@ function splitBreakApart(
   const chunks: SimShip[] = [];
   for (const [, list] of components) {
     if (list === survivorModules) continue;
-    const chunk = makeChunkShip(ship, list, nextChunkId(ship.instanceId, currentTick));
+    const chunkCrew = crewOfComponent.get(list) ?? [];
+    const chunk = makeChunkShip(ship, list, chunkCrew, nextChunkId(ship.instanceId, currentTick));
     chunks.push(chunk);
     // Mark the migrated modules as gone on the original ship so its
     // hit-selection and aggregate recompute ignore them from now on.
@@ -2146,6 +2185,18 @@ function splitBreakApart(
       }
     }
   }
+
+  // The parent keeps only the crew whose cell stayed with the survivor
+  // fragment; everyone else either migrated to a chunk (copied independently)
+  // or died with a severed cell. A migrating crew member that was mid-haul to a
+  // station now on a different fragment is reset to idle so it re-plans within
+  // its own fragment next tick.
+  ship.crew = crewOfComponent.get(survivorModules) ?? [];
+  for (const chunk of chunks) {
+    if (chunk.crew === undefined) continue;
+    for (const c of chunk.crew) resetCrewForFragment(c);
+  }
+  for (const c of ship.crew) resetCrewForFragment(c);
 
   // The surviving fragment's centre of mass shifts once the migrated modules
   // are gone. Apply the same tangential split to it so it, too, keeps the
@@ -2222,6 +2273,7 @@ function applyMomentumSplitToSurvivor(
 function makeChunkShip(
   parent: SimShip,
   modules: readonly SimModule[],
+  crew: readonly SimCrew[],
   instanceId: string,
 ): SimShip {
   const totalAlive = parent.modules === undefined ? 1 : parent.modules.filter((m) => m.alive).length;
@@ -2270,10 +2322,10 @@ function makeChunkShip(
     target: undefined,
     alive: true,
     modules: chunkModules,
-    // Crew are partitioned into the fragment in a later slice; until then a
-    // chunk starts with no crew, so its crewed stations stay unmanned (correct:
-    // a severed section with nobody aboard cannot operate its guns).
-    crew: [],
+    // The crew whose cells fell into this fragment, copied independently so the
+    // chunk and its parent never share crew state. A fragment with nobody aboard
+    // leaves its crewed stations unmanned — a severed section can't crew itself.
+    crew: crew.map((c) => ({ ...c, path: c.path.map((p) => ({ ...p })) })),
     hullBaseThrust: parent.hullBaseThrust,
     hullBaseTurnRate: parent.hullBaseTurnRate,
   };
@@ -3447,7 +3499,7 @@ function snapshot(
       };
       if (s.brokeOff === true) s.brokeOff = false;
       if (s.modules === undefined) return base;
-      return {
+      const withModules = {
         ...base,
         modules: s.modules.map((m) => ({
           slotId: m.slotId,
@@ -3462,9 +3514,57 @@ function snapshot(
           // non-weapon cells (their barrel always points along the mount
           // facing) to keep legacy replays byte-compatible.
           ...(m.turretTurnRate > 0 ? { turretAngle: m.turretAngle } : {}),
+          // Manning state — only emitted for stations that need crew, so
+          // crewless cells stay byte-identical to pre-crew replays.
+          ...(m.crewRequired > 0 ? { manned: m.manned } : {}),
+          // Remaining rounds — only for weapons with a finite local magazine
+          // (an ammoCapacity); unlimited weapons and non-weapons omit it.
+          ...(m.effect.kind === "weapon" && m.effect.ammoCapacity !== undefined
+            ? { ammo: m.ammo }
+            : {}),
+          // Local charge buffer — only for power-drawing modules; draw-free
+          // cells omit it so simple designs stay byte-compatible.
+          ...(m.powerDraw > 0 ? { charge: m.charge } : {}),
         })),
+      };
+      // Crew positions and state, in ship-local coordinates. Each crew member
+      // sits on the cell of the module at its (col, row); that module's x/y is
+      // the cell's ship-local centre, plus the fractional render offset. Omitted
+      // when the ship carries no crew so crewless replays stay byte-compatible.
+      if (s.crew === undefined || s.crew.length === 0) return withModules;
+      const moduleByCell = new Map<string, SimModule>();
+      for (const m of s.modules) moduleByCell.set(crewCellKey(m.col, m.row), m);
+      return {
+        ...withModules,
+        crew: s.crew.map((c) => {
+          const cell = moduleByCell.get(crewCellKey(c.col, c.row));
+          const cx = cell !== undefined ? cell.x : 0;
+          const cy = cell !== undefined ? cell.y : 0;
+          return {
+            id: c.id,
+            x: cx + c.ox * CELL_SIZE,
+            y: cy + c.oy * CELL_SIZE,
+            state: crewState(c),
+            hp: c.hp,
+            ...(c.carrying !== undefined ? { carrying: c.carrying } : {}),
+          };
+        }),
       };
     }),
     projectiles: projectiles.map((p) => ({ x: p.x, y: p.y, kind: p.kind })),
   };
+}
+
+/**
+ * Map a crew member's internal job to the snapshot's state enum the renderer
+ * reads. A walking member (one with steps left on its path) shows as `walking`
+ * regardless of job; an arrived hauler shows as `hauling`; an arrived gunner as
+ * `manning`; an idle member as `idle`. Injury is reserved for a future damage
+ * model — crew hp is emitted but not yet reduced, so `injured` is unused here.
+ */
+function crewState(crew: SimCrew): "idle" | "walking" | "manning" | "hauling" | "injured" {
+  if (crew.path.length > 0) return "walking";
+  if (crew.job === "haulAmmo" || crew.job === "haulPower") return "hauling";
+  if (crew.job === "manning") return "manning";
+  return "idle";
 }
