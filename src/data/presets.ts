@@ -302,13 +302,11 @@ const designData: ShipDesign[] = [
     // backbone links (b, rows 2/4 col 13) for fleet squad-net, and adds RCS (J)
     // plus reaction wheels (W) on the spine so the capital can come about.
     grid: gridFromMap([
-      "...JWSDTRLO...",
-      "..EXCCSWTRRL..",
-      ".EXFCC~GDRRLLb",
-      "EXFCCCWG~RRLLL",
-      ".EXFCC~GDRRLLb",
-      "..EXCCSWTRRL..",
-      "...JWSDTRLO...",
+      "..JWSTRL..",
+      ".EXCCTRRLO",
+      "EXFCCGTRRL",
+      ".EXCCGTRLO",
+      "..JWSTRL..",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -329,15 +327,11 @@ const designData: ShipDesign[] = [
     // C cells (crew quarters) line the central corridor; G (magazine) cells sit
     // between the crew block and the weapon batteries so crew can haul ammo.
     grid: gridFromMap([
-      "......JWWSDRML.....",
-      ".....EXCCWSDRRMLL..",
-      "....EXFCC~GSDRRMMLL",
-      "...EXFFCCGGWDRRMMLL",
-      "EXFFCCCGGGCDRRMMLLL",
-      "...EXFFCCGGWDRRMMLL",
-      "....EXFCC~GSDRRMMLL",
-      ".....EXCCWSDRRMLL..",
-      "......JWWSDRML.....",
+      "...JWSDRML...",
+      ".EXCCWDRRMLL.",
+      "EXFCCGDRRMMLL",
+      ".EXCCWDRRMLL.",
+      "...JWSDRML...",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,

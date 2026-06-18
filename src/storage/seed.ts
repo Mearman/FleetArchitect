@@ -21,7 +21,7 @@ import { getMeta, setMeta, storage } from "@/storage/db";
  * torque-driven attitude model. Centre-line-only designs could not rotate at all
  * without it. This bump reseeds the combined set over either feature's v4.
  */
-const PRESETS_VERSION = 5;
+const PRESETS_VERSION = 6;
 const VERSION_KEY = "presetsVersion";
 
 /**
