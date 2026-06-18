@@ -73,6 +73,7 @@ function moduleOf(
       isWeapon && effect.kind === "weapon" ? effect.turretTurnRate ?? 0 : 0,
     channel: 0,
     commsBearing: 0,
+    sensorBearing: 0,
   };
 }
 

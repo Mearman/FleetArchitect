@@ -66,7 +66,6 @@ function makeShip(opts: {
     // which require the ship to have acquired its target at the band's range.
     // The ships are fully sensor-equipped so detection isn't the variable under
     // test; fog of war is covered by the awareness suite.
-    sensorRange: 1000,
   };
   return {
     instanceId: opts.id,
@@ -192,6 +191,9 @@ describe("engine.movement-modes", () => {
     // The defender hits the attacker enough to drop structure below the
     // retreatThreshold but leaves it alive (two hits of 40 from 100 → 20),
     // then we assert the attacker orients away and flees.
+    // The 130 wu separation is within the innate visual radius so both ships
+    // detect each other from tick 0 without a sensor module — the test is
+    // about the retreat manoeuvre, not detection.
     const result = runBattle(
       inputs([
         makeShip({
@@ -206,7 +208,7 @@ describe("engine.movement-modes", () => {
           id: "d1",
           side: "defender",
           x: 0,
-          y: 150,
+          y: 130,
           structure: 99999,
           // One big hit (100 → 40, below the 0.5 threshold) with a cooldown
           // long enough that no second shot lands during the sample window, so

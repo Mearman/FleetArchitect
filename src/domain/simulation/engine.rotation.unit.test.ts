@@ -35,12 +35,10 @@ function shipStats(over: Partial<ShipStats>): ShipStats {
     thrust: 1,
     turnRate: 0.02,
     weapons: [],
-    // These tests exercise the rotation controller, which only engages once a
-    // ship has acquired its target and is steering toward it. Give the ships a
-    // long sensor reach so they detect each other across the test geometry and
-    // the controller (not advance-to-contact under fog) is the variable under
-    // test; faithful fog of war is covered by the awareness suite.
-    sensorRange: 1000,
+    // The rotation controller only engages once a ship has acquired its target.
+    // The ships carry an all-round (omni) sensor module so they detect each
+    // other across the test geometry and the controller (not advance-to-contact
+    // under fog) is the variable under test; fog is covered by the awareness suite.
     ...over,
   };
 }
@@ -69,6 +67,20 @@ function moduleOf(slotId: string, effect: ModuleEffect, x: number, y: number, co
     turretTurnRate: 0,
     channel: effect.kind === "comms" ? effect.channel : 0,
     commsBearing: effect.kind === "comms" ? effect.bearing : 0,
+    sensorBearing: effect.kind === "sensor" ? effect.bearing : 0,
+  };
+}
+
+/** An all-round (omni) sensor effect of the given range — a full detection
+ *  circle, which is what the removed sensorRange scalar stood in for. */
+function omniSensor(detectionRange: number): ModuleEffect {
+  return {
+    kind: "sensor",
+    sensorType: "omni",
+    arc: Math.PI,
+    detectionRange,
+    bearing: 0,
+    nebulaImmune: false,
   };
 }
 
@@ -87,6 +99,9 @@ function turner(id: string, side: "attacker" | "defender", pos: { x: number; y: 
       // Rear-mounted engine (exhaust aft) so the ship can drive forward; turn
       // rate is what governs the angular accel cap under test.
       moduleOf("e", { kind: "engine", thrust: 1, turnRate: 0.02, facing: Math.PI }, -1, 0),
+      // An all-round sensor so the ships detect each other across the test
+      // geometry (replaces the removed sensorRange scalar).
+      moduleOf("se", omniSensor(1000), 1, 0),
     ],
   };
 }

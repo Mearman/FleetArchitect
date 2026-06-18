@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
-import type { CombatShip, BattleInputs } from "@/domain/simulation/types";
+import type { CombatShip, BattleInputs, ResolvedModule } from "@/domain/simulation/types";
 import { defaultOrders } from "@/schema/fleet";
 import type { ShipClassification } from "@/schema/hull";
-import type { WeaponEffect } from "@/schema/module";
+import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
 
 /**
@@ -17,7 +17,8 @@ import type { ShipStats } from "@/domain/stats";
  *
  * All tests use hitscan beams (projectileSpeed=0). Ships use high thrust
  * (50 units) so they settle into their engagement range within ~80 ticks
- * at a max speed of 50 units/tick; legacy movement maxSpeed = thrust.
+ * at a max speed of 50 units/tick; the per-module engine module supplies
+ * that same thrust so movement is unchanged from the legacy scalar path.
  */
 
 function weapon(over: Partial<WeaponEffect> = {}): WeaponEffect {
@@ -36,11 +37,82 @@ function weapon(over: Partial<WeaponEffect> = {}): WeaponEffect {
   };
 }
 
+/** Build a ResolvedModule with the per-instance fields the engine reads. */
+function moduleOf(
+  slotId: string,
+  effect: ModuleEffect,
+  col: number,
+  row: number,
+  command = false,
+): ResolvedModule {
+  return {
+    slotId,
+    moduleId: slotId,
+    kind: effect.kind,
+    col,
+    row,
+    x: col,
+    y: row,
+    maxHp: 500,
+    mass: 1,
+    powerDraw: 0,
+    crewRequired: 0,
+    effect,
+    command,
+    repairRate: 0,
+    shieldArc: Math.PI * 2,
+    shieldFacing: 0,
+    facing: effect.kind === "engine" ? effect.facing ?? 0 : 0,
+    weaponFacing: 0,
+    turretArc: 0,
+    turretTurnRate: 0,
+    channel: 0,
+    commsBearing: 0,
+    sensorBearing: 0,
+  };
+}
+
+/** An all-round (omni) sensor effect — a full detection circle, which is what
+ *  the removed sensorRange scalar stood in for. */
+function omniSensor(detectionRange: number): ModuleEffect {
+  return {
+    kind: "sensor",
+    sensorType: "omni",
+    arc: Math.PI,
+    detectionRange,
+    bearing: 0,
+    nebulaImmune: false,
+  };
+}
+
+/**
+ * The engine-module thrust that reproduces the legacy movement model's
+ * terminal velocity on a per-module ship. Derived, not magic:
+ *
+ *   terminal velocity v = (thrust / mass) / (1 - linearDamping)
+ *
+ * The legacy path clamps top speed to `stats.thrust` (50). For a per-module
+ * ship with MODULE_COUNT modules of mass 1 each (mass = MODULE_COUNT) and
+ * SIM.linearDamping = 0.97, the thrust that yields the same v = 50 is:
+ *
+ *   thrust = v * mass * (1 - linearDamping) = 50 * MODULE_COUNT * 0.03
+ *
+ * The engine sits at the ship's origin (0, 0) so its lever arm about the
+ * centre of mass is zero — no spurious torque, matching the legacy model's
+ * thrust-along-heading behaviour. The engine's `facing` is π (exhaust aft),
+ * so it drives the ship forward (+x in ship-local), again matching legacy.
+ */
+const MODULE_COUNT = 4; // cmd + engine + sensor + one weapon
+const TARGET_TOP_SPEED = 50;
+const LINEAR_DAMPING = 0.97;
+const PER_MODULE_ENGINE_THRUST =
+  TARGET_TOP_SPEED * MODULE_COUNT * (1 - LINEAR_DAMPING);
+const PER_MODULE_ENGINE_TURN_RATE = 0.2;
+
 function stats(opts: {
   structure?: number;
   shield?: number;
   cost?: number;
-  thrust?: number;
   weapons?: WeaponEffect[];
 }): ShipStats {
   const weapons = opts.weapons ?? [];
@@ -59,15 +131,12 @@ function stats(opts: {
     shieldCapacity: opts.shield ?? 0,
     shieldRechargeRate: 0,
     shieldRechargeDelay: 999,
-    thrust: opts.thrust ?? 50,
-    turnRate: 0.2,
+    // Thrust and turn rate come from the engine module (per-module path); the
+    // stats scalar is only read by the legacy aggregated path, which these
+    // ships do not use once `modules` is defined.
+    thrust: 0,
+    turnRate: 0,
     weapons: weapons.map((w, i) => ({ slotId: `slot-${i}`, effect: w })),
-    // These tests exercise the order system (focus fire, target selection,
-    // stance range-keeping, range-keeping band), all of which require ships to
-    // have already detected each other at the test geometry (up to 400 units
-    // apart). Give them a long sensor reach so detection isn't the variable
-    // under test; faithful fog of war is covered by the awareness suite.
-    sensorRange: 1000,
   };
 }
 
@@ -80,26 +149,54 @@ function makeShip(opts: {
   structure?: number;
   shield?: number;
   cost?: number;
-  thrust?: number;
   weapons?: WeaponEffect[];
   classification?: ShipClassification;
   orders?: Partial<typeof defaultOrders>;
 }): CombatShip {
+  const weapons = opts.weapons ?? [];
+  const s = stats({
+    structure: opts.structure,
+    shield: opts.shield,
+    cost: opts.cost,
+    weapons,
+  });
+  // These tests exercise the order system (focus fire, target selection,
+  // stance range-keeping, range-keeping band), all of which require ships to
+  // have already detected each other at the test geometry (up to 400 units
+  // apart, well beyond the innate visual radius). Each ship carries an
+  // all-round (omni) sensor module so detection isn't the variable under
+  // test; faithful fog of war is covered by the awareness suite.
+  // All modules sit at the ship's origin (0, 0) so every module's lever arm
+  // about the centre of mass is zero — no spurious torque, matching the
+  // legacy model's thrust-along-heading behaviour. The engine module supplies
+  // PER_MODULE_ENGINE_THRUST (derived so terminal velocity equals the legacy
+  // top speed of 50) and turn rate 0.2, matching the legacy scalar path.
+  const modules: ResolvedModule[] = [
+    moduleOf(`${opts.id}-cmd`, { kind: "power", output: 1000 }, 0, 0, true),
+    moduleOf(
+      `${opts.id}-eng`,
+      {
+        kind: "engine",
+        thrust: PER_MODULE_ENGINE_THRUST,
+        turnRate: PER_MODULE_ENGINE_TURN_RATE,
+        facing: Math.PI,
+      },
+      0,
+      0,
+    ),
+    moduleOf(`${opts.id}-se`, omniSensor(1000), 0, 0),
+    ...weapons.map((w, i) => moduleOf(`${opts.id}-w${i}`, w, 0, 0)),
+  ];
   return {
     instanceId: opts.id,
     designId: `design-${opts.id}`,
     side: opts.side,
-    stats: stats({
-      structure: opts.structure,
-      shield: opts.shield,
-      cost: opts.cost,
-      thrust: opts.thrust,
-      weapons: opts.weapons,
-    }),
+    stats: s,
     position: { x: opts.x, y: opts.y },
     facing: opts.facing ?? 0,
     orders: { ...defaultOrders, ...opts.orders },
     classification: opts.classification ?? "frigate",
+    modules,
   };
 }
 
@@ -114,7 +211,9 @@ function inputs(ships: CombatShip[], maxTicks = 200): BattleInputs {
   };
 }
 
-/** Total damage dealt to `targetId` across all frames. */
+/** Total damage dealt to `targetId` across all frames, counting structure,
+ *  shield, and per-module HP so per-module ships (which absorb hits in their
+ *  cells before structure) are measured correctly. */
 function totalDamageDealt(
   result: ReturnType<typeof runBattle>,
   targetId: string,
@@ -123,15 +222,24 @@ function totalDamageDealt(
   if (initFrame === undefined) return 0;
   const initShip = initFrame.ships.find((s) => s.instanceId === targetId);
   if (initShip === undefined) return 0;
-  const initHp = initShip.structure + initShip.shield;
+  const initHp = totalHp(initShip);
   let minHp = initHp;
   for (const frame of result.frames) {
     const s = frame.ships.find((ship) => ship.instanceId === targetId);
     if (s === undefined) continue;
-    const hp = s.structure + s.shield;
+    const hp = totalHp(s);
     if (hp < minHp) minHp = hp;
   }
   return initHp - minHp;
+}
+
+/** Structure + shield + sum of alive module HP. */
+function totalHp(s: { structure: number; shield: number; modules?: { hp: number }[] }): number {
+  let moduleHp = 0;
+  if (s.modules !== undefined) {
+    for (const m of s.modules) moduleHp += m.hp;
+  }
+  return s.structure + s.shield + moduleHp;
 }
 
 /** Distance between two ships at the given tick. */
@@ -180,8 +288,10 @@ describe("engine.orders / focusFire", () => {
           orders: { focusFire: true, targetPriority: "highestCost" },
         }),
         // d1 is the high-cost focus target; d2 is low-cost and should be ignored.
-        makeShip({ id: "d1", side: "defender", x: 200, y: 0, cost: 500, structure: 9999 }),
-        makeShip({ id: "d2", side: "defender", x: 200, y: 0, cost: 50,  structure: 9999 }),
+        // The defenders hold position so the attackers can close and fire; the
+        // test is about target SELECTION, not defender movement.
+        makeShip({ id: "d1", side: "defender", x: 200, y: 0, cost: 500, structure: 9999, orders: { engageRange: "hold" } }),
+        makeShip({ id: "d2", side: "defender", x: 200, y: 0, cost: 50,  structure: 9999, orders: { engageRange: "hold" } }),
       ], 80),
     );
 
@@ -216,8 +326,8 @@ describe("engine.orders / focusFire", () => {
           weapons: [weapon()],
           orders: { focusFire: false, targetPriority: "nearest" },
         }),
-        makeShip({ id: "d1", side: "defender", x: 200, y: -60, structure: 9999 }),
-        makeShip({ id: "d2", side: "defender", x: 200, y:  60, structure: 9999 }),
+        makeShip({ id: "d1", side: "defender", x: 200, y: -60, structure: 9999, orders: { engageRange: "hold" } }),
+        makeShip({ id: "d2", side: "defender", x: 200, y:  60, structure: 9999, orders: { engageRange: "hold" } }),
       ], 80),
     );
 
@@ -291,9 +401,9 @@ describe("engine.orders / vulnerableTargetWeight", () => {
           },
         }),
         // d_highHp: slightly closer to a1, very high HP, low cost.
-        makeShip({ id: "d_highHp", side: "defender", x: 190, y: 0, cost: 10,  structure: 5000 }),
+        makeShip({ id: "d_highHp", side: "defender", x: 190, y: 0, cost: 10,  structure: 5000, orders: { engageRange: "hold" } }),
         // d_lowHp: slightly farther from a1, tiny HP, high cost (a2 targets it).
-        makeShip({ id: "d_lowHp",  side: "defender", x: 210, y: 0, cost: 500, structure: 12 }),
+        makeShip({ id: "d_lowHp",  side: "defender", x: 210, y: 0, cost: 500, structure: 12, orders: { engageRange: "hold" } }),
       ], 60),
     );
 
@@ -339,8 +449,8 @@ describe("engine.orders / vulnerableTargetWeight", () => {
             focusFire: false,
           },
         }),
-        makeShip({ id: "d_highHp", side: "defender", x: 190, y: 0, cost: 10,  structure: 5000 }),
-        makeShip({ id: "d_lowHp",  side: "defender", x: 210, y: 0, cost: 500, structure: 12 }),
+        makeShip({ id: "d_highHp", side: "defender", x: 190, y: 0, cost: 10,  structure: 5000, orders: { engageRange: "hold" } }),
+        makeShip({ id: "d_lowHp",  side: "defender", x: 210, y: 0, cost: 500, structure: 12, orders: { engageRange: "hold" } }),
       ], 60),
     );
 
@@ -384,8 +494,8 @@ describe("engine.orders / vulnerableTargetWeight", () => {
               focusFire: false,
             },
           }),
-          makeShip({ id: "d_highHp", side: "defender", x: 190, y: 0, cost: 10,  structure: 5000 }),
-          makeShip({ id: "d_lowHp",  side: "defender", x: 210, y: 0, cost: 500, structure: 12 }),
+          makeShip({ id: "d_highHp", side: "defender", x: 190, y: 0, cost: 10,  structure: 5000, orders: { engageRange: "hold" } }),
+          makeShip({ id: "d_lowHp",  side: "defender", x: 210, y: 0, cost: 500, structure: 12, orders: { engageRange: "hold" } }),
         ], 120),
       );
 
@@ -533,7 +643,7 @@ describe("engine.orders / rangeKeepingBand", () => {
               rangeKeepingBand: band,
             },
           }),
-          makeShip({ id: "d1", side: "defender", x: 200, y: 0, structure: 999999 }),
+          makeShip({ id: "d1", side: "defender", x: 200, y: 0, structure: 999999, orders: { engageRange: "hold" } }),
         ]),
       );
 
