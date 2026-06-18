@@ -146,3 +146,21 @@ export const BattleResult = z.object({
   frames: z.array(BattleFrame),
 });
 export type BattleResult = z.infer<typeof BattleResult>;
+
+/** Worker→main streaming protocol for progressive battle playback. Discriminated
+ * on 'kind': 'frames' delivers a batch of computed frames with the highest tick
+ * index seen so far; 'result' delivers the final battle outcome. Validated at
+ * the thread boundary just like BattleResult, ensuring type safety across the
+ * worker channel. */
+export const BattleStreamMessage = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("frames"),
+    frames: z.array(BattleFrame),
+    computedTicks: z.number().int().min(0),
+  }),
+  z.object({
+    kind: z.literal("result"),
+    result: BattleResult,
+  }),
+]);
+export type BattleStreamMessage = z.infer<typeof BattleStreamMessage>;

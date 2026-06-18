@@ -12,7 +12,13 @@ import type {
   WeaponType,
 } from "@/schema/module";
 import type { Orders } from "@/schema/fleet";
-import type { BattleInputs, CombatShip, ResolvedModule, SimCrew } from "./types";
+import type {
+  BattleInputs,
+  BattleSummary,
+  CombatShip,
+  ResolvedModule,
+  SimCrew,
+} from "./types";
 
 /**
  * Deterministic battle simulator. Given resolved combat ships, an anomaly, and
@@ -2772,7 +2778,17 @@ function localPointToWorld(ship: SimShip, lx: number, ly: number): { x: number; 
   return { x: ship.x + lx * c - ly * s, y: ship.y + lx * s + ly * c };
 }
 
-export function runBattle(inputs: BattleInputs): BattleResult {
+/**
+ * Pure deterministic battle simulation. Yields one BattleFrame per tick —
+ * the tick-0 frame first, then one per simulated tick in order — and returns
+ * the outcome summary once the run terminates. Contains all the simulation
+ * logic; it performs no id generation, timestamping, or config assembly, so
+ * the same inputs yield byte-identical frames on every run. `runBattle` wraps
+ * this generator to build a replayable BattleResult.
+ */
+export function* simulateBattle(
+  inputs: BattleInputs,
+): Generator<BattleFrame, BattleSummary> {
   const rng = mulberry32(inputs.seed >>> 0);
   const ships = inputs.ships.map((s) => toSimShip(s, rng));
   const attackers = ships.filter((s) => s.side === "attacker");
@@ -2786,7 +2802,10 @@ export function runBattle(inputs: BattleInputs): BattleResult {
   const nextChunkId = (parentId: string, tick: number): string =>
     `${parentId}#chunk#${tick}#${chunkSeq += 1}`;
 
-  const frames: BattleFrame[] = [snapshot(0, ships, projectiles)];
+  // Number of post-initial frames yielded, matching the previous
+  // `frames.length - 1`: the tick-0 frame is excluded from the count.
+  let ticks = 0;
+  yield snapshot(0, ships, projectiles);
 
   let winner: BattleSide = "draw";
   let resolved = false;
@@ -2927,7 +2946,8 @@ export function runBattle(inputs: BattleInputs): BattleResult {
       }
     }
 
-    frames.push(snapshot(tick, ships, projectiles));
+    yield snapshot(tick, ships, projectiles);
+    ticks += 1;
 
     // 6. Termination.
     const attackerAlive = attackers.some((s) => s.alive);
@@ -2954,6 +2974,19 @@ export function runBattle(inputs: BattleInputs): BattleResult {
     winner = leadingSide(attackers, defenders);
   }
 
+  return { winner, ticks };
+}
+
+export function runBattle(inputs: BattleInputs): BattleResult {
+  const frames: BattleFrame[] = [];
+  const sim = simulateBattle(inputs);
+  let step = sim.next();
+  while (!step.done) {
+    frames.push(step.value);
+    step = sim.next();
+  }
+  const summary = step.value;
+
   return {
     id: createId("battle"),
     config: {
@@ -2962,8 +2995,8 @@ export function runBattle(inputs: BattleInputs): BattleResult {
       anomaly: inputs.anomaly,
       seed: inputs.seed,
     },
-    winner,
-    ticks: frames.length - 1,
+    winner: summary.winner,
+    ticks: summary.ticks,
     playedAt: nowIso(),
     frames,
   };

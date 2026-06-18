@@ -34,7 +34,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { resolveFleetToCombatShips } from "@/domain/resolve";
 import { CELL_SIZE } from "@/domain/grid";
-import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
+import { DEFAULT_MAX_TICKS, TICKS_PER_SECOND } from "@/domain/simulation/types";
 import { battleRunner } from "@/ui/battleRunner";
 import { catalog } from "@/data/catalog";
 import { useFleets, useShipDesigns } from "@/ui/hooks/storage";
@@ -54,13 +54,6 @@ import {
 } from "./battleCamera";
 import type { Bounds, Camera } from "./battleCamera";
 import * as styles from "./BattleRoute.css";
-
-/**
- * The simulation's fixed tick rate. Playback time (seconds) × this value gives
- * the fractional sim-tick position for interpolation. Sim tick rate, playback
- * speed, and display refresh are all independent of one another.
- */
-const TICKS_PER_SECOND = 30;
 
 const PROJECTILE_COLOUR: Record<WeaponType, string> = {
   beam: "#ffe066",
@@ -104,6 +97,48 @@ const CARRYING_COLOUR: Record<string, string> = {
 };
 
 const DEFAULT_BOUNDS: Bounds = { minX: -700, maxX: 700, minY: -430, maxY: 430 };
+
+/**
+ * Exponential-moving-average weight for the measured simulation rate (ticks
+ * computed per real second). Each batch nudges the estimate towards its instant
+ * rate by this fraction, smoothing the spiky per-batch timings without lagging
+ * far behind a genuine change in compute speed.
+ */
+const SIM_RATE_EMA_WEIGHT = 0.3;
+
+/**
+ * How many real seconds of uninterrupted playback to buffer for before resuming
+ * once playback has stalled at the leading edge. When the simulation is slower
+ * than playback this sets how much lead to accumulate, trading a longer single
+ * rebuffer for fewer stop-start stutters (the streaming-video rebuffer model).
+ */
+const REBUFFER_TARGET_SECONDS = 3;
+
+/**
+ * Minimum lead (in playback seconds) required to (re)start playback at the
+ * leading edge when the simulation is keeping up. A small cushion so a single
+ * slow batch does not immediately stall playback again.
+ */
+const MIN_RESUME_LEAD_SECONDS = 0.3;
+
+/**
+ * Resume threshold in playback seconds: how far the streamed leading edge must
+ * be ahead of the playhead before playback (re)starts. Driven by the measured
+ * simulation rate versus the playback consumption rate. When the sim keeps up
+ * (rate >= playback rate) a minimal cushion suffices; when it lags, buffer
+ * enough lead to sustain `REBUFFER_TARGET_SECONDS` of smooth playback before the
+ * playhead would next catch the edge.
+ */
+function resumeLeadSeconds(simTickRate: number, playbackTickRate: number): number {
+  if (simTickRate <= 0 || simTickRate >= playbackTickRate) {
+    return MIN_RESUME_LEAD_SECONDS;
+  }
+  // Net ticks the buffer drains per real second while playing (playback consumes
+  // faster than the sim produces). The lead must cover the whole rebuffer window.
+  const drainPerSecond = playbackTickRate - simTickRate;
+  const neededTicks = drainPerSecond * REBUFFER_TARGET_SECONDS;
+  return Math.max(MIN_RESUME_LEAD_SECONDS, neededTicks / TICKS_PER_SECOND);
+}
 
 const ANOMALY_LABEL: Record<BattleAnomalyType, string> = {
   none: "Open space",
@@ -182,7 +217,86 @@ export function BattleRoute() {
   const [defenderId, setDefenderId] = useState<string | null>(null);
   const [anomaly, setAnomaly] = useState<BattleAnomalyType>("none");
   const [seed, setSeed] = useState(1);
+
+  /**
+   * The full, final BattleResult. Set only when the run promise resolves; used
+   * for the winner badge, persistence, and the terminal stop-at-end behaviour.
+   * Playback no longer waits on this — it reads streamed frames from `framesRef`
+   * as soon as the first batch lands.
+   */
   const [result, setResult] = useState<BattleResult | null>(null);
+
+  /**
+   * Streamed frames, accumulated batch by batch as the worker produces them.
+   * Held in a ref (not state) so appending a batch is O(batch) and never forces
+   * an array copy; the rAF loop, pointer handlers, and redraw effects read
+   * `framesRef.current` directly (all non-render contexts, where reading a ref
+   * is legitimate). Render never touches the ref: the facts render needs are
+   * mirrored into state below as each batch lands.
+   */
+  const framesRef = useRef<BattleFrame[]>([]);
+
+  /**
+   * Number of frames streamed so far, mirrored from `framesRef` on each batch.
+   * Drives `hasFrames` and bounds-checks in the render path without reading the
+   * ref during render.
+   */
+  const [frameCount, setFrameCount] = useState(0);
+
+  /**
+   * The tick-0 deployment frame, captured once when the first batch lands. The
+   * full per-ship structure/shield maxima are taken from it for the HP bars, so
+   * render reads this state rather than indexing `framesRef.current[0]`.
+   */
+  const [deploymentFrame, setDeploymentFrame] = useState<BattleFrame | null>(null);
+
+  /**
+   * Highest tick streamed so far. While computing this is the leading edge of
+   * playable time; once the final `result` lands the authoritative tick count
+   * is `result.ticks` (the two agree at completion).
+   */
+  const [computedTicks, setComputedTicks] = useState(0);
+
+  /**
+   * True when the playback clock has caught up to the streamed leading edge and
+   * is waiting for more frames to compute. Distinct from paused: the clock is
+   * clamped to the leading edge but playback is still "on" and resumes
+   * automatically as soon as more frames arrive.
+   */
+  const [buffering, setBuffering] = useState(false);
+
+  /**
+   * Running world bounds (raw, unpadded), expanded as each batch arrives so the
+   * camera widens to follow the spreading battle rather than snapping to the
+   * final extent. Held in state so the padded `bounds` memo recomputes whenever
+   * the extent grows; the `onFrames` handler reads the current value and sets a
+   * fresh object when the extent changes. The padded transform applies the same
+   * 8% + 40 padding as the original all-frames pass.
+   */
+  const [rawBounds, setRawBounds] = useState<Bounds | null>(null);
+
+  /**
+   * AbortController for the in-flight run. Aborted when a new battle starts so a
+   * stale stream can never feed frames into the new run's accumulator.
+   */
+  const runAbortRef = useRef<AbortController | null>(null);
+
+  /**
+   * Measured simulation rate in ticks computed per real second, as an EMA over
+   * batch arrivals (0 until two batches have landed). Compared against the
+   * playback consumption rate to decide how much lead to buffer before resuming
+   * playback at the streamed leading edge.
+   */
+  const simTickRateRef = useRef(0);
+  /** Arrival time (ms) and tick count of the previous batch, for the rate EMA. */
+  const lastBatchRef = useRef<{ timeMs: number; ticks: number } | null>(null);
+  /**
+   * Whether playback is currently stalled at the leading edge waiting for the
+   * buffer to refill. Held in a ref so the rAF loop carries the buffering state
+   * across frames (hysteresis): once stalled it stays stalled until the lead
+   * reaches `resumeLeadSeconds`, rather than flip-flopping every frame.
+   */
+  const bufferingRef = useRef(false);
 
   /**
    * Playback clock: elapsed playback-time in seconds, independent of rAF rate
@@ -220,6 +334,10 @@ export function BattleRoute() {
     cameraRef.current = camera;
   }, [camera]);
 
+  // Abort any in-flight run when the route unmounts so a stream can't keep
+  // appending frames into a torn-down component.
+  useEffect(() => () => runAbortRef.current?.abort(), []);
+
   /** Whether the setup panel and module-status overlay are shown. */
   const [setupOpen, setSetupOpen] = useState(true);
   const [statusOpen, setStatusOpen] = useState(false);
@@ -238,64 +356,82 @@ export function BattleRoute() {
     [fleets],
   );
 
+  /**
+   * Whether any frames have streamed in yet. The canvas stage and all the
+   * draw/playback machinery key off this rather than `result`, so playback can
+   * begin the moment the first batch arrives — long before the final result
+   * resolves. Derived from `frameCount` state, which the first batch flips from
+   * zero, rather than reading the frames ref during render.
+   */
+  const hasFrames = frameCount > 0;
+
+  /** Authoritative max tick: the streamed leading edge while computing, the
+   *  final tick count once the result has landed. */
+  const maxTick = result !== null ? result.ticks : computedTicks;
+
+  // Padded view bounds, derived from the running min/max accumulated in the
+  // onFrames handler. Recomputed whenever the raw extent grows (a fresh
+  // `rawBounds` object), so the camera expands as the battle spreads instead of
+  // being computed once over all frames. Same 8% + 40 padding as the original
+  // all-frames pass.
   const bounds = useMemo<Bounds>(() => {
-    if (result === null) return DEFAULT_BOUNDS;
-    let minX = Infinity;
-    let maxX = -Infinity;
-    let minY = Infinity;
-    let maxY = -Infinity;
-    for (const frame of result.frames) {
-      for (const s of frame.ships) {
-        minX = Math.min(minX, s.x);
-        maxX = Math.max(maxX, s.x);
-        minY = Math.min(minY, s.y);
-        maxY = Math.max(maxY, s.y);
-      }
-      for (const p of frame.projectiles) {
-        minX = Math.min(minX, p.x);
-        maxX = Math.max(maxX, p.x);
-        minY = Math.min(minY, p.y);
-        maxY = Math.max(maxY, p.y);
-      }
-    }
-    if (!Number.isFinite(minX)) return DEFAULT_BOUNDS;
-    const padX = (maxX - minX) * 0.08 + 40;
-    const padY = (maxY - minY) * 0.08 + 40;
+    if (rawBounds === null || !Number.isFinite(rawBounds.minX)) return DEFAULT_BOUNDS;
+    const padX = (rawBounds.maxX - rawBounds.minX) * 0.08 + 40;
+    const padY = (rawBounds.maxY - rawBounds.minY) * 0.08 + 40;
     return {
-      minX: minX - padX,
-      maxX: maxX + padX,
-      minY: minY - padY,
-      maxY: maxY + padY,
+      minX: rawBounds.minX - padX,
+      maxX: rawBounds.maxX + padX,
+      minY: rawBounds.minY - padY,
+      maxY: rawBounds.maxY + padY,
     };
-  }, [result]);
+  }, [rawBounds]);
 
   /**
-   * The anomaly actually baked into the running replay. Read from the result's
-   * config (not the setup `anomaly` state) so the rendered anomaly always
-   * matches the simulated physics, even if the setup control is changed after
-   * engaging.
+   * The anomaly baked into the running replay. Captured at battle start (the
+   * value passed to `startBattle`) so the rendered anomaly matches the simulated
+   * physics from the first streamed frame, before the final result — with its
+   * `config.anomaly` — has landed. Reconciled against the result on completion.
    */
-  const activeAnomaly: BattleAnomalyType = result?.config.anomaly ?? "none";
+  const [runningAnomaly, setRunningAnomaly] = useState<BattleAnomalyType>("none");
+  const activeAnomaly: BattleAnomalyType = result?.config.anomaly ?? runningAnomaly;
 
-  /** Per-ship full structure/shield, taken from the deployment frame. */
+  /**
+   * Per-ship full structure/shield, taken from the deployment frame captured on
+   * the first batch. Re-derived only when that frame changes (a fresh run), so
+   * the HP bars are correct from the moment progressive playback begins.
+   */
   const maxHp = useMemo(() => {
     const map = new Map<string, { structure: number; shield: number }>();
-    if (result !== null) {
-      const first = result.frames[0];
-      if (first !== undefined) {
-        for (const s of first.ships) {
-          map.set(s.instanceId, { structure: s.structure, shield: s.shield });
-        }
+    if (deploymentFrame !== null) {
+      for (const s of deploymentFrame.ships) {
+        map.set(s.instanceId, { structure: s.structure, shield: s.shield });
       }
     }
     return map;
-  }, [result]);
+  }, [deploymentFrame]);
+
+  // Derive the integer tick for the Slider and tick counter from playbackTime,
+  // clamped to the playable ceiling: the streamed leading edge while computing,
+  // the final tick count once the result has landed.
+  const currentTick = hasFrames
+    ? Math.min(maxTick, Math.floor(playbackTime * TICKS_PER_SECOND))
+    : 0;
+
+  // The status panel uses the discrete-nearest frame since it shows system HP
+  // values, not positions — there is no meaningful interpolation for HP. It is
+  // selected inside the rAF loop below (a legitimate non-render context for
+  // reading `framesRef`) and mirrored here, updated only when the integer tick
+  // changes so it does not re-render every animation frame. It is left stale
+  // while the panel is closed — render gates on `statusOpen` — and refreshed
+  // within one frame of reopening.
+  const [statusFrame, setStatusFrame] = useState<BattleFrame | null>(null);
 
   // Keep the canvas backing store matched to its CSS display size, with a DPR
   // multiplier for crisp lines. Without this the backing is the HTML default
   // 300×150 regardless of how big the canvas renders, and the browser scales
   // that tiny bitmap up to fill the box — a blurry smear. The effect depends
-  // on `result` so it (re)runs when the canvas first mounts on a new battle.
+  // on `hasFrames` so it (re)runs when the canvas first mounts as the first
+  // streamed batch lands.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (canvas === null) return;
@@ -322,7 +458,7 @@ export function BattleRoute() {
     });
     observer.observe(canvas);
     return () => observer.disconnect();
-  }, [result]);
+  }, [hasFrames]);
 
   /**
    * Pure draw function: renders `frame` onto the canvas. Separated from the
@@ -576,10 +712,13 @@ export function BattleRoute() {
    * this loop runs regardless of `playing` so that seek/resize redraws work.
    */
   useEffect(() => {
-    if (result === null) return;
+    if (!hasFrames) return;
 
     let rafId = 0;
     let lastTimestamp: number | null = null;
+    // Tracks the last integer tick mirrored into `statusFrame`, so the panel's
+    // state is updated only when the discrete tick changes, not every frame.
+    let lastStatusTick = -1;
 
     const loop = (now: number) => {
       if (lastTimestamp !== null) {
@@ -589,15 +728,61 @@ export function BattleRoute() {
         const clampedDt = Math.min(realDt, 0.2);
 
         if (playing) {
-          const maxTime = result.ticks / TICKS_PER_SECOND;
+          // Reading `result`/`computedTicks` from the closure: the effect re-runs
+          // when either changes, so the closure always sees current values.
+          const final = result !== null;
           const newTime = playbackTimeRef.current + clampedDt * speed;
-          if (newTime >= maxTime) {
-            playbackTimeRef.current = maxTime;
-            setPlaybackTime(maxTime);
-            setPlaying(false);
+
+          if (final) {
+            // The whole battle is computed. Play straight through to the
+            // authoritative end, then stop.
+            const maxTime = result.ticks / TICKS_PER_SECOND;
+            if (newTime >= maxTime) {
+              playbackTimeRef.current = maxTime;
+              setPlaybackTime(maxTime);
+              setPlaying(false);
+              setBuffering(false);
+              bufferingRef.current = false;
+            } else {
+              playbackTimeRef.current = newTime;
+              setPlaybackTime(newTime);
+              if (bufferingRef.current) {
+                bufferingRef.current = false;
+                setBuffering(false);
+              }
+            }
           } else {
-            playbackTimeRef.current = newTime;
-            setPlaybackTime(newTime);
+            // Still computing: gate playback on the streamed leading edge using
+            // the measured sim rate. Switch to buffering when the playhead
+            // catches the edge; resume only once enough lead has built up that
+            // playback can run smoothly given how fast the sim is producing
+            // frames (the rebuffer model — fewer, longer stalls over constant
+            // micro-stutter when the sim is slower than playback).
+            const edgeTime = computedTicks / TICKS_PER_SECOND;
+            const playbackTickRate = TICKS_PER_SECOND * speed;
+            const resumeLead = resumeLeadSeconds(simTickRateRef.current, playbackTickRate);
+
+            if (bufferingRef.current) {
+              // Hold at the edge until the buffer has refilled to the target lead.
+              if (edgeTime - playbackTimeRef.current >= resumeLead) {
+                bufferingRef.current = false;
+                setBuffering(false);
+                playbackTimeRef.current = newTime;
+                setPlaybackTime(newTime);
+              } else {
+                playbackTimeRef.current = Math.min(playbackTimeRef.current, edgeTime);
+                setPlaybackTime(playbackTimeRef.current);
+              }
+            } else if (newTime >= edgeTime) {
+              // Caught the leading edge — clamp and start buffering.
+              playbackTimeRef.current = edgeTime;
+              setPlaybackTime(edgeTime);
+              bufferingRef.current = true;
+              setBuffering(true);
+            } else {
+              playbackTimeRef.current = newTime;
+              setPlaybackTime(newTime);
+            }
           }
         }
       }
@@ -606,30 +791,45 @@ export function BattleRoute() {
 
       // Draw on every rAF regardless of whether the clock advanced.
       const fractionalTick = playbackTimeRef.current * TICKS_PER_SECOND;
-      const frame = interpolateFrame(result.frames, fractionalTick);
+      const frames = framesRef.current;
+      const frame = interpolateFrame(frames, fractionalTick);
       drawFrame(frame);
+
+      // Mirror the discrete-nearest frame into state for the status panel, but
+      // only when the panel is open and the integer tick has moved — avoiding a
+      // re-render on every animation frame. Reading the ref here is legitimate:
+      // the rAF callback is not the render path.
+      if (statusOpen && frames.length > 0) {
+        const tick = Math.min(frames.length - 1, Math.floor(fractionalTick));
+        if (tick !== lastStatusTick) {
+          lastStatusTick = tick;
+          setStatusFrame(frames[tick] ?? null);
+        }
+      }
 
       rafId = requestAnimationFrame(loop);
     };
 
     rafId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(rafId);
-  // Restart the loop when: a new battle lands, playing toggles, speed changes,
-  // or drawFrame is recreated (bounds/maxHp changed). All of these are
+  // Restart the loop when: the first batch lands, playing toggles, speed
+  // changes, the streamed leading edge grows, the final result arrives, or
+  // drawFrame is recreated (bounds/maxHp changed), or the status panel opens or
+  // closes (so the loop begins/stops mirroring the status frame). All are
   // legitimate reasons to reset `lastTimestamp` so the first dt after each
   // change is not inflated.
-  }, [result, playing, speed, drawFrame]);
+  }, [hasFrames, playing, speed, drawFrame, result, computedTicks, statusOpen]);
 
   // Redraw when the canvas is resized (canvasSize changes). The draw itself is
   // purely a side-effect of the current playbackTime; no clock advance needed.
   // The rAF loop above handles the drawing during normal playback; this covers
   // the paused-then-resize case.
   useEffect(() => {
-    if (result === null) return;
+    if (!hasFrames) return;
     const fractionalTick = playbackTimeRef.current * TICKS_PER_SECOND;
-    const frame = interpolateFrame(result.frames, fractionalTick);
+    const frame = interpolateFrame(framesRef.current, fractionalTick);
     drawFrame(frame);
-  }, [canvasSize, result, drawFrame]);
+  }, [canvasSize, hasFrames, drawFrame]);
 
   /**
    * Resolve the transform exactly as `drawFrame` does, for pointer-space
@@ -638,17 +838,17 @@ export function BattleRoute() {
    */
   const currentTransform = useCallback(() => {
     const canvas = canvasRef.current;
-    if (canvas === null || result === null) return undefined;
+    if (canvas === null || framesRef.current.length === 0) return undefined;
     const width = canvas.clientWidth;
     const height = canvas.clientHeight;
     if (width === 0 || height === 0) return undefined;
     const cam = cameraRef.current;
     const fractionalTick = playbackTimeRef.current * TICKS_PER_SECOND;
-    const frame = interpolateFrame(result.frames, fractionalTick);
+    const frame = interpolateFrame(framesRef.current, fractionalTick);
     const followPos =
       cam.followId !== null ? frame.ships.find((s) => s.instanceId === cam.followId) : undefined;
     return { t: resolveTransform(width, height, bounds, cam, followPos), frame };
-  }, [result, bounds]);
+  }, [bounds]);
 
   /** Canvas-relative pointer position from a pointer event. */
   const pointerPos = (e: ReactPointerEvent<HTMLCanvasElement>) => {
@@ -661,7 +861,7 @@ export function BattleRoute() {
   // handler cannot call preventDefault, and the page would scroll while zooming.
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (canvas === null || result === null) return;
+    if (canvas === null || !hasFrames) return;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       const resolved = currentTransform();
@@ -693,7 +893,7 @@ export function BattleRoute() {
     };
     canvas.addEventListener("wheel", onWheel, { passive: false });
     return () => canvas.removeEventListener("wheel", onWheel);
-  }, [result, currentTransform, bounds]);
+  }, [hasFrames, currentTransform, bounds]);
 
   const handlePointerDown = useCallback((e: ReactPointerEvent<HTMLCanvasElement>) => {
     if (e.button !== 0) return;
@@ -785,30 +985,139 @@ export function BattleRoute() {
       });
       return;
     }
-    // Compute off the main thread via the BattleRunner contract, so the engine
-    // no longer blocks the UI. The replay below is unchanged: it still drives
-    // off the precomputed frames once the result arrives, on the wall-clock
-    // playback timeline.
+    // Compute off the main thread via the BattleRunner contract. Frames stream
+    // in batch by batch through `onFrames`; playback starts on the first batch
+    // and runs along the streamed leading edge while later batches compute. The
+    // final `result` only lands when the run resolves — used for the winner
+    // badge, persistence, and the terminal stop-at-end.
+
+    // Abort any run still in flight so its stale stream can't feed this one.
+    runAbortRef.current?.abort();
+    const controller = new AbortController();
+    runAbortRef.current = controller;
+
+    // Reset every streaming accumulator for the fresh run.
+    framesRef.current = [];
+    setFrameCount(0);
+    setDeploymentFrame(null);
+    setRawBounds(null);
+    setComputedTicks(0);
+    setBuffering(false);
+    simTickRateRef.current = 0;
+    lastBatchRef.current = null;
+    bufferingRef.current = false;
+    setResult(null);
+    setRunningAnomaly(chosenAnomaly);
     setComputing(true);
     setPlaying(false);
-    try {
-      const battle = await battleRunner.run({
-        ships: [...attackers, ...defenders],
-        attackerFleetId: attacker.id,
-        defenderFleetId: defender.id,
-        anomaly: chosenAnomaly,
-        seed: chosenSeed,
-        maxTicks: DEFAULT_MAX_TICKS,
+
+    let firstBatch = true;
+    const onFrames = (frames: readonly BattleFrame[], streamedTicks: number) => {
+      // Ignore late batches from a run that has since been superseded.
+      if (controller.signal.aborted) return;
+
+      // Update the measured simulation rate (ticks computed per real second) as
+      // an EMA over batch arrivals. The rAF loop uses it to decide how much lead
+      // to buffer before resuming playback at the leading edge.
+      const nowMs = performance.now();
+      const prevBatch = lastBatchRef.current;
+      if (prevBatch !== null) {
+        const dtSeconds = (nowMs - prevBatch.timeMs) / 1000;
+        const dTicks = streamedTicks - prevBatch.ticks;
+        if (dtSeconds > 0 && dTicks > 0) {
+          const instantRate = dTicks / dtSeconds;
+          simTickRateRef.current =
+            simTickRateRef.current === 0
+              ? instantRate
+              : SIM_RATE_EMA_WEIGHT * instantRate +
+                (1 - SIM_RATE_EMA_WEIGHT) * simTickRateRef.current;
+        }
+      }
+      lastBatchRef.current = { timeMs: nowMs, ticks: streamedTicks };
+
+      // Capture the very first streamed frame (the tick-0 deployment snapshot)
+      // before appending, so the HP-bar maxima can be taken from it.
+      const firstFrame = framesRef.current.length === 0 ? frames[0] : undefined;
+
+      // Append the batch into the ref the rAF loop reads from. The runner hands
+      // us a readonly view; push each frame reference into the accumulator.
+      for (const frame of frames) {
+        framesRef.current.push(frame);
+      }
+
+      // Expand the running world extent with this batch's ships and projectiles,
+      // growing the camera view as the battle spreads. Folded into the previous
+      // bounds state so render reads a reactive value, never the ref. Only emit
+      // a fresh object when the extent actually grew, so the bounds memo stays
+      // stable across batches that add nothing new.
+      setRawBounds((prev) => {
+        let minX = prev?.minX ?? Infinity;
+        let maxX = prev?.maxX ?? -Infinity;
+        let minY = prev?.minY ?? Infinity;
+        let maxY = prev?.maxY ?? -Infinity;
+        for (const frame of frames) {
+          for (const s of frame.ships) {
+            if (s.x < minX) minX = s.x;
+            if (s.x > maxX) maxX = s.x;
+            if (s.y < minY) minY = s.y;
+            if (s.y > maxY) maxY = s.y;
+          }
+          for (const p of frame.projectiles) {
+            if (p.x < minX) minX = p.x;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y < minY) minY = p.y;
+            if (p.y > maxY) maxY = p.y;
+          }
+        }
+        if (
+          prev !== null &&
+          minX === prev.minX &&
+          maxX === prev.maxX &&
+          minY === prev.minY &&
+          maxY === prev.maxY
+        ) {
+          return prev;
+        }
+        return { minX, maxX, minY, maxY };
       });
+
+      setFrameCount(framesRef.current.length);
+      setComputedTicks(streamedTicks);
+
+      if (firstFrame !== undefined) {
+        // Capture the tick-0 deployment frame for the HP-bar maxima.
+        setDeploymentFrame(firstFrame);
+      }
+
+      if (firstBatch) {
+        firstBatch = false;
+        // Start playback from the top of the fresh battle and hand the stage the
+        // full width once the first frames are on screen.
+        playbackTimeRef.current = 0;
+        setPlaybackTime(0);
+        setCamera(DEFAULT_CAMERA);
+        setSetupOpen(false);
+        setPlaying(true);
+      }
+    };
+
+    try {
+      const battle = await battleRunner.run(
+        {
+          ships: [...attackers, ...defenders],
+          attackerFleetId: attacker.id,
+          defenderFleetId: defender.id,
+          anomaly: chosenAnomaly,
+          seed: chosenSeed,
+          maxTicks: DEFAULT_MAX_TICKS,
+        },
+        { signal: controller.signal, onFrames },
+      );
+      // A superseded run that resolves anyway must not clobber the current one.
+      if (controller.signal.aborted) return;
       void storage().battles.save(battle);
       setResult(battle);
-      // Reset the playback clock and camera to the start of a fresh battle, and
-      // collapse the setup panel so the stage gets the full width for playback.
-      playbackTimeRef.current = 0;
-      setPlaybackTime(0);
-      setCamera(DEFAULT_CAMERA);
-      setSetupOpen(false);
-      setPlaying(true);
+      setBuffering(false);
     } catch (error) {
       notifications.show({
         title: "Battle failed to compute",
@@ -816,7 +1125,7 @@ export function BattleRoute() {
         color: "red",
       });
     } finally {
-      setComputing(false);
+      if (runAbortRef.current === controller) setComputing(false);
     }
   }
 
@@ -884,17 +1193,6 @@ export function BattleRoute() {
       : result?.winner === "defender"
         ? "#5ab0ff"
         : "gray";
-
-  // Derive the integer tick for the Slider and tick counter from playbackTime.
-  const currentTick = result !== null
-    ? Math.min(result.ticks, Math.floor(playbackTime * TICKS_PER_SECOND))
-    : 0;
-
-  // The status panel uses the discrete-nearest frame since it shows system HP
-  // values, not positions — there is no meaningful interpolation for HP.
-  const statusFrame = result !== null
-    ? (result.frames[currentTick] ?? result.frames[result.frames.length - 1])
-    : null;
 
   const setupForm = (
     <Stack gap="sm">
@@ -1007,7 +1305,7 @@ export function BattleRoute() {
         </Paper>
       </Collapse>
 
-      {result === null ? (
+      {!hasFrames ? (
         <Paper p="xl" withBorder>
           <Center h={360}>
             {computing ? (
@@ -1078,9 +1376,41 @@ export function BattleRoute() {
                 </Tooltip>
               </Group>
 
-              {statusOpen && statusFrame !== null && statusFrame !== undefined && (
+              {statusOpen && statusFrame !== null && (
                 <Box className={styles.statusOverlay}>
                   <ModuleStatusPanel frame={statusFrame} />
+                </Box>
+              )}
+
+              {/* Streaming progress: shown while the run is still computing (the
+                  final result has not yet landed). A thin progress bar tracks the
+                  streamed leading edge against the safety cap, with a badge that
+                  flips to 'buffering' when playback has outrun the streamed
+                  frames. Vanishes the moment the final result arrives. */}
+              {result === null && computing && (
+                <Box
+                  style={{
+                    position: "absolute",
+                    bottom: 8,
+                    left: 8,
+                    zIndex: 3,
+                    width: "min(260px, 60%)",
+                    pointerEvents: "none",
+                  }}
+                >
+                  <Stack gap={4}>
+                    <Group gap={6} align="center">
+                      <Loader size={12} />
+                      <Badge size="sm" variant="filled" color={buffering ? "yellow" : "indigo"}>
+                        {buffering ? "Buffering" : "Computing"}
+                      </Badge>
+                    </Group>
+                    <Progress
+                      size="xs"
+                      value={Math.min(100, (computedTicks / DEFAULT_MAX_TICKS) * 100)}
+                      color={buffering ? "yellow" : "indigo"}
+                    />
+                  </Stack>
                 </Box>
               )}
             </Box>
@@ -1091,7 +1421,10 @@ export function BattleRoute() {
               variant="light"
               leftSection={playing ? <IconPlayerPause size={16} /> : <IconPlayerPlay size={16} />}
               onClick={() => {
-                if (currentTick >= result.ticks) {
+                // Restart from the top only when we are paused at the true end of
+                // a finished battle. Mid-stream the "end" is just the leading edge,
+                // so a play press there resumes rather than rewinds.
+                if (result !== null && currentTick >= result.ticks) {
                   playbackTimeRef.current = 0;
                   setPlaybackTime(0);
                 }
@@ -1117,7 +1450,8 @@ export function BattleRoute() {
               </Badge>
             </Tooltip>
             <Text size="sm" c="dimmed" style={{ flex: 1 }}>
-              Tick {currentTick} / {result.ticks}
+              Tick {currentTick} / {maxTick}
+              {result === null ? "…" : ""}
             </Text>
             <SegmentedControl
               size="xs"
@@ -1133,14 +1467,15 @@ export function BattleRoute() {
           </Group>
           <Slider
             min={0}
-            max={result.ticks}
+            max={maxTick}
             value={currentTick}
             onChange={(val) => {
               setPlaying(false);
+              setBuffering(false);
               const newTime = val / TICKS_PER_SECOND;
               playbackTimeRef.current = newTime;
               setPlaybackTime(newTime);
-              const frame = interpolateFrame(result.frames, val);
+              const frame = interpolateFrame(framesRef.current, val);
               drawFrame(frame);
             }}
           />

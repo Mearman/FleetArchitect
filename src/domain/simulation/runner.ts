@@ -1,7 +1,7 @@
 import { runBattle } from "@/domain/simulation/engine";
 import type { BattleInputs } from "@/domain/simulation/types";
-import { BattleResult } from "@/schema/battle";
-import type { BattleResult as BattleResultType } from "@/schema/battle";
+import { BattleResult, BattleStreamMessage } from "@/schema/battle";
+import type { BattleFrame, BattleResult as BattleResultType } from "@/schema/battle";
 
 /**
  * The portable-runtime boundary for the battle simulation. A `BattleRunner`
@@ -14,9 +14,16 @@ import type { BattleResult as BattleResultType } from "@/schema/battle";
  * The contract is asynchronous and cancellable: pass an `AbortSignal` to abort
  * an in-flight run. Aborting rejects the returned promise and frees the
  * underlying worker.
+ *
+ * The optional `onFrames` callback receives streamed frame batches as they
+ * arrive from the worker, enabling progressive replay rendering before the
+ * battle finishes computing.
  */
 export interface BattleRunner {
-  run(inputs: BattleInputs, signal?: AbortSignal): Promise<BattleResultType>;
+  run(
+    inputs: BattleInputs,
+    options?: { signal?: AbortSignal; onFrames?: (frames: readonly BattleFrame[], computedTicks: number) => void },
+  ): Promise<BattleResultType>;
 }
 
 /** Rejection thrown when a run is aborted via its `AbortSignal`. */
@@ -31,13 +38,23 @@ export class BattleAbortError extends Error {
  * Runs the engine synchronously on the calling thread. Used by Vitest / node
  * where `Worker` is unavailable, and as a fallback. Still honours the async
  * contract (returns a resolved promise) and the abort signal.
+ *
+ * When `onFrames` is provided, it is called once with all frames after the
+ * battle completes — streaming on the direct path is a single batch.
  */
 export class DirectBattleRunner implements BattleRunner {
-  run(inputs: BattleInputs, signal?: AbortSignal): Promise<BattleResultType> {
+  run(
+    inputs: BattleInputs,
+    options?: { signal?: AbortSignal; onFrames?: (frames: readonly BattleFrame[], computedTicks: number) => void },
+  ): Promise<BattleResultType> {
+    const signal = options?.signal;
+    const onFrames = options?.onFrames;
     if (signal?.aborted === true) {
       return Promise.reject(new BattleAbortError());
     }
-    return Promise.resolve(runBattle(inputs));
+    const result = runBattle(inputs);
+    onFrames?.(result.frames, result.ticks);
+    return Promise.resolve(result);
   }
 }
 
@@ -48,6 +65,13 @@ export class DirectBattleRunner implements BattleRunner {
  * Vite `?worker` import lives at the call site (the UI) rather than being a
  * hard dependency of this module — keeping the domain layer free of bundler
  * specifics and the adapter unit-constructable in node.
+ *
+ * The worker streams frame batches via `{ kind: 'frames' }` messages before
+ * posting a `{ kind: 'result' }` message with the final `BattleResult`. Each
+ * incoming message is validated with `BattleStreamMessage.safeParse` at the
+ * thread boundary. On a `frames` message `onFrames` is invoked and the worker
+ * is kept alive; on a `result` message the worker is cleaned up and the
+ * promise resolves.
  */
 export type WorkerFactory = () => Worker;
 
@@ -58,7 +82,13 @@ export class WorkerBattleRunner implements BattleRunner {
     this.#createWorker = createWorker;
   }
 
-  run(inputs: BattleInputs, signal?: AbortSignal): Promise<BattleResultType> {
+  run(
+    inputs: BattleInputs,
+    options?: { signal?: AbortSignal; onFrames?: (frames: readonly BattleFrame[], computedTicks: number) => void },
+  ): Promise<BattleResultType> {
+    const signal = options?.signal;
+    const onFrames = options?.onFrames;
+
     return new Promise<BattleResultType>((resolve, reject) => {
       if (signal?.aborted === true) {
         reject(new BattleAbortError());
@@ -80,12 +110,30 @@ export class WorkerBattleRunner implements BattleRunner {
       };
 
       worker.onmessage = (event: MessageEvent<unknown>) => {
-        const parsed = BattleResult.safeParse(event.data);
+        const parsed = BattleStreamMessage.safeParse(event.data);
+        if (!parsed.success) {
+          cleanup();
+          reject(new Error(`Worker sent an invalid BattleStreamMessage: ${parsed.error.message}`));
+          return;
+        }
+
+        if (parsed.data.kind === "frames") {
+          // Deliver the batch to the caller and keep the worker alive — more
+          // batches (or the final result) are still on the way.
+          onFrames?.(parsed.data.frames, parsed.data.computedTicks);
+          return;
+        }
+
+        // kind === "result": the simulation has finished — clean up and resolve.
+        // Re-parse the embedded result through BattleResult to narrow to the
+        // correct type; BattleStreamMessage already validated the shape, so
+        // this parse will always succeed.
+        const resultParsed = BattleResult.safeParse(parsed.data.result);
         cleanup();
-        if (parsed.success) {
-          resolve(parsed.data);
+        if (resultParsed.success) {
+          resolve(resultParsed.data);
         } else {
-          reject(new Error(`Worker returned an invalid BattleResult: ${parsed.error.message}`));
+          reject(new Error(`Worker returned an invalid BattleResult: ${resultParsed.error.message}`));
         }
       };
 
