@@ -116,6 +116,52 @@ export function hashStringUnit(s: string): number {
 }
 
 /**
+ * A coverage element drawn by the renderer. Mirrors the runtime type of a
+ * single entry in `AwarenessSnapshot.clusters[].coverage` without importing
+ * the schema here — the fields we read are x, y, r and the optional cone
+ * bearing/arc.
+ */
+type CoverageElement = {
+  x: number;
+  y: number;
+  r: number;
+  bearing?: number;
+  arc?: number;
+};
+
+/**
+ * Type guard: a coverage element represents a directional SECTOR (cone) when
+ * BOTH `bearing` and `arc` are present. If only one is present the schema is
+ * invalid, but the renderer treats that as a full circle (innate/omni) so the
+ * overlay never crashes on a partial field.
+ *
+ * Pure and deterministic — a given input always yields the same boolean, which
+ * makes it safe to unit-test for determinism and to call inside the draw loop.
+ */
+export function isSectorCoverage(c: CoverageElement): c is CoverageElement & {
+  bearing: number;
+  arc: number;
+} {
+  return c.bearing !== undefined && c.arc !== undefined;
+}
+
+/**
+ * Compute the start and end angles (radians, canvas convention — 0 = +x, CCW)
+ * for a sector coverage element. The cone is centred on `bearing` with half-arc
+ * `arc`, so the swept arc runs from `bearing - arc` to `bearing + arc`.
+ *
+ * Pure and deterministic — depends only on its inputs. Exported so the
+ * determinism of the angle math can be unit-tested independently of the
+ * canvas.
+ */
+export function sectorAngles(bearing: number, arc: number): {
+  start: number;
+  end: number;
+} {
+  return { start: bearing - arc, end: bearing + arc };
+}
+
+/**
  * Return an HSL colour string for a cluster perimeter, jittered from the
  * base side colour by a deterministic amount derived from the cluster id.
  */
@@ -199,18 +245,30 @@ export function drawFogAndAwareness(
   ctx.fillStyle = FOG_COLOUR;
   ctx.fillRect(x0, y0, w, h);
 
-  // Cut coverage discs out of the fog so covered space reads as clear.
+  // Cut coverage shapes out of the fog so covered space reads as clear.
   // "destination-out" makes new draws erase existing pixels proportional to
-  // their alpha; a fully-opaque disc punches a clean hole.
+  // their alpha; a fully-opaque shape punches a clean hole.
+  //
+  // A directional coverage element (bearing + arc present) is cut as a SECTOR:
+  // a wedge from the centre out to radius r, swept from bearing-arc to
+  // bearing+arc. Elements without bearing/arc are cut as full circles (innate
+  // visual circle or omni sensor).
   ctx.globalCompositeOperation = "destination-out";
   ctx.globalAlpha = 1;
   for (const cluster of awareness.clusters) {
-    for (const disc of cluster.coverage) {
-      const px = t.sx(disc.x);
-      const py = t.sy(disc.y);
-      const rPx = disc.r * t.scale;
+    for (const cov of cluster.coverage) {
+      const px = t.sx(cov.x);
+      const py = t.sy(cov.y);
+      const rPx = cov.r * t.scale;
       ctx.beginPath();
-      ctx.arc(px, py, rPx, 0, Math.PI * 2);
+      if (isSectorCoverage(cov)) {
+        const { start, end } = sectorAngles(cov.bearing, cov.arc);
+        ctx.moveTo(px, py);
+        ctx.arc(px, py, rPx, start, end);
+        ctx.closePath();
+      } else {
+        ctx.arc(px, py, rPx, 0, Math.PI * 2);
+      }
       ctx.fill();
     }
   }
@@ -220,19 +278,28 @@ export function drawFogAndAwareness(
   // -------------------------------------------------------------------------
   // 3. Cluster perimeter strokes
   // -------------------------------------------------------------------------
-  // Stroke each coverage disc with a side+cluster-specific colour.
+  // Stroke each coverage shape with a side+cluster-specific colour. A sector
+  // outline consists of the two radii (centre to the arc endpoints) plus the
+  // swept arc; a full circle is a single circular stroke.
   ctx.save();
   for (const cluster of awareness.clusters) {
     const strokeColour = clusterColour(cluster.side, cluster.id, CLUSTER_PERIMETER_ALPHA);
     ctx.strokeStyle = strokeColour;
     ctx.lineWidth = CLUSTER_PERIMETER_WIDTH;
     ctx.setLineDash([]);
-    for (const disc of cluster.coverage) {
-      const px = t.sx(disc.x);
-      const py = t.sy(disc.y);
-      const rPx = disc.r * t.scale;
+    for (const cov of cluster.coverage) {
+      const px = t.sx(cov.x);
+      const py = t.sy(cov.y);
+      const rPx = cov.r * t.scale;
       ctx.beginPath();
-      ctx.arc(px, py, rPx, 0, Math.PI * 2);
+      if (isSectorCoverage(cov)) {
+        const { start, end } = sectorAngles(cov.bearing, cov.arc);
+        ctx.moveTo(px, py);
+        ctx.arc(px, py, rPx, start, end);
+        ctx.closePath();
+      } else {
+        ctx.arc(px, py, rPx, 0, Math.PI * 2);
+      }
       ctx.stroke();
     }
   }

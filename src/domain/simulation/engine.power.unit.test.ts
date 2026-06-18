@@ -103,7 +103,7 @@ function modularAttacker(
     moduleOf("w1", cannon({ damage: 25, range: 500 }), 12, 0, 100, 5, weaponDraw),
     moduleOf("w2", cannon({ damage: 25, range: 500 }), -12, 0, 100, 5, weaponDraw),
     moduleOf("p1", { kind: "power", output: reactorOutput }, 0, -12, 100, 5, 0, true),
-    moduleOf("e1", { kind: "engine", thrust: 0.4, turnRate: 0.05 }, 0, 12, 100, 5, 0),
+    moduleOf("e1", { kind: "engine", thrust: 0.4 }, 0, 12, 100, 5, 0),
   ];
   const stats: ShipStats = {
     mass: 10,

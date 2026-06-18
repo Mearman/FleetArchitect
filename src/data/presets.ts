@@ -42,7 +42,8 @@ const PRESET_TIME = "2026-06-16T00:00:00.000Z";
  *  Sensors: `v` passive array (omni), `V` long-range dish (narrow forward cone,
  *  crewed), `K` gravimetric imager (wide nebula-immune cone). All face forward
  *  (bearing 0).
- *  Comms: `O` omni transceiver, `d` steerable relay dish, `b` laser backbone link. */
+ *  Comms: `O` omni transceiver, `d` steerable relay dish, `b` laser backbone link.
+ *  Manoeuvring: `J` RCS thrusters, `W` reaction wheel. */
 const TOKENS: Record<string, GridCell> = {
   ".": { kind: "empty" },
   "#": { kind: "hull", tile: "block" },
@@ -72,6 +73,9 @@ const TOKENS: Record<string, GridCell> = {
   "O": { kind: "module", moduleId: "mod-comms-omni", facing: 0 },
   "d": { kind: "module", moduleId: "mod-comms-dish", facing: 0 },
   "b": { kind: "module", moduleId: "mod-comms-laser", facing: 0 },
+  // Manoeuvring gear (Newtonian rotation): `J` RCS thrusters, `W` reaction wheel.
+  "J": { kind: "module", moduleId: "mod-rcs-thrusters", facing: 0 },
+  "W": { kind: "module", moduleId: "mod-reaction-wheel", facing: 0 },
 };
 
 /** Single-character tokens for the ASCII grid authoring map — Swarm parts.
@@ -81,7 +85,8 @@ const TOKENS: Record<string, GridCell> = {
  *  `q` ammon sac (swm-ammon-sac, the Swarm magazine equivalent).
  *  Sensors: `e` electro-receptor membrane (omni), `y` chemosensor palp
  *  (directional cone). Both face forward (bearing 0).
- *  Comms: `h` pheromone net (omni), `i` synapse focus organ (dish), `k` biolaser spine. */
+ *  Comms: `h` pheromone net (omni), `i` synapse focus organ (dish), `k` biolaser spine.
+ *  Manoeuvring: `x` pseudopod cluster, `z` gyral organ. */
 const SWARM_TOKENS: Record<string, GridCell> = {
   ".": { kind: "empty" },
   "#": { kind: "hull", tile: "block" },
@@ -106,6 +111,9 @@ const SWARM_TOKENS: Record<string, GridCell> = {
   "h": { kind: "module", moduleId: "swm-pheromone-net", facing: 0 },
   "i": { kind: "module", moduleId: "swm-synapse-dish", facing: 0 },
   "k": { kind: "module", moduleId: "swm-biolaser-spine", facing: 0 },
+  // Manoeuvring gear (Newtonian rotation): `x` pseudopod cluster, `z` gyral organ.
+  "x": { kind: "module", moduleId: "swm-pseudopod-cluster", facing: 0 },
+  "z": { kind: "module", moduleId: "swm-gyral-organ", facing: 0 },
 };
 
 /** Parse an ASCII map (one string per row) into a row-major TileGrid using the
@@ -176,12 +184,14 @@ const designData: ShipDesign[] = [
     // it scouts ahead and relays contact data back on channel 0. The central
     // hull block is replaced by a second crew bay so the scanner operator has
     // a berth. crewRequired 9 / crewCapacity 16 — comfortably manned.
+    // Merged: keeps the scanner (V) and omni transceiver (O), and adds RCS
+    // thrusters (J) on the nose and tail so the Sabre can actually slew.
     grid: gridFromMap([
-      "...oL..",
+      "...JL..",
       ".E=#LV.",
       "EFFCCLL",
       ".E=#LO.",
-      "...oL..",
+      "...JL..",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -195,11 +205,11 @@ const designData: ShipDesign[] = [
     // turrets — the whole ship is 4-connected so crew can walk from any
     // crew-quarters cell to the magazine and back. Plasma drives give good speed.
     grid: gridFromMap([
-      "..#M..",
+      "..JM..",
       "P=CFMM",
       "PFCCGL",
       "P=CFMM",
-      "..#M..",
+      "..JM..",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -212,11 +222,11 @@ const designData: ShipDesign[] = [
     // central magazine (G) fed by a floor corridor, twin fusion reactors, crew
     // quarters, and an engine bank. The Mk I shields protect the flanks.
     grid: gridFromMap([
-      "..=sRL..",
-      ".EFC~s#R",
+      "..JsRL..",
+      ".EFC~sWR",
       "EFFCG~#R",
-      ".EFC~s#R",
-      "..=sRL..",
+      ".EFC~sWR",
+      "..JsRL..",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -229,11 +239,11 @@ const designData: ShipDesign[] = [
     // means no magazine required. A broad Mk II shield wall fronts a laser bank;
     // triple fusion reactors and a deep crew and engine block run it.
     grid: gridFromMap([
-      ".=#SAL.",
+      ".JWSAL.",
       "EFCSSAL",
       "EFFCSAL",
       "EFCSSAL",
-      ".=#SAL.",
+      ".JWSAL.",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -246,11 +256,11 @@ const designData: ShipDesign[] = [
     // shield soaks punishment while railgun turrets answer. The magazine (G) in
     // the central corridor feeds all railguns; slow but unyielding.
     grid: gridFromMap([
-      ".#DDsR.",
+      ".JDDsR.",
       "EFCCGsR",
-      "EXF~GsR",
+      "EXFWGsR",
       "EFCCGsR",
-      ".#DDsR.",
+      ".JDDsR.",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -265,11 +275,11 @@ const designData: ShipDesign[] = [
     // needed to man torpedoes and missiles; titanium armour and shields protect
     // the fragile innards.
     grid: gridFromMap([
-      "..A#MM...",
-      ".EFCCA#TT",
+      "..AJMM...",
+      ".EFCCAWTT",
       "EXFGCA#TT",
-      ".EFCCA#TT",
-      "..A#MM...",
+      ".EFCCAWTT",
+      "..AJMM...",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -291,14 +301,17 @@ const designData: ShipDesign[] = [
     //
     // Layout (14 cols × 7 rows):
     // stern (left) → crew/reactor spine → corridors → magazines → weapons → prow
+    // Merged: keeps the omni transceivers (O, prow tips rows 0/6) and the laser
+    // backbone links (b, rows 2/4 col 13) for fleet squad-net, and adds RCS (J)
+    // plus reaction wheels (W) on the spine so the capital can come about.
     grid: gridFromMap([
-      "...=#SDTRLO...",
-      "..EXCCS~TRRL..",
+      "...JWSDTRLO...",
+      "..EXCCSWTRRL..",
       ".EXFCC~GDRRLLb",
-      "EXFCCC~G~RRLLL",
+      "EXFCCCWG~RRLLL",
       ".EXFCC~GDRRLLb",
-      "..EXCCS~TRRL..",
-      "...=#SDTRLO...",
+      "..EXCCSWTRRL..",
+      "...JWSDTRLO...",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -319,15 +332,15 @@ const designData: ShipDesign[] = [
     // C cells (crew quarters) line the central corridor; G (magazine) cells sit
     // between the crew block and the weapon batteries so crew can haul ammo.
     grid: gridFromMap([
-      "......=#~SDRML.....",
-      ".....EXCC~SDRRMLL..",
+      "......JWWSDRML.....",
+      ".....EXCCWSDRRMLL..",
       "....EXFCC~GSDRRMMLL",
-      "...EXFFCCGG~DRRMMLL",
+      "...EXFFCCGGWDRRMMLL",
       "EXFFCCCGGGCDRRMMLLL",
-      "...EXFFCCGG~DRRMMLL",
+      "...EXFFCCGGWDRRMMLL",
       "....EXFCC~GSDRRMMLL",
-      ".....EXCC~SDRRMLL..",
-      "......=#~SDRML.....",
+      ".....EXCCWSDRRMLL..",
+      "......JWWSDRML.....",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -352,10 +365,12 @@ const designData: ShipDesign[] = [
     // Phase B: an electro-receptor membrane (e) and a pheromone net (h) extend
     // the Drone's awareness and connect it to the hive-net on channel 0. Both
     // are passive (no metabolic cost or crew), tucked onto the aft wing tips.
+    // Merged: keeps the electro-receptor membrane (e) and pheromone net (h) for
+    // hive-net awareness, and adds pseudopod clusters (x) so the Drone can turn.
     grid: swarmGrid([
-      ".#pe",
+      ".xpe",
       "jgpp",
-      ".#ph",
+      ".xph",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -367,11 +382,11 @@ const designData: ShipDesign[] = [
     // Fighter: a fast acid flanker. Forward-swept acid claws strip armour at
     // knife range; paired flagella and a pulse jet make it the quickest hunter.
     grid: swarmGrid([
-      "..#a..",
+      "..xa..",
       "j=gaa.",
       "ugcgaa",
       "j=gaa.",
-      "..#a..",
+      "..xa..",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -384,11 +399,11 @@ const designData: ShipDesign[] = [
     // self-knitting carapace, a metabolic core, and a cluster of flagella and
     // pulse jets. No discrete ammo weapons so no ammon sac needed.
     grid: swarmGrid([
-      ".j#caa..",
-      "jgcraaa.",
+      ".jxcaa..",
+      "jgczaaa.",
       "ugmcraaa",
-      "jgcraaa.",
-      ".j#caa..",
+      "jgczaaa.",
+      ".jxcaa..",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -401,11 +416,11 @@ const designData: ShipDesign[] = [
     // downrange; spore clouds screen it. Neural stings have no ammoCapacity so
     // no ammon sac is required. Regen membranes and a metabolic core sustain it.
     grid: swarmGrid([
-      "..#snn...",
-      ".jgcsnnn.",
+      "..xsnn...",
+      ".jgzsnnn.",
       "ugmcrsnnn",
-      ".jgcsnnn.",
-      "..#snn...",
+      ".jgzsnnn.",
+      "..xsnn...",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -424,14 +439,17 @@ const designData: ShipDesign[] = [
     // (k) on row 3 extends the Hive Lord to a high-bandwidth backbone relay
     // linking other hive-kin on the same channel. All bio-comms/sensors are
     // autonomous (crewRequired 0), adding only metabolic draw.
+    // Merged: keeps the biolaser spines (k), pheromone nets (h) and chemosensor
+    // organs (y) for hive-net coverage, and adds pseudopod clusters (x) plus
+    // gyral organs (z) on the spine so the capital can come about.
     grid: swarmGrid([
-      "...#cnnnk...",
-      "..jgcrsnnnnh",
+      "...xcnnnk...",
+      "..jgzrsnnnnh",
       ".jgmcrsannny",
       "ugmmcrsaannn",
       ".jgmcrsannny",
-      "..jgcrsnnnnh",
-      "...#cnnnk...",
+      "..jgzrsnnnnh",
+      "...xcnnnk...",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
