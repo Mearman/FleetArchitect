@@ -214,6 +214,10 @@ function baseHpFor(kind: ResolvedModule["kind"]): number {
       return 20;
     case "comms":
       return 20;
+    case "rcs":
+      return 20;
+    case "reactionWheel":
+      return 30;
   }
 }
 

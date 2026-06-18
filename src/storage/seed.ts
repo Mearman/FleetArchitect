@@ -14,8 +14,14 @@ import { getMeta, setMeta, storage } from "@/storage/db";
  * Version 4: Phase B — sensor and comms modules added to key presets. Scout
  * ships (Sabre, Drone Skimmer) gain long-range sensors; capital ships
  * (Leviathan, Hive Lord) gain comms backbone links and squad-net transceivers.
+ *
+ * Version 5: Newtonian rotation merged with sensors/comms/fog. Every preset now
+ * carries BOTH its sensor/comms fit AND manoeuvring gear (RCS thrusters and/or
+ * reaction wheels) so it has real commandable turn authority under the
+ * torque-driven attitude model. Centre-line-only designs could not rotate at all
+ * without it. This bump reseeds the combined set over either feature's v4.
  */
-const PRESETS_VERSION = 4;
+const PRESETS_VERSION = 5;
 const VERSION_KEY = "presetsVersion";
 
 /**

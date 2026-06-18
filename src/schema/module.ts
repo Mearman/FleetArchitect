@@ -97,16 +97,28 @@ export type ArmourEffect = z.infer<typeof ArmourEffect>;
  * heading. Unbalanced placement of asymmetric engines produces a non-zero
  * net torque about the ship's centre and spins the ship.
  *
- * The field defaults to 0 (forward) when omitted so existing module
- * definitions and legacy designs continue to behave like a single
- * rear-mounted thruster — i.e. a force pointing along the ship's +x axis.
+ * `gimbalArc` (radians, ≥ 0) is the half-arc either side of `facing` within
+ * which the thrust vector may be steered by the attitude controller. A
+ * gimballed engine can thereby vector its thrust to produce a commandable
+ * torque while still contributing useful linear thrust. Defaults to 0 (fixed
+ * mount, no gimbal).
+ *
+ * `facing` defaults to 0 (forward) when omitted so existing module definitions
+ * and legacy designs continue to behave like a single rear-mounted thruster —
+ * i.e. a force pointing along the ship's +x axis.
+ *
+ * There is no per-engine `turnRate`: a ship turns from real torque, not an
+ * abstract per-engine scalar. Turning authority comes from engine `r × F`
+ * about the centre of mass, gimbal thrust-vectoring, and dedicated RCS /
+ * reaction-wheel modules — never a summed engine `turnRate`.
  */
 export const EngineEffect = z.object({
   kind: z.literal("engine"),
   thrust: z.number().min(0),
-  turnRate: z.number().min(0),
   /** Direction the engine thrusts, in radians, ship-local. Default 0 = forward. */
   facing: z.number().optional(),
+  /** Gimbal half-arc in radians. Thrust vector may swing ±gimbalArc from facing. Default 0 = fixed. */
+  gimbalArc: z.number().min(0).optional(),
 });
 export type EngineEffect = z.infer<typeof EngineEffect>;
 
@@ -259,6 +271,34 @@ export const CommsEffect = z.object({
 export type CommsEffect = z.infer<typeof CommsEffect>;
 
 /**
+ * Effect payload for a reaction-control system (RCS) thruster. RCS produces
+ * bounded pure torque (either sign), with no net translation force. The
+ * controller determines the sign (spin up or down) and magnitude; the module's
+ * torque rating is the maximum per tick. RCS is gated by alive, powered, manned,
+ * and charged like any engine module.
+ */
+export const RcsEffect = z.object({
+  kind: z.literal("rcs"),
+  torque: z.number().min(0),
+});
+export type RcsEffect = z.infer<typeof RcsEffect>;
+
+/**
+ * Effect payload for a reaction wheel. A reaction wheel produces bounded pure
+ * torque (either sign) through internal momentum transfer, with no exhaust or
+ * translation. The controller determines the sign (spin up or down) and
+ * magnitude; the module's torque rating is the maximum per tick. Reaction
+ * wheels are gated by alive, powered, manned, and charged like any module.
+ * Torque is independent of the wheel's position on the ship (it is not
+ * a lever arm effect; the torque is purely internal).
+ */
+export const ReactionWheelEffect = z.object({
+  kind: z.literal("reactionWheel"),
+  torque: z.number().min(0),
+});
+export type ReactionWheelEffect = z.infer<typeof ReactionWheelEffect>;
+
+/**
  * Discriminated union of all module effects. New module kinds extend this.
  */
 export const ModuleEffect = z.discriminatedUnion("kind", [
@@ -274,6 +314,8 @@ export const ModuleEffect = z.discriminatedUnion("kind", [
   MagazineEffect,
   SensorEffect,
   CommsEffect,
+  RcsEffect,
+  ReactionWheelEffect,
 ]);
 export type ModuleEffect = z.infer<typeof ModuleEffect>;
 

@@ -397,7 +397,7 @@ describe("engine.rigidbody — moment of inertia and engine torque", () => {
     const ship = modularShip("s1", "attacker", { x: 0, y: 0 }, 0, [
       moduleOf(
         "e1",
-        { kind: "engine", thrust: 1.0, turnRate: 0, facing: Math.PI / 2 },
+        { kind: "engine", thrust: 1.0, facing: Math.PI / 2 },
         0,
         0,
         100,
@@ -427,7 +427,7 @@ describe("engine.rigidbody — moment of inertia and engine torque", () => {
     const ship = modularShip("s1", "attacker", { x: 0, y: 0 }, 0, [
       moduleOf(
         "e1",
-        { kind: "engine", thrust: 1.0, turnRate: 0, facing: 0 },
+        { kind: "engine", thrust: 1.0, facing: 0 },
         0,
         10,
         100,
@@ -437,8 +437,14 @@ describe("engine.rigidbody — moment of inertia and engine torque", () => {
     const target = modularShip("d1", "defender", { x: 500, y: 0 }, 0, []);
     ship.orders = defaultOrders;
     const result = runBattle(inputs([ship, target]));
-    const a = result.frames[5];
-    const b = result.frames[20];
+    // Under Newtonian rotation the angular velocity from this off-CoM thrust
+    // accumulates with no speed cap, so by ~20 ticks the ship has spun well
+    // past π and the shortest signed delta wraps. Read an early, narrow window
+    // (frames 2 → 5) where the spin is still a fraction of a radian, so the
+    // sign is unambiguous: the torque is +5F (counter-clockwise), so facing
+    // must increase.
+    const a = result.frames[2];
+    const b = result.frames[5];
     if (a === undefined || b === undefined) throw new Error("missing frames");
     const fa = findShip(a, "s1").facing ?? 0;
     const fb = findShip(b, "s1").facing ?? 0;
@@ -541,7 +547,7 @@ describe("engine.rigidbody — determinism", () => {
             moduleOf("w1", cannon({ cooldown: 2, damage: 5 }), 10, 4, 100, 8),
             moduleOf(
               "e1",
-              { kind: "engine", thrust: 0.8, turnRate: 0, facing: Math.PI },
+              { kind: "engine", thrust: 0.8, facing: Math.PI },
               -8,
               0,
               100,

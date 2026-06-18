@@ -105,7 +105,7 @@ function modularDefender(id: string, x: number): CombatShip {
   const modules: ResolvedModule[] = [
     moduleOf("w1", beam({ damage: 1, range: 50 }), 12, 0, 20),
     moduleOf("s1", { kind: "shield", capacity: 0, rechargeRate: 0, rechargeDelay: 60 }, -12, 0, 20),
-    moduleOf("e1", { kind: "engine", thrust: 0.4, turnRate: 0.05 }, 0, 12, 20),
+    moduleOf("e1", { kind: "engine", thrust: 0.4 }, 0, 12, 20),
     moduleOf("p1", { kind: "power", output: 40 }, 0, -12, 20),
   ];
   // stats.thrust includes the engine module's thrust; hullBaseThrust is
