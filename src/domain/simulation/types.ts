@@ -139,12 +139,23 @@ export interface SimCrew {
   /** Remaining steps to walk, one cell consumed per tick. Empty when at rest
    *  or already on the target cell. */
   path: { col: number; row: number }[];
-  /** The station / source cell this crew member is assigned to, addressed by
-   *  the occupant module's `slotId`. Undefined when idle. */
+  /** The cell this crew member is currently walking to, addressed by the
+   *  occupant module's `slotId`. For a haul job this names the current leg's
+   *  destination: the source while fetching, the sink while delivering.
+   *  Undefined when idle. */
   targetSlotId?: string;
+  /** For a haul job, the slot id of the final delivery sink (the dry weapon for
+   *  an ammo run, the starved module for a power run). Held separately from
+   *  `targetSlotId` so the two-leg journey — fetch at the source, deliver to the
+   *  sink — needs no hidden state. Undefined when not hauling. */
+  haulSinkSlotId?: string;
   /** A resource physically in hand: set when the crew member has picked up at a
    *  source and is en route to a sink; cleared on deposit. */
   carrying?: "ammo" | "power";
+  /** The quantity picked up at the source, deposited verbatim at the sink, so a
+   *  run neither creates nor loses rounds/charge. Set with `carrying`, cleared
+   *  on deposit. */
+  carryAmount?: number;
 }
 
 /** Everything the simulator needs to run a deterministic battle. */
