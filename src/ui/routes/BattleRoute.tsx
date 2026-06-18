@@ -61,6 +61,28 @@ const MODULE_COLOUR: Record<string, string> = {
   power: "#ffe066",
   crew: "#c792ff",
   hull: "#5a6172",
+  magazine: "#e8a550",
+  pointDefense: "#ff8c5a",
+  repair: "#80d4a0",
+};
+
+/**
+ * Crew dot colour by state, drawn in ship-local space.
+ * Walking and hauling use a brighter tint to make movement legible;
+ * manning shows green (on-station); injured shows red.
+ */
+const CREW_COLOUR: Record<string, string> = {
+  idle: "#b0b0b8",
+  walking: "#a0d4ff",
+  hauling: "#ffe066",
+  manning: "#7bd88f",
+  injured: "#ff5a5a",
+};
+
+/** Accent dot colour for what a hauling crew member is carrying. */
+const CARRYING_COLOUR: Record<string, string> = {
+  power: "#ffe066",
+  ammo: "#ff9a3c",
 };
 
 interface Bounds {
@@ -362,14 +384,33 @@ export function BattleRoute() {
             const ly = m.y * scale;
             const colour = MODULE_COLOUR[m.kind];
             if (colour === undefined) continue;
-            ctx.globalAlpha = m.alive ? 1 : 0.18;
+
+            // Supply/manning dimming: a crewed station that is unmanned, or a
+            // module that has run out of ammo or charge, is rendered at reduced
+            // opacity so the player can see supply problems at a glance. Only
+            // applied to alive modules — destroyed cells use the existing 0.18 path.
+            const hasCrewReq =
+              m.kind === "weapon" ||
+              m.kind === "engine" ||
+              m.kind === "shield" ||
+              m.kind === "power" ||
+              m.kind === "pointDefense" ||
+              m.kind === "repair";
+            const starvedAmmo = m.ammo !== undefined && m.ammo === 0;
+            const starvedCharge = m.charge !== undefined && m.charge === 0;
+            const unmanned = hasCrewReq && m.manned === false;
+            const isStarved = starvedAmmo || starvedCharge || unmanned;
+
+            ctx.globalAlpha = m.alive ? (isStarved ? 0.45 : 1) : 0.18;
             ctx.fillStyle = colour;
             ctx.fillRect(lx - half, ly - half, cellPx, cellPx);
+
             // A faint side-coloured inset keeps adjacent cells distinct and
             // tints the whole hull toward its allegiance colour.
-            ctx.globalAlpha = m.alive ? 0.22 : 0.1;
+            ctx.globalAlpha = m.alive ? (isStarved ? 0.1 : 0.22) : 0.1;
             ctx.fillStyle = base;
             ctx.fillRect(lx - half, ly - half, cellPx, cellPx);
+
             if (!m.alive) {
               ctx.globalAlpha = 0.35;
               ctx.strokeStyle = "rgba(255,255,255,0.4)";
@@ -396,6 +437,36 @@ export function BattleRoute() {
               ctx.stroke();
             }
           }
+
+          // Crew dots: drawn on top of cells in ship-local space so they are
+          // correctly positioned and rotate with the ship. Dot radius scales
+          // with zoom (half a cell) but is floored at 2 px so crew remain
+          // visible on distant ships.
+          if (s.crew !== undefined) {
+            const dotR = Math.max(2, cellPx * 0.28);
+            for (const c of s.crew) {
+              const cx = c.x * scale;
+              const cy = c.y * scale;
+              const dotColour = CREW_COLOUR[c.state] ?? "#b0b0b8";
+              ctx.globalAlpha = 0.92;
+              ctx.fillStyle = dotColour;
+              ctx.beginPath();
+              ctx.arc(cx, cy, dotR, 0, Math.PI * 2);
+              ctx.fill();
+              // Carrying accent: a tiny inner dot in the cargo colour.
+              if (c.carrying !== undefined) {
+                const accentColour = CARRYING_COLOUR[c.carrying];
+                if (accentColour !== undefined) {
+                  ctx.globalAlpha = 1;
+                  ctx.fillStyle = accentColour;
+                  ctx.beginPath();
+                  ctx.arc(cx, cy, Math.max(1, dotR * 0.45), 0, Math.PI * 2);
+                  ctx.fill();
+                }
+              }
+            }
+          }
+
           ctx.restore();
           ctx.globalAlpha = 1;
         } else {

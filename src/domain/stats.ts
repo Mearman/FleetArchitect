@@ -3,6 +3,7 @@ import {
   footprint,
   isConnected4,
   occupiedCount,
+  reachableFrom,
 } from "@/domain/grid";
 import type { GridCell } from "@/schema/grid";
 import type { ModuleDefinition, WeaponEffect } from "@/schema/module";
@@ -49,7 +50,21 @@ export type DesignFault =
   | { kind: "crewDeficit"; net: number }
   /** Parts from more than one faction are present on this design. A valid
    *  ship uses tiles and modules exclusively from the design's own faction. */
-  | { kind: "crossFaction"; expected: string; found: string[] };
+  | { kind: "crossFaction"; expected: string; found: string[] }
+  /**
+   * A station that needs crew (crewRequired > 0) has no walkable path from any
+   * crew-quarters cell. Only raised when at least one crew-quarters module exists
+   * (a ship with no quarters simply has no crew — that is the crewDeficit case).
+   * Both the station and the quarters must be on the walkable surface (hull,
+   * module, or floor cells) connected by 4-adjacent edges.
+   */
+  | { kind: "unreachableStation"; col: number; row: number; moduleId: EntityId }
+  /**
+   * A weapon with a finite ammo capacity (ammoCapacity is set) has no magazine
+   * module (effect.kind === "magazine") reachable via a walkable path. Only
+   * raised when at least one such weapon exists on the design.
+   */
+  | { kind: "noAmmoSource"; col: number; row: number; moduleId: EntityId };
 
 export interface ShipDesignAnalysis {
   stats: ShipStats;
@@ -252,6 +267,110 @@ export function analyseShipDesign(
       expected: design.faction,
       found: wrongFactions,
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Reachability faults — require crew pathfinding over the walkable surface.
+  //
+  // We compute these only when the grid has occupied cells and is connected
+  // (otherwise the connectivity and empty faults already describe the problem).
+  // Disconnected grids have an undefined reachable graph, so checking paths
+  // inside them would produce misleading results.
+  // ---------------------------------------------------------------------------
+  if (cellCount > 0 && isConnected4(grid)) {
+    // Collect the grid-cell positions of every crew-quarters module (effect.kind
+    // === "crew"). These are the sources from which crew walk to man stations.
+    const quartersPositions: { col: number; row: number }[] = [];
+    // Collect every crewed station (crewRequired > 0) and the positions of
+    // every magazine module and every finite-ammo weapon.
+    const crewedStations: { col: number; row: number; moduleId: EntityId }[] = [];
+    const magazinePositions: { col: number; row: number }[] = [];
+    const finiteAmmoWeapons: { col: number; row: number; moduleId: EntityId }[] = [];
+
+    for (const { col, row } of footprint(grid)) {
+      const cell = grid.cells[row * grid.cols + col];
+      if (cell === undefined || cell.kind !== "module") continue;
+      const moduleDef = catalog.module(cell.moduleId);
+      if (moduleDef === undefined) continue;
+
+      if (moduleDef.effect.kind === "crew") {
+        quartersPositions.push({ col, row });
+      }
+      if (moduleDef.crewRequired > 0) {
+        crewedStations.push({ col, row, moduleId: cell.moduleId });
+      }
+      if (moduleDef.effect.kind === "magazine") {
+        magazinePositions.push({ col, row });
+      }
+      if (
+        moduleDef.effect.kind === "weapon" &&
+        moduleDef.effect.ammoCapacity !== undefined
+      ) {
+        finiteAmmoWeapons.push({ col, row, moduleId: cell.moduleId });
+      }
+    }
+
+    // Unreachable-station fault: a crewed station with no walkable path from
+    // any crew-quarters cell. Only checked when quarters exist — a design with
+    // no quarters has a crewDeficit instead, which already covers the problem.
+    if (quartersPositions.length > 0) {
+      // Build the union of all cells reachable from any quarters cell. We start
+      // from each quarters cell and collect the flood-fill, then union the sets.
+      // This is cheaper than running findPath from every quarters to every station.
+      const reachableFromAnyQuarters = new Set<string>();
+      for (const qPos of quartersPositions) {
+        for (const key of reachableFrom(grid, qPos)) {
+          reachableFromAnyQuarters.add(key);
+        }
+      }
+
+      for (const station of crewedStations) {
+        const key = `${station.col},${station.row}`;
+        if (!reachableFromAnyQuarters.has(key)) {
+          faults.push({
+            kind: "unreachableStation",
+            col: station.col,
+            row: station.row,
+            moduleId: station.moduleId,
+          });
+        }
+      }
+    }
+
+    // No-ammo-source fault: a finite-ammo weapon with no magazine reachable via
+    // a walkable path. Only checked when at least one such weapon exists.
+    if (finiteAmmoWeapons.length > 0 && magazinePositions.length === 0) {
+      // No magazines at all — every finite-ammo weapon is affected.
+      for (const weapon of finiteAmmoWeapons) {
+        faults.push({
+          kind: "noAmmoSource",
+          col: weapon.col,
+          row: weapon.row,
+          moduleId: weapon.moduleId,
+        });
+      }
+    } else if (finiteAmmoWeapons.length > 0 && magazinePositions.length > 0) {
+      // Build reachability sets from each magazine position once, then test
+      // each weapon. A weapon is faulted only if no magazine can reach it.
+      const reachableFromAnyMagazine = new Set<string>();
+      for (const magPos of magazinePositions) {
+        for (const key of reachableFrom(grid, magPos)) {
+          reachableFromAnyMagazine.add(key);
+        }
+      }
+
+      for (const weapon of finiteAmmoWeapons) {
+        const key = `${weapon.col},${weapon.row}`;
+        if (!reachableFromAnyMagazine.has(key)) {
+          faults.push({
+            kind: "noAmmoSource",
+            col: weapon.col,
+            row: weapon.row,
+            moduleId: weapon.moduleId,
+          });
+        }
+      }
+    }
   }
 
   return { stats, faults, valid: faults.length === 0 };

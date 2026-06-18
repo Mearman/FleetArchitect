@@ -14,11 +14,12 @@ import { ShipDesign } from "@/schema/ship";
  * asserts, so a catalog change that breaks a preset fails loudly rather than
  * shipping a broken starter ship.
  *
- * The roster is built for variety: each faction fields a spread of roles
- * (interceptor, gunship, brawler, artillery, capital) that between them exercise
- * the whole catalogue — every weapon, both shield marks, both armour types, both
- * Terran engines, and the hull-tile shapes (block/edge/corner/strut) used as
- * light structural spines and prows rather than packing every cell with a module.
+ * Phase D additions: floor / corridor cells (`~` token) and munitions magazines
+ * (`G` Terran, `q` Swarm) are now part of the vocabulary. Every ship with
+ * finite-ammo weapons (railguns, missiles, torpedoes, neural stings) carries at
+ * least one magazine that is walkable-reachable from those weapons. Capitals
+ * have explicit floor corridors running through their interiors so crew can
+ * walk between quarters, reactors, magazines and weapon stations.
  *
  * Preset ids are stable ("preset-*"); seeding is idempotent and version-gated
  * (see src/storage/seed.ts).
@@ -35,13 +36,16 @@ import { ShipDesign } from "@/schema/ship";
 const PRESET_TIME = "2026-06-16T00:00:00.000Z";
 
 /** Single-character tokens for the ASCII grid authoring map — Terran parts.
- *  Hull tiles: `#` block, `=` edge, `o` corner, `/` strut. */
+ *  Hull tiles: `#` block, `=` edge, `o` corner, `/` strut.
+ *  `~` walkable floor / corridor cell (no module, just interior decking).
+ *  `G` munitions magazine (mod-munitions-magazine). */
 const TOKENS: Record<string, GridCell> = {
   ".": { kind: "empty" },
   "#": { kind: "hull", tile: "block" },
   "=": { kind: "hull", tile: "edge" },
   "o": { kind: "hull", tile: "corner" },
   "/": { kind: "hull", tile: "strut" },
+  "~": { kind: "floor" },
   "L": { kind: "module", moduleId: "mod-pulse-laser", facing: 0 },
   "R": { kind: "module", moduleId: "mod-railgun", facing: 0 },
   "M": { kind: "module", moduleId: "mod-missile-rack", facing: 0 },
@@ -55,16 +59,20 @@ const TOKENS: Record<string, GridCell> = {
   "F": { kind: "module", moduleId: "mod-reactor-fusion", facing: 0 },
   "X": { kind: "module", moduleId: "mod-reactor-antimatter", facing: 0 },
   "C": { kind: "module", moduleId: "mod-crew-quarters", facing: 0 },
+  "G": { kind: "module", moduleId: "mod-munitions-magazine", facing: 0 },
 };
 
 /** Single-character tokens for the ASCII grid authoring map — Swarm parts.
  *  Distinct set so a Swarm grid can be authored without ambiguity. Hull tiles:
- *  `#` carapace block, `=` chitin plate (edge), `/` chitin filament (strut). */
+ *  `#` carapace block, `=` chitin plate (edge), `/` chitin filament (strut).
+ *  `~` walkable floor / corridor cell (interior bio-membrane passage).
+ *  `q` ammon sac (swm-ammon-sac, the Swarm magazine equivalent). */
 const SWARM_TOKENS: Record<string, GridCell> = {
   ".": { kind: "empty" },
   "#": { kind: "hull", tile: "block" },
   "=": { kind: "hull", tile: "edge" },
   "/": { kind: "hull", tile: "strut" },
+  "~": { kind: "floor" },
   "p": { kind: "module", moduleId: "swm-spore-launcher", facing: 0 },
   "a": { kind: "module", moduleId: "swm-acid-sprayer", facing: 0 },
   "n": { kind: "module", moduleId: "swm-neural-sting", facing: 0 },
@@ -75,6 +83,7 @@ const SWARM_TOKENS: Record<string, GridCell> = {
   "g": { kind: "module", moduleId: "swm-neural-ganglion", facing: 0 },
   "m": { kind: "module", moduleId: "swm-metabolic-core", facing: 0 },
   "s": { kind: "module", moduleId: "swm-spore-cloud", facing: 0 },
+  "q": { kind: "module", moduleId: "swm-ammon-sac", facing: 0 },
 };
 
 /** Parse an ASCII map (one string per row) into a row-major TileGrid using the
@@ -117,6 +126,16 @@ function swarmGrid(rows: readonly string[]): TileGrid {
 // firing aft, weapons cluster toward the right. Empty cells (`.`) carve the
 // silhouette: tapered prows, swept-back wings, engine nacelles. Rows are the
 // beam (top-to-bottom) axis; designs are mirrored top/bottom so they fly true.
+//
+// Phase D interior design notes:
+// - `~` (floor / corridor) tiles connect modules to quarters and magazines.
+// - `G` (munitions magazine) must appear on every ship with finite-ammo weapons
+//   (railguns, missiles, torpedoes). All occupied cells are walkable, so a
+//   connected ship with at least one `G` automatically satisfies the
+//   noAmmoSource reachability check.
+// - Crew quarters (`C`) are needed whenever any module has crewRequired > 0.
+//   All Terran modules with crew draw on the connected walkable surface, so
+//   any connected design with crew quarters satisfies unreachableStation.
 
 const designData: ShipDesign[] = [
   // ===========================================================================
@@ -127,8 +146,10 @@ const designData: ShipDesign[] = [
     id: "preset-ship-sabre",
     name: "Sabre Interceptor",
     faction: "Terran",
-    // Fighter: a darting laser interceptor. A pointed nose of pulse lasers, swept
-    // strut wings, an ion drive on the spine — cheap, fast, fragile.
+    // Fighter: a darting laser interceptor. Pulse lasers need no ammo supply
+    // so no magazine is required. A central crew deck and fusion reactor keep
+    // the design self-sufficient; swept hull struts give it its silhouette.
+    // 19 cells, cost 520, all-beam weapons — already valid before Phase D.
     grid: gridFromMap([
       "...oL..",
       ".E=#L..",
@@ -143,12 +164,14 @@ const designData: ShipDesign[] = [
     id: "preset-ship-wasp",
     name: "Wasp Skirmisher",
     faction: "Terran",
-    // Fighter: a plasma-drive missile skirmisher that kites. Wingtip missile
-    // turrets fire in any direction while it runs; a strut tail for agility.
+    // Fighter-sized missile skirmisher. The central munitions magazine (G)
+    // replaces the hull block in the ship's spine, feeding all wingtip missile
+    // turrets — the whole ship is 4-connected so crew can walk from any
+    // crew-quarters cell to the magazine and back. Plasma drives give good speed.
     grid: gridFromMap([
       "..#M..",
       "P=CFMM",
-      "PFCC#L",
+      "PFCCGL",
       "P=CFMM",
       "..#M..",
     ]),
@@ -159,13 +182,14 @@ const designData: ShipDesign[] = [
     id: "preset-ship-gunship",
     name: "Vanguard Gunship",
     faction: "Terran",
-    // Frigate: the balanced workhorse. A railgun and laser battery behind a Mk I
-    // deflector prow, twin fusion reactors, an engine bank and crew amidships.
+    // Frigate: the balanced workhorse. A spinal railgun battery backed by a
+    // central magazine (G) fed by a floor corridor, twin fusion reactors, crew
+    // quarters, and an engine bank. The Mk I shields protect the flanks.
     grid: gridFromMap([
       "..=sRL..",
-      ".EFCCs#R",
-      "EEFFCs#R",
-      ".EFCCs#R",
+      ".EFC~s#R",
+      "EFFCG~#R",
+      ".EFC~s#R",
       "..=sRL..",
     ]),
     createdAt: PRESET_TIME,
@@ -175,8 +199,9 @@ const designData: ShipDesign[] = [
     id: "preset-ship-bulwark",
     name: "Bulwark Escort",
     faction: "Terran",
-    // Frigate: a shield brawler. A broad Mk II shield wall and titanium belt
-    // front a laser battery; triple fusion reactors and a deep engine bank.
+    // Frigate: a shield brawler using only pulse lasers. No finite-ammo weapons
+    // means no magazine required. A broad Mk II shield wall fronts a laser bank;
+    // triple fusion reactors and a deep crew and engine block run it.
     grid: gridFromMap([
       ".=#SAL.",
       "EFCSSAL",
@@ -192,12 +217,13 @@ const designData: ShipDesign[] = [
     name: "Aegis Monitor",
     faction: "Terran",
     // Frigate: an armour brawler. A blunt prow of ablative plating over a Mk I
-    // shield soaks punishment while railgun turrets answer; slow but unyielding.
+    // shield soaks punishment while railgun turrets answer. The magazine (G) in
+    // the central corridor feeds all railguns; slow but unyielding.
     grid: gridFromMap([
       ".#DDsR.",
-      "EFCCDsR",
-      "EXFCDsR",
-      "EFCCDsR",
+      "EFCCGsR",
+      "EXF~GsR",
+      "EFCCGsR",
       ".#DDsR.",
     ]),
     createdAt: PRESET_TIME,
@@ -208,11 +234,14 @@ const designData: ShipDesign[] = [
     name: "Vanguard Torpedo Boat",
     faction: "Terran",
     // Frigate: stand-off artillery. Spinal plasma torpedoes and wingtip missile
-    // turrets behind a titanium belt; hits enormously hard, folds under a rush.
+    // turrets hit enormously hard. The munitions magazine (G) sits in the
+    // reactor bay feeding all weapons; five crew quarters sustain the large crew
+    // needed to man torpedoes and missiles; titanium armour and shields protect
+    // the fragile innards.
     grid: gridFromMap([
       "..A#MM...",
       ".EFCCA#TT",
-      "EXFFCA#TT",
+      "EXFGCA#TT",
       ".EFCCA#TT",
       "..A#MM...",
     ]),
@@ -223,16 +252,20 @@ const designData: ShipDesign[] = [
     id: "preset-ship-leviathan",
     name: "Leviathan Battleship",
     faction: "Terran",
-    // Cruiser: a true capital broadside. A stepped armoured prow and Mk II shield
-    // wall front a mixed battery of torpedoes, railguns and lasers; antimatter
-    // cores and a deep crew block run it, behind a five-engine stern bank.
+    // Cruiser: a true capital broadside. Corridors (~) run from the crew block
+    // through two magazines (G) to the torpedo and railgun batteries along the
+    // flanks. A stepped armoured prow fronts the works; antimatter cores and a
+    // five-engine stern bank drive the whole mass.
+    //
+    // Layout (14 cols × 7 rows, 72 cells):
+    // stern (left) → crew/reactor spine → corridors → magazines → weapons → prow
     grid: gridFromMap([
       "...=#SDTRL....",
-      "..EXCCSDTRRL..",
-      ".EXFCCSDTRRLL.",
-      "EXFCCCSDTRRLLL",
-      ".EXFCCSDTRRLL.",
-      "..EXCCSDTRRL..",
+      "..EXCCS~TRRL..",
+      ".EXFCC~GDRRLL.",
+      "EXFCCC~G~RRLLL",
+      ".EXFCC~GDRRLL.",
+      "..EXCCS~TRRL..",
       "...=#SDTRL....",
     ]),
     createdAt: PRESET_TIME,
@@ -242,21 +275,27 @@ const designData: ShipDesign[] = [
     id: "preset-ship-titan",
     name: "Titan Dreadnought",
     faction: "Terran",
-    // Capital: the apex Terran hull and by far the largest thing in the
-    // catalogue — a dreadnought that dwarfs a cruiser. A great arrowhead prow of
-    // ablative armour and stacked Mk II shields fronts banked railgun, missile
-    // and laser batteries; a core of antimatter cores and crew decks drives a
-    // vast stern engine bank. One anchors an entire fleet.
+    // Capital: the apex Terran hull — a true dreadnought with a proper crewed
+    // interior. Floor corridors (~) run fore–aft through the ship's core,
+    // branching to magazines (G) that supply the railgun and missile batteries.
+    // A great arrowhead prow of ablative armour and stacked Mk II shields fronts
+    // banked weapon batteries; antimatter cores and crew decks drive a vast stern
+    // engine bank. One anchors an entire fleet.
+    //
+    // Layout (19 cols × 9 rows):
+    // stern → engines → reactor/crew spine → crew decks → magazines → weapons → prow
+    // C cells (crew quarters) line the central corridor; G (magazine) cells sit
+    // between the crew block and the weapon batteries so crew can haul ammo.
     grid: gridFromMap([
-      ".....=#SDRML.....",
-      "...EXCCCSDRRMLL..",
-      "..EXFCCCSDRRMMLL.",
-      ".EXFFCCCSDRRMMLLL",
-      "EXFFCCCCSDRRMMLLL",
-      ".EXFFCCCSDRRMMLLL",
-      "..EXFCCCSDRRMMLL.",
-      "...EXCCCSDRRMLL..",
-      ".....=#SDRML.....",
+      "......=#~SDRML.....",
+      ".....EXCC~SDRRMLL..",
+      "....EXFCC~GSDRRMMLL",
+      "...EXFFCCGG~DRRMMLL",
+      "EXFFCCCGGGCDRRMMLLL",
+      "...EXFFCCGG~DRRMMLL",
+      "....EXFCC~GSDRRMMLL",
+      ".....EXCC~SDRRMLL..",
+      "......=#~SDRML.....",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -265,13 +304,19 @@ const designData: ShipDesign[] = [
   // ===========================================================================
   // Swarm designs — bio-organic insectoid ships. Asymmetric, clawed, organic
   // silhouettes: tapered stingers, swept carapace, clustered drive flagella.
+  //
+  // Swarm weapons are all bio-organic — spore launchers (cannon), acid sprayers
+  // (beam), and neural stings (missile with tracking). Neural stings have no
+  // ammoCapacity in the schema (they are guided bio-electric tendrils, not
+  // discrete rounds), so no ammon sac is needed even for sting-armed ships.
+  // All Swarm crewRequired values are 0; no crew quarters are needed either.
   // ===========================================================================
   {
     id: "preset-ship-drone",
     name: "Drone Skimmer",
     faction: "Swarm",
     // Fighter: the basic Swarm unit. A spore launcher snout, a neural ganglion
-    // core, twin flagella — small, fast, expendable.
+    // core, twin flagella — small, fast, expendable. No crew, no ammo.
     grid: swarmGrid([
       ".#p.",
       "jgpp",
@@ -300,8 +345,9 @@ const designData: ShipDesign[] = [
     id: "preset-ship-ravager",
     name: "Ravager Assault Ship",
     faction: "Swarm",
-    // Frigate: a regenerating brawler. Banks of acid sprayers over a self-knitting
-    // carapace, a metabolic core, and a cluster of flagella and pulse jets.
+    // Frigate: a regenerating brawler. Banks of acid sprayers over a
+    // self-knitting carapace, a metabolic core, and a cluster of flagella and
+    // pulse jets. No discrete ammo weapons so no ammon sac needed.
     grid: swarmGrid([
       ".j#caa..",
       "jgcraaa.",
@@ -317,8 +363,8 @@ const designData: ShipDesign[] = [
     name: "Brood Spitter",
     faction: "Swarm",
     // Frigate: living artillery. A fan of neural stingers spits homing tendrils
-    // downrange; spore clouds screen it while regen membranes and a metabolic
-    // core sustain the brood.
+    // downrange; spore clouds screen it. Neural stings have no ammoCapacity so
+    // no ammon sac is required. Regen membranes and a metabolic core sustain it.
     grid: swarmGrid([
       "..#snn...",
       ".jgcsnnn.",
@@ -333,9 +379,10 @@ const designData: ShipDesign[] = [
     id: "preset-ship-hive-lord",
     name: "Hive Lord",
     faction: "Swarm",
-    // Cruiser: the swarm capital. A great clawed prow of neural stingers and acid
-    // sprayers over a regenerating carapace, ringed by spore-cloud defences, with
-    // a metabolic heart and a bank of pulse-jet flagella driving the whole mass.
+    // Cruiser: the swarm capital. A great clawed prow of neural stingers and
+    // acid sprayers over a regenerating carapace, ringed by spore-cloud defences,
+    // with a metabolic heart and a bank of pulse-jet flagella driving the whole
+    // mass. No discrete ammo weapons; no ammon sac needed.
     grid: swarmGrid([
       "...#cnnn....",
       "..jgcrsnnnn.",
