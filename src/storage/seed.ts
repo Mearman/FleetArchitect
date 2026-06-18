@@ -7,7 +7,7 @@ import { getMeta, setMeta, storage } from "@/storage/db";
  * version is then recorded. A player who deleted a preset keeps it deleted
  * until the preset set itself changes and this version bumps.
  */
-const PRESETS_VERSION = 1;
+const PRESETS_VERSION = 2;
 const VERSION_KEY = "presetsVersion";
 
 /**
