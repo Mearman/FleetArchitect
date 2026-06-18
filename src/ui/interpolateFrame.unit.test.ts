@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { interpolateFrame } from "./interpolateFrame";
-import type { BattleFrame } from "@/schema/battle";
+import type { BattleFrame, CrewSnapshot } from "@/schema/battle";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -225,6 +225,157 @@ describe("interpolateFrame", () => {
     expect(ship?.x).toBeCloseTo(7);
     // Projectile from nearest (frameB)
     expect(result.projectiles[0]?.x).toBeCloseTo(5);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Crew interpolation
+  // ---------------------------------------------------------------------------
+
+  describe("crew interpolation", () => {
+    function makeCrewFrame(
+      tick: number,
+      crew: CrewSnapshot[],
+    ): BattleFrame {
+      return {
+        tick,
+        ships: [
+          {
+            instanceId: "ship-1",
+            side: "attacker",
+            x: 0,
+            y: 0,
+            structure: 100,
+            shield: 0,
+            alive: true,
+            crew,
+          },
+        ],
+        projectiles: [],
+      };
+    }
+
+    it("lerps crew x and y at the midpoint", () => {
+      const frameA = makeCrewFrame(0, [
+        { id: "c1", x: 0, y: 0, state: "idle", hp: 100 },
+      ]);
+      const frameB = makeCrewFrame(1, [
+        { id: "c1", x: 20, y: 40, state: "walking", hp: 100 },
+      ]);
+
+      const result = interpolateFrame([frameA, frameB], 0.5);
+      const crew = result.ships[0]?.crew;
+      expect(crew).toHaveLength(1);
+      expect(crew?.[0]?.x).toBeCloseTo(10);
+      expect(crew?.[0]?.y).toBeCloseTo(20);
+    });
+
+    it("takes discrete state from the lo frame when alpha < 0.5", () => {
+      const frameA = makeCrewFrame(0, [
+        { id: "c1", x: 0, y: 0, state: "idle", hp: 100 },
+      ]);
+      const frameB = makeCrewFrame(1, [
+        { id: "c1", x: 20, y: 0, state: "manning", hp: 80, carrying: "ammo" },
+      ]);
+
+      // alpha = 0.3 → nearest is lo
+      const result = interpolateFrame([frameA, frameB], 0.3);
+      const c = result.ships[0]?.crew?.[0];
+      expect(c?.state).toBe("idle");
+      expect(c?.hp).toBe(100);
+      expect(c?.carrying).toBeUndefined();
+    });
+
+    it("takes discrete state from the hi frame when alpha >= 0.5", () => {
+      const frameA = makeCrewFrame(0, [
+        { id: "c1", x: 0, y: 0, state: "idle", hp: 100 },
+      ]);
+      const frameB = makeCrewFrame(1, [
+        { id: "c1", x: 20, y: 0, state: "manning", hp: 80, carrying: "power" },
+      ]);
+
+      // alpha = 0.7 → nearest is hi
+      const result = interpolateFrame([frameA, frameB], 0.7);
+      const c = result.ships[0]?.crew?.[0];
+      expect(c?.state).toBe("manning");
+      expect(c?.hp).toBe(80);
+      expect(c?.carrying).toBe("power");
+    });
+
+    it("carries through crew present only in the lo frame", () => {
+      const frameA = makeCrewFrame(0, [
+        { id: "c1", x: 5, y: 10, state: "idle", hp: 100 },
+        { id: "c2", x: 15, y: 20, state: "hauling", hp: 50, carrying: "ammo" },
+      ]);
+      const frameB = makeCrewFrame(1, [
+        // c2 absent (e.g. just killed)
+        { id: "c1", x: 25, y: 30, state: "walking", hp: 100 },
+      ]);
+
+      const result = interpolateFrame([frameA, frameB], 0.5);
+      const crew = result.ships[0]?.crew ?? [];
+      const c2 = crew.find((c) => c.id === "c2");
+      expect(c2).toBeDefined();
+      expect(c2?.x).toBeCloseTo(15);
+      expect(c2?.y).toBeCloseTo(20);
+    });
+
+    it("carries through crew present only in the hi frame", () => {
+      const frameA = makeCrewFrame(0, [
+        { id: "c1", x: 0, y: 0, state: "idle", hp: 100 },
+      ]);
+      const frameB = makeCrewFrame(1, [
+        { id: "c1", x: 20, y: 0, state: "idle", hp: 100 },
+        // c2 newly spawned in hi
+        { id: "c2", x: 50, y: 50, state: "idle", hp: 100 },
+      ]);
+
+      const result = interpolateFrame([frameA, frameB], 0.5);
+      const crew = result.ships[0]?.crew ?? [];
+      const c2 = crew.find((c) => c.id === "c2");
+      expect(c2).toBeDefined();
+      expect(c2?.x).toBeCloseTo(50);
+    });
+
+    it("two crew members do not cross-contaminate", () => {
+      const frameA = makeCrewFrame(0, [
+        { id: "c1", x: 0, y: 0, state: "idle", hp: 100 },
+        { id: "c2", x: 100, y: 100, state: "manning", hp: 80 },
+      ]);
+      const frameB = makeCrewFrame(1, [
+        { id: "c1", x: 20, y: 0, state: "idle", hp: 100 },
+        { id: "c2", x: 120, y: 100, state: "manning", hp: 80 },
+      ]);
+
+      const result = interpolateFrame([frameA, frameB], 0.5);
+      const crew = result.ships[0]?.crew ?? [];
+      const c1 = crew.find((c) => c.id === "c1");
+      const c2 = crew.find((c) => c.id === "c2");
+      // c1 interpolated between (0,0) and (20,0): midpoint = (10,0)
+      expect(c1?.x).toBeCloseTo(10);
+      expect(c1?.y).toBeCloseTo(0);
+      // c2 interpolated between (100,100) and (120,100): midpoint = (110,100)
+      expect(c2?.x).toBeCloseTo(110);
+      expect(c2?.y).toBeCloseTo(100);
+    });
+
+    it("returns undefined crew when both frames have no crew", () => {
+      const frameA: BattleFrame = {
+        tick: 0,
+        ships: [
+          { instanceId: "s", side: "attacker", x: 0, y: 0, structure: 100, shield: 0, alive: true },
+        ],
+        projectiles: [],
+      };
+      const frameB: BattleFrame = {
+        tick: 1,
+        ships: [
+          { instanceId: "s", side: "attacker", x: 10, y: 0, structure: 100, shield: 0, alive: true },
+        ],
+        projectiles: [],
+      };
+      const result = interpolateFrame([frameA, frameB], 0.5);
+      expect(result.ships[0]?.crew).toBeUndefined();
+    });
   });
 
   it("omits a ship from interpolation when it exists only in the lo frame", () => {
