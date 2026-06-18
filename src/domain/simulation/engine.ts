@@ -697,6 +697,7 @@ function recomputeAggregates(ship: SimShip): void {
       case "pointDefense":
       case "repair":
       case "hull":
+      case "magazine":
         break;
     }
   }
