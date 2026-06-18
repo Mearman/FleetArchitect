@@ -2975,8 +2975,13 @@ function cellThrustForceAndTorque(ship: SimShip): { fx: number; fy: number; torq
     if (!m.powered || !m.manned || !isCharged(m)) continue;
     const t = m.effect.thrust;
     if (t <= 0) continue;
-    const lx = Math.cos(m.facing) * t;
-    const ly = Math.sin(m.facing) * t;
+    // A module's `facing` is its exhaust direction (where the nozzle/flame
+    // points), matching how engines are authored — a rear-mounted engine
+    // faces aft (π). Newton's third law: the thrust on the ship is OPPOSITE
+    // the exhaust, so the force vector is `-(cos facing, sin facing) · thrust`.
+    // A rear engine (facing π) therefore drives the ship forward (+x).
+    const lx = -Math.cos(m.facing) * t;
+    const ly = -Math.sin(m.facing) * t;
     fx += lx;
     fy += ly;
     // 2D cross product (z-component): r × F = rx*fy − ry*fx, where r is
