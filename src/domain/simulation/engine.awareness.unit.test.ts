@@ -272,8 +272,7 @@ describe("engine.awareness — determinism", () => {
 
 describe("engine.awareness — direct detection", () => {
   it("an enemy inside the effective sensor radius is a direct contact", () => {
-    // Sensorless ships fall back to full visibility, so give each side a sensor
-    // to engage the fog path. The enemy is 200 wu away, well within visual+300.
+    // The enemy is 200 wu away, well within visual (140) + sensor (300).
     const result = runBattle(
       inputs([
         ship("a1", "attacker", 0, 0, [...core(), moduleOf("se", sensor(300), 1, 0)]),
@@ -294,6 +293,90 @@ describe("engine.awareness — direct detection", () => {
       ]),
     );
     expect(contactsOf(result, 0, "a1")).not.toContain("d1");
+  });
+});
+
+describe("engine.awareness — faithful fog (no omniscience)", () => {
+  // An aggregated (non-modular) mobile ship: thrust drives advance-to-contact;
+  // sensorRange controls how far it can see (0 = visual radius only).
+  function mobile(
+    id: string,
+    side: "attacker" | "defender",
+    x: number,
+    sensorRange: number,
+  ): CombatShip {
+    const stats: ShipStats = {
+      mass: 10,
+      massCapacity: 1000,
+      cost: 100,
+      powerDraw: 0,
+      powerOutput: 0,
+      powerNet: 0,
+      crewRequired: 0,
+      crewCapacity: 0,
+      crewNet: 0,
+      structure: 100_000,
+      damageReduction: 0,
+      shieldCapacity: 0,
+      shieldRechargeRate: 0,
+      shieldRechargeDelay: 30,
+      thrust: 0.6,
+      turnRate: 0.2,
+      weapons: [],
+      sensorRange,
+    };
+    return {
+      instanceId: id,
+      designId: `d-${id}`,
+      side,
+      stats,
+      position: { x, y: 0 },
+      facing: side === "attacker" ? 0 : Math.PI,
+      orders: { ...defaultOrders, engageRange: "hold" },
+      classification: "frigate",
+    };
+  }
+
+  it("a sensorless ship is blind beyond its visual radius — no omniscient fallback", () => {
+    // A non-modular ship with no aggregated sensor (sensorRange 0) sees only out
+    // to the visual radius. An enemy at 400 wu is invisible: zero contacts. This
+    // is the whole point of faithful fog — there is no full-visibility escape
+    // hatch for module-less ships.
+    const result = runBattle(
+      inputs([mobile("a1", "attacker", 0, 0), mobile("d1", "defender", 400, 0)]),
+    );
+    expect(contactsOf(result, 0, "a1")).toEqual([]);
+  });
+
+  it("a blind fleet advances to contact and acquires the enemy it could not initially see", () => {
+    // Two blind ships (sensorRange 0) deploy 800 wu apart — far outside each
+    // other's 140 wu visual range, so at tick 0 neither sees the other. They
+    // must steer toward the opposing deployment centroid, close the distance,
+    // and eventually detect each other within visual range.
+    const result = runBattle({
+      ships: [mobile("a1", "attacker", -400, 0), mobile("d1", "defender", 400, 0)],
+      attackerFleetId: "fa",
+      defenderFleetId: "fd",
+      anomaly: "none",
+      seed: 7,
+      // Enough ticks for the blind ships to close the 800 wu gap to within
+      // visual range (they reach contact by ~tick 600 at thrust 0.6).
+      maxTicks: 800,
+    });
+
+    // Initially blind.
+    expect(contactsOf(result, 0, "a1")).toEqual([]);
+    // By the end of the run the attacker has closed and acquired the defender.
+    const everSawEnemy = result.frames.some((f) =>
+      (f.awareness?.contacts ?? []).some(
+        (c) => c.observerId === "a1" && c.enemyId === "d1",
+      ),
+    );
+    expect(everSawEnemy, "the blind attacker should advance to contact and detect d1").toBe(true);
+    // And it genuinely moved toward the enemy (its x increased from -400).
+    const lastFrame = result.frames[result.frames.length - 1];
+    const finalX = lastFrame?.ships.find((s) => s.instanceId === "a1")?.x ?? -400;
+    expect(finalX).toBeGreaterThan(-400);
   });
 });
 
