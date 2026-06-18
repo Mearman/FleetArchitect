@@ -31,6 +31,7 @@ function cells(rows: readonly string[]): GridCell[] {
     F: { kind: "module", moduleId: "mod-reactor-fusion", facing: 0 },
     C: { kind: "module", moduleId: "mod-crew-quarters", facing: 0 },
     E: { kind: "module", moduleId: "mod-engine-ion", facing: Math.PI },
+    W: { kind: "module", moduleId: "mod-rcs-thrusters", facing: 0 },
   };
   const out: GridCell[] = [];
   for (const row of rows) {
@@ -48,10 +49,11 @@ function cells(rows: readonly string[]): GridCell[] {
  * magazine) so a fired shot is observable as a projectile in the frame — the
  * pulse laser is hitscan and spawns no projectile. Engine faces aft (π) so the
  * ship drives forward; crew man the gun, a magazine supplies it, a reactor is
- * the bridge and power. Two rows keep the magazine walkable-adjacent to the gun.
+ * the bridge and power. RCS thrusters (W) provide commandable attitude control
+ * so the ship can steer toward the enemy and bring the railgun to bear.
  */
 function corvette(id: string): ShipDesign {
-  const rows = ["ECFR", ".#GL"];
+  const rows = ["ECFR", "W#GL"];
   return {
     id,
     name: id,

@@ -256,7 +256,7 @@ const moduleData: ModuleDefinition[] = [
     powerDraw: 3,
     crewRequired: 0,
     techLevel: 1,
-    effect: { kind: "rcs", torque: 0.08 },
+    effect: { kind: "rcs", torque: 100 },
   },
   {
     id: "mod-reaction-wheel",
@@ -269,7 +269,7 @@ const moduleData: ModuleDefinition[] = [
     powerDraw: 2,
     crewRequired: 0,
     techLevel: 2,
-    effect: { kind: "reactionWheel", torque: 0.06 },
+    effect: { kind: "reactionWheel", torque: 80 },
   },
   // --- System: power ---
   {
@@ -501,7 +501,7 @@ const moduleData: ModuleDefinition[] = [
     powerDraw: 2,
     crewRequired: 0,
     techLevel: 1,
-    effect: { kind: "rcs", torque: 0.1 },
+    effect: { kind: "rcs", torque: 120 },
   },
   {
     id: "swm-gyral-organ",
@@ -514,7 +514,7 @@ const moduleData: ModuleDefinition[] = [
     powerDraw: 1,
     crewRequired: 0,
     techLevel: 2,
-    effect: { kind: "reactionWheel", torque: 0.07 },
+    effect: { kind: "reactionWheel", torque: 90 },
   },
   // --- System: neural command / bio-power ---
   {
