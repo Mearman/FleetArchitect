@@ -328,6 +328,13 @@ interface SimShip {
   momentOfInertia: number;
   radius: number;
   cost: number;
+  /**
+   * Aggregated sensor reach (world units) for a non-modular ship: added to the
+   * innate visual radius in `effectiveSensorRadius`. 0 for a ship with no
+   * aggregated sensors (it sees only out to the visual radius). Modular ships
+   * derive detection from their sensor modules and ignore this — it stays 0.
+   */
+  sensorRange: number;
   weapons: readonly WeaponEffect[];
   weaponCooldowns: number[];
   orders: Orders;
@@ -718,6 +725,10 @@ function toSimShip(ship: CombatShip, rng: () => number): SimShip {
       (SIM.hullMass[ship.classification] + ship.stats.mass) * SIM.legacyMoI,
     radius: radiusFor(ship.classification),
     cost: ship.stats.cost,
+    // Aggregated sensor reach; absent means visual-only. A modular ship's
+    // detection comes from its sensor modules instead, so this is read only on
+    // the non-modular path (where stats.sensorRange is the honest declaration).
+    sensorRange: ship.stats.sensorRange ?? 0,
     weapons,
     // Stagger initial cooldowns so weapons don't all fire on tick 0.
     weaponCooldowns: weapons.map((w) => Math.floor(rng() * (w.cooldown + 1))),
@@ -2622,6 +2633,9 @@ function makeChunkShip(
     momentOfInertia: 1,
     radius: parent.radius,
     cost: 0,
+    // A chunk is modular: its detection comes from any sensor modules it
+    // inherits, not an aggregated reach.
+    sensorRange: 0,
     weapons: [],
     weaponCooldowns: [],
     orders: parent.orders,
@@ -3005,19 +3019,6 @@ interface SensorUnit {
   effect: SensorEffect;
 }
 
-/** True when a ship participates in the fog-of-war subsystem: it has at least
- *  one alive sensor or comms module. Ships without any awareness hardware fall
- *  back to full visibility (the legacy path) so the gate never silently blinds
- *  a design that predates sensors. */
-function hasAwarenessHardware(ship: SimShip): boolean {
-  if (ship.modules === undefined) return false;
-  for (const m of ship.modules) {
-    if (!m.alive) continue;
-    if (m.effect.kind === "sensor" || m.effect.kind === "comms") return true;
-  }
-  return false;
-}
-
 /** Alive sensor modules on a ship, in (col, row) module-array order. */
 function sensorUnitsOf(ship: SimShip): SensorUnit[] {
   const out: SensorUnit[] = [];
@@ -3052,7 +3053,10 @@ function commsUnitsOf(ship: SimShip): CommsUnit[] {
  * `nebulaImmune` sensor bonuses are added afterwards, unattenuated.
  */
 function effectiveSensorRadius(ship: SimShip, anomaly: BattleAnomaly): number {
-  let attenuable = SIM.visualLosRadius;
+  // Innate visual radius plus the aggregated sensor reach of a non-modular
+  // ship (0 for modular ships, which add their per-module sensor ranges
+  // below). Both are attenuated by a nebula like any non-immune sensor.
+  let attenuable = SIM.visualLosRadius + ship.sensorRange;
   let immune = 0;
   for (const { module, effect } of sensorUnitsOf(ship)) {
     // A sensor that needs crew contributes only when manned; one that needs
@@ -3232,54 +3236,44 @@ function computeAwareness(
     .sort((p, q) => (p.instanceId < q.instanceId ? -1 : p.instanceId > q.instanceId ? 1 : 0));
 
   // (b) Per-ship direct detection. directContacts[observerId] = Contact[].
+  //
+  // Direct enemy iteration in instanceId order (the `alive` set is already
+  // sorted), not a spatial-hash broad-phase: a sensor radius routinely spans a
+  // large fraction of the arena, so the broad-phase bucket sweep would touch a
+  // huge bucket block (radius/CELL_SIZE per axis) and is far slower than a plain
+  // O(n^2) scan over the modest ship count. The result is identical and fully
+  // deterministic.
   const directContacts = new Map<string, Contact[]>();
-  // Broad-phase by position so the O(n^2) scan only touches nearby candidates.
-  // The hash is an EXACT pre-filter (every in-range enemy is a candidate); the
-  // distance + LOS test below is unchanged by it.
-  const detectHash = new SpatialHash<SimShip>();
-  for (const s of alive) detectHash.insert(s, s.x, s.y);
+  const enemiesBySide = {
+    attacker: alive.filter((s) => s.side === "defender"),
+    defender: alive.filter((s) => s.side === "attacker"),
+  };
 
   for (const observer of alive) {
+    // Every ship is fog-gated. A ship with no sensor still detects out to its
+    // baseline visual radius (SIM.visualLosRadius); sensors extend that. There
+    // is no omniscient escape hatch — a sensorless ship is genuinely myopic,
+    // modular or not.
     const list: Contact[] = [];
-    if (hasAwarenessHardware(observer)) {
-      const effR = effectiveSensorRadius(observer, anomaly);
-      const effRSq = effR * effR;
-      const candidates = detectHash.candidates(observer.x, observer.y, effR);
-      // Sort candidates by enemyId so contact order is deterministic regardless
-      // of bucket iteration order.
-      const enemies = candidates
-        .map((c) => c.payload)
-        .filter((e) => e.side !== observer.side && e.alive)
-        .sort((p, q) =>
-          p.instanceId < q.instanceId ? -1 : p.instanceId > q.instanceId ? 1 : 0,
-        );
-      for (const enemy of enemies) {
-        const dx = enemy.x - observer.x;
-        const dy = enemy.y - observer.y;
-        if (dx * dx + dy * dy > effRSq) continue;
-        if (segmentBlocked(observer.x, observer.y, enemy.x, enemy.y, occluders)) continue;
-        list.push({
-          enemyId: enemy.instanceId,
-          x: enemy.x,
-          y: enemy.y,
-          facing: enemy.facing,
-          threat: contactThreat(observer, enemy),
-          origin: observer.instanceId,
-        });
-      }
-    } else {
-      // No awareness hardware: full visibility (legacy / pre-feature path).
-      for (const enemy of alive) {
-        if (enemy.side === observer.side) continue;
-        list.push({
-          enemyId: enemy.instanceId,
-          x: enemy.x,
-          y: enemy.y,
-          facing: enemy.facing,
-          threat: contactThreat(observer, enemy),
-          origin: observer.instanceId,
-        });
-      }
+    const effR = effectiveSensorRadius(observer, anomaly);
+    const effRSq = effR * effR;
+    // enemiesBySide is keyed by the observer's own side and already sorted by
+    // instanceId (it is a filter of the sorted `alive` set).
+    const enemies =
+      observer.side === "attacker" ? enemiesBySide.attacker : enemiesBySide.defender;
+    for (const enemy of enemies) {
+      const dx = enemy.x - observer.x;
+      const dy = enemy.y - observer.y;
+      if (dx * dx + dy * dy > effRSq) continue;
+      if (segmentBlocked(observer.x, observer.y, enemy.x, enemy.y, occluders)) continue;
+      list.push({
+        enemyId: enemy.instanceId,
+        x: enemy.x,
+        y: enemy.y,
+        facing: enemy.facing,
+        threat: contactThreat(observer, enemy),
+        origin: observer.instanceId,
+      });
     }
     directContacts.set(observer.instanceId, list);
   }
@@ -3670,9 +3664,10 @@ function awarenessRowOrder(
 
 /** A ship's detection disc radius for cluster coverage rendering: its effective
  *  sensor radius ignoring anomaly attenuation (the disc the renderer draws is
- *  the clear-space coverage). Uses visual + summed sensor bonuses. */
+ *  the clear-space coverage). Visual radius + the aggregated sensor reach of a
+ *  non-modular ship + the summed per-module sensor bonuses. */
 function gridDetectionDisc(ship: SimShip): number {
-  let r = SIM.visualLosRadius;
+  let r = SIM.visualLosRadius + ship.sensorRange;
   for (const { module, effect } of sensorUnitsOf(ship)) {
     if (module.crewRequired > 0 && !module.manned) continue;
     r += effect.detectionRange;
@@ -3686,6 +3681,17 @@ export function runBattle(inputs: BattleInputs): BattleResult {
   const attackers = ships.filter((s) => s.side === "attacker");
   const defenders = ships.filter((s) => s.side === "defender");
   const byId = new Map(ships.map((s) => [s.instanceId, s]));
+
+  // Initial deployment reference: each side's centroid at the moment of
+  // deployment, captured once before any ship moves. A ship with zero awareness
+  // (no live contact, no ghost) advances toward the OPPOSING side's deployment
+  // centroid so blind fleets close until something enters sensor range. This is
+  // legitimate "we know roughly where they deployed" intel, NOT live tracking —
+  // the reference never updates as enemies move, so it is not omniscience.
+  const deployment: DeploymentReference = {
+    attacker: fleetCentroid(ships, "attacker"),
+    defender: fleetCentroid(ships, "defender"),
+  };
   let projectiles: SimProjectile[] = [];
   // Deterministic counter for break-away chunk ids. Each split consumes
   // one tick + one chunk-index slot so two battles with the same seed
@@ -3734,7 +3740,7 @@ export function runBattle(inputs: BattleInputs): BattleResult {
     }
 
     // 2. Movement + facing.
-    moveShips(ships, byId, inputs.anomaly);
+    moveShips(ships, byId, inputs.anomaly, deployment);
 
     // 2b. Ship-vs-ship collision at cell granularity. After movement, any two
     //     ships whose cells now overlap are pushed apart with an elastic
@@ -3955,6 +3961,16 @@ function rotateLocal(facing: number, lx: number, ly: number): { x: number; y: nu
 }
 
 /**
+ * Each side's deployment centroid, captured once at battle start. Used by
+ * advance-to-contact so a blind ship steers toward where the enemy deployed.
+ * A side's reference is `undefined` only when it deployed no ships.
+ */
+interface DeploymentReference {
+  attacker: { x: number; y: number } | undefined;
+  defender: { x: number; y: number } | undefined;
+}
+
+/**
  * Compute the centroid of all alive ships on a given side. Used by
  * formation-keeping to pull ships toward their fleet's centre of mass.
  * Returns `undefined` when no alive ships are present.
@@ -3979,6 +3995,7 @@ function moveShips(
   ships: readonly SimShip[],
   byId: Map<string, SimShip>,
   anomaly: BattleInputs["anomaly"],
+  deployment: DeploymentReference,
 ): void {
   // Pre-compute fleet centroids once per tick so formation-keeping blends
   // each ship's desired heading toward a stable reference point, not one
@@ -4026,46 +4043,71 @@ function moveShips(
 
     if (!ship.alive) continue;
     const target = ship.target !== undefined ? byId.get(ship.target) : undefined;
-    if (target === undefined) continue;
-
-    const dx = target.x - ship.x;
-    const dy = target.y - ship.y;
-    const dist = Math.hypot(dx, dy);
 
     let desiredFacing: number;
     let shouldThrust: boolean;
     let reverse = false;
-    // Each ship's rangeKeepingBand determines how wide the "at range" dead-zone
-    // is. A wider band means the ship tolerates being further from its ideal
-    // range before correcting — cautious captains set wide bands, aggressive
-    // ones set narrow ones so they close quickly. The inner edge of the dead-
-    // zone is `1 - rangeKeepingBand` of `want`; the outer edge is `want`
-    // itself (outside `want` always closes).
-    const band = ship.orders.rangeKeepingBand;
-    if (isRetreating(ship)) {
-      // Turn tail and flee; retreating ships do not fire.
-      desiredFacing = Math.atan2(-dy, -dx);
+
+    if (target === undefined) {
+      // Advance-to-contact: this ship has zero awareness (no live contact and
+      // no ghost), so it cannot pick a target. Rather than hold blind, it
+      // closes on where the enemy deployed — steering toward the OPPOSING
+      // side's initial deployment centroid (a fixed reference captured at
+      // battle start, never live enemy positions). A retreating blind ship
+      // instead flees away from that reference, back toward its own lines. With
+      // no opposing reference at all (the enemy fielded nothing) there is
+      // nowhere to advance to, so the ship holds.
+      const enemyDeployment =
+        ship.side === "attacker" ? deployment.defender : deployment.attacker;
+      if (enemyDeployment === undefined) continue;
+      const ex = enemyDeployment.x - ship.x;
+      const ey = enemyDeployment.y - ship.y;
+      // A retreating blind ship flees back toward its own lines (away from the
+      // enemy reference); every other blind ship advances toward it. Note
+      // `engageRange` only governs firing distance once in contact, not whether
+      // to seek the enemy, so even a "hold" ship advances to contact.
+      // `angleDifference` handles wrapping, so the raw atan2 result is fine.
+      desiredFacing = isRetreating(ship)
+        ? Math.atan2(-ey, -ex)
+        : Math.atan2(ey, ex);
       shouldThrust = true;
-    } else if (ship.orders.engageRange === "hold") {
-      desiredFacing = Math.atan2(dy, dx);
-      shouldThrust = false;
     } else {
-      // Close in when the anomaly punishes time-of-flight (nebula, asteroid
-      // field); unchanged for black hole and none.
-      const want = anomalyAdjustedRange(ship.orders, ship.weapons, anomaly);
-      if (dist > want) {
-        desiredFacing = Math.atan2(dy, dx);
+      const dx = target.x - ship.x;
+      const dy = target.y - ship.y;
+      const dist = Math.hypot(dx, dy);
+
+      // Each ship's rangeKeepingBand determines how wide the "at range" dead-
+      // zone is. A wider band means the ship tolerates being further from its
+      // ideal range before correcting — cautious captains set wide bands,
+      // aggressive ones set narrow ones so they close quickly. The inner edge
+      // of the dead-zone is `1 - rangeKeepingBand` of `want`; the outer edge is
+      // `want` itself (outside `want` always closes).
+      const band = ship.orders.rangeKeepingBand;
+      if (isRetreating(ship)) {
+        // Turn tail and flee; retreating ships do not fire.
+        desiredFacing = Math.atan2(-dy, -dx);
         shouldThrust = true;
-      } else if (dist < want * (1 - band)) {
-        // Too close — face the target and reverse-thrust to back off while
-        // keeping guns on it. A Newtonian kiting maneuver that decelerates
-        // instead of just turning tail.
-        desiredFacing = Math.atan2(dy, dx);
-        shouldThrust = true;
-        reverse = true;
-      } else {
+      } else if (ship.orders.engageRange === "hold") {
         desiredFacing = Math.atan2(dy, dx);
         shouldThrust = false;
+      } else {
+        // Close in when the anomaly punishes time-of-flight (nebula, asteroid
+        // field); unchanged for black hole and none.
+        const want = anomalyAdjustedRange(ship.orders, ship.weapons, anomaly);
+        if (dist > want) {
+          desiredFacing = Math.atan2(dy, dx);
+          shouldThrust = true;
+        } else if (dist < want * (1 - band)) {
+          // Too close — face the target and reverse-thrust to back off while
+          // keeping guns on it. A Newtonian kiting maneuver that decelerates
+          // instead of just turning tail.
+          desiredFacing = Math.atan2(dy, dx);
+          shouldThrust = true;
+          reverse = true;
+        } else {
+          desiredFacing = Math.atan2(dy, dx);
+          shouldThrust = false;
+        }
       }
     }
 

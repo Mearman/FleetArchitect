@@ -36,6 +36,14 @@ export interface ShipStats {
   thrust: number;
   turnRate: number;
   weapons: readonly ResolvedWeapon[];
+  /**
+   * Aggregated sensor reach (world units) for a non-modular ship, added to the
+   * innate visual radius to give its effective detection range — the aggregated
+   * analogue of how `weapons` aggregates weaponry. Absent (or 0) means the ship
+   * carries no sensors and sees only out to the innate visual radius. Modular
+   * ships derive detection from their sensor modules instead and ignore this.
+   */
+  sensorRange?: number;
 }
 
 /** A reason a ship design cannot be built as-is. */
