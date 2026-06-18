@@ -92,7 +92,7 @@ function modularAttacker(id: string): CombatShip {
   const modules: ResolvedModule[] = [
     moduleOf("p1", { kind: "power", output: 40 }, 0, -1, 20, 5, 0, true),
     moduleOf("w1", missileLauncher(), 0, 0, 50, 5, 8),
-    moduleOf("e1", { kind: "engine", thrust: 0.4, turnRate: 0.05 }, 0, 1, 20, 5, 0),
+    moduleOf("e1", { kind: "engine", thrust: 0.4 }, 0, 1, 20, 5, 0),
   ];
   const stats: ShipStats = {
     mass: 10,
@@ -138,7 +138,7 @@ function modularDefender(id: string, withPd: boolean): CombatShip {
   const modules: ResolvedModule[] = [
     moduleOf("p1", { kind: "power", output: 40 }, 0, -1, 20, 5, 0, true),
     moduleOf("h1", { kind: "hull" }, 0, 0, 30, 5, 0),
-    moduleOf("e1", { kind: "engine", thrust: 0.4, turnRate: 0.05 }, 0, 1, 20, 5, 0),
+    moduleOf("e1", { kind: "engine", thrust: 0.4 }, 0, 1, 20, 5, 0),
   ];
   if (withPd) {
     modules.push(moduleOf("pd1", pdModule(), 1, 0, 30, 4, 5));

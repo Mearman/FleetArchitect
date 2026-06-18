@@ -32,7 +32,7 @@ import type { ShipStats } from "@/domain/stats";
 
 /** Build an engine effect with a given ship-local facing (radians). */
 function engine(thrust: number, facing: number): EngineEffect {
-  return { kind: "engine", thrust, turnRate: 0, facing };
+  return { kind: "engine", thrust, facing };
 }
 
 function moduleOf(
@@ -296,7 +296,7 @@ describe("engine.cellthrust", () => {
       moduleOf("c1", { kind: "power", output: 40 }, 0, 0, 100, 5, 0, true),
       moduleOf(
         "e1",
-        { kind: "engine", thrust: 1.0, turnRate: 0 }, // no facing field → 0
+        { kind: "engine", thrust: 1.0 }, // no facing field → 0
         10,
         0,
         100,

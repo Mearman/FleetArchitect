@@ -78,7 +78,7 @@ function turner(id: string, side: "attacker" | "defender", pos: { x: number; y: 
       moduleOf("c", { kind: "power", output: 40 }, 0, 0, true),
       // Rear-mounted engine (exhaust aft) so the ship can drive forward; turn
       // rate is what governs the angular accel cap under test.
-      moduleOf("e", { kind: "engine", thrust: 1, turnRate: 0.02, facing: Math.PI }, -1, 0),
+      moduleOf("e", { kind: "engine", thrust: 1, facing: Math.PI }, -1, 0),
     ],
   };
 }

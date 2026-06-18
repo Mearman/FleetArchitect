@@ -110,7 +110,7 @@ function modularDefender(id: string, x: number, repairRate: number): CombatShip 
     // The sacrificial module the hammer keeps hitting.
     moduleOf("v1", { kind: "shield", capacity: 0, rechargeRate: 0, rechargeDelay: 60 }, -12, 0, 20),
     moduleOf("v2", { kind: "shield", capacity: 0, rechargeRate: 0, rechargeDelay: 60 }, 12, 0, 20),
-    moduleOf("v3", { kind: "engine", thrust: 0.4, turnRate: 0.05 }, 0, 12, 20),
+    moduleOf("v3", { kind: "engine", thrust: 0.4 }, 0, 12, 20),
     // The repair bay.
     moduleOf(
       "r1",
