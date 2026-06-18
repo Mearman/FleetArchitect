@@ -381,6 +381,45 @@ interface SimShip {
    * cells to walk and ignores crew entirely.
    */
   crew?: SimCrew[];
+  /**
+   * Per-ship cache of crew pathfinding results, keyed by a numeric cell encoding
+   * (`cellNum`) as a nested map: outer keyed by the from-cell, inner keyed by
+   * the to-cell. Stores the full path array (inclusive of both endpoints) for a
+   * reachable pair, or the `UNREACHABLE` sentinel for a pair with no
+   * 4-connected route. The cache is invalidated wholesale whenever the ship's
+   * alive-cell topology changes — a module dies or a chunk splits off — detected
+   * by comparing `topologyFingerprint`. Between topology changes (the vast
+   * majority of ticks) every `findCrewPath` call is an O(1) nested map lookup.
+   * Present only on modular ships (the only kind with a crew interior to path
+   * over). Numeric keys avoid the per-lookup string allocation the `"col,row"`
+   * form would impose across the tens of thousands of lookups per tick. */
+  pathCache?: Map<number, Map<number, { col: number; row: number }[] | typeof UNREACHABLE>>;
+  /**
+   * Rolling fingerprint of the ship's alive-cell set: a count and a hash over
+   * every alive cell's `(col, row)`. Recomputed at the top of `updateCrew`; when
+   * it differs from the cached value the path cache is cleared and the new
+   * fingerprint stored. Also seeded for a fresh chunk ship in `makeChunkShip`.
+   * A pure function of the alive set, so two ships with identical topology share
+   * a fingerprint without ambiguity, and a topology change always moves it. */
+  topologyFingerprint?: number;
+  /**
+   * Cached wiring reach (cells within `powerWiringRadius` of any alive reactor),
+   * computed once per topology change and reused every tick in between. A Set of
+   * `"col,row"` cell keys. `undefined` means not yet computed for the current
+   * topology; `refreshPathCache` clears it alongside the path cache on a
+   * fingerprint change. The wiring BFS depends only on the alive-cell graph and
+   * reactor positions, so it is stable across ticks with no module death — the
+   * common case. */
+  wiringReach?: Set<string>;
+  /**
+   * Cached index of alive modules by cell key (`"col,row"` → module), built once
+   * per topology change and reused across ticks. `updateCrew` reads it every
+   * tick for crew-on-cell lookups and pathfinding seeds; rebuilding it from
+   * scratch each tick was a measurable per-ship cost on capital-heavy battles.
+   * `refreshPathCache` clears it alongside the path cache on a fingerprint
+   * change. The map is stable between module deaths — exactly the same
+   * invariant the path cache relies on. */
+  aliveCells?: Map<string, SimModule>;
   /** Hull base thrust, used by recomputeAggregates to recover the non-engine
    *  thrust floor. Set only when modules are present. */
   hullBaseThrust?: number;
@@ -889,6 +928,7 @@ function spawnCrew(
       hp: CREW_HP,
       job: "idle",
       path: [],
+      pathIndex: 0,
     });
   }
   return crew;
@@ -913,6 +953,123 @@ function crewCellKey(col: number, row: number): string {
   return `${col},${row}`;
 }
 
+/** Sentinel stored in the path cache for a (from, to) pair the A* proved has no
+ *  4-connected route. Distinct from a cached path array (always truthy) and from
+ *  a genuine cache miss (the key is absent), so `findCrewPath` can tell "not yet
+ *  searched" from "searched and unreachable" without a second lookup. */
+const UNREACHABLE = Symbol("crew-path-unreachable");
+
+/**
+ * Encode a `(col, row)` cell as a single number for use as a cache key, avoiding
+ * the per-lookup string allocation of the `"col,row"` form. Ship grid
+ * coordinates are small integers (the design grid is tens of cells across), so
+ * the encoding `col * CELL_KEY_STRIDE + row` is collision-free across the
+ * practical range; the stride is wide enough that no two distinct cells share an
+ * encoding for any realistic grid.
+ */
+const CELL_KEY_STRIDE = 100000;
+function cellNum(col: number, row: number): number {
+  return col * CELL_KEY_STRIDE + row;
+}
+
+/**
+ * Rolling fingerprint of a ship's alive-cell topology: a count and a hash over
+ * every alive cell's `(col, row)`. A pure function of the alive set, so an
+ * unchanged topology yields an unchanged fingerprint and a topology change
+ * (a module dies, a chunk splits off) moves it. Used to decide when the path
+ * cache is stale: the fingerprint is recomputed at the top of `updateCrew` and
+ * compared to the cached value; on a change the cache is cleared wholesale.
+ *
+ * The hash mixes each cell's coordinates with a positional multiplier so two
+ * different sets never collide by accident (the count already differentiates
+ * most, and the hash the rest). Deterministic: cells are visited in array order
+ * but addition and XOR are commutative, so iteration order never affects the
+ * result — only the set membership does.
+ */
+function aliveCellFingerprint(ship: SimShip): number {
+  if (ship.modules === undefined) return 0;
+  let count = 0;
+  let hash = 2166136261 >>> 0; // FNV-32 offset basis
+  for (const m of ship.modules) {
+    if (!m.alive) continue;
+    count += 1;
+    // Fold the cell coordinates into the running hash. Each coordinate is
+    // shifted into its own bit band so (col,row) pairs are distinguished, not
+    // just their sum.
+    hash ^= (m.col + 0x9e3779b9) & 0xffffffff;
+    hash = Math.imul(hash, 16777619) >>> 0;
+    hash ^= (m.row + 0x85ebca6b) & 0xffffffff;
+    hash = Math.imul(hash, 16777619) >>> 0;
+  }
+  // Combine count and hash into a single number; a change in either flips the
+  // fingerprint. The count alone catches the common one-cell-death case fast.
+  return count * 0x100000000 + hash;
+}
+
+/**
+ * Invalidate the ship's path cache if the alive-cell topology has changed since
+ * the cache was built. Called at the top of `updateCrew`, before any path
+ * lookup, so a module destroyed this tick (its `alive` flag already flipped by
+ * the damage phase and `recomputeAggregates`) is reflected before crew plan.
+ * Cheap: a single pass over the module array to recompute the fingerprint, then
+ * a comparison. On no change (the vast majority of ticks) nothing happens.
+ */
+function refreshPathCache(ship: SimShip): void {
+  if (ship.modules === undefined) return;
+  const fingerprint = aliveCellFingerprint(ship);
+  if (ship.topologyFingerprint !== fingerprint) {
+    ship.pathCache = new Map();
+    ship.wiringReach = undefined; // topology changed: wiring BFS is stale
+    ship.aliveCells = undefined; // topology changed: cell index is stale
+    ship.topologyFingerprint = fingerprint;
+  } else if (ship.pathCache === undefined) {
+    ship.pathCache = new Map();
+  }
+}
+
+/**
+ * Look up (or compute and cache) the crew path between two cells on a ship.
+ * The cache is keyed by the directed `(from, to)` pair and invalidated wholesale
+ * on any topology change (see `refreshPathCache`). On a cache hit this is an O(1)
+ * map lookup; on a miss it runs the A* below and stores the result. The cached
+ * array is returned by reference — callers copy via `pathIndex` offset rather
+ * than `slice`, so the shared array is never mutated.
+ *
+ * Determinism: the cache is a pure memo of the A* over a fixed topology, so a
+ * cached result is identical to a fresh one for the same `(from, to, topology)`.
+ * The A* itself is deterministic (fixed tie-break, no RNG, no Map/Set iteration
+ * order in any decision).
+ */
+function findCrewPath(
+  ship: SimShip,
+  cells: ReadonlyMap<string, SimModule>,
+  from: { col: number; row: number },
+  to: { col: number; row: number },
+): { col: number; row: number }[] | undefined {
+  const cache = ship.pathCache;
+  if (cache !== undefined) {
+    const fromN = cellNum(from.col, from.row);
+    const toN = cellNum(to.col, to.row);
+    const inner = cache.get(fromN);
+    if (inner !== undefined) {
+      const cached = inner.get(toN);
+      if (cached !== undefined) {
+        return cached === UNREACHABLE ? undefined : cached;
+      }
+    }
+    const path = computeCrewPathAStar(cells, from, to);
+    if (inner !== undefined) {
+      inner.set(toN, path ?? UNREACHABLE);
+    } else {
+      const fresh = new Map<number, { col: number; row: number }[] | typeof UNREACHABLE>();
+      fresh.set(toN, path ?? UNREACHABLE);
+      cache.set(fromN, fresh);
+    }
+    return path;
+  }
+  return computeCrewPathAStar(cells, from, to);
+}
+
 /**
  * Deterministic A* over a ship's alive cells, treating every alive module cell
  * as a walkable interior tile (crew stand on hull, modules, and floor alike).
@@ -924,8 +1081,15 @@ function crewCellKey(col: number, row: number): string {
  * fixed tie-break (lowest f, then lowest row, then lowest col) so two runs with
  * identical inputs yield byte-identical paths. No RNG, no Map/Set iteration
  * order dependence.
+ *
+ * The open set is a binary min-heap ordered by `(f, row, col)` — the same
+ * comparator the old sorted array used — with lazy deletion for decrease-key
+ * (a node rediscovered at a better f is pushed again; the stale entry is skipped
+ * when it surfaces). This yields the identical expansion order as the old
+ * O(n) sorted-array splice, at O(log n) per push, so a cache miss is no longer
+ * quadratic in the open-set size.
  */
-function findCrewPath(
+function computeCrewPathAStar(
   cells: ReadonlyMap<string, SimModule>,
   from: { col: number; row: number },
   to: { col: number; row: number },
@@ -944,36 +1108,82 @@ function findCrewPath(
   const cameFrom = new Map<string, { col: number; row: number }>();
   gScore.set(fromKey, 0);
 
-  const open: { col: number; row: number; f: number }[] = [
+  // Binary min-heap of open entries, ordered by (f, row, col) — the same
+  // tie-break the old sorted array enforced. Lazy deletion: a node rediscovered
+  // at a better f is pushed again; the stale entry is filtered on pop by
+  // comparing its f against the best-known gScore + heuristic.
+  const heap: { col: number; row: number; f: number }[] = [
     { col: from.col, row: from.row, f: heuristic(from.col, from.row) },
   ];
-  const openKeys = new Set<string>([fromKey]);
+  const closed = new Set<string>();
 
-  const insertSorted = (entry: { col: number; row: number; f: number }): void => {
-    let lo = 0;
-    let hi = open.length;
-    while (lo < hi) {
-      const mid = (lo + hi) >>> 1;
-      const m = open[mid];
-      if (m === undefined) break;
-      if (
-        m.f < entry.f ||
-        (m.f === entry.f && m.row < entry.row) ||
-        (m.f === entry.f && m.row === entry.row && m.col < entry.col)
-      ) {
-        lo = mid + 1;
-      } else {
-        hi = mid;
-      }
-    }
-    open.splice(lo, 0, entry);
+  /** Heap comparator: lowest f, then lowest row, then lowest col. */
+  const better = (
+    a: { f: number; row: number; col: number },
+    b: { f: number; row: number; col: number },
+  ): boolean => {
+    if (a.f !== b.f) return a.f < b.f;
+    if (a.row !== b.row) return a.row < b.row;
+    return a.col < b.col;
   };
 
-  while (open.length > 0) {
-    const current = open.shift();
+  const pushHeap = (entry: { col: number; row: number; f: number }): void => {
+    heap.push(entry);
+    let i = heap.length - 1;
+    while (i > 0) {
+      const parentIdx = (i - 1) >>> 1;
+      const pe = heap[parentIdx];
+      const ie = heap[i];
+      if (pe === undefined || ie === undefined) break;
+      if (better(ie, pe)) {
+        heap[parentIdx] = ie;
+        heap[i] = pe;
+        i = parentIdx;
+      } else break;
+    }
+  };
+
+  const popHeap = (): { col: number; row: number; f: number } | undefined => {
+    const top = heap[0];
+    if (top === undefined) return undefined;
+    const last = heap.pop();
+    if (heap.length > 0 && last !== undefined) {
+      heap[0] = last;
+      let i = 0;
+      const n = heap.length;
+      for (;;) {
+        const left = 2 * i + 1;
+        const right = 2 * i + 2;
+        let best = i;
+        const be = heap[i];
+        if (be === undefined) break;
+        if (left < n) {
+          const le = heap[left];
+          if (le !== undefined && better(le, be)) best = left;
+        }
+        if (right < n) {
+          const re = heap[right];
+          const bestE = heap[best];
+          if (re !== undefined && bestE !== undefined && better(re, bestE)) best = right;
+        }
+        if (best === i) break;
+        const a = heap[best];
+        const b = heap[i];
+        if (a === undefined || b === undefined) break;
+        heap[best] = b;
+        heap[i] = a;
+        i = best;
+      }
+    }
+    return top;
+  };
+
+  for (;;) {
+    const current = popHeap();
     if (current === undefined) break;
     const currentKey = crewCellKey(current.col, current.row);
-    openKeys.delete(currentKey);
+    if (closed.has(currentKey)) continue; // stale re-discovery: skip
+    closed.add(currentKey);
 
     if (current.col === to.col && current.row === to.row) {
       const path: { col: number; row: number }[] = [
@@ -1001,19 +1211,12 @@ function findCrewPath(
     for (const n of candidates) {
       const nKey = crewCellKey(n.col, n.row);
       if (!cells.has(nKey)) continue; // not a walkable alive cell
+      if (closed.has(nKey)) continue; // already finalised
       const tentativeG = currentG + 1;
       if (tentativeG < (gScore.get(nKey) ?? Infinity)) {
         cameFrom.set(nKey, { col: current.col, row: current.row });
         gScore.set(nKey, tentativeG);
-        const f = tentativeG + heuristic(n.col, n.row);
-        if (!openKeys.has(nKey)) {
-          openKeys.add(nKey);
-          insertSorted({ col: n.col, row: n.row, f });
-        } else {
-          const idx = open.findIndex((e) => e.col === n.col && e.row === n.row);
-          if (idx !== -1) open.splice(idx, 1);
-          insertSorted({ col: n.col, row: n.row, f });
-        }
+        pushHeap({ col: n.col, row: n.row, f: tentativeG + heuristic(n.col, n.row) });
       }
     }
   }
@@ -1056,7 +1259,20 @@ function aliveCellMap(ship: SimShip): Map<string, SimModule> {
 function updateCrew(ship: SimShip): void {
   if (ship.modules === undefined || ship.crew === undefined) return;
 
-  const cells = aliveCellMap(ship);
+  // Refresh the per-ship path cache before any path lookup this tick: a module
+  // destroyed by the just-run damage phase flips its `alive` flag, which may
+  // sever a route the cache still holds. `refreshPathCache` compares the
+  // alive-cell fingerprint to the cached one and clears the cache only when the
+  // topology actually changed (the common no-change case is a fingerprint pass).
+  refreshPathCache(ship);
+
+  // Reuse the cached alive-cell index across ticks; it only changes when the
+  // topology does (a module dies), at which point `refreshPathCache` cleared it.
+  // Rebuilding it every tick was a per-ship Map allocation over every module.
+  if (ship.aliveCells === undefined) {
+    ship.aliveCells = aliveCellMap(ship);
+  }
+  const cells = ship.aliveCells;
   const bySlot = new Map<string, SimModule>();
   for (const m of ship.modules) bySlot.set(m.slotId, m);
 
@@ -1071,7 +1287,7 @@ function updateCrew(ship: SimShip): void {
   // 2. Resolve arrivals (pickup / deposit). A member with an empty path that is
   //    standing on its target acts on it; manning members simply hold.
   for (const c of ordered) {
-    resolveArrival(c, bySlot, cells);
+    resolveArrival(ship, c, bySlot, cells);
   }
 
   // Reservation maps so assignment never over-subscribes a station or sends two
@@ -1089,9 +1305,36 @@ function updateCrew(ship: SimShip): void {
     }
   }
 
-  // Stations that still need crew, scanned in a fixed (col, row) order.
+  // Precompute the sorted candidate lists for each job priority ONCE per ship
+  // per tick, rather than re-filtering and re-sorting the full module array on
+  // every idle-crew assignment. The per-crew claim filters (stations under-
+  // subscribed, weapons/sinks not already targeted) are applied inline against
+  // the claim sets, which mutate as crew are assigned — so the result is
+  // byte-identical to the old per-crew rebuild, without the allocation churn.
   const stations = ship.modules
     .filter((m) => m.alive && m.crewRequired > 0 && stationNeedsCrew(m))
+    .slice()
+    .sort(compareByCell);
+  const dryWeapons = ship.modules
+    .filter(
+      (m) =>
+        m.alive &&
+        m.effect.kind === "weapon" &&
+        m.effect.ammoCapacity !== undefined &&
+        ammoShortfall(m) >= SIM.ammoRunAmount,
+    )
+    .slice()
+    .sort(compareByCell);
+  const magazines = ship.modules
+    .filter((m) => m.alive && m.effect.kind === "magazine" && m.ammoStored > 0)
+    .slice()
+    .sort(compareByCell);
+  const starvedSinks = ship.modules
+    .filter((m) => m.alive && m.powerDraw > 0 && chargeShortfall(m) >= SIM.powerRunAmount)
+    .slice()
+    .sort(compareByCell);
+  const reactors = ship.modules
+    .filter((m) => m.alive && m.effect.kind === "power")
     .slice()
     .sort(compareByCell);
 
@@ -1100,11 +1343,15 @@ function updateCrew(ship: SimShip): void {
     if (c.job !== "idle") continue;
 
     // Priority 1: man an under-manned station.
-    const station = chooseStation(c, stations, cells, claimedStations);
+    const station = chooseStation(ship, c, stations, cells, claimedStations);
     if (station !== undefined) {
       c.job = "manning";
       c.targetSlotId = station.station.slotId;
-      c.path = station.path.slice(1);
+      // Adopt the cached path by reference and step through it from index 1
+      // (index 0 is the crew's current cell). The array is never mutated, so
+      // sharing it across crew on the same route is safe.
+      c.path = station.path;
+      c.pathIndex = 1;
       claimedStations.set(
         station.station.slotId,
         (claimedStations.get(station.station.slotId) ?? 0) + 1,
@@ -1113,7 +1360,7 @@ function updateCrew(ship: SimShip): void {
     }
 
     // Priority 2: run ammo from a magazine to a dry weapon.
-    const run = chooseAmmoRun(c, ship.modules, cells, claimedWeapons);
+    const run = chooseAmmoRun(ship, c, dryWeapons, magazines, cells, claimedWeapons);
     if (run !== undefined) {
       c.job = "haulAmmo";
       c.carrying = undefined;
@@ -1121,20 +1368,22 @@ function updateCrew(ship: SimShip): void {
       // the crew member so the second leg knows where to take the rounds.
       c.targetSlotId = run.source.slotId;
       c.haulSinkSlotId = run.sink.slotId;
-      c.path = run.path.slice(1);
+      c.path = run.path;
+      c.pathIndex = 1;
       claimedWeapons.add(run.sink.slotId);
       continue;
     }
 
     // Priority 3: run charge from a reactor to a starved power-drawing module.
-    const power = choosePowerRun(c, ship.modules, cells, claimedSinks);
+    const power = choosePowerRun(ship, c, starvedSinks, reactors, cells, claimedSinks);
     if (power !== undefined) {
       c.job = "haulPower";
       c.carrying = undefined;
       c.carryAmount = undefined;
       c.targetSlotId = power.source.slotId;
       c.haulSinkSlotId = power.sink.slotId;
-      c.path = power.path.slice(1);
+      c.path = power.path;
+      c.pathIndex = 1;
       claimedSinks.add(power.sink.slotId);
       continue;
     }
@@ -1180,8 +1429,14 @@ function rechargeAndConsume(ship: SimShip): void {
   }
 
   // 1. Cells within the wiring radius of any alive reactor (multi-source BFS
-  //    over alive cells). A module on one of these cells is hard-wired.
-  const wired = reactorWiringReach(ship);
+  //    over alive cells). A module on one of these cells is hard-wired. The BFS
+  //    depends only on the alive-cell graph and reactor positions, so it is
+  //    cached on the ship and reused across ticks until the topology changes
+  //    (`refreshPathCache` clears `wiringReach` on a fingerprint change).
+  if (ship.wiringReach === undefined) {
+    ship.wiringReach = reactorWiringReach(ship);
+  }
+  const wired = ship.wiringReach;
   for (const m of ship.modules) {
     if (m.powerDraw <= 0 || !m.alive) continue;
     if (wired.has(crewCellKey(m.col, m.row))) m.charge = SIM.chargeBufferMax;
@@ -1250,12 +1505,12 @@ function isCharged(m: SimModule): boolean {
 }
 
 /**
- * Whether a crew member has finished its current leg: its path is empty and it
- * is standing on the cell of its current `targetSlotId`. A member still walking
- * (non-empty path) or with no target has not arrived.
+ * Whether a crew member has finished its current leg: it has no steps left on
+ * its path and is standing on the cell of its current `targetSlotId`. A member
+ * still walking (`pathIndex < path.length`) or with no target has not arrived.
  */
 function hasArrived(crew: SimCrew, bySlot: ReadonlyMap<string, SimModule>): boolean {
-  if (crew.path.length > 0 || crew.targetSlotId === undefined) return false;
+  if (crew.path.length - crew.pathIndex > 0 || crew.targetSlotId === undefined) return false;
   const target = bySlot.get(crew.targetSlotId);
   if (target === undefined) return false;
   return target.col === crew.col && target.row === crew.row;
@@ -1270,13 +1525,14 @@ function hasArrived(crew: SimCrew, bySlot: ReadonlyMap<string, SimModule>): bool
  * severed abandons and frees the member.
  */
 function resolveArrival(
+  ship: SimShip,
   crew: SimCrew,
   bySlot: ReadonlyMap<string, SimModule>,
   cells: ReadonlyMap<string, SimModule>,
 ): void {
   if (!hasArrived(crew, bySlot)) return;
-  if (crew.job === "haulAmmo") resolveAmmoArrival(crew, bySlot, cells);
-  else if (crew.job === "haulPower") resolvePowerArrival(crew, bySlot, cells);
+  if (crew.job === "haulAmmo") resolveAmmoArrival(ship, crew, bySlot, cells);
+  else if (crew.job === "haulPower") resolvePowerArrival(ship, crew, bySlot, cells);
   // Manning members hold their station; nothing to do on arrival.
 }
 
@@ -1284,6 +1540,7 @@ function resolveArrival(
  *  deposit them at the dry weapon (clamped to capacity), conserving the amount
  *  carried end to end. */
 function resolveAmmoArrival(
+  ship: SimShip,
   crew: SimCrew,
   bySlot: ReadonlyMap<string, SimModule>,
   cells: ReadonlyMap<string, SimModule>,
@@ -1309,7 +1566,7 @@ function resolveAmmoArrival(
     source.ammoStored -= carried;
     crew.carrying = "ammo";
     crew.carryAmount = carried;
-    const path = findCrewPath(cells, { col: crew.col, row: crew.row }, { col: sink.col, row: sink.row });
+    const path = findCrewPath(ship, cells, { col: crew.col, row: crew.row }, { col: sink.col, row: sink.row });
     if (path === undefined) {
       // Route severed after pickup: drop the rounds back and give up.
       source.ammoStored += carried;
@@ -1317,7 +1574,8 @@ function resolveAmmoArrival(
       return;
     }
     crew.targetSlotId = sink.slotId;
-    crew.path = path.slice(1);
+    crew.path = path;
+    crew.pathIndex = 1;
     return;
   }
 
@@ -1337,6 +1595,7 @@ function resolveAmmoArrival(
  *  then deposit it into the starved module's local buffer (clamped to the buffer
  *  ceiling), conserving the amount carried. */
 function resolvePowerArrival(
+  ship: SimShip,
   crew: SimCrew,
   bySlot: ReadonlyMap<string, SimModule>,
   cells: ReadonlyMap<string, SimModule>,
@@ -1363,13 +1622,14 @@ function resolvePowerArrival(
     }
     crew.carrying = "power";
     crew.carryAmount = carried;
-    const path = findCrewPath(cells, { col: crew.col, row: crew.row }, { col: sink.col, row: sink.row });
+    const path = findCrewPath(ship, cells, { col: crew.col, row: crew.row }, { col: sink.col, row: sink.row });
     if (path === undefined) {
       abandonHaul(crew);
       return;
     }
     crew.targetSlotId = sink.slotId;
-    crew.path = path.slice(1);
+    crew.path = path;
+    crew.pathIndex = 1;
     return;
   }
 
@@ -1407,6 +1667,7 @@ function resetCrewForFragment(crew: SimCrew): void {
   crew.carrying = undefined;
   crew.carryAmount = undefined;
   crew.path = [];
+  crew.pathIndex = 0;
 }
 
 /** Release a crew member from any haul assignment, returning it to idle. Any
@@ -1419,6 +1680,7 @@ function abandonHaul(crew: SimCrew): void {
   crew.carrying = undefined;
   crew.carryAmount = undefined;
   crew.path = [];
+  crew.pathIndex = 0;
 }
 
 /**
@@ -1428,6 +1690,12 @@ function abandonHaul(crew: SimCrew): void {
  * Returns the source magazine, the sink weapon, and the path to the source, or
  * undefined when no run is both needed and reachable.
  *
+ * The dry-weapon and magazine candidate lists are precomputed once per ship per
+ * tick by the caller (`updateCrew`) and passed in already sorted by `(col, row)`;
+ * only the per-crew claim filter (skip weapons already being resupplied) is
+ * applied inline. This is byte-identical to the old per-crew rebuild, without
+ * the filter+sort allocation churn on every idle-crew assignment.
+ *
  * "Dry" is a weapon below a top-up threshold so crew restock proactively rather
  * than only at exactly zero — a magazine run takes several ticks to walk, so a
  * weapon that waited for a literal empty would always be caught mid-salvo with
@@ -1435,33 +1703,20 @@ function abandonHaul(crew: SimCrew): void {
  * run, a hauler is dispatched.
  */
 function chooseAmmoRun(
+  ship: SimShip,
   crew: SimCrew,
-  modules: readonly SimModule[],
+  dryWeapons: readonly SimModule[],
+  magazines: readonly SimModule[],
   cells: ReadonlyMap<string, SimModule>,
   claimedWeapons: ReadonlySet<string>,
 ): { source: SimModule; sink: SimModule; path: { col: number; row: number }[] } | undefined {
-  const weapons = modules
-    .filter(
-      (m) =>
-        m.alive &&
-        m.effect.kind === "weapon" &&
-        m.effect.ammoCapacity !== undefined &&
-        ammoShortfall(m) >= SIM.ammoRunAmount &&
-        !claimedWeapons.has(m.slotId),
-    )
-    .slice()
-    .sort(compareByCell);
-  if (weapons.length === 0) return undefined;
+  if (dryWeapons.length === 0 || magazines.length === 0) return undefined;
 
-  const magazines = modules
-    .filter((m) => m.alive && m.effect.kind === "magazine" && m.ammoStored > 0)
-    .slice()
-    .sort(compareByCell);
-  if (magazines.length === 0) return undefined;
-
-  for (const sink of weapons) {
+  for (const sink of dryWeapons) {
+    if (claimedWeapons.has(sink.slotId)) continue;
     for (const source of magazines) {
       const path = findCrewPath(
+        ship,
         cells,
         { col: crew.col, row: crew.row },
         { col: source.col, row: source.row },
@@ -1470,6 +1725,7 @@ function chooseAmmoRun(
       // Confirm the second leg (magazine -> weapon) is also walkable before
       // committing, so a crew member never picks up rounds it cannot deliver.
       const delivery = findCrewPath(
+        ship,
         cells,
         { col: source.col, row: source.row },
         { col: sink.col, row: sink.row },
@@ -1495,39 +1751,33 @@ function chargeShortfall(m: SimModule): number {
  * Returns the source reactor, the sink module, and the path to the source, or
  * undefined when no run is both needed and reachable.
  *
+ * The starved-sink and reactor candidate lists are precomputed once per ship per
+ * tick by the caller (`updateCrew`) and passed in already sorted by `(col, row)`;
+ * only the per-crew claim filter (skip sinks already being fed) is applied
+ * inline. This is byte-identical to the old per-crew rebuild, without the
+ * filter+sort allocation churn on every idle-crew assignment.
+ *
  * As with ammo, the starvation threshold is the run amount so crew restock
  * proactively: a module that could accept a full charge packet gets a hauler
  * before its buffer empties and the station drops offline mid-fight.
  */
 function choosePowerRun(
+  ship: SimShip,
   crew: SimCrew,
-  modules: readonly SimModule[],
+  starvedSinks: readonly SimModule[],
+  reactors: readonly SimModule[],
   cells: ReadonlyMap<string, SimModule>,
   claimedSinks: ReadonlySet<string>,
 ): { source: SimModule; sink: SimModule; path: { col: number; row: number }[] } | undefined {
-  const sinks = modules
-    .filter(
-      (m) =>
-        m.alive &&
-        m.powerDraw > 0 &&
-        chargeShortfall(m) >= SIM.powerRunAmount &&
-        !claimedSinks.has(m.slotId),
-    )
-    .slice()
-    .sort(compareByCell);
-  if (sinks.length === 0) return undefined;
+  if (starvedSinks.length === 0 || reactors.length === 0) return undefined;
 
-  const reactors = modules
-    .filter((m) => m.alive && m.effect.kind === "power")
-    .slice()
-    .sort(compareByCell);
-  if (reactors.length === 0) return undefined;
-
-  for (const sink of sinks) {
+  for (const sink of starvedSinks) {
+    if (claimedSinks.has(sink.slotId)) continue;
     for (const source of reactors) {
-      const path = findCrewPath(cells, { col: crew.col, row: crew.row }, { col: source.col, row: source.row });
+      const path = findCrewPath(ship, cells, { col: crew.col, row: crew.row }, { col: source.col, row: source.row });
       if (path === undefined) continue;
       const delivery = findCrewPath(
+        ship,
         cells,
         { col: source.col, row: source.row },
         { col: sink.col, row: sink.row },
@@ -1581,6 +1831,7 @@ function stationNeedsCrew(m: SimModule): boolean {
  * nothing is both needed and reachable (the crew member then stays idle).
  */
 function chooseStation(
+  ship: SimShip,
   crew: SimCrew,
   stations: readonly SimModule[],
   cells: ReadonlyMap<string, SimModule>,
@@ -1588,7 +1839,7 @@ function chooseStation(
 ): { station: SimModule; path: { col: number; row: number }[] } | undefined {
   for (const station of stations) {
     if ((claimed.get(station.slotId) ?? 0) >= station.crewRequired) continue;
-    const path = findCrewPath(cells, { col: crew.col, row: crew.row }, { col: station.col, row: station.row });
+    const path = findCrewPath(ship, cells, { col: crew.col, row: crew.row }, { col: station.col, row: station.row });
     if (path === undefined) continue;
     return { station, path };
   }
@@ -1597,13 +1848,17 @@ function chooseStation(
 
 /**
  * Walk a crew member one cell along its path, updating its integer cell and
- * clearing the within-cell render offset. When the path empties the crew member
- * has arrived; an idle member with no path simply holds position. The fractional
- * offset is reset to 0 on arrival of each step — render smoothing is purely a UI
- * concern and never feeds back into a gameplay decision.
+ * clearing the within-cell render offset. When no steps remain (`pathIndex` at
+ * the end) the crew member has arrived; an idle member with no path simply holds
+ * position. The fractional offset is reset to 0 on each step — render smoothing
+ * is purely a UI concern and never feeds back into a gameplay decision.
+ *
+ * Steps are consumed by advancing `pathIndex`, not by slicing the array, so the
+ * cached path is never mutated and can be shared by reference across crew on the
+ * same route.
  */
 function advanceCrew(crew: SimCrew, cells: ReadonlyMap<string, SimModule>): void {
-  const next = crew.path[0];
+  const next = crew.path[crew.pathIndex];
   if (next === undefined) {
     crew.ox = 0;
     crew.oy = 0;
@@ -1618,7 +1873,7 @@ function advanceCrew(crew: SimCrew, cells: ReadonlyMap<string, SimModule>): void
   }
   crew.col = next.col;
   crew.row = next.row;
-  crew.path = crew.path.slice(1);
+  crew.pathIndex += 1;
   crew.ox = 0;
   crew.oy = 0;
 }
@@ -2665,7 +2920,16 @@ function makeChunkShip(
     // The crew whose cells fell into this fragment, copied independently so the
     // chunk and its parent never share crew state. A fragment with nobody aboard
     // leaves its crewed stations unmanned — a severed section can't crew itself.
-    crew: crew.map((c) => ({ ...c, path: c.path.map((p) => ({ ...p })) })),
+    crew: crew.map((c) => ({
+      ...c,
+      // Deep-copy the path so the chunk's crew never share array identity with
+      // the parent's crew (the arrays are never mutated in place, but the
+      // snapshot and any future mutation must be independent). pathIndex is
+      // reset by resetCrewForFragment (called by the caller after this), so the
+      // copied value here is transient.
+      path: c.path.map((p) => ({ ...p })),
+      pathIndex: c.pathIndex,
+    })),
     hullBaseThrust: parent.hullBaseThrust,
   };
   // Force a clean recompute so chunk aggregates match its own modules.
@@ -5053,7 +5317,7 @@ function snapshot(
  * model — crew hp is emitted but not yet reduced, so `injured` is unused here.
  */
 function crewState(crew: SimCrew): "idle" | "walking" | "manning" | "hauling" | "injured" {
-  if (crew.path.length > 0) return "walking";
+  if (crew.path.length - crew.pathIndex > 0) return "walking";
   if (crew.job === "haulAmmo" || crew.job === "haulPower") return "hauling";
   if (crew.job === "manning") return "manning";
   return "idle";
