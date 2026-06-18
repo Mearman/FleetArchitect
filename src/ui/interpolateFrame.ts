@@ -1,4 +1,4 @@
-import type { BattleFrame, CrewSnapshot, ShipSnapshot } from "@/schema/battle";
+import type { BattleFrame, CrewSnapshot, ProjectileSnapshot, ShipSnapshot } from "@/schema/battle";
 
 /**
  * Normalise an angle into (-π, π].
@@ -176,15 +176,35 @@ export function interpolateFrame(frames: readonly BattleFrame[], t: number): Bat
     };
   });
 
-  // Projectiles, awareness, and the tick number come from the nearest frame so
-  // that discrete events (hits, break-apart, sensor contacts) are never smeared
-  // across the interval. Awareness is binary per tick — there is no meaningful
-  // interpolation between two AwarenessSnapshots.
+  // Projectiles: interpolate x/y by id so fast-moving shots glide smoothly
+  // at all playback speeds (especially slow-mo where snapping is most visible).
+  // Projectiles present in only one frame are carried through verbatim.
+  const hiProjMap = new Map<string, ProjectileSnapshot>();
+  for (const p of hi.projectiles) {
+    hiProjMap.set(p.id, p);
+  }
+  const projectiles = lo.projectiles.map<ProjectileSnapshot>((loP) => {
+    const hiP = hiProjMap.get(loP.id);
+    if (hiP === undefined) return loP;
+    hiProjMap.delete(loP.id);
+    return {
+      id: loP.id,
+      x: loP.x + (hiP.x - loP.x) * alpha,
+      y: loP.y + (hiP.y - loP.y) * alpha,
+      kind: loP.kind,
+    };
+  });
+  for (const hiP of hiProjMap.values()) {
+    projectiles.push(hiP);
+  }
+
+  // Awareness and the tick number come from the nearest frame so that discrete
+  // events (sensor contacts) are never smeared across the interval.
   const nearest = alpha < 0.5 ? lo : hi;
   return {
     tick: nearest.tick,
     ships,
-    projectiles: nearest.projectiles,
+    projectiles,
     awareness: nearest.awareness,
   };
 }

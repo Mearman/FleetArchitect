@@ -155,7 +155,7 @@ describe("interpolateFrame", () => {
           alive: true,
         },
       ],
-      projectiles: [{ x: 1, y: 2, kind: "cannon" }],
+      projectiles: [{ id: "proj-0", x: 1, y: 2, kind: "cannon" }],
     };
     const frameB: BattleFrame = {
       tick: 1,
@@ -170,7 +170,7 @@ describe("interpolateFrame", () => {
           alive: true,
         },
       ],
-      projectiles: [{ x: 5, y: 2, kind: "cannon" }],
+      projectiles: [{ id: "proj-0", x: 5, y: 2, kind: "cannon" }],
     };
 
     // Alpha = 0.3 → nearest is lo (frameA)
@@ -180,8 +180,8 @@ describe("interpolateFrame", () => {
     expect(ship?.structure).toBe(100);
     // Continuous: x interpolated
     expect(ship?.x).toBeCloseTo(3);
-    // Projectile from nearest (frameA)
-    expect(result.projectiles[0]?.x).toBeCloseTo(1);
+    // Projectile interpolated (lerp 1→5 at alpha 0.3 = 2.2)
+    expect(result.projectiles[0]?.x).toBeCloseTo(2.2);
   });
 
   it("uses the hi-frame for discrete state when alpha >= 0.5", () => {
@@ -198,7 +198,7 @@ describe("interpolateFrame", () => {
           alive: true,
         },
       ],
-      projectiles: [{ x: 1, y: 2, kind: "cannon" }],
+      projectiles: [{ id: "proj-0", x: 1, y: 2, kind: "cannon" }],
     };
     const frameB: BattleFrame = {
       tick: 1,
@@ -213,7 +213,7 @@ describe("interpolateFrame", () => {
           alive: true,
         },
       ],
-      projectiles: [{ x: 5, y: 2, kind: "cannon" }],
+      projectiles: [{ id: "proj-0", x: 5, y: 2, kind: "cannon" }],
     };
 
     // Alpha = 0.7 → nearest is hi (frameB)
@@ -223,8 +223,8 @@ describe("interpolateFrame", () => {
     expect(ship?.structure).toBe(80);
     // Continuous: x interpolated
     expect(ship?.x).toBeCloseTo(7);
-    // Projectile from nearest (frameB)
-    expect(result.projectiles[0]?.x).toBeCloseTo(5);
+    // Projectile interpolated (lerp 1→5 at alpha 0.7 = 3.8)
+    expect(result.projectiles[0]?.x).toBeCloseTo(3.8);
   });
 
   // ---------------------------------------------------------------------------

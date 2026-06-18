@@ -34,6 +34,12 @@ import type {
  * runs with identical BattleInputs produce byte-identical frames.
  */
 
+/** Deterministic per-battle projectile id counter. Reset at the start of each
+ *  `simulateBattle` call; incremented in spawn order so two same-seed runs
+ *  produce identical ids. Used by the snapshot → interpolation path to match
+ *  projectiles across consecutive frames for smooth sub-tick rendering. */
+let projectileCounter = 0;
+
 /** Tunable gameplay constants. All "feel" lives here as named values. */
 const SIM = {
   /** Half-angle (radians) either side of a ship's facing within which its
@@ -603,6 +609,11 @@ interface SimModule {
 
 /** Mutable in-flight projectile. */
 interface SimProjectile {
+  /** Stable id for interpolation matching across frames. Assigned from a
+   *  deterministic per-battle counter at spawn time so two same-seed runs
+   *  produce byte-identical ids (the counter increments in spawn order, which
+   *  is fixed by the seeded RNG and tick update order). */
+  id: string;
   x: number;
   y: number;
   vx: number;
@@ -2994,6 +3005,7 @@ function spawnProjectile(
   // ship's post-recoil velocity.
   applyImpulse(owner, -SIM.projectileMass * vx, -SIM.projectileMass * vy, muzzleLocalX, muzzleLocalY);
   return {
+    id: `proj-${projectileCounter++}`,
     x: muzzleX,
     y: muzzleY,
     vx,
@@ -4054,6 +4066,7 @@ export function* simulateBattle(
   inputs: BattleInputs,
 ): Generator<BattleFrame, BattleSummary> {
   const rng = mulberry32(inputs.seed >>> 0);
+  projectileCounter = 0;
   const ships = inputs.ships.map((s) => toSimShip(s, rng));
   const attackers = ships.filter((s) => s.side === "attacker");
   const defenders = ships.filter((s) => s.side === "defender");
@@ -5417,7 +5430,7 @@ function snapshot(
         }),
       };
     }),
-    projectiles: projectiles.map((p) => ({ x: p.x, y: p.y, kind: p.kind })),
+    projectiles: projectiles.map((p) => ({ id: p.id, x: p.x, y: p.y, kind: p.kind })),
   };
 }
 

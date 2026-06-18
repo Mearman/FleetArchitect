@@ -126,6 +126,7 @@ export type ShipSnapshot = z.infer<typeof ShipSnapshot>;
 
 /** A visible projectile at a tick, for rendering weapon fire during replay. */
 export const ProjectileSnapshot = z.object({
+  id: EntityId,
   x: z.number(),
   y: z.number(),
   kind: WeaponType,
