@@ -187,24 +187,53 @@ export const MagazineEffect = z.object({
 export type MagazineEffect = z.infer<typeof MagazineEffect>;
 
 /**
- * Effect payload for a sensor array.
+ * Effect payload for a sensor array — directional, mirroring `CommsEffect`.
  *
- * `detectionRange` (world units) is added to the hull's innate visual radius
- * to extend how far this ship can passively detect enemies.
+ * A sensor projects a detection cone (a sector of half-arc `arc` about its
+ * world bearing) rather than a scalar radius. The ship's innate visual circle
+ * (`SIM.visualLosRadius`) is separate and always present; sensor cones extend
+ * detection beyond it in the directions they cover.
  *
- * `nebulaImmune` marks special sensor arrays (e.g. active LIDAR, gravimetric)
- * that are unaffected by nebula attenuation — they see through the gas cloud
- * as well as in clear space.
+ * `sensorType` sets the cone geometry:
+ *   - "omni"        — all-round; `arc` is Math.PI so the angle test always
+ *                     passes and the cone is a full circle.
+ *   - "directional" — fixed-facing sector; `arc` is the half-arc.
+ *   - "dish"        — narrow long-range sector; `arc` is the half-beam-width.
+ *                     A dish typically needs crew (`crewRequired > 0`) and only
+ *                     contributes when manned.
+ *   - "variable"    — electronically steerable; range traded against arc via the
+ *                     per-instance range dial (longer range narrows the arc),
+ *                     bounded by `minArc`/`maxArc` and `minRange`/`maxRange`.
  *
- * Phase A: inert — contributes mass/cost/power/crew but no detection behaviour.
- * Detection logic is Phase C.
+ * `detectionRange` — maximum detection range (world units) along the cone.
+ * `arc`            — half-arc in radians; omni sets this to Math.PI (full circle).
+ * `bearing`        — ship-local mount bearing in radians (0 = forward / +x).
+ * `nebulaImmune`   — true for active LIDAR / gravimetric arrays unaffected by
+ *                    nebula attenuation; they keep full range in the gas cloud.
+ *
+ * Variable-unit optional fields (`minArc`, `maxArc`, `minRange`, `maxRange`)
+ * are only meaningful when `sensorType === "variable"`.
  */
 export const SensorEffect = z.object({
   kind: z.literal("sensor"),
-  /** Additional detection range in world units, added to the hull's base visual radius. */
+  sensorType: z.enum(["omni", "directional", "dish", "variable"]),
+  /** Maximum detection range in world units along the cone. */
   detectionRange: z.number().min(0),
+  /** Half-arc in radians (0 = point, Math.PI = full circle / all-round). */
+  arc: z.number().min(0).max(Math.PI),
+  /** Ship-local mount bearing in radians (0 = forward). */
+  bearing: z.number(),
   /** True for sensor types (active LIDAR, gravimetric) unaffected by nebula gas. */
   nebulaImmune: z.boolean(),
+  // Variable-unit range/arc bounds — only used when sensorType === "variable".
+  /** Minimum electronically steerable arc (variable units only). */
+  minArc: z.number().optional(),
+  /** Maximum electronically steerable arc (variable units only). */
+  maxArc: z.number().optional(),
+  /** Minimum electronically steerable range (variable units only). */
+  minRange: z.number().optional(),
+  /** Maximum electronically steerable range (variable units only). */
+  maxRange: z.number().optional(),
 });
 export type SensorEffect = z.infer<typeof SensorEffect>;
 

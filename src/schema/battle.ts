@@ -150,15 +150,30 @@ export const AwarenessSnapshot = z.object({
   /**
    * Comms relay clusters: groups of friendly ships that share awareness via
    * active comms links. Each cluster has a stable id, a side, the member ship
-   * instance ids, and the geometric disc that bounds the cluster's collective
-   * sensor coverage (for rendering).
+   * instance ids, and the set of coverage shapes that bound the cluster's
+   * collective sensor reach (for rendering).
+   *
+   * Each coverage element is centred at (x, y) with reach `r`. When `bearing`
+   * and `arc` are BOTH present the shape is a SECTOR (cone): a wedge of half-arc
+   * `arc` radians about world bearing `bearing`. When both are absent the shape
+   * is a full circle of radius `r` (an omni sensor or the innate visual circle).
    */
   clusters: z.array(
     z.object({
       id: EntityId,
       side: z.enum(["attacker", "defender"]),
       memberIds: z.array(EntityId),
-      coverage: z.array(z.object({ x: z.number(), y: z.number(), r: z.number() })),
+      coverage: z.array(
+        z.object({
+          x: z.number(),
+          y: z.number(),
+          r: z.number(),
+          /** World bearing (radians) the cone is centred on; absent = full circle. */
+          bearing: z.number().optional(),
+          /** Half-arc (radians) of the cone; absent = full circle. */
+          arc: z.number().optional(),
+        }),
+      ),
     }),
   ),
   /**

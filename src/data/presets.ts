@@ -39,7 +39,9 @@ const PRESET_TIME = "2026-06-16T00:00:00.000Z";
  *  Hull tiles: `#` block, `=` edge, `o` corner, `/` strut.
  *  `~` walkable floor / corridor cell (no module, just interior decking).
  *  `G` munitions magazine (mod-munitions-magazine).
- *  Sensors: `v` passive array, `V` long-range scanner, `K` gravimetric imager.
+ *  Sensors: `v` passive array (omni), `V` long-range dish (narrow forward cone,
+ *  crewed), `K` gravimetric imager (wide nebula-immune cone). All face forward
+ *  (bearing 0).
  *  Comms: `O` omni transceiver, `d` steerable relay dish, `b` laser backbone link. */
 const TOKENS: Record<string, GridCell> = {
   ".": { kind: "empty" },
@@ -77,7 +79,8 @@ const TOKENS: Record<string, GridCell> = {
  *  `#` carapace block, `=` chitin plate (edge), `/` chitin filament (strut).
  *  `~` walkable floor / corridor cell (interior bio-membrane passage).
  *  `q` ammon sac (swm-ammon-sac, the Swarm magazine equivalent).
- *  Sensors: `e` electro-receptor membrane, `y` chemosensor organ.
+ *  Sensors: `e` electro-receptor membrane (omni), `y` chemosensor palp
+ *  (directional cone). Both face forward (bearing 0).
  *  Comms: `h` pheromone net (omni), `i` synapse focus organ (dish), `k` biolaser spine. */
 const SWARM_TOKENS: Record<string, GridCell> = {
   ".": { kind: "empty" },

@@ -34,6 +34,19 @@ const hullTileData: HullTileDefinition[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Sensor cone half-arcs (radians). A sensor covers a sector of this half-arc
+// about its world bearing; omni uses Math.PI so the cone is a full circle.
+// ---------------------------------------------------------------------------
+/** All-round: the full half-circle each side, i.e. a 360° cone (a full circle). */
+const SENSOR_OMNI_ARC = Math.PI;
+/** Directional scanner: ~29° half-arc (a medium forward sector). */
+const SENSOR_DIRECTIONAL_ARC = 0.5;
+/** Wide directional (e.g. gravimetric): ~46° half-arc. */
+const SENSOR_WIDE_ARC = 0.8;
+/** Long-range dish: ~11° half-arc (a tight forward beam). */
+const SENSOR_DISH_ARC = 0.2;
+
+// ---------------------------------------------------------------------------
 // Terran modules — conventional human technology.
 // ---------------------------------------------------------------------------
 const moduleData: ModuleDefinition[] = [
@@ -301,12 +314,17 @@ const moduleData: ModuleDefinition[] = [
     techLevel: 2,
     effect: { kind: "magazine", ammoStored: 300 },
   },
-  // --- System: sensors ---
+  // --- System: sensors (directional, mirroring the comms family) ---
+  // Sensors project a detection cone (a sector of half-arc `arc` about their
+  // world bearing) rather than a scalar radius. `bearing: 0` mounts the cone
+  // forward (+x). Ranges are tuned against weapon ranges (~180–600): an omni is
+  // short, a directional reaches outside most weapon envelopes, and a dish
+  // out-ranges every weapon for genuine early warning.
   {
     id: "mod-sensor-passive",
     faction: "Terran",
     name: "Passive Array",
-    description: "Basic electromagnetic listeners. Cheap and silent — adds modest detection reach without drawing power.",
+    description: "Cheap all-round electromagnetic listeners. Silent and crewless — modest detection in every direction without drawing power.",
     category: "system",
     mass: 2,
     cost: 35,
@@ -315,18 +333,41 @@ const moduleData: ModuleDefinition[] = [
     techLevel: 1,
     effect: {
       kind: "sensor",
-      // Modest range extension — better than naked eyes but not dramatically so.
-      // Weapons have ranges of ~180–600 units; 350 means the Passive Array extends
-      // detection to just outside most weapon envelopes.
-      detectionRange: 350,
+      sensorType: "omni",
+      // All-round: arc spans the full half-circle each side (effectively 360°),
+      // so the cone is a full circle. Short reach, just outside the visual circle.
+      arc: SENSOR_OMNI_ARC,
+      detectionRange: 320,
+      bearing: 0,
+      nebulaImmune: false,
+    },
+  },
+  {
+    id: "mod-sensor-directional",
+    faction: "Terran",
+    name: "Directional Scanner",
+    description: "Fixed-sector active radar. Sweeps a medium-long forward cone — far better reach than the passive array, but only where it is pointed.",
+    category: "system",
+    mass: 4,
+    cost: 70,
+    powerDraw: 4,
+    crewRequired: 0,
+    techLevel: 2,
+    effect: {
+      kind: "sensor",
+      sensorType: "directional",
+      // ~29° half-arc forward cone; reaches just past missile range.
+      arc: SENSOR_DIRECTIONAL_ARC,
+      detectionRange: 600,
+      bearing: 0,
       nebulaImmune: false,
     },
   },
   {
     id: "mod-sensor-longrange",
     faction: "Terran",
-    name: "Long-Range Scanner",
-    description: "Active AESA radar with extended sweep. Spots threats well before they enter firing range; one operator required to maintain the scan cycle.",
+    name: "Long-Range Dish",
+    description: "Narrow high-gain dish that out-ranges every weapon. Spots threats long before they can fire, but needs an operator to hold the scan and only sees a tight forward cone.",
     category: "system",
     mass: 5,
     cost: 90,
@@ -335,17 +376,45 @@ const moduleData: ModuleDefinition[] = [
     techLevel: 2,
     effect: {
       kind: "sensor",
-      // Substantially out-ranges all weapons (max ~560 for missiles) so a
-      // scanner-equipped ship has genuine early-warning capability.
-      detectionRange: 800,
+      sensorType: "dish",
+      // ~11° half-arc, very long reach — genuine early warning straight ahead.
+      arc: SENSOR_DISH_ARC,
+      detectionRange: 900,
+      bearing: 0,
       nebulaImmune: false,
+    },
+  },
+  {
+    id: "mod-sensor-variable",
+    faction: "Terran",
+    name: "AESA Sensor Suite",
+    description: "Electronically steerable phased-array sensor. Trade arc for range on the fly — a wide short-range sweep or a narrow long-range stare.",
+    category: "system",
+    mass: 6,
+    cost: 135,
+    powerDraw: 9,
+    crewRequired: 0,
+    techLevel: 3,
+    effect: {
+      kind: "sensor",
+      sensorType: "variable",
+      // Default mid-values; the sim interpolates min/max when steering. A longer
+      // range narrows the arc (maxArc at minRange, minArc at maxRange).
+      detectionRange: 480,
+      arc: 0.4,
+      bearing: 0,
+      nebulaImmune: false,
+      minRange: 300,
+      maxRange: 720,
+      minArc: 0.15,
+      maxArc: 0.6,
     },
   },
   {
     id: "mod-sensor-gravimetric",
     faction: "Terran",
     name: "Gravimetric Imager",
-    description: "Reads mass-distortion signatures through gas clouds. Unaffected by nebulae that blind conventional radar.",
+    description: "Reads mass-distortion signatures through gas clouds in a wide arc. Unaffected by nebulae that blind conventional radar.",
     category: "system",
     mass: 6,
     cost: 140,
@@ -354,9 +423,12 @@ const moduleData: ModuleDefinition[] = [
     techLevel: 3,
     effect: {
       kind: "sensor",
-      // Range comparable to the long-range scanner but the distinguishing
-      // property is nebula immunity, not raw range.
-      detectionRange: 750,
+      sensorType: "directional",
+      // Wide forward cone, nebula-immune — the distinguishing property is seeing
+      // through gas, not raw reach.
+      arc: SENSOR_WIDE_ARC,
+      detectionRange: 700,
+      bearing: 0,
       nebulaImmune: true,
     },
   },
@@ -685,12 +757,12 @@ const moduleData: ModuleDefinition[] = [
     effect: { kind: "magazine", ammoStored: 250 },
   },
 
-  // --- Swarm system: bio-sensors ---
+  // --- Swarm system: bio-sensors (directional, mirroring the Terran family) ---
   {
     id: "swm-electro-membrane",
     faction: "Swarm",
     name: "Electro-Receptor Membrane",
-    description: "Passive skin of piezoelectric cilia that senses pressure waves and electromagnetic fields. No metabolic cost; always alert.",
+    description: "Passive skin of piezoelectric cilia sensing pressure waves and fields from every direction. No metabolic cost; always alert all-round.",
     category: "system",
     mass: 2,
     cost: 30,
@@ -699,27 +771,52 @@ const moduleData: ModuleDefinition[] = [
     techLevel: 1,
     effect: {
       kind: "sensor",
-      // Mirrors the Terran Passive Array in doctrine — cheap wide-field awareness.
-      detectionRange: 350,
+      sensorType: "omni",
+      // All-round awareness, like the Terran Passive Array.
+      arc: SENSOR_OMNI_ARC,
+      detectionRange: 320,
+      bearing: 0,
       nebulaImmune: false,
     },
   },
   {
     id: "swm-chemosensor-organ",
     faction: "Swarm",
-    name: "Chemosensor Organ",
-    description: "Long-range chemoreceptor cluster tuned to drive exhaust traces. Metabolically intensive; extends the hive's hunt range well beyond weapon reach.",
+    name: "Chemosensor Palp",
+    description: "Forward chemoreceptor palp tuned to drive-exhaust traces. Sweeps a medium-long cone ahead of the hunter; crewless, but only sees where it faces.",
     category: "system",
     mass: 4,
-    cost: 85,
+    cost: 75,
+    powerDraw: 4,
+    crewRequired: 0,
+    techLevel: 2,
+    effect: {
+      kind: "sensor",
+      sensorType: "directional",
+      arc: SENSOR_DIRECTIONAL_ARC,
+      detectionRange: 600,
+      bearing: 0,
+      nebulaImmune: false,
+    },
+  },
+  {
+    id: "swm-chemosensor-organ-long",
+    faction: "Swarm",
+    name: "Chemosensor Organ",
+    description: "Elongated long-range chemoreceptor cluster. A narrow forward stare that out-ranges every weapon — the hive's autonomous early-warning organ.",
+    category: "system",
+    mass: 5,
+    cost: 95,
     powerDraw: 5,
     crewRequired: 0,
     techLevel: 2,
     effect: {
       kind: "sensor",
-      // Same doctrine as mod-sensor-longrange: out-ranges all weapons to give
-      // the Swarm genuine early awareness.
-      detectionRange: 800,
+      sensorType: "dish",
+      // Narrow, very long reach — the Swarm pays no crew (autonomous bio-organ).
+      arc: SENSOR_DISH_ARC,
+      detectionRange: 860,
+      bearing: 0,
       nebulaImmune: false,
     },
   },
@@ -727,7 +824,7 @@ const moduleData: ModuleDefinition[] = [
     id: "swm-gravitic-node",
     faction: "Swarm",
     name: "Gravitic Sensing Node",
-    description: "Dense bio-mineral node that resonates with gravitational gradients — reads mass through nebula gas as easily as clear space.",
+    description: "Dense bio-mineral node that resonates with gravitational gradients across a wide arc — reads mass through nebula gas as easily as clear space.",
     category: "system",
     mass: 5,
     cost: 130,
@@ -736,9 +833,11 @@ const moduleData: ModuleDefinition[] = [
     techLevel: 3,
     effect: {
       kind: "sensor",
-      // Range comparable to Terran gravimetric but no crewRequired — the Swarm
-      // trades raw range for autonomous operation.
-      detectionRange: 720,
+      sensorType: "directional",
+      // Wide nebula-immune cone; the Swarm trades raw range for autonomy.
+      arc: SENSOR_WIDE_ARC,
+      detectionRange: 700,
+      bearing: 0,
       nebulaImmune: true,
     },
   },

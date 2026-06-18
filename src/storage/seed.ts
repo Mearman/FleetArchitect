@@ -14,8 +14,12 @@ import { getMeta, setMeta, storage } from "@/storage/db";
  * Version 4: Phase B — sensor and comms modules added to key presets. Scout
  * ships (Sabre, Drone Skimmer) gain long-range sensors; capital ships
  * (Leviathan, Hive Lord) gain comms backbone links and squad-net transceivers.
+ *
+ * Version 5: Directional sensors — sensors gain a comms-style cone model
+ * (sensorType/arc/bearing). Preset sensor modules become typed: omni passive
+ * arrays, forward-facing directional/dish scanners on scouts, all aimed forward.
  */
-const PRESETS_VERSION = 4;
+const PRESETS_VERSION = 5;
 const VERSION_KEY = "presetsVersion";
 
 /**
