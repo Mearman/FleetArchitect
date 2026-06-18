@@ -148,6 +148,8 @@ function applyModule(
     case "repair":
     case "hull":
     case "magazine":
+    case "sensor": // Phase A: inert — mass/cost/power/crew apply; no detection effect yet
+    case "comms":  // Phase A: inert — mass/cost/power/crew apply; no link effect yet
       break;
   }
 }

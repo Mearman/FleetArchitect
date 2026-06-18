@@ -196,6 +196,13 @@ function baseHpFor(kind: ResolvedModule["kind"]): number {
       return 60;
     case "magazine":
       return 40;
+    // Phase A: sensor and comms modules are inert system components.
+    // HP matches a mid-range electronics module — more fragile than armour,
+    // sturdier than crew quarters.
+    case "sensor":
+      return 20;
+    case "comms":
+      return 20;
   }
 }
 

@@ -82,6 +82,8 @@ const MODULE_COLOUR: Record<string, string> = {
   magazine: "#e8a550",
   pointDefense: "#ff8c5a",
   repair: "#80d4a0",
+  sensor: "#40d0d0",
+  comms: "#a0c0ff",
 };
 
 /**
@@ -119,6 +121,8 @@ const MODULE_LABEL: Record<string, string> = {
   engine: "Engine",
   power: "Power",
   crew: "Crew",
+  sensor: "Sensor",
+  comms: "Comms",
 };
 
 /**

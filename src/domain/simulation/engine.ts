@@ -1390,6 +1390,8 @@ function stationNeedsCrew(m: SimModule): boolean {
     case "crew":
     case "repair":
     case "hull":
+    case "sensor": // Phase A: inert — crew not dispatched (no detection behaviour yet)
+    case "comms":  // Phase A: inert — crew not dispatched (no comms link behaviour yet)
       return false;
   }
 }
@@ -1660,6 +1662,8 @@ function recomputeAggregates(ship: SimShip): void {
       case "repair":
       case "hull":
       case "magazine":
+      case "sensor": // Phase A: inert — no aggregate effect (detection is Phase C)
+      case "comms":  // Phase A: inert — no aggregate effect (link logic is Phase C)
         break;
     }
   }
