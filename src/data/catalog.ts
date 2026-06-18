@@ -87,6 +87,8 @@ const moduleData: ModuleDefinition[] = [
       // A 90° (±π/2) turret that slews briskly to bear on its target.
       turretArc: Math.PI / 2,
       turretTurnRate: 0.08,
+      /** Railgun needs finite ammo resupply. */
+      ammoCapacity: 120,
     },
   },
   {
@@ -114,6 +116,8 @@ const moduleData: ModuleDefinition[] = [
       // A full 360° launcher (±π) that slews slowly.
       turretArc: Math.PI,
       turretTurnRate: 0.05,
+      /** Missiles need finite ammo resupply. */
+      ammoCapacity: 80,
     },
   },
   {
@@ -138,6 +142,8 @@ const moduleData: ModuleDefinition[] = [
       shieldPiercing: 0.3,
       armourPiercing: 0.4,
       spread: 0.05,
+      /** Torpedoes need finite ammo resupply. */
+      ammoCapacity: 50,
     },
   },
   // --- Defence: shields ---
@@ -281,6 +287,19 @@ const moduleData: ModuleDefinition[] = [
     crewRequired: 0,
     techLevel: 1,
     effect: { kind: "crew", capacity: 8 },
+  },
+  {
+    id: "mod-munitions-magazine",
+    faction: "Terran",
+    name: "Munitions Magazine",
+    description: "Stores ammunition for heavy weapons. Crew will haul rounds to weapons needing resupply.",
+    category: "system",
+    mass: 8,
+    cost: 50,
+    powerDraw: 0,
+    crewRequired: 1,
+    techLevel: 2,
+    effect: { kind: "magazine", ammoStored: 300 },
   },
 
   // ---------------------------------------------------------------------------
@@ -473,6 +492,19 @@ const moduleData: ModuleDefinition[] = [
     techLevel: 3,
     effect: { kind: "power", output: 75 },
     command: true,
+  },
+  {
+    id: "swm-ammon-sac",
+    faction: "Swarm",
+    name: "Ammon Sac",
+    description: "Bio-organic ammunition reservoir producing and storing organic projectile clusters. Crew distribute harvested rounds to weapons.",
+    category: "system",
+    mass: 7,
+    cost: 55,
+    powerDraw: 1,
+    crewRequired: 1,
+    techLevel: 2,
+    effect: { kind: "magazine", ammoStored: 250 },
   },
 ];
 
