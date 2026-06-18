@@ -62,6 +62,15 @@ export const anomalyLegend = style({
   pointerEvents: "none",
 });
 
+/** The fog-of-war legend badge, shown below the anomaly legend when fog is active. */
+export const fogLegend = style({
+  position: "absolute",
+  top: 34,
+  left: 8,
+  zIndex: 3,
+  pointerEvents: "none",
+});
+
 /** Module status overlay pinned to the right edge, toggled on demand. */
 export const statusOverlay = style({
   position: "absolute",

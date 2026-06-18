@@ -11,6 +11,13 @@ import type { ShipDesign } from "@/schema/ship";
 import type { EntityId } from "@/schema/primitives";
 import type { Catalog } from "./catalog";
 
+/**
+ * Fault severity. "error" faults block deployment (the design is invalid);
+ * "warning" faults are informational — they may indicate a sub-optimal build
+ * but do not make the design undeployable.
+ */
+export type FaultSeverity = "error" | "warning";
+
 export interface ResolvedWeapon {
   slotId: EntityId;
   effect: WeaponEffect;
@@ -36,21 +43,30 @@ export interface ShipStats {
   thrust: number;
   turnRate: number;
   weapons: readonly ResolvedWeapon[];
+  /**
+   * Aggregated sensor reach (world units) for a non-modular ship, added to the
+   * innate visual radius to give its effective detection range — the aggregated
+   * analogue of how `weapons` aggregates weaponry. Absent (or 0) means the ship
+   * carries no sensors and sees only out to the innate visual radius. Modular
+   * ships derive detection from their sensor modules instead and ignore this.
+   */
+  sensorRange?: number;
 }
 
-/** A reason a ship design cannot be built as-is. */
+/** A reason a ship design cannot be built as-is (error), or an advisory note (warning). */
 export type DesignFault =
-  | { kind: "empty" }
-  | { kind: "disconnected" }
-  | { kind: "noCommand" }
-  | { kind: "unknownModule"; col: number; row: number; moduleId: EntityId }
-  | { kind: "unknownHullTile"; col: number; row: number; tile: string }
-  | { kind: "massExceeded"; mass: number; capacity: number }
-  | { kind: "powerDeficit"; net: number }
-  | { kind: "crewDeficit"; net: number }
+  // ---- Error-level faults (block deployment) ----
+  | { kind: "empty"; severity: "error" }
+  | { kind: "disconnected"; severity: "error" }
+  | { kind: "noCommand"; severity: "error" }
+  | { kind: "unknownModule"; severity: "error"; col: number; row: number; moduleId: EntityId }
+  | { kind: "unknownHullTile"; severity: "error"; col: number; row: number; tile: string }
+  | { kind: "massExceeded"; severity: "error"; mass: number; capacity: number }
+  | { kind: "powerDeficit"; severity: "error"; net: number }
+  | { kind: "crewDeficit"; severity: "error"; net: number }
   /** Parts from more than one faction are present on this design. A valid
    *  ship uses tiles and modules exclusively from the design's own faction. */
-  | { kind: "crossFaction"; expected: string; found: string[] }
+  | { kind: "crossFaction"; severity: "error"; expected: string; found: string[] }
   /**
    * A station that needs crew (crewRequired > 0) has no walkable path from any
    * crew-quarters cell. Only raised when at least one crew-quarters module exists
@@ -58,13 +74,36 @@ export type DesignFault =
    * Both the station and the quarters must be on the walkable surface (hull,
    * module, or floor cells) connected by 4-adjacent edges.
    */
-  | { kind: "unreachableStation"; col: number; row: number; moduleId: EntityId }
+  | { kind: "unreachableStation"; severity: "error"; col: number; row: number; moduleId: EntityId }
   /**
    * A weapon with a finite ammo capacity (ammoCapacity is set) has no magazine
    * module (effect.kind === "magazine") reachable via a walkable path. Only
    * raised when at least one such weapon exists on the design.
    */
-  | { kind: "noAmmoSource"; col: number; row: number; moduleId: EntityId };
+  | { kind: "noAmmoSource"; severity: "error"; col: number; row: number; moduleId: EntityId }
+  // ---- Warning-level faults (informational, do not block deployment) ----
+  /**
+   * The design has no sensor module. The ship will rely on short visual range
+   * only; it will not detect enemies until they are close.
+   */
+  | { kind: "noSensors"; severity: "warning" }
+  /**
+   * A comms unit is the only unit on its channel — nothing else on this ship
+   * shares that channel, so it cannot relay data or form an intra-ship bridge.
+   * Phrase: "comms unit on a channel nothing else uses".
+   */
+  | { kind: "commsIsland"; severity: "warning"; col: number; row: number; channel: number }
+  /**
+   * A dish or laser comms unit (crewRequired > 0) has no walkable path from any
+   * crew-quarters cell. It can never be manned, so it will never link.
+   * Only raised when at least one crew-quarters module exists on the design.
+   */
+  | { kind: "unmannedAimUnit"; severity: "warning"; col: number; row: number; moduleId: EntityId }
+  /**
+   * The design has comms modules but fewer than two, so it cannot relay
+   * third-party contact data.
+   */
+  | { kind: "noRelay"; severity: "warning" };
 
 export interface ShipDesignAnalysis {
   stats: ShipStats;
@@ -148,6 +187,8 @@ function applyModule(
     case "repair":
     case "hull":
     case "magazine":
+    case "sensor": // Phase A: inert — mass/cost/power/crew apply; no detection effect yet
+    case "comms":  // Phase A: inert — mass/cost/power/crew apply; no link effect yet
       break;
   }
 }
@@ -205,6 +246,12 @@ export function analyseShipDesign(
   const stats = emptyStats(massCapacity);
 
   let hasCommand = false;
+  let hasSensor = false;
+  // Comms units grouped by channel: channel -> list of positions with moduleId.
+  const commsUnitsByChannel = new Map<number, { col: number; row: number; moduleId: EntityId }[]>();
+  // Aim units (dish or laser) that have crewRequired > 0.
+  const aimUnitPositions: { col: number; row: number; moduleId: EntityId }[] = [];
+
   for (const { col, row } of footprint(grid)) {
     const cell = grid.cells[row * grid.cols + col];
     if (cell === undefined) continue;
@@ -216,7 +263,7 @@ export function analyseShipDesign(
         catalog.hullTileFor(design.faction, cell.tile) ??
         catalog.hullTile(cell.tile);
       if (tile === undefined) {
-        faults.push({ kind: "unknownHullTile", col, row, tile: cell.tile });
+        faults.push({ kind: "unknownHullTile", severity: "error", col, row, tile: cell.tile });
         continue;
       }
       // Hull tiles are pure structure: they contribute mass and hull HP.
@@ -227,10 +274,29 @@ export function analyseShipDesign(
     if (cell.kind === "module") {
       const moduleDef = catalog.module(cell.moduleId);
       if (moduleDef === undefined) {
-        faults.push({ kind: "unknownModule", col, row, moduleId: cell.moduleId });
+        faults.push({ kind: "unknownModule", severity: "error", col, row, moduleId: cell.moduleId });
         continue;
       }
       if (moduleDef.command === true) hasCommand = true;
+      if (moduleDef.effect.kind === "sensor") hasSensor = true;
+      if (moduleDef.effect.kind === "comms") {
+        // Resolve the effective channel: per-instance override wins over the
+        // module definition's default channel.
+        const effectiveChannel = cell.channel ?? moduleDef.effect.channel;
+        const existing = commsUnitsByChannel.get(effectiveChannel);
+        if (existing !== undefined) {
+          existing.push({ col, row, moduleId: cell.moduleId });
+        } else {
+          commsUnitsByChannel.set(effectiveChannel, [{ col, row, moduleId: cell.moduleId }]);
+        }
+        // Track aim units (dish or laser) that require crew.
+        if (
+          (moduleDef.effect.commsType === "dish" || moduleDef.effect.commsType === "laser") &&
+          moduleDef.crewRequired > 0
+        ) {
+          aimUnitPositions.push({ col, row, moduleId: cell.moduleId });
+        }
+      }
       applyModule(stats, moduleDef, slotId);
     }
   }
@@ -240,21 +306,21 @@ export function analyseShipDesign(
   stats.crewNet = stats.crewCapacity - stats.crewRequired;
 
   if (cellCount === 0) {
-    faults.push({ kind: "empty" });
+    faults.push({ kind: "empty", severity: "error" });
   } else if (!isConnected4(grid)) {
-    faults.push({ kind: "disconnected" });
+    faults.push({ kind: "disconnected", severity: "error" });
   }
   if (cellCount > 0 && !hasCommand) {
-    faults.push({ kind: "noCommand" });
+    faults.push({ kind: "noCommand", severity: "error" });
   }
   if (stats.mass > massCapacity) {
-    faults.push({ kind: "massExceeded", mass: stats.mass, capacity: massCapacity });
+    faults.push({ kind: "massExceeded", severity: "error", mass: stats.mass, capacity: massCapacity });
   }
   if (stats.powerNet < 0) {
-    faults.push({ kind: "powerDeficit", net: stats.powerNet });
+    faults.push({ kind: "powerDeficit", severity: "error", net: stats.powerNet });
   }
   if (stats.crewNet < 0) {
-    faults.push({ kind: "crewDeficit", net: stats.crewNet });
+    faults.push({ kind: "crewDeficit", severity: "error", net: stats.crewNet });
   }
 
   // Validate faction purity: every part on this design must belong to the
@@ -264,6 +330,7 @@ export function analyseShipDesign(
   if (wrongFactions.length > 0) {
     faults.push({
       kind: "crossFaction",
+      severity: "error",
       expected: design.faction,
       found: wrongFactions,
     });
@@ -313,11 +380,15 @@ export function analyseShipDesign(
     // Unreachable-station fault: a crewed station with no walkable path from
     // any crew-quarters cell. Only checked when quarters exist — a design with
     // no quarters has a crewDeficit instead, which already covers the problem.
+    //
+    // We build the reachability set once and reuse it for the unmannedAimUnit
+    // warning check further below (aim units also depend on crew reachability).
+    let reachableFromAnyQuarters: Set<string> | undefined;
     if (quartersPositions.length > 0) {
       // Build the union of all cells reachable from any quarters cell. We start
       // from each quarters cell and collect the flood-fill, then union the sets.
       // This is cheaper than running findPath from every quarters to every station.
-      const reachableFromAnyQuarters = new Set<string>();
+      reachableFromAnyQuarters = new Set<string>();
       for (const qPos of quartersPositions) {
         for (const key of reachableFrom(grid, qPos)) {
           reachableFromAnyQuarters.add(key);
@@ -329,6 +400,7 @@ export function analyseShipDesign(
         if (!reachableFromAnyQuarters.has(key)) {
           faults.push({
             kind: "unreachableStation",
+            severity: "error",
             col: station.col,
             row: station.row,
             moduleId: station.moduleId,
@@ -344,6 +416,7 @@ export function analyseShipDesign(
       for (const weapon of finiteAmmoWeapons) {
         faults.push({
           kind: "noAmmoSource",
+          severity: "error",
           col: weapon.col,
           row: weapon.row,
           moduleId: weapon.moduleId,
@@ -364,6 +437,7 @@ export function analyseShipDesign(
         if (!reachableFromAnyMagazine.has(key)) {
           faults.push({
             kind: "noAmmoSource",
+            severity: "error",
             col: weapon.col,
             row: weapon.row,
             moduleId: weapon.moduleId,
@@ -371,7 +445,63 @@ export function analyseShipDesign(
         }
       }
     }
+
+    // -------------------------------------------------------------------------
+    // Warning-level faults — sensors and comms advisory checks.
+    // These are computed only on connected, non-empty grids to avoid noise
+    // when the design is already fundamentally broken.
+    // -------------------------------------------------------------------------
+
+    // noSensors: no sensor module at all; ship will fight on short visual range.
+    if (!hasSensor) {
+      faults.push({ kind: "noSensors", severity: "warning" });
+    }
+
+    // commsIsland: a channel that only a single comms unit on this ship uses —
+    // it can never bridge or relay anything intra-ship.
+    for (const [channel, units] of commsUnitsByChannel) {
+      if (units.length === 1) {
+        const unit = units[0];
+        if (unit !== undefined) {
+          faults.push({
+            kind: "commsIsland",
+            severity: "warning",
+            col: unit.col,
+            row: unit.row,
+            channel,
+          });
+        }
+      }
+    }
+
+    // noRelay: the design has comms modules but fewer than 2 total comms units,
+    // so it cannot relay third-party contact data to other ships.
+    const totalCommsUnits = [...commsUnitsByChannel.values()].reduce(
+      (sum, units) => sum + units.length,
+      0,
+    );
+    if (totalCommsUnits > 0 && totalCommsUnits < 2) {
+      faults.push({ kind: "noRelay", severity: "warning" });
+    }
+
+    // unmannedAimUnit: a dish or laser comms unit with crewRequired > 0 but no
+    // walkable path from any crew-quarters cell. Only checked when quarters exist
+    // (reachableFromAnyQuarters was built above in the unreachable-station block).
+    if (reachableFromAnyQuarters !== undefined && aimUnitPositions.length > 0) {
+      for (const aimUnit of aimUnitPositions) {
+        const key = `${aimUnit.col},${aimUnit.row}`;
+        if (!reachableFromAnyQuarters.has(key)) {
+          faults.push({
+            kind: "unmannedAimUnit",
+            severity: "warning",
+            col: aimUnit.col,
+            row: aimUnit.row,
+            moduleId: aimUnit.moduleId,
+          });
+        }
+      }
+    }
   }
 
-  return { stats, faults, valid: faults.length === 0 };
+  return { stats, faults, valid: faults.every((f) => f.severity === "warning") };
 }

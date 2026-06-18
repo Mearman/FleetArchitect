@@ -1,3 +1,4 @@
+import { computeOccluders } from "@/domain/occluders";
 import type { BattleAnomaly } from "@/schema/battle";
 import type { Bounds, Transform } from "./battleCamera";
 
@@ -22,12 +23,19 @@ function hash01(n: number): number {
   return x - Math.floor(x);
 }
 
-/** Draw the active anomaly in world space, beneath the ships. */
+/**
+ * Draw the active anomaly in world space, beneath the ships.
+ *
+ * @param seed  The battle seed, forwarded to computeOccluders for asteroid
+ *              field placement so the rendered rocks exactly match the engine's
+ *              line-of-sight occluders (single source of truth).
+ */
 export function drawAnomaly(
   ctx: CanvasRenderingContext2D,
   anomaly: BattleAnomaly,
   t: Transform,
   bounds: Bounds,
+  seed: number,
 ): void {
   if (anomaly === "none") return;
   if (anomaly === "blackHole") {
@@ -38,7 +46,7 @@ export function drawAnomaly(
     drawNebula(ctx, t, bounds);
     return;
   }
-  drawAsteroidField(ctx, t, bounds);
+  drawAsteroidField(ctx, t, seed);
 }
 
 function drawBlackHole(ctx: CanvasRenderingContext2D, t: Transform): void {
@@ -117,19 +125,28 @@ function drawNebula(ctx: CanvasRenderingContext2D, t: Transform, bounds: Bounds)
   ctx.restore();
 }
 
-function drawAsteroidField(ctx: CanvasRenderingContext2D, t: Transform, bounds: Bounds): void {
+/**
+ * Draw the asteroid field using the canonical occluder discs from
+ * computeOccluders. This guarantees the rocks the player sees are exactly the
+ * discs the engine uses for line-of-sight occlusion — a single source of truth.
+ *
+ * Previously this function invented its own scatter via hash01; that is now
+ * replaced by the occluder module so visual and physics representations agree.
+ */
+function drawAsteroidField(ctx: CanvasRenderingContext2D, t: Transform, seed: number): void {
   ctx.save();
 
-  const rangeX = bounds.maxX - bounds.minX;
-  const rangeY = bounds.maxY - bounds.minY;
-  const rockCount = 60;
-  for (let i = 0; i < rockCount; i += 1) {
-    const wx = bounds.minX + hash01(i * 3 + 1) * rangeX;
-    const wy = bounds.minY + hash01(i * 3 + 2) * rangeY;
-    // World-unit radius scaled to display; floored so distant rocks stay visible.
-    const rPx = Math.max(1.5, (2 + hash01(i * 3 + 3) * 4) * t.scale);
-    const px = t.sx(wx);
-    const py = t.sy(wy);
+  const discs = computeOccluders("asteroidField", seed);
+  for (let i = 0; i < discs.length; i += 1) {
+    const disc = discs[i];
+    if (disc === undefined) continue;
+    const px = t.sx(disc.x);
+    const py = t.sy(disc.y);
+    // Radius in display pixels; floored so distant rocks remain visible.
+    const rPx = Math.max(1.5, disc.r * t.scale);
+    // Deterministic shade: use hash01 over the disc index so appearance is
+    // stable between redraws. The index is stable since computeOccluders
+    // always returns the same ordered array for a given (anomaly, seed).
     const shade = 0.35 + hash01(i + 91) * 0.3;
     ctx.fillStyle = `rgba(150,150,160,${shade})`;
     ctx.beginPath();

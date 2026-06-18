@@ -31,6 +31,7 @@ function cells(rows: readonly string[]): GridCell[] {
     F: { kind: "module", moduleId: "mod-reactor-fusion", facing: 0 },
     C: { kind: "module", moduleId: "mod-crew-quarters", facing: 0 },
     E: { kind: "module", moduleId: "mod-engine-ion", facing: Math.PI },
+    S: { kind: "module", moduleId: "mod-sensor-array", facing: 0 },
   };
   const out: GridCell[] = [];
   for (const row of rows) {
@@ -51,7 +52,10 @@ function cells(rows: readonly string[]): GridCell[] {
  * the bridge and power. Two rows keep the magazine walkable-adjacent to the gun.
  */
 function corvette(id: string): ShipDesign {
-  const rows = ["ECFR", ".#GL"];
+  // A sensor array fills the formerly-empty corner so the corvette can detect
+  // the enemy at weapon range and engage, rather than fighting blind at the
+  // short visual radius. S is 4-connected to the engine above it.
+  const rows = ["ECFR", "S#GL"];
   return {
     id,
     name: id,

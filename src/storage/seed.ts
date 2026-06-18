@@ -10,8 +10,12 @@ import { getMeta, setMeta, storage } from "@/storage/db";
  * Version 3: Phase D — floor/corridor cells and munitions magazines added to
  * all ships with finite-ammo weapons; new reachability faults added to the
  * design validator.
+ *
+ * Version 4: Phase B — sensor and comms modules added to key presets. Scout
+ * ships (Sabre, Drone Skimmer) gain long-range sensors; capital ships
+ * (Leviathan, Hive Lord) gain comms backbone links and squad-net transceivers.
  */
-const PRESETS_VERSION = 3;
+const PRESETS_VERSION = 4;
 const VERSION_KEY = "presetsVersion";
 
 /**

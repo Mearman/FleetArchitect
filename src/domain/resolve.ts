@@ -134,6 +134,10 @@ function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] 
         weaponFacing: 0,
         turretArc: 0,
         turretTurnRate: 0,
+        // A hull cell is not a comms module: channel and bearing carry 0 and are
+        // never read by the awareness phase.
+        channel: 0,
+        commsBearing: 0,
       });
       continue;
     }
@@ -168,6 +172,13 @@ function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] 
         // non-weapon modules carry 0 (a fixed mount).
         turretArc: turretArcFor(moduleDef.effect),
         turretTurnRate: turretTurnRateFor(moduleDef.effect),
+        // Comms config: the per-instance cell override when present, else the
+        // comms effect's own value. Non-comms modules carry 0 and never read it.
+        channel: commsChannelFor(moduleDef.effect, cell),
+        commsBearing: commsBearingFor(moduleDef.effect, cell),
+        ...(commsRangeFor(cell) !== undefined
+          ? { commsRange: commsRangeFor(cell) }
+          : {}),
       });
     }
   }
@@ -196,6 +207,13 @@ function baseHpFor(kind: ResolvedModule["kind"]): number {
       return 60;
     case "magazine":
       return 40;
+    // Phase A: sensor and comms modules are inert system components.
+    // HP matches a mid-range electronics module — more fragile than armour,
+    // sturdier than crew quarters.
+    case "sensor":
+      return 20;
+    case "comms":
+      return 20;
   }
 }
 
@@ -230,4 +248,30 @@ function turretArcFor(effect: ModuleEffect): number {
 function turretTurnRateFor(effect: ModuleEffect): number {
   if (effect.kind !== "weapon") return 0;
   return effect.turretTurnRate ?? 0;
+}
+
+/** Comms channel: the cell's per-instance override when set, else the comms
+ *  effect's own channel. 0 for non-comms modules (never read). */
+function commsChannelFor(effect: ModuleEffect, cell: GridCell): number {
+  if (effect.kind !== "comms") return 0;
+  if (cell.kind === "module" && cell.channel !== undefined) return cell.channel;
+  return effect.channel;
+}
+
+/** Comms mount bearing (radians, ship-local): the cell's per-instance override
+ *  when set, else the comms effect's bearing. 0 for non-comms modules. */
+function commsBearingFor(effect: ModuleEffect, cell: GridCell): number {
+  if (effect.kind !== "comms") return 0;
+  if (cell.kind === "module" && cell.commsBearing !== undefined) {
+    return cell.commsBearing;
+  }
+  return effect.bearing;
+}
+
+/** Per-instance variable-comms range setting from the cell, or undefined when
+ *  the cell set none. Only meaningful for variable comms modules; the engine
+ *  ignores it on every other kind. */
+function commsRangeFor(cell: GridCell): number | undefined {
+  if (cell.kind !== "module") return undefined;
+  return cell.commsRange;
 }

@@ -69,6 +69,10 @@ function makeShip(opts: {
     thrust: 0.5,
     turnRate: 0.1,
     weapons: weapons.map((w) => ({ slotId: `slot-${opts.id}`, effect: w })),
+    // These tests exercise anomaly physics (projectile bending, gravity), not
+    // fog of war — the ships are fully sensor-equipped so they acquire across
+    // the test arena. Fog is covered by the awareness suite.
+    sensorRange: 1000,
   };
   return {
     instanceId: opts.id,

@@ -66,6 +66,8 @@ function moduleOf(
     weaponFacing: 0,
     turretArc: 0,
     turretTurnRate: 0,
+    channel: 0,
+    commsBearing: 0,
   };
 }
 

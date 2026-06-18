@@ -3,6 +3,7 @@ import { analyseShipDesign } from "@/domain/stats";
 import { DEFAULT_FLEET_BUDGET } from "@/domain/points";
 import { catalog } from "@/data/catalog";
 import { presetDesigns, presetFleets } from "@/data/presets";
+import type { ModuleCell } from "@/schema/grid";
 
 describe("bundled presets", () => {
   it("ships every preset design as a valid build with no faults", () => {
@@ -50,5 +51,37 @@ describe("bundled presets", () => {
         expect(designIds.has(ship.designId), `${fleet.name} references ${ship.designId}`).toBe(true);
       }
     }
+  });
+
+  it("includes at least one design with a sensor module", () => {
+    /** Collect module ids that have a sensor effect from the catalog. */
+    const sensorModuleIds = new Set(
+      catalog().allModules()
+        .filter((m) => m.effect.kind === "sensor")
+        .map((m) => m.id),
+    );
+    const hasSensor = presetDesigns.some((design) =>
+      design.grid.cells.some(
+        (cell): cell is ModuleCell =>
+          cell.kind === "module" && sensorModuleIds.has(cell.moduleId),
+      ),
+    );
+    expect(hasSensor, "no preset design carries a sensor module").toBe(true);
+  });
+
+  it("includes at least one design with a comms module", () => {
+    /** Collect module ids that have a comms effect from the catalog. */
+    const commsModuleIds = new Set(
+      catalog().allModules()
+        .filter((m) => m.effect.kind === "comms")
+        .map((m) => m.id),
+    );
+    const hasComms = presetDesigns.some((design) =>
+      design.grid.cells.some(
+        (cell): cell is ModuleCell =>
+          cell.kind === "module" && commsModuleIds.has(cell.moduleId),
+      ),
+    );
+    expect(hasComms, "no preset design carries a comms module").toBe(true);
   });
 });

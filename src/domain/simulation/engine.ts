@@ -2,12 +2,16 @@ import { createId, nowIso } from "@/domain/id";
 import { CELL_SIZE } from "@/domain/grid";
 import { mulberry32, ranged } from "@/domain/simulation/rng";
 import { SpatialHash, cellWorldPosition } from "@/domain/simulation/spatial-hash";
-import type { BattleFrame, BattleResult, BattleSide } from "@/schema/battle";
+import { computeOccluders, segmentBlocked } from "@/domain/occluders";
+import type { Disc } from "@/domain/occluders";
+import type { AwarenessSnapshot, BattleAnomaly, BattleFrame, BattleResult, BattleSide } from "@/schema/battle";
 import type { ShipClassification } from "@/schema/hull";
 import { DEFAULT_WEAPON_AMMO } from "@/schema/module";
 import type {
+  CommsEffect,
   ModuleEffect,
   PointDefenseEffect,
+  SensorEffect,
   WeaponEffect,
   WeaponType,
 } from "@/schema/module";
@@ -202,7 +206,82 @@ const SIM = {
    * crew can keep fed, which is the whole point of crewed interiors.
    */
   powerWiringRadius: 3,
+  /**
+   * Innate visual line-of-sight radius (world units) every ship has before any
+   * sensor module extends it. A ship with no sensor arrays can still see an
+   * enemy that drifts inside this radius (the Mk-1 eyeball / short-range
+   * passives), but nothing further. Sensor modules add their `detectionRange`
+   * on top. Tuned below typical weapon ranges so a fleet without dedicated
+   * sensors is genuinely myopic and must close to engage.
+   */
+  visualLosRadius: 140,
+  /**
+   * Multiplier applied to the non-immune part of a ship's effective sensor
+   * radius inside a nebula. Matches the other nebula attenuation factors
+   * (`nebulaRegenFactor`, `nebulaTrackingFactor`): the gas halves passive
+   * detection range. `nebulaImmune` sensor bonuses bypass this entirely.
+   */
+  nebulaSensorFactor: 0.5,
+  /**
+   * Weight on enemy cost in the awareness threat score
+   * `threat = -dist + threatCostWeight * cost`. Small, so distance dominates
+   * (a near contact is the more pressing threat), but a far, very expensive
+   * capital still ranks above a near, cheap fighter — exactly the prioritisation
+   * a relay's bounded bandwidth should forward first. Distances run to a few
+   * hundred world units and costs to a few hundred points, so a weight of ~0.01
+   * makes one cost point worth ~0.01 world units of nearness.
+   */
+  threatCostWeight: 0.01,
+  /**
+   * Ticks a ghost contact survives after its target leaves sensor coverage.
+   * The observer keeps engaging the last-known position until this counts down
+   * to zero, modelling tracking memory / dead reckoning. 60 ticks is ~2 s at
+   * 30 ticks/s — long enough to keep firing through a brief occlusion, short
+   * enough that a ship that has truly slipped away stops drawing fire.
+   */
+  ghostFadeTicks: 60,
+  /**
+   * Hard upper bound on the number of candidate comms unit pairs processed per
+   * side per tick. Comms pairing is O(n^2) in comms units; on a pathologically
+   * large fleet this caps the work. Candidate pairs are processed in canonical
+   * sorted order and any beyond the budget are dropped (with a single
+   * `console.warn` per run per side), so the result stays deterministic even
+   * when the cap fires. Sized far above any realistic fleet's comms-unit count.
+   */
+  maxCommsPairs: 20000,
 };
+
+/**
+ * A live awareness contact: an enemy this observer (or a relaying ally on its
+ * comms net) currently has a fix on. `origin` is the instanceId of the observer
+ * that directly sensed the enemy — used by the per-observer propagation to mark
+ * forwarded (third-party) contacts so a leaf doesn't re-forward them. `threat`
+ * orders the bandwidth-limited relay queue (higher forwarded first).
+ */
+interface Contact {
+  enemyId: string;
+  x: number;
+  y: number;
+  facing: number;
+  threat: number;
+  origin: string;
+}
+
+/**
+ * A ghost contact: a fading memory of where an enemy was last seen. Persisted on
+ * the observer across ticks (unlike the transient live `awareness` set), decayed
+ * one tick at a time, and dropped when it expires or its target dies. The AI
+ * engages a ghost's last-known position so a ship keeps firing through a brief
+ * occlusion instead of instantly forgetting a target.
+ */
+interface GhostContact {
+  enemyId: string;
+  x: number;
+  y: number;
+  facing: number;
+  threat: number;
+  ticksLeft: number;
+}
 
 /** Mutable per-ship runtime state carried across ticks. */
 interface SimShip {
@@ -249,6 +328,13 @@ interface SimShip {
   momentOfInertia: number;
   radius: number;
   cost: number;
+  /**
+   * Aggregated sensor reach (world units) for a non-modular ship: added to the
+   * innate visual radius in `effectiveSensorRadius`. 0 for a ship with no
+   * aggregated sensors (it sees only out to the visual radius). Modular ships
+   * derive detection from their sensor modules and ignore this — it stays 0.
+   */
+  sensorRange: number;
   weapons: readonly WeaponEffect[];
   weaponCooldowns: number[];
   orders: Orders;
@@ -281,6 +367,24 @@ interface SimShip {
    * split frame, not every frame the chunk exists.
    */
   brokeOff?: boolean;
+  /**
+   * Fading memories of enemies recently seen, persisted across ticks. Refreshed
+   * to full life when the enemy is currently visible (directly or via the comms
+   * net), decayed one tick otherwise, and dropped when expired or the target
+   * dies. Kept sorted by enemyId for a deterministic snapshot order. A chunk
+   * inherits a deep copy of its parent's ghosts on a split. Initialised `[]`
+   * in `toSimShip`; the legacy aggregated path never has awareness so it stays
+   * empty there.
+   */
+  ghosts: GhostContact[];
+  /**
+   * The transient per-tick awareness set: every enemy this ship can engage this
+   * tick — live contacts plus any ghost last-known positions (live overrides a
+   * ghost for the same enemy). Rebuilt from scratch each tick by
+   * `computeAwareness`, never persisted across ticks; held as a field only so
+   * the targeting block can read it. Keyed by enemyId for stable lookup.
+   */
+  awareness: Map<string, Contact>;
 }
 
 /**
@@ -394,6 +498,36 @@ interface SimModule {
    * firing path can read it unconditionally.
    */
   turretAngle: number;
+  /**
+   * Comms channel for a comms module: the per-instance grid override when set,
+   * else the comms effect's own channel. Two comms units link only on a matching
+   * channel. Copied off the resolved module; 0 on non-comms modules (unused).
+   */
+  channel: number;
+  /**
+   * Ship-local mount bearing (radians) of a comms module's antenna, copied off
+   * the resolved module's `commsBearing`. Fixed for the module's life; the live
+   * world bearing is `commsBearing + ship.facing` for omni/directional/laser
+   * units. 0 on non-comms modules (unused).
+   */
+  commsBearing: number;
+  /**
+   * Live world-space antenna bearing (radians) for a comms module, analogous to
+   * a weapon turret's `turretAngle`. Each tick the awareness phase recomputes
+   * it: a steerable dish aims it at its chosen relay partner (or, with no
+   * partner, leaves the previous value); every other comms type sets it to
+   * `commsBearing + ship.facing`. The renderer reads it to draw the antenna arc.
+   * Initialised to the mount bearing in `toSimModule`. Unused on non-comms
+   * modules.
+   */
+  dishAngle: number;
+  /**
+   * Per-instance range setting for a `variable` comms module (world units),
+   * from the resolved module's `commsRange`. Undefined when the design set none
+   * (then the effect's `maxRange` is used). Only meaningful for variable comms
+   * modules; undefined and unused on every other kind.
+   */
+  dishRangeSetting?: number;
 }
 
 /** Mutable in-flight projectile. */
@@ -591,12 +725,19 @@ function toSimShip(ship: CombatShip, rng: () => number): SimShip {
       (SIM.hullMass[ship.classification] + ship.stats.mass) * SIM.legacyMoI,
     radius: radiusFor(ship.classification),
     cost: ship.stats.cost,
+    // Aggregated sensor reach; absent means visual-only. A modular ship's
+    // detection comes from its sensor modules instead, so this is read only on
+    // the non-modular path (where stats.sensorRange is the honest declaration).
+    sensorRange: ship.stats.sensorRange ?? 0,
     weapons,
     // Stagger initial cooldowns so weapons don't all fire on tick 0.
     weaponCooldowns: weapons.map((w) => Math.floor(rng() * (w.cooldown + 1))),
     orders: ship.orders,
     target: undefined,
     alive: true,
+    // No awareness yet — computeAwareness fills these from tick 0 onward.
+    ghosts: [],
+    awareness: new Map(),
   };
 
   // Per-module path: build SimModule[] from the resolved modules and let
@@ -671,6 +812,13 @@ facing: m.facing,
     // The barrel starts aligned with its mount direction; a turret slews it
     // toward the target from there each tick, a fixed mount leaves it.
     turretAngle: m.weaponFacing,
+    // Comms channel, mount bearing, and live antenna bearing, copied off the
+    // resolved module. The awareness phase recomputes dishAngle each tick (the
+    // aim pass for dishes, mount + facing for the rest); it starts at the mount.
+    channel: m.channel,
+    commsBearing: m.commsBearing,
+    dishAngle: m.commsBearing,
+    ...(m.commsRange !== undefined ? { dishRangeSetting: m.commsRange } : {}),
   };
 }
 
@@ -1378,6 +1526,11 @@ function choosePowerRun(
  * exactly the kinds whose `crewRequired` matters to output.
  */
 function stationNeedsCrew(m: SimModule): boolean {
+  // A crewed sensor array only contributes its detection range when manned, and
+  // a crewed comms unit (a manned dish or laser relay) only forms links when
+  // manned — so both are crew stations alongside weapons, engines, etc. The
+  // caller already gates on crewRequired > 0, so a crewless sensor/comms unit
+  // (always manned) never reaches here.
   switch (m.effect.kind) {
     case "weapon":
     case "engine":
@@ -1385,6 +1538,8 @@ function stationNeedsCrew(m: SimModule): boolean {
     case "pointDefense":
     case "power":
     case "magazine":
+    case "sensor":
+    case "comms":
       return true;
     case "armour":
     case "crew":
@@ -1660,6 +1815,8 @@ function recomputeAggregates(ship: SimShip): void {
       case "repair":
       case "hull":
       case "magazine":
+      case "sensor": // Phase A: inert — no aggregate effect (detection is Phase C)
+      case "comms":  // Phase A: inert — no aggregate effect (link logic is Phase C)
         break;
     }
   }
@@ -1715,6 +1872,65 @@ function hasAliveCommand(ship: SimShip): boolean {
 }
 
 /**
+ * The view of an enemy a ship's targeting AI is allowed to act on this tick.
+ * Either a live contact (the real enemy's current pose and health) or a ghost
+ * stand-in (the enemy's last-known position, with its current — still alive —
+ * health and cost). Carries exactly the fields `scoreEnemy` reads, so targeting
+ * is identical whether it scores a live ship or a remembered ghost position. The
+ * `instanceId` is the real enemy's id, so `ship.target` still resolves to a live
+ * ship in the firing/movement passes.
+ */
+interface EnemyView {
+  instanceId: string;
+  x: number;
+  y: number;
+  structure: number;
+  shield: number;
+  maxStructure: number;
+  maxShield: number;
+  cost: number;
+}
+
+/**
+ * The enemies a ship may target this tick: exactly those in its awareness set.
+ * A live contact yields a view at the enemy's real current pose; a ghost yields
+ * a view at the ghost's last-known position but the enemy's live health/cost
+ * (the AI keeps engaging the last fix). Enemies the ship cannot see at all —
+ * directly or relayed — are absent, so it never targets or votes for them. Built
+ * in awareness-map order then sorted by instanceId for a deterministic scan.
+ */
+function visibleEnemyViews(
+  ship: SimShip,
+  enemies: readonly SimShip[],
+): EnemyView[] {
+  const enemyById = new Map(enemies.map((e) => [e.instanceId, e]));
+  const views: EnemyView[] = [];
+  for (const [enemyId, contact] of ship.awareness) {
+    const enemy = enemyById.get(enemyId);
+    // The awareness set may name an enemy that has since died or that belongs to
+    // the other enemy list (focus election passes a single side's list); only
+    // act on a live enemy present in this list.
+    if (enemy === undefined || !enemy.alive) continue;
+    views.push({
+      instanceId: enemy.instanceId,
+      // Position comes from the contact (the ghost's last-known x/y, or the
+      // live fix which equals the enemy's current position).
+      x: contact.x,
+      y: contact.y,
+      structure: enemy.structure,
+      shield: enemy.shield,
+      maxStructure: enemy.maxStructure,
+      maxShield: enemy.maxShield,
+      cost: enemy.cost,
+    });
+  }
+  views.sort((p, q) =>
+    p.instanceId < q.instanceId ? -1 : p.instanceId > q.instanceId ? 1 : 0,
+  );
+  return views;
+}
+
+/**
  * Score a single enemy for targeting purposes, from `ship`'s perspective.
  * Higher scores are preferred. The raw priority score is blended with a
  * vulnerability score when `vulnerableTargetWeight > 0`:
@@ -1731,8 +1947,8 @@ function hasAliveCommand(ship: SimShip): boolean {
  */
 function scoreEnemy(
   ship: SimShip,
-  enemy: SimShip,
-  living: readonly SimShip[],
+  enemy: EnemyView,
+  living: readonly EnemyView[],
 ): number {
   // Raw priority score (higher = better target for this priority).
   const distSq = (enemy.x - ship.x) ** 2 + (enemy.y - ship.y) ** 2;
@@ -1800,26 +2016,33 @@ function scoreEnemy(
  *
  * Otherwise the ship scores each living enemy with `scoreEnemy` and picks the
  * highest. `vulnerableTargetWeight` blends vulnerability into that score.
+ *
+ * Awareness gate: the ship may only target an enemy in its own awareness set
+ * (live contact or surviving ghost). An empty awareness means it sees nothing
+ * and holds fire (returns undefined). The fleet focus target is honoured only
+ * when this ship can personally see it; otherwise it falls through to its own
+ * gated scoring.
  */
 function pickTarget(
   ship: SimShip,
   enemies: readonly SimShip[],
   focusTargetId: string | undefined,
-): SimShip | undefined {
-  const living = enemies.filter((e) => e.alive);
-  if (living.length === 0) return undefined;
+): EnemyView | undefined {
+  const visible = visibleEnemyViews(ship, enemies);
+  if (visible.length === 0) return undefined;
 
-  // Focus-fire: override individual preference with the fleet-agreed target.
+  // Focus-fire: defer to the fleet-agreed target, but only if this ship can
+  // personally see it; a target it can't see falls through to its own scoring.
   if (ship.orders.focusFire && focusTargetId !== undefined) {
-    const focus = living.find((e) => e.instanceId === focusTargetId);
+    const focus = visible.find((e) => e.instanceId === focusTargetId);
     if (focus !== undefined) return focus;
-    // Fleet target is dead — fall through to individual scoring.
+    // Fleet target not in this ship's awareness — fall through to scoring.
   }
 
-  let best: SimShip | undefined;
+  let best: EnemyView | undefined;
   let bestScore = -Infinity;
-  for (const enemy of living) {
-    const score = scoreEnemy(ship, enemy, living);
+  for (const enemy of visible) {
+    const score = scoreEnemy(ship, enemy, visible);
     if (score > bestScore) {
       bestScore = score;
       best = enemy;
@@ -1851,18 +2074,31 @@ function electFocusTarget(
   );
   if (voters.length === 0) return undefined;
 
-  // Aggregate score: sum each voter's scoreEnemy across living enemies.
+  // Aggregate score: each voter scores only the enemies in its OWN awareness
+  // set, so an enemy no focus-fire ship can see receives no votes and cannot be
+  // elected. A voter scores over its own visible set (the same set its
+  // individual pickTarget would normalise against), keeping the election
+  // consistent with what each voter would pick alone.
   const totals = new Map<string, number>();
   for (const voter of voters) {
-    for (const enemy of living) {
-      const s = scoreEnemy(voter, enemy, living);
+    const visible = visibleEnemyViews(voter, living);
+    for (const enemy of visible) {
+      const s = scoreEnemy(voter, enemy, visible);
       totals.set(enemy.instanceId, (totals.get(enemy.instanceId) ?? 0) + s);
     }
   }
 
   let bestId: string | undefined;
   let bestTotal = -Infinity;
-  for (const [id, total] of totals) {
+  // Iterate in id order so ties resolve deterministically (Map insertion order
+  // depends on voter scan order, which is already deterministic, but sorting the
+  // candidate ids makes the tie-break explicit and robust).
+  const candidateIds = [...totals.keys()].sort((p, q) =>
+    p < q ? -1 : p > q ? 1 : 0,
+  );
+  for (const id of candidateIds) {
+    const total = totals.get(id);
+    if (total === undefined) continue;
     if (total > bestTotal) {
       bestTotal = total;
       bestId = id;
@@ -2397,11 +2633,20 @@ function makeChunkShip(
     momentOfInertia: 1,
     radius: parent.radius,
     cost: 0,
+    // A chunk is modular: its detection comes from any sensor modules it
+    // inherits, not an aggregated reach.
+    sensorRange: 0,
     weapons: [],
     weaponCooldowns: [],
     orders: parent.orders,
     target: undefined,
     alive: true,
+    // A fragment inherits a deep copy of the parent's ghost memory — it
+    // remembers the enemies the parent had a fix on at the moment of the split
+    // (independent objects so decay on one fragment never bleeds into the
+    // other). Awareness is transient and rebuilt next tick, so it starts empty.
+    ghosts: parent.ghosts.map((g) => ({ ...g })),
+    awareness: new Map(),
     modules: chunkModules,
     // The crew whose cells fell into this fragment, copied independently so the
     // chunk and its parent never share crew state. A fragment with nobody aboard
@@ -2744,12 +2989,709 @@ function localPointToWorld(ship: SimShip, lx: number, ly: number): { x: number; 
   return { x: ship.x + lx * c - ly * s, y: ship.y + lx * s + ly * c };
 }
 
+// ---------------------------------------------------------------------------
+// Awareness phase (sensors, comms, fog of war)
+//
+// The whole phase is a pure function of ship state + occluders + anomaly. It
+// draws ZERO times from the battle rng (occluders are pre-seeded separately),
+// never reads Date/Math.random, and iterates every collection in a fixed
+// instanceId / (shipId, slotId) order with all ties broken on stable string
+// ids — so two runs with the same inputs produce byte-identical awareness.
+//
+// Gating boundary: awareness only constrains a ship that has opted into the
+// sensor/comms subsystem, i.e. carries at least one alive sensor or comms
+// module. A ship with neither (every legacy aggregated ship, and any modular
+// ship designed without awareness hardware) keeps full battlefield awareness,
+// exactly as before this phase existed — preserving every pre-feature replay
+// and the existing engagement/targeting/crew tests byte-for-byte.
+// ---------------------------------------------------------------------------
+
+/** A comms unit on a ship, paired with its host for the link/aim passes. */
+interface CommsUnit {
+  ship: SimShip;
+  module: SimModule;
+  effect: CommsEffect;
+}
+
+/** A sensor module on a ship, paired with its host for the detection pass. */
+interface SensorUnit {
+  module: SimModule;
+  effect: SensorEffect;
+}
+
+/** Alive sensor modules on a ship, in (col, row) module-array order. */
+function sensorUnitsOf(ship: SimShip): SensorUnit[] {
+  const out: SensorUnit[] = [];
+  if (ship.modules === undefined) return out;
+  for (const m of ship.modules) {
+    if (!m.alive) continue;
+    const effect = m.effect;
+    if (effect.kind !== "sensor") continue;
+    out.push({ module: m, effect });
+  }
+  return out;
+}
+
+/** Alive comms modules on a ship, in module-array order. */
+function commsUnitsOf(ship: SimShip): CommsUnit[] {
+  const out: CommsUnit[] = [];
+  if (ship.modules === undefined) return out;
+  for (const m of ship.modules) {
+    if (!m.alive) continue;
+    const effect = m.effect;
+    if (effect.kind !== "comms") continue;
+    out.push({ ship, module: m, effect });
+  }
+  return out;
+}
+
+/**
+ * Effective detection radius of a ship: the innate visual radius plus the sum
+ * of `detectionRange` over its alive sensor modules (a crewed sensor counts
+ * only when manned; a crewless one always counts). In a nebula the visual radius
+ * and every non-immune sensor bonus are attenuated by `nebulaSensorFactor`;
+ * `nebulaImmune` sensor bonuses are added afterwards, unattenuated.
+ */
+function effectiveSensorRadius(ship: SimShip, anomaly: BattleAnomaly): number {
+  // Innate visual radius plus the aggregated sensor reach of a non-modular
+  // ship (0 for modular ships, which add their per-module sensor ranges
+  // below). Both are attenuated by a nebula like any non-immune sensor.
+  let attenuable = SIM.visualLosRadius + ship.sensorRange;
+  let immune = 0;
+  for (const { module, effect } of sensorUnitsOf(ship)) {
+    // A sensor that needs crew contributes only when manned; one that needs
+    // none is always manned (recomputeManning sets manned = true for it).
+    if (module.crewRequired > 0 && !module.manned) continue;
+    if (effect.nebulaImmune) immune += effect.detectionRange;
+    else attenuable += effect.detectionRange;
+  }
+  const factor = anomaly === "nebula" ? SIM.nebulaSensorFactor : 1;
+  return attenuable * factor + immune;
+}
+
+/** Threat score of an enemy from a ship's position: nearer and costlier enemies
+ *  score higher. Distance dominates; cost is a small tie-shaper. */
+function contactThreat(ship: SimShip, enemy: SimShip): number {
+  const dx = enemy.x - ship.x;
+  const dy = enemy.y - ship.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  return -dist + SIM.threatCostWeight * enemy.cost;
+}
+
+/** Effective comms range of a unit. Variable units interpolate between their
+ *  range bounds using the per-instance `commsRange` setting (a longer range
+ *  trades down the arc; see `variableArc`); every other type uses the static
+ *  effect range. */
+function effectiveCommsRange(unit: CommsUnit): number {
+  const { effect, module } = unit;
+  if (effect.commsType !== "variable") return effect.range;
+  const minR = effect.minRange ?? effect.range;
+  const maxR = effect.maxRange ?? effect.range;
+  // commsRange is the desired range; clamp into [minR, maxR]. Absent => maxR.
+  const desired = module.dishRangeSetting;
+  if (desired === undefined) return maxR;
+  return Math.max(minR, Math.min(maxR, desired));
+}
+
+/** Effective half-arc of a unit. Variable units trade arc against range: at
+ *  minimum range the arc is widest (`maxArc`), at maximum range narrowest
+ *  (`minArc`), interpolating linearly with the chosen range. Every other type
+ *  uses the static effect arc. */
+function effectiveCommsArc(unit: CommsUnit): number {
+  const { effect } = unit;
+  if (effect.commsType !== "variable") return effect.arc;
+  const minR = effect.minRange ?? effect.range;
+  const maxR = effect.maxRange ?? effect.range;
+  const minA = effect.minArc ?? effect.arc;
+  const maxA = effect.maxArc ?? effect.arc;
+  const range = effectiveCommsRange(unit);
+  // Fraction of the way from min to max range; 0 at minR (=> maxArc), 1 at maxR.
+  const span = maxR - minR;
+  const t = span > 0 ? (range - minR) / span : 0;
+  return maxA + (minA - maxA) * t;
+}
+
+/** World-space bearing (radians) a comms unit's antenna points along: a dish
+ *  uses its live auto-aimed `dishAngle` (a world angle set by the aim pass);
+ *  every other type points along its mount bearing rotated by the ship's
+ *  facing. */
+function effectiveCommsBearing(unit: CommsUnit): number {
+  if (unit.effect.commsType === "dish") return unit.module.dishAngle;
+  return unit.module.commsBearing + unit.ship.facing;
+}
+
+/** Whether `unit` on its ship can cover the point (tx, ty): the target lies
+ *  within the unit's half-arc about its effective world bearing. Omni units
+ *  (arc = PI) always pass since |angleDifference| <= PI. */
+function unitCovers(unit: CommsUnit, tx: number, ty: number): boolean {
+  const bearing = effectiveCommsBearing(unit);
+  const toTarget = Math.atan2(ty - unit.ship.y, tx - unit.ship.x);
+  return Math.abs(angleDifference(bearing, toTarget)) <= effectiveCommsArc(unit);
+}
+
+/** Whether a comms unit is currently able to operate: a dish or laser (any
+ *  crewed unit) must be manned. Crewless units are always manned. */
+function commsUnitOperable(unit: CommsUnit): boolean {
+  return unit.module.manned;
+}
+
+/** A formed comms link between two units on two different same-side ships. */
+interface CommsLink {
+  side: "attacker" | "defender";
+  a: CommsUnit;
+  b: CommsUnit;
+  type: CommsEffect["commsType"];
+}
+
+/**
+ * Whether a candidate pair of comms units (ua on A, ub on B) forms a link this
+ * tick. Both must share a channel and lie within the shorter of the two ranges,
+ * each must cover the other within its arc, and a laser pair additionally
+ * requires both units manned and clear line of sight. A dish is already gated
+ * to manned by the aim pass; omni/directional pass the manning gate trivially
+ * (crewRequired 0) or via their crew. The two ships are guaranteed same-side and
+ * distinct by the caller.
+ */
+function linkForms(
+  ua: CommsUnit,
+  ub: CommsUnit,
+  occluders: readonly Disc[],
+): boolean {
+  if (ua.module.channel !== ub.module.channel) return false;
+  const a = ua.ship;
+  const b = ub.ship;
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const distSq = dx * dx + dy * dy;
+  const range = Math.min(effectiveCommsRange(ua), effectiveCommsRange(ub));
+  if (distSq > range * range) return false;
+  if (!unitCovers(ua, b.x, b.y)) return false;
+  if (!unitCovers(ub, a.x, a.y)) return false;
+  // A laser link is a tight beam: both ends must be manned and nothing may
+  // block the segment. An RF link (omni/directional/dish/variable) passes
+  // through occluders. Manning of crewed RF units is already required for the
+  // unit to be operable (enforced where units are gathered).
+  if (ua.effect.commsType === "laser" || ub.effect.commsType === "laser") {
+    if (!ua.module.manned || !ub.module.manned) return false;
+    if (segmentBlocked(a.x, a.y, b.x, b.y, occluders)) return false;
+  }
+  return true;
+}
+
+/**
+ * Aim every manned steerable dish on one side at the nearest channel-compatible
+ * same-side ally within range, setting its live world `dishAngle`. Runs before
+ * link formation so a dish that has slewed onto an ally can then form a link
+ * with it. Processed in (shipId, slotId) order; the ally tie-break is the ally
+ * instanceId. A dish with no candidate keeps its previous bearing and simply
+ * forms no link this tick (linkForms still fails its arc test against anyone it
+ * isn't pointing at).
+ */
+function aimDishes(units: readonly CommsUnit[]): void {
+  for (const unit of units) {
+    if (unit.effect.commsType !== "dish") continue;
+    if (!unit.module.manned) continue;
+    const range = effectiveCommsRange(unit);
+    let best: SimShip | undefined;
+    let bestDistSq = range * range;
+    for (const other of units) {
+      if (other.ship === unit.ship) continue;
+      if (other.module.channel !== unit.module.channel) continue;
+      const dx = other.ship.x - unit.ship.x;
+      const dy = other.ship.y - unit.ship.y;
+      const distSq = dx * dx + dy * dy;
+      if (distSq > range * range) continue;
+      if (
+        distSq < bestDistSq ||
+        (distSq === bestDistSq &&
+          best !== undefined &&
+          other.ship.instanceId < best.instanceId)
+      ) {
+        bestDistSq = distSq;
+        best = other.ship;
+      }
+    }
+    if (best !== undefined) {
+      unit.module.dishAngle = Math.atan2(best.y - unit.ship.y, best.x - unit.ship.x);
+    }
+  }
+}
+
+/**
+ * Compute the live awareness for every ship this tick. Mutates each ship's
+ * `ghosts` (refresh/decay/drop) and `awareness` (rebuilt) and each manned
+ * dish's `dishAngle` in place, then returns the snapshot. See the phase header
+ * for the determinism contract: zero rng draws, fixed iteration order, all ties
+ * on stable ids.
+ */
+function computeAwareness(
+  ships: SimShip[],
+  byId: Map<string, SimShip>,
+  occluders: readonly Disc[],
+  anomaly: BattleAnomaly,
+): AwarenessSnapshot {
+  // Alive ships in instanceId order — the canonical order for every pass.
+  const alive = [...ships]
+    .filter((s) => s.alive)
+    .sort((p, q) => (p.instanceId < q.instanceId ? -1 : p.instanceId > q.instanceId ? 1 : 0));
+
+  // (b) Per-ship direct detection. directContacts[observerId] = Contact[].
+  //
+  // Direct enemy iteration in instanceId order (the `alive` set is already
+  // sorted), not a spatial-hash broad-phase: a sensor radius routinely spans a
+  // large fraction of the arena, so the broad-phase bucket sweep would touch a
+  // huge bucket block (radius/CELL_SIZE per axis) and is far slower than a plain
+  // O(n^2) scan over the modest ship count. The result is identical and fully
+  // deterministic.
+  const directContacts = new Map<string, Contact[]>();
+  const enemiesBySide = {
+    attacker: alive.filter((s) => s.side === "defender"),
+    defender: alive.filter((s) => s.side === "attacker"),
+  };
+
+  for (const observer of alive) {
+    // Every ship is fog-gated. A ship with no sensor still detects out to its
+    // baseline visual radius (SIM.visualLosRadius); sensors extend that. There
+    // is no omniscient escape hatch — a sensorless ship is genuinely myopic,
+    // modular or not.
+    const list: Contact[] = [];
+    const effR = effectiveSensorRadius(observer, anomaly);
+    const effRSq = effR * effR;
+    // enemiesBySide is keyed by the observer's own side and already sorted by
+    // instanceId (it is a filter of the sorted `alive` set).
+    const enemies =
+      observer.side === "attacker" ? enemiesBySide.attacker : enemiesBySide.defender;
+    for (const enemy of enemies) {
+      const dx = enemy.x - observer.x;
+      const dy = enemy.y - observer.y;
+      if (dx * dx + dy * dy > effRSq) continue;
+      if (segmentBlocked(observer.x, observer.y, enemy.x, enemy.y, occluders)) continue;
+      list.push({
+        enemyId: enemy.instanceId,
+        x: enemy.x,
+        y: enemy.y,
+        facing: enemy.facing,
+        threat: contactThreat(observer, enemy),
+        origin: observer.instanceId,
+      });
+    }
+    directContacts.set(observer.instanceId, list);
+  }
+
+  // (c) Per-side comms links. Gather comms units per side in (shipId, slotId)
+  //     order, aim dishes, then form links over A.instanceId < B.instanceId
+  //     unit pairs. A laser/dish needs manning (enforced in linkForms / aim).
+  const links: CommsLink[] = [];
+  const sides: ("attacker" | "defender")[] = ["attacker", "defender"];
+  for (const side of sides) {
+    const units: CommsUnit[] = [];
+    for (const ship of alive) {
+      if (ship.side !== side) continue;
+      for (const unit of commsUnitsOf(ship)) units.push(unit);
+    }
+    // Sort by (shipId, slotId) for a deterministic aim + pairing order.
+    units.sort((p, q) => {
+      if (p.ship.instanceId !== q.ship.instanceId) {
+        return p.ship.instanceId < q.ship.instanceId ? -1 : 1;
+      }
+      return p.module.slotId < q.module.slotId ? -1 : p.module.slotId > q.module.slotId ? 1 : 0;
+    });
+    aimDishes(units);
+
+    // Pair units across distinct ships with A.instanceId < B.instanceId.
+    // A laser/dish unit only counts as operable when manned; skip inoperable
+    // units up front so they form no link.
+    let pairBudget = SIM.maxCommsPairs;
+    let cappedWarned = false;
+    for (let i = 0; i < units.length; i++) {
+      const ua = units[i];
+      if (ua === undefined || !commsUnitOperable(ua)) continue;
+      for (let j = i + 1; j < units.length; j++) {
+        const ub = units[j];
+        if (ub === undefined || !commsUnitOperable(ub)) continue;
+        if (ua.ship.instanceId >= ub.ship.instanceId) continue; // A < B, distinct ships
+        if (pairBudget <= 0) {
+          if (!cappedWarned) {
+            // One deterministic warning per run per side when the cap fires.
+            console.warn(
+              `computeAwareness: comms pair budget (${SIM.maxCommsPairs}) exceeded for ${side}; remaining pairs dropped`,
+            );
+            cappedWarned = true;
+          }
+          break;
+        }
+        pairBudget -= 1;
+        if (linkForms(ua, ub, occluders)) {
+          links.push({ side, a: ua, b: ub, type: ua.effect.commsType });
+        }
+      }
+      if (pairBudget <= 0) break;
+    }
+  }
+
+  // (e) Per-observer propagation: relay + bandwidth. Each ship gets its own
+  //     pool seeded with its direct contacts; relays forward third-party
+  //     contacts along links, bandwidth-capped, to a fixed point. There is NO
+  //     side-wide union — two ships with no comms path share nothing.
+  const liveByShip = propagateContacts(alive, directContacts, links);
+
+  // (f) Per-ship awareness + ghost memory. The live pool drives ghost refresh;
+  //     the merged awareness (live ∪ surviving ghosts) is what targeting reads.
+  for (const ship of alive) {
+    refreshGhostsAndAwareness(ship, liveByShip.get(ship.instanceId) ?? new Map(), byId);
+  }
+  // A ship that died is not in `alive`; its ghosts/awareness are irrelevant
+  // (it never targets again) and its stale awareness map is harmless.
+
+  return buildAwarenessSnapshot(alive, liveByShip, occluders, links);
+}
+
+/**
+ * Union-find over instanceIds for the cluster pass: groups same-side ships that
+ * are transitively comms-linked. Deterministic — find/union touch only the maps,
+ * never iteration order.
+ */
+function clusterComponents(
+  sideShips: readonly SimShip[],
+  sideLinks: readonly CommsLink[],
+): Map<string, string[]> {
+  const parent = new Map<string, string>();
+  for (const s of sideShips) parent.set(s.instanceId, s.instanceId);
+  const find = (x: string): string => {
+    let root = x;
+    for (;;) {
+      const p = parent.get(root);
+      if (p === undefined || p === root) break;
+      root = p;
+    }
+    return root;
+  };
+  const union = (a: string, b: string): void => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra === rb) return;
+    // Union by id order so the chosen root is deterministic.
+    if (ra < rb) parent.set(rb, ra);
+    else parent.set(ra, rb);
+  };
+  for (const link of sideLinks) union(link.a.ship.instanceId, link.b.ship.instanceId);
+
+  const groups = new Map<string, string[]>();
+  for (const s of sideShips) {
+    const root = find(s.instanceId);
+    const g = groups.get(root);
+    if (g === undefined) groups.set(root, [s.instanceId]);
+    else g.push(s.instanceId);
+  }
+  return groups;
+}
+
+/**
+ * Bounded per-observer flood of contacts along comms links. EACH ship has its
+ * own pool seeded with its direct contacts. A ship is a relay iff at least two
+ * of its comms units appear in some link; only relays forward third-party
+ * contacts (a leaf forwards nothing). Each forward is sorted by (threat desc,
+ * enemyId asc) and truncated to the link's min bandwidth, then merged into the
+ * neighbour's pool (dedup by enemyId, keep higher threat; tie on enemyId).
+ * Repeats in id order to a fixed point. Mutates each ship's awareness pool via
+ * the returned-into maps; the caller reads the settled pools in (f).
+ */
+function propagateContacts(
+  alive: readonly SimShip[],
+  directContacts: ReadonlyMap<string, Contact[]>,
+  links: readonly CommsLink[],
+): Map<string, Map<string, Contact>> {
+  // Pools: each ship's accumulating contact set, keyed by enemyId.
+  const pool = new Map<string, Map<string, Contact>>();
+  // receivedThirdParty[shipId]: contacts that arrived from elsewhere (origin
+  // != this ship), the only contacts a relay may forward onward.
+  const received = new Map<string, Map<string, Contact>>();
+  for (const ship of alive) {
+    const p = new Map<string, Contact>();
+    for (const c of directContacts.get(ship.instanceId) ?? []) p.set(c.enemyId, c);
+    pool.set(ship.instanceId, p);
+    received.set(ship.instanceId, new Map());
+  }
+
+  // relay[shipId]: a ship with >= 2 of its comms units appearing in any link.
+  // Count distinct (slotId) per ship across both link endpoints.
+  const linkedSlots = new Map<string, Set<string>>();
+  const adjacency = new Map<string, { neighbour: string; bandwidth: number }[]>();
+  for (const ship of alive) {
+    linkedSlots.set(ship.instanceId, new Set());
+    adjacency.set(ship.instanceId, []);
+  }
+  for (const link of links) {
+    const aId = link.a.ship.instanceId;
+    const bId = link.b.ship.instanceId;
+    linkedSlots.get(aId)?.add(link.a.module.slotId);
+    linkedSlots.get(bId)?.add(link.b.module.slotId);
+    const bandwidth = Math.min(link.a.effect.bandwidth, link.b.effect.bandwidth);
+    adjacency.get(aId)?.push({ neighbour: bId, bandwidth });
+    adjacency.get(bId)?.push({ neighbour: aId, bandwidth });
+  }
+  const isRelay = new Map<string, boolean>();
+  for (const ship of alive) {
+    isRelay.set(ship.instanceId, (linkedSlots.get(ship.instanceId)?.size ?? 0) >= 2);
+  }
+
+  // Sort each ship's neighbours by id for a deterministic processing order.
+  for (const list of adjacency.values()) {
+    list.sort((p, q) => (p.neighbour < q.neighbour ? -1 : p.neighbour > q.neighbour ? 1 : 0));
+  }
+
+  // Bounded flood to a fixed point: at most `alive.length` rounds (any contact
+  // can traverse at most that many hops before the pools stop growing).
+  const ids = alive.map((s) => s.instanceId);
+  for (let round = 0; round < ids.length; round++) {
+    let changed = false;
+    for (const shipId of ids) {
+      const direct = directContacts.get(shipId) ?? [];
+      const relay = isRelay.get(shipId) === true;
+      // Outbound = own direct contacts, plus received third-party only if relay.
+      const outboundMap = new Map<string, Contact>();
+      for (const c of direct) outboundMap.set(c.enemyId, c);
+      if (relay) {
+        for (const [enemyId, c] of received.get(shipId) ?? []) {
+          const existing = outboundMap.get(enemyId);
+          if (existing === undefined || c.threat > existing.threat) {
+            outboundMap.set(enemyId, c);
+          }
+        }
+      }
+      // Sort outbound by (threat desc, enemyId asc) for the bandwidth cut.
+      const outbound = [...outboundMap.values()].sort((p, q) => {
+        if (q.threat !== p.threat) return q.threat - p.threat;
+        return p.enemyId < q.enemyId ? -1 : p.enemyId > q.enemyId ? 1 : 0;
+      });
+      for (const { neighbour, bandwidth } of adjacency.get(shipId) ?? []) {
+        const forwarded = outbound.slice(0, bandwidth);
+        const nPool = pool.get(neighbour);
+        const nRecv = received.get(neighbour);
+        if (nPool === undefined || nRecv === undefined) continue;
+        for (const c of forwarded) {
+          const existing = nPool.get(c.enemyId);
+          if (existing === undefined || c.threat > existing.threat) {
+            nPool.set(c.enemyId, c);
+            changed = true;
+          }
+          // Mark as third-party at the neighbour when the contact did not
+          // originate there, so the neighbour (if a relay) can forward it on.
+          if (c.origin !== neighbour) {
+            const existingR = nRecv.get(c.enemyId);
+            if (existingR === undefined || c.threat > existingR.threat) {
+              nRecv.set(c.enemyId, c);
+            }
+          }
+        }
+      }
+    }
+    if (!changed) break;
+  }
+
+  // Return the settled live pools; the caller merges in ghost memory before
+  // writing the final awareness each ship's targeting reads.
+  return pool;
+}
+
+/**
+ * Refresh a ship's ghost memory and final awareness from its settled live pool.
+ * Live contacts refresh (or create) ghosts at full life; ghosts not currently
+ * live decay one tick; ghosts that expire or whose target died are dropped.
+ * The final awareness is live contacts plus surviving ghost positions, live
+ * overriding a ghost for the same enemy. `ship.ghosts` is kept sorted by enemyId.
+ */
+function refreshGhostsAndAwareness(
+  ship: SimShip,
+  live: ReadonlyMap<string, Contact>,
+  byId: ReadonlyMap<string, SimShip>,
+): void {
+  const ghostById = new Map<string, GhostContact>();
+  for (const g of ship.ghosts) ghostById.set(g.enemyId, g);
+
+  // Refresh ghosts for every live contact.
+  for (const [enemyId, c] of live) {
+    ghostById.set(enemyId, {
+      enemyId,
+      x: c.x,
+      y: c.y,
+      facing: c.facing,
+      threat: c.threat,
+      ticksLeft: SIM.ghostFadeTicks,
+    });
+  }
+  // Decay ghosts that are not currently live; drop expired or dead-target ones.
+  const surviving: GhostContact[] = [];
+  for (const [enemyId, g] of ghostById) {
+    const enemyAlive = byId.get(enemyId)?.alive === true;
+    if (!enemyAlive) continue; // target dead — forget it
+    if (live.has(enemyId)) {
+      surviving.push(g); // refreshed above at full life
+      continue;
+    }
+    const ticksLeft = g.ticksLeft - 1;
+    if (ticksLeft <= 0) continue; // expired
+    surviving.push({ ...g, ticksLeft });
+  }
+  surviving.sort((p, q) =>
+    p.enemyId < q.enemyId ? -1 : p.enemyId > q.enemyId ? 1 : 0,
+  );
+  ship.ghosts = surviving;
+
+  // Final awareness = live ∪ ghost last-known (live overrides ghost).
+  const finalAwareness = new Map<string, Contact>();
+  for (const g of surviving) {
+    finalAwareness.set(g.enemyId, {
+      enemyId: g.enemyId,
+      x: g.x,
+      y: g.y,
+      facing: g.facing,
+      threat: g.threat,
+      origin: ship.instanceId,
+    });
+  }
+  for (const [enemyId, c] of live) finalAwareness.set(enemyId, c);
+  ship.awareness = finalAwareness;
+}
+
+/** Build the deterministic AwarenessSnapshot from the settled per-ship state.
+ *  Every array is sorted by its canonical key. */
+function buildAwarenessSnapshot(
+  alive: readonly SimShip[],
+  liveByShip: ReadonlyMap<string, Map<string, Contact>>,
+  occluders: readonly Disc[],
+  links: readonly CommsLink[],
+): AwarenessSnapshot {
+  // Occluders: emit verbatim (computeOccluders already returns a fixed order).
+  const snapOccluders = occluders.map((d) => ({ x: d.x, y: d.y, r: d.r }));
+
+  // Clusters per side from the link union-find.
+  const clusters: AwarenessSnapshot["clusters"] = [];
+  const sides: ("attacker" | "defender")[] = ["attacker", "defender"];
+  for (const side of sides) {
+    const sideShips = alive.filter((s) => s.side === side);
+    const sideLinks = links.filter((l) => l.side === side);
+    const groups = clusterComponents(sideShips, sideLinks);
+    const byInstance = new Map(sideShips.map((s) => [s.instanceId, s]));
+    for (const memberIds of groups.values()) {
+      const sortedMembers = [...memberIds].sort((p, q) => (p < q ? -1 : p > q ? 1 : 0));
+      const id = `${side}|${sortedMembers.join(",")}`;
+      const coverage = sortedMembers.map((mid) => {
+        // mid came from this side's union-find over sideShips, so the lookup
+        // always resolves; the explicit guard documents that invariant.
+        const member = byInstance.get(mid);
+        if (member === undefined) {
+          throw new Error(`cluster member ${mid} missing from side ${side}`);
+        }
+        return { x: member.x, y: member.y, r: gridDetectionDisc(member) };
+      });
+      clusters.push({ id, side, memberIds: sortedMembers, coverage });
+    }
+  }
+  clusters.sort((p, q) => (p.id < q.id ? -1 : p.id > q.id ? 1 : 0));
+
+  // Contacts (live fixes only) + ghosts (surviving memories) per observer.
+  const contacts: AwarenessSnapshot["contacts"] = [];
+  const ghosts: AwarenessSnapshot["ghosts"] = [];
+  for (const ship of alive) {
+    const live = liveByShip.get(ship.instanceId) ?? new Map();
+    for (const [enemyId, c] of live) {
+      contacts.push({
+        side: ship.side,
+        observerId: ship.instanceId,
+        enemyId,
+        x: c.x,
+        y: c.y,
+      });
+    }
+    for (const g of ship.ghosts) {
+      ghosts.push({
+        side: ship.side,
+        observerId: ship.instanceId,
+        enemyId: g.enemyId,
+        x: g.x,
+        y: g.y,
+        ticksLeft: g.ticksLeft,
+      });
+    }
+  }
+  contacts.sort(awarenessRowOrder);
+  ghosts.sort(awarenessRowOrder);
+
+  // Links, sorted by (side, aId, aSlot, bId, bSlot).
+  const snapLinks: AwarenessSnapshot["links"] = links.map((l) => ({
+    side: l.side,
+    aId: l.a.ship.instanceId,
+    aSlot: l.a.module.slotId,
+    bId: l.b.ship.instanceId,
+    bSlot: l.b.module.slotId,
+    type: l.type,
+  }));
+  snapLinks.sort((p, q) => {
+    if (p.side !== q.side) return p.side < q.side ? -1 : 1;
+    if (p.aId !== q.aId) return p.aId < q.aId ? -1 : 1;
+    if (p.aSlot !== q.aSlot) return p.aSlot < q.aSlot ? -1 : 1;
+    if (p.bId !== q.bId) return p.bId < q.bId ? -1 : 1;
+    return p.bSlot < q.bSlot ? -1 : p.bSlot > q.bSlot ? 1 : 0;
+  });
+
+  // Dish angles for every manned dish, sorted by (shipId, slotId).
+  const dishAngles: AwarenessSnapshot["dishAngles"] = [];
+  for (const ship of alive) {
+    for (const unit of commsUnitsOf(ship)) {
+      if (unit.effect.commsType !== "dish") continue;
+      if (!unit.module.manned) continue;
+      dishAngles.push({ shipId: ship.instanceId, slotId: unit.module.slotId, angle: unit.module.dishAngle });
+    }
+  }
+  dishAngles.sort((p, q) => {
+    if (p.shipId !== q.shipId) return p.shipId < q.shipId ? -1 : 1;
+    return p.slotId < q.slotId ? -1 : p.slotId > q.slotId ? 1 : 0;
+  });
+
+  return { occluders: snapOccluders, clusters, contacts, ghosts, links: snapLinks, dishAngles };
+}
+
+/** Canonical row order for contacts/ghosts: (side, observerId, enemyId). */
+function awarenessRowOrder(
+  p: { side: string; observerId: string; enemyId: string },
+  q: { side: string; observerId: string; enemyId: string },
+): number {
+  if (p.side !== q.side) return p.side < q.side ? -1 : 1;
+  if (p.observerId !== q.observerId) return p.observerId < q.observerId ? -1 : 1;
+  return p.enemyId < q.enemyId ? -1 : p.enemyId > q.enemyId ? 1 : 0;
+}
+
+/** A ship's detection disc radius for cluster coverage rendering: its effective
+ *  sensor radius ignoring anomaly attenuation (the disc the renderer draws is
+ *  the clear-space coverage). Visual radius + the aggregated sensor reach of a
+ *  non-modular ship + the summed per-module sensor bonuses. */
+function gridDetectionDisc(ship: SimShip): number {
+  let r = SIM.visualLosRadius + ship.sensorRange;
+  for (const { module, effect } of sensorUnitsOf(ship)) {
+    if (module.crewRequired > 0 && !module.manned) continue;
+    r += effect.detectionRange;
+  }
+  return r;
+}
+
 export function runBattle(inputs: BattleInputs): BattleResult {
   const rng = mulberry32(inputs.seed >>> 0);
   const ships = inputs.ships.map((s) => toSimShip(s, rng));
   const attackers = ships.filter((s) => s.side === "attacker");
   const defenders = ships.filter((s) => s.side === "defender");
   const byId = new Map(ships.map((s) => [s.instanceId, s]));
+
+  // Initial deployment reference: each side's centroid at the moment of
+  // deployment, captured once before any ship moves. A ship with zero awareness
+  // (no live contact, no ghost) advances toward the OPPOSING side's deployment
+  // centroid so blind fleets close until something enters sensor range. This is
+  // legitimate "we know roughly where they deployed" intel, NOT live tracking —
+  // the reference never updates as enemies move, so it is not omniscience.
+  const deployment: DeploymentReference = {
+    attacker: fleetCentroid(ships, "attacker"),
+    defender: fleetCentroid(ships, "defender"),
+  };
   let projectiles: SimProjectile[] = [];
   // Deterministic counter for break-away chunk ids. Each split consumes
   // one tick + one chunk-index slot so two battles with the same seed
@@ -2758,12 +3700,29 @@ export function runBattle(inputs: BattleInputs): BattleResult {
   const nextChunkId = (parentId: string, tick: number): string =>
     `${parentId}#chunk#${tick}#${chunkSeq += 1}`;
 
-  const frames: BattleFrame[] = [snapshot(0, ships, projectiles)];
+  // Occluders are a pure function of (anomaly, seed): compute them once here
+  // (drawing from a salted, separate rng inside computeOccluders, never the
+  // battle rng) and reuse the same array for every tick's awareness phase and
+  // every snapshot. This keeps the awareness phase from touching the battle rng.
+  const occluders = computeOccluders(inputs.anomaly, inputs.seed >>> 0);
+
+  // Frame 0: run the awareness phase once so the opening snapshot carries the
+  // same fog-of-war data every later frame does, and so each ship's `awareness`
+  // is populated before the first targeting pass below.
+  const frame0Awareness = computeAwareness(ships, byId, occluders, inputs.anomaly);
+  const frames: BattleFrame[] = [snapshot(0, ships, projectiles, frame0Awareness)];
 
   let winner: BattleSide = "draw";
   let resolved = false;
 
   for (let tick = 1; tick <= inputs.maxTicks; tick++) {
+    // 0. Awareness phase (sensors, comms, fog of war). Runs first so the
+    //    targeting pass below reads each ship's freshly computed `awareness`.
+    //    Pure function of ship state + the pre-computed occluders + anomaly;
+    //    draws ZERO times from the battle rng. The returned snapshot is recorded
+    //    on this tick's frame at the end of the loop body.
+    const awareness = computeAwareness(ships, byId, occluders, inputs.anomaly);
+
     // 1. Targeting.
     // Elect focus-fire targets once per tick per side. A ship with
     // focusFire=true defers to this fleet-agreed target; all others pick
@@ -2781,7 +3740,7 @@ export function runBattle(inputs: BattleInputs): BattleResult {
     }
 
     // 2. Movement + facing.
-    moveShips(ships, byId, inputs.anomaly);
+    moveShips(ships, byId, inputs.anomaly, deployment);
 
     // 2b. Ship-vs-ship collision at cell granularity. After movement, any two
     //     ships whose cells now overlap are pushed apart with an elastic
@@ -2899,7 +3858,7 @@ export function runBattle(inputs: BattleInputs): BattleResult {
       }
     }
 
-    frames.push(snapshot(tick, ships, projectiles));
+    frames.push(snapshot(tick, ships, projectiles, awareness));
 
     // 6. Termination.
     const attackerAlive = attackers.some((s) => s.alive);
@@ -3002,6 +3961,16 @@ function rotateLocal(facing: number, lx: number, ly: number): { x: number; y: nu
 }
 
 /**
+ * Each side's deployment centroid, captured once at battle start. Used by
+ * advance-to-contact so a blind ship steers toward where the enemy deployed.
+ * A side's reference is `undefined` only when it deployed no ships.
+ */
+interface DeploymentReference {
+  attacker: { x: number; y: number } | undefined;
+  defender: { x: number; y: number } | undefined;
+}
+
+/**
  * Compute the centroid of all alive ships on a given side. Used by
  * formation-keeping to pull ships toward their fleet's centre of mass.
  * Returns `undefined` when no alive ships are present.
@@ -3026,6 +3995,7 @@ function moveShips(
   ships: readonly SimShip[],
   byId: Map<string, SimShip>,
   anomaly: BattleInputs["anomaly"],
+  deployment: DeploymentReference,
 ): void {
   // Pre-compute fleet centroids once per tick so formation-keeping blends
   // each ship's desired heading toward a stable reference point, not one
@@ -3073,46 +4043,71 @@ function moveShips(
 
     if (!ship.alive) continue;
     const target = ship.target !== undefined ? byId.get(ship.target) : undefined;
-    if (target === undefined) continue;
-
-    const dx = target.x - ship.x;
-    const dy = target.y - ship.y;
-    const dist = Math.hypot(dx, dy);
 
     let desiredFacing: number;
     let shouldThrust: boolean;
     let reverse = false;
-    // Each ship's rangeKeepingBand determines how wide the "at range" dead-zone
-    // is. A wider band means the ship tolerates being further from its ideal
-    // range before correcting — cautious captains set wide bands, aggressive
-    // ones set narrow ones so they close quickly. The inner edge of the dead-
-    // zone is `1 - rangeKeepingBand` of `want`; the outer edge is `want`
-    // itself (outside `want` always closes).
-    const band = ship.orders.rangeKeepingBand;
-    if (isRetreating(ship)) {
-      // Turn tail and flee; retreating ships do not fire.
-      desiredFacing = Math.atan2(-dy, -dx);
+
+    if (target === undefined) {
+      // Advance-to-contact: this ship has zero awareness (no live contact and
+      // no ghost), so it cannot pick a target. Rather than hold blind, it
+      // closes on where the enemy deployed — steering toward the OPPOSING
+      // side's initial deployment centroid (a fixed reference captured at
+      // battle start, never live enemy positions). A retreating blind ship
+      // instead flees away from that reference, back toward its own lines. With
+      // no opposing reference at all (the enemy fielded nothing) there is
+      // nowhere to advance to, so the ship holds.
+      const enemyDeployment =
+        ship.side === "attacker" ? deployment.defender : deployment.attacker;
+      if (enemyDeployment === undefined) continue;
+      const ex = enemyDeployment.x - ship.x;
+      const ey = enemyDeployment.y - ship.y;
+      // A retreating blind ship flees back toward its own lines (away from the
+      // enemy reference); every other blind ship advances toward it. Note
+      // `engageRange` only governs firing distance once in contact, not whether
+      // to seek the enemy, so even a "hold" ship advances to contact.
+      // `angleDifference` handles wrapping, so the raw atan2 result is fine.
+      desiredFacing = isRetreating(ship)
+        ? Math.atan2(-ey, -ex)
+        : Math.atan2(ey, ex);
       shouldThrust = true;
-    } else if (ship.orders.engageRange === "hold") {
-      desiredFacing = Math.atan2(dy, dx);
-      shouldThrust = false;
     } else {
-      // Close in when the anomaly punishes time-of-flight (nebula, asteroid
-      // field); unchanged for black hole and none.
-      const want = anomalyAdjustedRange(ship.orders, ship.weapons, anomaly);
-      if (dist > want) {
-        desiredFacing = Math.atan2(dy, dx);
+      const dx = target.x - ship.x;
+      const dy = target.y - ship.y;
+      const dist = Math.hypot(dx, dy);
+
+      // Each ship's rangeKeepingBand determines how wide the "at range" dead-
+      // zone is. A wider band means the ship tolerates being further from its
+      // ideal range before correcting — cautious captains set wide bands,
+      // aggressive ones set narrow ones so they close quickly. The inner edge
+      // of the dead-zone is `1 - rangeKeepingBand` of `want`; the outer edge is
+      // `want` itself (outside `want` always closes).
+      const band = ship.orders.rangeKeepingBand;
+      if (isRetreating(ship)) {
+        // Turn tail and flee; retreating ships do not fire.
+        desiredFacing = Math.atan2(-dy, -dx);
         shouldThrust = true;
-      } else if (dist < want * (1 - band)) {
-        // Too close — face the target and reverse-thrust to back off while
-        // keeping guns on it. A Newtonian kiting maneuver that decelerates
-        // instead of just turning tail.
-        desiredFacing = Math.atan2(dy, dx);
-        shouldThrust = true;
-        reverse = true;
-      } else {
+      } else if (ship.orders.engageRange === "hold") {
         desiredFacing = Math.atan2(dy, dx);
         shouldThrust = false;
+      } else {
+        // Close in when the anomaly punishes time-of-flight (nebula, asteroid
+        // field); unchanged for black hole and none.
+        const want = anomalyAdjustedRange(ship.orders, ship.weapons, anomaly);
+        if (dist > want) {
+          desiredFacing = Math.atan2(dy, dx);
+          shouldThrust = true;
+        } else if (dist < want * (1 - band)) {
+          // Too close — face the target and reverse-thrust to back off while
+          // keeping guns on it. A Newtonian kiting maneuver that decelerates
+          // instead of just turning tail.
+          desiredFacing = Math.atan2(dy, dx);
+          shouldThrust = true;
+          reverse = true;
+        } else {
+          desiredFacing = Math.atan2(dy, dx);
+          shouldThrust = false;
+        }
       }
     }
 
@@ -3586,9 +4581,11 @@ function snapshot(
   tick: number,
   ships: readonly SimShip[],
   projectiles: readonly SimProjectile[],
+  awareness: AwarenessSnapshot,
 ): BattleFrame {
   return {
     tick,
+    awareness,
     ships: ships.map((s) => {
       const base = {
         instanceId: s.instanceId,
