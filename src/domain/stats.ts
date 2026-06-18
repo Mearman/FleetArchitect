@@ -148,6 +148,8 @@ function applyModule(
     case "repair":
     case "hull":
     case "magazine":
+    case "rcs":
+    case "reactionWheel":
       break;
   }
 }
