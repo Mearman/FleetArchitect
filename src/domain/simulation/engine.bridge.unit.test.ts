@@ -60,6 +60,8 @@ function moduleOf(
     weaponFacing: 0,
     turretArc: 0,
     turretTurnRate: 0,
+    channel: 0,
+    commsBearing: 0,
   };
 }
 
@@ -103,6 +105,10 @@ function modularAttacker(id: string, commandHp: number): CombatShip {
   const modules: ResolvedModule[] = [
     moduleOf("w1", beam({ damage: 10, range: 400, cooldown: 2 }), 12, 0, 50, false),
     moduleOf("c1", { kind: "power", output: 40 }, 0, -12, commandHp, true),
+    // A sensor so the ship can actually see the dummy 160 wu away — a warship
+    // with a 400-range gun needs sensors to match. Without it the ship would be
+    // blind beyond the 140 wu visual radius and never acquire a target.
+    moduleOf("se1", { kind: "sensor", detectionRange: 300, nebulaImmune: false }, 0, 12, 20, false),
   ];
   const stats: ShipStats = {
     mass: 10,

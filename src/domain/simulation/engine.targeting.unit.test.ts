@@ -120,9 +120,11 @@ describe("engine.targeting", () => {
           weapons: [weapon()],
           orders: { targetPriority: "nearest" },
         }),
-        makeShip({ id: "d1", side: "defender", x: 100, y: 0, structure: 500 }),
-        makeShip({ id: "d2", side: "defender", x: 250, y: 0, structure: 500 }),
-        makeShip({ id: "d3", side: "defender", x: 400, y: 0, structure: 500 }),
+        // Distinct distances, all within the attacker's visual range so every
+        // candidate is genuinely seen and the nearest (d1) wins on distance.
+        makeShip({ id: "d1", side: "defender", x: 60, y: 0, structure: 500 }),
+        makeShip({ id: "d2", side: "defender", x: 100, y: 0, structure: 500 }),
+        makeShip({ id: "d3", side: "defender", x: 130, y: 0, structure: 500 }),
       ]),
     );
     expect(firstHitTarget(result, ["d1", "d2", "d3"])).toBe("d1");
@@ -139,10 +141,12 @@ describe("engine.targeting", () => {
           weapons: [weapon()],
           orders: { targetPriority: "weakest" },
         }),
-        // Same distances as the nearest test so distance can't decide.
+        // Co-located within the attacker's visual range so neither distance nor
+        // fog can decide — only the priority (structure) does. The weakest
+        // (d2, structure 30) must be picked.
         makeShip({ id: "d1", side: "defender", x: 100, y: 0, structure: 300 }),
-        makeShip({ id: "d2", side: "defender", x: 250, y: 0, structure: 30 }),
-        makeShip({ id: "d3", side: "defender", x: 400, y: 0, structure: 200 }),
+        makeShip({ id: "d2", side: "defender", x: 100, y: 0, structure: 30 }),
+        makeShip({ id: "d3", side: "defender", x: 100, y: 0, structure: 200 }),
       ]),
     );
     expect(firstHitTarget(result, ["d1", "d2", "d3"])).toBe("d2");
@@ -159,9 +163,11 @@ describe("engine.targeting", () => {
           weapons: [weapon()],
           orders: { targetPriority: "strongest" },
         }),
+        // Co-located within the attacker's visual range so only the priority
+        // (structure) decides; the strongest (d3, structure 300) must be picked.
         makeShip({ id: "d1", side: "defender", x: 100, y: 0, structure: 50 }),
-        makeShip({ id: "d2", side: "defender", x: 250, y: 0, structure: 120 }),
-        makeShip({ id: "d3", side: "defender", x: 400, y: 0, structure: 300 }),
+        makeShip({ id: "d2", side: "defender", x: 100, y: 0, structure: 120 }),
+        makeShip({ id: "d3", side: "defender", x: 100, y: 0, structure: 300 }),
       ]),
     );
     expect(firstHitTarget(result, ["d1", "d2", "d3"])).toBe("d3");

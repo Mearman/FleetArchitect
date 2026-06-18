@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
-import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { CombatShip, BattleInputs } from "@/domain/simulation/types";
 import { defaultOrders } from "@/schema/fleet";
 import type { ShipClassification } from "@/schema/hull";
@@ -63,6 +62,11 @@ function makeShip(opts: {
     thrust: 0.5,
     turnRate: 0.1,
     weapons: weapons.map((w) => ({ slotId: `slot-${opts.id}`, effect: w })),
+    // These tests exercise the movement bands (close / hold / kite / retreat),
+    // which require the ship to have acquired its target at the band's range.
+    // The ships are fully sensor-equipped so detection isn't the variable under
+    // test; fog of war is covered by the awareness suite.
+    sensorRange: 1000,
   };
   return {
     instanceId: opts.id,
@@ -83,7 +87,10 @@ function inputs(ships: CombatShip[]): BattleInputs {
     defenderFleetId: "fd",
     anomaly: "none",
     seed: 1,
-    maxTicks: DEFAULT_MAX_TICKS,
+    // These tests sample movement state by tick 80 at the latest; a short cap
+    // keeps them fast (the tanky 99999-structure defender never resolves the
+    // battle, so without a cap it would otherwise run the full DEFAULT_MAX_TICKS).
+    maxTicks: 120,
   };
 }
 

@@ -301,6 +301,23 @@ const moduleData: ModuleDefinition[] = [
     techLevel: 2,
     effect: { kind: "magazine", ammoStored: 300 },
   },
+  // --- Sensors ---
+  {
+    id: "mod-sensor-array",
+    faction: "Terran",
+    name: "Sensor Array",
+    description:
+      "Passive detection suite that extends a ship's awareness well beyond its naked-eye visual range, letting it acquire and engage targets at weapon range.",
+    category: "system",
+    mass: 5,
+    cost: 45,
+    powerDraw: 4,
+    crewRequired: 0,
+    techLevel: 1,
+    // Detection bonus tuned to reach a typical weapon's range when added to the
+    // innate visual radius, so a sensor-equipped warship sees what it can shoot.
+    effect: { kind: "sensor", detectionRange: 360, nebulaImmune: false },
+  },
 
   // --- System: sensors ---
   {
