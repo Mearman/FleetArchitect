@@ -38,7 +38,9 @@ const PRESET_TIME = "2026-06-16T00:00:00.000Z";
 /** Single-character tokens for the ASCII grid authoring map — Terran parts.
  *  Hull tiles: `#` block, `=` edge, `o` corner, `/` strut.
  *  `~` walkable floor / corridor cell (no module, just interior decking).
- *  `G` munitions magazine (mod-munitions-magazine). */
+ *  `G` munitions magazine (mod-munitions-magazine).
+ *  Sensors: `v` passive array, `V` long-range scanner, `K` gravimetric imager.
+ *  Comms: `O` omni transceiver, `d` steerable relay dish, `b` laser backbone link. */
 const TOKENS: Record<string, GridCell> = {
   ".": { kind: "empty" },
   "#": { kind: "hull", tile: "block" },
@@ -60,13 +62,23 @@ const TOKENS: Record<string, GridCell> = {
   "X": { kind: "module", moduleId: "mod-reactor-antimatter", facing: 0 },
   "C": { kind: "module", moduleId: "mod-crew-quarters", facing: 0 },
   "G": { kind: "module", moduleId: "mod-munitions-magazine", facing: 0 },
+  // Sensors
+  "v": { kind: "module", moduleId: "mod-sensor-passive", facing: 0 },
+  "V": { kind: "module", moduleId: "mod-sensor-longrange", facing: 0 },
+  "K": { kind: "module", moduleId: "mod-sensor-gravimetric", facing: 0 },
+  // Comms
+  "O": { kind: "module", moduleId: "mod-comms-omni", facing: 0 },
+  "d": { kind: "module", moduleId: "mod-comms-dish", facing: 0 },
+  "b": { kind: "module", moduleId: "mod-comms-laser", facing: 0 },
 };
 
 /** Single-character tokens for the ASCII grid authoring map — Swarm parts.
  *  Distinct set so a Swarm grid can be authored without ambiguity. Hull tiles:
  *  `#` carapace block, `=` chitin plate (edge), `/` chitin filament (strut).
  *  `~` walkable floor / corridor cell (interior bio-membrane passage).
- *  `q` ammon sac (swm-ammon-sac, the Swarm magazine equivalent). */
+ *  `q` ammon sac (swm-ammon-sac, the Swarm magazine equivalent).
+ *  Sensors: `e` electro-receptor membrane, `y` chemosensor organ.
+ *  Comms: `h` pheromone net (omni), `i` synapse focus organ (dish), `k` biolaser spine. */
 const SWARM_TOKENS: Record<string, GridCell> = {
   ".": { kind: "empty" },
   "#": { kind: "hull", tile: "block" },
@@ -84,6 +96,13 @@ const SWARM_TOKENS: Record<string, GridCell> = {
   "m": { kind: "module", moduleId: "swm-metabolic-core", facing: 0 },
   "s": { kind: "module", moduleId: "swm-spore-cloud", facing: 0 },
   "q": { kind: "module", moduleId: "swm-ammon-sac", facing: 0 },
+  // Sensors
+  "e": { kind: "module", moduleId: "swm-electro-membrane", facing: 0 },
+  "y": { kind: "module", moduleId: "swm-chemosensor-organ", facing: 0 },
+  // Comms
+  "h": { kind: "module", moduleId: "swm-pheromone-net", facing: 0 },
+  "i": { kind: "module", moduleId: "swm-synapse-dish", facing: 0 },
+  "k": { kind: "module", moduleId: "swm-biolaser-spine", facing: 0 },
 };
 
 /** Parse an ASCII map (one string per row) into a row-major TileGrid using the
@@ -149,12 +168,16 @@ const designData: ShipDesign[] = [
     // Fighter: a darting laser interceptor. Pulse lasers need no ammo supply
     // so no magazine is required. A central crew deck and fusion reactor keep
     // the design self-sufficient; swept hull struts give it its silhouette.
-    // 19 cells, cost 520, all-beam weapons — already valid before Phase D.
+    // Phase B: a long-range scanner (V) on the starboard wing tip and an omni
+    // transceiver (O) on the port wing tip make the Sabre the fleet's eyes —
+    // it scouts ahead and relays contact data back on channel 0. The central
+    // hull block is replaced by a second crew bay so the scanner operator has
+    // a berth. crewRequired 9 / crewCapacity 16 — comfortably manned.
     grid: gridFromMap([
       "...oL..",
-      ".E=#L..",
-      "EFFC#LL",
-      ".E=#L..",
+      ".E=#LV.",
+      "EFFCCLL",
+      ".E=#LO.",
       "...oL..",
     ]),
     createdAt: PRESET_TIME,
@@ -257,16 +280,22 @@ const designData: ShipDesign[] = [
     // flanks. A stepped armoured prow fronts the works; antimatter cores and a
     // five-engine stern bank drive the whole mass.
     //
-    // Layout (14 cols × 7 rows, 72 cells):
+    // Phase B: omni transceivers (O) bolted to the outer prow tips (rows 0 and 6
+    // col 10) give fleet squad-net coverage on channel 0. Laser backbone links
+    // (b) on rows 2 and 4 col 13 extend the high-bandwidth spine to relay ships
+    // (dish/laser, also channel 0). Laser links are manned — crew can reach them
+    // via the continuous walkable surface from the C cells in the interior.
+    //
+    // Layout (14 cols × 7 rows):
     // stern (left) → crew/reactor spine → corridors → magazines → weapons → prow
     grid: gridFromMap([
-      "...=#SDTRL....",
+      "...=#SDTRLO...",
       "..EXCCS~TRRL..",
-      ".EXFCC~GDRRLL.",
+      ".EXFCC~GDRRLLb",
       "EXFCCC~G~RRLLL",
-      ".EXFCC~GDRRLL.",
+      ".EXFCC~GDRRLLb",
       "..EXCCS~TRRL..",
-      "...=#SDTRL....",
+      "...=#SDTRLO...",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -317,10 +346,13 @@ const designData: ShipDesign[] = [
     faction: "Swarm",
     // Fighter: the basic Swarm unit. A spore launcher snout, a neural ganglion
     // core, twin flagella — small, fast, expendable. No crew, no ammo.
+    // Phase B: an electro-receptor membrane (e) and a pheromone net (h) extend
+    // the Drone's awareness and connect it to the hive-net on channel 0. Both
+    // are passive (no metabolic cost or crew), tucked onto the aft wing tips.
     grid: swarmGrid([
-      ".#p.",
+      ".#pe",
       "jgpp",
-      ".#p.",
+      ".#ph",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -383,14 +415,20 @@ const designData: ShipDesign[] = [
     // acid sprayers over a regenerating carapace, ringed by spore-cloud defences,
     // with a metabolic heart and a bank of pulse-jet flagella driving the whole
     // mass. No discrete ammo weapons; no ammon sac needed.
+    // Phase B: pheromone nets (h) on rows 1 and 5 provide omni squad-net
+    // coverage on channel 0. Chemosensor organs (y) on rows 2 and 4 extend
+    // the hive's detection reach well beyond weapon range. A biolaser spine
+    // (k) on row 3 extends the Hive Lord to a high-bandwidth backbone relay
+    // linking other hive-kin on the same channel. All bio-comms/sensors are
+    // autonomous (crewRequired 0), adding only metabolic draw.
     grid: swarmGrid([
-      "...#cnnn....",
-      "..jgcrsnnnn.",
-      ".jgmcrsannn.",
+      "...#cnnnk...",
+      "..jgcrsnnnnh",
+      ".jgmcrsannny",
       "ugmmcrsaannn",
-      ".jgmcrsannn.",
-      "..jgcrsnnnn.",
-      "...#cnnn....",
+      ".jgmcrsannny",
+      "..jgcrsnnnnh",
+      "...#cnnnk...",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
