@@ -128,6 +128,21 @@ export interface ResolvedModule {
    * from the effect's own bounds. Only meaningful for variable comms modules.
    */
   commsRange?: number;
+  /**
+   * Mount bearing (radians, ship-local) a sensor module's cone points along:
+   * the per-instance `sensorBearing` override from the grid cell when present,
+   * else the sensor effect's `bearing`. Combined with the ship's facing to give
+   * the world-space cone the sensor sweeps. On non-sensor modules this is 0 and
+   * unused.
+   */
+  sensorBearing: number;
+  /**
+   * Per-instance range setting for a `variable`-type sensor module (world units),
+   * from the grid cell. Undefined when the cell did not set one (or the module
+   * is not a variable sensor unit); the engine then derives the effective range
+   * from the effect's own bounds. Only meaningful for variable sensor modules.
+   */
+  sensorRangeSetting?: number;
 }
 
 /**

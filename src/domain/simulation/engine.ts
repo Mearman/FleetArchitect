@@ -362,13 +362,6 @@ interface SimShip {
   momentOfInertia: number;
   radius: number;
   cost: number;
-  /**
-   * Aggregated sensor reach (world units) for a non-modular ship: added to the
-   * innate visual radius in `effectiveSensorRadius`. 0 for a ship with no
-   * aggregated sensors (it sees only out to the visual radius). Modular ships
-   * derive detection from their sensor modules and ignore this — it stays 0.
-   */
-  sensorRange: number;
   weapons: readonly WeaponEffect[];
   weaponCooldowns: number[];
   orders: Orders;
@@ -562,6 +555,19 @@ interface SimModule {
    * modules; undefined and unused on every other kind.
    */
   dishRangeSetting?: number;
+  /**
+   * Ship-local mount bearing (radians) of a sensor module's cone, copied off the
+   * resolved module's `sensorBearing`. Fixed for the module's life; the live
+   * world bearing is `sensorBearing + ship.facing`. 0 on non-sensor modules.
+   */
+  sensorBearing: number;
+  /**
+   * Per-instance range setting for a `variable` sensor module (world units),
+   * from the resolved module's `sensorRangeSetting`. Undefined when the design
+   * set none (then the effect's `maxRange` is used). Only meaningful for variable
+   * sensor modules; undefined and unused on every other kind.
+   */
+  sensorRangeSetting?: number;
 }
 
 /** Mutable in-flight projectile. */
@@ -759,10 +765,6 @@ function toSimShip(ship: CombatShip, rng: () => number): SimShip {
       (SIM.hullMass[ship.classification] + ship.stats.mass) * SIM.legacyMoI,
     radius: radiusFor(ship.classification),
     cost: ship.stats.cost,
-    // Aggregated sensor reach; absent means visual-only. A modular ship's
-    // detection comes from its sensor modules instead, so this is read only on
-    // the non-modular path (where stats.sensorRange is the honest declaration).
-    sensorRange: ship.stats.sensorRange ?? 0,
     weapons,
     // Stagger initial cooldowns so weapons don't all fire on tick 0.
     weaponCooldowns: weapons.map((w) => Math.floor(rng() * (w.cooldown + 1))),
@@ -853,6 +855,12 @@ facing: m.facing,
     commsBearing: m.commsBearing,
     dishAngle: m.commsBearing,
     ...(m.commsRange !== undefined ? { dishRangeSetting: m.commsRange } : {}),
+    // Sensor mount bearing and variable range dial, copied off the resolved
+    // module. The detection pass derives the live world cone from these.
+    sensorBearing: m.sensorBearing,
+    ...(m.sensorRangeSetting !== undefined
+      ? { sensorRangeSetting: m.sensorRangeSetting }
+      : {}),
   };
 }
 
@@ -2667,9 +2675,6 @@ function makeChunkShip(
     momentOfInertia: 1,
     radius: parent.radius,
     cost: 0,
-    // A chunk is modular: its detection comes from any sensor modules it
-    // inherits, not an aggregated reach.
-    sensorRange: 0,
     weapons: [],
     weaponCooldowns: [],
     orders: parent.orders,
@@ -3051,11 +3056,19 @@ interface CommsUnit {
 
 /** A sensor module on a ship, paired with its host for the detection pass. */
 interface SensorUnit {
+  ship: SimShip;
   module: SimModule;
   effect: SensorEffect;
 }
 
-/** Alive sensor modules on a ship, in (col, row) module-array order. */
+/** One coverage shape in a cluster's rendered footprint: a circle (bearing/arc
+ *  absent) or a sector (both present). The element type the AwarenessSnapshot
+ *  schema declares for `clusters[].coverage`. */
+type CoverageShape = AwarenessSnapshot["clusters"][number]["coverage"][number];
+
+/** Alive sensor modules on a ship, in (col, row) module-array order. A crewed
+ *  sensor (crewRequired > 0, e.g. a dish) is only included when it is manned;
+ *  a crewless sensor is always manned. */
 function sensorUnitsOf(ship: SimShip): SensorUnit[] {
   const out: SensorUnit[] = [];
   if (ship.modules === undefined) return out;
@@ -3063,9 +3076,97 @@ function sensorUnitsOf(ship: SimShip): SensorUnit[] {
     if (!m.alive) continue;
     const effect = m.effect;
     if (effect.kind !== "sensor") continue;
-    out.push({ module: m, effect });
+    // A sensor that needs crew contributes only when manned; a crewless one is
+    // always manned (recomputeManning sets manned = true for it).
+    if (m.crewRequired > 0 && !m.manned) continue;
+    out.push({ ship, module: m, effect });
   }
   return out;
+}
+
+/** Effective detection range of a sensor unit. Variable units interpolate
+ *  between their range bounds using the per-instance `sensorRangeSetting`
+ *  (a longer range trades down the arc; see `effectiveSensorArc`); every other
+ *  type uses the static effect range. */
+function effectiveSensorRange(unit: SensorUnit): number {
+  const { effect, module } = unit;
+  if (effect.sensorType !== "variable") return effect.detectionRange;
+  const minR = effect.minRange ?? effect.detectionRange;
+  const maxR = effect.maxRange ?? effect.detectionRange;
+  const desired = module.sensorRangeSetting;
+  if (desired === undefined) return maxR;
+  return Math.max(minR, Math.min(maxR, desired));
+}
+
+/** Effective half-arc of a sensor unit. Variable units trade arc against range:
+ *  at minimum range the arc is widest (`maxArc`), at maximum range narrowest
+ *  (`minArc`), interpolating linearly with the chosen range. Every other type
+ *  uses the static effect arc. */
+function effectiveSensorArc(unit: SensorUnit): number {
+  const { effect } = unit;
+  if (effect.sensorType !== "variable") return effect.arc;
+  const minR = effect.minRange ?? effect.detectionRange;
+  const maxR = effect.maxRange ?? effect.detectionRange;
+  const minA = effect.minArc ?? effect.arc;
+  const maxA = effect.maxArc ?? effect.arc;
+  const range = effectiveSensorRange(unit);
+  const span = maxR - minR;
+  const t = span > 0 ? (range - minR) / span : 0;
+  return maxA + (minA - maxA) * t;
+}
+
+/** World-space bearing (radians) a sensor unit's cone is centred on: its
+ *  ship-local mount bearing rotated by the ship's facing. */
+function effectiveSensorBearing(unit: SensorUnit): number {
+  return unit.module.sensorBearing + unit.ship.facing;
+}
+
+/** Effective range of a sensor unit after anomaly attenuation. In a nebula a
+ *  non-immune sensor's range is scaled by `nebulaSensorFactor`; an immune one
+ *  (active LIDAR / gravimetric) keeps its full range. */
+function attenuatedSensorRange(unit: SensorUnit, anomaly: BattleAnomaly): number {
+  const range = effectiveSensorRange(unit);
+  if (anomaly !== "nebula") return range;
+  return unit.effect.nebulaImmune ? range : range * SIM.nebulaSensorFactor;
+}
+
+/** The ship's innate omni visual radius after anomaly attenuation. The naked-eye
+ *  / short-range passive circle every ship has; a nebula halves it (it is never
+ *  immune). */
+function attenuatedVisualRadius(anomaly: BattleAnomaly): number {
+  const r = SIM.visualLosRadius;
+  return anomaly === "nebula" ? r * SIM.nebulaSensorFactor : r;
+}
+
+/** Whether `observer` detects `enemy` this tick (line-of-sight permitting):
+ *  the enemy lies inside the innate omni visual circle OR inside any of the
+ *  observer's alive (manned-if-crewed) sensor cones. A cone hit needs
+ *  `dist <= effRange` AND the bearing within the cone's half-arc; an omni
+ *  sensor (arc === Math.PI) is a full circle and skips the angle test. */
+function sensorDetects(
+  observer: SimShip,
+  enemy: SimShip,
+  anomaly: BattleAnomaly,
+): boolean {
+  const dx = enemy.x - observer.x;
+  const dy = enemy.y - observer.y;
+  const distSq = dx * dx + dy * dy;
+  // Innate omni visual circle — always present, no angle test.
+  const visual = attenuatedVisualRadius(anomaly);
+  if (distSq <= visual * visual) return true;
+  // Any sensor cone covering the enemy.
+  const toEnemy = Math.atan2(dy, dx);
+  for (const unit of sensorUnitsOf(observer)) {
+    const range = attenuatedSensorRange(unit, anomaly);
+    if (distSq > range * range) continue;
+    const arc = effectiveSensorArc(unit);
+    // An omni sensor's arc is Math.PI: |angleDifference| <= PI always holds, so
+    // the cone is a full circle. Directional/dish/variable test the bearing.
+    if (arc >= Math.PI) return true;
+    const bearing = effectiveSensorBearing(unit);
+    if (Math.abs(angleDifference(bearing, toEnemy)) <= arc) return true;
+  }
+  return false;
 }
 
 /** Alive comms modules on a ship, in module-array order. */
@@ -3079,30 +3180,6 @@ function commsUnitsOf(ship: SimShip): CommsUnit[] {
     out.push({ ship, module: m, effect });
   }
   return out;
-}
-
-/**
- * Effective detection radius of a ship: the innate visual radius plus the sum
- * of `detectionRange` over its alive sensor modules (a crewed sensor counts
- * only when manned; a crewless one always counts). In a nebula the visual radius
- * and every non-immune sensor bonus are attenuated by `nebulaSensorFactor`;
- * `nebulaImmune` sensor bonuses are added afterwards, unattenuated.
- */
-function effectiveSensorRadius(ship: SimShip, anomaly: BattleAnomaly): number {
-  // Innate visual radius plus the aggregated sensor reach of a non-modular
-  // ship (0 for modular ships, which add their per-module sensor ranges
-  // below). Both are attenuated by a nebula like any non-immune sensor.
-  let attenuable = SIM.visualLosRadius + ship.sensorRange;
-  let immune = 0;
-  for (const { module, effect } of sensorUnitsOf(ship)) {
-    // A sensor that needs crew contributes only when manned; one that needs
-    // none is always manned (recomputeManning sets manned = true for it).
-    if (module.crewRequired > 0 && !module.manned) continue;
-    if (effect.nebulaImmune) immune += effect.detectionRange;
-    else attenuable += effect.detectionRange;
-  }
-  const factor = anomaly === "nebula" ? SIM.nebulaSensorFactor : 1;
-  return attenuable * factor + immune;
 }
 
 /** Threat score of an enemy from a ship's position: nearer and costlier enemies
@@ -3287,21 +3364,18 @@ function computeAwareness(
 
   for (const observer of alive) {
     // Every ship is fog-gated. A ship with no sensor still detects out to its
-    // baseline visual radius (SIM.visualLosRadius); sensors extend that. There
-    // is no omniscient escape hatch — a sensorless ship is genuinely myopic,
-    // modular or not.
+    // innate omni visual circle (SIM.visualLosRadius); sensor cones extend that
+    // in the directions they cover. There is no omniscient escape hatch — a
+    // sensorless ship is genuinely myopic, modular or not. An occluder on the
+    // sight line blocks detection regardless of range or arc.
     const list: Contact[] = [];
-    const effR = effectiveSensorRadius(observer, anomaly);
-    const effRSq = effR * effR;
     // enemiesBySide is keyed by the observer's own side and already sorted by
     // instanceId (it is a filter of the sorted `alive` set).
     const enemies =
       observer.side === "attacker" ? enemiesBySide.attacker : enemiesBySide.defender;
     for (const enemy of enemies) {
-      const dx = enemy.x - observer.x;
-      const dy = enemy.y - observer.y;
-      if (dx * dx + dy * dy > effRSq) continue;
       if (segmentBlocked(observer.x, observer.y, enemy.x, enemy.y, occluders)) continue;
+      if (!sensorDetects(observer, enemy, anomaly)) continue;
       list.push({
         enemyId: enemy.instanceId,
         x: enemy.x,
@@ -3612,14 +3686,14 @@ function buildAwarenessSnapshot(
     for (const memberIds of groups.values()) {
       const sortedMembers = [...memberIds].sort((p, q) => (p < q ? -1 : p > q ? 1 : 0));
       const id = `${side}|${sortedMembers.join(",")}`;
-      const coverage = sortedMembers.map((mid) => {
+      const coverage = sortedMembers.flatMap((mid) => {
         // mid came from this side's union-find over sideShips, so the lookup
         // always resolves; the explicit guard documents that invariant.
         const member = byInstance.get(mid);
         if (member === undefined) {
           throw new Error(`cluster member ${mid} missing from side ${side}`);
         }
-        return { x: member.x, y: member.y, r: gridDetectionDisc(member) };
+        return coverageShapes(member);
       });
       clusters.push({ id, side, memberIds: sortedMembers, coverage });
     }
@@ -3698,17 +3772,28 @@ function awarenessRowOrder(
   return p.enemyId < q.enemyId ? -1 : p.enemyId > q.enemyId ? 1 : 0;
 }
 
-/** A ship's detection disc radius for cluster coverage rendering: its effective
- *  sensor radius ignoring anomaly attenuation (the disc the renderer draws is
- *  the clear-space coverage). Visual radius + the aggregated sensor reach of a
- *  non-modular ship + the summed per-module sensor bonuses. */
-function gridDetectionDisc(ship: SimShip): number {
-  let r = SIM.visualLosRadius + ship.sensorRange;
-  for (const { module, effect } of sensorUnitsOf(ship)) {
-    if (module.crewRequired > 0 && !module.manned) continue;
-    r += effect.detectionRange;
+/** The coverage shapes a ship contributes to its cluster's rendered footprint,
+ *  in clear-space (un-attenuated) terms: the innate omni visual circle plus, per
+ *  alive (manned-if-crewed) sensor, either a full circle (omni) or a sector
+ *  (directional/dish/variable). A sector carries `bearing` (the cone's world
+ *  centre) and `arc` (its half-arc); a circle omits both. */
+function coverageShapes(ship: SimShip): CoverageShape[] {
+  const shapes: CoverageShape[] = [
+    // The innate omni visual circle — always present, a full circle.
+    { x: ship.x, y: ship.y, r: SIM.visualLosRadius },
+  ];
+  for (const unit of sensorUnitsOf(ship)) {
+    const r = effectiveSensorRange(unit);
+    const arc = effectiveSensorArc(unit);
+    if (arc >= Math.PI) {
+      // Omni sensor: a full circle, no bearing/arc.
+      shapes.push({ x: ship.x, y: ship.y, r });
+    } else {
+      // Directional/dish/variable: a sector about the world bearing.
+      shapes.push({ x: ship.x, y: ship.y, r, bearing: effectiveSensorBearing(unit), arc });
+    }
   }
-  return r;
+  return shapes;
 }
 
 /**
@@ -4126,15 +4211,24 @@ function moveShips(
       if (enemyDeployment === undefined) continue;
       const ex = enemyDeployment.x - ship.x;
       const ey = enemyDeployment.y - ship.y;
+      // A hold-order ship holds position even when blind: hold means do not
+      // engage, full stop, so a blind hold ship pins and waits rather than
+      // advancing toward an enemy it cannot see. Every other engage-range value
+      // advances to contact — close, short, and long-range ships all seek the
+      // enemy and let their range band take over once they acquire a target.
       // A retreating blind ship flees back toward its own lines (away from the
-      // enemy reference); every other blind ship advances toward it. Note
-      // `engageRange` only governs firing distance once in contact, not whether
-      // to seek the enemy, so even a "hold" ship advances to contact.
-      // `angleDifference` handles wrapping, so the raw atan2 result is fine.
-      desiredFacing = isRetreating(ship)
-        ? Math.atan2(-ey, -ex)
-        : Math.atan2(ey, ex);
-      shouldThrust = true;
+      // enemy reference) regardless of engage-range, because retreat overrides
+      // every other order. `angleDifference` handles wrapping, so the raw atan2
+      // result is fine.
+      if (ship.orders.engageRange === "hold" && !isRetreating(ship)) {
+        desiredFacing = ship.facing;
+        shouldThrust = false;
+      } else {
+        desiredFacing = isRetreating(ship)
+          ? Math.atan2(-ey, -ex)
+          : Math.atan2(ey, ex);
+        shouldThrust = true;
+      }
     } else {
       const dx = target.x - ship.x;
       const dy = target.y - ship.y;

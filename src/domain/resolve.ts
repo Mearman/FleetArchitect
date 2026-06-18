@@ -134,10 +134,11 @@ function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] 
         weaponFacing: 0,
         turretArc: 0,
         turretTurnRate: 0,
-        // A hull cell is not a comms module: channel and bearing carry 0 and are
-        // never read by the awareness phase.
+        // A hull cell is not a comms or sensor module: channel and bearings
+        // carry 0 and are never read by the awareness phase.
         channel: 0,
         commsBearing: 0,
+        sensorBearing: 0,
       });
       continue;
     }
@@ -178,6 +179,12 @@ function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] 
         commsBearing: commsBearingFor(moduleDef.effect, cell),
         ...(commsRangeFor(cell) !== undefined
           ? { commsRange: commsRangeFor(cell) }
+          : {}),
+        // Sensor config: the per-instance cell override when present, else the
+        // sensor effect's own bearing. Non-sensor modules carry 0 and never read it.
+        sensorBearing: sensorBearingFor(moduleDef.effect, cell),
+        ...(sensorRangeSettingFor(cell) !== undefined
+          ? { sensorRangeSetting: sensorRangeSettingFor(cell) }
           : {}),
       });
     }
@@ -274,4 +281,22 @@ function commsBearingFor(effect: ModuleEffect, cell: GridCell): number {
 function commsRangeFor(cell: GridCell): number | undefined {
   if (cell.kind !== "module") return undefined;
   return cell.commsRange;
+}
+
+/** Sensor mount bearing (radians, ship-local): the cell's per-instance override
+ *  when set, else the sensor effect's bearing. 0 for non-sensor modules. */
+function sensorBearingFor(effect: ModuleEffect, cell: GridCell): number {
+  if (effect.kind !== "sensor") return 0;
+  if (cell.kind === "module" && cell.sensorBearing !== undefined) {
+    return cell.sensorBearing;
+  }
+  return effect.bearing;
+}
+
+/** Per-instance variable-sensor range setting from the cell, or undefined when
+ *  the cell set none. Only meaningful for variable sensor modules; the engine
+ *  ignores it on every other kind. */
+function sensorRangeSettingFor(cell: GridCell): number | undefined {
+  if (cell.kind !== "module") return undefined;
+  return cell.sensorRangeSetting;
 }

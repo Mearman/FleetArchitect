@@ -36,7 +36,9 @@ export type HullCell = z.infer<typeof HullCell>;
  *
  * The optional per-instance comms/sensor fields are only meaningful for cells
  * whose module has a CommsEffect or SensorEffect; they are absent on all other
- * cell kinds so existing grids parse unchanged.
+ * cell kinds so existing grids parse unchanged. `commsBearing`/`commsRange`
+ * configure comms modules; `sensorBearing`/`sensorRangeSetting` configure
+ * sensor modules in exactly the same way.
  */
 export const ModuleCell = z.object({
   kind: z.literal("module"),
@@ -48,6 +50,11 @@ export const ModuleCell = z.object({
   commsBearing: z.number().optional(),
   /** Per-instance range setting for variable-type comms modules (world units). */
   commsRange: z.number().optional(),
+  /** Per-instance fixed-facing bearing override for directional/dish sensor
+   *  modules (radians). */
+  sensorBearing: z.number().optional(),
+  /** Per-instance range setting for variable-type sensor modules (world units). */
+  sensorRangeSetting: z.number().optional(),
 });
 export type ModuleCell = z.infer<typeof ModuleCell>;
 
