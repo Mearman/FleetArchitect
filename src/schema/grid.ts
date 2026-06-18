@@ -33,11 +33,21 @@ export type HullCell = z.infer<typeof HullCell>;
  * catalog; `facing` is the module's mount direction in radians, ship-local
  * (0 = along +x, i.e. forward). Weapons fire along it and engines thrust along
  * it, exactly as the old per-slot facing did.
+ *
+ * The optional per-instance comms/sensor fields are only meaningful for cells
+ * whose module has a CommsEffect or SensorEffect; they are absent on all other
+ * cell kinds so existing grids parse unchanged.
  */
 export const ModuleCell = z.object({
   kind: z.literal("module"),
   moduleId: EntityId,
   facing: z.number(),
+  /** Per-instance logical channel override for comms modules. */
+  channel: z.number().int().min(0).optional(),
+  /** Per-instance fixed-facing bearing override for comms modules (radians). */
+  commsBearing: z.number().optional(),
+  /** Per-instance range setting for variable-type comms modules (world units). */
+  commsRange: z.number().optional(),
 });
 export type ModuleCell = z.infer<typeof ModuleCell>;
 
