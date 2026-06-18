@@ -1,4 +1,4 @@
-import type { BattleFrame, ShipSnapshot } from "@/schema/battle";
+import type { BattleFrame, CrewSnapshot, ShipSnapshot } from "@/schema/battle";
 
 /**
  * Normalise an angle into (-π, π].
@@ -17,6 +17,63 @@ function wrapAngle(a: number): number {
 function lerpAngle(a: number, b: number, t: number): number {
   const delta = wrapAngle(b - a);
   return a + delta * t;
+}
+
+/**
+ * Interpolate crew positions between two bracketing snapshots.
+ *
+ * For each crew member present in both frames, x/y are linearly interpolated;
+ * discrete state (state, hp, carrying) is taken from the nearest frame.
+ * Crew present in only one frame are carried through verbatim so they neither
+ * pop into existence nor vanish mid-interval.
+ *
+ * Keyed by `id` — two crew with different ids never cross-contaminate.
+ */
+function interpolateCrew(
+  loCrew: readonly CrewSnapshot[] | undefined,
+  hiCrew: readonly CrewSnapshot[] | undefined,
+  alpha: number,
+): CrewSnapshot[] | undefined {
+  if (loCrew === undefined && hiCrew === undefined) return undefined;
+
+  // Index hi crew by id for O(1) lookup.
+  const hiMap = new Map<string, CrewSnapshot>();
+  if (hiCrew !== undefined) {
+    for (const c of hiCrew) {
+      hiMap.set(c.id, c);
+    }
+  }
+
+  const result: CrewSnapshot[] = [];
+
+  // Crew in the lo frame: lerp if also in hi, otherwise carry lo verbatim.
+  if (loCrew !== undefined) {
+    for (const lo of loCrew) {
+      const hi = hiMap.get(lo.id);
+      if (hi === undefined) {
+        result.push(lo);
+      } else {
+        const nearest = alpha < 0.5 ? lo : hi;
+        result.push({
+          id: lo.id,
+          x: lo.x + (hi.x - lo.x) * alpha,
+          y: lo.y + (hi.y - lo.y) * alpha,
+          state: nearest.state,
+          hp: nearest.hp,
+          carrying: nearest.carrying,
+        });
+        // Mark as processed so we don't double-add from hi.
+        hiMap.delete(lo.id);
+      }
+    }
+  }
+
+  // Crew present only in hi (newly spawned mid-interval): carry hi verbatim.
+  for (const hi of hiMap.values()) {
+    result.push(hi);
+  }
+
+  return result;
 }
 
 /**
@@ -104,6 +161,8 @@ export function interpolateFrame(frames: readonly BattleFrame[], t: number): Bat
     // from the nearest bracketing frame, not interpolated.
     const nearest = alpha < 0.5 ? loShip : hiShip;
 
+    const crew = interpolateCrew(loShip.crew, hiShip.crew, alpha);
+
     return {
       ...nearest,
       x,
@@ -113,6 +172,7 @@ export function interpolateFrame(frames: readonly BattleFrame[], t: number): Bat
       facing,
       comX,
       comY,
+      crew,
     };
   });
 
