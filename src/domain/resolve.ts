@@ -151,6 +151,8 @@ function baseHpFor(kind: ResolvedModule["kind"]): number {
       return 25;
     case "hull":
       return 60;
+    case "magazine":
+      return 40;
   }
 }
 

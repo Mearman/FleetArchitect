@@ -132,6 +132,7 @@ function applyModule(
     case "pointDefense":
     case "repair":
     case "hull":
+    case "magazine":
       break;
   }
 }
