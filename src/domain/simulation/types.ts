@@ -223,10 +223,16 @@ export const TICKS_PER_SECOND = 30;
 export const DEFAULT_MAX_TICKS = 3600;
 
 /**
- * Frame batch size for streaming. Roughly one second of playback per streamed
- * frame batch (matches TICKS_PER_SECOND to align batch boundaries with seconds).
+ * Frame batch size for streaming. Four seconds of playback per batch — large
+ * enough that each batch provides a comfortable playback buffer (so the
+ * playhead never catches the streamed leading edge between batches), while
+ * keeping batches infrequent enough that the per-batch React re-render
+ * (updating frame count, bounds, status) doesn't contend with the worker's
+ * postMessage delivery. Smaller values (e.g. one second) cause the main
+ * thread to render on every batch, blocking subsequent batch delivery and
+ * producing the start-then-buffer stutter on crewed battles.
  */
-export const FRAMES_PER_BATCH = TICKS_PER_SECOND;
+export const FRAMES_PER_BATCH = TICKS_PER_SECOND * 4;
 
 /** Terminal value produced by the streaming generator: battle outcome and duration. */
 export interface BattleSummary {
