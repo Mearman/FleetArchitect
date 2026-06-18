@@ -34,9 +34,9 @@ gameplay parity layered on top. The simulation runs off the main thread.
 | Independently-rotating turrets (track targets off the ship's facing) | Shipped |
 | Tactical order system (formation, stance, focus-fire, range-keeping) | Shipped |
 | Faction / race part sets | Shipped |
+| Crew as physical entities (corridor pathfinding, manned stations, hauled power and ammo) | Shipped |
 | Async online challenges (submit a fleet, others fight it) — needs a sync server | Future |
 | Campaign / career progression (economy, bounties, unlocks) | Future |
-| Crew as physical entities (corridor pathfinding, manned stations) — needs the grid | Maybe |
 | Manual / direct control (WASD flight, aim and fire) | Maybe |
 | Boarding / capture / salvage — needs crew | Maybe |
 

@@ -1,8 +1,10 @@
 import {
+  ActionIcon,
   Badge,
   Box,
   Button,
   Center,
+  Collapse,
   Group,
   Loader,
   NativeSelect,
@@ -17,8 +19,19 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconArrowsShuffle, IconPlayerPause, IconPlayerPlay, IconRefresh, IconSwords } from "@tabler/icons-react";
+import {
+  IconArrowsShuffle,
+  IconFocus2,
+  IconLayoutSidebarRightExpand,
+  IconMaximize,
+  IconPlayerPause,
+  IconPlayerPlay,
+  IconRefresh,
+  IconSettings,
+  IconSwords,
+} from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import { resolveFleetToCombatShips } from "@/domain/resolve";
 import { CELL_SIZE } from "@/domain/grid";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
@@ -31,11 +44,16 @@ import type { BattleAnomaly as BattleAnomalyType, BattleFrame, BattleResult } fr
 import type { Fleet } from "@/schema/fleet";
 import type { WeaponType } from "@/schema/module";
 import { interpolateFrame } from "@/ui/interpolateFrame";
-
-/** Logical canvas resolution (CSS pixels before device-pixel-ratio scaling). */
-const W = 960;
-const H = 600;
-const PAD = 40;
+import { drawAnomaly } from "./battleAnomaly";
+import {
+  clampZoom,
+  DEFAULT_CAMERA,
+  pickShipAt,
+  resolveTransform,
+  screenToWorld,
+} from "./battleCamera";
+import type { Bounds, Camera } from "./battleCamera";
+import * as styles from "./BattleRoute.css";
 
 /**
  * The simulation's fixed tick rate. Playback time (seconds) × this value gives
@@ -84,13 +102,6 @@ const CARRYING_COLOUR: Record<string, string> = {
   power: "#ffe066",
   ammo: "#ff9a3c",
 };
-
-interface Bounds {
-  minX: number;
-  maxX: number;
-  minY: number;
-  maxY: number;
-}
 
 const DEFAULT_BOUNDS: Bounds = { minX: -700, maxX: 700, minY: -430, maxY: 430 };
 
@@ -193,6 +204,35 @@ export function BattleRoute() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [canvasSize, setCanvasSize] = useState<{ width: number; height: number } | null>(null);
 
+  /**
+   * Camera state drives the world-to-display transform. `zoom` multiplies the
+   * auto-fit scale; `panX`/`panY` shift the focus; `followId` pins the focus to
+   * a ship. Kept in a ref as well so the rAF draw loop reads the live camera
+   * without the effect needing `camera` in its dependency list (which would
+   * restart the loop and reset the frame clock on every wheel tick or drag).
+   */
+  const [camera, setCamera] = useState<Camera>(DEFAULT_CAMERA);
+  const cameraRef = useRef<Camera>(camera);
+  // Mirror the live camera into a ref so the rAF draw loop and pointer handlers
+  // read the current value without `camera` in their dependency lists. Synced in
+  // an effect (never during render) per the react-hooks/refs rule.
+  useEffect(() => {
+    cameraRef.current = camera;
+  }, [camera]);
+
+  /** Whether the setup panel and module-status overlay are shown. */
+  const [setupOpen, setSetupOpen] = useState(true);
+  const [statusOpen, setStatusOpen] = useState(false);
+
+  /** Pointer-drag state for panning, tracked in a ref to avoid re-renders. */
+  const dragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    moved: boolean;
+  } | null>(null);
+  const [dragging, setDragging] = useState(false);
+
   const fleetOptions = useMemo(
     () => (fleets ?? []).map((f) => ({ value: f.id, label: f.name })),
     [fleets],
@@ -228,6 +268,14 @@ export function BattleRoute() {
       maxY: maxY + padY,
     };
   }, [result]);
+
+  /**
+   * The anomaly actually baked into the running replay. Read from the result's
+   * config (not the setup `anomaly` state) so the rendered anomaly always
+   * matches the simulated physics, even if the setup control is changed after
+   * engaging.
+   */
+  const activeAnomaly: BattleAnomalyType = result?.config.anomaly ?? "none";
 
   /** Per-ship full structure/shield, taken from the deployment frame. */
   const maxHp = useMemo(() => {
@@ -281,9 +329,11 @@ export function BattleRoute() {
    * clock-advance so resize events and seek operations can redraw without
    * advancing the playback clock.
    *
-   * Closes over `bounds` and `maxHp` from the enclosing render scope. Both are
-   * stable for a given `result` (they're derived from it), so `drawFrame` is
-   * re-created only when those values change.
+   * Closes over `bounds`, `maxHp` and `anomaly` from the enclosing render
+   * scope, plus the live camera via `cameraRef`. `bounds`/`maxHp`/`anomaly` are
+   * stable for a given `result`, so `drawFrame` is re-created only when those
+   * change; reading the camera from the ref keeps drawing responsive to zoom and
+   * pan without re-creating the callback (and so without restarting the loop).
    */
   const drawFrame = useCallback(
     (frame: BattleFrame) => {
@@ -299,17 +349,21 @@ export function BattleRoute() {
       if (width === 0 || height === 0) return;
       ctx.clearRect(0, 0, width, height);
 
-      // Uniform world-to-display scale that letterboxes to preserve the
-      // world's aspect ratio. Independent x/y scales would stretch ships
-      // whenever the canvas aspect doesn't match the battle's.
-      const rangeX = Math.max(bounds.maxX - bounds.minX, 1);
-      const rangeY = Math.max(bounds.maxY - bounds.minY, 1);
-      const scale = Math.min((width - PAD * 2) / rangeX, (height - PAD * 2) / rangeY);
-      const offsetX = (width - rangeX * scale) / 2;
-      const offsetY = (height - rangeY * scale) / 2;
+      // When following a ship, the focus point is that ship's live position in
+      // this frame, so the camera tracks it. The follow ship may have died or
+      // not yet appeared; fall back to centre-pan in that case.
+      const cam = cameraRef.current;
+      const followPos =
+        cam.followId !== null
+          ? frame.ships.find((s) => s.instanceId === cam.followId)
+          : undefined;
+      const t = resolveTransform(width, height, bounds, cam, followPos);
+      const scale = t.scale;
+      const sx = t.sx;
+      const sy = t.sy;
 
-      const sx = (wx: number) => offsetX + (wx - bounds.minX) * scale;
-      const sy = (wy: number) => offsetY + (wy - bounds.minY) * scale;
+      // Anomaly is drawn first, in world space, beneath everything else.
+      drawAnomaly(ctx, activeAnomaly, t, bounds);
 
       for (const p of frame.projectiles) {
         const colour = PROJECTILE_COLOUR[p.kind];
@@ -509,7 +563,7 @@ export function BattleRoute() {
         ctx.fillRect(px - barW / 2, py + 10, barW * frac, 3);
       }
     },
-    [bounds, maxHp],
+    [bounds, maxHp, activeAnomaly],
   );
 
   /**
@@ -577,6 +631,132 @@ export function BattleRoute() {
     drawFrame(frame);
   }, [canvasSize, result, drawFrame]);
 
+  /**
+   * Resolve the transform exactly as `drawFrame` does, for pointer-space
+   * conversions in the input handlers. Returns undefined when there is nothing
+   * to draw or the canvas has no size yet.
+   */
+  const currentTransform = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (canvas === null || result === null) return undefined;
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
+    if (width === 0 || height === 0) return undefined;
+    const cam = cameraRef.current;
+    const fractionalTick = playbackTimeRef.current * TICKS_PER_SECOND;
+    const frame = interpolateFrame(result.frames, fractionalTick);
+    const followPos =
+      cam.followId !== null ? frame.ships.find((s) => s.instanceId === cam.followId) : undefined;
+    return { t: resolveTransform(width, height, bounds, cam, followPos), frame };
+  }, [result, bounds]);
+
+  /** Canvas-relative pointer position from a pointer event. */
+  const pointerPos = (e: ReactPointerEvent<HTMLCanvasElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    return { px: e.clientX - rect.left, py: e.clientY - rect.top };
+  };
+
+  // Wheel-to-zoom is attached as a NON-passive native listener (not a React
+  // onWheel prop): React registers wheel handlers as passive, so a synthetic
+  // handler cannot call preventDefault, and the page would scroll while zooming.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (canvas === null || result === null) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const resolved = currentTransform();
+      if (resolved === undefined) return;
+      const rect = canvas.getBoundingClientRect();
+      const px = e.clientX - rect.left;
+      const py = e.clientY - rect.top;
+      const before = screenToWorld(resolved.t, px, py);
+      setCamera((cam) => {
+        const factor = Math.exp(-e.deltaY * 0.0015);
+        const nextZoom = clampZoom(cam.zoom * factor);
+        if (nextZoom === cam.zoom) return cam;
+        // While following, keep the ship centred (zoom toward it, not the
+        // cursor). Otherwise zoom toward the cursor: keep the world point under
+        // it fixed by deriving the pan that maps `before` back to the cursor.
+        if (cam.followId !== null) return { ...cam, zoom: nextZoom };
+        const worldCentreX = (bounds.minX + bounds.maxX) / 2;
+        const worldCentreY = (bounds.minY + bounds.maxY) / 2;
+        const ratio = cam.zoom / nextZoom;
+        const newCentreX = before.x - (before.x - resolved.t.centreX) * ratio;
+        const newCentreY = before.y - (before.y - resolved.t.centreY) * ratio;
+        return {
+          ...cam,
+          zoom: nextZoom,
+          panX: newCentreX - worldCentreX,
+          panY: newCentreY - worldCentreY,
+        };
+      });
+    };
+    canvas.addEventListener("wheel", onWheel, { passive: false });
+    return () => canvas.removeEventListener("wheel", onWheel);
+  }, [result, currentTransform, bounds]);
+
+  const handlePointerDown = useCallback((e: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (e.button !== 0) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const { px, py } = pointerPos(e);
+    dragRef.current = { pointerId: e.pointerId, startX: px, startY: py, moved: false };
+  }, []);
+
+  const handlePointerMove = useCallback(
+    (e: ReactPointerEvent<HTMLCanvasElement>) => {
+      const drag = dragRef.current;
+      if (drag === null || drag.pointerId !== e.pointerId) return;
+      const resolved = currentTransform();
+      if (resolved === undefined) return;
+      const { px, py } = pointerPos(e);
+      const dxPx = px - drag.startX;
+      const dyPx = py - drag.startY;
+      if (!drag.moved && Math.hypot(dxPx, dyPx) < 4) return;
+      drag.moved = true;
+      setDragging(true);
+      drag.startX = px;
+      drag.startY = py;
+      // Convert the pixel delta to a world delta and shift the focus. Dragging
+      // releases any follow lock so the player can free-look.
+      const worldDx = dxPx / resolved.t.scale;
+      const worldDy = dyPx / resolved.t.scale;
+      setCamera((cam) => {
+        const base = cam.followId !== null
+          ? { panX: resolved.t.centreX - (bounds.minX + bounds.maxX) / 2, panY: resolved.t.centreY - (bounds.minY + bounds.maxY) / 2 }
+          : { panX: cam.panX, panY: cam.panY };
+        return {
+          ...cam,
+          followId: null,
+          panX: base.panX - worldDx,
+          panY: base.panY - worldDy,
+        };
+      });
+    },
+    [currentTransform, bounds],
+  );
+
+  const handlePointerUp = useCallback(
+    (e: ReactPointerEvent<HTMLCanvasElement>) => {
+      const drag = dragRef.current;
+      dragRef.current = null;
+      setDragging(false);
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+      if (drag === null || drag.moved) return;
+      // A click without drag: pick a ship to follow, or clear follow on empty space.
+      const resolved = currentTransform();
+      if (resolved === undefined) return;
+      const { px, py } = pointerPos(e);
+      const world = screenToWorld(resolved.t, px, py);
+      const hit = pickShipAt(resolved.frame, world);
+      setCamera((cam) => ({ ...cam, followId: hit?.instanceId ?? null }));
+    },
+    [currentTransform],
+  );
+
+  const resetCamera = useCallback(() => setCamera(DEFAULT_CAMERA), []);
+
   if (fleets === undefined || designs === undefined) {
     return <Text c="dimmed">Loading…</Text>;
   }
@@ -622,9 +802,12 @@ export function BattleRoute() {
       });
       void storage().battles.save(battle);
       setResult(battle);
-      // Reset the playback clock to the start.
+      // Reset the playback clock and camera to the start of a fresh battle, and
+      // collapse the setup panel so the stage gets the full width for playback.
       playbackTimeRef.current = 0;
       setPlaybackTime(0);
+      setCamera(DEFAULT_CAMERA);
+      setSetupOpen(false);
       setPlaying(true);
     } catch (error) {
       notifications.show({
@@ -713,190 +896,256 @@ export function BattleRoute() {
     ? (result.frames[currentTick] ?? result.frames[result.frames.length - 1])
     : null;
 
-  return (
-    <Stack gap="lg">
-      <Title order={2}>Battle Arena</Title>
-
-      <Group gap="lg" align="flex-start">
-        <Paper p="md" withBorder style={{ flex: "1 1 320px" }}>
-          <Stack gap="sm">
-            <NativeSelect
-              label="Attacker"
-              value={attackerId ?? ""}
-              onChange={(e) => setAttackerId(e.target.value || null)}
-            >
-              <option value="">— select —</option>
-              {fleetOptions.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </NativeSelect>
-            <NativeSelect
-              label="Defender"
-              value={defenderId ?? ""}
-              onChange={(e) => setDefenderId(e.target.value || null)}
-            >
-              <option value="">— select —</option>
-              {fleetOptions.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </NativeSelect>
-
-            <Stack gap={4}>
-              <Text size="sm" fw={500}>
-                Spatial anomaly
-              </Text>
-              <SegmentedControl
-                fullWidth
-                size="xs"
-                data={BattleAnomaly.options.map((a) => ({
-                  value: a,
-                  label: ANOMALY_LABEL[a],
-                }))}
-                value={anomaly}
-                onChange={(val) => setAnomaly(BattleAnomaly.parse(val))}
-              />
-            </Stack>
-
-            <Group align="flex-end">
-              <NumberInput
-                label="Seed"
-                value={seed}
-                onChange={(val) => setSeed(typeof val === "number" ? val : 1)}
-                style={{ flex: 1 }}
-              />
-              <Button
-                variant="light"
-                leftSection={<IconRefresh size={16} />}
-                onClick={() => setSeed(Math.floor(Math.random() * 1_000_000_000))}
-              >
-                Random
-              </Button>
-            </Group>
-
-            <Button
-              size="md"
-              leftSection={<IconSwords size={18} />}
-              onClick={engage}
-              loading={computing}
-            >
-              Engage
-            </Button>
-
-            <Tooltip label="Auto-roll attacker, defender, anomaly and seed, then watch.">
-              <Button
-                variant="light"
-                fullWidth
-                leftSection={<IconArrowsShuffle size={16} />}
-                onClick={randomBattle}
-                disabled={allFleets.length === 0 || computing}
-              >
-                AI vs AI
-              </Button>
-            </Tooltip>
-
-            {result !== null && (
-              <Group justify="space-between">
-                <Text size="sm" c="dimmed">
-                  Result
-                </Text>
-                <Badge size="lg" color="gray" style={{ color: winnerColour }}>
-                  {result.winner === "draw"
-                    ? "Draw"
-                    : `${result.winner.toUpperCase()} WINS`}
-                </Badge>
-              </Group>
-            )}
-          </Stack>
-        </Paper>
-
-        <Stack gap="sm" style={{ flex: "1 1 560px" }}>
-          {result === null ? (
-            <Paper p="xl" withBorder>
-              <Center h={360}>
-                {computing ? (
-                  <Stack align="center" gap="xs">
-                    <Loader />
-                    <Text c="dimmed">Computing battle…</Text>
-                  </Stack>
-                ) : (
-                  <Stack align="center" gap="xs">
-                    <IconSwords size={40} color="#6b7280" />
-                    <Text c="dimmed">Pick two fleets and engage to watch the battle.</Text>
-                  </Stack>
-                )}
-              </Center>
-            </Paper>
-          ) : (
-            <>
-              <Paper p="xs" withBorder>
-                <canvas
-                  ref={canvasRef}
-                  style={{
-                    width: "100%",
-                    aspectRatio: `${W} / ${H}`,
-                    display: "block",
-                    borderRadius: 4,
-                  }}
-                />
-              </Paper>
-              <Group gap="md" align="center">
-                <Button
-                  variant="light"
-                  leftSection={
-                    playing ? <IconPlayerPause size={16} /> : <IconPlayerPlay size={16} />
-                  }
-                  onClick={() => {
-                    if (currentTick >= result.ticks) {
-                      // Rewind to start before playing again.
-                      playbackTimeRef.current = 0;
-                      setPlaybackTime(0);
-                    }
-                    setPlaying((p) => !p);
-                  }}
-                >
-                  {playing ? "Pause" : "Play"}
-                </Button>
-                <Text size="sm" c="dimmed" style={{ flex: 1 }}>
-                  Tick {currentTick} / {result.ticks}
-                </Text>
-                <SegmentedControl
-                  size="xs"
-                  data={[
-                    { value: "0.25", label: "0.25x" },
-                    { value: "0.5", label: "0.5x" },
-                    { value: "1", label: "1x" },
-                    { value: "2", label: "2x" },
-                  ]}
-                  value={String(speed)}
-                  onChange={(val) => setSpeed(Number(val))}
-                />
-              </Group>
-              <Slider
-                min={0}
-                max={result.ticks}
-                value={currentTick}
-                onChange={(val) => {
-                  setPlaying(false);
-                  const newTime = val / TICKS_PER_SECOND;
-                  playbackTimeRef.current = newTime;
-                  setPlaybackTime(newTime);
-                  // Redraw immediately at the new position without waiting for
-                  // the next rAF, so seeking feels instant.
-                  const frame = interpolateFrame(result.frames, val);
-                  drawFrame(frame);
-                }}
-              />
-              {statusFrame !== null && statusFrame !== undefined && (
-                <ModuleStatusPanel frame={statusFrame} />
-              )}
-            </>
-          )}
-        </Stack>
+  const setupForm = (
+    <Stack gap="sm">
+      <Group gap="sm" grow align="flex-start">
+        <NativeSelect
+          label="Attacker"
+          value={attackerId ?? ""}
+          onChange={(e) => setAttackerId(e.target.value || null)}
+        >
+          <option value="">— select —</option>
+          {fleetOptions.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </NativeSelect>
+        <NativeSelect
+          label="Defender"
+          value={defenderId ?? ""}
+          onChange={(e) => setDefenderId(e.target.value || null)}
+        >
+          <option value="">— select —</option>
+          {fleetOptions.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </NativeSelect>
       </Group>
+
+      <Stack gap={4}>
+        <Text size="sm" fw={500}>
+          Spatial anomaly
+        </Text>
+        <SegmentedControl
+          fullWidth
+          size="xs"
+          data={BattleAnomaly.options.map((a) => ({
+            value: a,
+            label: ANOMALY_LABEL[a],
+          }))}
+          value={anomaly}
+          onChange={(val) => setAnomaly(BattleAnomaly.parse(val))}
+        />
+      </Stack>
+
+      <Group align="flex-end">
+        <NumberInput
+          label="Seed"
+          value={seed}
+          onChange={(val) => setSeed(typeof val === "number" ? val : 1)}
+          style={{ flex: 1 }}
+        />
+        <Button
+          variant="light"
+          leftSection={<IconRefresh size={16} />}
+          onClick={() => setSeed(Math.floor(Math.random() * 1_000_000_000))}
+        >
+          Random
+        </Button>
+      </Group>
+
+      <Group grow>
+        <Button
+          size="md"
+          leftSection={<IconSwords size={18} />}
+          onClick={engage}
+          loading={computing}
+        >
+          Engage
+        </Button>
+        <Tooltip label="Auto-roll attacker, defender, anomaly and seed, then watch.">
+          <Button
+            variant="light"
+            leftSection={<IconArrowsShuffle size={16} />}
+            onClick={randomBattle}
+            disabled={allFleets.length === 0 || computing}
+          >
+            AI vs AI
+          </Button>
+        </Tooltip>
+      </Group>
+    </Stack>
+  );
+
+  return (
+    <Stack gap="md">
+      <Group justify="space-between" align="center">
+        <Title order={2}>Battle Arena</Title>
+        <Group gap="xs">
+          {result !== null && (
+            <Badge size="lg" color="gray" style={{ color: winnerColour }}>
+              {result.winner === "draw" ? "Draw" : `${result.winner.toUpperCase()} WINS`}
+            </Badge>
+          )}
+          <Button
+            variant={setupOpen ? "filled" : "light"}
+            size="sm"
+            leftSection={<IconSettings size={16} />}
+            onClick={() => setSetupOpen((o) => !o)}
+          >
+            Setup
+          </Button>
+        </Group>
+      </Group>
+
+      <Collapse expanded={setupOpen}>
+        <Paper p="md" withBorder>
+          {setupForm}
+        </Paper>
+      </Collapse>
+
+      {result === null ? (
+        <Paper p="xl" withBorder>
+          <Center h={360}>
+            {computing ? (
+              <Stack align="center" gap="xs">
+                <Loader />
+                <Text c="dimmed">Computing battle…</Text>
+              </Stack>
+            ) : (
+              <Stack align="center" gap="xs">
+                <IconSwords size={40} color="#6b7280" />
+                <Text c="dimmed">Pick two fleets and engage to watch the battle.</Text>
+              </Stack>
+            )}
+          </Center>
+        </Paper>
+      ) : (
+        <Stack gap="sm">
+          <Paper p={0} withBorder className={styles.stage}>
+            <Box className={styles.canvasBox}>
+              <canvas
+                ref={canvasRef}
+                className={`${styles.canvas}${dragging ? ` ${styles.canvasGrabbing}` : ""}`}
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                onPointerCancel={handlePointerUp}
+              />
+
+              <Badge
+                className={styles.anomalyLegend}
+                size="sm"
+                variant="filled"
+                color={activeAnomaly === "none" ? "gray" : "grape"}
+              >
+                {ANOMALY_LABEL[activeAnomaly]}
+                {camera.followId !== null ? " · following" : ""}
+              </Badge>
+
+              <Group className={styles.cameraControls} gap={4}>
+                <Tooltip label="Zoom in">
+                  <ActionIcon
+                    variant="default"
+                    onClick={() => setCamera((c) => ({ ...c, zoom: clampZoom(c.zoom * 1.4) }))}
+                  >
+                    +
+                  </ActionIcon>
+                </Tooltip>
+                <Tooltip label="Zoom out">
+                  <ActionIcon
+                    variant="default"
+                    onClick={() => setCamera((c) => ({ ...c, zoom: clampZoom(c.zoom / 1.4) }))}
+                  >
+                    −
+                  </ActionIcon>
+                </Tooltip>
+                <Tooltip label="Fit whole battle (reset camera)">
+                  <ActionIcon variant="default" onClick={resetCamera}>
+                    <IconMaximize size={16} />
+                  </ActionIcon>
+                </Tooltip>
+                <Tooltip label={statusOpen ? "Hide module panel" : "Show module panel"}>
+                  <ActionIcon
+                    variant={statusOpen ? "filled" : "default"}
+                    onClick={() => setStatusOpen((o) => !o)}
+                  >
+                    <IconLayoutSidebarRightExpand size={16} />
+                  </ActionIcon>
+                </Tooltip>
+              </Group>
+
+              {statusOpen && statusFrame !== null && statusFrame !== undefined && (
+                <Box className={styles.statusOverlay}>
+                  <ModuleStatusPanel frame={statusFrame} />
+                </Box>
+              )}
+            </Box>
+          </Paper>
+
+          <Group gap="md" align="center">
+            <Button
+              variant="light"
+              leftSection={playing ? <IconPlayerPause size={16} /> : <IconPlayerPlay size={16} />}
+              onClick={() => {
+                if (currentTick >= result.ticks) {
+                  playbackTimeRef.current = 0;
+                  setPlaybackTime(0);
+                }
+                setPlaying((p) => !p);
+              }}
+            >
+              {playing ? "Pause" : "Play"}
+            </Button>
+            <Tooltip
+              label={
+                camera.followId !== null
+                  ? "Following a ship — click empty space or Fit to release"
+                  : "Click a ship to follow it; scroll to zoom, drag to pan"
+              }
+            >
+              <Badge
+                size="sm"
+                variant="light"
+                color={camera.followId !== null ? "grape" : "gray"}
+                leftSection={<IconFocus2 size={12} />}
+              >
+                {Math.round(camera.zoom * 100)}%
+              </Badge>
+            </Tooltip>
+            <Text size="sm" c="dimmed" style={{ flex: 1 }}>
+              Tick {currentTick} / {result.ticks}
+            </Text>
+            <SegmentedControl
+              size="xs"
+              data={[
+                { value: "0.25", label: "0.25x" },
+                { value: "0.5", label: "0.5x" },
+                { value: "1", label: "1x" },
+                { value: "2", label: "2x" },
+              ]}
+              value={String(speed)}
+              onChange={(val) => setSpeed(Number(val))}
+            />
+          </Group>
+          <Slider
+            min={0}
+            max={result.ticks}
+            value={currentTick}
+            onChange={(val) => {
+              setPlaying(false);
+              const newTime = val / TICKS_PER_SECOND;
+              playbackTimeRef.current = newTime;
+              setPlaybackTime(newTime);
+              const frame = interpolateFrame(result.frames, val);
+              drawFrame(frame);
+            }}
+          />
+        </Stack>
+      )}
     </Stack>
   );
 }
