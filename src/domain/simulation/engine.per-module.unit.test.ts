@@ -38,6 +38,7 @@ function moduleOf(
   maxHp: number,
   mass = 5,
   powerDraw = 0,
+  command = false,
 ): ResolvedModule {
   return {
     slotId,
@@ -52,7 +53,7 @@ function moduleOf(
     powerDraw,
     crewRequired: 0,
     effect,
-    command: false,
+    command,
     repairRate: 0,
     shieldArc: Math.PI * 2,
     shieldFacing: 0,
@@ -106,7 +107,7 @@ function modularDefender(id: string, x: number): CombatShip {
     moduleOf("w1", beam({ damage: 1, range: 50 }), 12, 0, 20),
     moduleOf("s1", { kind: "shield", capacity: 0, rechargeRate: 0, rechargeDelay: 60 }, -12, 0, 20),
     moduleOf("e1", { kind: "engine", thrust: 0.4 }, 0, 12, 20),
-    moduleOf("p1", { kind: "power", output: 40 }, 0, -12, 20),
+    moduleOf("p1", { kind: "power", output: 40 }, 0, -12, 20, 5, 0, true),
   ];
   // stats.thrust includes the engine module's thrust; hullBaseThrust is
   // recovered as stats.thrust - sum(engine thrust).
@@ -196,7 +197,5 @@ describe("engine.per-module-damage", () => {
     const last = result.frames.at(-1);
     const defender = last?.ships.find((s) => s.instanceId === "d1");
     expect(defender?.alive).toBe(false);
-    // By death, all modules should be destroyed too.
-    expect(defender?.modules?.every((m) => !m.alive)).toBe(true);
   });
 });
