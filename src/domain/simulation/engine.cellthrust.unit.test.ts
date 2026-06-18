@@ -7,21 +7,25 @@ import type { ModuleEffect, EngineEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
 
 /**
- * Per-cell directional thrusters: each engine's `facing` (radians,
- * ship-local) determines which direction its thrust vector points, and its
- * (x, y) on the hull gives the lever arm for the torque calculation.
+ * Per-cell directional thrusters: each engine's `facing` (radians, ship-local)
+ * is its EXHAUST direction — where the nozzle/flame points. By Newton's third
+ * law the thrust on the ship is opposite the exhaust, so a force vector of
+ * `-(cos facing, sin facing) · thrust`. Its (x, y) on the hull gives the lever
+ * arm for the torque calculation.
  *
  * Expected behaviours verified here:
- *   - A rear-mounted engine (`facing` ≈ π) thrusts the ship forward along
- *     its heading, just like the legacy scalar model.
- *   - A side-mounted engine (`facing` ≈ ±π/2) strafes the ship
- *     perpendicular to its facing.
+ *   - A rear-mounted engine (exhaust aft, `facing` ≈ π) drives the ship
+ *     forward (+x) along its heading, just like the legacy scalar model.
+ *   - An engine whose exhaust points forward (`facing` = 0) pushes the ship
+ *     backward (−x) — a reverse/braking thruster.
+ *   - A side-mounted engine (exhaust ≈ ±π/2) strafes the ship opposite its
+ *     exhaust direction.
  *   - Two opposing engines cancel linear thrust (zero net force) and
  *     produce no torque when symmetrically placed.
  *   - Unbalanced engines (one on each side, asymmetric positions) spin the
  *     ship — angVel becomes non-zero.
- *   - Non-hull modular ships without an explicit facing on their engine
- *     default to facing = 0 (forward), preserving legacy behaviour.
+ *   - Non-hull modular ships without an explicit facing default to facing = 0
+ *     (exhaust forward), so the un-faced engine pushes the ship backward.
  *   - The model is deterministic — running the same battle twice yields
  *     identical frames.
  */
@@ -181,16 +185,15 @@ function angVelOf(
 }
 
 describe("engine.cellthrust", () => {
-  it("a forward-thrusting engine (facing 0) accelerates the ship along its heading", () => {
-    // Ship faces +x (facing = 0). Engine anywhere with `facing` = 0
-    // produces a force vector along +x in ship-local; rotated by
-    // ship.facing = 0, the world force is also +x, so the ship accelerates
-    // toward +x. This is the legacy default and the Cosmoteer "rear-
-    // mounted" engine (the nozzle points backward, the ship is pushed
-    // forward).
+  it("a rear-mounted engine (exhaust aft, facing π) accelerates the ship forward (+x)", () => {
+    // Ship faces +x (facing = 0). A rear engine's exhaust points aft
+    // (facing = π); by Newton's third law the thrust on the ship is opposite
+    // the exhaust → +x in ship-local; rotated by ship.facing = 0 the world
+    // force is also +x, so the ship accelerates forward. This is the Cosmoteer
+    // "rear-mounted" engine and how every real design mounts its drives.
     const modules: ResolvedModule[] = [
       moduleOf("c1", { kind: "power", output: 40 }, 0, 0, 100, 5, 0, true),
-      moduleOf("e1", engine(1.0, 0), -10, 0, 100),
+      moduleOf("e1", engine(1.0, Math.PI), -10, 0, 100),
     ];
     const ship = modularShip("s1", "attacker", modules, { x: 0, y: 0 }, 0);
     const result = runBattle(inputs([ship, dummy("d1", 200)]));
@@ -198,7 +201,7 @@ describe("engine.cellthrust", () => {
     const mid = result.frames[50];
     if (mid === undefined) throw new Error("no frame at tick 50");
     const v = velOf(mid, "s1");
-    expect(v.vx, "facing=0 engine should accelerate ship along +x").toBeGreaterThan(0);
+    expect(v.vx, "rear-mounted (facing π) engine should accelerate ship along +x").toBeGreaterThan(0);
     // No sideways thrust → no perpendicular velocity component.
     expect(Math.abs(v.vy), "no sideways thrust expected").toBeLessThan(Math.abs(v.vx));
   });
@@ -284,16 +287,17 @@ describe("engine.cellthrust", () => {
     void angVelOf; // silence unused warning
   });
 
-  it("non-hull modular ships default engine facing to 0 when omitted", () => {
-    // Engine declared without an explicit `facing` should default to 0
-    // (forward), giving the same thrust behaviour as the legacy scalar
-    // model: the ship accelerates along its heading.
+  it("non-hull modular ships default engine facing to 0 (exhaust forward) when omitted", () => {
+    // An engine declared without an explicit `facing` defaults to 0, i.e. its
+    // exhaust points forward (+x), so the thrust on the ship is backward (−x).
+    // A real forward-driving ship therefore must mount its engines facing π;
+    // an un-faced engine is a reverse thruster.
     const modules: ResolvedModule[] = [
       moduleOf("c1", { kind: "power", output: 40 }, 0, 0, 100, 5, 0, true),
       moduleOf(
         "e1",
-        { kind: "engine", thrust: 1.0, turnRate: 0 }, // no facing field
-        -10,
+        { kind: "engine", thrust: 1.0, turnRate: 0 }, // no facing field → 0
+        10,
         0,
         100,
       ),
@@ -303,7 +307,7 @@ describe("engine.cellthrust", () => {
     const mid = result.frames[50];
     if (mid === undefined) throw new Error("no frame at tick 50");
     const v = velOf(mid, "s1");
-    expect(v.vx, "default-facing engine (forward) thrusts along +x").toBeGreaterThan(0);
+    expect(v.vx, "default-facing engine (exhaust forward) thrusts ship backward (−x)").toBeLessThan(0);
   });
 
   it("is deterministic", () => {

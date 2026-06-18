@@ -94,7 +94,9 @@ function rammer(
     classification: "frigate",
     modules: [
       moduleOf("c1", { kind: "power", output: 40 }, 0, 0, 5, true),
-      moduleOf("e1", { kind: "engine", thrust: 1, turnRate: 0 }, 1, 0, 5),
+      // Exhaust faces aft (π) so the thrust drives the ship forward (+x along
+      // its heading) — a rammer needs to actually close on its target.
+      moduleOf("e1", { kind: "engine", thrust: 1, turnRate: 0, facing: Math.PI }, 1, 0, 5),
       moduleOf(
         "w1",
         {

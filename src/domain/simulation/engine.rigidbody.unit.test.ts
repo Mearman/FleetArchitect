@@ -416,11 +416,12 @@ describe("engine.rigidbody — moment of inertia and engine torque", () => {
   });
 
   it("an off-CoM engine produces torque in the expected direction", () => {
-    // Layout: command module at origin, engine at (0, +10) facing 0
-    // (thrusts along +x in ship-local). CoM is at y = +5 (midway between
-    // the two equal-mass modules). Lever arm from CoM: (0, +10) - (0, +5)
-    // = (0, +5). Force: (+F, 0). Torque = r × F = 0*0 - (+5)*(+F) = -5F
-    // (negative, clockwise — facing drifts negative).
+    // Layout: command module at origin, engine at (0, +10) with exhaust
+    // facing 0 (nozzle points +x), so the thrust on the ship is −x (Newton's
+    // third law). CoM is at y = +5 (midway between the two equal-mass
+    // modules). Lever arm from CoM: (0, +10) − (0, +5) = (0, +5). Force:
+    // (−F, 0). Torque = r × F = rx*Fy − ry*Fx = 0*0 − (+5)*(−F) = +5F
+    // (positive, counter-clockwise — facing drifts positive).
     const ship = modularShip("s1", "attacker", { x: 0, y: 0 }, 0, [
       moduleOf(
         "e1",
@@ -440,7 +441,7 @@ describe("engine.rigidbody — moment of inertia and engine torque", () => {
     const fa = findShip(a, "s1").facing ?? 0;
     const fb = findShip(b, "s1").facing ?? 0;
     const delta = angleDelta(fa, fb);
-    expect(delta, "off-CoM engine must spin the ship clockwise (negative)").toBeLessThan(-1e-4);
+    expect(delta, "off-CoM engine must spin the ship counter-clockwise (positive)").toBeGreaterThan(1e-4);
   });
 });
 

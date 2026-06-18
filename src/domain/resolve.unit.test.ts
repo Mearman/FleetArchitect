@@ -96,12 +96,19 @@ describe("resolveFleetToCombatShips (grid)", () => {
     expect(hull.maxHp).toBe(tile.hp);
   });
 
-  it("mirrors the defender to the opposite side and turns it to face the attacker", () => {
+  it("deploys the attacker left of the midline facing right and the defender mirrored", () => {
+    // Deployment is edge-relative and auto-spaced (it ignores the authored
+    // position, which rots as ship sizes change): attackers form up on the
+    // left (x < 0) facing +x (0), defenders mirror to the right (x > 0)
+    // facing −x (π), so the two sides meet across the arena.
     const designs = new Map([["d-1", design()]]);
     const [att] = resolveFleetToCombatShips(fleet(), designs, catalog(), "attacker");
     const [def] = resolveFleetToCombatShips(fleet(), designs, catalog(), "defender");
-    expect(att?.position.x).toBe(-100);
-    expect(def?.position.x).toBe(100);
+    expect(att?.position.x).toBeLessThan(0);
+    expect(att?.facing).toBeCloseTo(0, 6);
+    expect(def?.position.x).toBeGreaterThan(0);
     expect(def?.facing).toBeCloseTo(Math.PI, 6);
+    // The two sides are mirror images across x = 0.
+    expect(def?.position.x).toBeCloseTo(-(att?.position.x ?? 0), 6);
   });
 });

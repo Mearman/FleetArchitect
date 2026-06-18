@@ -1,9 +1,9 @@
 import { createId } from "@/domain/id";
 import { analyseShipDesign } from "@/domain/stats";
-import { cellToLocal, deriveClassification, footprint } from "@/domain/grid";
+import { cellToLocal, deriveClassification, deriveRadius, footprint } from "@/domain/grid";
 import type { Catalog } from "@/domain/catalog";
 import type { CombatShip, ResolvedModule } from "@/domain/simulation/types";
-import type { Fleet, FleetShip } from "@/schema/fleet";
+import type { Fleet } from "@/schema/fleet";
 import type { GridCell } from "@/schema/grid";
 import type { ModuleEffect } from "@/schema/module";
 import type { ShipDesign } from "@/schema/ship";
@@ -24,27 +24,66 @@ import type { ShipDesign } from "@/schema/ship";
  * so the engine can run the per-module damage / fire / regen model and the
  * grid-exact break-apart.
  */
+/**
+ * Where a fleet forms up, in battle units. Ships deploy in a vertical column
+ * inset from their own side's edge — attackers on the left facing right (+x),
+ * defenders mirrored on the right — rather than at hand-authored coordinates,
+ * which rot the moment ship sizes change. Each ship's centre sits one ship
+ * radius inside the edge so its hull doesn't clip off-screen; ships stack down
+ * the column spaced by their radii plus a margin so no two ever overlap at
+ * tick 0 (overlap would trigger the collision-separation impulse and fling the
+ * fleet apart before the battle starts). The column is centred on y = 0.
+ */
+const DEPLOY = {
+  /** Distance of the formation line from the arena's vertical midline (x = 0). */
+  edgeInset: 360,
+  /** Vertical clear space between adjacent ships' hull circles. */
+  shipMargin: 18,
+};
+
 export function resolveFleetToCombatShips(
   fleet: Fleet,
   designs: ReadonlyMap<string, ShipDesign>,
   catalog: Catalog,
   side: "attacker" | "defender",
 ): CombatShip[] {
+  // Resolve every deployable design first, carrying its radius so the column
+  // can be spaced by actual ship size.
+  const resolved = fleet.ships
+    .map((deployed) => {
+      const design = designs.get(deployed.designId);
+      if (design === undefined) return undefined;
+      return { deployed, design, radius: deriveRadius(design.grid) };
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== undefined);
+
+  // Total column height: every ship's diameter plus a margin between each pair.
+  const totalHeight =
+    resolved.reduce((sum, e) => sum + e.radius * 2, 0) +
+    Math.max(0, resolved.length - 1) * DEPLOY.shipMargin;
+
+  // Attackers face right (+x) from the left edge; defenders mirror to the right
+  // edge facing left (π). Lay the column out top (most negative y) to bottom,
+  // centred on y = 0.
+  const dir = side === "attacker" ? -1 : 1;
+  const facing = side === "attacker" ? 0 : Math.PI;
+  let cursorY = -totalHeight / 2;
+
   const ships: CombatShip[] = [];
-  for (const deployed of fleet.ships) {
-    const design = designs.get(deployed.designId);
-    if (design === undefined) continue;
+  for (const { deployed, design, radius } of resolved) {
     const { stats } = analyseShipDesign(design, catalog);
-    const placement = side === "defender" ? mirrorPlacement(deployed) : deployed;
     const modules = resolveModules(design, catalog);
+    const x = dir * (DEPLOY.edgeInset - radius);
+    const y = cursorY + radius;
+    cursorY += radius * 2 + DEPLOY.shipMargin;
     ships.push({
       instanceId: createId("ship"),
       designId: design.id,
       side,
       stats,
-      position: placement.position,
-      facing: placement.facing,
-      orders: placement.orders,
+      position: { x, y },
+      facing,
+      orders: deployed.orders,
       classification: deriveClassification(design.grid),
       ...(modules.length > 0 ? { modules } : {}),
     });
@@ -191,14 +230,4 @@ function turretArcFor(effect: ModuleEffect): number {
 function turretTurnRateFor(effect: ModuleEffect): number {
   if (effect.kind !== "weapon") return 0;
   return effect.turretTurnRate ?? 0;
-}
-
-/** Reflect a deployment across the y-axis: negate x, add π to facing. */
-function mirrorPlacement(ship: FleetShip): FleetShip {
-  return {
-    designId: ship.designId,
-    position: { x: -ship.position.x, y: ship.position.y },
-    facing: ship.facing + Math.PI,
-    orders: ship.orders,
-  };
 }
