@@ -378,6 +378,88 @@ describe("interpolateFrame", () => {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // Awareness (discrete — taken from nearest frame, never interpolated)
+  // ---------------------------------------------------------------------------
+
+  describe("awareness interpolation", () => {
+    function makeAwarenessFrame(tick: number, x: number, contactX: number): BattleFrame {
+      return {
+        tick,
+        ships: [
+          { instanceId: "s1", side: "attacker", x, y: 0, structure: 100, shield: 0, alive: true },
+        ],
+        projectiles: [],
+        awareness: {
+          occluders: [],
+          clusters: [
+            {
+              id: `cluster-${tick}`,
+              side: "attacker",
+              memberIds: ["s1"],
+              coverage: [{ x: contactX, y: 0, r: 50 }],
+            },
+          ],
+          contacts: [],
+          ghosts: [],
+          links: [],
+          dishAngles: [],
+        },
+      };
+    }
+
+    it("carries awareness from the lo frame when alpha < 0.5", () => {
+      const frameA = makeAwarenessFrame(0, 0, 10);
+      const frameB = makeAwarenessFrame(1, 10, 20);
+
+      // alpha = 0.3 → nearest is lo (frameA)
+      const result = interpolateFrame([frameA, frameB], 0.3);
+      expect(result.awareness).toBeDefined();
+      expect(result.awareness?.clusters[0]?.id).toBe("cluster-0");
+      // Coverage disc is from frameA, not interpolated
+      expect(result.awareness?.clusters[0]?.coverage[0]?.x).toBe(10);
+    });
+
+    it("carries awareness from the hi frame when alpha >= 0.5", () => {
+      const frameA = makeAwarenessFrame(0, 0, 10);
+      const frameB = makeAwarenessFrame(1, 10, 20);
+
+      // alpha = 0.7 → nearest is hi (frameB)
+      const result = interpolateFrame([frameA, frameB], 0.7);
+      expect(result.awareness).toBeDefined();
+      expect(result.awareness?.clusters[0]?.id).toBe("cluster-1");
+      // Coverage disc is from frameB, not interpolated
+      expect(result.awareness?.clusters[0]?.coverage[0]?.x).toBe(20);
+    });
+
+    it("carries undefined awareness when neither frame has awareness", () => {
+      const frameA: BattleFrame = {
+        tick: 0,
+        ships: [{ instanceId: "s", side: "attacker", x: 0, y: 0, structure: 100, shield: 0, alive: true }],
+        projectiles: [],
+      };
+      const frameB: BattleFrame = {
+        tick: 1,
+        ships: [{ instanceId: "s", side: "attacker", x: 10, y: 0, structure: 100, shield: 0, alive: true }],
+        projectiles: [],
+      };
+
+      const result = interpolateFrame([frameA, frameB], 0.5);
+      expect(result.awareness).toBeUndefined();
+    });
+
+    it("is never a blend of lo and hi awareness values", () => {
+      const frameA = makeAwarenessFrame(0, 0, 100);
+      const frameB = makeAwarenessFrame(1, 10, 200);
+
+      // At alpha = 0.5 (boundary), nearest is hi — coverage.x must be exactly
+      // 200 (frameB's value), not 150 (a blend of 100 and 200).
+      const result = interpolateFrame([frameA, frameB], 0.5);
+      const coverageX = result.awareness?.clusters[0]?.coverage[0]?.x;
+      expect(coverageX).toBe(200);
+    });
+  });
+
   it("omits a ship from interpolation when it exists only in the lo frame", () => {
     const frameA: BattleFrame = {
       tick: 0,
