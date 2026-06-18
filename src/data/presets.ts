@@ -111,19 +111,30 @@ function swarmGrid(rows: readonly string[]): TileGrid {
   return gridFromMapWith(rows, SWARM_TOKENS);
 }
 
+// Authoring note on orientation: ships face +x (to the right). A cell's world
+// x grows with its column, so the RIGHTMOST columns are the prow (forward) and
+// the LEFTMOST are the stern — engines (`E`/`P`, `j`/`u`) sit at the left edge
+// firing aft, weapons cluster toward the right. Empty cells (`.`) carve the
+// silhouette: tapered prows, swept-back wings, engine nacelles. Rows are the
+// beam (top-to-bottom) axis; designs are mirrored top/bottom so they fly true.
+
 const designData: ShipDesign[] = [
   // ===========================================================================
   // Terran designs — ferro-steel hulls, energy shields, conventional drives.
+  // Angular, symmetrical warships with armoured prows and aft engine banks.
   // ===========================================================================
   {
     id: "preset-ship-sabre",
     name: "Sabre Interceptor",
     faction: "Terran",
-    // Fighter: a cheap, fast laser picket. Twin pulse lasers on a fusion spine
-    // with an ion drive and a strut nose for a little structure.
+    // Fighter: a darting laser interceptor. A pointed nose of pulse lasers, swept
+    // strut wings, an ion drive on the spine — cheap, fast, fragile.
     grid: gridFromMap([
-      "EFL",
-      "/CL",
+      "...oL..",
+      ".E=#L..",
+      "EFFC#LL",
+      ".E=#L..",
+      "...oL..",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -132,11 +143,14 @@ const designData: ShipDesign[] = [
     id: "preset-ship-wasp",
     name: "Wasp Skirmisher",
     faction: "Terran",
-    // Fighter: a plasma-drive missile skirmisher that kites — the 360° missile
-    // turret keeps firing while it runs. Light strut wings for shape.
+    // Fighter: a plasma-drive missile skirmisher that kites. Wingtip missile
+    // turrets fire in any direction while it runs; a strut tail for agility.
     grid: gridFromMap([
-      "PFM",
-      "/C/",
+      "..#M..",
+      "P=CFMM",
+      "PFCC#L",
+      "P=CFMM",
+      "..#M..",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -145,11 +159,14 @@ const designData: ShipDesign[] = [
     id: "preset-ship-gunship",
     name: "Vanguard Gunship",
     faction: "Terran",
-    // Frigate: the balanced workhorse. A railgun turret and pulse laser behind
-    // a Mk I deflector, twin reactors and ion drives, crew amidships.
+    // Frigate: the balanced workhorse. A railgun and laser battery behind a Mk I
+    // deflector prow, twin fusion reactors, an engine bank and crew amidships.
     grid: gridFromMap([
-      "EFsR",
-      "EFLC",
+      "..=sRL..",
+      ".EFCCs#R",
+      "EEFFCs#R",
+      ".EFCCs#R",
+      "..=sRL..",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -158,12 +175,14 @@ const designData: ShipDesign[] = [
     id: "preset-ship-bulwark",
     name: "Bulwark Escort",
     faction: "Terran",
-    // Frigate: a shield brawler. A heavy Mk II shield bank and titanium plating
-    // protect three pulse lasers, on triple reactors and ion drives.
+    // Frigate: a shield brawler. A broad Mk II shield wall and titanium belt
+    // front a laser battery; triple fusion reactors and a deep engine bank.
     grid: gridFromMap([
-      "EFCL",
-      "ESAL",
-      "EF#L",
+      ".=#SAL.",
+      "EFCSSAL",
+      "EFFCSAL",
+      "EFCSSAL",
+      ".=#SAL.",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -172,12 +191,14 @@ const designData: ShipDesign[] = [
     id: "preset-ship-aegis",
     name: "Aegis Monitor",
     faction: "Terran",
-    // Frigate: an armour brawler — slow, but a double belt of ablative hull and
-    // a Mk I shield soak enormous punishment while two lasers chip back.
+    // Frigate: an armour brawler. A blunt prow of ablative plating over a Mk I
+    // shield soaks punishment while railgun turrets answer; slow but unyielding.
     grid: gridFromMap([
-      "EFDL",
-      "EsDC",
-      "EF#L",
+      ".#DDsR.",
+      "EFCCDsR",
+      "EXFCDsR",
+      "EFCCDsR",
+      ".#DDsR.",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -186,11 +207,14 @@ const designData: ShipDesign[] = [
     id: "preset-ship-torpedo",
     name: "Vanguard Torpedo Boat",
     faction: "Terran",
-    // Frigate: stand-off artillery. A plasma torpedo and a missile turret behind
-    // titanium and ablative plating; hits hard, folds under a rush.
+    // Frigate: stand-off artillery. Spinal plasma torpedoes and wingtip missile
+    // turrets behind a titanium belt; hits enormously hard, folds under a rush.
     grid: gridFromMap([
-      "EFAT",
-      "ECDM",
+      "..A#MM...",
+      ".EFCCA#TT",
+      "EXFFCA#TT",
+      ".EFCCA#TT",
+      "..A#MM...",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -199,14 +223,17 @@ const designData: ShipDesign[] = [
     id: "preset-ship-leviathan",
     name: "Leviathan Battleship",
     faction: "Terran",
-    // Cruiser: a heavy mixed battery — torpedoes, railguns and lasers over a
-    // hull spine, behind a Mk II shield wall, on triple antimatter cores with a
-    // crew block amidships to run the guns.
+    // Cruiser: a true capital broadside. A stepped armoured prow and Mk II shield
+    // wall front a mixed battery of torpedoes, railguns and lasers; antimatter
+    // cores and a deep crew block run it, behind a five-engine stern bank.
     grid: gridFromMap([
-      "EXCTS",
-      "EXCRL",
-      "EXCRL",
-      "EX#TS",
+      "...=#SDTRL....",
+      "..EXCCSDTRRL..",
+      ".EXFCCSDTRRLL.",
+      "EXFCCCSDTRRLLL",
+      ".EXFCCSDTRRLL.",
+      "..EXCCSDTRRL..",
+      "...=#SDTRL....",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -215,29 +242,41 @@ const designData: ShipDesign[] = [
     id: "preset-ship-titan",
     name: "Titan Dreadnought",
     faction: "Terran",
-    // Capital: the apex Terran hull. A laser broadside and railgun spinal mounts
-    // behind a triple Mk II shield wall and an ablative cap, on antimatter power
-    // with a full crew block. Enormously expensive — one anchors a whole fleet.
+    // Capital: the apex Terran hull and by far the largest thing in the
+    // catalogue — a dreadnought that dwarfs a cruiser. A great arrowhead prow of
+    // ablative armour and stacked Mk II shields fronts banked railgun, missile
+    // and laser batteries; a core of antimatter cores and crew decks drives a
+    // vast stern engine bank. One anchors an entire fleet.
     grid: gridFromMap([
-      "EXCLLS",
-      "EXCLLS",
-      "EXCLLS",
-      "EX#RRD",
+      ".....=#SDRML.....",
+      "...EXCCCSDRRMLL..",
+      "..EXFCCCSDRRMMLL.",
+      ".EXFFCCCSDRRMMLLL",
+      "EXFFCCCCSDRRMMLLL",
+      ".EXFFCCCSDRRMMLLL",
+      "..EXFCCCSDRRMMLL.",
+      "...EXCCCSDRRMLL..",
+      ".....=#SDRML.....",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
   },
 
   // ===========================================================================
-  // Swarm designs — bio-organic insectoid ships. Fast, numerous, regenerating.
+  // Swarm designs — bio-organic insectoid ships. Asymmetric, clawed, organic
+  // silhouettes: tapered stingers, swept carapace, clustered drive flagella.
   // ===========================================================================
   {
     id: "preset-ship-drone",
     name: "Drone Skimmer",
     faction: "Swarm",
-    // Fighter: a spore launcher forward, a neural ganglion (command + power), a
-    // flagellum drive aft — the most basic Swarm combat unit.
-    grid: swarmGrid(["jgp"]),
+    // Fighter: the basic Swarm unit. A spore launcher snout, a neural ganglion
+    // core, twin flagella — small, fast, expendable.
+    grid: swarmGrid([
+      ".#p.",
+      "jgpp",
+      ".#p.",
+    ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
   },
@@ -245,11 +284,14 @@ const designData: ShipDesign[] = [
     id: "preset-ship-carrion",
     name: "Carrion Wing",
     faction: "Swarm",
-    // Fighter: a fast acid flanker. Twin acid sprayers strip armour at knife
-    // range; a flagellum and a pulse jet make it the quickest thing in the swarm.
+    // Fighter: a fast acid flanker. Forward-swept acid claws strip armour at
+    // knife range; paired flagella and a pulse jet make it the quickest hunter.
     grid: swarmGrid([
-      "jga",
-      "u/a",
+      "..#a..",
+      "j=gaa.",
+      "ugcgaa",
+      "j=gaa.",
+      "..#a..",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -258,11 +300,14 @@ const designData: ShipDesign[] = [
     id: "preset-ship-ravager",
     name: "Ravager Assault Ship",
     faction: "Swarm",
-    // Frigate: twin acid sprayers over a regenerating hull, a metabolic core
-    // (command + heavy power), two flagellum drives.
+    // Frigate: a regenerating brawler. Banks of acid sprayers over a self-knitting
+    // carapace, a metabolic core, and a cluster of flagella and pulse jets.
     grid: swarmGrid([
-      "jga",
-      "jra",
+      ".j#caa..",
+      "jgcraaa.",
+      "ugmcraaa",
+      "jgcraaa.",
+      ".j#caa..",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -271,13 +316,15 @@ const designData: ShipDesign[] = [
     id: "preset-ship-spitter",
     name: "Brood Spitter",
     faction: "Swarm",
-    // Frigate: a living artillery battery. A column of three neural stings spits
-    // homing tendrils downrange; spore-cloud emitters screen incoming fire while
-    // a regen membrane and metabolic core keep it in the fight.
+    // Frigate: living artillery. A fan of neural stingers spits homing tendrils
+    // downrange; spore clouds screen it while regen membranes and a metabolic
+    // core sustain the brood.
     grid: swarmGrid([
-      "jmn",
-      "ssn",
-      "jrn",
+      "..#snn...",
+      ".jgcsnnn.",
+      "ugmcrsnnn",
+      ".jgcsnnn.",
+      "..#snn...",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -286,14 +333,17 @@ const designData: ShipDesign[] = [
     id: "preset-ship-hive-lord",
     name: "Hive Lord",
     faction: "Swarm",
-    // Cruiser: a neural sting battery flanked by acid sprayers, carapace plating
-    // amidships, a metabolic core, spore cloud point defences, pulse jets, and
-    // regeneration membranes along the spine.
+    // Cruiser: the swarm capital. A great clawed prow of neural stingers and acid
+    // sprayers over a regenerating carapace, ringed by spore-cloud defences, with
+    // a metabolic heart and a bank of pulse-jet flagella driving the whole mass.
     grid: swarmGrid([
-      "jm#n",
-      "umsn",
-      "jrcn",
-      "uram",
+      "...#cnnn....",
+      "..jgcrsnnnn.",
+      ".jgmcrsannn.",
+      "ugmmcrsaannn",
+      ".jgmcrsannn.",
+      "..jgcrsnnnn.",
+      "...#cnnn....",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -363,12 +413,14 @@ const fleetData: Fleet[] = [
     id: "preset-fleet-battleline",
     name: "Battle Line",
     faction: "Terran",
-    // A defensive capital line: a battleship anchor screened by two shield
+    // A defensive capital line: twin battleships anchor a wall of shield
     // brawlers, holding at long range and focusing the strongest threat.
     ships: [
-      { designId: "preset-ship-leviathan", position: { x: -300, y: 0 }, facing: 0, orders: lineOrders },
-      { designId: "preset-ship-bulwark", position: { x: -340, y: -130 }, facing: 0, orders: lineOrders },
-      { designId: "preset-ship-bulwark", position: { x: -340, y: 130 }, facing: 0, orders: lineOrders },
+      { designId: "preset-ship-leviathan", position: { x: -300, y: -70 }, facing: 0, orders: lineOrders },
+      { designId: "preset-ship-leviathan", position: { x: -300, y: 70 }, facing: 0, orders: lineOrders },
+      { designId: "preset-ship-bulwark", position: { x: -350, y: -180 }, facing: 0, orders: lineOrders },
+      { designId: "preset-ship-bulwark", position: { x: -350, y: 0 }, facing: 0, orders: lineOrders },
+      { designId: "preset-ship-bulwark", position: { x: -350, y: 180 }, facing: 0, orders: lineOrders },
     ],
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -377,14 +429,16 @@ const fleetData: Fleet[] = [
     id: "preset-fleet-strike",
     name: "Strike Wing",
     faction: "Terran",
-    // A balanced mixed-arms wing: a gunship and torpedo boat for weight, fast
-    // fighters to screen and flank.
+    // A balanced mixed-arms wing: paired gunships and torpedo boats for weight,
+    // a screen of fast fighters to flank.
     ships: [
-      { designId: "preset-ship-gunship", position: { x: -300, y: -70 }, facing: 0, orders: strikeOrders },
-      { designId: "preset-ship-torpedo", position: { x: -300, y: 70 }, facing: 0, orders: strikeOrders },
-      { designId: "preset-ship-wasp", position: { x: -360, y: -150 }, facing: 0, orders: strikeOrders },
-      { designId: "preset-ship-sabre", position: { x: -360, y: 0 }, facing: 0, orders: strikeOrders },
-      { designId: "preset-ship-sabre", position: { x: -360, y: 150 }, facing: 0, orders: strikeOrders },
+      { designId: "preset-ship-gunship", position: { x: -300, y: -90 }, facing: 0, orders: strikeOrders },
+      { designId: "preset-ship-gunship", position: { x: -300, y: 90 }, facing: 0, orders: strikeOrders },
+      { designId: "preset-ship-torpedo", position: { x: -320, y: 0 }, facing: 0, orders: strikeOrders },
+      { designId: "preset-ship-wasp", position: { x: -360, y: -170 }, facing: 0, orders: strikeOrders },
+      { designId: "preset-ship-wasp", position: { x: -360, y: 170 }, facing: 0, orders: strikeOrders },
+      { designId: "preset-ship-sabre", position: { x: -380, y: -60 }, facing: 0, orders: strikeOrders },
+      { designId: "preset-ship-sabre", position: { x: -380, y: 60 }, facing: 0, orders: strikeOrders },
     ],
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -393,12 +447,14 @@ const fleetData: Fleet[] = [
     id: "preset-fleet-spearhead",
     name: "Armoured Spearhead",
     faction: "Terran",
-    // A heavy aggressive thrust: the Titan dreadnought punches in behind two
-    // armour brawlers, all driving to medium range and focusing fire.
+    // A heavy aggressive thrust: the Titan dreadnought punches in flanked by
+    // armour brawlers and a gunship, all driving to medium range and focusing
+    // fire on the strongest target.
     ships: [
-      { designId: "preset-ship-titan", position: { x: -280, y: 0 }, facing: 0, orders: spearheadOrders },
-      { designId: "preset-ship-aegis", position: { x: -340, y: -120 }, facing: 0, orders: spearheadOrders },
-      { designId: "preset-ship-aegis", position: { x: -340, y: 120 }, facing: 0, orders: spearheadOrders },
+      { designId: "preset-ship-titan", position: { x: -260, y: 0 }, facing: 0, orders: spearheadOrders },
+      { designId: "preset-ship-aegis", position: { x: -360, y: -150 }, facing: 0, orders: spearheadOrders },
+      { designId: "preset-ship-aegis", position: { x: -360, y: 150 }, facing: 0, orders: spearheadOrders },
+      { designId: "preset-ship-gunship", position: { x: -400, y: 0 }, facing: 0, orders: spearheadOrders },
     ],
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -407,14 +463,17 @@ const fleetData: Fleet[] = [
     id: "preset-fleet-picket",
     name: "Picket Screen",
     faction: "Terran",
-    // A cheap fast screen: a cloud of interceptors and skirmishers that swarms
-    // and harasses, picking off the weakest targets.
+    // A cheap fast screen: a large cloud of interceptors and skirmishers that
+    // swarms and harasses, picking off the weakest targets.
     ships: [
-      { designId: "preset-ship-wasp", position: { x: -340, y: -120 }, facing: 0, orders: skirmishOrders },
-      { designId: "preset-ship-wasp", position: { x: -340, y: 120 }, facing: 0, orders: skirmishOrders },
-      { designId: "preset-ship-sabre", position: { x: -360, y: -60 }, facing: 0, orders: skirmishOrders },
-      { designId: "preset-ship-sabre", position: { x: -380, y: 0 }, facing: 0, orders: skirmishOrders },
-      { designId: "preset-ship-sabre", position: { x: -360, y: 60 }, facing: 0, orders: skirmishOrders },
+      { designId: "preset-ship-wasp", position: { x: -340, y: -180 }, facing: 0, orders: skirmishOrders },
+      { designId: "preset-ship-wasp", position: { x: -340, y: -90 }, facing: 0, orders: skirmishOrders },
+      { designId: "preset-ship-wasp", position: { x: -340, y: 90 }, facing: 0, orders: skirmishOrders },
+      { designId: "preset-ship-wasp", position: { x: -340, y: 180 }, facing: 0, orders: skirmishOrders },
+      { designId: "preset-ship-sabre", position: { x: -380, y: -135 }, facing: 0, orders: skirmishOrders },
+      { designId: "preset-ship-sabre", position: { x: -380, y: -45 }, facing: 0, orders: skirmishOrders },
+      { designId: "preset-ship-sabre", position: { x: -380, y: 45 }, facing: 0, orders: skirmishOrders },
+      { designId: "preset-ship-sabre", position: { x: -380, y: 135 }, facing: 0, orders: skirmishOrders },
     ],
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -425,15 +484,19 @@ const fleetData: Fleet[] = [
     name: "Drone Swarm",
     faction: "Swarm",
     // The signature Swarm rush: a wall of expendable drones that closes fast
-    // and overwhelms by numbers.
+    // and overwhelms by numbers, with acid flankers on the wings.
     ships: [
-      { designId: "preset-ship-drone", position: { x: -340, y: -120 }, facing: 0, orders: hiveOrders },
-      { designId: "preset-ship-drone", position: { x: -340, y: -60 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-drone", position: { x: -340, y: -200 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-drone", position: { x: -340, y: -150 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-drone", position: { x: -340, y: -100 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-drone", position: { x: -340, y: -50 }, facing: 0, orders: hiveOrders },
       { designId: "preset-ship-drone", position: { x: -360, y: 0 }, facing: 0, orders: hiveOrders },
-      { designId: "preset-ship-drone", position: { x: -340, y: 60 }, facing: 0, orders: hiveOrders },
-      { designId: "preset-ship-drone", position: { x: -340, y: 120 }, facing: 0, orders: hiveOrders },
-      { designId: "preset-ship-carrion", position: { x: -320, y: -90 }, facing: 0, orders: hiveOrders },
-      { designId: "preset-ship-carrion", position: { x: -320, y: 90 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-drone", position: { x: -340, y: 50 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-drone", position: { x: -340, y: 100 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-drone", position: { x: -340, y: 150 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-drone", position: { x: -340, y: 200 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-carrion", position: { x: -320, y: -120 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-carrion", position: { x: -320, y: 120 }, facing: 0, orders: hiveOrders },
     ],
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -442,14 +505,18 @@ const fleetData: Fleet[] = [
     id: "preset-fleet-hive-assault",
     name: "Hive Assault",
     faction: "Swarm",
-    // The combined assault: a Hive Lord leads ravagers and drones in an
-    // all-out close-range charge.
+    // The combined assault: twin Hive Lords lead a pack of ravagers and drones
+    // in an all-out close-range charge.
     ships: [
-      { designId: "preset-ship-hive-lord", position: { x: -300, y: 0 }, facing: 0, orders: hiveOrders },
-      { designId: "preset-ship-ravager", position: { x: -360, y: -80 }, facing: 0, orders: hiveOrders },
-      { designId: "preset-ship-ravager", position: { x: -360, y: 80 }, facing: 0, orders: hiveOrders },
-      { designId: "preset-ship-drone", position: { x: -400, y: -160 }, facing: 0, orders: hiveOrders },
-      { designId: "preset-ship-drone", position: { x: -400, y: 160 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-hive-lord", position: { x: -290, y: -80 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-hive-lord", position: { x: -290, y: 80 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-ravager", position: { x: -360, y: -160 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-ravager", position: { x: -360, y: 0 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-ravager", position: { x: -360, y: 160 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-drone", position: { x: -420, y: -200 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-drone", position: { x: -420, y: -100 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-drone", position: { x: -420, y: 100 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-drone", position: { x: -420, y: 200 }, facing: 0, orders: hiveOrders },
     ],
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -458,14 +525,16 @@ const fleetData: Fleet[] = [
     id: "preset-fleet-brood-flight",
     name: "Brood Flight",
     faction: "Swarm",
-    // An artillery brood: spitters sting from the back rank while carrion wings
-    // and drones screen and run down anything that closes.
+    // An artillery brood: a rank of spitters stings from the back while carrion
+    // wings and drones screen and run down anything that closes.
     ships: [
-      { designId: "preset-ship-spitter", position: { x: -300, y: -70 }, facing: 0, orders: broodOrders },
-      { designId: "preset-ship-spitter", position: { x: -300, y: 70 }, facing: 0, orders: broodOrders },
-      { designId: "preset-ship-carrion", position: { x: -360, y: -150 }, facing: 0, orders: hiveOrders },
-      { designId: "preset-ship-carrion", position: { x: -360, y: 150 }, facing: 0, orders: hiveOrders },
-      { designId: "preset-ship-drone", position: { x: -380, y: 0 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-spitter", position: { x: -300, y: -110 }, facing: 0, orders: broodOrders },
+      { designId: "preset-ship-spitter", position: { x: -300, y: 0 }, facing: 0, orders: broodOrders },
+      { designId: "preset-ship-spitter", position: { x: -300, y: 110 }, facing: 0, orders: broodOrders },
+      { designId: "preset-ship-carrion", position: { x: -370, y: -170 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-carrion", position: { x: -370, y: 170 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-drone", position: { x: -400, y: -60 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-drone", position: { x: -400, y: 60 }, facing: 0, orders: hiveOrders },
     ],
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
