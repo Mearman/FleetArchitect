@@ -543,8 +543,10 @@ describe("engine.crew — path cache determinism (larger grid)", () => {
   }
 
   it("a capital-like crewed grid is byte-identical across two same-seed runs", () => {
-    const a = runBattle(inputs([capitalLike(), toughTarget("d1", 200)]));
-    const b = runBattle(inputs([capitalLike(), toughTarget("d1", 200)]));
+    // Target placed within visualLosRadius (140) so the sensor-less shooter can
+    // acquire it; beam range (500) still covers the gap comfortably.
+    const a = runBattle(inputs([capitalLike(), toughTarget("d1", 100)]));
+    const b = runBattle(inputs([capitalLike(), toughTarget("d1", 100)]));
     expect(b.frames.length).toBe(a.frames.length);
     expect(b.frames).toEqual(a.frames);
     expect(b.winner).toBe(a.winner);
@@ -553,8 +555,9 @@ describe("engine.crew — path cache determinism (larger grid)", () => {
   it("crew actually move and man stations on the capital-like grid", () => {
     // Sanity: the cache isn't silently returning empty paths. Crew must reach
     // their stations and the weapons must eventually fire (the target takes
-    // damage), proving the cached paths are real and walked correctly.
-    const result = runBattle(inputs([capitalLike(), toughTarget("d1", 200)]));
+    // damage), proving the cached paths are real and walked correctly. Target
+    // within visualLosRadius so the sensor-less shooter acquires it.
+    const result = runBattle(inputs([capitalLike(), toughTarget("d1", 100)]));
     const structures = result.frames.map((f) => structureOf(f, "d1") ?? 0);
     const initial = structures[0] ?? 0;
     const final = structures.at(-1) ?? initial;
