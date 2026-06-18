@@ -188,36 +188,36 @@ function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] 
 function baseHpFor(kind: ResolvedModule["kind"]): number {
   switch (kind) {
     case "weapon":
-      return 25;
-    case "shield":
-      return 35;
-    case "armour":
-      return 50;
-    case "engine":
-      return 30;
-    case "power":
-      return 20;
-    case "crew":
       return 15;
-    case "pointDefense":
+    case "shield":
       return 20;
+    case "armour":
+      return 30;
+    case "engine":
+      return 20;
+    case "power":
+      return 15;
+    case "crew":
+      return 10;
+    case "pointDefense":
+      return 15;
     case "repair":
-      return 25;
+      return 15;
     case "hull":
-      return 60;
-    case "magazine":
       return 40;
+    case "magazine":
+      return 25;
     // Phase A: sensor and comms modules are inert system components.
     // HP matches a mid-range electronics module — more fragile than armour,
     // sturdier than crew quarters.
     case "sensor":
-      return 20;
+      return 12;
     case "comms":
-      return 20;
+      return 12;
     case "rcs":
-      return 20;
+      return 12;
     case "reactionWheel":
-      return 30;
+      return 20;
   }
 }
 
