@@ -35,6 +35,7 @@ gameplay parity layered on top. The simulation runs off the main thread.
 | Tactical order system (formation, stance, focus-fire, range-keeping) | Shipped |
 | Faction / race part sets | Shipped |
 | Crew as physical entities (corridor pathfinding, manned stations, hauled power and ammo) | Shipped |
+| Sensors, communications, and fog of war (per-ship awareness, comms relays, geometric occlusion, last-known ghosts) | Shipped |
 | Async online challenges (submit a fleet, others fight it) — needs a sync server | Future |
 | Campaign / career progression (economy, bounties, unlocks) | Future |
 | Manual / direct control (WASD flight, aim and fire) | Maybe |
