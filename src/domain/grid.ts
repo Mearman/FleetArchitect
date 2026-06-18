@@ -191,6 +191,183 @@ export function deriveRadius(grid: TileGrid): number {
 }
 
 /**
+ * Whether a cell is walkable by crew — true for hull, module, and floor cells;
+ * false for empty cells and undefined (out-of-bounds). The crew pathfinder
+ * treats every solid/decked cell as traversable; `floor` is dedicated corridor
+ * space, but weapons, engines, and hull are also surfaces crew can walk across.
+ */
+export function isWalkable(cell: GridCell | undefined): boolean {
+  if (cell === undefined) return false;
+  return cell.kind === "hull" || cell.kind === "module" || cell.kind === "floor";
+}
+
+/**
+ * The 4-connected in-bounds neighbours of (col, row) whose cells are walkable.
+ * Reuses `neighbours4` and `isWalkable`; the crew pathfinder calls this to
+ * discover the next reachable cells from any position.
+ */
+export function walkableNeighbours4(
+  col: number,
+  row: number,
+  grid: TileGrid,
+): { col: number; row: number }[] {
+  return neighbours4(col, row, grid).filter((n) =>
+    isWalkable(cellAt(n.col, n.row, grid)),
+  );
+}
+
+/**
+ * The canonical string key for a grid cell, used consistently across the grid
+ * toolkit and the simulation engine.
+ */
+function cellKey(col: number, row: number): string {
+  return `${col},${row}`;
+}
+
+/**
+ * Flood-fill over walkable cells from `start`, returning the set of reachable
+ * cell keys (`"col,row"`) including the start cell itself. Returns an empty set
+ * if `start` is not walkable or is out of bounds. Pure BFS; no RNG.
+ */
+export function reachableFrom(
+  grid: TileGrid,
+  start: { col: number; row: number },
+): Set<string> {
+  if (!isWalkable(cellAt(start.col, start.row, grid))) return new Set();
+  const visited = new Set<string>([cellKey(start.col, start.row)]);
+  const queue: { col: number; row: number }[] = [start];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (current === undefined) break;
+    for (const n of walkableNeighbours4(current.col, current.row, grid)) {
+      const k = cellKey(n.col, n.row);
+      if (!visited.has(k)) {
+        visited.add(k);
+        queue.push(n);
+      }
+    }
+  }
+  return visited;
+}
+
+/**
+ * A* shortest path over walkable cells from `from` to `to`, inclusive of both
+ * endpoints. Returns `undefined` if `to` is unreachable (blocked or
+ * out-of-bounds) or if either endpoint is not walkable.
+ *
+ * **Determinism guarantee:** ties in the A* frontier are broken by a fixed
+ * total order — lowest f-score first, then lowest row, then lowest col. This
+ * means two calls with identical inputs always produce the byte-identical path
+ * regardless of Map/Set insertion-order variance. No RNG is used anywhere.
+ *
+ * Heuristic: Manhattan distance, which is admissible on a 4-connected grid.
+ */
+export function findPath(
+  grid: TileGrid,
+  from: { col: number; row: number },
+  to: { col: number; row: number },
+): { col: number; row: number }[] | undefined {
+  if (!isWalkable(cellAt(from.col, from.row, grid))) return undefined;
+  if (!isWalkable(cellAt(to.col, to.row, grid))) return undefined;
+
+  // Early exit for trivial same-cell case.
+  if (from.col === to.col && from.row === to.row) return [{ col: from.col, row: from.row }];
+
+  const heuristic = (col: number, row: number): number =>
+    Math.abs(col - to.col) + Math.abs(row - to.row);
+
+  // g-score: cost from start to this cell. Stored as a map keyed by "col,row".
+  const gScore = new Map<string, number>();
+  // f-score: g + h. Determines priority.
+  const fScore = new Map<string, number>();
+  // For path reconstruction.
+  const cameFrom = new Map<string, { col: number; row: number }>();
+
+  const startKey = cellKey(from.col, from.row);
+  gScore.set(startKey, 0);
+  fScore.set(startKey, heuristic(from.col, from.row));
+
+  // Open set as a sorted array. We keep it sorted by the tie-break total order:
+  // (f ascending, row ascending, col ascending). This is a min-heap substitute
+  // that is simple, correct, and fully deterministic.
+  const open: { col: number; row: number; f: number }[] = [
+    { col: from.col, row: from.row, f: heuristic(from.col, from.row) },
+  ];
+
+  const insertSorted = (entry: { col: number; row: number; f: number }): void => {
+    // Binary-search insertion to maintain sorted order. The comparator is:
+    // (a, b) -> a.f - b.f, then a.row - b.row, then a.col - b.col.
+    let lo = 0;
+    let hi = open.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      const m = open[mid];
+      if (m === undefined) break;
+      if (
+        m.f < entry.f ||
+        (m.f === entry.f && m.row < entry.row) ||
+        (m.f === entry.f && m.row === entry.row && m.col < entry.col)
+      ) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    open.splice(lo, 0, entry);
+  };
+
+  const openKeys = new Set<string>([startKey]);
+
+  while (open.length > 0) {
+    const current = open.shift();
+    if (current === undefined) break;
+    const currentKey = cellKey(current.col, current.row);
+    openKeys.delete(currentKey);
+
+    // Reached the goal — reconstruct path.
+    if (current.col === to.col && current.row === to.row) {
+      const path: { col: number; row: number }[] = [
+        { col: current.col, row: current.row },
+      ];
+      let key = currentKey;
+      for (;;) {
+        const prev = cameFrom.get(key);
+        if (prev === undefined) break;
+        path.unshift({ col: prev.col, row: prev.row });
+        key = cellKey(prev.col, prev.row);
+      }
+      return path;
+    }
+
+    const currentG = gScore.get(currentKey) ?? Infinity;
+
+    for (const n of walkableNeighbours4(current.col, current.row, grid)) {
+      const nKey = cellKey(n.col, n.row);
+      const tentativeG = currentG + 1;
+      const existingG = gScore.get(nKey) ?? Infinity;
+      if (tentativeG < existingG) {
+        cameFrom.set(nKey, { col: current.col, row: current.row });
+        gScore.set(nKey, tentativeG);
+        const f = tentativeG + heuristic(n.col, n.row);
+        fScore.set(nKey, f);
+        if (!openKeys.has(nKey)) {
+          openKeys.add(nKey);
+          insertSorted({ col: n.col, row: n.row, f });
+        } else {
+          // Update: remove old entry and re-insert with new f.
+          const idx = open.findIndex((e) => e.col === n.col && e.row === n.row);
+          if (idx !== -1) open.splice(idx, 1);
+          insertSorted({ col: n.col, row: n.row, f });
+        }
+      }
+    }
+  }
+
+  // No path found.
+  return undefined;
+}
+
+/**
  * Whether every occupied cell is reachable from every other by 4-connected
  * edge steps through occupied cells. A grid with no occupied cells is treated
  * as not connected (an empty ship is not a valid single body). Used by stats
