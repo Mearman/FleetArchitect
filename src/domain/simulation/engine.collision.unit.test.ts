@@ -59,6 +59,7 @@ function moduleOf(
     maxHp: 1000,
     mass,
     powerDraw: 0,
+    crewRequired: 0,
     effect,
     command,
     repairRate: 0,

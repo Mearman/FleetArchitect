@@ -12,7 +12,7 @@ import type {
   WeaponType,
 } from "@/schema/module";
 import type { Orders } from "@/schema/fleet";
-import type { BattleInputs, CombatShip, ResolvedModule } from "./types";
+import type { BattleInputs, CombatShip, ResolvedModule, SimCrew } from "./types";
 
 /**
  * Deterministic battle simulator. Given resolved combat ships, an anomaly, and
@@ -131,6 +131,25 @@ const SIM = {
   pdHitChancePerModule: 0.4,
   /** Upper bound on the stacked PD intercept probability per projectile. */
   pdMaxStackedChance: 0.95,
+  /**
+   * Rounds a crew member carries per ammo-run from a magazine to a dry weapon.
+   * One trip tops a weapon up by at most this much (and never beyond the
+   * weapon's `ammoCapacity`), and drains the magazine's store by the amount
+   * actually carried.
+   */
+  ammoRunAmount: 40,
+  /**
+   * Charge packets a crew member carries per power-run from a reactor to a
+   * starved module. Each packet refills the sink module's local charge buffer
+   * by this much (capped at the buffer ceiling).
+   */
+  powerRunAmount: 30,
+  /**
+   * Ceiling on a powered module's local charge buffer. Crew top it up from a
+   * reactor; the module spends `powerDraw` from it each tick it operates. A
+   * module whose buffer hits zero goes idle until a crew power-run refills it.
+   */
+  chargeBufferMax: 60,
 };
 
 /** Mutable per-ship runtime state carried across ticks. */
@@ -191,6 +210,15 @@ interface SimShip {
    * means the legacy aggregated path is in use.
    */
   modules?: SimModule[];
+  /**
+   * Crew aboard the ship: physical entities that walk the walkable interior
+   * (alive cells) to man stations and haul resources. Populated from the
+   * design's crew-quarters cells in `toSimShip`; advanced each tick by
+   * `updateCrew` after aggregates recompute. Always present on modular ships
+   * (possibly empty); undefined on the legacy aggregated path, which has no
+   * cells to walk and ignores crew entirely.
+   */
+  crew?: SimCrew[];
   /** Hull base thrust/turn-rate, used by recomputeAggregates. Set only
    *  when modules are present. */
   hullBaseThrust?: number;
@@ -240,6 +268,19 @@ interface SimModule {
    * modules (weapons, then shields) go offline until supply recovers.
    */
   powered: boolean;
+  /**
+   * Whether enough crew currently occupy this module's cell to operate it:
+   * the count of crew on the cell is at least the module's `crewRequired`.
+   * A module that needs no crew (`crewRequired === 0`) is always manned.
+   * Recomputed each tick by `updateCrew` from live crew positions, then read
+   * by `recomputeAggregates` and the firing loop so an unmanned station
+   * contributes nothing and cannot fire. A station functions only when
+   * `alive && powered && manned`.
+   */
+  manned: boolean;
+  /** How many crew must occupy this cell for the module to be manned. Copied
+   *  off the module definition; 0 means the module needs no crew. */
+  crewRequired: number;
   /** Whether this module serves as the ship's bridge / command module. */
   command: boolean;
   /**
@@ -455,6 +496,7 @@ function toSimShip(ship: CombatShip, rng: () => number): SimShip {
     base.modules = ship.modules.map((m) => toSimModule(m, rng));
     base.hullBaseThrust = ship.stats.thrust - sumWeaponThrust(ship);
     base.hullBaseTurnRate = ship.stats.turnRate - sumWeaponTurn(ship);
+    base.crew = spawnCrew(base.instanceId, base.modules);
     recomputeAggregates(base);
     // Broad-phase radius is the grid bounding radius (the farthest cell
     // centre plus half a cell), derived from the module cells rather than a
@@ -498,6 +540,11 @@ function toSimModule(m: ResolvedModule, rng: () => number): SimModule {
     ammo: isWeapon ? effect.ammo ?? DEFAULT_WEAPON_AMMO : 0,
     alive: true,
     powered: true,
+    // A module that needs no crew is born manned; one that needs crew starts
+    // unmanned and is only switched on once enough crew reach its cell. The
+    // first updateCrew pass (tick 1) recomputes this from live positions.
+    manned: m.crewRequired === 0,
+    crewRequired: m.crewRequired,
     command: m.command,
     repairRate: m.repairRate,
     shieldArc: m.shieldArc,
@@ -510,6 +557,365 @@ facing: m.facing,
     // toward the target from there each tick, a fixed mount leaves it.
     turretAngle: m.weaponFacing,
   };
+}
+
+/**
+ * Spawn the ship's crew from its crew-quarters cells. Each alive crew module
+ * (`CrewEffect`) yields `capacity` crew members; every crew member starts on a
+ * crew-quarters cell, distributed round-robin across the quarters in
+ * `(col, row)` order so two ships built from the same design always spawn the
+ * same crew on the same cells. Ids are stable and globally unique within the
+ * run (`<instanceId>-crew-<n>`), which is also the fixed order crew are
+ * iterated in for deterministic job assignment.
+ *
+ * A ship with no crew quarters spawns no crew — its crewed stations simply
+ * stay unmanned, which the manning gate then keeps offline. No RNG is used.
+ */
+function spawnCrew(
+  instanceId: string,
+  modules: readonly SimModule[],
+): SimCrew[] {
+  // Quarters cells, in deterministic (col, row) order. Crew stand on these
+  // cells at spawn and round-robin across them.
+  const quarters = modules
+    .filter((m) => m.alive && m.effect.kind === "crew")
+    .slice()
+    .sort(compareByCell);
+  if (quarters.length === 0) return [];
+
+  let total = 0;
+  for (const q of quarters) {
+    if (q.effect.kind === "crew") total += Math.floor(q.effect.capacity);
+  }
+  if (total <= 0) return [];
+
+  const crew: SimCrew[] = [];
+  for (let n = 0; n < total; n += 1) {
+    // Round-robin placement keeps quarters evenly populated and is a pure
+    // function of the crew index, so it is fully deterministic.
+    const cell = quarters[n % quarters.length];
+    if (cell === undefined) break;
+    crew.push({
+      id: `${instanceId}-crew-${n}`,
+      col: cell.col,
+      row: cell.row,
+      ox: 0,
+      oy: 0,
+      hp: CREW_HP,
+      job: "idle",
+      path: [],
+    });
+  }
+  return crew;
+}
+
+/** Starting hit points of a freshly spawned crew member. */
+const CREW_HP = 10;
+
+/** Total order on cells by (col, row), used wherever crew or modules must be
+ *  scanned in a fixed, RNG-free order. */
+function compareByCell(
+  a: { col: number; row: number },
+  b: { col: number; row: number },
+): number {
+  if (a.col !== b.col) return a.col - b.col;
+  return a.row - b.row;
+}
+
+/** Canonical "col,row" cell key, matching the convention used by break-apart
+ *  and the grid toolkit. */
+function crewCellKey(col: number, row: number): string {
+  return `${col},${row}`;
+}
+
+/**
+ * Deterministic A* over a ship's alive cells, treating every alive module cell
+ * as a walkable interior tile (crew stand on hull, modules, and floor alike).
+ * Returns the path inclusive of both endpoints, or undefined when no 4-connected
+ * route of alive cells links them.
+ *
+ * The engine works on its resolved cell set rather than a `TileGrid`, so this
+ * mirrors `domain/grid.findPath` over that set: same Manhattan heuristic, same
+ * fixed tie-break (lowest f, then lowest row, then lowest col) so two runs with
+ * identical inputs yield byte-identical paths. No RNG, no Map/Set iteration
+ * order dependence.
+ */
+function findCrewPath(
+  cells: ReadonlyMap<string, SimModule>,
+  from: { col: number; row: number },
+  to: { col: number; row: number },
+): { col: number; row: number }[] | undefined {
+  const fromKey = crewCellKey(from.col, from.row);
+  const toKey = crewCellKey(to.col, to.row);
+  if (!cells.has(fromKey) || !cells.has(toKey)) return undefined;
+  if (from.col === to.col && from.row === to.row) {
+    return [{ col: from.col, row: from.row }];
+  }
+
+  const heuristic = (col: number, row: number): number =>
+    Math.abs(col - to.col) + Math.abs(row - to.row);
+
+  const gScore = new Map<string, number>();
+  const cameFrom = new Map<string, { col: number; row: number }>();
+  gScore.set(fromKey, 0);
+
+  const open: { col: number; row: number; f: number }[] = [
+    { col: from.col, row: from.row, f: heuristic(from.col, from.row) },
+  ];
+  const openKeys = new Set<string>([fromKey]);
+
+  const insertSorted = (entry: { col: number; row: number; f: number }): void => {
+    let lo = 0;
+    let hi = open.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      const m = open[mid];
+      if (m === undefined) break;
+      if (
+        m.f < entry.f ||
+        (m.f === entry.f && m.row < entry.row) ||
+        (m.f === entry.f && m.row === entry.row && m.col < entry.col)
+      ) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    open.splice(lo, 0, entry);
+  };
+
+  while (open.length > 0) {
+    const current = open.shift();
+    if (current === undefined) break;
+    const currentKey = crewCellKey(current.col, current.row);
+    openKeys.delete(currentKey);
+
+    if (current.col === to.col && current.row === to.row) {
+      const path: { col: number; row: number }[] = [
+        { col: current.col, row: current.row },
+      ];
+      let key = currentKey;
+      for (;;) {
+        const prev = cameFrom.get(key);
+        if (prev === undefined) break;
+        path.unshift({ col: prev.col, row: prev.row });
+        key = crewCellKey(prev.col, prev.row);
+      }
+      return path;
+    }
+
+    const currentG = gScore.get(currentKey) ?? Infinity;
+    // Visit the four edge neighbours in a fixed order; the tie-break in the open
+    // set makes the chosen path canonical regardless of insertion order here.
+    const candidates = [
+      { col: current.col - 1, row: current.row },
+      { col: current.col + 1, row: current.row },
+      { col: current.col, row: current.row - 1 },
+      { col: current.col, row: current.row + 1 },
+    ];
+    for (const n of candidates) {
+      const nKey = crewCellKey(n.col, n.row);
+      if (!cells.has(nKey)) continue; // not a walkable alive cell
+      const tentativeG = currentG + 1;
+      if (tentativeG < (gScore.get(nKey) ?? Infinity)) {
+        cameFrom.set(nKey, { col: current.col, row: current.row });
+        gScore.set(nKey, tentativeG);
+        const f = tentativeG + heuristic(n.col, n.row);
+        if (!openKeys.has(nKey)) {
+          openKeys.add(nKey);
+          insertSorted({ col: n.col, row: n.row, f });
+        } else {
+          const idx = open.findIndex((e) => e.col === n.col && e.row === n.row);
+          if (idx !== -1) open.splice(idx, 1);
+          insertSorted({ col: n.col, row: n.row, f });
+        }
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Index a ship's alive modules by their integer cell key. This is the walkable
+ * graph crew path over and the lookup used to find which module (if any) sits on
+ * a given cell.
+ */
+function aliveCellMap(ship: SimShip): Map<string, SimModule> {
+  const map = new Map<string, SimModule>();
+  if (ship.modules === undefined) return map;
+  for (const m of ship.modules) {
+    if (m.alive) map.set(crewCellKey(m.col, m.row), m);
+  }
+  return map;
+}
+
+/**
+ * Advance one ship's crew by a single tick and recompute every module's
+ * `manned` flag from the resulting positions. Runs after `recomputeAggregates`
+ * (so `powered` is settled) and before break-apart. Deterministic throughout:
+ * crew are processed in id order, candidate stations are scanned in `(col, row)`
+ * order, and the only tie-breaks are on those stable orders — never RNG.
+ *
+ * Step sequence:
+ *  1. Crew whose current cell has died (shot away or severed) are removed.
+ *  2. Each crew member with no job is assigned the highest-priority unmet need,
+ *     reserving the station so two crew never chase the same one.
+ *  3. Crew with a path walk one cell along it.
+ *  4. Manning is recomputed: a station is manned when the count of crew on its
+ *     cell is at least its `crewRequired` (0 means always manned).
+ */
+function updateCrew(ship: SimShip): void {
+  if (ship.modules === undefined || ship.crew === undefined) return;
+
+  const cells = aliveCellMap(ship);
+
+  // 1. Remove crew standing on a cell that no longer exists.
+  ship.crew = ship.crew.filter((c) => cells.has(crewCellKey(c.col, c.row)));
+
+  // Stations that need crew, scanned in a fixed (col, row) order.
+  const stations = ship.modules
+    .filter((m) => m.alive && m.crewRequired > 0 && stationNeedsCrew(m))
+    .slice()
+    .sort(compareByCell);
+
+  // How many crew already man (or are assigned to and standing on) each station
+  // cell right now, plus which stations are already claimed by an en-route
+  // crew member. Both keep assignment from over- or double-subscribing.
+  const onCell = new Map<string, number>();
+  for (const c of ship.crew) {
+    const k = crewCellKey(c.col, c.row);
+    onCell.set(k, (onCell.get(k) ?? 0) + 1);
+  }
+  const claimed = new Map<string, number>();
+  for (const c of ship.crew) {
+    if (c.targetSlotId !== undefined) {
+      claimed.set(c.targetSlotId, (claimed.get(c.targetSlotId) ?? 0) + 1);
+    }
+  }
+
+  // 2. Assign idle crew (in id order) to the first under-manned station.
+  for (const c of [...ship.crew].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
+    if (c.job !== "idle") continue;
+    const need = chooseStation(c, stations, cells, claimed);
+    if (need === undefined) continue;
+    c.job = "manning";
+    c.targetSlotId = need.station.slotId;
+    // The path includes the current cell as its first element; drop it so the
+    // first walk step moves toward the station.
+    c.path = need.path.slice(1);
+    claimed.set(need.station.slotId, (claimed.get(need.station.slotId) ?? 0) + 1);
+  }
+
+  // 3. Walk one cell along each crew member's path (id order for determinism).
+  for (const c of ship.crew) {
+    advanceCrew(c, cells);
+  }
+
+  // 4. Recompute manning from final positions.
+  recomputeManning(ship);
+}
+
+/**
+ * Whether a station kind is one the manning gate governs. Weapons, engines,
+ * shields, point-defence, power and magazines must be crewed to function; pure
+ * structure (hull) and passive bays (armour, crew quarters, repair) carry no
+ * manning requirement of their own, so a non-zero `crewRequired` on them is
+ * still honoured but they are not treated as combat stations to chase. We gate
+ * exactly the kinds whose `crewRequired` matters to output.
+ */
+function stationNeedsCrew(m: SimModule): boolean {
+  switch (m.effect.kind) {
+    case "weapon":
+    case "engine":
+    case "shield":
+    case "pointDefense":
+    case "power":
+    case "magazine":
+      return true;
+    case "armour":
+    case "crew":
+    case "repair":
+    case "hull":
+      return false;
+  }
+}
+
+/**
+ * Pick the highest-priority station an idle crew member should man: the first
+ * (in `(col, row)` order) under-subscribed station that the crew member can
+ * actually reach. "Under-subscribed" means fewer crew are already assigned to it
+ * than it requires. Returns the station and the path to it, or undefined when
+ * nothing is both needed and reachable (the crew member then stays idle).
+ */
+function chooseStation(
+  crew: SimCrew,
+  stations: readonly SimModule[],
+  cells: ReadonlyMap<string, SimModule>,
+  claimed: ReadonlyMap<string, number>,
+): { station: SimModule; path: { col: number; row: number }[] } | undefined {
+  for (const station of stations) {
+    if ((claimed.get(station.slotId) ?? 0) >= station.crewRequired) continue;
+    const path = findCrewPath(cells, { col: crew.col, row: crew.row }, { col: station.col, row: station.row });
+    if (path === undefined) continue;
+    return { station, path };
+  }
+  return undefined;
+}
+
+/**
+ * Walk a crew member one cell along its path, updating its integer cell and
+ * clearing the within-cell render offset. When the path empties the crew member
+ * has arrived; an idle member with no path simply holds position. The fractional
+ * offset is reset to 0 on arrival of each step — render smoothing is purely a UI
+ * concern and never feeds back into a gameplay decision.
+ */
+function advanceCrew(crew: SimCrew, cells: ReadonlyMap<string, SimModule>): void {
+  const next = crew.path[0];
+  if (next === undefined) {
+    crew.ox = 0;
+    crew.oy = 0;
+    return;
+  }
+  // If the next step is no longer walkable (its cell died this tick), abandon
+  // the route; the crew member re-plans next tick from where it stands.
+  if (!cells.has(crewCellKey(next.col, next.row))) {
+    crew.path = [];
+    crew.job = "idle";
+    crew.targetSlotId = undefined;
+    return;
+  }
+  crew.col = next.col;
+  crew.row = next.row;
+  crew.path = crew.path.slice(1);
+  crew.ox = 0;
+  crew.oy = 0;
+  // Arrived at the destination cell: the manning recompute will switch the
+  // station on this tick if enough crew are present.
+  if (crew.path.length === 0) crew.job = "manning";
+}
+
+/**
+ * Recompute every module's `manned` flag from the crew now standing on each
+ * cell. A module that needs no crew is always manned; otherwise it is manned
+ * when at least `crewRequired` crew occupy its cell. Crew standing on a cell
+ * count toward manning regardless of their job label, so a member that has just
+ * arrived mans the station the same tick.
+ */
+function recomputeManning(ship: SimShip): void {
+  if (ship.modules === undefined || ship.crew === undefined) return;
+  const counts = new Map<string, number>();
+  for (const c of ship.crew) {
+    const k = crewCellKey(c.col, c.row);
+    counts.set(k, (counts.get(k) ?? 0) + 1);
+  }
+  for (const m of ship.modules) {
+    if (m.crewRequired <= 0) {
+      m.manned = true;
+      continue;
+    }
+    const present = counts.get(crewCellKey(m.col, m.row)) ?? 0;
+    m.manned = present >= m.crewRequired;
+  }
 }
 
 /** Thrust contributed by engine modules (subtracted from the aggregate to
@@ -606,10 +1012,11 @@ export function comTangentialVelocity(
 function recomputeAggregates(ship: SimShip): void {
   if (ship.modules === undefined) return;
 
-  // 1. Supply from alive reactors.
+  // 1. Supply from alive, manned reactors. A reactor that needs crew only
+  //    outputs when its cell is manned — an unmanned reactor is cold.
   let supply = 0;
   for (const m of ship.modules) {
-    if (m.alive && m.effect.kind === "power") {
+    if (m.alive && m.manned && m.effect.kind === "power") {
       supply += m.effect.output;
     }
   }
@@ -673,7 +1080,11 @@ function recomputeAggregates(ship: SimShip): void {
       continue;
     }
     mass += m.mass;
-    if (!m.powered) continue; // unpowered modules are present but inert
+    // Unpowered or unmanned modules are present (they still mass the ship) but
+    // contribute no function: a station works only when alive, powered, and
+    // manned. A module needing no crew is always manned (set in toSimModule and
+    // recomputeManning), so this gate is a no-op for crewless designs.
+    if (!m.powered || !m.manned) continue;
     const effect = m.effect;
     switch (effect.kind) {
       case "weapon":
@@ -1406,6 +1817,10 @@ function makeChunkShip(
     target: undefined,
     alive: true,
     modules: chunkModules,
+    // Crew are partitioned into the fragment in a later slice; until then a
+    // chunk starts with no crew, so its crewed stations stay unmanned (correct:
+    // a severed section with nobody aboard cannot operate its guns).
+    crew: [],
     hullBaseThrust: parent.hullBaseThrust,
     hullBaseTurnRate: parent.hullBaseTurnRate,
   };
@@ -1815,6 +2230,17 @@ export function runBattle(inputs: BattleInputs): BattleResult {
       if (ship.modules !== undefined) recomputeAggregates(ship);
     }
 
+    // 4b-crew. Crew AI + movement. After aggregates settle `powered`, each
+    //     ship's crew walk one cell toward an under-manned station, then every
+    //     module's `manned` flag is recomputed from the new positions. Done
+    //     before break-apart so the split partitions crew by their post-move
+    //     cell. Fully deterministic: crew iterate in id order, stations scan in
+    //     (col, row) order, paths come from the fixed-tie-break A*.
+    for (const ship of ships) {
+      if (!ship.alive || ship.modules === undefined) continue;
+      updateCrew(ship);
+    }
+
     // 4c. Break-apart: if the alive modules on a modular ship no longer
     //     form a single connected graph, split the disconnected pieces
     //     into fresh SimShips. Each chunk gets its own `brokeOff` flag
@@ -1957,6 +2383,10 @@ function cellThrustForceAndTorque(ship: SimShip): { fx: number; fy: number; torq
   let torque = 0;
   for (const m of ship.modules) {
     if (!m.alive || m.effect.kind !== "engine") continue;
+    // An engine thrusts only when powered and manned, matching the manning
+    // gate the aggregate thrust total already applies. An unmanned or
+    // browned-out thruster is dead weight this tick.
+    if (!m.powered || !m.manned) continue;
     const t = m.effect.thrust;
     if (t <= 0) continue;
     const lx = Math.cos(m.facing) * t;
@@ -2236,6 +2666,7 @@ function fireWeapons(
           continue;
         }
         if (!m.powered) continue; // reactor can't sustain it this tick
+        if (!m.manned) continue; // nobody crewing the gun — it can't fire
         if (dist > weapon.range) continue;
         // Fire gate: a turret fires when its slewed barrel bears on the target
         // (independent of where the ship is pointing); a fixed mount fires
@@ -2336,7 +2767,7 @@ function tryPointDefenseIntercept(
     if (ship.modules === undefined) continue; // legacy ships don't run PD
     if (!hasAliveCommand(ship)) continue; // no bridge → no coordination
     for (const m of ship.modules) {
-      if (!m.alive || !m.powered) continue;
+      if (!m.alive || !m.powered || !m.manned) continue;
       if (m.cooldown > 0) continue;
       if (m.effect.kind !== "pointDefense") continue;
       const effect: PointDefenseEffect = m.effect;
@@ -2357,7 +2788,7 @@ function tryPointDefenseIntercept(
     if (ship.modules === undefined) continue;
     if (!hasAliveCommand(ship)) continue;
     for (const m of ship.modules) {
-      if (!m.alive || !m.powered) continue;
+      if (!m.alive || !m.powered || !m.manned) continue;
       if (m.effect.kind !== "pointDefense") continue;
       if (m.cooldown > 0) continue;
       const dx = ship.x - p.x;
