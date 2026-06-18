@@ -78,6 +78,7 @@ function moduleOf(
     turretTurnRate: 0,
     channel: 0,
     commsBearing: 0,
+    sensorBearing: 0,
   };
 }
 

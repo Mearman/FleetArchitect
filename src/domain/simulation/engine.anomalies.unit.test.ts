@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleAnomaly } from "@/schema/battle";
-import type { CombatShip, BattleInputs } from "@/domain/simulation/types";
+import type { CombatShip, BattleInputs, ResolvedModule } from "@/domain/simulation/types";
 import { defaultOrders } from "@/schema/fleet";
 import type { ShipClassification } from "@/schema/hull";
-import type { WeaponEffect } from "@/schema/module";
+import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
 
 /**
@@ -18,6 +18,13 @@ import type { ShipStats } from "@/domain/stats";
  * anomaly=none so the assertion is robust to the rest of the engine.
  *
  * Helper duplicated so this file is self-contained.
+ *
+ * Fixture split: the attacker is a per-module ship (it needs a sensor module
+ * to acquire the defender at range across every anomaly — a nebula halves the
+ * innate visual radius so the 80–300 wu separations in these tests would be
+ * blind without one), while the defender is a legacy aggregated ship so
+ * `totalHitsOn` — which counts structure decrements — sees every projectile
+ * hit directly (per-module damage would be absorbed by module HP first).
  */
 
 function weapon(over: Partial<WeaponEffect> = {}): WeaponEffect {
@@ -36,16 +43,64 @@ function weapon(over: Partial<WeaponEffect> = {}): WeaponEffect {
   };
 }
 
-function makeShip(opts: {
+/** Build a ResolvedModule with the per-instance fields the engine reads. */
+function moduleOf(
+  slotId: string,
+  effect: ModuleEffect,
+  col: number,
+  row: number,
+  command = false,
+): ResolvedModule {
+  return {
+    slotId,
+    moduleId: slotId,
+    kind: effect.kind,
+    col,
+    row,
+    x: col,
+    y: row,
+    maxHp: 50,
+    mass: 5,
+    powerDraw: 0,
+    crewRequired: 0,
+    effect,
+    command,
+    repairRate: 0,
+    shieldArc: Math.PI * 2,
+    shieldFacing: 0,
+    facing: effect.kind === "engine" ? effect.facing ?? 0 : 0,
+    weaponFacing: 0,
+    turretArc: 0,
+    turretTurnRate: 0,
+    channel: 0,
+    commsBearing: 0,
+    sensorBearing: 0,
+  };
+}
+
+/** An all-round (omni) sensor effect — a full detection circle, which is what
+ *  the removed sensorRange scalar stood in for. */
+function omniSensor(detectionRange: number): ModuleEffect {
+  return {
+    kind: "sensor",
+    sensorType: "omni",
+    arc: Math.PI,
+    detectionRange,
+    bearing: 0,
+    nebulaImmune: false,
+  };
+}
+
+/** The attacker: a per-module ship (command + engine + omni sensor + weapons)
+ *  so it acquires the defender at range across every anomaly (a nebula halves
+ *  the innate visual radius, so without a sensor the longer-range fixtures
+ *  would be blind). Weapons are modules so the per-module fire path runs. */
+function attacker(opts: {
   id: string;
-  side: "attacker" | "defender";
   x: number;
   y: number;
   facing?: number;
   structure?: number;
-  shield?: number;
-  shieldRechargeRate?: number;
-  shieldRechargeDelay?: number;
   weapons?: WeaponEffect[];
   classification?: ShipClassification;
   orders?: Partial<typeof defaultOrders>;
@@ -63,26 +118,76 @@ function makeShip(opts: {
     crewNet: 0,
     structure: opts.structure ?? 500,
     damageReduction: 0,
+    shieldCapacity: 0,
+    shieldRechargeRate: 0,
+    shieldRechargeDelay: 60,
+    thrust: 0.5,
+    turnRate: 0.1,
+    weapons: weapons.map((w) => ({ slotId: `slot-${opts.id}`, effect: w })),
+  };
+  const modules: ResolvedModule[] = [
+    moduleOf(`${opts.id}-cmd`, { kind: "power", output: 1000 }, 0, 0, true),
+    moduleOf(`${opts.id}-eng`, { kind: "engine", thrust: 0.5, turnRate: 0.1, facing: Math.PI }, -1, 0),
+    moduleOf(`${opts.id}-se`, omniSensor(2000), 1, 0),
+    ...weapons.map((w, i) => moduleOf(`${opts.id}-w${i}`, w, 0, 1 + i)),
+  ];
+  return {
+    instanceId: opts.id,
+    designId: `design-${opts.id}`,
+    side: "attacker",
+    stats,
+    position: { x: opts.x, y: opts.y },
+    facing: opts.facing ?? 0,
+    orders: { ...defaultOrders, ...opts.orders },
+    classification: opts.classification ?? "frigate",
+    modules,
+  };
+}
+
+/** The defender: a legacy aggregated ship. Shields come from stats so nebula
+ *  regen attenuation (which reads `ship.shieldRechargeRate`) applies; structure
+ *  is the direct damage sink so `totalHitsOn` sees every projectile hit without
+ *  per-module HP absorbing it first. Detection of the attacker is not needed —
+ *  the defender is a target dummy. */
+function defender(opts: {
+  id: string;
+  x: number;
+  y: number;
+  structure?: number;
+  shield?: number;
+  shieldRechargeRate?: number;
+  shieldRechargeDelay?: number;
+  classification?: ShipClassification;
+  orders?: Partial<typeof defaultOrders>;
+}): CombatShip {
+  const stats: ShipStats = {
+    mass: 10,
+    massCapacity: 100,
+    cost: 100,
+    powerDraw: 0,
+    powerOutput: 0,
+    powerNet: 0,
+    crewRequired: 0,
+    crewCapacity: 0,
+    crewNet: 0,
+    structure: opts.structure ?? 500,
+    damageReduction: 0,
     shieldCapacity: opts.shield ?? 0,
     shieldRechargeRate: opts.shieldRechargeRate ?? 0,
     shieldRechargeDelay: opts.shieldRechargeDelay ?? 60,
     thrust: 0.5,
     turnRate: 0.1,
-    weapons: weapons.map((w) => ({ slotId: `slot-${opts.id}`, effect: w })),
-    // These tests exercise anomaly physics (projectile bending, gravity), not
-    // fog of war — the ships are fully sensor-equipped so they acquire across
-    // the test arena. Fog is covered by the awareness suite.
-    sensorRange: 1000,
+    weapons: [],
   };
   return {
     instanceId: opts.id,
     designId: `design-${opts.id}`,
-    side: opts.side,
+    side: "defender",
     stats,
     position: { x: opts.x, y: opts.y },
-    facing: opts.facing ?? 0,
+    facing: Math.PI,
     orders: { ...defaultOrders, ...opts.orders },
-    classification: (opts.classification ?? "frigate"),
+    classification: opts.classification ?? "frigate",
   };
 }
 
@@ -124,17 +229,15 @@ describe("engine.anomalies", () => {
       runBattle(
         inputs(
           [
-            makeShip({
+            attacker({
               id: "a1",
-              side: "attacker",
               x: 0,
               y: 0,
               facing: 0,
               weapons: [weapon()],
             }),
-            makeShip({
+            defender({
               id: "d1",
-              side: "defender",
               x: 100,
               y: 0,
               structure: 99999,
@@ -163,20 +266,19 @@ describe("engine.anomalies", () => {
       runBattle(
         inputs(
           [
-            makeShip({
+            attacker({
               id: "a1",
-              side: "attacker",
               x: 0,
               y: 0,
               facing: 0,
               // One big hit, long cooldown so only one hit lands and the
-              // rest of the battle is pure shield regen.
-              weapons: [weapon({ damage: 8000, cooldown: 150, range: 200 })],
+              // rest of the battle is pure shield regen. The cooldown exceeds
+              // the battle's tick cap so a second shot never lands.
+              weapons: [weapon({ damage: 8000, cooldown: 400, range: 200 })],
               orders: { engageRange: "hold" },
             }),
-            makeShip({
+            defender({
               id: "d1",
-              side: "defender",
               x: 80,
               y: 0,
               structure: 99999,
@@ -209,15 +311,14 @@ describe("engine.anomalies", () => {
       runBattle(
         inputs(
           [
-            makeShip({
+            attacker({
               id: "a1",
-              side: "attacker",
               x: 30,
               y: 0,
               structure: 60,
               orders: { engageRange: "hold" },
             }),
-            makeShip({ id: "d1", side: "defender", x: 0, y: 0, structure: 99999, orders: { engageRange: "hold" } }),
+            defender({ id: "d1", x: 0, y: 0, structure: 99999, orders: { engageRange: "hold" } }),
           ],
           anomaly,
         ),
@@ -246,9 +347,8 @@ describe("engine.anomalies", () => {
       runBattle(
         inputs(
           [
-            makeShip({
+            attacker({
               id: "a1",
-              side: "attacker",
               x: -150,
               y: 40,
               facing: 0,
@@ -256,7 +356,7 @@ describe("engine.anomalies", () => {
                 weapon({ damage: 1, range: 400, cooldown: 10, projectileSpeed }),
               ],
             }),
-            makeShip({ id: "d1", side: "defender", x: 150, y: 40, structure: 99999 }),
+            defender({ id: "d1", x: 150, y: 40, structure: 99999 }),
           ],
           anomaly,
         ),

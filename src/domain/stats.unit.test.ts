@@ -63,7 +63,7 @@ const sensorModuleDef: ModuleDefinition = {
   powerDraw: 4,
   crewRequired: 0,
   techLevel: 1,
-  effect: { kind: "sensor", detectionRange: 200, nebulaImmune: false },
+  effect: { kind: "sensor", sensorType: "omni", arc: Math.PI, bearing: 0, detectionRange: 200, nebulaImmune: false },
 };
 
 /** Omni-directional comms unit — no crew needed, no bearing concern. */

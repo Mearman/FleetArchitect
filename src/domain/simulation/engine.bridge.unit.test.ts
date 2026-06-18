@@ -62,6 +62,7 @@ function moduleOf(
     turretTurnRate: 0,
     channel: 0,
     commsBearing: 0,
+    sensorBearing: 0,
   };
 }
 
@@ -108,7 +109,14 @@ function modularAttacker(id: string, commandHp: number): CombatShip {
     // A sensor so the ship can actually see the dummy 160 wu away — a warship
     // with a 400-range gun needs sensors to match. Without it the ship would be
     // blind beyond the 140 wu visual radius and never acquire a target.
-    moduleOf("se1", { kind: "sensor", detectionRange: 300, nebulaImmune: false }, 0, 12, 20, false),
+    moduleOf(
+      "se1",
+      { kind: "sensor", sensorType: "omni", arc: Math.PI, bearing: 0, detectionRange: 300, nebulaImmune: false },
+      0,
+      12,
+      20,
+      false,
+    ),
   ];
   const stats: ShipStats = {
     mass: 10,
