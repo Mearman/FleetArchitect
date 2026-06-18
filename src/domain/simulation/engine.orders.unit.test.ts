@@ -102,12 +102,18 @@ function omniSensor(detectionRange: number): ModuleEffect {
  * thrust-along-heading behaviour. The engine's `facing` is π (exhaust aft),
  * so it drives the ship forward (+x in ship-local), again matching legacy.
  */
-const MODULE_COUNT = 4; // cmd + engine + sensor + one weapon
+const MODULE_COUNT = 5; // cmd + engine + rcs + sensor + one weapon
 const TARGET_TOP_SPEED = 50;
 const LINEAR_DAMPING = 0.97;
 const PER_MODULE_ENGINE_THRUST =
   TARGET_TOP_SPEED * MODULE_COUNT * (1 - LINEAR_DAMPING);
-const PER_MODULE_ENGINE_TURN_RATE = 0.2;
+// RCS torque giving each ship real commandable turn authority under the
+// torque-driven attitude model. Every module sits at the ship's origin so the
+// modular moment of inertia bottoms out at its floor of 1; with MoI = 1 an RCS
+// torque of 0.2 yields α = 0.2 rad/tick², fast enough that ships complete their
+// turns well inside the 80–200-tick test windows. Derived from the legacy
+// scalar turn rate of 0.2 (kept as the per-tick angular-acceleration target).
+const RCS_TORQUE = 0.2;
 
 function stats(opts: {
   structure?: number;
@@ -170,7 +176,9 @@ function makeShip(opts: {
   // about the centre of mass is zero — no spurious torque, matching the
   // legacy model's thrust-along-heading behaviour. The engine module supplies
   // PER_MODULE_ENGINE_THRUST (derived so terminal velocity equals the legacy
-  // top speed of 50) and turn rate 0.2, matching the legacy scalar path.
+  // top speed of 50). Turn authority comes from an RCS module at the origin
+  // (position-independent for pure-torque sources), replacing the engine
+  // `turnRate` scalar removed under the torque-driven attitude model.
   const modules: ResolvedModule[] = [
     moduleOf(`${opts.id}-cmd`, { kind: "power", output: 1000 }, 0, 0, true),
     moduleOf(
@@ -178,12 +186,12 @@ function makeShip(opts: {
       {
         kind: "engine",
         thrust: PER_MODULE_ENGINE_THRUST,
-        turnRate: PER_MODULE_ENGINE_TURN_RATE,
         facing: Math.PI,
       },
       0,
       0,
     ),
+    moduleOf(`${opts.id}-rcs`, { kind: "rcs", torque: RCS_TORQUE }, 0, 0),
     moduleOf(`${opts.id}-se`, omniSensor(1000), 0, 0),
     ...weapons.map((w, i) => moduleOf(`${opts.id}-w${i}`, w, 0, 0)),
   ];

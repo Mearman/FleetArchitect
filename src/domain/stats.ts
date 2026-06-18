@@ -167,7 +167,10 @@ function applyModule(
       break;
     case "engine":
       stats.thrust += effect.thrust;
-      stats.turnRate += effect.turnRate;
+      // No per-engine turn rate: a modular ship turns from real torque
+      // (engine r × F, gimbal vectoring, RCS, reaction wheels), derived in the
+      // engine from the cell geometry — not from a summed scalar. ShipStats.turnRate
+      // stays the scalar agility of the legacy aggregated path only.
       break;
     case "power":
       stats.powerOutput += effect.output;
@@ -181,6 +184,8 @@ function applyModule(
     case "magazine":
     case "sensor": // Phase A: inert — mass/cost/power/crew apply; no detection effect yet
     case "comms":  // Phase A: inert — mass/cost/power/crew apply; no link effect yet
+    case "rcs":
+    case "reactionWheel":
       break;
   }
 }

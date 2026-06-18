@@ -15,9 +15,14 @@ import { getMeta, setMeta, storage } from "@/storage/db";
  * ships (Sabre, Drone Skimmer) gain long-range sensors; capital ships
  * (Leviathan, Hive Lord) gain comms backbone links and squad-net transceivers.
  *
- * Version 5: Directional sensors — sensors gain a comms-style cone model
- * (sensorType/arc/bearing). Preset sensor modules become typed: omni passive
- * arrays, forward-facing directional/dish scanners on scouts, all aimed forward.
+ * Version 5: Directional sensors + Newtonian rotation manoeuvring gear, both
+ * landing together. Sensors gained a comms-style cone model
+ * (sensorType/arc/bearing): preset sensor modules are now typed as omni passive
+ * arrays or forward-facing directional/dish scanners on scouts. Separately,
+ * every preset now carries manoeuvring gear (RCS thrusters and/or reaction
+ * wheels) so it has real commandable turn authority under the torque-driven
+ * attitude model — centre-line-only designs could not rotate at all without it.
+ * This bump reseeds the combined set over either feature's v4.
  */
 const PRESETS_VERSION = 5;
 const VERSION_KEY = "presetsVersion";

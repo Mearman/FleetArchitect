@@ -152,33 +152,23 @@ const SIM = {
    * half-life at 30 ticks/s — momentum is felt, but ships settle.
    */
   linearDamping: 0.97,
-  // A gentle drag on residual angular velocity. The steering controller is a
-  // rate-limited "arrive" profile that settles on its own, so this only needs
-  // to bleed off stray spin from off-centre thruster torque and collisions —
-  // not to brake the deliberate turn (the old 0.9 fought the controller and
-  // caused the wobble). Close to 1 so a real tumble still reads as momentum.
+  /**
+   * Per-tick multiplicative drag on angular velocity — the rotational analogue
+   * of `linearDamping`, and like it a deliberate small non-physical bleed: real
+   * space is frictionless, so a torqued ship would otherwise spin forever, and
+   * the attitude controller's braking only lands angVel exactly on zero in the
+   * continuous limit. Close to 1 so a real tumble still reads as momentum (the
+   * controller, not damping, does the deliberate braking) while a settled ship
+   * cannot jitter forever on residual spin from off-centre thruster torque or a
+   * collision kick. There is NO maximum angular speed — this only decays spin,
+   * it never caps it.
+   */
   angularDamping: 0.98,
   /**
-   * Angular acceleration as a fraction of a ship's `turnRate` (its max angular
-   * SPEED). The per-tick cap on how fast angular velocity can change is
-   * `turnRate * angularAccelRatio` (rad/tick²), so agility scales coherently:
-   * a nimble ship (high turnRate) both reaches a higher top spin AND ramps up
-   * to it quickly, while a sluggish ship eases in slowly — rather than every
-   * ship sharing one absolute acceleration regardless of how manoeuvrable it
-   * is. A ratio below 1 means a ship still takes a few ticks to wind its spin
-   * up to full, giving visible rotational inertia; it is tuned so a ship needs
-   * on the order of `1/angularAccelRatio` ticks to spin up, fast enough that an
-   * agile ship can actually swerve clear of a fast-developing threat (e.g. a
-   * black hole it is closing on at speed) but slow enough that heavy ships read
-   * as having mass. The old fixed absolute cap (0.012 rad/tick²) made a highly
-   * agile ship (turnRate 0.5) take ~40 ticks to reach full spin — far too
-   * sluggish to react, so it ploughed straight through hazards it should dodge.
-   */
-  angularAccelRatio: 0.6,
-  /**
-   * Heading error (radians) within which a near-stationary ship snaps exactly
-   * onto its target heading and zeroes its spin. ~0.6° — below visual notice —
-   * so off-centre thruster torque can't jitter a ship that has arrived on aim.
+   * Heading error (radians) within which the attitude controller commands no
+   * turn — the ship is considered on aim. ~0.6°, below visual notice, so
+   * off-centre thruster torque or a residual fraction of a degree cannot make
+   * the controller chatter the turn command around a settled heading.
    */
   angularDeadband: 0.01,
   /**
@@ -384,10 +374,9 @@ interface SimShip {
    * cells to walk and ignores crew entirely.
    */
   crew?: SimCrew[];
-  /** Hull base thrust/turn-rate, used by recomputeAggregates. Set only
-   *  when modules are present. */
+  /** Hull base thrust, used by recomputeAggregates to recover the non-engine
+   *  thrust floor. Set only when modules are present. */
   hullBaseThrust?: number;
-  hullBaseTurnRate?: number;
   /**
    * True on the tick this ship was created as a break-away chunk from a
    * parent ship. Cleared by snapshot so the flag highlights only the
@@ -781,7 +770,6 @@ function toSimShip(ship: CombatShip, rng: () => number): SimShip {
   if (ship.modules !== undefined && ship.modules.length > 0) {
     base.modules = ship.modules.map((m) => toSimModule(m, rng));
     base.hullBaseThrust = ship.stats.thrust - sumWeaponThrust(ship);
-    base.hullBaseTurnRate = ship.stats.turnRate - sumWeaponTurn(ship);
     base.crew = spawnCrew(base.instanceId, base.modules);
     recomputeAggregates(base);
     // Broad-phase radius is the grid bounding radius (the farthest cell
@@ -1587,6 +1575,8 @@ function stationNeedsCrew(m: SimModule): boolean {
     case "crew":
     case "repair":
     case "hull":
+    case "rcs":
+    case "reactionWheel":
       return false;
   }
 }
@@ -1672,15 +1662,6 @@ function sumWeaponThrust(ship: CombatShip): number {
   let sum = 0;
   for (const m of ship.modules) {
     if (m.effect.kind === "engine") sum += m.effect.thrust;
-  }
-  return sum;
-}
-
-function sumWeaponTurn(ship: CombatShip): number {
-  if (ship.modules === undefined) return 0;
-  let sum = 0;
-  for (const m of ship.modules) {
-    if (m.effect.kind === "engine") sum += m.effect.turnRate;
   }
   return sum;
 }
@@ -1808,7 +1789,6 @@ function recomputeAggregates(ship: SimShip): void {
 
   // 4. Build aggregates from alive + powered modules.
   let thrust = ship.hullBaseThrust ?? 0;
-  let turnRate = ship.hullBaseTurnRate ?? 0;
   // Grid-derived mass: the sum of every alive cell's mass. The hull is no
   // longer a per-class base point mass — a ship *is* its grid, so its mass is
   // exactly the mass of the cells it is built from. The legacy aggregated
@@ -1849,7 +1829,6 @@ function recomputeAggregates(ship: SimShip): void {
         break;
       case "engine":
         thrust += effect.thrust;
-        turnRate += effect.turnRate;
         break;
       case "power":
       case "crew":
@@ -1859,12 +1838,13 @@ function recomputeAggregates(ship: SimShip): void {
       case "magazine":
       case "sensor": // Phase A: inert — no aggregate effect (detection is Phase C)
       case "comms":  // Phase A: inert — no aggregate effect (link logic is Phase C)
+      case "rcs":          // torque handled in the modular shipForceAndTorque path
+      case "reactionWheel": // torque handled in the modular shipForceAndTorque path
         break;
     }
   }
 
   ship.thrust = thrust;
-  ship.turnRate = turnRate;
   ship.mass = mass;
   ship.armourReduction = armourReduction;
   ship.maxShield = shieldCapacity;
@@ -2692,7 +2672,6 @@ function makeChunkShip(
     // leaves its crewed stations unmanned — a severed section can't crew itself.
     crew: crew.map((c) => ({ ...c, path: c.path.map((p) => ({ ...p })) })),
     hullBaseThrust: parent.hullBaseThrust,
-    hullBaseTurnRate: parent.hullBaseTurnRate,
   };
   // Force a clean recompute so chunk aggregates match its own modules.
   // This derives the chunk's own ship-local centre of mass (comX/comY).
@@ -4070,36 +4049,332 @@ function leadingSide(
  *  facing. Torque is computed about the ship's centre of mass: the lever
  *  arm is `(engine_pos − com)`, so an engine mounted exactly at the CoM
  *  produces pure linear thrust and zero spin regardless of its facing. */
-function cellThrustForceAndTorque(ship: SimShip): { fx: number; fy: number; torque: number } {
-  if (ship.modules === undefined) return { fx: 0, fy: 0, torque: 0 };
+/**
+ * Net linear force, net torque, and maximum commandable torque for a modular
+ * ship this tick, given the attitude controller's commanded turn sign
+ * (`turnSign`: −1 clockwise, +1 counter-clockwise, 0 = no turn command).
+ *
+ * Four torque sources compose into one net torque about the centre of mass,
+ * each gated by alive + powered + manned + charged:
+ *
+ *  1. Engine `r × F` — every alive engine's thrust applied at its lever arm
+ *     from the CoM. Always present (off-centre or angled mounts spin the ship
+ *     whether or not a turn is commanded), exactly as before.
+ *  2. Gimbal vectoring — a gimballed engine (`gimbalArc > 0`) may swing its
+ *     thrust vector by up to `gimbalArc` toward producing torque of the
+ *     commanded sign. Deterministic rule: full deflection toward `turnSign`.
+ *     We add the EXTRA torque the deflection buys over the nominal `r × F`
+ *     (already counted in 1), and keep the linear force on the nominal vector
+ *     so thrust-vectoring trades pure attitude authority without perturbing
+ *     the translation model.
+ *  3. RCS modules — bounded pure torque `turnSign · rcs.torque`, no translation.
+ *  4. Reaction wheels — bounded pure internal torque `turnSign · wheel.torque`,
+ *     no exhaust, position-independent.
+ *
+ * `maxTorque` is the total commandable torque magnitude the controller can
+ * call on in either direction: gimbal differential authority + Σ|rcs.torque| +
+ * Σ|wheel.torque|. It sizes the bang-bang controller's angular acceleration.
+ * Engine `r × F` is NOT counted in `maxTorque` — it is an uncommandable
+ * disturbance the controller works against, not authority it can steer with.
+ */
+/**
+ * Net linear force (ship-local) and net torque for a modular ship this tick.
+ *
+ * `shouldThrust` gates whether engines are firing this tick: when false, engines
+ * are off and contribute neither linear force nor geometric r × F torque —
+ * only RCS and reaction wheels (pure-torque sources) remain active. This
+ * matches the physical reality that you cannot have engine torque without
+ * engine thrust.
+ *
+ * `turnSign` (−1 / 0 / +1) drives the commanded-torque sources: RCS, reaction
+ * wheels, and gimballed engines add their torque in the commanded direction.
+ * Engine r × F is present only when `shouldThrust` is true.
+ */
+function shipForceAndTorque(
+  ship: SimShip,
+  turnSign: number,
+  shouldThrust: boolean,
+): { fx: number; fy: number; torque: number; maxTorque: number } {
+  if (ship.modules === undefined) return { fx: 0, fy: 0, torque: 0, maxTorque: 0 };
   let fx = 0;
   let fy = 0;
   let torque = 0;
+  let maxTorque = 0;
   for (const m of ship.modules) {
-    if (!m.alive || m.effect.kind !== "engine") continue;
-    // An engine thrusts only when powered, manned, and locally charged,
+    if (!m.alive) continue;
+    // Every torque source runs only when powered, manned, and locally charged,
     // matching the gate the aggregate thrust total already applies. An
-    // unmanned, browned-out, or uncharged thruster is dead weight this tick.
+    // unmanned, browned-out, or uncharged module is dead weight this tick.
     if (!m.powered || !m.manned || !isCharged(m)) continue;
+    const effect = m.effect;
+    if (effect.kind === "engine") {
+      // Engines only fire when the ship is thrusting. An off engine contributes
+      // no linear force and no geometric torque — no thrust, no torque.
+      if (!shouldThrust) continue;
+      const t = effect.thrust;
+      if (t <= 0) continue;
+      // A module's `facing` is its exhaust direction (where the nozzle/flame
+      // points), matching how engines are authored — a rear-mounted engine
+      // faces aft (π). Newton's third law: the thrust on the ship is OPPOSITE
+      // the exhaust, so the force vector is `-(cos facing, sin facing) · thrust`.
+      // A rear engine (facing π) therefore drives the ship forward (+x).
+      const lx = -Math.cos(m.facing) * t;
+      const ly = -Math.sin(m.facing) * t;
+      fx += lx;
+      fy += ly;
+      // 2D cross product (z-component): r × F = rx*Fy − ry*Fx, where r is
+      // measured from the centre of mass. Positive rotates counter-clockwise
+      // (toward +y from +x). This is the nominal (un-gimballed) thrust torque.
+      const rx = m.x - ship.comX;
+      const ry = m.y - ship.comY;
+      const nominalTorque = rx * ly - ry * lx;
+      torque += nominalTorque;
+
+      const gimbalArc = effect.gimbalArc ?? 0;
+      if (gimbalArc > 0) {
+        // Thrust direction (on the ship) is the exhaust direction + π. Swinging
+        // the thrust vector by ±gimbalArc rotates that direction; the favourable
+        // sign is the one that yields the larger torque toward the commanded
+        // turn. The differential authority is the most extra torque a full
+        // deflection can buy over the nominal — that is what the controller may
+        // call on, so it feeds maxTorque regardless of whether a turn is
+        // commanded this tick.
+        const thrustDir = m.facing + Math.PI;
+        const ccw = gimbalTorque(rx, ry, t, thrustDir, gimbalArc);
+        const cw = gimbalTorque(rx, ry, t, thrustDir, -gimbalArc);
+        // Best torque the gimbal can produce in each direction, relative to the
+        // nominal already added above.
+        const extraCcw = ccw - nominalTorque;
+        const extraCw = cw - nominalTorque;
+        maxTorque += Math.max(0, extraCcw, -extraCw);
+        if (turnSign > 0 && extraCcw > 0) torque += extraCcw;
+        else if (turnSign < 0 && extraCw < 0) torque += extraCw;
+      }
+    } else if (effect.kind === "rcs" || effect.kind === "reactionWheel") {
+      // Pure commandable torque, either sign, no translation. RCS vents
+      // reaction mass; a reaction wheel transfers internal momentum — both
+      // appear here only as torque about the CoM, never as linear force.
+      // These fire regardless of `shouldThrust` — attitude control is
+      // independent of translation.
+      maxTorque += effect.torque;
+      torque += turnSign * effect.torque;
+    }
+  }
+  return { fx, fy, torque, maxTorque };
+}
+
+/**
+ * Torque about the CoM from a gimballed engine whose thrust vector points in
+ * world-of-ship-local direction `thrustDir + delta`, at lever arm `(rx, ry)`
+ * and thrust magnitude `t`. `delta` is the gimbal deflection (clamped by the
+ * caller to ±gimbalArc). 2D cross product `r × F`.
+ */
+function gimbalTorque(
+  rx: number,
+  ry: number,
+  t: number,
+  thrustDir: number,
+  delta: number,
+): number {
+  const a = thrustDir + delta;
+  const fxg = Math.cos(a) * t;
+  const fyg = Math.sin(a) * t;
+  return rx * fyg - ry * fxg;
+}
+
+/**
+ * Maximum commandable torque magnitude available to the attitude controller
+ * this tick. For modular ships this is the sum of gimbal differential authority
+ * + Σ|rcs.torque| + Σ|wheel.torque| (the commandable sources only — engine
+ * r × F is an uncommandable disturbance, not authority). For legacy ships it
+ * is turnRate × mass (the scalar authority derived from ShipStats.turnRate),
+ * matching the torque the legacy integration path applies.
+ *
+ * Deterministic: a pure function of the ship's module state, no RNG.
+ */
+/**
+ * Maximum commandable torque for a ship, given whether its engines are firing
+ * this tick. Gimbal authority is only available when the engine fires; RCS and
+ * reaction wheels are available regardless. Engine r × F is NOT authority —
+ * it is an uncommandable disturbance. For legacy ships the scalar turnRate is
+ * always the authority (engines are abstracted away).
+ */
+function maxCommandableTorque(ship: SimShip, shouldThrust = false): number {
+  if (ship.modules !== undefined) {
+    let maxTorque = 0;
+    const comX = ship.comX;
+    const comY = ship.comY;
+    for (const m of ship.modules) {
+      if (!m.alive || !m.powered || !m.manned || !isCharged(m)) continue;
+      const effect = m.effect;
+      if (effect.kind === "engine") {
+        // Gimbal authority only exists when the engine is firing.
+        if (!shouldThrust) continue;
+        const gimbalArc = effect.gimbalArc ?? 0;
+        if (gimbalArc <= 0) continue;
+        const t = effect.thrust;
+        if (t <= 0) continue;
+        const rx = m.x - comX;
+        const ry = m.y - comY;
+        const thrustDir = m.facing + Math.PI;
+        const lx = -Math.cos(m.facing) * t;
+        const ly = -Math.sin(m.facing) * t;
+        const nominalTorque = rx * ly - ry * lx;
+        const ccw = gimbalTorque(rx, ry, t, thrustDir, gimbalArc);
+        const cw = gimbalTorque(rx, ry, t, thrustDir, -gimbalArc);
+        const extraCcw = ccw - nominalTorque;
+        const extraCw = cw - nominalTorque;
+        maxTorque += Math.max(0, extraCcw, -extraCw);
+      } else if (effect.kind === "rcs" || effect.kind === "reactionWheel") {
+        maxTorque += effect.torque;
+      }
+    }
+    return maxTorque;
+  }
+  return ship.turnRate * ship.mass;
+}
+
+/**
+ * Net uncommandable (geometric) torque on a modular ship from the r × F of
+ * its engines in their nominal (un-gimballed) facing, when firing
+ * (`shouldThrust = true`). Engine torque only exists when engines fire; when
+ * the ship is not thrusting (`shouldThrust = false`), the geometric disturbance
+ * is zero. Returns 0 for legacy ships (their scalar integration has no
+ * geometric term). Used by the bang-bang controller to compute accurate
+ * stopping-angle estimates.
+ */
+function geometricTorque(ship: SimShip, shouldThrust: boolean): number {
+  if (ship.modules === undefined || !shouldThrust) return 0;
+  let torque = 0;
+  const comX = ship.comX;
+  const comY = ship.comY;
+  for (const m of ship.modules) {
+    if (!m.alive || !m.powered || !m.manned || !isCharged(m)) continue;
+    if (m.effect.kind !== "engine") continue;
     const t = m.effect.thrust;
     if (t <= 0) continue;
-    // A module's `facing` is its exhaust direction (where the nozzle/flame
-    // points), matching how engines are authored — a rear-mounted engine
-    // faces aft (π). Newton's third law: the thrust on the ship is OPPOSITE
-    // the exhaust, so the force vector is `-(cos facing, sin facing) · thrust`.
-    // A rear engine (facing π) therefore drives the ship forward (+x).
     const lx = -Math.cos(m.facing) * t;
     const ly = -Math.sin(m.facing) * t;
-    fx += lx;
-    fy += ly;
-    // 2D cross product (z-component): r × F = rx*fy − ry*fx, where r is
-    // measured from the centre of mass. A positive value rotates the ship
-    // counter-clockwise (toward +y from +x).
-    const rx = m.x - ship.comX;
-    const ry = m.y - ship.comY;
+    const rx = m.x - comX;
+    const ry = m.y - comY;
     torque += rx * ly - ry * lx;
   }
-  return { fx, fy, torque };
+  return torque;
+}
+
+/**
+ * Bang-bang minimum-time attitude controller. Decides the commanded turn sign
+ * (−1 clockwise, +1 counter-clockwise, 0 = hold) to bring `ship.facing` to
+ * `desiredFacing` with `angVel → 0` on arrival.
+ *
+ * Algorithm (all quantities in radians / radians-per-tick):
+ *
+ *  e = angleDifference(facing, desiredFacing) — heading error, signed.
+ *  w = ship.angVel — current angular velocity.
+ *  α = mct / momentOfInertia — maximum commandable angular acceleration.
+ *  g = geometricTorque / momentOfInertia — constant disturbance angular accel
+ *      from off-centre / angled engine r × F (zero for legacy ships).
+ *
+ *  If α ≤ 0 (no torque authority): command 0 — ship cannot rotate.
+ *
+ *  Effective braking alpha: when braking against spin of sign `s`, the
+ *  net deceleration is (mct − s·g_torque) / I. If geometric torque opposes
+ *  the brake (g in same direction as spin), effective braking is reduced; if
+ *  it helps (g opposes spin), braking is enhanced. We use the pessimistic
+ *  (minimum) effective braking alpha so the stopping-angle estimate errs on
+ *  the side of braking early rather than late — preventing overshoot.
+ *
+ *  Stopping angle eStop = w² / (2·αBrake): angle consumed braking |w| → 0.
+ *
+ *  Settle deadband: if |e| ≤ deadband and |w| ≤ α (one tick of braking
+ *  brings |w| to zero): command 0 for the caller to snap to rest.
+ *
+ *  Brake if: spinning toward target and would overshoot (eStop ≥ |e|), OR
+ *  spinning away from target — command −sign(w).
+ *
+ *  Otherwise: command sign(e) to accelerate toward the target.
+ *
+ * `mct` is pre-computed by the caller (via `maxCommandableTorque`) so the
+ * settle-snap logic after integration can reuse the same value without a
+ * second module scan.
+ *
+ * Deterministic: a pure function of ship state and the desired heading —
+ * no RNG, clock, or Map/Set iteration-order dependence.
+ */
+/**
+ * Simulate discrete braking from angular velocity `w` using a braking angular
+ * acceleration of `alphaBrake` per tick, with `angularDamping` applied each
+ * tick, returning the total angle traversed until the ship stops (angVel
+ * magnitude ≤ 0). This is the exact discrete stopping distance for the
+ * engine's integration model, accounting for damping.
+ *
+ * Returns the angle (positive, unsigned) consumed from |w| to 0.
+ *
+ * Bounded to `maxIter` iterations (well above any reachable angVel /
+ * alphaBrake ratio for realistic scenarios) for guaranteed termination.
+ */
+function discreteStoppingAngle(w: number, alphaBrake: number): number {
+  if (alphaBrake <= 0) return Infinity;
+  let vel = Math.abs(w);
+  let angle = 0;
+  const maxIter = 512; // far beyond any realistic angVel / alphaBrake ratio
+  for (let i = 0; i < maxIter; i += 1) {
+    // Apply one tick of braking: decelerate then damp.
+    vel = (vel - alphaBrake) * SIM.angularDamping;
+    if (vel <= 0) break;
+    angle += vel;
+  }
+  return angle;
+}
+
+function commandedTurn(
+  ship: SimShip,
+  desiredFacing: number,
+  mct: number,
+  shouldThrust: boolean,
+): -1 | 0 | 1 {
+  const e = angleDifference(ship.facing, desiredFacing);
+  const w = ship.angVel;
+  const I = ship.momentOfInertia;
+  const alpha = I > 0 ? mct / I : 0;
+
+  // No commandable torque authority — cannot steer.
+  if (alpha <= 0) return 0;
+
+  // Net geometric disturbance angular acceleration (uncommandable r × F).
+  // Only non-zero when engines are actually firing this tick.
+  const gTorque = geometricTorque(ship, shouldThrust);
+  const gAlpha = I > 0 ? gTorque / I : 0;
+
+  // Settle deadband: close enough to target and slow enough to snap to rest.
+  if (Math.abs(e) <= SIM.angularDeadband && Math.abs(w) <= alpha) {
+    return 0;
+  }
+
+  // Effective braking alpha: the net deceleration when applying counter-torque
+  // (-mct) against the geometric disturbance. When geo torque is in the same
+  // direction as spin (hindrance), effective braking is reduced; when it
+  // opposes spin (helps brake), effective braking is enhanced. Clamped to 0 if
+  // the geometric torque overwhelms the commandable authority — the ship cannot
+  // actively decelerate but damping will eventually bleed the spin.
+  const spinSign = w > 0 ? 1 : w < 0 ? -1 : 0;
+  const hindrance = spinSign * gAlpha > 0 ? spinSign * gAlpha : 0;
+  const alphaBrake = Math.max(alpha - hindrance, 0);
+
+  // Discrete stopping angle: the exact angle consumed braking |w| → 0 in the
+  // engine's damped integration model, simulated tick by tick. More accurate
+  // than the continuous formula w²/(2α) when angularDamping < 1.
+  const eStop = discreteStoppingAngle(w, alphaBrake);
+
+  // Brake if spinning toward the target but would overshoot, or spinning away.
+  if (w !== 0 && (Math.sign(w) === Math.sign(e) ? eStop >= Math.abs(e) : true)) {
+    if (w > 0) return -1;
+    return 1;
+  }
+
+  // Accelerate toward the target.
+  if (e > 0) return 1;
+  return -1;
 }
 
 /** Rotate a local (ship-frame) vector into world coordinates by `facing`. */
@@ -4317,45 +4592,21 @@ function moveShips(
       }
     }
 
-    // Angular: a rate-limited "arrive" controller. `turnRate` is the ship's
-    // maximum angular SPEED (rad/tick); the per-tick cap on how fast that speed
-    // can change (rad/tick²) is `turnRate * SIM.angularAccelRatio` — bounded
-    // angular acceleration is what makes a heavy ship feel like it has
-    // rotational inertia rather than snapping instantly to a new spin. Each tick we pick
-    // the angular velocity that drives the heading error to zero WITHOUT
-    // overshooting: if the ship can't decelerate from its current spin to a
-    // stop within the remaining error (the "stopping angle"), it brakes;
-    // otherwise it accelerates toward the error, capped to the max speed.
-    // This eases in and out and settles cleanly on aim instead of oscillating.
-    const angError = angleDifference(ship.facing, desiredFacing);
-    // Max angular SPEED is the ship's own turnRate — a ship with turnRate 0
-    // (a fixed-heading hull) genuinely cannot rotate, so we never floor this:
-    // flooring it would let a zero-turn ship creep round to face its target,
-    // which is wrong (and silently un-fixed several turret and arc tests that
-    // rely on a held ship's heading staying put). The per-tick angular-accel
-    // cap scales with that same turnRate, so an agile ship winds its spin up
-    // quickly and a sluggish one eases in — see SIM.angularAccelRatio.
-    const maxSpin = ship.turnRate;
-    const accel = ship.turnRate * SIM.angularAccelRatio;
-    if (Math.abs(angError) <= SIM.angularDeadband && Math.abs(ship.angVel) <= accel) {
-      // On target and barely moving: snap exactly onto the heading and kill the
-      // spin so the ship holds aim instead of jittering by a fraction of a
-      // degree forever (off-centre thruster torque would otherwise nudge it).
-      ship.facing = desiredFacing;
-      ship.angVel = 0;
-    } else {
-      // Angular speed from which the ship can just stop within `|angError|`,
-      // decelerating at `accel` per tick: v = sqrt(2·a·d) (kinematics).
-      const arriveSpeed = Math.min(maxSpin, Math.sqrt(2 * accel * Math.abs(angError)));
-      const targetAngVel = Math.sign(angError) * arriveSpeed;
-      // Move the current angular velocity toward the target, limited by the
-      // per-tick angular-acceleration cap, so the spin ramps up and down
-      // smoothly rather than jumping.
-      const dv = targetAngVel - ship.angVel;
-      const step = Math.abs(dv) <= accel ? dv : Math.sign(dv) * accel;
-      ship.angVel += step;
-      ship.facing += ship.angVel;
-    }
+    // Attitude control is pure Newtonian rotation: the bang-bang controller
+    // decides the commanded turn sign, the ship's torque sources produce a real
+    // torque about the centre of mass, and `angVel += torque / I; facing +=
+    // angVel` is the only thing that rotates the ship. There is NO maximum
+    // angular speed — a ship under sustained turning torque keeps spinning up
+    // until counter-torque brakes it to rest at the target heading. Both the
+    // modular and legacy branches below share this one rotational model — they
+    // differ only in where their commandable torque comes from (module geometry
+    // vs a scalar derived from ShipStats.turnRate).
+    //
+    // Pre-compute the commandable torque and angular alpha so the bang-bang
+    // controller and the post-integration settle snap share the same value.
+    const mct = maxCommandableTorque(ship, shouldThrust);
+    const alpha = ship.momentOfInertia > 0 ? mct / ship.momentOfInertia : 0;
+    const turnSign = commandedTurn(ship, desiredFacing, mct, shouldThrust);
 
     // Linear: thrust accelerates velocity.
     //
@@ -4377,7 +4628,14 @@ function moveShips(
     // is clamped to `thrust` so heavier ships are sluggish to build speed
     // and have the same top speed as lighter ones.
     if (ship.modules !== undefined) {
-      const { fx, fy, torque } = cellThrustForceAndTorque(ship);
+      // Engines, RCS, and reaction wheels for the commanded turn sign. Engine
+      // r × F torque (and linear force) applies only when the ship is actively
+      // thrusting; RCS and reaction wheels (pure-torque sources) apply their
+      // commanded torque every tick regardless of thrust. When the ship is
+      // holding position or braking (`shouldThrust = false`), engines are off
+      // and produce neither force nor geometric torque — only the commandable
+      // attitude sources (RCS, wheels, gimbal) are active.
+      const { fx, fy, torque } = shipForceAndTorque(ship, turnSign, shouldThrust);
       const dir = reverse ? -1 : 1;
       const lx = shouldThrust ? dir * fx : 0;
       const ly = shouldThrust ? dir * fy : 0;
@@ -4387,18 +4645,27 @@ function moveShips(
       ship.velY += world.y * invMass;
       ship.velX *= SIM.linearDamping;
       ship.velY *= SIM.linearDamping;
-      // Angular kick from off-centre thrusters. Torque is measured about
-      // the CoM and moment of inertia is the scalar I = Σ m·|r−com|², so
-      // angular acceleration is `alpha = torque / I` (Newton's second law
-      // for rotation). Clamped to a sane per-tick cap so a tiny I can't
-      // spin a stripped-down ship to absurd angular speeds in one tick.
+      // Newtonian rotation: α = torque / I. No angular speed cap.
       const angularAccel = ship.momentOfInertia > 0 ? torque / ship.momentOfInertia : 0;
-      ship.angVel += shouldThrust ? angularAccel : 0;
-      // Gentle drag bleeds off residual spin from off-centre thrust (and any
-      // collision/recoil kick) without braking the steering controller's
-      // deliberate turn, which already eases itself to a stop.
+      ship.angVel += angularAccel;
+      // Deliberate small non-physical angular damping (mirrors linearDamping):
+      // keeps a settled ship from drifting on floating-point residuals without
+      // meaningfully opposing a real turn.
       ship.angVel *= SIM.angularDamping;
     } else {
+      // Legacy aggregated ship: no module geometry, so its commandable torque
+      // is a scalar authority derived from ShipStats.turnRate. Scaling by mass
+      // gives `α = torque / I = (turnRate · mass) / (mass · legacyMoI) =
+      // turnRate / legacyMoI`, an agility independent of the absolute mass —
+      // an agile hull (high turnRate) spins up fast, a sluggish one slowly —
+      // under the SAME `angVel += torque / I` integration as modular ships and
+      // with NO maximum angular speed. A turnRate-0 hull genuinely cannot turn.
+      const torqueAuthority = ship.turnRate * ship.mass;
+      const torque = turnSign * torqueAuthority;
+      const angularAccel = ship.momentOfInertia > 0 ? torque / ship.momentOfInertia : 0;
+      ship.angVel += angularAccel;
+      ship.angVel *= SIM.angularDamping;
+
       const maxSpeed = ship.thrust;
       const accel = ship.thrust / Math.max(ship.mass, 1);
       const dir = reverse ? -1 : 1;
@@ -4422,6 +4689,22 @@ function moveShips(
       ship.velY *= SIM.linearDamping;
     }
 
+    // Deadband settle: snap the ship cleanly onto the target heading when the
+    // controller has commanded 0 (|e| ≤ deadband and |w| ≤ α) AND there is
+    // real torque authority (α > 0). Applied AFTER torque integration so any
+    // residual angVel change from that tick is included before the snap, and the
+    // ship does not then drift away from the settled heading on the next tick.
+    // A ship with zero authority (alpha === 0) genuinely cannot steer — no snap.
+    if (
+      turnSign === 0 &&
+      alpha > 0 &&
+      Math.abs(angleDifference(ship.facing, desiredFacing)) <= SIM.angularDeadband
+    ) {
+      ship.angVel = 0;
+      ship.facing = desiredFacing;
+    } else {
+      ship.facing += ship.angVel;
+    }
     ship.x += ship.velX;
     ship.y += ship.velY;
   }

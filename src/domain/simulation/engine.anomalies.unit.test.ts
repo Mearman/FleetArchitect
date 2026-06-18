@@ -127,7 +127,10 @@ function attacker(opts: {
   };
   const modules: ResolvedModule[] = [
     moduleOf(`${opts.id}-cmd`, { kind: "power", output: 1000 }, 0, 0, true),
-    moduleOf(`${opts.id}-eng`, { kind: "engine", thrust: 0.5, turnRate: 0.1, facing: Math.PI }, -1, 0),
+    moduleOf(`${opts.id}-eng`, { kind: "engine", thrust: 0.5, facing: Math.PI }, -1, 0),
+    // RCS at the origin so the attacker has commandable turn authority under
+    // the torque-driven attitude model (replaces the removed engine `turnRate`).
+    moduleOf(`${opts.id}-rcs`, { kind: "rcs", torque: 0.5 }, 0, 0),
     moduleOf(`${opts.id}-se`, omniSensor(2000), 1, 0),
     ...weapons.map((w, i) => moduleOf(`${opts.id}-w${i}`, w, 0, 1 + i)),
   ];
