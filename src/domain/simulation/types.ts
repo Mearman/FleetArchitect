@@ -52,6 +52,13 @@ export interface ResolvedModule {
   mass: number;
   /** Power drawn from the reactor each tick to run this module. */
   powerDraw: number;
+  /**
+   * Crew that must occupy this module's cell for it to function. Copied off the
+   * module definition (`ModuleDefinition.crewRequired`); 0 means the module
+   * needs no crew and is always considered manned. Drives the runtime manning
+   * gate in the engine.
+   */
+  crewRequired: number;
   /** The module's effect (weapon/shield/armour/engine/power/crew/repair). */
   effect: ModuleEffect;
   /** Whether this module is a bridge / command module. */
@@ -98,6 +105,46 @@ export interface ResolvedModule {
    */
   turretArc: number;
   turretTurnRate: number;
+}
+
+/**
+ * A crew member aboard a ship: a physical entity that walks the walkable
+ * interior (alive cells) to man stations and haul resources. Position is an
+ * integer cell `(col, row)` — the single source of truth for everything the
+ * engine decides — plus a fractional within-cell offset `(ox, oy)` carried
+ * only so the renderer can interpolate smooth motion between cell steps.
+ *
+ * All crew decisions are made in a fixed iteration order (crew sorted by id,
+ * modules scanned in `(col, row)` order) so the simulation stays a pure
+ * deterministic function of its inputs: no RNG, no Map/Set insertion order,
+ * no wall-clock.
+ */
+export interface SimCrew {
+  /** Stable id, unique within the run: `<instanceId>-crew-<n>`. Drives the
+   *  fixed iteration order for deterministic job assignment. */
+  id: string;
+  /** Integer cell the crew member currently occupies. The source of truth for
+   *  manning and hauling; render position derives from this plus `(ox, oy)`. */
+  col: number;
+  row: number;
+  /** Fractional offset within the cell (0..1 on each axis) for render smoothing
+   *  only; never read by any gameplay decision. */
+  ox: number;
+  oy: number;
+  hp: number;
+  /** What the crew member is doing this tick. `idle` has no assignment;
+   *  `manning` is occupying its target station cell; `haulAmmo` / `haulPower`
+   *  are carrying (or fetching) a resource along `path`. */
+  job: "idle" | "manning" | "haulAmmo" | "haulPower";
+  /** Remaining steps to walk, one cell consumed per tick. Empty when at rest
+   *  or already on the target cell. */
+  path: { col: number; row: number }[];
+  /** The station / source cell this crew member is assigned to, addressed by
+   *  the occupant module's `slotId`. Undefined when idle. */
+  targetSlotId?: string;
+  /** A resource physically in hand: set when the crew member has picked up at a
+   *  source and is en route to a sink; cleared on deposit. */
+  carrying?: "ammo" | "power";
 }
 
 /** Everything the simulator needs to run a deterministic battle. */

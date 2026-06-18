@@ -50,6 +50,7 @@ function moduleOf(
     maxHp,
     mass,
     powerDraw,
+    crewRequired: 0,
     effect,
     command,
     repairRate: 0,

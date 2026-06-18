@@ -74,6 +74,7 @@ function moduleOf(
     maxHp,
     mass,
     powerDraw,
+    crewRequired: 0,
     effect,
     command,
     shieldArc: Math.PI * 2,
