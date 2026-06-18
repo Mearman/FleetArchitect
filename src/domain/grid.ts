@@ -26,11 +26,11 @@ export const CLASSIFICATION_MAX_CELLS: {
   cruiser: number;
 } = {
   /** Up to this many occupied cells is a fighter. */
-  fighter: 4,
+  fighter: 16,
   /** Up to this many is a frigate. */
-  frigate: 12,
+  frigate: 45,
   /** Up to this many is a cruiser; anything larger is a dreadnought. */
-  cruiser: 30,
+  cruiser: 100,
 };
 
 /** Index into the flat row-major `cells` array for a (col, row) coordinate. */

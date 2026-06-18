@@ -121,11 +121,16 @@ describe("grid connectivity", () => {
 
 describe("derived properties", () => {
   it("classifies by occupied-cell count", () => {
-    expect(deriveClassification(grid(["##"]))).toBe("fighter");
-    expect(deriveClassification(grid(["#####", "#####"]))).toBe("frigate");
-    const cruiser = grid(Array.from({ length: 4 }, () => "######"));
+    // Tiers: fighter <=16, frigate <=45, cruiser <=100, else dreadnought.
+    expect(deriveClassification(grid(["##"]))).toBe("fighter"); // 2 cells
+    // 30 cells (5 rows of 6): above the fighter bound, within the frigate one.
+    const frigate = grid(Array.from({ length: 5 }, () => "######"));
+    expect(deriveClassification(frigate)).toBe("frigate");
+    // 72 cells (8 rows of 9): within the cruiser bound.
+    const cruiser = grid(Array.from({ length: 8 }, () => "#########"));
     expect(deriveClassification(cruiser)).toBe("cruiser");
-    const dread = grid(Array.from({ length: 8 }, () => "######"));
+    // 120 cells (10 rows of 12): above the cruiser bound — a dreadnought.
+    const dread = grid(Array.from({ length: 10 }, () => "############"));
     expect(deriveClassification(dread)).toBe("dreadnought");
   });
 
