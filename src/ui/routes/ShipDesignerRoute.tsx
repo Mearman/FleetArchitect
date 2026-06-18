@@ -88,6 +88,8 @@ function cellColour(cell: GridCell): string {
       return "#8794b8";
     case "module":
       return "#6ea8ff";
+    case "floor":
+      return "#4a5568";
   }
 }
 
@@ -95,6 +97,7 @@ function cellColour(cell: GridCell): string {
 function cellLabel(cell: GridCell): string {
   if (cell.kind === "empty") return "";
   if (cell.kind === "hull") return cell.tile.charAt(0).toUpperCase();
+  if (cell.kind === "floor") return "F";
   const mod = catalog().module(cell.moduleId);
   return mod === undefined ? "?" : mod.name.charAt(0).toUpperCase();
 }
