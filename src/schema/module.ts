@@ -187,6 +187,78 @@ export const MagazineEffect = z.object({
 export type MagazineEffect = z.infer<typeof MagazineEffect>;
 
 /**
+ * Effect payload for a sensor array.
+ *
+ * `detectionRange` (world units) is added to the hull's innate visual radius
+ * to extend how far this ship can passively detect enemies.
+ *
+ * `nebulaImmune` marks special sensor arrays (e.g. active LIDAR, gravimetric)
+ * that are unaffected by nebula attenuation — they see through the gas cloud
+ * as well as in clear space.
+ *
+ * Phase A: inert — contributes mass/cost/power/crew but no detection behaviour.
+ * Detection logic is Phase C.
+ */
+export const SensorEffect = z.object({
+  kind: z.literal("sensor"),
+  /** Additional detection range in world units, added to the hull's base visual radius. */
+  detectionRange: z.number().min(0),
+  /** True for sensor types (active LIDAR, gravimetric) unaffected by nebula gas. */
+  nebulaImmune: z.boolean(),
+});
+export type SensorEffect = z.infer<typeof SensorEffect>;
+
+/**
+ * Effect payload for a communications module.
+ *
+ * `commsType` sets the antenna geometry:
+ *   - "omni"        — broadcasts in all directions; `arc` should be Math.PI.
+ *   - "directional" — fixed-facing sector; `arc` is the half-arc.
+ *   - "dish"        — narrow steerable beam; `arc` is the physical half-beam-width.
+ *   - "laser"       — point-to-point; `arc` is effectively zero.
+ *   - "variable"    — electronically steerable; `minArc`/`maxArc` and
+ *                     `minRange`/`maxRange` override the static values.
+ *
+ * `range`     — maximum contact range in world units.
+ * `arc`       — half-arc in radians; omni sets this to Math.PI (full hemisphere,
+ *               which at 2 × π covers 360°).
+ * `bearing`   — ship-local mount bearing in radians.
+ * `channel`   — logical frequency channel (non-negative integer). Ships share
+ *               awareness only if their comms channels match.
+ * `bandwidth` — maximum simultaneous contacts relayed per tick.
+ *
+ * Variable-unit optional fields (`minArc`, `maxArc`, `minRange`, `maxRange`)
+ * are only meaningful when `commsType === "variable"`.
+ *
+ * Phase A: inert — contributes mass/cost/power/crew but no comms behaviour.
+ * Link logic is Phase C.
+ */
+export const CommsEffect = z.object({
+  kind: z.literal("comms"),
+  commsType: z.enum(["omni", "directional", "dish", "laser", "variable"]),
+  /** Maximum communication range in world units. */
+  range: z.number().min(0),
+  /** Half-arc in radians (0 = point, Math.PI = full hemisphere each side). */
+  arc: z.number().min(0).max(Math.PI),
+  /** Ship-local mount bearing in radians. */
+  bearing: z.number(),
+  /** Logical frequency channel; two units communicate only on matching channels. */
+  channel: z.number().int().min(0),
+  /** Maximum contacts relayed per tick (bandwidth cap). */
+  bandwidth: z.number().int().min(0),
+  // Variable-unit range/arc bounds — only used when commsType === "variable".
+  /** Minimum electronically steerable arc (variable units only). */
+  minArc: z.number().optional(),
+  /** Maximum electronically steerable arc (variable units only). */
+  maxArc: z.number().optional(),
+  /** Minimum electronically steerable range (variable units only). */
+  minRange: z.number().optional(),
+  /** Maximum electronically steerable range (variable units only). */
+  maxRange: z.number().optional(),
+});
+export type CommsEffect = z.infer<typeof CommsEffect>;
+
+/**
  * Discriminated union of all module effects. New module kinds extend this.
  */
 export const ModuleEffect = z.discriminatedUnion("kind", [
@@ -200,6 +272,8 @@ export const ModuleEffect = z.discriminatedUnion("kind", [
   RepairEffect,
   HullEffect,
   MagazineEffect,
+  SensorEffect,
+  CommsEffect,
 ]);
 export type ModuleEffect = z.infer<typeof ModuleEffect>;
 
