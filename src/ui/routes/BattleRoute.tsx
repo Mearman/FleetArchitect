@@ -20,6 +20,7 @@ import { notifications } from "@mantine/notifications";
 import { IconArrowsShuffle, IconPlayerPause, IconPlayerPlay, IconRefresh, IconSwords } from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { resolveFleetToCombatShips } from "@/domain/resolve";
+import { CELL_SIZE } from "@/domain/grid";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import { battleRunner } from "@/ui/battleRunner";
 import { catalog } from "@/data/catalog";
@@ -59,6 +60,7 @@ const MODULE_COLOUR: Record<string, string> = {
   engine: "#7bd88f",
   power: "#ffe066",
   crew: "#c792ff",
+  hull: "#5a6172",
 };
 
 interface Bounds {
@@ -310,6 +312,20 @@ export function BattleRoute() {
           continue;
         }
 
+        // Shield bubble radius: encircle the hull, so a big ship's shield ring
+        // sits outside its cells rather than buried inside them. Derived from
+        // the farthest cell from the ship centre (display pixels), falling back
+        // to a small fixed ring for legacy ships with no cell data.
+        let hullRadiusPx = 11;
+        if (s.modules !== undefined && s.modules.length > 0) {
+          let maxDistSq = 0;
+          for (const m of s.modules) {
+            const d = m.x * m.x + m.y * m.y;
+            if (d > maxDistSq) maxDistSq = d;
+          }
+          hullRadiusPx = (Math.sqrt(maxDistSq) + CELL_SIZE) * scale + 3;
+        }
+
         const maxShield = max?.shield ?? s.shield;
         if (maxShield > 0) {
           const frac = Math.max(0, s.shield / maxShield);
@@ -317,57 +333,77 @@ export function BattleRoute() {
             ctx.strokeStyle = "rgba(120,200,255,0.65)";
             ctx.lineWidth = 2;
             ctx.beginPath();
-            ctx.arc(px, py, 11, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac);
+            ctx.arc(px, py, hullRadiusPx, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac);
             ctx.stroke();
           }
         }
 
-        ctx.fillStyle = base;
-        ctx.beginPath();
-        ctx.arc(px, py, 7, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Per-module parts: each placed module drawn at its world position
-        // (ship centre + the module's local cell rotated by the ship's facing),
-        // coloured by kind. Destroyed parts go dark — the ship visibly comes
-        // apart system by system as the battle wears on.
+        // Per-cell hull: each module/hull cell is drawn as a square the true
+        // size of a grid cell (CELL_SIZE world units), positioned at its world
+        // location (ship centre + the cell's local offset rotated by the ship's
+        // facing) and rotated to match. This makes a ship read as its actual
+        // sculpted silhouette and scale rather than a dot — a dreadnought
+        // genuinely dwarfs a fighter on the canvas. Cells are tinted toward the
+        // side colour so faction allegiance stays legible at a glance. Destroyed
+        // cells go dark with a cross; turreted weapons draw a tracking barrel.
         if (s.modules !== undefined && s.facing !== undefined) {
-          const cos = Math.cos(s.facing);
-          const sin = Math.sin(s.facing);
+          // Cell edge length in display pixels (world CELL_SIZE through the
+          // current world-to-display scale). Floored so distant fleets still
+          // show a visible hull rather than collapsing to sub-pixel specks.
+          const cellPx = Math.max(2, CELL_SIZE * scale);
+          const half = cellPx / 2;
+          ctx.save();
+          ctx.translate(px, py);
+          ctx.rotate(s.facing);
           for (const m of s.modules) {
-            const wx = s.x + m.x * cos - m.y * sin;
-            const wy = s.y + m.x * sin + m.y * cos;
-            const mx = sx(wx);
-            const my = sy(wy);
+            // Cell centre in ship-local display space (local world offset times
+            // the scale); the surrounding translate/rotate places it in world.
+            const lx = m.x * scale;
+            const ly = m.y * scale;
             const colour = MODULE_COLOUR[m.kind];
             if (colour === undefined) continue;
-            ctx.globalAlpha = m.alive ? 1 : 0.2;
+            ctx.globalAlpha = m.alive ? 1 : 0.18;
             ctx.fillStyle = colour;
-            ctx.fillRect(mx - 2, my - 2, 4, 4);
+            ctx.fillRect(lx - half, ly - half, cellPx, cellPx);
+            // A faint side-coloured inset keeps adjacent cells distinct and
+            // tints the whole hull toward its allegiance colour.
+            ctx.globalAlpha = m.alive ? 0.22 : 0.1;
+            ctx.fillStyle = base;
+            ctx.fillRect(lx - half, ly - half, cellPx, cellPx);
             if (!m.alive) {
-              // Destroyed: a dark cross to read as a hole / wreckage.
-              ctx.strokeStyle = "rgba(255,255,255,0.25)";
+              ctx.globalAlpha = 0.35;
+              ctx.strokeStyle = "rgba(255,255,255,0.4)";
               ctx.lineWidth = 1;
               ctx.beginPath();
-              ctx.moveTo(mx - 3, my - 3);
-              ctx.lineTo(mx + 3, my + 3);
-              ctx.moveTo(mx + 3, my - 3);
-              ctx.lineTo(mx - 3, my + 3);
+              ctx.moveTo(lx - half * 0.6, ly - half * 0.6);
+              ctx.lineTo(lx + half * 0.6, ly + half * 0.6);
+              ctx.moveTo(lx + half * 0.6, ly - half * 0.6);
+              ctx.lineTo(lx - half * 0.6, ly + half * 0.6);
               ctx.stroke();
             } else if (m.turretAngle !== undefined) {
-              // Turreted weapon: a short barrel along the live world angle
-              // (ship heading plus the turret's slewed local angle), so a
-              // turret visibly tracks its target independently of the hull.
-              const world = s.facing + m.turretAngle;
+              // Turret barrel: drawn in the local frame, so the ship's own
+              // rotation is already applied by the surrounding transform; only
+              // the turret's slew angle is added here.
+              ctx.globalAlpha = 1;
               ctx.strokeStyle = colour;
               ctx.lineWidth = 1.5;
               ctx.beginPath();
-              ctx.moveTo(mx, my);
-              ctx.lineTo(mx + Math.cos(world) * 7, my + Math.sin(world) * 7);
+              ctx.moveTo(lx, ly);
+              ctx.lineTo(
+                lx + Math.cos(m.turretAngle) * cellPx,
+                ly + Math.sin(m.turretAngle) * cellPx,
+              );
               ctx.stroke();
             }
           }
+          ctx.restore();
           ctx.globalAlpha = 1;
+        } else {
+          // Legacy aggregated ship with no per-cell data: a simple blob.
+          ctx.fillStyle = base;
+          ctx.beginPath();
+          ctx.arc(px, py, 7, 0, Math.PI * 2);
+          ctx.fill();
         }
 
         // Heading indicator: a short line along the ship's velocity vector,
