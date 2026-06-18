@@ -41,11 +41,24 @@ export const ModuleCell = z.object({
 });
 export type ModuleCell = z.infer<typeof ModuleCell>;
 
+/**
+ * A walkable interior decking cell. Floor tiles are solid — they have mass and
+ * HP like a light structural plate — but provide no module function. They are
+ * dedicated corridor and crew-quarters space that crew can walk through to reach
+ * stations. Hull and module cells are also walkable; `floor` is the explicit
+ * interior-decking kind that a designer paints to build corridors.
+ */
+export const FloorCell = z.object({
+  kind: z.literal("floor"),
+});
+export type FloorCell = z.infer<typeof FloorCell>;
+
 /** Discriminated union over the cell kinds. New cell kinds extend this. */
 export const GridCell = z.discriminatedUnion("kind", [
   EmptyCell,
   HullCell,
   ModuleCell,
+  FloorCell,
 ]);
 export type GridCell = z.infer<typeof GridCell>;
 
