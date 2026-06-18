@@ -261,6 +261,14 @@ interface SimModule {
    * effect's `ammo` (defaulting to DEFAULT_WEAPON_AMMO when undefined).
    */
   ammo: number;
+  /**
+   * Rounds remaining in a magazine module's store. Initialised from
+   * `MagazineEffect.ammoStored`; decremented as crew draw runs from it to
+   * resupply dry weapons. Zero on every non-magazine module. Kept on the
+   * SimModule (not the shared effect) so two ships built from the same design
+   * deplete their own magazines independently.
+   */
+  ammoStored: number;
   alive: boolean;
   /**
    * Whether the power grid can sustain this module this tick. Reactors
@@ -538,6 +546,7 @@ function toSimModule(m: ResolvedModule, rng: () => number): SimModule {
     // they get a large default so they effectively never run dry. PD is
     // unlimited by design — see PointDefenseEffect.
     ammo: isWeapon ? effect.ammo ?? DEFAULT_WEAPON_AMMO : 0,
+    ammoStored: effect.kind === "magazine" ? effect.ammoStored : 0,
     alive: true,
     powered: true,
     // A module that needs no crew is born manned; one that needs crew starts
@@ -753,66 +762,273 @@ function aliveCellMap(ship: SimShip): Map<string, SimModule> {
  * Advance one ship's crew by a single tick and recompute every module's
  * `manned` flag from the resulting positions. Runs after `recomputeAggregates`
  * (so `powered` is settled) and before break-apart. Deterministic throughout:
- * crew are processed in id order, candidate stations are scanned in `(col, row)`
- * order, and the only tie-breaks are on those stable orders — never RNG.
+ * crew are processed in id order, candidate stations / sources are scanned in
+ * `(col, row)` order, and the only tie-breaks are on those stable orders —
+ * never RNG, never Map/Set insertion order.
  *
- * Step sequence:
+ * Step sequence (crew always iterated in id order):
  *  1. Crew whose current cell has died (shot away or severed) are removed.
- *  2. Each crew member with no job is assigned the highest-priority unmet need,
- *     reserving the station so two crew never chase the same one.
- *  3. Crew with a path walk one cell along it.
- *  4. Manning is recomputed: a station is manned when the count of crew on its
- *     cell is at least its `crewRequired` (0 means always manned).
+ *  2. Crew that have arrived at their target resolve the arrival action: a
+ *     manning member that reached its station holds; a hauler picks up at a
+ *     source or deposits at a sink and frees up for the next job.
+ *  3. Idle crew are assigned the highest-priority unmet need — first man an
+ *     under-manned station, then run ammo to a dry weapon — reserving the
+ *     target so two crew never chase the same one.
+ *  4. Crew with a path walk one cell along it.
+ *  5. Manning is recomputed from the final positions.
  */
 function updateCrew(ship: SimShip): void {
   if (ship.modules === undefined || ship.crew === undefined) return;
 
   const cells = aliveCellMap(ship);
+  const bySlot = new Map<string, SimModule>();
+  for (const m of ship.modules) bySlot.set(m.slotId, m);
 
   // 1. Remove crew standing on a cell that no longer exists.
   ship.crew = ship.crew.filter((c) => cells.has(crewCellKey(c.col, c.row)));
 
-  // Stations that need crew, scanned in a fixed (col, row) order.
+  // Stable id order for every per-crew pass below.
+  const ordered = [...ship.crew].sort((a, b) =>
+    a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
+  );
+
+  // 2. Resolve arrivals (pickup / deposit). A member with an empty path that is
+  //    standing on its target acts on it; manning members simply hold.
+  for (const c of ordered) {
+    resolveArrival(c, bySlot, cells);
+  }
+
+  // Reservation maps so assignment never over-subscribes a station or sends two
+  // haulers to the same dry weapon. Built from current (post-arrival) intents.
+  const claimedStations = new Map<string, number>();
+  const claimedWeapons = new Set<string>();
+  for (const c of ship.crew) {
+    if (c.targetSlotId === undefined) continue;
+    if (c.job === "manning") {
+      claimedStations.set(c.targetSlotId, (claimedStations.get(c.targetSlotId) ?? 0) + 1);
+    } else if (c.job === "haulAmmo" && c.haulSinkSlotId !== undefined) {
+      claimedWeapons.add(c.haulSinkSlotId);
+    }
+  }
+
+  // Stations that still need crew, scanned in a fixed (col, row) order.
   const stations = ship.modules
     .filter((m) => m.alive && m.crewRequired > 0 && stationNeedsCrew(m))
     .slice()
     .sort(compareByCell);
 
-  // How many crew already man (or are assigned to and standing on) each station
-  // cell right now, plus which stations are already claimed by an en-route
-  // crew member. Both keep assignment from over- or double-subscribing.
-  const onCell = new Map<string, number>();
-  for (const c of ship.crew) {
-    const k = crewCellKey(c.col, c.row);
-    onCell.set(k, (onCell.get(k) ?? 0) + 1);
-  }
-  const claimed = new Map<string, number>();
-  for (const c of ship.crew) {
-    if (c.targetSlotId !== undefined) {
-      claimed.set(c.targetSlotId, (claimed.get(c.targetSlotId) ?? 0) + 1);
+  // 3. Assign idle crew (id order) to the highest-priority unmet need.
+  for (const c of ordered) {
+    if (c.job !== "idle") continue;
+
+    // Priority 1: man an under-manned station.
+    const station = chooseStation(c, stations, cells, claimedStations);
+    if (station !== undefined) {
+      c.job = "manning";
+      c.targetSlotId = station.station.slotId;
+      c.path = station.path.slice(1);
+      claimedStations.set(
+        station.station.slotId,
+        (claimedStations.get(station.station.slotId) ?? 0) + 1,
+      );
+      continue;
+    }
+
+    // Priority 2: run ammo from a magazine to a dry weapon.
+    const run = chooseAmmoRun(c, ship.modules, cells, claimedWeapons);
+    if (run !== undefined) {
+      c.job = "haulAmmo";
+      c.carrying = undefined;
+      // First leg: walk to the magazine. The final delivery sink is recorded on
+      // the crew member so the second leg knows where to take the rounds.
+      c.targetSlotId = run.source.slotId;
+      c.haulSinkSlotId = run.sink.slotId;
+      c.path = run.path.slice(1);
+      claimedWeapons.add(run.sink.slotId);
+      continue;
     }
   }
 
-  // 2. Assign idle crew (in id order) to the first under-manned station.
-  for (const c of [...ship.crew].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
-    if (c.job !== "idle") continue;
-    const need = chooseStation(c, stations, cells, claimed);
-    if (need === undefined) continue;
-    c.job = "manning";
-    c.targetSlotId = need.station.slotId;
-    // The path includes the current cell as its first element; drop it so the
-    // first walk step moves toward the station.
-    c.path = need.path.slice(1);
-    claimed.set(need.station.slotId, (claimed.get(need.station.slotId) ?? 0) + 1);
-  }
-
-  // 3. Walk one cell along each crew member's path (id order for determinism).
-  for (const c of ship.crew) {
+  // 4. Walk one cell along each crew member's path (id order for determinism).
+  for (const c of ordered) {
     advanceCrew(c, cells);
   }
 
-  // 4. Recompute manning from final positions.
+  // 5. Recompute manning from final positions.
   recomputeManning(ship);
+}
+
+/**
+ * Whether a crew member has finished its current leg: its path is empty and it
+ * is standing on the cell of its current `targetSlotId`. A member still walking
+ * (non-empty path) or with no target has not arrived.
+ */
+function hasArrived(crew: SimCrew, bySlot: ReadonlyMap<string, SimModule>): boolean {
+  if (crew.path.length > 0 || crew.targetSlotId === undefined) return false;
+  const target = bySlot.get(crew.targetSlotId);
+  if (target === undefined) return false;
+  return target.col === crew.col && target.row === crew.row;
+}
+
+/**
+ * Resolve a crew member that has reached its current target. Manning members
+ * simply hold their station — `recomputeManning` reads their position. A hauler
+ * acts on arrival:
+ *  - at the magazine (not yet carrying): draw a run of rounds, decrementing the
+ *    magazine's store, then re-path to the delivery sink;
+ *  - at the weapon (carrying): top the weapon up to its `ammoCapacity` with the
+ *    carried rounds, then go idle, ready for the next job.
+ * A hauler whose magazine has run dry or whose sink has vanished abandons the
+ * run and goes idle. Re-pathing failures (a severed route) also free the member.
+ */
+function resolveArrival(
+  crew: SimCrew,
+  bySlot: ReadonlyMap<string, SimModule>,
+  cells: ReadonlyMap<string, SimModule>,
+): void {
+  if (!hasArrived(crew, bySlot)) return;
+  if (crew.job !== "haulAmmo") return; // manning members hold; nothing to do
+
+  if (crew.carrying === undefined) {
+    // At the source magazine: pick up a run of rounds and head to the sink.
+    const source = crew.targetSlotId !== undefined ? bySlot.get(crew.targetSlotId) : undefined;
+    const sink = crew.haulSinkSlotId !== undefined ? bySlot.get(crew.haulSinkSlotId) : undefined;
+    if (
+      source === undefined ||
+      source.ammoStored <= 0 ||
+      sink === undefined ||
+      !sink.alive ||
+      sink.effect.kind !== "weapon"
+    ) {
+      abandonHaul(crew);
+      return;
+    }
+    const want = ammoShortfall(sink);
+    const carried = Math.min(SIM.ammoRunAmount, source.ammoStored, want);
+    if (carried <= 0) {
+      abandonHaul(crew);
+      return;
+    }
+    source.ammoStored -= carried;
+    crew.carrying = "ammo";
+    crew.carryAmount = carried;
+    // Re-path to the sink for the delivery leg.
+    const path = findCrewPath(
+      cells,
+      { col: crew.col, row: crew.row },
+      { col: sink.col, row: sink.row },
+    );
+    if (path === undefined) {
+      // Route severed after pickup: drop the rounds back and give up.
+      source.ammoStored += carried;
+      abandonHaul(crew);
+      return;
+    }
+    crew.targetSlotId = sink.slotId;
+    crew.path = path.slice(1);
+    return;
+  }
+
+  // At the sink weapon, carrying rounds: deposit exactly what was carried
+  // (clamped to the weapon's capacity) and free the member. The pickup never
+  // takes more than the weapon was short of, and the weapon can only have fired
+  // since, so the clamp never discards rounds in the normal path.
+  const sink = crew.targetSlotId !== undefined ? bySlot.get(crew.targetSlotId) : undefined;
+  // carryAmount is set together with carrying at pickup, so it is defined here.
+  const carried = crew.carryAmount;
+  if (
+    carried !== undefined &&
+    sink !== undefined &&
+    sink.alive &&
+    sink.effect.kind === "weapon"
+  ) {
+    const cap = sink.effect.ammoCapacity;
+    if (cap !== undefined) {
+      sink.ammo = Math.min(cap, sink.ammo + carried);
+    }
+  }
+  abandonHaul(crew);
+}
+
+/** Rounds a weapon is short of its local magazine capacity. Zero for an
+ *  unlimited weapon (no `ammoCapacity`) — those are never resupplied. */
+function ammoShortfall(weapon: SimModule): number {
+  if (weapon.effect.kind !== "weapon") return 0;
+  const cap = weapon.effect.ammoCapacity;
+  if (cap === undefined) return 0;
+  return Math.max(0, cap - weapon.ammo);
+}
+
+/** Release a crew member from any haul assignment, returning it to idle. Any
+ *  rounds still in hand are dropped — only happens when a sink or route has been
+ *  destroyed, so the loss models cargo lost with the wreckage. */
+function abandonHaul(crew: SimCrew): void {
+  crew.job = "idle";
+  crew.targetSlotId = undefined;
+  crew.haulSinkSlotId = undefined;
+  crew.carrying = undefined;
+  crew.carryAmount = undefined;
+  crew.path = [];
+}
+
+/**
+ * Pick an ammo run for an idle crew member: the first dry weapon (in (col, row)
+ * order) with a finite `ammoCapacity` it is short of, that is not already being
+ * resupplied, paired with the nearest reachable magazine that still has store.
+ * Returns the source magazine, the sink weapon, and the path to the source, or
+ * undefined when no run is both needed and reachable.
+ *
+ * "Dry" is a weapon below a top-up threshold so crew restock proactively rather
+ * than only at exactly zero — a magazine run takes several ticks to walk, so a
+ * weapon that waited for a literal empty would always be caught mid-salvo with
+ * no rounds. The threshold is the run amount: once a weapon could accept a full
+ * run, a hauler is dispatched.
+ */
+function chooseAmmoRun(
+  crew: SimCrew,
+  modules: readonly SimModule[],
+  cells: ReadonlyMap<string, SimModule>,
+  claimedWeapons: ReadonlySet<string>,
+): { source: SimModule; sink: SimModule; path: { col: number; row: number }[] } | undefined {
+  const weapons = modules
+    .filter(
+      (m) =>
+        m.alive &&
+        m.effect.kind === "weapon" &&
+        m.effect.ammoCapacity !== undefined &&
+        ammoShortfall(m) >= SIM.ammoRunAmount &&
+        !claimedWeapons.has(m.slotId),
+    )
+    .slice()
+    .sort(compareByCell);
+  if (weapons.length === 0) return undefined;
+
+  const magazines = modules
+    .filter((m) => m.alive && m.effect.kind === "magazine" && m.ammoStored > 0)
+    .slice()
+    .sort(compareByCell);
+  if (magazines.length === 0) return undefined;
+
+  for (const sink of weapons) {
+    for (const source of magazines) {
+      const path = findCrewPath(
+        cells,
+        { col: crew.col, row: crew.row },
+        { col: source.col, row: source.row },
+      );
+      if (path === undefined) continue;
+      // Confirm the second leg (magazine -> weapon) is also walkable before
+      // committing, so a crew member never picks up rounds it cannot deliver.
+      const delivery = findCrewPath(
+        cells,
+        { col: source.col, row: source.row },
+        { col: sink.col, row: sink.row },
+      );
+      if (delivery === undefined) continue;
+      return { source, sink, path };
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -877,11 +1093,10 @@ function advanceCrew(crew: SimCrew, cells: ReadonlyMap<string, SimModule>): void
     return;
   }
   // If the next step is no longer walkable (its cell died this tick), abandon
-  // the route; the crew member re-plans next tick from where it stands.
+  // the route and drop the job; the crew member re-plans next tick from where it
+  // stands. A dropped ammo run forgets its sink reservation too.
   if (!cells.has(crewCellKey(next.col, next.row))) {
-    crew.path = [];
-    crew.job = "idle";
-    crew.targetSlotId = undefined;
+    abandonHaul(crew);
     return;
   }
   crew.col = next.col;
@@ -889,9 +1104,6 @@ function advanceCrew(crew: SimCrew, cells: ReadonlyMap<string, SimModule>): void
   crew.path = crew.path.slice(1);
   crew.ox = 0;
   crew.oy = 0;
-  // Arrived at the destination cell: the manning recompute will switch the
-  // station on this tick if enough crew are present.
-  if (crew.path.length === 0) crew.job = "manning";
 }
 
 /**

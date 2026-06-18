@@ -206,7 +206,7 @@ describe("engine.crew — entities and manning", () => {
     expect(structures[2], "crewless gun should fire early").toBeLessThan(initial);
   });
 
-  it("is byte-identical across two runs with the same seed (incl. crew)", () => {
+  it("is byte-identical across two runs with the same seed (manning)", () => {
     const build = (): CombatShip =>
       shooterShip("a1", 0, [
         moduleOf("q1", { kind: "crew", capacity: 2 }, 0, 0, 15),
@@ -215,6 +215,100 @@ describe("engine.crew — entities and manning", () => {
       ]);
     const a = runBattle(inputs([build(), toughTarget("d1", 40)]));
     const b = runBattle(inputs([build(), toughTarget("d1", 40)]));
+    expect(b.frames).toEqual(a.frames);
+    expect(b.winner).toBe(a.winner);
+  });
+});
+
+describe("engine.crew — ammo hauling", () => {
+  /**
+   * A crewless ship whose only weapon starts dry (`ammo: 0`) with a finite
+   * `ammoCapacity`, a magazine with store, and surplus crew with a clear route
+   * along a hull corridor. Layout, left to right:
+   *   col 0: crew quarters (capacity 2)   — crew spawn here
+   *   col 1: hull corridor                 — walkable bridge
+   *   col 2: reactor/bridge                — power + command (crewless)
+   *   col 3: magazine (ammoStored)         — the ammo source
+   *   col 4: dry weapon (ammoCapacity)     — the sink, also crewless so it fires
+   *                                          the instant it has rounds
+   */
+  function haulShip(opts: { magazine: boolean; ammoStored?: number }): CombatShip {
+    const modules: ResolvedModule[] = [
+      moduleOf("q1", { kind: "crew", capacity: 2 }, 0, 0, 15),
+      moduleOf("h1", { kind: "hull" }, 1, 0, 60),
+      moduleOf("p1", { kind: "power", output: 200 }, 2, 0, 20, { command: true }),
+    ];
+    if (opts.magazine) {
+      modules.push(
+        moduleOf(
+          "mag1",
+          { kind: "magazine", ammoStored: opts.ammoStored ?? 300 },
+          3,
+          0,
+          40,
+        ),
+      );
+    } else {
+      // Keep the corridor connected without a magazine: a plain hull cell.
+      modules.push(moduleOf("h2", { kind: "hull" }, 3, 0, 60));
+    }
+    modules.push(
+      moduleOf(
+        "w1",
+        beam({ damage: 25, cooldown: 1, ammo: 0, ammoCapacity: 120 }),
+        4,
+        0,
+        50,
+        { powerDraw: 10 },
+      ),
+    );
+    return shooterShip("a1", 0, modules);
+  }
+
+  it("a dry weapon resumes firing only after a crew ammo-run from a magazine", () => {
+    const result = runBattle(inputs([haulShip({ magazine: true }), toughTarget("d1", 60)]));
+    const structures = result.frames.map((f) => structureOf(f, "d1") ?? 0);
+    const initial = structures[0] ?? 0;
+
+    // The weapon is dry at the start: the first several frames deal no damage
+    // while crew walk from the quarters (col 0) to the magazine (col 3) and back
+    // to the gun (col 4).
+    expect(structures[1], "dry weapon must not fire before resupply").toBe(initial);
+    expect(structures[3], "still dry while crew are en route").toBe(initial);
+
+    // Once a run completes the gun fires and the target loses structure.
+    const final = structures.at(-1) ?? initial;
+    expect(final, "weapon should fire after an ammo-run refills it").toBeLessThan(initial);
+  });
+
+  it("a dry weapon with no magazine or route stays dry forever", () => {
+    const result = runBattle(inputs([haulShip({ magazine: false }), toughTarget("d1", 60)]));
+    const structures = result.frames.map((f) => structureOf(f, "d1") ?? 0);
+    const initial = structures[0] ?? 0;
+    const final = structures.at(-1) ?? initial;
+    expect(final, "no magazine means the weapon never resupplies").toBe(initial);
+  });
+
+  it("an exhausted magazine cannot refill the weapon", () => {
+    // A magazine with almost no store: a single short run, then it is empty and
+    // the gun goes quiet again. The target takes a little damage, then no more.
+    const result = runBattle(
+      inputs([haulShip({ magazine: true, ammoStored: 10 }), toughTarget("d1", 60)]),
+    );
+    const structures = result.frames.map((f) => structureOf(f, "d1") ?? 0);
+    const initial = structures[0] ?? 0;
+    const minStruct = structures.reduce((a, b) => Math.min(a, b), initial);
+    // Some damage was dealt from the one small run...
+    expect(minStruct, "the one small run should land some hits").toBeLessThan(initial);
+    // ...but the tail is flat: once the magazine is dry and the weapon spends
+    // its rounds, nothing more lands.
+    const tail = structures.slice(-15);
+    expect(tail.every((s) => s === tail[0]), "damage stops once the magazine empties").toBe(true);
+  });
+
+  it("is byte-identical across two runs with the same seed (ammo hauling)", () => {
+    const a = runBattle(inputs([haulShip({ magazine: true }), toughTarget("d1", 60)]));
+    const b = runBattle(inputs([haulShip({ magazine: true }), toughTarget("d1", 60)]));
     expect(b.frames).toEqual(a.frames);
     expect(b.winner).toBe(a.winner);
   });
