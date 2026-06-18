@@ -1418,6 +1418,8 @@ function stationNeedsCrew(m: SimModule): boolean {
     case "crew":
     case "repair":
     case "hull":
+    case "rcs":
+    case "reactionWheel":
       return false;
   }
 }
@@ -1688,6 +1690,8 @@ function recomputeAggregates(ship: SimShip): void {
       case "repair":
       case "hull":
       case "magazine":
+      case "rcs":
+      case "reactionWheel":
         break;
     }
   }
