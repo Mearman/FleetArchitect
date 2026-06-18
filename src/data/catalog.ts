@@ -65,7 +65,7 @@ const moduleData: ModuleDefinition[] = [
     effect: {
       kind: "weapon",
       weaponType: "beam",
-      damage: 6,
+      damage: 18,
       range: 320,
       cooldown: 30,
       projectileSpeed: 0,
@@ -84,24 +84,24 @@ const moduleData: ModuleDefinition[] = [
     mass: 12,
     cost: 90,
     powerDraw: 12,
-    crewRequired: 2,
+    crewRequired: 1,
     techLevel: 2,
     effect: {
       kind: "weapon",
       weaponType: "cannon",
-      damage: 22,
+      damage: 70,
       range: 480,
-      cooldown: 90,
+      cooldown: 60,
       projectileSpeed: 8,
       tracking: 0.5,
-      shieldPiercing: 0.2,
+      shieldPiercing: 0.35,
       armourPiercing: 0.5,
       spread: 0.02,
       // A 90° (±π/2) turret that slews briskly to bear on its target.
       turretArc: Math.PI / 2,
       turretTurnRate: 0.08,
       /** Railgun needs finite ammo resupply. */
-      ammoCapacity: 120,
+      ammoCapacity: 200,
     },
   },
   {
@@ -113,24 +113,24 @@ const moduleData: ModuleDefinition[] = [
     mass: 14,
     cost: 110,
     powerDraw: 8,
-    crewRequired: 2,
+    crewRequired: 1,
     techLevel: 2,
     effect: {
       kind: "weapon",
       weaponType: "missile",
-      damage: 30,
+      damage: 85,
       range: 560,
-      cooldown: 140,
+      cooldown: 100,
       projectileSpeed: 4,
       tracking: 2.5,
-      shieldPiercing: 0,
+      shieldPiercing: 0.15,
       armourPiercing: 0.3,
       spread: 0.4,
       // A full 360° launcher (±π) that slews slowly.
       turretArc: Math.PI,
       turretTurnRate: 0.05,
       /** Missiles need finite ammo resupply. */
-      ammoCapacity: 80,
+      ammoCapacity: 140,
     },
   },
   {
@@ -142,21 +142,21 @@ const moduleData: ModuleDefinition[] = [
     mass: 20,
     cost: 180,
     powerDraw: 16,
-    crewRequired: 3,
+    crewRequired: 2,
     techLevel: 3,
     effect: {
       kind: "weapon",
       weaponType: "torpedo",
-      damage: 70,
+      damage: 200,
       range: 420,
-      cooldown: 220,
+      cooldown: 140,
       projectileSpeed: 2.5,
       tracking: 1,
-      shieldPiercing: 0.3,
+      shieldPiercing: 0.45,
       armourPiercing: 0.4,
       spread: 0.05,
       /** Torpedoes need finite ammo resupply. */
-      ammoCapacity: 50,
+      ammoCapacity: 90,
     },
   },
   // --- Defence: shields ---
@@ -173,9 +173,9 @@ const moduleData: ModuleDefinition[] = [
     techLevel: 1,
     effect: {
       kind: "shield",
-      capacity: 120,
-      rechargeRate: 1.2,
-      rechargeDelay: 60,
+      capacity: 60,
+      rechargeRate: 0.5,
+      rechargeDelay: 120,
     },
   },
   {
@@ -191,9 +191,9 @@ const moduleData: ModuleDefinition[] = [
     techLevel: 3,
     effect: {
       kind: "shield",
-      capacity: 260,
-      rechargeRate: 2.4,
-      rechargeDelay: 70,
+      capacity: 90,
+      rechargeRate: 0.6,
+      rechargeDelay: 150,
     },
   },
   // --- Defence: armour ---
@@ -210,8 +210,8 @@ const moduleData: ModuleDefinition[] = [
     techLevel: 1,
     effect: {
       kind: "armour",
-      hitpoints: 80,
-      damageReduction: 0.25,
+      hitpoints: 40,
+      damageReduction: 0.2,
     },
   },
   {
@@ -227,8 +227,8 @@ const moduleData: ModuleDefinition[] = [
     techLevel: 2,
     effect: {
       kind: "armour",
-      hitpoints: 160,
-      damageReduction: 0.45,
+      hitpoints: 70,
+      damageReduction: 0.35,
     },
   },
   // --- Propulsion ---
@@ -338,7 +338,7 @@ const moduleData: ModuleDefinition[] = [
     powerDraw: 0,
     crewRequired: 1,
     techLevel: 2,
-    effect: { kind: "magazine", ammoStored: 300 },
+    effect: { kind: "magazine", ammoStored: 1200 },
   },
   // --- System: sensors (directional, mirroring the comms family) ---
   // Sensors project a detection cone (a sector of half-arc `arc` about their
@@ -600,7 +600,7 @@ const moduleData: ModuleDefinition[] = [
     effect: {
       kind: "weapon",
       weaponType: "cannon",
-      damage: 4,
+      damage: 7,
       range: 260,
       cooldown: 18,
       projectileSpeed: 6,
@@ -624,7 +624,7 @@ const moduleData: ModuleDefinition[] = [
     effect: {
       kind: "weapon",
       weaponType: "beam",
-      damage: 8,
+      damage: 13,
       range: 180,
       cooldown: 25,
       projectileSpeed: 0,
@@ -648,7 +648,7 @@ const moduleData: ModuleDefinition[] = [
     effect: {
       kind: "weapon",
       weaponType: "missile",
-      damage: 18,
+      damage: 28,
       range: 440,
       cooldown: 90,
       projectileSpeed: 5,

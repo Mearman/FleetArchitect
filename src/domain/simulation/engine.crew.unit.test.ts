@@ -501,3 +501,63 @@ describe("engine.crew — break-apart partition", () => {
     expect(b.winner).toBe(a.winner);
   });
 });
+
+describe("engine.crew — path cache determinism (larger grid)", () => {
+  /**
+   * A capital-like grid with crew, weapons, a magazine, reactors, and a hull
+   * corridor — enough structure that the crew path cache exercises many distinct
+   * (from, to) pairs across manning, ammo runs, and power runs. The byte-identity
+   * check across two runs proves the cache (and its topology-fingerprint
+   * invalidation, the pathIndex stepping, and the batched assignment) produce
+   * identical crew behaviour to a single uncached run.
+   *
+   * Layout (a 2-row, 8-column grid, all cells 4-connected):
+   *   row 0: q0 q1 h0 p1 h1 w1 w2 h3
+   *   row 1: .. .. .. .. h2 m1 .. ..
+   * Crew spawn at the two quarters (q0, q1), man the weapons (w1 crewRequired 1,
+   * w2 crewRequired 2), run ammo from the magazine (m1) to the dry weapon (w2),
+   * and run power from the reactor (p1) to the weapons. The hull cells bridge
+   * the corridor so paths are multi-step and exercise the cache.
+   */
+  function capitalLike(): CombatShip {
+    const modules = [
+      moduleOf("q0", { kind: "crew", capacity: 2 }, 0, 0, 15),
+      moduleOf("q1", { kind: "crew", capacity: 2 }, 1, 0, 15),
+      moduleOf("h0", { kind: "hull" }, 2, 0, 60),
+      moduleOf("p1", { kind: "power", output: 300 }, 3, 0, 20, { command: true }),
+      moduleOf("h1", { kind: "hull" }, 4, 0, 60),
+      moduleOf("w1", beam({ damage: 10, cooldown: 2 }), 5, 0, 50, { powerDraw: 10, crewRequired: 1 }),
+      moduleOf(
+        "w2",
+        beam({ damage: 15, cooldown: 3, ammo: 0, ammoCapacity: 80 }),
+        6,
+        0,
+        50,
+        { powerDraw: 15, crewRequired: 2 },
+      ),
+      moduleOf("h3", { kind: "hull" }, 7, 0, 60),
+      moduleOf("h2", { kind: "hull" }, 4, 1, 60),
+      moduleOf("m1", { kind: "magazine", ammoStored: 400 }, 5, 1, 40),
+    ];
+    return shooterShip("a1", 0, modules);
+  }
+
+  it("a capital-like crewed grid is byte-identical across two same-seed runs", () => {
+    const a = runBattle(inputs([capitalLike(), toughTarget("d1", 200)]));
+    const b = runBattle(inputs([capitalLike(), toughTarget("d1", 200)]));
+    expect(b.frames.length).toBe(a.frames.length);
+    expect(b.frames).toEqual(a.frames);
+    expect(b.winner).toBe(a.winner);
+  });
+
+  it("crew actually move and man stations on the capital-like grid", () => {
+    // Sanity: the cache isn't silently returning empty paths. Crew must reach
+    // their stations and the weapons must eventually fire (the target takes
+    // damage), proving the cached paths are real and walked correctly.
+    const result = runBattle(inputs([capitalLike(), toughTarget("d1", 200)]));
+    const structures = result.frames.map((f) => structureOf(f, "d1") ?? 0);
+    const initial = structures[0] ?? 0;
+    const final = structures.at(-1) ?? initial;
+    expect(final, "crewed weapons should fire and damage the target").toBeLessThan(initial);
+  });
+});

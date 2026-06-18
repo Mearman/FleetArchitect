@@ -175,8 +175,15 @@ export interface SimCrew {
    *  are carrying (or fetching) a resource along `path`. */
   job: "idle" | "manning" | "haulAmmo" | "haulPower";
   /** Remaining steps to walk, one cell consumed per tick. Empty when at rest
-   *  or already on the target cell. */
+   *  or already on the target cell. Read from `pathIndex` onward — the array is
+   *  never mutated after assignment, so it can be shared from the path cache
+   *  without copying. `pathIndex` advances one step per tick in `advanceCrew`
+   *  and resets to 0 whenever a new path is assigned. */
   path: { col: number; row: number }[];
+  /** Index into `path` of the next cell to step onto. `advanceCrew` increments
+   *  this instead of slicing the array, avoiding a per-tick allocation for every
+   *  walking crew member. The remaining steps are `path.length - pathIndex`. */
+  pathIndex: number;
   /** The cell this crew member is currently walking to, addressed by the
    *  occupant module's `slotId`. For a haul job this names the current leg's
    *  destination: the source while fetching, the sink while delivering.
