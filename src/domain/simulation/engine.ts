@@ -207,19 +207,19 @@ const SIM = {
    * weapon's `ammoCapacity`), and drains the magazine's store by the amount
    * actually carried.
    */
-  ammoRunAmount: 40,
+  ammoRunAmount: 60,
   /**
    * Charge packets a crew member carries per power-run from a reactor to a
    * starved module. Each packet refills the sink module's local charge buffer
    * by this much (capped at the buffer ceiling).
    */
-  powerRunAmount: 30,
+  powerRunAmount: 60,
   /**
    * Ceiling on a powered module's local charge buffer. Crew top it up from a
    * reactor; the module spends `powerDraw` from it each tick it operates. A
    * module whose buffer hits zero goes idle until a crew power-run refills it.
    */
-  chargeBufferMax: 60,
+  chargeBufferMax: 120,
   /**
    * Passive wiring reach, in cells of walkable path distance from a reactor.
    * A power-drawing module within this many alive cells of an alive reactor is
@@ -227,9 +227,12 @@ const SIM = {
    * beyond it are off the grid and depend on crew hauling charge from a
    * reactor. Small, compact ships (reactor beside the guns) are fully wired and
    * need no power crew; sprawling capitals have outlying stations that only
-   * crew can keep fed, which is the whole point of crewed interiors.
+   * crew can keep fed, which is the whole point of crewed interiors. Tuned so a
+   * typical capital's prow weapons sit within reach of a central reactor without
+   * a permanent charge-haul — distant wings still sometimes need a run, but the
+   * battery is not permanently starved.
    */
-  powerWiringRadius: 3,
+  powerWiringRadius: 7,
   /**
    * Innate visual line-of-sight radius (world units) every ship has before any
    * sensor module extends it. A ship with no sensor arrays can still see an
@@ -4201,6 +4204,21 @@ export function* simulateBattle(
       for (const s of ships) {
         if (s.side === "attacker") attackers.push(s);
         else defenders.push(s);
+      }
+    }
+
+    // 4d. A modular ship whose bridge (every command module) has been
+    //     destroyed is a powerless derelict — it cannot fire, navigate, or
+    //     coordinate. Kill it outright so disarmed survivors do not stall
+    //     a battle that is otherwise decided. Runs after break-apart so a
+    //     ship that loses its bridge mid-split still produces chunks first.
+    //     Legacy non-modular ships are unaffected (hasAliveCommand returns
+    //     true when there are no modules).
+    for (const ship of ships) {
+      if (!ship.alive) continue;
+      if (ship.modules !== undefined && !hasAliveCommand(ship)) {
+        ship.alive = false;
+        ship.structure = 0;
       }
     }
 
