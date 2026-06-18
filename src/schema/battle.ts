@@ -72,6 +72,8 @@ export const ShipSnapshot = z.object({
           "repair",
           "hull",
           "magazine",
+          "sensor",
+          "comms",
         ]),
         /** Position in ship-local (design) coordinates, for rendering. */
         x: z.number(),
@@ -128,11 +130,106 @@ export const ProjectileSnapshot = z.object({
 });
 export type ProjectileSnapshot = z.infer<typeof ProjectileSnapshot>;
 
+/**
+ * Awareness snapshot appended to a BattleFrame when the sensor/comms system
+ * is active. Optional so battles recorded before Phase C still parse without
+ * error.
+ *
+ * All ids in the sub-objects are EntityId strings (ship instance ids or slot
+ * ids) to keep the data self-contained and renderable without back-references
+ * to the design.
+ */
+export const AwarenessSnapshot = z.object({
+  /**
+   * Solid disc occluders blocking line-of-sight this tick: the event-horizon
+   * of a black hole, or the asteroid disc set for an asteroid field. Recomputed
+   * deterministically from the anomaly and seed; carried here so the renderer
+   * needs no separate occluder call.
+   */
+  occluders: z.array(z.object({ x: z.number(), y: z.number(), r: z.number() })),
+  /**
+   * Comms relay clusters: groups of friendly ships that share awareness via
+   * active comms links. Each cluster has a stable id, a side, the member ship
+   * instance ids, and the geometric disc that bounds the cluster's collective
+   * sensor coverage (for rendering).
+   */
+  clusters: z.array(
+    z.object({
+      id: EntityId,
+      side: z.enum(["attacker", "defender"]),
+      memberIds: z.array(EntityId),
+      coverage: z.array(z.object({ x: z.number(), y: z.number(), r: z.number() })),
+    }),
+  ),
+  /**
+   * Per-observer confirmed contacts: each entry records that the ship
+   * `observerId` on `side` has a current sensor fix on enemy ship `enemyId`
+   * at world position (x, y). One entry per (observer, enemy) pair — a ship
+   * can observe multiple enemies and be observed by multiple allies.
+   */
+  contacts: z.array(
+    z.object({
+      side: z.enum(["attacker", "defender"]),
+      observerId: EntityId,
+      enemyId: EntityId,
+      x: z.number(),
+      y: z.number(),
+    }),
+  ),
+  /**
+   * Stale ghost contacts: a ship `observerId` last saw enemy `enemyId` at (x, y)
+   * and `ticksLeft` ticks remain before that memory expires. The renderer can
+   * draw these as faded/fading markers.
+   */
+  ghosts: z.array(
+    z.object({
+      side: z.enum(["attacker", "defender"]),
+      observerId: EntityId,
+      enemyId: EntityId,
+      x: z.number(),
+      y: z.number(),
+      ticksLeft: z.number().int().min(0),
+    }),
+  ),
+  /**
+   * Active comms links between pairs of friendly modules this tick. `aSlot` and
+   * `bSlot` are the slot ids of the two comms modules forming the link.
+   */
+  links: z.array(
+    z.object({
+      side: z.enum(["attacker", "defender"]),
+      aId: EntityId,
+      aSlot: EntityId,
+      bId: EntityId,
+      bSlot: EntityId,
+      type: z.enum(["omni", "directional", "dish", "laser", "variable"]),
+    }),
+  ),
+  /**
+   * Live dish/directional angles for steerable comms modules: the world-space
+   * bearing (radians) the module's antenna is currently pointing. Enables the
+   * renderer to draw the antenna arc in the correct direction.
+   */
+  dishAngles: z.array(
+    z.object({
+      shipId: EntityId,
+      slotId: EntityId,
+      angle: z.number(),
+    }),
+  ),
+});
+export type AwarenessSnapshot = z.infer<typeof AwarenessSnapshot>;
+
 /** A single frame of recorded battle state, for replay rendering. */
 export const BattleFrame = z.object({
   tick: z.number().int().min(0),
   ships: z.array(ShipSnapshot),
   projectiles: z.array(ProjectileSnapshot),
+  /**
+   * Optional awareness data for this tick. Absent on battles recorded before
+   * the sensor/comms system (Phase C) was active, so older replays parse cleanly.
+   */
+  awareness: AwarenessSnapshot.optional(),
 });
 export type BattleFrame = z.infer<typeof BattleFrame>;
 
