@@ -230,7 +230,7 @@ const moduleData: ModuleDefinition[] = [
     powerDraw: 4,
     crewRequired: 0,
     techLevel: 1,
-    effect: { kind: "engine", thrust: 0.5, turnRate: 0.04 },
+    effect: { kind: "engine", thrust: 0.5 },
   },
   {
     id: "mod-engine-plasma",
@@ -243,7 +243,7 @@ const moduleData: ModuleDefinition[] = [
     powerDraw: 8,
     crewRequired: 1,
     techLevel: 2,
-    effect: { kind: "engine", thrust: 0.9, turnRate: 0.06, gimbalArc: Math.PI / 6 },
+    effect: { kind: "engine", thrust: 0.9, gimbalArc: Math.PI / 6 },
   },
   {
     id: "mod-rcs-thrusters",
@@ -475,7 +475,7 @@ const moduleData: ModuleDefinition[] = [
     powerDraw: 2,
     crewRequired: 0,
     techLevel: 1,
-    effect: { kind: "engine", thrust: 0.65, turnRate: 0.07 },
+    effect: { kind: "engine", thrust: 0.65 },
   },
   {
     id: "swm-pulse-jet",
@@ -488,7 +488,7 @@ const moduleData: ModuleDefinition[] = [
     powerDraw: 6,
     crewRequired: 0,
     techLevel: 2,
-    effect: { kind: "engine", thrust: 1.1, turnRate: 0.05, gimbalArc: Math.PI / 8 },
+    effect: { kind: "engine", thrust: 1.1, gimbalArc: Math.PI / 8 },
   },
   {
     id: "swm-pseudopod-cluster",

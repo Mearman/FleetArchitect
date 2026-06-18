@@ -99,17 +99,22 @@ export type ArmourEffect = z.infer<typeof ArmourEffect>;
  *
  * `gimbalArc` (radians, ≥ 0) is the half-arc either side of `facing` within
  * which the thrust vector may be steered by the attitude controller. A
- * gimballed engine on an off-centre mount can thereby produce torque without
- * compromising linear thrust. Defaults to 0 (fixed mount, no gimbal).
+ * gimballed engine can thereby vector its thrust to produce a commandable
+ * torque while still contributing useful linear thrust. Defaults to 0 (fixed
+ * mount, no gimbal).
  *
- * The field defaults to 0 (forward) when omitted so existing module
- * definitions and legacy designs continue to behave like a single
- * rear-mounted thruster — i.e. a force pointing along the ship's +x axis.
+ * `facing` defaults to 0 (forward) when omitted so existing module definitions
+ * and legacy designs continue to behave like a single rear-mounted thruster —
+ * i.e. a force pointing along the ship's +x axis.
+ *
+ * There is no per-engine `turnRate`: a ship turns from real torque, not an
+ * abstract per-engine scalar. Turning authority comes from engine `r × F`
+ * about the centre of mass, gimbal thrust-vectoring, and dedicated RCS /
+ * reaction-wheel modules — never a summed engine `turnRate`.
  */
 export const EngineEffect = z.object({
   kind: z.literal("engine"),
   thrust: z.number().min(0),
-  turnRate: z.number().min(0),
   /** Direction the engine thrusts, in radians, ship-local. Default 0 = forward. */
   facing: z.number().optional(),
   /** Gimbal half-arc in radians. Thrust vector may swing ±gimbalArc from facing. Default 0 = fixed. */
