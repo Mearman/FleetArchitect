@@ -94,6 +94,48 @@ const SIM = {
   /** Per-tick chance an asteroid field destroys a passing projectile. */
   asteroidDeflectChance: 0.01,
   /**
+   * Black-hole avoidance steering. A ship reads the well at the origin and
+   * blends a heading that points directly AWAY from it into its normal
+   * target-seeking heading, weighted by how deep inside a safety margin it
+   * sits. Outside the margin the weight is zero, so a ship clear of the hole
+   * fights exactly as it would with no anomaly; well inside the lethal radius
+   * the weight saturates at 1 and the ship steers purely to escape. Between
+   * the two it interpolates linearly, so a ship grazing the danger zone arcs
+   * around it rather than ploughing through.
+   */
+  blackHoleAvoid: {
+    /**
+     * Outer edge of the avoidance field as a multiple of the tidal radius.
+     * Beyond `safetyMargin * blackHoleTidalRadius` from the centre the
+     * avoidance weight is zero — the ship is considered clear and ignores the
+     * hole entirely, preserving open-space combat behaviour. 1.5 gives a
+     * comfortable buffer outside the damaging tidal zone so a ship begins
+     * arcing away before it starts taking tidal damage.
+     */
+    safetyMargin: 1.5,
+    /**
+     * Minimum avoidance weight applied the instant a ship crosses inside the
+     * safety margin, so the steering bias is felt immediately at the edge
+     * rather than fading in from zero (a zero-at-the-edge ramp lets a fast
+     * ship punch through before the bias grows). The weight then ramps from
+     * this floor up to 1 as the ship nears the lethal radius.
+     */
+    edgeWeight: 0.35,
+  },
+  /**
+   * Desired-range multipliers (<1) applied when an anomaly punishes
+   * time-of-flight, so ships close in to where their shots actually land.
+   *  - Nebula halves projectile tracking, gutting homing weapons at range, so
+   *    ships fight noticeably closer.
+   *  - An asteroid field destroys a fraction of in-flight rounds each tick, so
+   *    a shorter flight time means fewer shots lost — a more modest pull-in.
+   * Each anomaly is exclusive, so these never compound.
+   */
+  anomalyRangeFactor: {
+    nebula: 0.6,
+    asteroidField: 0.8,
+  },
+  /**
    * Per-tick multiplicative drag on linear and angular velocity. A small drag
    * is a gameplay compromise: real space is frictionless (ships would coast
    * forever), but unbounded drift makes battles unreadable. 0.97 ≈ 0.5 s
@@ -417,6 +459,45 @@ function desiredRange(orders: Orders, weapons: readonly WeaponEffect[]): number 
   if (orders.engageRange === "hold") return 0;
   const base = maxWeaponRange(weapons) * SIM.rangeFraction[orders.engageRange];
   return base * SIM.stanceRangeFactor[orders.stance];
+}
+
+/**
+ * The desired engagement range adjusted for the active anomaly. In a nebula
+ * (halved projectile tracking) and an asteroid field (in-flight rounds
+ * destroyed over time) a longer time-of-flight means fewer shots that land, so
+ * ships should close to where their fire is effective; we scale the base
+ * desired range down by the anomaly's factor. Black hole and "none" leave the
+ * range untouched (the black hole is handled by avoidance steering, not by
+ * range), so this is byte-identical to `desiredRange` for those cases.
+ */
+function anomalyAdjustedRange(
+  orders: Orders,
+  weapons: readonly WeaponEffect[],
+  anomaly: BattleInputs["anomaly"],
+): number {
+  const base = desiredRange(orders, weapons);
+  if (anomaly === "nebula") return base * SIM.anomalyRangeFactor.nebula;
+  if (anomaly === "asteroidField") return base * SIM.anomalyRangeFactor.asteroidField;
+  return base;
+}
+
+/**
+ * Avoidance weight for a ship at world distance `dist` from the black hole at
+ * the origin: 0 when clear of the safety margin, ramping from `edgeWeight` up
+ * to 1 as the ship closes from the margin edge to the lethal radius, and
+ * saturating at 1 inside the lethal radius. The ramp is linear in distance so
+ * the bias grows smoothly as the danger does. Returns 0 for any non-black-hole
+ * call so the caller can invoke it unconditionally.
+ */
+function blackHoleAvoidWeight(dist: number): number {
+  const margin = SIM.blackHoleAvoid.safetyMargin * SIM.blackHoleTidalRadius;
+  if (dist >= margin) return 0;
+  if (dist <= SIM.blackHoleLethalRadius) return 1;
+  // Fraction of the way from the margin edge (0) to the lethal radius (1).
+  const span = margin - SIM.blackHoleLethalRadius;
+  const depth = (margin - dist) / span;
+  const { edgeWeight } = SIM.blackHoleAvoid;
+  return edgeWeight + (1 - edgeWeight) * depth;
 }
 
 function angleDifference(a: number, b: number): number {
@@ -3011,7 +3092,9 @@ function moveShips(
       desiredFacing = Math.atan2(dy, dx);
       shouldThrust = false;
     } else {
-      const want = desiredRange(ship.orders, ship.weapons);
+      // Close in when the anomaly punishes time-of-flight (nebula, asteroid
+      // field); unchanged for black hole and none.
+      const want = anomalyAdjustedRange(ship.orders, ship.weapons, anomaly);
       if (dist > want) {
         desiredFacing = Math.atan2(dy, dx);
         shouldThrust = true;
@@ -3050,6 +3133,30 @@ function moveShips(
       // Blend using the angular difference to avoid wrapping artefacts.
       const angDiff = angleDifference(desiredFacing, formationFacing);
       desiredFacing = desiredFacing + angDiff * fk;
+    }
+
+    // Black-hole avoidance: ships fly into the well blind otherwise. Blend a
+    // heading pointing directly away from the origin into the (already
+    // formation-adjusted) target-seeking heading, weighted by how deep inside
+    // the safety margin the ship sits. Applied last so near the hole it
+    // dominates target-seeking and formation-keeping alike — survival first.
+    // When the weight saturates we also force thrust so a ship being dragged
+    // in actively burns to escape rather than coasting to its death; clear of
+    // the margin the weight is zero and this is a no-op, so non-black-hole and
+    // open-space behaviour is untouched.
+    if (anomaly === "blackHole") {
+      const distToHole = Math.hypot(ship.x, ship.y);
+      const avoidWeight = blackHoleAvoidWeight(distToHole);
+      if (avoidWeight > 0 && distToHole > 0) {
+        const awayFacing = Math.atan2(ship.y, ship.x);
+        const angDiff = angleDifference(desiredFacing, awayFacing);
+        desiredFacing = desiredFacing + angDiff * avoidWeight;
+        // Inside the danger zone, burn to escape — never sit still next to the
+        // hole. A retreating ship is already thrusting; this guarantees a
+        // holding or at-range ship also fires its engines to climb out.
+        shouldThrust = true;
+        reverse = false;
+      }
     }
 
     // Angular: apply torque toward desiredFacing (capped by turnRate as an
