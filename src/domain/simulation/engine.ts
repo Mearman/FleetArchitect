@@ -142,7 +142,35 @@ const SIM = {
    * half-life at 30 ticks/s — momentum is felt, but ships settle.
    */
   linearDamping: 0.97,
-  angularDamping: 0.9,
+  // A gentle drag on residual angular velocity. The steering controller is a
+  // rate-limited "arrive" profile that settles on its own, so this only needs
+  // to bleed off stray spin from off-centre thruster torque and collisions —
+  // not to brake the deliberate turn (the old 0.9 fought the controller and
+  // caused the wobble). Close to 1 so a real tumble still reads as momentum.
+  angularDamping: 0.98,
+  /**
+   * Angular acceleration as a fraction of a ship's `turnRate` (its max angular
+   * SPEED). The per-tick cap on how fast angular velocity can change is
+   * `turnRate * angularAccelRatio` (rad/tick²), so agility scales coherently:
+   * a nimble ship (high turnRate) both reaches a higher top spin AND ramps up
+   * to it quickly, while a sluggish ship eases in slowly — rather than every
+   * ship sharing one absolute acceleration regardless of how manoeuvrable it
+   * is. A ratio below 1 means a ship still takes a few ticks to wind its spin
+   * up to full, giving visible rotational inertia; it is tuned so a ship needs
+   * on the order of `1/angularAccelRatio` ticks to spin up, fast enough that an
+   * agile ship can actually swerve clear of a fast-developing threat (e.g. a
+   * black hole it is closing on at speed) but slow enough that heavy ships read
+   * as having mass. The old fixed absolute cap (0.012 rad/tick²) made a highly
+   * agile ship (turnRate 0.5) take ~40 ticks to reach full spin — far too
+   * sluggish to react, so it ploughed straight through hazards it should dodge.
+   */
+  angularAccelRatio: 0.6,
+  /**
+   * Heading error (radians) within which a near-stationary ship snaps exactly
+   * onto its target heading and zeroes its spin. ~0.6° — below visual notice —
+   * so off-centre thruster torque can't jitter a ship that has arrived on aim.
+   */
+  angularDeadband: 0.01,
   /**
    * Moment of inertia per unit mass for legacy (non-modular) ships, which
    * have no module distribution to derive one from. Treated as a uniform
@@ -3164,15 +3192,45 @@ function moveShips(
       }
     }
 
-    // Angular: apply torque toward desiredFacing (capped by turnRate as an
-    // angular-acceleration cap). angVel persists, with mild damping so the
-    // ship settles on aim.
+    // Angular: a rate-limited "arrive" controller. `turnRate` is the ship's
+    // maximum angular SPEED (rad/tick); the per-tick cap on how fast that speed
+    // can change (rad/tick²) is `turnRate * SIM.angularAccelRatio` — bounded
+    // angular acceleration is what makes a heavy ship feel like it has
+    // rotational inertia rather than snapping instantly to a new spin. Each tick we pick
+    // the angular velocity that drives the heading error to zero WITHOUT
+    // overshooting: if the ship can't decelerate from its current spin to a
+    // stop within the remaining error (the "stopping angle"), it brakes;
+    // otherwise it accelerates toward the error, capped to the max speed.
+    // This eases in and out and settles cleanly on aim instead of oscillating.
     const angError = angleDifference(ship.facing, desiredFacing);
-    const maxTurn = ship.turnRate;
-    const angAccel = Math.abs(angError) <= maxTurn ? angError : Math.sign(angError) * maxTurn;
-    ship.angVel += angAccel;
-    ship.angVel *= SIM.angularDamping;
-    ship.facing += ship.angVel;
+    // Max angular SPEED is the ship's own turnRate — a ship with turnRate 0
+    // (a fixed-heading hull) genuinely cannot rotate, so we never floor this:
+    // flooring it would let a zero-turn ship creep round to face its target,
+    // which is wrong (and silently un-fixed several turret and arc tests that
+    // rely on a held ship's heading staying put). The per-tick angular-accel
+    // cap scales with that same turnRate, so an agile ship winds its spin up
+    // quickly and a sluggish one eases in — see SIM.angularAccelRatio.
+    const maxSpin = ship.turnRate;
+    const accel = ship.turnRate * SIM.angularAccelRatio;
+    if (Math.abs(angError) <= SIM.angularDeadband && Math.abs(ship.angVel) <= accel) {
+      // On target and barely moving: snap exactly onto the heading and kill the
+      // spin so the ship holds aim instead of jittering by a fraction of a
+      // degree forever (off-centre thruster torque would otherwise nudge it).
+      ship.facing = desiredFacing;
+      ship.angVel = 0;
+    } else {
+      // Angular speed from which the ship can just stop within `|angError|`,
+      // decelerating at `accel` per tick: v = sqrt(2·a·d) (kinematics).
+      const arriveSpeed = Math.min(maxSpin, Math.sqrt(2 * accel * Math.abs(angError)));
+      const targetAngVel = Math.sign(angError) * arriveSpeed;
+      // Move the current angular velocity toward the target, limited by the
+      // per-tick angular-acceleration cap, so the spin ramps up and down
+      // smoothly rather than jumping.
+      const dv = targetAngVel - ship.angVel;
+      const step = Math.abs(dv) <= accel ? dv : Math.sign(dv) * accel;
+      ship.angVel += step;
+      ship.facing += ship.angVel;
+    }
 
     // Linear: thrust accelerates velocity.
     //
@@ -3211,6 +3269,10 @@ function moveShips(
       // spin a stripped-down ship to absurd angular speeds in one tick.
       const angularAccel = ship.momentOfInertia > 0 ? torque / ship.momentOfInertia : 0;
       ship.angVel += shouldThrust ? angularAccel : 0;
+      // Gentle drag bleeds off residual spin from off-centre thrust (and any
+      // collision/recoil kick) without braking the steering controller's
+      // deliberate turn, which already eases itself to a stop.
+      ship.angVel *= SIM.angularDamping;
     } else {
       const maxSpeed = ship.thrust;
       const accel = ship.thrust / Math.max(ship.mass, 1);

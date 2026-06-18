@@ -201,10 +201,12 @@ describe("engine.movement-modes", () => {
           x: 0,
           y: 150,
           structure: 99999,
-          // One big hit (100 → 40, below the 0.5 threshold) with a long
-          // cooldown so the attacker stays alive and visibly retreating for
-          // the sample window.
-          weapons: [weapon({ damage: 60, range: 400, cooldown: 30 })],
+          // One big hit (100 → 40, below the 0.5 threshold) with a cooldown
+          // long enough that no second shot lands during the sample window, so
+          // the attacker stays alive and visibly retreating. (A second hit at
+          // ~40 ticks would kill it mid-turn before the now-realistic, slower
+          // rotation has swung it around and carried it clear.)
+          weapons: [weapon({ damage: 60, range: 400, cooldown: 400 })],
           orders: { engageRange: "hold" },
         }),
       ]),
@@ -224,8 +226,11 @@ describe("engine.movement-modes", () => {
     if (retreatTick === undefined) return;
     // After retreating, sample a later frame: the facing should point into
     // the lower half-plane (fleeing the defender at +y) and the y-coordinate
-    // should drop below 0.
-    const later = attackerAt(result, retreatTick + 20, "a1");
+    // should drop below 0. The window allows for the realistic rate-limited
+    // turn: caught mid-turn toward the enemy when hit, the ship must first
+    // bleed off that spin (drifting +y a little) before its heading swings to
+    // -π/2 and it accelerates clear — it recrosses y=0 around +40 ticks.
+    const later = attackerAt(result, retreatTick + 40, "a1");
     expect(Math.sin(later.facing ?? 0)).toBeLessThan(0);
     expect(later.y).toBeLessThan(0);
   });

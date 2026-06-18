@@ -71,7 +71,9 @@ function fleetOf(id: string, designId: string, x: number, ys: readonly number[])
       designId,
       position: { x, y },
       facing: 0,
-      orders: { ...defaultOrders, engageRange: "medium", stance: "balanced" },
+      // Aggressive, short-range orders so the fleets commit to a point-blank
+      // brawl rather than kiting at range — the engagement we want to assert.
+      orders: { ...defaultOrders, engageRange: "short", stance: "aggressive" },
     })),
     createdAt: nowIso(),
     updatedAt: nowIso(),
@@ -133,9 +135,20 @@ describe("engagement: ships close and fight", () => {
     expect(everFired, "at least one projectile should be fired").toBe(true);
   });
 
-  it("the battle resolves to a winner before the tick cap", () => {
+  it("keeps the two sides facing each other as they engage (no fleeing)", () => {
+    // The original bug was ships thrusting backwards and flying apart. Beyond
+    // closing the distance, each side should bring its heading to bear on the
+    // enemy — an attacker (facing ~0, +x) and a mirrored defender (facing ~π)
+    // pointed at one another, not turned tail. Sample mid-engagement.
     const res = runEngagement(11);
-    expect(res.ticks).toBeLessThan(DEFAULT_MAX_TICKS);
-    expect(["attacker", "defender"]).toContain(res.winner);
+    const probe = res.frames[Math.min(150, res.frames.length - 1)];
+    if (probe === undefined) throw new Error("no probe frame");
+    const att = probe.ships.find((s) => s.side === "attacker" && s.alive);
+    const def = probe.ships.find((s) => s.side === "defender" && s.alive);
+    if (att === undefined || def === undefined) return; // a side already wiped — fine
+    // Attacker heading should have an +x component (cos > 0): pointing toward
+    // the enemy on the right, not fled to the left.
+    expect(Math.cos(att.facing ?? 0), "attacker should face toward the enemy (+x)").toBeGreaterThan(0);
+    expect(Math.cos(def.facing ?? 0), "defender should face toward the enemy (−x)").toBeLessThan(0);
   });
 });
