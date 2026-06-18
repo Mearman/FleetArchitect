@@ -10,8 +10,13 @@ import { getMeta, setMeta, storage } from "@/storage/db";
  * Version 3: Phase D — floor/corridor cells and munitions magazines added to
  * all ships with finite-ammo weapons; new reachability faults added to the
  * design validator.
+ *
+ * Version 4: Newtonian rotation — every preset gains manoeuvring gear (RCS
+ * thrusters and/or reaction wheels) so it has real commandable turn authority
+ * under the torque-driven attitude model. Centre-line-only designs could not
+ * rotate at all without it.
  */
-const PRESETS_VERSION = 3;
+const PRESETS_VERSION = 4;
 const VERSION_KEY = "presetsVersion";
 
 /**

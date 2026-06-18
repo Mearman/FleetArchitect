@@ -60,6 +60,8 @@ const TOKENS: Record<string, GridCell> = {
   "X": { kind: "module", moduleId: "mod-reactor-antimatter", facing: 0 },
   "C": { kind: "module", moduleId: "mod-crew-quarters", facing: 0 },
   "G": { kind: "module", moduleId: "mod-munitions-magazine", facing: 0 },
+  "K": { kind: "module", moduleId: "mod-rcs-thrusters", facing: 0 },
+  "W": { kind: "module", moduleId: "mod-reaction-wheel", facing: 0 },
 };
 
 /** Single-character tokens for the ASCII grid authoring map — Swarm parts.
@@ -84,6 +86,8 @@ const SWARM_TOKENS: Record<string, GridCell> = {
   "m": { kind: "module", moduleId: "swm-metabolic-core", facing: 0 },
   "s": { kind: "module", moduleId: "swm-spore-cloud", facing: 0 },
   "q": { kind: "module", moduleId: "swm-ammon-sac", facing: 0 },
+  "y": { kind: "module", moduleId: "swm-pseudopod-cluster", facing: 0 },
+  "z": { kind: "module", moduleId: "swm-gyral-organ", facing: 0 },
 };
 
 /** Parse an ASCII map (one string per row) into a row-major TileGrid using the
@@ -151,11 +155,11 @@ const designData: ShipDesign[] = [
     // the design self-sufficient; swept hull struts give it its silhouette.
     // 19 cells, cost 520, all-beam weapons — already valid before Phase D.
     grid: gridFromMap([
-      "...oL..",
+      "...KL..",
       ".E=#L..",
       "EFFC#LL",
       ".E=#L..",
-      "...oL..",
+      "...KL..",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -169,11 +173,11 @@ const designData: ShipDesign[] = [
     // turrets — the whole ship is 4-connected so crew can walk from any
     // crew-quarters cell to the magazine and back. Plasma drives give good speed.
     grid: gridFromMap([
-      "..#M..",
+      "..KM..",
       "P=CFMM",
       "PFCCGL",
       "P=CFMM",
-      "..#M..",
+      "..KM..",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -186,11 +190,11 @@ const designData: ShipDesign[] = [
     // central magazine (G) fed by a floor corridor, twin fusion reactors, crew
     // quarters, and an engine bank. The Mk I shields protect the flanks.
     grid: gridFromMap([
-      "..=sRL..",
-      ".EFC~s#R",
+      "..KsRL..",
+      ".EFC~sWR",
       "EFFCG~#R",
-      ".EFC~s#R",
-      "..=sRL..",
+      ".EFC~sWR",
+      "..KsRL..",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -203,11 +207,11 @@ const designData: ShipDesign[] = [
     // means no magazine required. A broad Mk II shield wall fronts a laser bank;
     // triple fusion reactors and a deep crew and engine block run it.
     grid: gridFromMap([
-      ".=#SAL.",
+      ".KWSAL.",
       "EFCSSAL",
       "EFFCSAL",
       "EFCSSAL",
-      ".=#SAL.",
+      ".KWSAL.",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -220,11 +224,11 @@ const designData: ShipDesign[] = [
     // shield soaks punishment while railgun turrets answer. The magazine (G) in
     // the central corridor feeds all railguns; slow but unyielding.
     grid: gridFromMap([
-      ".#DDsR.",
+      ".KDDsR.",
       "EFCCGsR",
-      "EXF~GsR",
+      "EXFWGsR",
       "EFCCGsR",
-      ".#DDsR.",
+      ".KDDsR.",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -239,11 +243,11 @@ const designData: ShipDesign[] = [
     // needed to man torpedoes and missiles; titanium armour and shields protect
     // the fragile innards.
     grid: gridFromMap([
-      "..A#MM...",
-      ".EFCCA#TT",
+      "..AKMM...",
+      ".EFCCAWTT",
       "EXFGCA#TT",
-      ".EFCCA#TT",
-      "..A#MM...",
+      ".EFCCAWTT",
+      "..AKMM...",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -260,13 +264,13 @@ const designData: ShipDesign[] = [
     // Layout (14 cols × 7 rows, 72 cells):
     // stern (left) → crew/reactor spine → corridors → magazines → weapons → prow
     grid: gridFromMap([
-      "...=#SDTRL....",
-      "..EXCCS~TRRL..",
+      "...KWSDTRL....",
+      "..EXCCSWTRRL..",
       ".EXFCC~GDRRLL.",
-      "EXFCCC~G~RRLLL",
+      "EXFCCCWG~RRLLL",
       ".EXFCC~GDRRLL.",
-      "..EXCCS~TRRL..",
-      "...=#SDTRL....",
+      "..EXCCSWTRRL..",
+      "...KWSDTRL....",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -287,15 +291,15 @@ const designData: ShipDesign[] = [
     // C cells (crew quarters) line the central corridor; G (magazine) cells sit
     // between the crew block and the weapon batteries so crew can haul ammo.
     grid: gridFromMap([
-      "......=#~SDRML.....",
-      ".....EXCC~SDRRMLL..",
+      "......KWWSDRML.....",
+      ".....EXCCWSDRRMLL..",
       "....EXFCC~GSDRRMMLL",
-      "...EXFFCCGG~DRRMMLL",
+      "...EXFFCCGGWDRRMMLL",
       "EXFFCCCGGGCDRRMMLLL",
-      "...EXFFCCGG~DRRMMLL",
+      "...EXFFCCGGWDRRMMLL",
       "....EXFCC~GSDRRMMLL",
-      ".....EXCC~SDRRMLL..",
-      "......=#~SDRML.....",
+      ".....EXCCWSDRRMLL..",
+      "......KWWSDRML.....",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -318,9 +322,9 @@ const designData: ShipDesign[] = [
     // Fighter: the basic Swarm unit. A spore launcher snout, a neural ganglion
     // core, twin flagella — small, fast, expendable. No crew, no ammo.
     grid: swarmGrid([
-      ".#p.",
+      ".yp.",
       "jgpp",
-      ".#p.",
+      ".yp.",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -332,11 +336,11 @@ const designData: ShipDesign[] = [
     // Fighter: a fast acid flanker. Forward-swept acid claws strip armour at
     // knife range; paired flagella and a pulse jet make it the quickest hunter.
     grid: swarmGrid([
-      "..#a..",
+      "..ya..",
       "j=gaa.",
       "ugcgaa",
       "j=gaa.",
-      "..#a..",
+      "..ya..",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -349,11 +353,11 @@ const designData: ShipDesign[] = [
     // self-knitting carapace, a metabolic core, and a cluster of flagella and
     // pulse jets. No discrete ammo weapons so no ammon sac needed.
     grid: swarmGrid([
-      ".j#caa..",
-      "jgcraaa.",
+      ".jycaa..",
+      "jgczaaa.",
       "ugmcraaa",
-      "jgcraaa.",
-      ".j#caa..",
+      "jgczaaa.",
+      ".jycaa..",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -366,11 +370,11 @@ const designData: ShipDesign[] = [
     // downrange; spore clouds screen it. Neural stings have no ammoCapacity so
     // no ammon sac is required. Regen membranes and a metabolic core sustain it.
     grid: swarmGrid([
-      "..#snn...",
-      ".jgcsnnn.",
+      "..ysnn...",
+      ".jgzsnnn.",
       "ugmcrsnnn",
-      ".jgcsnnn.",
-      "..#snn...",
+      ".jgzsnnn.",
+      "..ysnn...",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -384,13 +388,13 @@ const designData: ShipDesign[] = [
     // with a metabolic heart and a bank of pulse-jet flagella driving the whole
     // mass. No discrete ammo weapons; no ammon sac needed.
     grid: swarmGrid([
-      "...#cnnn....",
-      "..jgcrsnnnn.",
+      "...ycnnn....",
+      "..jgzrsnnnn.",
       ".jgmcrsannn.",
-      "ugmmcrsaannn",
+      "ugmmczsaannn",
       ".jgmcrsannn.",
-      "..jgcrsnnnn.",
-      "...#cnnn....",
+      "..jgzrsnnnn.",
+      "...ycnnn....",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
