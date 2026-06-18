@@ -223,16 +223,19 @@ export const TICKS_PER_SECOND = 30;
 export const DEFAULT_MAX_TICKS = 3600;
 
 /**
- * Frame batch size for streaming. Four seconds of playback per batch — large
- * enough that each batch provides a comfortable playback buffer (so the
- * playhead never catches the streamed leading edge between batches), while
- * keeping batches infrequent enough that the per-batch React re-render
- * (updating frame count, bounds, status) doesn't contend with the worker's
- * postMessage delivery. Smaller values (e.g. one second) cause the main
- * thread to render on every batch, blocking subsequent batch delivery and
- * producing the start-then-buffer stutter on crewed battles.
+ * Wall-clock interval between streamed frame batches, in milliseconds. The
+ * worker posts accumulated frames every time this much real time has elapsed
+ * during computation, so the main thread receives updates at a steady cadence
+ * regardless of how fast or slow the simulation runs. The frame count per
+ * batch emerges naturally from the computation rate — faster simulations send
+ * more frames per batch, slower ones fewer — rather than being a fixed count
+ * that can't account for the main-thread render cost each batch triggers.
+ *
+ * 100 ms = 10 updates/s, matching typical animation cadence and giving each
+ * batch enough playback depth (several seconds at typical sim rates) that the
+ * playhead never catches the streamed leading edge between batches.
  */
-export const FRAMES_PER_BATCH = TICKS_PER_SECOND * 4;
+export const STREAM_BATCH_INTERVAL_MS = 100;
 
 /** Terminal value produced by the streaming generator: battle outcome and duration. */
 export interface BattleSummary {

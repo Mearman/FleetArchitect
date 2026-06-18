@@ -1,7 +1,7 @@
 import { createId, nowIso } from "@/domain/id";
 import { simulateBattle } from "@/domain/simulation/engine";
 import type { BattleInputs } from "@/domain/simulation/types";
-import { FRAMES_PER_BATCH } from "@/domain/simulation/types";
+import { STREAM_BATCH_INTERVAL_MS } from "@/domain/simulation/types";
 import type { BattleFrame } from "@/schema/battle";
 
 /**
@@ -20,6 +20,7 @@ self.onmessage = (event: MessageEvent<BattleInputs>) => {
 
   const allFrames: BattleFrame[] = [];
   let batch: BattleFrame[] = [];
+  let lastPostMs = performance.now();
 
   let next = it.next();
   while (!next.done) {
@@ -27,15 +28,18 @@ self.onmessage = (event: MessageEvent<BattleInputs>) => {
     allFrames.push(frame);
     batch.push(frame);
 
-    if (batch.length >= FRAMES_PER_BATCH) {
+    // Post a batch when enough wall-clock time has elapsed since the last one.
+    // The frame count per batch scales with the simulation's speed, so the
+    // main thread always receives several seconds of playback per update.
+    if (performance.now() - lastPostMs >= STREAM_BATCH_INTERVAL_MS) {
       const lastFrame = batch[batch.length - 1];
-      // lastFrame is always defined here: batch.length >= FRAMES_PER_BATCH > 0
       self.postMessage({
         kind: "frames",
         frames: batch,
         computedTicks: lastFrame !== undefined ? lastFrame.tick : 0,
       });
       batch = [];
+      lastPostMs = performance.now();
     }
 
     next = it.next();
