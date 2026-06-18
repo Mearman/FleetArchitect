@@ -150,6 +150,16 @@ const SIM = {
    * module whose buffer hits zero goes idle until a crew power-run refills it.
    */
   chargeBufferMax: 60,
+  /**
+   * Passive wiring reach, in cells of walkable path distance from a reactor.
+   * A power-drawing module within this many alive cells of an alive reactor is
+   * hard-wired to the grid and refills its buffer for free each tick; modules
+   * beyond it are off the grid and depend on crew hauling charge from a
+   * reactor. Small, compact ships (reactor beside the guns) are fully wired and
+   * need no power crew; sprawling capitals have outlying stations that only
+   * crew can keep fed, which is the whole point of crewed interiors.
+   */
+  powerWiringRadius: 3,
 };
 
 /** Mutable per-ship runtime state carried across ticks. */
@@ -269,6 +279,16 @@ interface SimModule {
    * deplete their own magazines independently.
    */
   ammoStored: number;
+  /**
+   * Local energy buffer a power-drawing module spends each tick it operates.
+   * Crew haul charge packets from reactors to top it up. A module whose buffer
+   * hits zero goes idle even when the whole-ship brownout would otherwise power
+   * it, so the physical distance to a reactor — and the crew routing it — matters.
+   * Modules with `powerDraw === 0` never consume charge and are always
+   * considered charged. Initialised so reactor-adjacent modules start live;
+   * isolated ones drain and starve unless crew feed them.
+   */
+  charge: number;
   alive: boolean;
   /**
    * Whether the power grid can sustain this module this tick. Reactors
@@ -547,6 +567,11 @@ function toSimModule(m: ResolvedModule, rng: () => number): SimModule {
     // unlimited by design — see PointDefenseEffect.
     ammo: isWeapon ? effect.ammo ?? DEFAULT_WEAPON_AMMO : 0,
     ammoStored: effect.kind === "magazine" ? effect.ammoStored : 0,
+    // Start every power-drawing module with a full local buffer so a ship is
+    // immediately live; modules out of crew reach then drain to zero and idle
+    // until a power-run refills them. A reactor has no draw, so it carries no
+    // buffer of its own — it is the source crew draw charge from.
+    charge: m.powerDraw > 0 ? SIM.chargeBufferMax : 0,
     alive: true,
     powered: true,
     // A module that needs no crew is born manned; one that needs crew starts
@@ -799,15 +824,17 @@ function updateCrew(ship: SimShip): void {
   }
 
   // Reservation maps so assignment never over-subscribes a station or sends two
-  // haulers to the same dry weapon. Built from current (post-arrival) intents.
+  // haulers to the same sink. Built from current (post-arrival) intents.
   const claimedStations = new Map<string, number>();
   const claimedWeapons = new Set<string>();
+  const claimedSinks = new Set<string>();
   for (const c of ship.crew) {
-    if (c.targetSlotId === undefined) continue;
-    if (c.job === "manning") {
+    if (c.job === "manning" && c.targetSlotId !== undefined) {
       claimedStations.set(c.targetSlotId, (claimedStations.get(c.targetSlotId) ?? 0) + 1);
     } else if (c.job === "haulAmmo" && c.haulSinkSlotId !== undefined) {
       claimedWeapons.add(c.haulSinkSlotId);
+    } else if (c.job === "haulPower" && c.haulSinkSlotId !== undefined) {
+      claimedSinks.add(c.haulSinkSlotId);
     }
   }
 
@@ -847,6 +874,19 @@ function updateCrew(ship: SimShip): void {
       claimedWeapons.add(run.sink.slotId);
       continue;
     }
+
+    // Priority 3: run charge from a reactor to a starved power-drawing module.
+    const power = choosePowerRun(c, ship.modules, cells, claimedSinks);
+    if (power !== undefined) {
+      c.job = "haulPower";
+      c.carrying = undefined;
+      c.carryAmount = undefined;
+      c.targetSlotId = power.source.slotId;
+      c.haulSinkSlotId = power.sink.slotId;
+      c.path = power.path.slice(1);
+      claimedSinks.add(power.sink.slotId);
+      continue;
+    }
   }
 
   // 4. Walk one cell along each crew member's path (id order for determinism).
@@ -854,8 +894,108 @@ function updateCrew(ship: SimShip): void {
     advanceCrew(c, cells);
   }
 
-  // 5. Recompute manning from final positions.
+  // 5. Recompute manning from final positions, then refresh local charge:
+  //    hard-wired modules near a reactor refill for free, then every operating
+  //    module spends a tick of its buffer.
   recomputeManning(ship);
+  rechargeAndConsume(ship);
+}
+
+/**
+ * Update every power-drawing module's local charge buffer for the tick:
+ *  1. Passive wiring — a module within `powerWiringRadius` walkable cells of an
+ *     alive reactor is hard-wired and refills to full for free.
+ *  2. Consumption — a module that is operating this tick (alive, powered within
+ *     the brownout ceiling, and manned, with charge to spend) draws `powerDraw`
+ *     from its buffer, floored at zero.
+ * Modules off the wiring grid get no free refill, so they drain and starve
+ * unless crew haul charge to them; that crew-fed top-up has already happened in
+ * the arrival step before this runs. Reactors draw no power and keep no buffer.
+ */
+function rechargeAndConsume(ship: SimShip): void {
+  if (ship.modules === undefined) return;
+
+  // A ship with no crew has no hauling economy: it runs the pre-crew abstract
+  // power grid, so every powered module is hard-wired and never starves. The
+  // local-charge logistics only engages once a design commits to crew. This
+  // keeps charge as a pure refinement layered on top of the existing brownout
+  // for crewed ships, leaving crewless designs on the original power model.
+  const hasCrew = ship.crew !== undefined && ship.crew.length > 0;
+  if (!hasCrew) {
+    for (const m of ship.modules) {
+      if (m.alive && m.powerDraw > 0) m.charge = SIM.chargeBufferMax;
+    }
+    return;
+  }
+
+  // 1. Cells within the wiring radius of any alive reactor (multi-source BFS
+  //    over alive cells). A module on one of these cells is hard-wired.
+  const wired = reactorWiringReach(ship);
+  for (const m of ship.modules) {
+    if (m.powerDraw <= 0 || !m.alive) continue;
+    if (wired.has(crewCellKey(m.col, m.row))) m.charge = SIM.chargeBufferMax;
+  }
+
+  // 2. Spend a tick of charge from operating modules.
+  for (const m of ship.modules) {
+    if (m.powerDraw <= 0) continue;
+    if (!m.alive || !m.powered || !m.manned || m.charge <= 0) continue;
+    m.charge = Math.max(0, m.charge - m.powerDraw);
+  }
+}
+
+/**
+ * The set of cell keys within `powerWiringRadius` walkable steps of any alive
+ * reactor, by multi-source breadth-first search over the alive cells. Used to
+ * decide which power-drawing modules are hard-wired (free charge) versus
+ * crew-fed. Deterministic: BFS frontier order does not affect the resulting set,
+ * and the set membership is all the caller reads.
+ */
+function reactorWiringReach(ship: SimShip): Set<string> {
+  const reach = new Set<string>();
+  if (ship.modules === undefined) return reach;
+  const cells = aliveCellMap(ship);
+  // Seed the frontier with every alive reactor cell at distance 0.
+  let frontier: { col: number; row: number }[] = [];
+  for (const m of ship.modules) {
+    if (m.alive && m.effect.kind === "power") {
+      const k = crewCellKey(m.col, m.row);
+      if (!reach.has(k)) {
+        reach.add(k);
+        frontier.push({ col: m.col, row: m.row });
+      }
+    }
+  }
+  for (let depth = 0; depth < SIM.powerWiringRadius && frontier.length > 0; depth += 1) {
+    const next: { col: number; row: number }[] = [];
+    for (const cell of frontier) {
+      const neighbours = [
+        { col: cell.col - 1, row: cell.row },
+        { col: cell.col + 1, row: cell.row },
+        { col: cell.col, row: cell.row - 1 },
+        { col: cell.col, row: cell.row + 1 },
+      ];
+      for (const n of neighbours) {
+        const k = crewCellKey(n.col, n.row);
+        if (!cells.has(k) || reach.has(k)) continue;
+        reach.add(k);
+        next.push(n);
+      }
+    }
+    frontier = next;
+  }
+  return reach;
+}
+
+/**
+ * Whether a module has the local charge to operate this tick. A module that
+ * draws no power needs no charge and is always charged; a power-drawing module
+ * operates only while its local buffer is above zero. Composed with `powered`
+ * (the whole-ship brownout ceiling) and `manned` to decide whether a module
+ * actually functions: `alive && powered && manned && isCharged(m)`.
+ */
+function isCharged(m: SimModule): boolean {
+  return m.powerDraw <= 0 || m.charge > 0;
 }
 
 /**
@@ -873,13 +1013,10 @@ function hasArrived(crew: SimCrew, bySlot: ReadonlyMap<string, SimModule>): bool
 /**
  * Resolve a crew member that has reached its current target. Manning members
  * simply hold their station — `recomputeManning` reads their position. A hauler
- * acts on arrival:
- *  - at the magazine (not yet carrying): draw a run of rounds, decrementing the
- *    magazine's store, then re-path to the delivery sink;
- *  - at the weapon (carrying): top the weapon up to its `ammoCapacity` with the
- *    carried rounds, then go idle, ready for the next job.
- * A hauler whose magazine has run dry or whose sink has vanished abandons the
- * run and goes idle. Re-pathing failures (a severed route) also free the member.
+ * picks up at the source on the first leg, then deposits at the sink on the
+ * second; ammo and power runs share the same two-leg shape and differ only in
+ * what is moved. Any run whose source is empty, sink is gone, or route is
+ * severed abandons and frees the member.
  */
 function resolveArrival(
   crew: SimCrew,
@@ -887,10 +1024,20 @@ function resolveArrival(
   cells: ReadonlyMap<string, SimModule>,
 ): void {
   if (!hasArrived(crew, bySlot)) return;
-  if (crew.job !== "haulAmmo") return; // manning members hold; nothing to do
+  if (crew.job === "haulAmmo") resolveAmmoArrival(crew, bySlot, cells);
+  else if (crew.job === "haulPower") resolvePowerArrival(crew, bySlot, cells);
+  // Manning members hold their station; nothing to do on arrival.
+}
 
+/** Arrival handling for an ammo run: pick up rounds at the magazine, then
+ *  deposit them at the dry weapon (clamped to capacity), conserving the amount
+ *  carried end to end. */
+function resolveAmmoArrival(
+  crew: SimCrew,
+  bySlot: ReadonlyMap<string, SimModule>,
+  cells: ReadonlyMap<string, SimModule>,
+): void {
   if (crew.carrying === undefined) {
-    // At the source magazine: pick up a run of rounds and head to the sink.
     const source = crew.targetSlotId !== undefined ? bySlot.get(crew.targetSlotId) : undefined;
     const sink = crew.haulSinkSlotId !== undefined ? bySlot.get(crew.haulSinkSlotId) : undefined;
     if (
@@ -903,8 +1050,7 @@ function resolveArrival(
       abandonHaul(crew);
       return;
     }
-    const want = ammoShortfall(sink);
-    const carried = Math.min(SIM.ammoRunAmount, source.ammoStored, want);
+    const carried = Math.min(SIM.ammoRunAmount, source.ammoStored, ammoShortfall(sink));
     if (carried <= 0) {
       abandonHaul(crew);
       return;
@@ -912,12 +1058,7 @@ function resolveArrival(
     source.ammoStored -= carried;
     crew.carrying = "ammo";
     crew.carryAmount = carried;
-    // Re-path to the sink for the delivery leg.
-    const path = findCrewPath(
-      cells,
-      { col: crew.col, row: crew.row },
-      { col: sink.col, row: sink.row },
-    );
+    const path = findCrewPath(cells, { col: crew.col, row: crew.row }, { col: sink.col, row: sink.row });
     if (path === undefined) {
       // Route severed after pickup: drop the rounds back and give up.
       source.ammoStored += carried;
@@ -929,23 +1070,64 @@ function resolveArrival(
     return;
   }
 
-  // At the sink weapon, carrying rounds: deposit exactly what was carried
-  // (clamped to the weapon's capacity) and free the member. The pickup never
-  // takes more than the weapon was short of, and the weapon can only have fired
-  // since, so the clamp never discards rounds in the normal path.
+  // At the sink weapon, carrying rounds: deposit exactly what was carried,
+  // clamped to capacity. The pickup never takes more than the weapon was short
+  // of and the weapon can only have fired since, so the clamp never discards.
   const sink = crew.targetSlotId !== undefined ? bySlot.get(crew.targetSlotId) : undefined;
-  // carryAmount is set together with carrying at pickup, so it is defined here.
-  const carried = crew.carryAmount;
-  if (
-    carried !== undefined &&
-    sink !== undefined &&
-    sink.alive &&
-    sink.effect.kind === "weapon"
-  ) {
+  const carried = crew.carryAmount; // set with carrying at pickup, so defined here
+  if (carried !== undefined && sink !== undefined && sink.alive && sink.effect.kind === "weapon") {
     const cap = sink.effect.ammoCapacity;
-    if (cap !== undefined) {
-      sink.ammo = Math.min(cap, sink.ammo + carried);
+    if (cap !== undefined) sink.ammo = Math.min(cap, sink.ammo + carried);
+  }
+  abandonHaul(crew);
+}
+
+/** Arrival handling for a power run: pick up a charge packet at the reactor,
+ *  then deposit it into the starved module's local buffer (clamped to the buffer
+ *  ceiling), conserving the amount carried. */
+function resolvePowerArrival(
+  crew: SimCrew,
+  bySlot: ReadonlyMap<string, SimModule>,
+  cells: ReadonlyMap<string, SimModule>,
+): void {
+  if (crew.carrying === undefined) {
+    const source = crew.targetSlotId !== undefined ? bySlot.get(crew.targetSlotId) : undefined;
+    const sink = crew.haulSinkSlotId !== undefined ? bySlot.get(crew.haulSinkSlotId) : undefined;
+    if (
+      source === undefined ||
+      source.effect.kind !== "power" ||
+      sink === undefined ||
+      !sink.alive ||
+      sink.powerDraw <= 0
+    ) {
+      abandonHaul(crew);
+      return;
     }
+    // A reactor is an unlimited charge source — it produces power every tick —
+    // so the packet is bounded only by the buffer headroom and the run amount.
+    const carried = Math.min(SIM.powerRunAmount, chargeShortfall(sink));
+    if (carried <= 0) {
+      abandonHaul(crew);
+      return;
+    }
+    crew.carrying = "power";
+    crew.carryAmount = carried;
+    const path = findCrewPath(cells, { col: crew.col, row: crew.row }, { col: sink.col, row: sink.row });
+    if (path === undefined) {
+      abandonHaul(crew);
+      return;
+    }
+    crew.targetSlotId = sink.slotId;
+    crew.path = path.slice(1);
+    return;
+  }
+
+  // At the sink module, carrying charge: refill its buffer, clamped to the
+  // ceiling, then free the member.
+  const sink = crew.targetSlotId !== undefined ? bySlot.get(crew.targetSlotId) : undefined;
+  const carried = crew.carryAmount; // set with carrying at pickup, so defined here
+  if (carried !== undefined && sink !== undefined && sink.alive && sink.powerDraw > 0) {
+    sink.charge = Math.min(SIM.chargeBufferMax, sink.charge + carried);
   }
   abandonHaul(crew);
 }
@@ -1019,6 +1201,64 @@ function chooseAmmoRun(
       if (path === undefined) continue;
       // Confirm the second leg (magazine -> weapon) is also walkable before
       // committing, so a crew member never picks up rounds it cannot deliver.
+      const delivery = findCrewPath(
+        cells,
+        { col: source.col, row: source.row },
+        { col: sink.col, row: sink.row },
+      );
+      if (delivery === undefined) continue;
+      return { source, sink, path };
+    }
+  }
+  return undefined;
+}
+
+/** Charge a power-drawing module is short of a full local buffer. Zero for a
+ *  module that draws no power. */
+function chargeShortfall(m: SimModule): number {
+  if (m.powerDraw <= 0) return 0;
+  return Math.max(0, SIM.chargeBufferMax - m.charge);
+}
+
+/**
+ * Pick a power run for an idle crew member: the first power-drawing module (in
+ * (col, row) order) whose local charge buffer has fallen a full run-amount short,
+ * that is not already being fed, paired with the nearest reachable reactor.
+ * Returns the source reactor, the sink module, and the path to the source, or
+ * undefined when no run is both needed and reachable.
+ *
+ * As with ammo, the starvation threshold is the run amount so crew restock
+ * proactively: a module that could accept a full charge packet gets a hauler
+ * before its buffer empties and the station drops offline mid-fight.
+ */
+function choosePowerRun(
+  crew: SimCrew,
+  modules: readonly SimModule[],
+  cells: ReadonlyMap<string, SimModule>,
+  claimedSinks: ReadonlySet<string>,
+): { source: SimModule; sink: SimModule; path: { col: number; row: number }[] } | undefined {
+  const sinks = modules
+    .filter(
+      (m) =>
+        m.alive &&
+        m.powerDraw > 0 &&
+        chargeShortfall(m) >= SIM.powerRunAmount &&
+        !claimedSinks.has(m.slotId),
+    )
+    .slice()
+    .sort(compareByCell);
+  if (sinks.length === 0) return undefined;
+
+  const reactors = modules
+    .filter((m) => m.alive && m.effect.kind === "power")
+    .slice()
+    .sort(compareByCell);
+  if (reactors.length === 0) return undefined;
+
+  for (const sink of sinks) {
+    for (const source of reactors) {
+      const path = findCrewPath(cells, { col: crew.col, row: crew.row }, { col: source.col, row: source.row });
+      if (path === undefined) continue;
       const delivery = findCrewPath(
         cells,
         { col: source.col, row: source.row },
@@ -1292,11 +1532,12 @@ function recomputeAggregates(ship: SimShip): void {
       continue;
     }
     mass += m.mass;
-    // Unpowered or unmanned modules are present (they still mass the ship) but
-    // contribute no function: a station works only when alive, powered, and
-    // manned. A module needing no crew is always manned (set in toSimModule and
-    // recomputeManning), so this gate is a no-op for crewless designs.
-    if (!m.powered || !m.manned) continue;
+    // Modules that are present (still massing the ship) but non-functional this
+    // tick contribute nothing. A station works only when alive, powered (the
+    // whole-ship brownout ceiling), manned, and locally charged. A module
+    // needing no crew is always manned and one drawing no power is always
+    // charged, so this gate is a no-op for simple crewless, draw-free designs.
+    if (!m.powered || !m.manned || !isCharged(m)) continue;
     const effect = m.effect;
     switch (effect.kind) {
       case "weapon":
@@ -2595,10 +2836,10 @@ function cellThrustForceAndTorque(ship: SimShip): { fx: number; fy: number; torq
   let torque = 0;
   for (const m of ship.modules) {
     if (!m.alive || m.effect.kind !== "engine") continue;
-    // An engine thrusts only when powered and manned, matching the manning
-    // gate the aggregate thrust total already applies. An unmanned or
-    // browned-out thruster is dead weight this tick.
-    if (!m.powered || !m.manned) continue;
+    // An engine thrusts only when powered, manned, and locally charged,
+    // matching the gate the aggregate thrust total already applies. An
+    // unmanned, browned-out, or uncharged thruster is dead weight this tick.
+    if (!m.powered || !m.manned || !isCharged(m)) continue;
     const t = m.effect.thrust;
     if (t <= 0) continue;
     const lx = Math.cos(m.facing) * t;
@@ -2879,6 +3120,7 @@ function fireWeapons(
         }
         if (!m.powered) continue; // reactor can't sustain it this tick
         if (!m.manned) continue; // nobody crewing the gun — it can't fire
+        if (!isCharged(m)) continue; // local charge buffer empty — no juice
         if (dist > weapon.range) continue;
         // Fire gate: a turret fires when its slewed barrel bears on the target
         // (independent of where the ship is pointing); a fixed mount fires
@@ -2979,7 +3221,7 @@ function tryPointDefenseIntercept(
     if (ship.modules === undefined) continue; // legacy ships don't run PD
     if (!hasAliveCommand(ship)) continue; // no bridge → no coordination
     for (const m of ship.modules) {
-      if (!m.alive || !m.powered || !m.manned) continue;
+      if (!m.alive || !m.powered || !m.manned || !isCharged(m)) continue;
       if (m.cooldown > 0) continue;
       if (m.effect.kind !== "pointDefense") continue;
       const effect: PointDefenseEffect = m.effect;
@@ -3000,7 +3242,7 @@ function tryPointDefenseIntercept(
     if (ship.modules === undefined) continue;
     if (!hasAliveCommand(ship)) continue;
     for (const m of ship.modules) {
-      if (!m.alive || !m.powered || !m.manned) continue;
+      if (!m.alive || !m.powered || !m.manned || !isCharged(m)) continue;
       if (m.effect.kind !== "pointDefense") continue;
       if (m.cooldown > 0) continue;
       const dx = ship.x - p.x;

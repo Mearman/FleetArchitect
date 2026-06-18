@@ -313,3 +313,67 @@ describe("engine.crew — ammo hauling", () => {
     expect(b.winner).toBe(a.winner);
   });
 });
+
+describe("engine.crew — power hauling", () => {
+  /**
+   * A crewed ship whose weapon sits beyond the passive wiring reach of the
+   * reactor, so it cannot draw power directly and depends on crew carrying
+   * charge. Layout, left to right (a long corridor of hull cells):
+   *   col 0:  crew quarters (capacity 2)  — crew spawn here
+   *   col 1:  reactor/bridge               — power + command, the charge source
+   *   col 2..6: hull corridor              — five cells, putting the gun out of
+   *                                          the wiring radius (3) of the reactor
+   *   col 7:  weapon (powerDraw, crewless) — starves without hauled charge
+   * The weapon needs no crew of its own, so manning never gates it: the only
+   * thing keeping it dark is local charge.
+   */
+  function farWeaponShip(corridor: number): CombatShip {
+    const modules: ResolvedModule[] = [
+      moduleOf("q1", { kind: "crew", capacity: 2 }, 0, 0, 15),
+      moduleOf("p1", { kind: "power", output: 500 }, 1, 0, 20, { command: true }),
+    ];
+    for (let col = 2; col <= 1 + corridor; col += 1) {
+      modules.push(moduleOf(`h${col}`, { kind: "hull" }, col, 0, 60));
+    }
+    const gunCol = 2 + corridor;
+    modules.push(
+      moduleOf("w1", beam({ damage: 25, cooldown: 1 }), gunCol, 0, 50, { powerDraw: 10 }),
+    );
+    return shooterShip("a1", 0, modules);
+  }
+
+  it("a module far from any reactor is restored by a crew power-run", () => {
+    // Five corridor cells put the gun six cells from the reactor — beyond the
+    // wiring radius — so it starts firing off its initial buffer, falls silent
+    // as the buffer drains, then crew power-runs keep it fed for the long haul.
+    const result = runBattle(inputs([farWeaponShip(5), toughTarget("d1", 70)]));
+    const structures = result.frames.map((f) => structureOf(f, "d1") ?? 0);
+    const initial = structures[0] ?? 0;
+    const final = structures.at(-1) ?? initial;
+    // Over the battle, crew haul charge to the gun and the target loses
+    // structure — the far station is being kept alive by the power economy.
+    expect(final, "a power-run should keep the far gun firing").toBeLessThan(initial);
+    // And it keeps firing late in the battle (not just an opening burst off the
+    // initial buffer): the tail is still trending down.
+    const tail = structures.slice(-20);
+    const tailStart = tail[0] ?? 0;
+    const tailEnd = tail.at(-1) ?? tailStart;
+    expect(tailEnd, "the gun should still be fed late in the battle").toBeLessThan(tailStart);
+  });
+
+  it("a wired weapon beside the reactor needs no power crew", () => {
+    // Gun one cell from the reactor — inside the wiring radius — so it is fed
+    // for free and fires from the off, even though the ship has crew.
+    const result = runBattle(inputs([farWeaponShip(0), toughTarget("d1", 30)]));
+    const structures = result.frames.map((f) => structureOf(f, "d1") ?? 0);
+    const initial = structures[0] ?? 0;
+    expect(structures[2], "a wired gun should fire early").toBeLessThan(initial);
+  });
+
+  it("is byte-identical across two runs with the same seed (power hauling)", () => {
+    const a = runBattle(inputs([farWeaponShip(5), toughTarget("d1", 70)]));
+    const b = runBattle(inputs([farWeaponShip(5), toughTarget("d1", 70)]));
+    expect(b.frames).toEqual(a.frames);
+    expect(b.winner).toBe(a.winner);
+  });
+});
