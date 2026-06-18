@@ -176,13 +176,15 @@ export function interpolateFrame(frames: readonly BattleFrame[], t: number): Bat
     };
   });
 
-  // Projectiles and the tick number come from the nearest frame so that event
-  // flashes (hits, break-apart) appear on the correct frame rather than being
-  // spread across the interval.
+  // Projectiles, awareness, and the tick number come from the nearest frame so
+  // that discrete events (hits, break-apart, sensor contacts) are never smeared
+  // across the interval. Awareness is binary per tick — there is no meaningful
+  // interpolation between two AwarenessSnapshots.
   const nearest = alpha < 0.5 ? lo : hi;
   return {
     tick: nearest.tick,
     ships,
     projectiles: nearest.projectiles,
+    awareness: nearest.awareness,
   };
 }

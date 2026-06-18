@@ -21,6 +21,8 @@ import {
 import { notifications } from "@mantine/notifications";
 import {
   IconArrowsShuffle,
+  IconEye,
+  IconEyeOff,
   IconFocus2,
   IconLayoutSidebarRightExpand,
   IconMaximize,
@@ -45,6 +47,8 @@ import type { Fleet } from "@/schema/fleet";
 import type { WeaponType } from "@/schema/module";
 import { interpolateFrame } from "@/ui/interpolateFrame";
 import { drawAnomaly } from "./battleAnomaly";
+import { drawFogAndAwareness } from "./battleFog";
+import type { ShipScreenPositions } from "./battleFog";
 import {
   clampZoom,
   DEFAULT_CAMERA,
@@ -227,6 +231,8 @@ export function BattleRoute() {
   /** Whether the setup panel and module-status overlay are shown. */
   const [setupOpen, setSetupOpen] = useState(true);
   const [statusOpen, setStatusOpen] = useState(false);
+  /** Whether the fog-of-war / awareness overlay is shown (default: on). */
+  const [showFog, setShowFog] = useState(true);
 
   /** Pointer-drag state for panning, tracked in a ref to avoid re-renders. */
   const dragRef = useRef<{
@@ -329,15 +335,23 @@ export function BattleRoute() {
   }, [result]);
 
   /**
+   * The battle seed baked into the running replay. Stable for a given result;
+   * used to draw canonical occluder positions for the asteroid field anomaly
+   * and to pass to the fog renderer.
+   */
+  const activeSeed: number = result?.config.seed ?? 1;
+
+  /**
    * Pure draw function: renders `frame` onto the canvas. Separated from the
    * clock-advance so resize events and seek operations can redraw without
    * advancing the playback clock.
    *
-   * Closes over `bounds`, `maxHp` and `anomaly` from the enclosing render
-   * scope, plus the live camera via `cameraRef`. `bounds`/`maxHp`/`anomaly` are
-   * stable for a given `result`, so `drawFrame` is re-created only when those
-   * change; reading the camera from the ref keeps drawing responsive to zoom and
-   * pan without re-creating the callback (and so without restarting the loop).
+   * Closes over `bounds`, `maxHp`, `anomaly`, `activeSeed`, and `showFog` from
+   * the enclosing render scope, plus the live camera via `cameraRef`.
+   * `bounds`/`maxHp`/`anomaly`/`activeSeed`/`showFog` are stable for a given
+   * `result`, so `drawFrame` is re-created only when those change; reading the
+   * camera from the ref keeps drawing responsive to zoom and pan without
+   * re-creating the callback (and so without restarting the loop).
    */
   const drawFrame = useCallback(
     (frame: BattleFrame) => {
@@ -367,7 +381,27 @@ export function BattleRoute() {
       const sy = t.sy;
 
       // Anomaly is drawn first, in world space, beneath everything else.
-      drawAnomaly(ctx, activeAnomaly, t, bounds);
+      // The seed is threaded through so asteroid rocks match the engine's
+      // canonical occluder positions (single source of truth).
+      drawAnomaly(ctx, activeAnomaly, t, bounds, activeSeed);
+
+      // Fog-of-war overlay: drawn after the anomaly but before ships so the
+      // fog shroud sits under hull graphics. Perimeters, ghost markers, links,
+      // and dish indicators are drawn as part of this call and can be layered
+      // on top of the fog layer but still under ships (caller controls depth by
+      // splitting drawFogAndAwareness, but a single call keeps the API simple).
+      if (showFog) {
+        // Build a screen-position map for the current frame's ships so links
+        // and dish indicators connect to real hull positions.
+        const shipScreenPos: Map<string, { x: number; y: number }> = new Map();
+        for (const s of frame.ships) {
+          if (s.alive) {
+            shipScreenPos.set(s.instanceId, { x: t.sx(s.x), y: t.sy(s.y) });
+          }
+        }
+        const shipPos: ShipScreenPositions = shipScreenPos;
+        drawFogAndAwareness(ctx, frame.awareness, t, bounds, shipPos);
+      }
 
       for (const p of frame.projectiles) {
         const colour = PROJECTILE_COLOUR[p.kind];
@@ -567,7 +601,7 @@ export function BattleRoute() {
         ctx.fillRect(px - barW / 2, py + 10, barW * frac, 3);
       }
     },
-    [bounds, maxHp, activeAnomaly],
+    [bounds, maxHp, activeAnomaly, activeSeed, showFog],
   );
 
   /**
@@ -1050,6 +1084,17 @@ export function BattleRoute() {
                 {camera.followId !== null ? " · following" : ""}
               </Badge>
 
+              {showFog && (
+                <Badge
+                  className={styles.fogLegend}
+                  size="sm"
+                  variant="dot"
+                  color="cyan"
+                >
+                  Fog of war
+                </Badge>
+              )}
+
               <Group className={styles.cameraControls} gap={4}>
                 <Tooltip label="Zoom in">
                   <ActionIcon
@@ -1070,6 +1115,14 @@ export function BattleRoute() {
                 <Tooltip label="Fit whole battle (reset camera)">
                   <ActionIcon variant="default" onClick={resetCamera}>
                     <IconMaximize size={16} />
+                  </ActionIcon>
+                </Tooltip>
+                <Tooltip label={showFog ? "Hide fog of war overlay" : "Show fog of war overlay"}>
+                  <ActionIcon
+                    variant={showFog ? "filled" : "default"}
+                    onClick={() => setShowFog((f) => !f)}
+                  >
+                    {showFog ? <IconEye size={16} /> : <IconEyeOff size={16} />}
                   </ActionIcon>
                 </Tooltip>
                 <Tooltip label={statusOpen ? "Hide module panel" : "Show module panel"}>
