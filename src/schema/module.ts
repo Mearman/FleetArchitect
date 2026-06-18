@@ -16,6 +16,9 @@ const zeroToOne = z.number().min(0).max(1);
 /** Effect payload for an offensive module. `projectileSpeed: 0` means hitscan.
  *  `ammo` is the finite magazine; when omitted the weapon gets a large default
  *  (`DEFAULT_WEAPON_AMMO`) and effectively never runs dry.
+ *  `ammoCapacity` (optional, int >= 0) is the local magazine size a crew ammo-run
+ *  tops the weapon up to, distinct from `ammo` which is the starting/abstract count.
+ *  When omitted, the weapon is treated as unlimited (effective infinite capacity).
  *  `facing` (radians, ship-local) is the direction the weapon fires relative
  *  to the host ship's heading; default 0 means the weapon fires along +x in
  *  ship-local space, i.e. forward. A side-mounted weapon uses π/2 (left) or
@@ -34,6 +37,9 @@ export const WeaponEffect = z.object({
   spread: z.number().min(0),
   /** Finite magazine; consumes 1 per shot and cannot fire at 0. */
   ammo: z.number().int().min(0).optional(),
+  /** Local magazine size (int >= 0) that a crew ammo-run tops the weapon up to.
+   *  Distinct from `ammo` (starting count). When omitted, weapon is unlimited. */
+  ammoCapacity: z.number().int().min(0).optional(),
   /** Direction the weapon fires, in radians, ship-local. Defaults to 0
    *  (fires along ship heading) so existing modules that never declared it
    *  behave exactly as before. */
@@ -170,6 +176,16 @@ export const HullEffect = z.object({
 });
 export type HullEffect = z.infer<typeof HullEffect>;
 
+/** Effect payload for an ammunition magazine. A magazine is a crewed
+ * ammo store that crew draw rounds from to resupply weapons. The magazine
+ * itself stores a finite amount; crew task logic (phase C+) handles
+ * the hauling and redistribution. */
+export const MagazineEffect = z.object({
+  kind: z.literal("magazine"),
+  ammoStored: z.number().int().min(0),
+});
+export type MagazineEffect = z.infer<typeof MagazineEffect>;
+
 /**
  * Discriminated union of all module effects. New module kinds extend this.
  */
@@ -183,6 +199,7 @@ export const ModuleEffect = z.discriminatedUnion("kind", [
   PointDefenseEffect,
   RepairEffect,
   HullEffect,
+  MagazineEffect,
 ]);
 export type ModuleEffect = z.infer<typeof ModuleEffect>;
 

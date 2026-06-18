@@ -6,6 +6,21 @@ import { WeaponType } from "./module";
 export const BattleSide = z.enum(["attacker", "defender", "draw"]);
 export type BattleSide = z.infer<typeof BattleSide>;
 
+/** Crew member state at a single tick of a recorded battle. */
+export const CrewSnapshot = z.object({
+  id: EntityId,
+  /** Ship-local position (relative to the ship's position). */
+  x: z.number(),
+  y: z.number(),
+  /** Current crew state: idle (no task), walking (moving), manning (at a module),
+   *  hauling (carrying ammo/power), injured (incapacitated). */
+  state: z.enum(["idle", "walking", "manning", "hauling", "injured"]),
+  hp: z.number(),
+  /** What the crew is carrying (if state is hauling). Optional for idle/walking/manning. */
+  carrying: z.enum(["power", "ammo"]).optional(),
+});
+export type CrewSnapshot = z.infer<typeof CrewSnapshot>;
+
 /** Environmental modifier for a battle (GSB's "spatial anomalies"). */
 export const BattleAnomaly = z.enum([
   "none",
@@ -56,6 +71,7 @@ export const ShipSnapshot = z.object({
           "pointDefense",
           "repair",
           "hull",
+          "magazine",
         ]),
         /** Position in ship-local (design) coordinates, for rendering. */
         x: z.number(),
@@ -73,9 +89,18 @@ export const ShipSnapshot = z.object({
          * replays.
          */
         turretAngle: z.number().optional(),
+        /** Whether this module is manned by crew. Optional for backward compatibility. */
+        manned: z.boolean().optional(),
+        /** Ammo remaining in a weapon module. Optional, complements WeaponEffect.ammo. */
+        ammo: z.number().int().min(0).optional(),
+        /** Charge level or progress for applicable modules. Optional for backward compatibility. */
+        charge: z.number().optional(),
       }),
     )
     .optional(),
+  /** Crew members aboard this ship. Optional for backward compatibility with
+   *  older replays that predate crew. */
+  crew: z.array(CrewSnapshot).optional(),
   /**
    * True when this ship was spawned as a break-away chunk from a parent
    * ship on the frame it first appeared. The flag clears the next frame
