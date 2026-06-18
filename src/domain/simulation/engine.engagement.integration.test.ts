@@ -31,7 +31,7 @@ function cells(rows: readonly string[]): GridCell[] {
     F: { kind: "module", moduleId: "mod-reactor-fusion", facing: 0 },
     C: { kind: "module", moduleId: "mod-crew-quarters", facing: 0 },
     E: { kind: "module", moduleId: "mod-engine-ion", facing: Math.PI },
-    S: { kind: "module", moduleId: "mod-sensor-array", facing: 0 },
+    S: { kind: "module", moduleId: "mod-sensor-passive", facing: 0 },
   };
   const out: GridCell[] = [];
   for (const row of rows) {
