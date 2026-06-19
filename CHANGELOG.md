@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/Mearman/FleetArchitect/compare/v1.0.0...v1.1.0) (2026-06-19)
+
+
+### Features
+
+* **ui:** show time-since-build tooltip on the version link ([651f38f](https://github.com/Mearman/FleetArchitect/commit/651f38f3c9ec06332462845574b1a8ca0fd3089f))
+
 # 1.0.0 (2026-06-19)
 
 
