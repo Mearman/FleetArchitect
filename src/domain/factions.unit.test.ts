@@ -19,7 +19,7 @@ function makeGrid(rows: readonly string[], tokens: Record<string, GridCell>): Ti
       cells.push(cell);
     }
   }
-  return { cols, rows: rows.length, cells, connections: [] };
+  return { cols, rows: rows.length, cells, connections: [], shape: { outlineMode: "hexadecilinear" } };
 }
 
 const TERRAN: Record<string, GridCell> = {
@@ -46,6 +46,11 @@ function design(faction: string, g: TileGrid): ShipDesign {
     grid: g,
     createdAt: nowIso(),
     updatedAt: nowIso(),
+    source: "user",
+    revision: 1,
+    shipStance: "balanced",
+    crewPriority: "combat",
+    rules: [],
   };
 }
 
@@ -284,7 +289,7 @@ describe("catalogue faction completeness", () => {
         }
         cells.push({ kind: "module", moduleId: crew.id, facing: 0 });
       }
-      const grid: TileGrid = { cols: cells.length, rows: 1, cells, connections: [] };
+      const grid: TileGrid = { cols: cells.length, rows: 1, cells, connections: [], shape: { outlineMode: "hexadecilinear" } };
       const { valid, faults } = analyseShipDesign(design(faction, grid), catalog());
       expect(valid, `${faction} minimal ship invalid: ${JSON.stringify(faults)}`).toBe(true);
     });

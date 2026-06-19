@@ -65,6 +65,11 @@ export function ShipDesignerRoute() {
       grid: working.grid,
       createdAt: nowIso(),
       updatedAt: nowIso(),
+      source: "user",
+      revision: 1,
+      shipStance: "balanced",
+      crewPriority: "combat",
+      rules: [],
     };
     return analyseShipDesign(design, catalog());
   }, [working]);
@@ -180,7 +185,7 @@ export function ShipDesignerRoute() {
           cn.to.col < cols &&
           cn.to.row < rows,
       );
-      return { ...prev, grid: { cols, rows, cells, connections } };
+      return { ...prev, grid: { cols, rows, cells, connections, shape: prev.grid.shape } };
     });
     setSelected(null);
   }
@@ -194,6 +199,11 @@ export function ShipDesignerRoute() {
       grid: working.grid,
       createdAt: working.createdAt ?? now,
       updatedAt: now,
+      source: "user",
+      revision: 1,
+      shipStance: "balanced",
+      crewPriority: "combat",
+      rules: [],
     };
     await storage().ships.save(design);
     setWorking((prev) => ({ ...prev, id: design.id, createdAt: design.createdAt }));
@@ -454,6 +464,11 @@ export function ShipDesignerRoute() {
                     grid: working.grid,
                     createdAt: working.createdAt ?? nowIso(),
                     updatedAt: nowIso(),
+                    source: "user",
+                    revision: 1,
+                    shipStance: "balanced",
+                    crewPriority: "combat",
+                    rules: [],
                   },
                 }}
               />

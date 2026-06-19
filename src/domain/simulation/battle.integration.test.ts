@@ -31,9 +31,15 @@ function armedFighter(id: string): ShipDesign {
         { kind: "module", moduleId: "mod-crew-quarters", facing: 0 },
       ],
       connections: [],
+      shape: { outlineMode: "hexadecilinear" },
     },
     createdAt: nowIso(),
     updatedAt: nowIso(),
+    source: "user",
+    revision: 1,
+    shipStance: "balanced",
+    crewPriority: "combat",
+    rules: [],
   };
 }
 
@@ -58,6 +64,8 @@ function fleet(id: string, designId: string): Fleet {
     ],
     createdAt: nowIso(),
     updatedAt: nowIso(),
+    source: "user",
+    revision: 1,
   };
 }
 

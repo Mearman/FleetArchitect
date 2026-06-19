@@ -23,9 +23,15 @@ function sampleDesign(): ShipDesign {
         { kind: "hull", tile: "block" },
       ],
       connections: [],
+      shape: { outlineMode: "hexadecilinear" },
     },
     createdAt: nowIso(),
     updatedAt: nowIso(),
+    source: "user",
+    revision: 1,
+    shipStance: "balanced",
+    crewPriority: "combat",
+    rules: [],
   };
 }
 
@@ -56,6 +62,8 @@ describe("sharing round-trip", () => {
       ],
       createdAt: nowIso(),
       updatedAt: nowIso(),
+      source: "user",
+      revision: 1,
     };
     const encoded = encodeShareable({ kind: "fleet", value: fleet });
     const decoded = decodeShareable(encoded);

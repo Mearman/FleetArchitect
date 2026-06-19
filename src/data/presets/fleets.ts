@@ -1,4 +1,10 @@
+import type { input } from "zod";
 import type { Fleet } from "@/schema/fleet";
+
+/** The input shape of a Fleet: fields with a schema default are optional here,
+ *  so preset literals omit them. `presetFleets` (in ./index.ts) runs each entry
+ *  through `Fleet.parse`, which fills the defaults and returns a full `Fleet`. */
+type FleetInput = input<typeof Fleet>;
 
 import { PRESET_TIME } from "@/data/presets/tokens";
 import {
@@ -14,7 +20,7 @@ import {
   strikeOrders,
 } from "@/data/presets/orders";
 
-export const fleetData: Fleet[] = [
+export const fleetData: FleetInput[] = [
   // --- Terran fleets ---
   {
     id: "preset-fleet-battleline",

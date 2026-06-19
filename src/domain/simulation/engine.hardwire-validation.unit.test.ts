@@ -42,7 +42,7 @@ function grid(
       cells.push(cell);
     }
   }
-  return { cols, rows: rows.length, cells, connections };
+  return { cols, rows: rows.length, cells, connections, shape: { outlineMode: "hexadecilinear" } };
 }
 
 function design(g: TileGrid): ShipDesign {
@@ -53,6 +53,11 @@ function design(g: TileGrid): ShipDesign {
     grid: g,
     createdAt: nowIso(),
     updatedAt: nowIso(),
+    source: "user",
+    revision: 1,
+    shipStance: "balanced",
+    crewPriority: "combat",
+    rules: [],
   };
 }
 

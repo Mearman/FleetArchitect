@@ -169,6 +169,8 @@ export function FleetBuilderRoute() {
       ships: working.rows.map(toFleetShip),
       createdAt: working.createdAt ?? now,
       updatedAt: now,
+      source: "user",
+      revision: 1,
     };
     await storage().fleets.save(fleet);
     setWorking((prev) => ({
@@ -592,6 +594,8 @@ export function FleetBuilderRoute() {
                   ships: working.rows.map(toFleetShip),
                   createdAt: working.createdAt ?? nowIso(),
                   updatedAt: nowIso(),
+                  source: "user",
+                  revision: 1,
                 },
               }}
             />

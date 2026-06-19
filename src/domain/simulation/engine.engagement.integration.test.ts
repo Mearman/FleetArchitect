@@ -65,9 +65,14 @@ function corvette(id: string): ShipDesign {
     id,
     name: id,
     faction: "Terran",
-    grid: { cols: 4, rows: 2, cells: cells(rows), connections: [] },
+    grid: { cols: 4, rows: 2, cells: cells(rows), connections: [], shape: { outlineMode: "hexadecilinear" } },
     createdAt: nowIso(),
     updatedAt: nowIso(),
+    source: "user",
+    revision: 1,
+    shipStance: "balanced",
+    crewPriority: "combat",
+    rules: [],
   };
 }
 
@@ -86,6 +91,8 @@ function fleetOf(id: string, designId: string, x: number, ys: readonly number[])
     })),
     createdAt: nowIso(),
     updatedAt: nowIso(),
+    source: "user",
+    revision: 1,
   };
 }
 

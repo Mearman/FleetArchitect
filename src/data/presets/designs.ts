@@ -1,4 +1,11 @@
+import type { input } from "zod";
 import type { ShipDesign } from "@/schema/ship";
+
+/** The input shape of a ShipDesign: fields with a schema default are optional
+ *  here, so preset literals omit them. `presetDesigns` (in ./index.ts) runs
+ *  each entry through `ShipDesign.parse`, which fills the defaults and returns
+ *  a full `ShipDesign`. */
+type ShipDesignInput = input<typeof ShipDesign>;
 
 import {
   corsairGrid,
@@ -27,7 +34,7 @@ import {
 //   All Terran modules with crew draw on the connected walkable surface, so
 //   any connected design with crew quarters satisfies unreachableStation.
 
-export const designData: ShipDesign[] = [
+export const designData: ShipDesignInput[] = [
   // ===========================================================================
   // Terran designs — ferro-steel hulls, energy shields, conventional drives.
   // Angular, symmetrical warships with armoured prows and aft engine banks.

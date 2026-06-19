@@ -19,6 +19,7 @@ function design(): ShipDesign {
       { kind: "module", moduleId: "mod-reactor-fusion", facing: 0 },
     ],
     connections: [],
+    shape: { outlineMode: "hexadecilinear" },
   };
   return {
     id: "d-1",
@@ -27,6 +28,11 @@ function design(): ShipDesign {
     grid,
     createdAt: nowIso(),
     updatedAt: nowIso(),
+    source: "user",
+    revision: 1,
+    shipStance: "balanced",
+    crewPriority: "combat",
+    rules: [],
   };
 }
 
@@ -40,6 +46,8 @@ function fleet(): Fleet {
     ],
     createdAt: nowIso(),
     updatedAt: nowIso(),
+    source: "user",
+    revision: 1,
   };
 }
 
@@ -81,6 +89,7 @@ describe("resolveFleetToCombatShips (grid)", () => {
           { kind: "module", moduleId: "mod-reactor-fusion", facing: 0 },
         ],
         connections: [],
+        shape: { outlineMode: "hexadecilinear" },
       },
     };
     const [ship] = resolveFleetToCombatShips(

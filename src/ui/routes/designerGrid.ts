@@ -17,7 +17,7 @@ export function blankGrid(cols: number, rows: number): TileGrid {
   }));
   const centre = Math.floor(rows / 2) * cols + Math.floor(cols / 2);
   cells[centre] = { kind: "module", moduleId: "mod-reactor-fusion", facing: 0 };
-  return { cols, rows, cells, connections: [] };
+  return { cols, rows, cells, connections: [], shape: { outlineMode: "hexadecilinear" } };
 }
 
 export function blankDesign(): WorkingDesign {

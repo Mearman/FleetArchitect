@@ -110,6 +110,35 @@ export const Connection = z.object({
 export type Connection = z.infer<typeof Connection>;
 
 /**
+ * Chamfer resolution at which the hull outline polygon is traced around the
+ * ship's protective shell (armour cells plus wall/door edges). The outline
+ * itself is computed in a later phase (`src/domain/outline.ts`); the grid
+ * only records the author's preferred resolution so the same grid renders
+ * identically everywhere.
+ *
+ * - `octilinear`     — 45-degree chamfers (8 compass directions).
+ * - `hexadecilinear` — 22.5-degree chamfers (16 directions); the default, a
+ *                      good balance of silhouette fidelity and vertex count.
+ * - `arbitrary`      — smooth boundary, chamfered at every boundary vertex.
+ */
+export const OutlineMode = z.enum([
+  "octilinear",
+  "hexadecilinear",
+  "arbitrary",
+]);
+export type OutlineMode = z.infer<typeof OutlineMode>;
+
+/**
+ * Per-grid shape metadata. `outlineMode` selects the chamfer resolution for
+ * the hull outline trace (Phase 7). Defaults to `hexadecilinear` so existing
+ * grids parse unchanged and render at the recommended fidelity.
+ */
+export const GridShape = z.object({
+  outlineMode: OutlineMode.default("hexadecilinear"),
+});
+export type GridShape = z.infer<typeof GridShape>;
+
+/**
  * A rectangular tile grid. `cells` is a flat, row-major array of length
  * `cols * rows`: the cell at (col, row) lives at index `row * cols + col`,
  * with col increasing left-to-right (+x) and row increasing top-to-bottom
@@ -117,7 +146,9 @@ export type Connection = z.infer<typeof Connection>;
  * to equal `cols * rows` so a malformed grid fails loudly at parse time.
  *
  * `connections` are hardwire conduits between module cells; it defaults to an
- * empty array so grids authored before hardwiring parse unchanged.
+ * empty array so grids authored before hardwiring parse unchanged. `shape`
+ * carries outline-render metadata; it defaults to a `hexadecilinear`
+ * outline so existing grids parse unchanged.
  */
 export const TileGrid = z
   .object({
@@ -125,6 +156,7 @@ export const TileGrid = z
     rows: z.number().int().min(1),
     cells: z.array(GridCell),
     connections: z.array(Connection).default([]),
+    shape: GridShape.default({ outlineMode: "hexadecilinear" }),
   })
   .refine((g) => g.cells.length === g.cols * g.rows, {
     message: "cells length must equal cols * rows",
