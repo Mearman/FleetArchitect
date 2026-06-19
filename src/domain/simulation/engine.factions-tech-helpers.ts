@@ -235,7 +235,16 @@ export function modularShip(opts: {
       command: true,
     },
   ];
-  // Engine: exhaust aft (facing π) ⇒ thrust along +x (the ship's forward axis).
+  // Engines. A competent combat ship mounts drive in BOTH directions: a rear
+  // engine (exhaust aft, facing PI) for prograde thrust along +x, and a fore
+  // braking engine (exhaust forward, facing 0) for retrograde thrust along -x.
+  // Symmetric thrust means the ship decelerates as fast as it accelerates and
+  // brakes directly along its heading — no flip-and-burn, no lateral-thrust
+  // injection from sweeping the nozzle mid-turn, precise stop-in-time
+  // range-keeping with no oscillation. A rear-only ship (the `rammer` fixture,
+  // or one that has lost its fore drive to damage) must flip PI to brake and is
+  // correspondingly less precise; that path is covered by the rammer and the
+  // aft-only branches of the movement controller.
   if (thrust > 0) {
     modules.push(
       moduleOf(
@@ -247,14 +256,35 @@ export function modularShip(opts: {
         5,
         0,
       ),
+      moduleOf(
+        `${prefix}-brk`,
+        { kind: "engine", thrust, facing: 0 },
+        1,
+        0,
+        moduleHp,
+        5,
+        0,
+      ),
+      // Lateral (RCS translation) thrusters: two balanced pairs at ±x, each
+      // pair facing the same lateral direction so their firing torques cancel
+      // (pure lateral force, no spin). RCS mass is low (1 each) — translation
+      // thrusters are small compared to the main drive. The +y pair (facing −π/2, exhaust −y ⇒
+      // force +y) and the −y pair (facing π/2 ⇒ force −y) give bidirectional
+      // lateral thrust, letting the ship cancel perpendicular drift without
+      // turning away from its target — so facing (to aim weapons) and
+      // translation (to station-keep) are decoupled.
+      moduleOf(`${prefix}-lp1`, { kind: "engine", thrust, facing: -Math.PI / 2 }, 2, 0, moduleHp, 1, 0),
+      moduleOf(`${prefix}-lp2`, { kind: "engine", thrust, facing: -Math.PI / 2 }, -2, 0, moduleHp, 1, 0),
+      moduleOf(`${prefix}-lm1`, { kind: "engine", thrust, facing: Math.PI / 2 }, 2, 0, moduleHp, 1, 0),
+      moduleOf(`${prefix}-lm2`, { kind: "engine", thrust, facing: Math.PI / 2 }, -2, 0, moduleHp, 1, 0),
     );
   }
   // Reaction wheel: pure commandable torque, available whether or not the
-  // ship is thrusting. The torque rating is derived from the grid's actual
-  // moment of inertia so the resulting angular acceleration matches the
-  // legacy scalar model (alpha = turnRate / legacyMoI, where legacyMoI was
-  // 5). Computing MoI from the real cell distribution keeps the agility
-  // comparable however the grid is laid out.
+  // ship is thrusting. Sized so the ship's angular acceleration matches the
+  // requested `turnRate` directly: alpha = torque / MoI, so torque = alpha *
+  // MoI = turnRate * MoI. `turnRate` is a physical angular acceleration
+  // (rad/tick^2), not a legacy feel scalar. Computing MoI from the real cell
+  // distribution keeps the agility comparable however the grid is laid out.
   if (turnRate > 0) {
     // Preview the reaction wheel's own cell so MoI accounts for it.
     const preview = moduleOf(
@@ -267,8 +297,8 @@ export function modularShip(opts: {
       0,
     );
     const moi = momentOfInertiaOf([...modules, preview]);
-    // alpha = torque / MoI; target alpha = turnRate / 5 (the legacy model).
-    const torque = (moi * turnRate) / 5;
+    // alpha = torque / MoI; target alpha = turnRate (rad/tick^2).
+    const torque = moi * turnRate;
     modules.push(
       moduleOf(
         `${prefix}-rw`,
@@ -294,8 +324,8 @@ export function modularShip(opts: {
         detectionRange: 4000,
         nebulaImmune: false,
       },
-      1,
       0,
+      1,
       moduleHp,
       5,
       0,
@@ -306,7 +336,7 @@ export function modularShip(opts: {
   for (let i = 0; i < weapons.length; i += 1) {
     const w = weapons[i];
     if (w === undefined) continue;
-    modules.push(moduleOf(`${prefix}-w${i}`, w, 0, 1 + i, moduleHp, 5, 0));
+    modules.push(moduleOf(`${prefix}-w${i}`, w, -2 - i, 0, moduleHp, 5, 0));
   }
   // Shield module — its `capacity` becomes the ship's shield pool. The
   // stats-level shieldCapacity mirrors it so the initial shield value
