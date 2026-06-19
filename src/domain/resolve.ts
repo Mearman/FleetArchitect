@@ -2,7 +2,11 @@ import { createId } from "@/domain/id";
 import { analyseShipDesign } from "@/domain/stats";
 import { cellToLocal, deriveClassification, deriveRadius, footprint } from "@/domain/grid";
 import type { Catalog } from "@/domain/catalog";
-import type { CombatShip, ResolvedModule } from "@/domain/simulation/types";
+import type {
+  CombatShip,
+  ResolvedHardwire,
+  ResolvedModule,
+} from "@/domain/simulation/types";
 import type { Fleet } from "@/schema/fleet";
 import type { GridCell } from "@/schema/grid";
 import type { ModuleEffect } from "@/schema/module";
@@ -73,12 +77,14 @@ export function resolveFleetToCombatShips(
   for (const { deployed, design, radius } of resolved) {
     const { stats } = analyseShipDesign(design, catalog);
     const modules = resolveModules(design, catalog);
+    const hardwires = resolveHardwires(design, modules);
     const x = dir * (DEPLOY.edgeInset - radius);
     const y = cursorY + radius;
     cursorY += radius * 2 + DEPLOY.shipMargin;
     ships.push({
       instanceId: createId("ship"),
       designId: design.id,
+      faction: design.faction,
       side,
       stats,
       position: { x, y },
@@ -86,6 +92,7 @@ export function resolveFleetToCombatShips(
       orders: deployed.orders,
       classification: deriveClassification(design.grid),
       ...(modules.length > 0 ? { modules } : {}),
+      ...(hardwires.length > 0 ? { hardwires } : {}),
     });
   }
   return ships;
@@ -188,6 +195,37 @@ function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] 
           : {}),
       });
     }
+  }
+  return out;
+}
+
+/**
+ * Resolve the design grid's hardwire `connections` into per-ship link data the
+ * engine can consume. Each connection's `from`/`to` cell coordinates are mapped
+ * to the slot id of the module occupying that cell (the same `cell-<col>-<row>`
+ * convention `resolveModules` uses). Only connections whose endpoints are both
+ * module cells (present in `modules`) are resolved; the schema already
+ * guarantees the endpoints are in-bounds and distinct, and the design validator
+ * reports incompatible source/sink pairings, so well-formed links are resolved
+ * directly here. A design with no connections yields an empty array, so an
+ * unhardwired ship carries no hardwire data and the engine behaves identically.
+ */
+function resolveHardwires(
+  design: ShipDesign,
+  modules: readonly ResolvedModule[],
+): ResolvedHardwire[] {
+  const connections = design.grid.connections;
+  if (connections.length === 0) return [];
+
+  const slotByCell = new Map<string, string>();
+  for (const m of modules) slotByCell.set(`${m.col},${m.row}`, m.slotId);
+
+  const out: ResolvedHardwire[] = [];
+  for (const c of connections) {
+    const sourceSlotId = slotByCell.get(`${c.from.col},${c.from.row}`);
+    const sinkSlotId = slotByCell.get(`${c.to.col},${c.to.row}`);
+    if (sourceSlotId === undefined || sinkSlotId === undefined) continue;
+    out.push({ sourceSlotId, sinkSlotId, resource: c.resource });
   }
   return out;
 }

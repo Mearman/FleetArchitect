@@ -1,5 +1,6 @@
 import type { ShipStats } from "@/domain/stats";
 import type { Orders } from "@/schema/fleet";
+import type { HardwireResource } from "@/schema/grid";
 import type { ShipClassification } from "@/schema/hull";
 import type { ModuleEffect } from "@/schema/module";
 import type { BattleAnomaly, BattleSide } from "@/schema/battle";
@@ -13,6 +14,10 @@ import type { Vec2 } from "@/schema/primitives";
 export interface CombatShip {
   instanceId: string;
   designId: string;
+  /** The faction this ship's design belongs to, copied from `ShipDesign.faction`
+   *  by the resolver. Carried through to the battle roster so the renderer can
+   *  colour combatants by faction without bloating per-tick snapshots. */
+  faction?: string;
   side: "attacker" | "defender";
   stats: ShipStats;
   position: Vec2;
@@ -27,6 +32,32 @@ export interface CombatShip {
    * When absent, the engine uses the aggregated model for backward compat.
    */
   modules?: ResolvedModule[];
+  /**
+   * Resolved hardwire conduits for this ship: each is a fixed one-to-one link
+   * from a source module's slot to a sink module's slot carrying one resource,
+   * derived from the design grid's `connections` by the resolver. Empty (and
+   * omitted) on every design with no connections, so the engine's behaviour is
+   * byte-identical to before for unhardwired ships. The per-tick loop reads
+   * these (once carried onto SimShip) to feed sinks directly from their source.
+   */
+  hardwires?: ResolvedHardwire[];
+}
+
+/**
+ * A resolved hardwire conduit: a fixed one-to-one link between two module slots
+ * on the same ship, carrying one resource. Resolved from a grid `Connection` by
+ * mapping its `from`/`to` cell coordinates to the occupying modules' slot ids.
+ * Behaviour (severance on endpoint death, source division across sinks) is
+ * implemented by the engine in a later stage; the resolver only carries the
+ * structure.
+ */
+export interface ResolvedHardwire {
+  /** Slot id of the resource source module (magazine / reactor / command). */
+  sourceSlotId: string;
+  /** Slot id of the consumer (sink) module the source feeds. */
+  sinkSlotId: string;
+  /** Which resource this conduit carries. */
+  resource: HardwireResource;
 }
 
 /** Per-module initial state, built from a ShipDesign by the resolver. */
