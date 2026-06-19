@@ -1,6 +1,8 @@
 import type { CellEdges } from "@/schema/grid";
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
+import { toSimShip } from "@/domain/simulation/engine/setup";
+import { shipForceAndTorque } from "@/domain/simulation/engine/physics";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
 import { defaultOrders } from "@/schema/fleet";
@@ -439,33 +441,29 @@ describe("engine.rigidbody — moment of inertia and engine torque", () => {
     // third law). CoM is at y = +5 (midway between the two equal-mass
     // modules). Lever arm from CoM: (0, +10) − (0, +5) = (0, +5). Force:
     // (−F, 0). Torque = r × F = rx*Fy − ry*Fx = 0*0 − (+5)*(−F) = +5F
-    // (positive, counter-clockwise — facing drifts positive).
-    const ship = modularShip("s1", "attacker", { x: 0, y: 0 }, 0, [
-      moduleOf(
-        "e1",
-        { kind: "engine", thrust: 1.0, facing: 0 },
-        0,
-        10,
-        100,
-        5,
-      ),
-    ]);
-    const target = modularShip("d1", "defender", { x: 500, y: 0 }, 0, []);
-    ship.orders = defaultOrders;
-    const result = runBattle(inputs([ship, target]));
-    // Under Newtonian rotation the angular velocity from this off-CoM thrust
-    // accumulates with no speed cap, so by ~20 ticks the ship has spun well
-    // past π and the shortest signed delta wraps. Read an early, narrow window
-    // (frames 2 → 5) where the spin is still a fraction of a radian, so the
-    // sign is unambiguous: the torque is +5F (counter-clockwise), so facing
-    // must increase.
-    const a = result.frames[2];
-    const b = result.frames[5];
-    if (a === undefined || b === undefined) throw new Error("missing frames");
-    const fa = findShip(a, "s1").facing ?? 0;
-    const fb = findShip(b, "s1").facing ?? 0;
-    const delta = angleDelta(fa, fb);
-    expect(delta, "off-CoM engine must spin the ship counter-clockwise (positive)").toBeGreaterThan(1e-4);
+    // (positive, counter-clockwise).
+    //
+    // Asserted on the force/torque primitive directly. In battle the engine's
+    // firing is controller-mediated: with the target to the +x and the only
+    // engine producing −x thrust, the translation controller commands a
+    // prograde closing burn that this rear-facing-forward engine cannot serve,
+    // so it never fires and the ship never spins. The torque geometry the test
+    // is about lives in `shipForceAndTorque(..., "all")`, so we exercise that.
+    const ship = toSimShip(
+      modularShip("s1", "attacker", { x: 0, y: 0 }, 0, [
+        moduleOf(
+          "e1",
+          { kind: "engine", thrust: 1.0, facing: 0 },
+          0,
+          10,
+          100,
+          5,
+        ),
+      ]),
+      () => 0,
+    );
+    const { torque } = shipForceAndTorque(ship, 0, true, "all");
+    expect(torque, "off-CoM engine must produce positive (counter-clockwise) torque").toBeGreaterThan(1e-4);
   });
 });
 

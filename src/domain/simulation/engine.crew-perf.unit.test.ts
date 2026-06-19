@@ -78,23 +78,32 @@ describe("engine.crew-perf — preset matchups still resolve", () => {
 });
 
 describe("engine.crew-perf — cache effectiveness", () => {
-  it("the crew path cache serves the overwhelming majority of lookups", () => {
+  it("the crew path cache serves the majority of lookups", () => {
     // Deterministic guard for the per-ship path cache. Its whole point is to
     // avoid recomputing A* every tick, and cache effectiveness is a pure
     // function of the (deterministic) battle — not the hardware — so we assert
     // a hit rate rather than a wall-clock budget, which flaked on slow CI
-    // runners. The heaviest crewed preset (Battle Line vs Armoured Spearhead,
-    // 464 crew) reuses paths heavily: a healthy hit rate is ~98%. A regression
-    // that removes or bypasses the cache drops this to ~0 and fails here
-    // immediately and reproducibly, on any machine.
+    // runners. A regression that removes or bypasses the cache drops the hit
+    // rate to ~0 and fails here immediately and reproducibly, on any machine.
     resetPathCacheStats();
     runBattle(buildInputs("preset-fleet-battleline", "preset-fleet-spearhead"));
     const { hitRate, total } = pathCacheStats();
     expect(total, "crew path lookups actually ran").toBeGreaterThan(0);
-    // Phase 2 lowered the hit rate slightly: crew now walks deck-only through
-    // edge-gated corridors (rather than across every solid cell), so the
-    // walkable graph is sparser and paths vary more. A healthy rate is still
-    // ~89%; a regression that bypasses the cache drops this to ~0.
-    expect(hitRate, "crew path cache hit rate").toBeGreaterThan(0.85);
+    // Phase 3 (frictionless Newtonian movement) lowered the steady-state hit
+    // rate. Cache effectiveness is a pure function of how the battle evolves —
+    // which crew (from, to) pairs recur, and how often a module death wipes the
+    // cache. Undamped movement makes ships close, brake, and die on a different
+    // cadence than the old damped model, so the heavy preset now reuses fewer
+    // distinct paths before topology changes invalidate them, and the rate is
+    // genuinely seed-dependent (measured across several seeds it ranges ~0.60 to
+    // ~0.88 for this matchup, ~0.64 on the default seed 42). The cache is still
+    // doing real work — it serves a clear majority of lookups — but "~89%" was
+    // calibrated to the damped regime and no longer holds. We therefore assert
+    // the rate stays above half: comfortably below the observed steady state, so
+    // it does not flake on a slow seed, yet far above the ~0 a bypassed or
+    // removed cache would produce. The cross-run byte-identity guards in
+    // engine.crew.unit.test.ts prove the cache does not change behaviour; this
+    // only proves it remains effective.
+    expect(hitRate, "crew path cache hit rate").toBeGreaterThan(0.5);
   }, 30000);
 });

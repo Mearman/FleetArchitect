@@ -65,7 +65,9 @@ function makeShip(opts: {
       facing: opts.facing,
       structure: opts.structure,
       thrust: opts.thrust ?? 0.5,
-      turnRate: opts.turnRate ?? 0.1,
+      // Physical angular acceleration (rad/tick^2) under the frictionless
+      // model; rescaled from the legacy /5 scalar.
+      turnRate: opts.turnRate ?? 0.02,
       weapons: opts.weapons,
       orders: opts.orders,
     });
@@ -185,7 +187,7 @@ describe("engine.anomaly-ai", () => {
               facing: Math.PI,
               structure: 99999,
               thrust: 60,
-              turnRate: 0.5,
+              turnRate: 0.1,
               weapons: [weapon()],
               orders: { engageRange: "medium" },
             }),
@@ -237,7 +239,7 @@ describe("engine.anomaly-ai", () => {
               facing: Math.PI,
               structure: 99999,
               thrust: 60,
-              turnRate: 0.5,
+              turnRate: 0.1,
               weapons: [weapon()],
               orders: { engageRange: "medium" },
             }),
@@ -265,12 +267,7 @@ describe("engine.anomaly-ai", () => {
     expect(holeY).toBeGreaterThan(10);
   });
 
-  // SKIP — Pending Phase 3 (movement): the modular Newtonian movement model
-  // has no legacy speed clamp, so the high-thrust attacker overshoots the
-  // shorter nebula desired engagement range and cannot brake in time — it
-  // flies past the defender instead of settling closer. Re-enable once Phase
-  // 3's stop-in-time controller brakes correctly within the desired range.
-  it.skip("nebula: ships close to a shorter engagement range than in open space", () => {
+  it("nebula: ships close to a shorter engagement range than in open space", () => {
     // An attacker on long-range orders approaches a stationary defender from
     // well outside its desired range. In open space it settles at its full
     // stand-off range; in a nebula the desired range is scaled down, so it
@@ -286,7 +283,7 @@ describe("engine.anomaly-ai", () => {
               y: 0,
               facing: 0,
               thrust: 40,
-              turnRate: 0.5,
+              turnRate: 0.1,
               weapons: [weapon({ range: 600, tracking: 1 })],
               orders: { engageRange: "long", stance: "balanced" },
             }),
@@ -324,7 +321,7 @@ describe("engine.anomaly-ai", () => {
               y: 0,
               facing: 0,
               thrust: 40,
-              turnRate: 0.5,
+              turnRate: 0.1,
               weapons: [weapon({ range: 600 })],
               orders: { engageRange: "long", stance: "balanced" },
             }),
@@ -361,7 +358,7 @@ describe("engine.anomaly-ai", () => {
             y: 30,
             facing: 0,
             thrust: 30,
-            turnRate: 0.3,
+            turnRate: 0.06,
             weapons: [weapon({ range: 400 })],
           }),
           makeShip({
@@ -371,7 +368,7 @@ describe("engine.anomaly-ai", () => {
             y: -30,
             facing: Math.PI,
             thrust: 30,
-            turnRate: 0.3,
+            turnRate: 0.06,
             weapons: [weapon({ range: 400 })],
           }),
         ],
@@ -398,7 +395,7 @@ describe("engine.anomaly-ai", () => {
             y: 0,
             facing: 0,
             thrust: 40,
-            turnRate: 0.5,
+            turnRate: 0.1,
             weapons: [weapon({ range: 600, damage: 25, cooldown: 5 })],
             orders: { engageRange: "long" },
           }),

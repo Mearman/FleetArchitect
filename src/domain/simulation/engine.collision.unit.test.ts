@@ -138,6 +138,37 @@ function rammer(
   };
 }
 
+/** A coasting body: hull cells for collision geometry, NO engine (so it ejects
+ *  no reaction mass — a closed system whose only interaction is the contact
+ *  impulse) entering the arena with a given initial velocity. Used by the
+ *  momentum-conservation test: a thrusting ship is an open system (its exhaust
+ *  carries momentum away), so conservation of momentum as a closed-system law
+ *  is only testable on coasting bodies. */
+function coaster(
+  id: string,
+  side: "attacker" | "defender",
+  position: { x: number; y: number },
+  velocity: { x: number; y: number },
+): CombatShip {
+  return {
+    instanceId: id,
+    designId: `d-${id}`,
+    faction: "test",
+    side,
+    stats: stats({ thrust: 0 }),
+    position,
+    velocity,
+    facing: side === "attacker" ? 0 : Math.PI,
+    orders: defaultOrders,
+    classification: "frigate",
+    modules: [
+      moduleOf("c1", { kind: "power", output: 40 }, 0, 0, 5, true),
+      moduleOf("f1", { kind: "hull" }, 1, 0, 5),
+      moduleOf("f2", { kind: "hull" }, -1, 0, 5),
+    ],
+  };
+}
+
 function inputs(ships: CombatShip[]): BattleInputs {
   return {
     ships,
@@ -217,25 +248,43 @@ describe("engine.collision — ship-vs-ship", () => {
   });
 
   it("conserves total linear momentum across a symmetric collision", () => {
-    // Equal-mass mirror-image ships: by symmetry total momentum is zero at
-    // every tick (A and B carry equal and opposite momentum). The collision
-    // impulse is internal and equal-and-opposite, so it cannot break that —
-    // total px and py stay zero throughout, including the collision frames.
-    const a = rammer("a1", "attacker", { x: -50, y: 0 }, 0);
-    const b = rammer("b1", "defender", { x: 50, y: 0 }, Math.PI);
+    // Two equal-mass coasting bodies enter the arena with equal and opposite
+    // velocity and collide head-on. They have no engine, so the pair is a
+    // CLOSED system: no reaction mass is ejected, and the only interaction is
+    // the contact impulse — which the resolver applies as equal-and-opposite
+    // impulses (-j to a, +j to b) at the shared contact point. Conservation of
+    // momentum is a closed-system law, so on coasting bodies the total px/py
+    // must stay at its initial value (zero by symmetry) throughout, including
+    // the collision frames.
+    //
+    // (A thrusting ship is an OPEN system — its exhaust carries momentum away —
+    // so the ship pair's momentum is not conserved under power. Testing the
+    // conservation law therefore requires coasting bodies, which is also the
+    // physically honest setup: it isolates the resolver from the external
+    // thrust force.)
+    const a = coaster("a1", "attacker", { x: -40, y: 0 }, { x: 4, y: 0 });
+    const b = coaster("b1", "defender", { x: 40, y: 0 }, { x: -4, y: 0 });
     const result = runBattle(inputs([a, b]));
-    // Both ships have identical mass (cells 5 + 5 = 10). Total momentum is
-    // mass * (vA + vB); with equal masses the sum of velocities must stay ~0.
     let maxTotalSpeed = 0;
     for (const f of result.frames) {
       const sa = find(f, "a1");
       const sb = find(f, "b1");
-      const totVx = (sa.vx ?? 0) + (sb.vx ?? 0);
-      const totVy = (sa.vy ?? 0) + (sb.vy ?? 0);
-      const tot = Math.hypot(totVx, totVy);
+      const tot = Math.hypot(
+        (sa.vx ?? 0) + (sb.vx ?? 0),
+        (sa.vy ?? 0) + (sb.vy ?? 0),
+      );
       if (tot > maxTotalSpeed) maxTotalSpeed = tot;
     }
-    expect(maxTotalSpeed, "symmetric collision must keep total momentum ~0").toBeCloseTo(0, 6);
+    // The resolver's only residual is floating-point (each ship runs the
+    // contact point through its own facing rotation and worldToLocal, so the
+    // two impulses round slightly differently). That is many orders of
+    // magnitude below the ships' own speed; 1e-6 is a generous absolute
+    // ceiling that still fails hard if the resolver ever became genuinely
+    // asymmetric.
+    expect(
+      maxTotalSpeed,
+      "a closed-system collision must conserve total momentum to floating-point precision",
+    ).toBeLessThan(1e-6);
   });
 
   it("friendlies are solid too (all-vs-all collision)", () => {

@@ -1,6 +1,8 @@
 import type { CellEdges } from "@/schema/grid";
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
+import { toSimShip } from "@/domain/simulation/engine/setup";
+import { availableThrust, shipForceAndTorque } from "@/domain/simulation/engine/physics";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
 import { defaultOrders } from "@/schema/fleet";
@@ -23,6 +25,17 @@ const OPEN_EDGES: CellEdges = {
  * `-(cos facing, sin facing) · thrust`. Its (x, y) on the hull gives the lever
  * arm for the torque calculation.
  *
+ * These tests assert on the force/torque PRIMITIVE directly — `shipForceAndTorque`
+ * with `thrustMode: "all"` and `availableThrust` — rather than observing a ship
+ * chase a target through `runBattle`. Under frictionless movement, engine firing
+ * is controller-mediated: the translation controller fires only the engines whose
+ * local force serves the commanded prograde/retrograde axis, so a side-only or
+ * forward-exhaust engine never fires when the ship is simply closing on a target.
+ * Routing these geometric assertions through a battle would therefore test the
+ * firing policy, not the force math. Building a SimShip and calling the primitive
+ * directly isolates the per-cell force/torque computation, which is what each test
+ * here is actually about.
+ *
  * Expected behaviours verified here:
  *   - A rear-mounted engine (exhaust aft, `facing` ≈ π) drives the ship
  *     forward (+x) along its heading, just like the legacy scalar model.
@@ -33,7 +46,7 @@ const OPEN_EDGES: CellEdges = {
  *   - Two opposing engines cancel linear thrust (zero net force) and
  *     produce no torque when symmetrically placed.
  *   - Unbalanced engines (one on each side, asymmetric positions) spin the
- *     ship — angVel becomes non-zero.
+ *     ship — net torque is non-zero.
  *   - Non-hull modular ships without an explicit facing default to facing = 0
  *     (exhaust forward), so the un-faced engine pushes the ship backward.
  *   - The model is deterministic — running the same battle twice yields
@@ -180,139 +193,99 @@ function inputs(ships: CombatShip[]): BattleInputs {
   };
 }
 
-/** Linear velocity of the named ship in the given frame. */
-function velOf(
-  frame: { ships: { instanceId: string; vx?: number; vy?: number }[] },
-  id: string,
-): { vx: number; vy: number } {
-  const s = frame.ships.find((x) => x.instanceId === id);
-  if (s === undefined) throw new Error(`no ship ${id}`);
-  return { vx: s.vx ?? 0, vy: s.vy ?? 0 };
-}
-
-/** Angular velocity of the named ship in the given frame. */
-function angVelOf(
-  frame: { ships: { instanceId: string; facing?: number }[] },
-  id: string,
-  tick: number,
-): number {
-  // Snapshot frames don't carry angVel directly; reconstruct from facing
-  // differences across consecutive frames.
-  void frame;
-  void id;
-  void tick;
-  return 0;
+/**
+ * Build a SimShip (with mass, CoM, and MoI derived by recomputeAggregates) from
+ * a module set, so the force/torque primitive can be exercised directly. The rng
+ * is unused for these crewless, weaponless fixtures (it only staggers weapon
+ * cooldowns), so a constant 0 is fine and keeps the build deterministic.
+ */
+function simShipOf(modules: ResolvedModule[], facing = 0) {
+  return toSimShip(modularShip("s1", "attacker", modules, { x: 0, y: 0 }, facing), () => 0);
 }
 
 describe("engine.cellthrust", () => {
-  it("a rear-mounted engine (exhaust aft, facing π) accelerates the ship forward (+x)", () => {
-    // Ship faces +x (facing = 0). A rear engine's exhaust points aft
-    // (facing = π); by Newton's third law the thrust on the ship is opposite
-    // the exhaust → +x in ship-local; rotated by ship.facing = 0 the world
-    // force is also +x, so the ship accelerates forward. This is the Cosmoteer
-    // "rear-mounted" engine and how every real design mounts its drives.
-    const modules: ResolvedModule[] = [
+  it("a rear-mounted engine (exhaust aft, facing π) produces net local force +x", () => {
+    // A rear engine's exhaust points aft (facing = π); by Newton's third law
+    // the thrust on the ship is opposite the exhaust → +x in ship-local. This
+    // is the Cosmoteer "rear-mounted" engine and how every real design mounts
+    // its drives. Asserted on the primitive directly because in battle the
+    // controller fires this engine only when the commanded thrust axis is
+    // prograde — here we test the force math itself, with `thrustMode: "all"`.
+    const ship = simShipOf([
       moduleOf("c1", { kind: "power", output: 40 }, 0, 0, 100, 5, 0, true),
       moduleOf("e1", engine(1.0, Math.PI), -10, 0, 100),
-    ];
-    const ship = modularShip("s1", "attacker", modules, { x: 0, y: 0 }, 0);
-    const result = runBattle(inputs([ship, dummy("d1", 200)]));
-    // After 50 ticks the ship should have positive vx (moving toward +x).
-    const mid = result.frames[50];
-    if (mid === undefined) throw new Error("no frame at tick 50");
-    const v = velOf(mid, "s1");
-    expect(v.vx, "rear-mounted (facing π) engine should accelerate ship along +x").toBeGreaterThan(0);
-    // No sideways thrust → no perpendicular velocity component.
-    expect(Math.abs(v.vy), "no sideways thrust expected").toBeLessThan(Math.abs(v.vx));
+    ]);
+    const { fx, fy } = shipForceAndTorque(ship, 0, true, "all");
+    expect(fx, "rear-mounted (facing π) engine should push ship along +x").toBeGreaterThan(0);
+    expect(Math.abs(fy), "no sideways force expected").toBeLessThan(Math.abs(fx) * 1e-9 + 1e-9);
+    // availableThrust agrees: this is pure prograde thrust, no retrograde.
+    const { prograde, retrograde } = availableThrust(ship);
+    expect(prograde, "rear engine is forward thrust").toBeGreaterThan(0);
+    expect(retrograde, "rear engine has no aft thrust").toBeCloseTo(0, 9);
   });
 
-  it("a side-thrusting engine (facing π/2) strafes the ship perpendicular to facing", () => {
-    // Ship faces +x. Engine on the right (x = +10) with facing = π/2
-    // produces a force vector along +y in ship-local → world +y after
-    // facing = 0. So the ship strafes upward.
-    const modules: ResolvedModule[] = [
+  it("a side-thrusting engine (facing π/2) produces net local force along -y", () => {
+    // Engine on the right (x = +10) with exhaust facing = π/2 (+y). The thrust
+    // on the ship is opposite the exhaust → −y in ship-local. So the ship
+    // strafes downward (−y). Asserted on the primitive: in battle this side
+    // engine never fires under a prograde/retrograde closing command.
+    const ship = simShipOf([
       moduleOf("c1", { kind: "power", output: 40 }, 0, 0, 100, 5, 0, true),
       moduleOf("e1", engine(1.0, Math.PI / 2), 10, 0, 100),
-    ];
-    const ship = modularShip("s1", "attacker", modules, { x: 0, y: 0 }, 0);
-    const result = runBattle(inputs([ship, dummy("d1", 200, 0)]));
-    const mid = result.frames[50];
-    if (mid === undefined) throw new Error("no frame at tick 50");
-    const v = velOf(mid, "s1");
-    // Side thrust produces perpendicular velocity; longitudinal velocity
-    // is small or zero (engine not pointing along facing).
-    expect(Math.abs(v.vy), "side engine should produce a vy component").toBeGreaterThan(
-      Math.abs(v.vx) / 2,
+    ]);
+    const { fx, fy } = shipForceAndTorque(ship, 0, true, "all");
+    expect(fy, "side engine (exhaust +y) should push ship along -y").toBeLessThan(0);
+    expect(Math.abs(fx), "no longitudinal force from a pure side engine").toBeLessThan(
+      Math.abs(fy) * 1e-9 + 1e-9,
     );
   });
 
-  it("two opposing engines cancel linear thrust and produce no torque when symmetric", () => {
-    // Two engines on the centreline (y = 0): one with facing 0 (pushes
-    // toward +x), one with facing π (pushes toward -x). Net force is
-    // zero; both engines sit on the centreline so they produce no
-    // perpendicular lever arm and therefore no torque either.
-    const modules: ResolvedModule[] = [
+  it("two opposing centreline engines cancel linear thrust and produce no torque", () => {
+    // Two engines on the centreline (y = 0): one with facing 0 (force toward
+    // -x), one with facing π (force toward +x). Net force is zero; both sit on
+    // the centreline so they have no perpendicular lever arm and produce no
+    // torque either. Asserted on the primitive — `thrustMode: "all"` fires both
+    // so the cancellation is observable (the controller would fire only one).
+    const ship = simShipOf([
       moduleOf("c1", { kind: "power", output: 40 }, 0, 0, 100, 5, 0, true),
       moduleOf("eF", engine(1.0, 0), 10, 0, 100),
       moduleOf("eB", engine(1.0, Math.PI), -10, 0, 100),
-    ];
-    const ship = modularShip("s1", "attacker", modules, { x: 0, y: 0 }, 0);
-    const result = runBattle(inputs([ship, dummy("d1", 200)]));
-    const mid = result.frames[50];
-    if (mid === undefined) throw new Error("no frame at tick 50");
-    const v = velOf(mid, "s1");
-    // Net force is zero → velocity should stay near zero.
-    expect(Math.abs(v.vx), "opposing engines should cancel longitudinal thrust").toBeLessThan(0.05);
-    expect(Math.abs(v.vy), "opposing centreline engines should not strafe").toBeLessThan(0.05);
-    // Also check facing hasn't drifted (no torque either).
-    const initial = result.frames[0];
-    if (initial === undefined) throw new Error("no frame 0");
-    const f0 = initial.ships.find((s) => s.instanceId === "s1");
-    const fN = mid.ships.find((s) => s.instanceId === "s1");
-    if (f0 === undefined || fN === undefined) throw new Error("ship missing");
-    expect(
-      Math.abs((fN.facing ?? 0) - (f0.facing ?? 0)),
-      "no torque → no rotation",
-    ).toBeLessThan(0.05);
+    ]);
+    const { fx, fy, torque } = shipForceAndTorque(ship, 0, true, "all");
+    expect(Math.abs(fx), "opposing engines should cancel longitudinal force").toBeLessThan(1e-9);
+    expect(Math.abs(fy), "opposing centreline engines should not strafe").toBeLessThan(1e-9);
+    expect(Math.abs(torque), "centreline engines produce no torque").toBeLessThan(1e-9);
   });
 
-  it("unbalanced side engines spin the ship (facing drifts over time)", () => {
-    // Two engines on opposite sides of the centreline, equal thrust
-    // magnitude but different lever arms along x. The forces are equal
-    // and opposite (cancel linear) but the perpendicular lever arms
-    // are different → non-zero torque.
+  it("unbalanced side engines produce a non-zero torque", () => {
+    // Two engines on opposite sides of the centreline, equal thrust magnitude
+    // but different lever arms. Asserted on the primitive directly because in
+    // battle the controller fires neither when simply closing.
     //
-    // Engine on left (x = -5, y = +5) facing -π/2 → force along -y in
-    // world; lever arm y=+5 gives τ = (-5)(-F) - (5)(0) = +5F
-    // (counter-clockwise spin).
+    // Modules (all mass 5): command at (0,0), eL at (-5,+5), eR at (+10,-5),
+    // so the CoM sits at (5/3, 0), not the origin.
     //
-    // Engine on right (x = +10, y = -5) facing +π/2 → force along +y in
-    // world; lever arm y=-5 gives τ = (+10)(+F) - (-5)(0) = +10F.
-    //
-    // Both contribute positive (counter-clockwise) torque → facing
-    // drifts positive over time.
-    const modules: ResolvedModule[] = [
+    // eL exhaust -π/2 → force +y; eR exhaust +π/2 → force -y. Both lever arms
+    // about the CoM give a clockwise (negative) contribution, so the net
+    // torque is non-zero and negative. The point of the test is that an
+    // asymmetric fit spins the ship at all — the magnitude/sign falls out of
+    // the geometry, so we assert a non-zero torque.
+    const ship = simShipOf([
       moduleOf("c1", { kind: "power", output: 40 }, 0, 0, 100, 5, 0, true),
       moduleOf("eL", engine(1.0, -Math.PI / 2), -5, 5, 100),
       moduleOf("eR", engine(1.0, Math.PI / 2), 10, -5, 100),
-    ];
-    const ship = modularShip("s1", "attacker", modules, { x: 0, y: 0 }, 0);
-    const result = runBattle(inputs([ship, dummy("d1", 200)]));
-    // Reconstruct angular drift from consecutive facing values.
-    const a = result.frames[10]?.ships.find((s) => s.instanceId === "s1");
-    const b = result.frames[20]?.ships.find((s) => s.instanceId === "s1");
-    if (a === undefined || b === undefined) throw new Error("missing frames");
-    const deltaFacing = normaliseDiff((b.facing ?? 0) - (a.facing ?? 0));
-    expect(Math.abs(deltaFacing), "unbalanced engines should spin the ship").toBeGreaterThan(0);
-    void angVelOf; // silence unused warning
+    ]);
+    const { torque } = shipForceAndTorque(ship, 0, true, "all");
+    expect(Math.abs(torque), "unbalanced engines should produce a non-zero torque").toBeGreaterThan(0);
   });
 
-  it("non-hull modular ships default engine facing to 0 (exhaust forward) when omitted", () => {
+  it("a default-facing engine (facing 0, exhaust forward) produces net local force -x", () => {
     // An engine declared without an explicit `facing` defaults to 0, i.e. its
     // exhaust points forward (+x), so the thrust on the ship is backward (−x).
     // A real forward-driving ship therefore must mount its engines facing π;
-    // an un-faced engine is a reverse thruster.
-    const modules: ResolvedModule[] = [
+    // an un-faced engine is a reverse thruster. Asserted on the primitive — in
+    // battle this engine never fires under a prograde closing command.
+    const ship = simShipOf([
       moduleOf("c1", { kind: "power", output: 40 }, 0, 0, 100, 5, 0, true),
       moduleOf(
         "e1",
@@ -321,13 +294,13 @@ describe("engine.cellthrust", () => {
         0,
         100,
       ),
-    ];
-    const ship = modularShip("s1", "attacker", modules, { x: 0, y: 0 }, 0);
-    const result = runBattle(inputs([ship, dummy("d1", 200)]));
-    const mid = result.frames[50];
-    if (mid === undefined) throw new Error("no frame at tick 50");
-    const v = velOf(mid, "s1");
-    expect(v.vx, "default-facing engine (exhaust forward) thrusts ship backward (−x)").toBeLessThan(0);
+    ]);
+    const { fx } = shipForceAndTorque(ship, 0, true, "all");
+    expect(fx, "default-facing engine (exhaust forward) pushes ship backward (−x)").toBeLessThan(0);
+    // availableThrust agrees: pure retrograde thrust, no prograde.
+    const { prograde, retrograde } = availableThrust(ship);
+    expect(retrograde, "forward-exhaust engine is aft thrust").toBeGreaterThan(0);
+    expect(prograde, "forward-exhaust engine has no forward thrust").toBeCloseTo(0, 9);
   });
 
   it("is deterministic", () => {
@@ -347,11 +320,3 @@ describe("engine.cellthrust", () => {
     expect(b.winner).toBe(a.winner);
   });
 });
-
-/** Smallest signed difference between two angles, wrapped to (-π, π]. */
-function normaliseDiff(a: number): number {
-  let x = a;
-  while (x > Math.PI) x -= Math.PI * 2;
-  while (x < -Math.PI) x += Math.PI * 2;
-  return x;
-}

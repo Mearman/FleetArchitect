@@ -115,11 +115,17 @@ function omniSensor(detectionRange: number): ModuleEffect {
  * thrust-along-heading behaviour. The engine's `facing` is π (exhaust aft),
  * so it drives the ship forward (+x in ship-local), again matching legacy.
  */
-const MODULE_COUNT = 5; // cmd + engine + rcs + sensor + one weapon
-const TARGET_TOP_SPEED = 50;
-const LINEAR_DAMPING = 0.97;
-const PER_MODULE_ENGINE_THRUST =
-  TARGET_TOP_SPEED * MODULE_COUNT * (1 - LINEAR_DAMPING);
+// Engine thrust sized for the frictionless movement model. The stop-in-time
+// controller bounds speed kinematically (vMax = sqrt(2·a·d) over the closing
+// distance d), so the engine's acceleration (a = thrust / mass, mass = 25 for
+// 5 mass-5 modules) sets how quickly a ship closes and settles. A thrust of 2.5
+// gives a = 0.1/tick, so over the ~200-unit closing typical of these fixtures
+// the ship reaches a peak speed near 6 and brakes to rest at its stance range
+// well inside the 150-200 tick sample windows. (The old derivation
+// `TARGET_TOP_SPEED * MODULE_COUNT * (1 - LINEAR_DAMPING)` was calibrated
+// against the removed per-tick velocity damping; with damping gone there is no
+// thrust-only terminal velocity, so the derivation is kinematic now.)
+const PER_MODULE_ENGINE_THRUST = 2.5;
 // RCS torque giving each ship real commandable turn authority under the
 // torque-driven attitude model. Every module sits at the ship's origin so the
 // modular moment of inertia bottoms out at its floor of 1; with MoI = 1 an RCS
@@ -202,6 +208,17 @@ function makeShip(opts: {
         thrust: PER_MODULE_ENGINE_THRUST,
         facing: Math.PI,
       },
+      0,
+      0,
+    ),
+    // Fore retro-thruster (exhaust forward, facing 0) so the ship can brake
+    // directly along its heading without flipping. Range-keeping against a
+    // fixed point requires balanced fore+aft thrust; an aft-only ship must
+    // flip PI to brake, and the turn lead-time makes it oscillate around
+    // the desired range. A real range-keeping ship has thrusters both ways.
+    moduleOf(
+      `${opts.id}-ret`,
+      { kind: "engine", thrust: PER_MODULE_ENGINE_THRUST, facing: 0 },
       0,
       0,
     ),

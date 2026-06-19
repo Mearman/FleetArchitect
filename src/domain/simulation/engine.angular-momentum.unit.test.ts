@@ -32,7 +32,10 @@ function makeShip(opts: {
     structure: opts.structure,
     // A reaction wheel sized from turnRate gives the attacker real
     // commandable torque authority under the modular attitude model.
-    turnRate: opts.turnRate ?? 0.05,
+    // turnRate is a physical angular acceleration (rad/tick^2) under the
+    // frictionless model; rescaled from the legacy /5 scalar so the
+    // physical alpha matches the original feel.
+    turnRate: opts.turnRate ?? 0.01,
     thrust: 0.5,
   });
 }
@@ -67,7 +70,7 @@ describe("engine.angular-momentum", () => {
           x: 0,
           y: 0,
           facing: 0,
-          turnRate: 0.1,
+          turnRate: 0.02,
         }),
         makeShip({
           id: "d1",
@@ -97,7 +100,7 @@ describe("engine.angular-momentum", () => {
     // model (facing += clamp(error, ±turnRate)) can never exceed turnRate
     // in a single tick. Finding a tick where the turn-rate is > turnRate
     // therefore proves angular velocity is persisting.
-    const turnRate = 0.05;
+    const turnRate = 0.01;
     const result = runBattle(
       inputs([
         makeShip({

@@ -60,7 +60,9 @@ function makeShip(opts: {
       shieldRechargeDelay: opts.shieldRechargeDelay,
       damageReduction: opts.damageReduction,
       thrust: 0.5,
-      turnRate: 0.1,
+      // Physical angular acceleration (rad/tick^2) under the frictionless
+      // model; rescaled from the legacy /5 scalar.
+      turnRate: 0.02,
       weapons: opts.weapons,
       orders: opts.orders,
     });

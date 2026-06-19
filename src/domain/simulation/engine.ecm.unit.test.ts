@@ -29,8 +29,16 @@ const OPEN_EDGES: CellEdges = {
  * byte-identical (also guarded by the factions-tech determinism fixtures).
  *
  * The mechanic is observed through homing against a moving prey on a fixed
- * perpendicular crossing course (it faces +y and cannot turn, with an engine
- * thrusting along its heading), so a missile must keep homing to stay on it.
+ * perpendicular crossing course (it faces +y and cannot turn, with a rear-
+ * mounted engine thrusting along its heading), so a missile must keep homing to
+ * stay on it. Under frictionless Newtonian movement the translation controller
+ * only fires the prey's engine when it is closing on an enemy on the bearing the
+ * engine can actually serve, so the prey is given a distant lure enemy directly
+ * along its +y heading: the controller then advances the prey straight up the y
+ * axis at its engine's thrust speed, reproducing the fixed crossing course the
+ * old damped "thrust along facing" model gave for free. The lure sits far enough
+ * away that the prey never reaches it (so the course stays straight for the whole
+ * battle) and is `hold`-ordered and unarmed, so it never influences the duel.
  *
  * Lock-break has a clean, geometry-independent signal: a round that loses its
  * lock goes ballistic and flies past the crossing prey, so a guaranteed
@@ -157,11 +165,14 @@ function ship(opts: {
   id: string;
   side: "attacker" | "defender";
   x: number;
+  y?: number;
   facing: number;
   thrust?: number;
   turnRate?: number;
   weapons?: WeaponEffect[];
   extra?: ResolvedModule[];
+  orders?: Partial<typeof defaultOrders>;
+  velocity?: { x: number; y: number };
 }): CombatShip {
   const weapons = opts.weapons ?? [];
   const weaponModules: ResolvedModule[] = weapons.map((w, i) =>
@@ -179,17 +190,21 @@ function ship(opts: {
       turnRate: opts.turnRate ?? 0,
       weapons: weapons.map((w, i) => ({ slotId: `w${i}`, effect: w })),
     }),
-    position: { x: opts.x, y: 0 },
+    position: { x: opts.x, y: opts.y ?? 0 },
+    velocity: opts.velocity,
     facing: opts.facing,
-    orders: defaultOrders,
+    orders: { ...defaultOrders, ...(opts.orders ?? {}) },
     classification: "frigate",
     modules,
   };
 }
 
 function inputs(ships: CombatShip[], maxTicks = 80, seed = 21): BattleInputs {
+  // Every battle includes the distant lure so the prey advances on a fixed +y
+  // crossing course (see `lure`). It is appended once here so all fixtures —
+  // including the determinism guards — share the identical ship set.
   return {
-    ships,
+    ships: [...ships, lure()],
     attackerFleetId: "fa",
     defenderFleetId: "fd",
     anomaly: "none",
@@ -213,16 +228,7 @@ function damageTaken(result: ReturnType<typeof runBattle>): number {
   return startHp - endHp;
 }
 
-const engineModule = moduleOf(
-  "eng",
-  { kind: "engine", thrust: 6, facing: 0 },
-  2,
-  0,
-  50,
-  5,
-  0,
-);
-
+// Rear-mounted engine (exhaust aft, facing π): thrust drives the ship along its
 const ecmModule = (
   over: Partial<{ trackingReduction: number; lockBreakChance: number }> = {},
 ): ResolvedModule =>
@@ -247,14 +253,40 @@ function hunter(extra: ResolvedModule[] = []): CombatShip {
 
 /** A prey on a fixed perpendicular crossing course, optionally carrying ECM. */
 function prey(extra: ResolvedModule[] = []): CombatShip {
+  // The prey COASTS across the hunter's line of fire at a constant velocity
+  // (initial velocity, no engine). The old damped model gave a constant-speed
+  // crossing for free (thrust balanced by drag at terminal velocity);
+  // frictionless movement would instead accelerate the prey, changing the
+  // missile-engagement geometry. Coasting at a fixed velocity reproduces the
+  // constant-speed crossing the ECM homing/lock-break tests are calibrated to,
+  // and keeps the prey a closed system whose motion is independent of its ECM
+  // loadout.
   return ship({
     id: "prey",
     side: "defender",
     x: 600,
     facing: Math.PI / 2,
-    thrust: 6,
-    turnRate: 0,
-    extra: [engineModule, ...extra],
+    velocity: { x: 0, y: 6 },
+    extra,
+  });
+}
+
+/**
+ * A distant, unarmed, hold-ordered lure on the attacker side, directly along the
+ * prey's +y heading. It exists only so the translation controller has an enemy
+ * to advance the prey toward, driving the prey straight up the y axis at its
+ * engine's thrust speed (the fixed crossing course). Placed far enough that the
+ * prey never closes on it within the battle, and unarmed + hold so it never
+ * fires, moves, or otherwise perturbs the hunter/prey duel.
+ */
+function lure(): CombatShip {
+  return ship({
+    id: "lure",
+    side: "attacker",
+    x: 600,
+    y: 100000,
+    facing: 0,
+    orders: { engageRange: "hold" },
   });
 }
 
