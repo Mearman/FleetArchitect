@@ -30,36 +30,79 @@ export function drawMovementTrail(c: OverlayCtx): void {
   ctx.lineWidth = TRAIL_WIDTH;
   ctx.setLineDash([]);
 
+  // Collect each in-scope alive ship's current position and side colour, keyed
+  // by instanceId. Ships not in scope / dead have no trail to draw.
+  const live = new Map<
+    string,
+    { x: number; y: number; colour: string }
+  >();
   for (const ship of frame.ships) {
     if (!inScope(ship) || !ship.alive) continue;
-    const colour = ship.side === "attacker" ? "#ff6b5a" : "#5ab0ff";
+    live.set(ship.instanceId, {
+      x: ship.x,
+      y: ship.y,
+      colour: ship.side === "attacker" ? "#ff6b5a" : "#5ab0ff",
+    });
+  }
+  if (live.size === 0) {
+    ctx.restore();
+    return;
+  }
 
-    // Walk backward through discrete frames, collecting alive positions for
-    // this ship. Start at `tick - 1` since the current tick's position is the
-    // ship itself (no segment to draw from it yet).
-    const points: Array<{ x: number; y: number }> = [];
-    const firstIdx = Math.max(0, tick - TRAIL_LENGTH);
-    for (let i = tick - 1; i >= firstIdx; i--) {
-      const f = frames[i];
-      if (f === undefined) break;
-      const past = f.ships.find((s) => s.instanceId === ship.instanceId);
-      if (past === undefined || !past.alive) break;
-      points.push({ x: past.x, y: past.y });
+  // For each in-scope ship, accumulate the trail of past alive positions.
+  // trails[instanceId] is ordered newest-first (index 0 = tick-1, the most
+  // recent past position). A null entry marks "stop collecting for this ship":
+  // once a ship is missing or dead in some historical frame, older positions
+  // are not contiguous with its current wake and must not be drawn (mirrors
+  // the original per-ship `break`).
+  const trails = new Map<string, Array<{ x: number; y: number }>>();
+  const stopped = new Set<string>();
+  const firstIdx = Math.max(0, tick - TRAIL_LENGTH);
+  for (let i = tick - 1; i >= firstIdx; i--) {
+    const f = frames[i];
+    if (f === undefined) break;
+    // Build ONE per-frame index of {x, y, alive} so each in-scope ship is an
+    // O(1) lookup rather than a frame.ships scan — mirrors damagePulse /
+    // targetLock. Building the map is O(frame.ships); lookup is O(1) per
+    // in-scope ship, so the overlay is O(in-scope × TRAIL_LENGTH + Σ
+    // frame.ships) instead of quadratic in (in-scope × TRAIL_LENGTH ×
+    // frame.ships).
+    const frameIndex = new Map<
+      string,
+      { x: number; y: number; alive: boolean }
+    >();
+    for (const s of f.ships) {
+      frameIndex.set(s.instanceId, { x: s.x, y: s.y, alive: s.alive });
     }
-    if (points.length === 0) continue;
+    for (const id of live.keys()) {
+      if (stopped.has(id)) continue;
+      const past = frameIndex.get(id);
+      if (past === undefined || !past.alive) {
+        stopped.add(id);
+        continue;
+      }
+      let trail = trails.get(id);
+      if (trail === undefined) {
+        trail = [];
+        trails.set(id, trail);
+      }
+      trail.push({ x: past.x, y: past.y });
+    }
+  }
 
-    // Stroke segment-by-segment so each segment can carry its own alpha: the
-    // newest segment (between points[0] and the ship) is most opaque, the
-    // oldest fades to 0. points[0] is the newest collected position. Walk a
-    // sliding pair so the type system narrows cleanly under
-    // noUncheckedIndexedAccess.
-    ctx.strokeStyle = colour;
-    const segCount = points.length;
-    // Anchor the newest end at the ship itself, then walk older positions.
+  // Stroke each ship's trail: segment-by-segment so each segment carries its
+  // own alpha. The newest segment (between trail[0] and the ship itself) is
+  // most opaque; the oldest fades toward 0. Walk a sliding pair so the type
+  // system narrows cleanly under noUncheckedIndexedAccess.
+  for (const [id, ship] of live) {
+    const trail = trails.get(id);
+    if (trail === undefined || trail.length === 0) continue;
+    ctx.strokeStyle = ship.colour;
+    const segCount = trail.length;
     let toX = ship.x;
     let toY = ship.y;
     for (let i = 0; i < segCount; i++) {
-      const from = points[i];
+      const from = trail[i];
       if (from === undefined) break;
       // Linear fade: segment i=0 (newest) at TRAIL_ALPHA_MAX, last at ~0.
       const fade = 1 - i / segCount;

@@ -225,5 +225,16 @@ describe("engine.targeting", () => {
     // target dies or breaks line of sight.
     const targetingFrame = attackerFrames.find((s) => s !== undefined && s.targetId !== undefined);
     expect(targetingFrame?.targetId).toBe("d1");
+
+    // Negative half of the contract: before the attacker has acquired (and any
+    // time it holds no live target), targetId must be omitted entirely — not
+    // null and not an empty string. The initial frame is the pre-sim snapshot
+    // so no target can yet exist; this keeps such frames byte-identical with
+    // replays recorded before the field was introduced.
+    const firstFrame = result.frames[0];
+    expect(firstFrame).toBeDefined();
+    const initialAttacker = firstFrame?.ships.find((s) => s.instanceId === "a1");
+    expect(initialAttacker).toBeDefined();
+    expect(initialAttacker?.targetId).toBeUndefined();
   });
 });

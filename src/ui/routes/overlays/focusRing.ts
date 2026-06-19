@@ -1,14 +1,30 @@
 import { CELL_SIZE } from "@/domain/grid";
 import type { OverlayCtx, OverlayDef } from "./types";
 
-/** Stroke width of the focus ring, in display pixels. */
+/** Stroke width of the focus ring on the followed ship, in display pixels. */
 const FOCUS_RING_WIDTH = 2;
+
+/** Stroke width of the faint ring on non-followed in-scope ships, in display
+ *  pixels. Thin so the dashed outline reads as a subtle marker. */
+const FAINT_RING_WIDTH = 1;
+
+/** Dash pattern for the faint ring. Dashed so it is visually distinct from
+ *  BattleRoute's solid side-outline ring (same radius band, side colour) that
+ *  would otherwise swallow a solid faint stroke. */
+const FAINT_RING_DASH: readonly [number, number] = [4, 3];
 
 /** Alpha of the focus ring on the followed (active) ship. */
 const FOCUS_ACTIVE_ALPHA = 0.9;
 
-/** Alpha of the focus ring on non-followed in-scope ships. */
-const FOCUS_FAINT_ALPHA = 0.18;
+/** Alpha of the faint ring on non-followed in-scope ships. Kept low so the
+ *  followed ship remains the clear focal point. */
+const FOCUS_FAINT_ALPHA = 0.4;
+
+/** Colour of the faint ring on non-followed in-scope ships. White reads
+ *  against both the attacker red and defender blue side-outline rings drawn
+ *  by BattleRoute at the same radius, which a side-coloured faint ring would
+ *  blend into and vanish. */
+const FAINT_RING_COLOUR = "#ffffff";
 
 /** Small fixed radius fallback for ships with no module data, in display pixels. */
 const FALLBACK_RADIUS_PX = 11;
@@ -45,10 +61,22 @@ function drawFocusRing(c: OverlayCtx): void {
     }
 
     const isFollowed = ship.instanceId === followId;
-    const colour = ship.side === "attacker" ? "#ff6b5a" : "#5ab0ff";
-    ctx.strokeStyle = colour;
-    ctx.lineWidth = isFollowed ? FOCUS_RING_WIDTH : 1;
-    ctx.globalAlpha = isFollowed ? FOCUS_ACTIVE_ALPHA : FOCUS_FAINT_ALPHA;
+    if (isFollowed) {
+      // Followed ship: bright solid ring in its side colour, sitting just
+      // outside BattleRoute's side-outline ring.
+      ctx.strokeStyle = ship.side === "attacker" ? "#ff6b5a" : "#5ab0ff";
+      ctx.lineWidth = FOCUS_RING_WIDTH;
+      ctx.globalAlpha = FOCUS_ACTIVE_ALPHA;
+      ctx.setLineDash([]);
+    } else {
+      // Non-followed in-scope ship: thin dashed white ring so it reads against
+      // BattleRoute's solid side-coloured outline at the same radius (which a
+      // side-coloured solid faint ring would be invisible against).
+      ctx.strokeStyle = FAINT_RING_COLOUR;
+      ctx.lineWidth = FAINT_RING_WIDTH;
+      ctx.globalAlpha = FOCUS_FAINT_ALPHA;
+      ctx.setLineDash([...FAINT_RING_DASH]);
+    }
     ctx.beginPath();
     ctx.arc(px, py, radiusPx + 4, 0, Math.PI * 2);
     ctx.stroke();

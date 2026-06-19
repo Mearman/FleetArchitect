@@ -23,6 +23,10 @@ const RADIUS_MAX = 40;
  *  `RADIUS_MAX`. */
 const RADIUS_PER_HP = 0.8;
 
+/** Additional alpha per point of structure lost, layered on top of
+ *  `DAMAGE_ALPHA` so heavier hits brighten toward fully opaque. */
+const ALPHA_PER_HP = 0.02;
+
 /**
  * Damage pulse: for each in-scope alive ship that lost structure between the
  * previous discrete tick and the current one, draws an expanding ring centred
@@ -60,7 +64,7 @@ export function drawDamagePulse(c: OverlayCtx): void {
     const radius = Math.min(RADIUS_MAX, RADIUS_MIN + delta * RADIUS_PER_HP);
     // Brighten with magnitude: heavier hits push alpha above the baseline up
     // toward fully opaque.
-    ctx.globalAlpha = Math.min(1, DAMAGE_ALPHA + delta * 0.02);
+    ctx.globalAlpha = Math.min(1, DAMAGE_ALPHA + delta * ALPHA_PER_HP);
     ctx.beginPath();
     ctx.arc(t.sx(ship.x), t.sy(ship.y), radius, 0, Math.PI * 2);
     ctx.stroke();
