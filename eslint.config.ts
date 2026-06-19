@@ -62,12 +62,13 @@ export default tseslint.config(
     },
   },
   {
-    // Max source file length. 800 gives headroom over the largest cohesive
-    // module (~690 lines, stats.ts) while blocking god-files: the former
-    // engine.ts was 7335 and BattleRoute.tsx was 1705 before they were split
-    // into packages. Tests are excluded: they are fixture-heavy by nature.
+    // Max file length across all source — logic, data, routes, styles, and
+    // tests alike. 800 gives headroom over the largest cohesive module (~690
+    // lines, stats.ts) and the largest test (~680, engine.orders) while
+    // blocking god-files: the former engine.ts was 7335 and BattleRoute.tsx
+    // was 1705 before they were split into packages. When a file grows past
+    // it, split the file rather than relax the rule.
     files: ["src/**/*.{ts,tsx}"],
-    ignores: ["**/*.test.{ts,tsx}", "**/*.css.ts"],
     rules: {
       "max-lines": ["error", { max: 800, skipBlankLines: false, skipComments: false }],
     },
