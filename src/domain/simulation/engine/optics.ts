@@ -1,3 +1,5 @@
+import { SPEED_OF_LIGHT_M_PER_S } from "./config";
+
 /**
  * Beam optics: diffraction-limited divergence and intensity falloff for
  * directed-energy weapons (lasers, particle beams). Pure functions, no state.
@@ -107,4 +109,57 @@ export function intensityFalloff(
     (OPTICS.RAYLEIGH_FACTOR * apertureRadius * apertureRadius) / wavelength;
   const ratio = range / rayleighRange;
   return 1 / (1 + ratio * ratio);
+}
+
+// ---------------------------------------------------------------------------
+// Relativistic ray optics (Phase 10): Doppler shift, aberration, gravitational
+// redshift, and weak-field lensing. Pure functions over (beta, angle, phi, GM);
+// beta is the dimensionless v/c along the relevant axis, phi the gravitational
+// potential (m^2/s^2), GM the body's standard gravitational parameter (m^3/s^2).
+// These transform the EM that the Phase 8 pulses / Phase 9 emissions carry.
+// ---------------------------------------------------------------------------
+
+/** The relativistic Doppler factor D = sqrt((1 - beta)/(1 + beta)) for a
+ *  source receding at radial fraction-of-c `beta` (positive = receding, so
+ *  D < 1 = redshift; negative = approaching, D > 1 = blueshift). A photon's
+ *  received frequency is the emitted frequency times D. */
+export function dopplerFactor(beta: number): number {
+  return Math.sqrt((1 - beta) / (1 + beta));
+}
+
+/** Relativistic aberration: the angle (radians, from the relative-velocity
+ *  axis) at which an observer moving at `beta` sees a ray that was at `angle`
+ *  in the source frame. cos(theta') = (cos(theta) - beta) / (1 - beta·cos(theta)).
+ *  A ray perpendicular in the source frame (theta = PI/2) is swept forward in
+ *  the observer frame — the "searchlight" effect of relativistic motion. */
+export function relativisticAberration(angle: number, beta: number): number {
+  const cosT = Math.cos(angle);
+  // Moving-source (searchlight) convention: a source moving at +beta
+  // concentrates its emission forward. cos(theta') = (cos(theta) + beta) /
+  // (1 + beta*cos(theta)); a perpendicular ray (theta = PI/2) appears at
+  // acos(beta) < PI/2 (forward of 90 degrees).
+  const cosTp = (cosT + beta) / (1 + beta * cosT);
+  return Math.acos(cosTp);
+}
+
+/** Gravitational redshift: the frequency factor of a photon climbing out of a
+ *  potential `phi` (m^2/s^2, negative). f_received / f_emitted = sqrt(1 + 2·Phi/c^2)
+ *  — a photon escaping a well is redshifted; at the Schwarzschild radius
+ *  (Phi = -c^2/2) the shift goes to 0. */
+export function gravitationalRedshift(phi: number): number {
+  const c2 = SPEED_OF_LIGHT_M_PER_S * SPEED_OF_LIGHT_M_PER_S;
+  const f = 1 + (2 * phi) / c2;
+  return f <= 0 ? 0 : Math.sqrt(f);
+}
+
+/** Weak-field gravitational lensing: the deflection angle (radians) of a ray
+ *  passing a body of gravitational parameter `gm` at impact parameter `b`
+ *  (closest approach, metres). Einstein's formula: 4·GM / (c^2 · b). For the
+ *  Sun (GM = 1.327e20, b = 6.96e8 solar radius) this is the famous ~1.75
+ *  arcseconds. Returns 0 for b <= 0 (a ray through the centre is not in the
+ *  weak-field regime). */
+export function lensingDeflection(impactParameter: number, gm: number): number {
+  if (impactParameter <= 0) return 0;
+  const c2 = SPEED_OF_LIGHT_M_PER_S * SPEED_OF_LIGHT_M_PER_S;
+  return (4 * gm) / (c2 * impactParameter);
 }
