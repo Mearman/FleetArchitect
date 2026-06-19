@@ -21,6 +21,12 @@ export interface CombatShip {
   side: "attacker" | "defender";
   stats: ShipStats;
   position: Vec2;
+  /** Optional initial velocity (world units/tick). Defaults to
+   *  zero — a fleet deploys at rest. Set to model ships entering the arena
+   *  with residual velocity (e.g. a Newtonian drop-out-of-FTTL entry), and to
+   *  test dynamics on a closed system of coasting bodies (no thrust, so the
+   *  only interaction is the contact impulse and momentum is conserved). */
+  velocity?: Vec2;
   facing: number;
   orders: Orders;
   classification: ShipClassification;
