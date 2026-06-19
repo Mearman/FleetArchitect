@@ -1,159 +1,160 @@
 /**
- * Propellant and delta-v — the rocket-equation layer.
+ * Propellant substance: fuel mass transported by advection only along a
+ * tank→pipe→engine graph, consumed by engine burn, exhausted for thrust.
  *
- * Phase 12 "underlying resource simulation (use deferred)": reaction mass is
- * burned honestly by thrust and specific impulse, dry mass falls as propellant
- * is consumed, and the Tsiolkovsky rocket equation gives the achievable delta-v.
- * The values are computed and exposed; gameplay *use* (dry-tank → derelict,
- * fuel UI, integrator mass feedback) is intentionally deferred to a later pass.
+ * φ = fuel mass per cell (kg). Pipied plumbing, not diffusive: fuel moves
+ * along the pipe graph at a commanded flow rate, not by Fickian spreading, so
+ * the diffusion coefficient is zero. The sink is engine burn (kg·s⁻¹ from
+ * `thrust / (Isp · g₀)`), and the boundary flux is the exhaust nozzle —
+ * `dm/dt = thrust / (Isp · g₀)` leaving at `v_e = Isp · g₀`, giving the
+ * Tsiolkovsky thrust `F = dm/dt · v_e = thrust`. Momentum conservation:
+ * exhaust impulse equals the impulse the field reports, so the same boundary
+ * flux path that vents atmosphere also drives the engine.
  *
- * Every numeric value here is one of: a real physical constant, a formula over
- * such constants, or an explicit authored input (thrust, Isp, propellant mass,
- * burn duration). No hand-tuned literals.
- *
- * Pure functions only — no module-level mutable state, no I/O. Deterministic:
- * identical inputs yield identical outputs (the only transcendental is `ln`,
- * which IEEE-754 fixes across runs).
+ * Use-deferred: fuel mass is honestly simulated and feeds the integrator
+ * (mass falls ⇒ acceleration rises ⇒ Tsiolkovsky Δv), but a dry tank does
+ * not yet derelict the ship, and the fuel UI is a later pass.
  */
 
-/** Standard gravitational acceleration, the exact defined SI value (m/s²).
- *  This is the `g0` that appears in the thrust / specific-impulse relation
- *  `ṁ = F / (Isp · g0)` and in Tsiolkovsky's `Δv = Isp · g0 · ln(m0/mf)`.
- *  Source: CGPM 1901, defined value, exact. */
-export const STANDARD_GRAVITY_M_PER_S2 = 9.80665;
+import {
+  STANDARD_GRAVITY_M_PER_S2,
+  type BoundaryFlux,
+  type TransportFace,
+  type TransportSubstance,
+} from "@/domain/simulation/engine/transport-field";
 
-/** A propellant state: the live reaction-mass budget of one ship.
- *  `propellantMass` is the remaining reaction mass (kg); `dryMass` is the
- *  mass of the ship with empty tanks (kg). Total (wet) mass is their sum. */
-export interface PropellantState {
-  /** Reaction mass remaining in the tanks (kg). Non-negative. */
-  propellantMass: number;
-  /** Ship mass with tanks empty (kg). Positive. */
-  dryMass: number;
+/**
+ * Reference specific impulse, seconds. A chemical orbital manoeuvring
+ * engine sits around 300–320 s; we use 320 s as the design point (hydrogen-
+ * oxygen upper-stage class). `v_e = Isp · g₀ ≈ 3138 m·s⁻¹`.
+ */
+export const REFERENCE_ISP_S = 320;
+
+/** Effective exhaust velocity, m·s⁻¹: `v_e = Isp · g₀`. The Tsiolkovsky
+ *  relation between fuel burn rate and thrust. */
+export const EXHAUST_VELOCITY_M_PER_S = REFERENCE_ISP_S * STANDARD_GRAVITY_M_PER_S2;
+
+/**
+ * Tank→pipe→engine flow speed, m·s⁻¹. Fuel moves along the pipe graph at a
+ * fixed commanded rate when an engine is burning upstream; this is a plumbing
+ * flow rate, not a fluid-dynamics derivation — a feed pump rating.
+ */
+export const PROPELLANT_FLOW_SPEED_M_PER_S = 1.0;
+
+/** Per-engine thrust command, newtons. Map: engine cell index → thrust being
+ *  produced. The caller derives this from the live throttle / module state. */
+export type EngineThrustMap = ReadonlyMap<number, number>;
+
+/** Pipe adjacency: the set of (from, to) cell pairs that are plumbed
+ *  together. Fuel flows along these edges toward the burning engine. */
+export type PipeAdjacency = ReadonlySet<string>;
+
+/** Per-engine outward exhaust normal (ship-local). The nozzle points along
+ *  this direction; thrust pushes the ship along −normal. */
+export type ExhaustNormals = ReadonlyMap<number, { nx: number; ny: number }>;
+
+/** Serialise a pipe edge into a stable string key. Order-independent: the
+ *  pipe (a, b) and (b, a) share one key. */
+export function pipeKey(a: number, b: number): string {
+  return a < b ? `${a}-${b}` : `${b}-${a}`;
 }
 
-/** Wet (total) mass of a propellant state: dry mass plus remaining propellant.
- *  This is the `m` that feeds the momentum integrator (Phase 3). */
-export function wetMass(state: PropellantState): number {
-  return state.dryMass + state.propellantMass;
+/**
+ * Build a propellant substance configuration.
+ *
+ * `engineThrust` is the per-engine-cell thrust command (N); `pipes` is the
+ * plumbing adjacency the fuel flows along; `exhaust` is the per-engine nozzle
+ * normal. The sink rate per burning engine is `thrust / v_e` (kg·s⁻¹), and
+ * the exhaust boundary flux carries that same mass out at `v_e` along the
+ * nozzle normal — impulse `dm·v_e = thrust·dt`, exactly the engine thrust.
+ */
+export function makePropellantSubstance(
+  engineThrust: EngineThrustMap,
+  pipes: PipeAdjacency,
+  exhaust: ExhaustNormals,
+): TransportSubstance {
+  return {
+    name: "propellant",
+    // Advection-only: piped, not diffusive.
+    coefficient: 0,
+    maxVelocity: PROPELLANT_FLOW_SPEED_M_PER_S,
+    nonNegative: true,
+    floor: 0,
+    velocity: (face: TransportFace, phi: readonly number[]): number => {
+      // Flow only along plumbed edges, toward a burning engine. The pipe is
+      // symmetric: fuel moves from whichever end has fuel toward whichever
+      // end is a burning engine. For a face `from → to`, positive velocity
+      // means fuel leaves `from` (toward `to`); we return +v when `to` is
+      // the burning engine and `from` has fuel, −v when `from` is the
+      // burning engine and `to` has fuel, and 0 otherwise.
+      if (face.to === undefined) return 0;
+      if (!pipes.has(pipeKey(face.from, face.to))) return 0;
+      const burnTo = engineThrust.get(face.to) ?? 0;
+      const burnFrom = engineThrust.get(face.from) ?? 0;
+      const phiFrom = phi[face.from] ?? 0;
+      const phiTo = phi[face.to] ?? 0;
+      if (burnTo > 0 && phiFrom > 0) {
+        // Fuel leaves `from` toward the burning engine at `to`.
+        return PROPELLANT_FLOW_SPEED_M_PER_S;
+      }
+      if (burnFrom > 0 && phiTo > 0) {
+        // Fuel leaves `to` toward the burning engine at `from` — i.e. enters
+        // `from` from the pipe, which is a negative velocity along this
+        // face's outward normal.
+        return -PROPELLANT_FLOW_SPEED_M_PER_S;
+      }
+      return 0;
+    },
+    source: () => {
+      // Engines do not consume fuel locally — the burn mass leaves through
+      // the exhaust boundary flux, which is where thrust is produced. Keeping
+      // the sink at the boundary (not the source) lets one path account for
+      // both the mass loss and the thrust impulse.
+      return 0;
+    },
+    boundaryFlux: (cell, phi): BoundaryFlux => {
+      const thrust = engineThrust.get(cell) ?? 0;
+      if (thrust <= 0) {
+        return { cell, scalarFlux: 0, momentumX: 0, momentumY: 0 };
+      }
+      const mass = phi[cell] ?? 0;
+      // Burn rate: dm/dt = thrust / v_e. If the tank is dry there is nothing
+      // to burn — the flux is zero and the engine flames out.
+      const burnRate = thrust / EXHAUST_VELOCITY_M_PER_S;
+      if (mass <= 0) {
+        return { cell, scalarFlux: 0, momentumX: 0, momentumY: 0 };
+      }
+      const normal = exhaust.get(cell) ?? { nx: 0, ny: -1 };
+      // Thrust force = burnRate · v_e = thrust (by construction). Pushes the
+      // ship along −normal (Newton's third law: exhaust leaves along
+      // +normal, ship recoils along −normal).
+      return {
+        cell,
+        scalarFlux: burnRate,
+        momentumX: -normal.nx * thrust,
+        momentumY: -normal.ny * thrust,
+      };
+    },
+  };
 }
 
-/** Propellant mass-flow rate (kg/s) for a given thrust and specific impulse.
+/**
+ * Steady-state delta-v from burning a fuel mass `deltaM` (kg) from a ship of
+ * dry mass `dryMass` (kg), via the Tsiolkovsky rocket equation:
  *
- *  Derived from the definition of specific impulse as thrust per unit
- *  weight-flow of reaction mass: `Isp = F / (ṁ · g0)`, rearranged to
- *  `ṁ = F / (Isp · g0)`. A higher Isp means less mass consumed per newton of
- *  thrust, which is the whole point of efficient engines.
+ *     Δv = v_e · ln((dryMass + fuelMass) / dryMass)
  *
- *  `thrustN` is the engine's thrust in newtons; `specificImpulseS` is the
- *  specific impulse in seconds. Both must be positive.
- *
- *  Throws on non-positive thrust or specific impulse: an engine that produces
- *  no thrust or has zero/negative Isp cannot burn propellant, and a zero Isp
- *  would divide by zero — these are invalid authored inputs, surfaced loudly. */
-export function massFlowRateKgPerS(thrustN: number, specificImpulseS: number): number {
-  if (thrustN <= 0) {
-    throw new Error(`massFlowRateKgPerS: thrustN must be positive, got ${thrustN}`);
-  }
-  if (specificImpulseS <= 0) {
-    throw new Error(`massFlowRateKgPerS: specificImpulseS must be positive, got ${specificImpulseS}`);
-  }
-  return thrustN / (specificImpulseS * STANDARD_GRAVITY_M_PER_S2);
-}
-
-/** Propellant consumed (kg) by burning at the given thrust and specific impulse
- *  for `burnDurationS` seconds. Returns the unconsumed demand; the caller is
- *  responsible for clamping to the available propellant (see {@link burn}).
- *
- *  `Δm = ṁ · Δt = F · Δt / (Isp · g0)`. */
-export function propellantDemandKg(
-  thrustN: number,
-  specificImpulseS: number,
-  burnDurationS: number,
-): number {
-  if (burnDurationS < 0) {
-    throw new Error(`propellantDemandKg: burnDurationS must be non-negative, got ${burnDurationS}`);
-  }
-  return massFlowRateKgPerS(thrustN, specificImpulseS) * burnDurationS;
-}
-
-/** Burn reaction mass for `burnDurationS` seconds at the given thrust and
- *  specific impulse, returning the resulting propellant state.
- *
- *  The demanded mass is clamped to the available propellant (a tank cannot go
- *  negative); if the demand would drain the tank partway through the burn, the
- *  returned state simply has zero propellant — the deferred-use design does not
- *  model partial-thrust cutoff here. The dry mass is unchanged (only reaction
- *  mass is consumed).
- *
- *  Pure: returns a new {@link PropellantState}; the input is not mutated. */
-export function burn(
-  state: PropellantState,
-  thrustN: number,
-  specificImpulseS: number,
-  burnDurationS: number,
-): PropellantState {
-  const demand = propellantDemandKg(thrustN, specificImpulseS, burnDurationS);
-  const remaining = Math.max(0, state.propellantMass - demand);
-  return { propellantMass: remaining, dryMass: state.dryMass };
-}
-
-/** Delta-v (m/s) available from burning all propellant between two masses, per
- *  the Tsiolkovsky rocket equation.
- *
- *  `Δv = Isp · g0 · ln(m0 / mf)`, where `m0` is the initial (wet) mass and
- *  `mf` is the final (dry) mass. `specificImpulseS` must be positive, `wetMass`
- *  must be greater than `dryMass` (there must be propellant to burn), and both
- *  must be positive.
- *
- *  Throws on `wetMass <= dryMass` (no propellant → no meaningful delta-v) and
- *  on non-positive inputs; these are invalid authored configurations. */
+ * Tests use this as the physics anchor for mass depletion → Δv.
+ */
 export function tsiolkovskyDeltaV(
-  specificImpulseS: number,
-  wetMassKg: number,
   dryMassKg: number,
+  fuelMassKg: number,
 ): number {
-  if (specificImpulseS <= 0) {
-    throw new Error(`tsiolkovskyDeltaV: specificImpulseS must be positive, got ${specificImpulseS}`);
-  }
-  if (wetMassKg <= 0) {
-    throw new Error(`tsiolkovskyDeltaV: wetMassKg must be positive, got ${wetMassKg}`);
-  }
-  if (dryMassKg <= 0) {
-    throw new Error(`tsiolkovskyDeltaV: dryMassKg must be positive, got ${dryMassKg}`);
-  }
-  if (wetMassKg <= dryMassKg) {
-    throw new Error(
-      `tsiolkovskyDeltaV: wetMassKg (${wetMassKg}) must exceed dryMassKg (${dryMassKg})`,
-    );
-  }
-  return specificImpulseS * STANDARD_GRAVITY_M_PER_S2 * Math.log(wetMassKg / dryMassKg);
+  return EXHAUST_VELOCITY_M_PER_S * Math.log((dryMassKg + fuelMassKg) / dryMassKg);
 }
 
-/** Delta-v (m/s) available from a {@link PropellantState} at the given specific
- *  impulse — the wet mass is dry plus remaining propellant. Convenience wrapper
- *  around {@link tsiolkovskyDeltaV}. */
-export function deltaVOf(state: PropellantState, specificImpulseS: number): number {
-  return tsiolkovskyDeltaV(specificImpulseS, wetMass(state), state.dryMass);
-}
-
-/** The required mass ratio `m0 / mf` to achieve a target delta-v at the given
- *  specific impulse — the inverse of Tsiolkovsky.
- *
- *  `m0 / mf = exp(Δv / (Isp · g0))`. Useful for sizing tanks against a mission
- *  delta-v budget. `targetDeltaVMPerS` may be zero (ratio 1, no propellant
- *  needed); it must not be negative. */
-export function massRatioForDeltaV(
-  specificImpulseS: number,
-  targetDeltaVMPerS: number,
-): number {
-  if (specificImpulseS <= 0) {
-    throw new Error(`massRatioForDeltaV: specificImpulseS must be positive, got ${specificImpulseS}`);
-  }
-  if (targetDeltaVMPerS < 0) {
-    throw new Error(
-      `massRatioForDeltaV: targetDeltaVMPerS must be non-negative, got ${targetDeltaVMPerS}`,
-    );
-  }
-  return Math.exp(targetDeltaVMPerS / (specificImpulseS * STANDARD_GRAVITY_M_PER_S2));
+/** Fuel mass consumed to produce a given total impulse `F·dt` (N·s):
+ *  `dm = impulse / v_e`. */
+export function fuelMassForImpulse(impulseNewtonSeconds: number): number {
+  return impulseNewtonSeconds / EXHAUST_VELOCITY_M_PER_S;
 }
