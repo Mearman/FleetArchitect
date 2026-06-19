@@ -32,7 +32,7 @@ function grid(rows: readonly string[]): TileGrid {
       cells.push(cell);
     }
   }
-  return { cols, rows: rows.length, cells };
+  return { cols, rows: rows.length, cells, connections: [] };
 }
 
 function design(g: TileGrid): ShipDesign {
@@ -143,7 +143,7 @@ function sensorCommsGrid(rows: readonly string[]): TileGrid {
       cells.push(cell);
     }
   }
-  return { cols, rows: rows.length, cells };
+  return { cols, rows: rows.length, cells, connections: [] };
 }
 
 describe("analyseShipDesign", () => {

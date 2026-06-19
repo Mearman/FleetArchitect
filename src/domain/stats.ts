@@ -5,7 +5,7 @@ import {
   occupiedCount,
   reachableFrom,
 } from "@/domain/grid";
-import type { GridCell } from "@/schema/grid";
+import type { GridCell, HardwireResource } from "@/schema/grid";
 import type { ModuleDefinition, WeaponEffect } from "@/schema/module";
 import type { ShipDesign } from "@/schema/ship";
 import type { EntityId } from "@/schema/primitives";
@@ -95,7 +95,24 @@ export type DesignFault =
    * The design has comms modules but fewer than two, so it cannot relay
    * third-party contact data.
    */
-  | { kind: "noRelay"; severity: "warning" };
+  | { kind: "noRelay"; severity: "warning" }
+  /**
+   * A hardwire connection has incompatible endpoints. Each resource kind requires
+   * a specific source and sink module type:
+   *   - "ammo"    — source must be a magazine; sink must be a finite-ammo weapon.
+   *   - "power"   — source must be a power plant; sink must draw power (powerDraw > 0).
+   *   - "manning" — source must be a command module; sink must require crew (crewRequired > 0).
+   * A fault is raised when either endpoint is not a module cell, is an unknown
+   * module, or is a module of the wrong kind for the declared resource.
+   */
+  | {
+      kind: "invalidHardwire";
+      severity: "error";
+      from: { col: number; row: number };
+      to: { col: number; row: number };
+      resource: HardwireResource;
+      reason: string;
+    };
 
 export interface ShipDesignAnalysis {
   stats: ShipStats;
@@ -186,6 +203,18 @@ function applyModule(
     case "comms":  // Phase A: inert — mass/cost/power/crew apply; no link effect yet
     case "rcs":
     case "reactionWheel":
+    case "blink": // tech modules (factions update): cost/power/crew counted above; no aggregate stat contribution, active behaviour is in the engine tick loop
+    case "afterburner":
+    case "overcharge":
+    case "cloak":
+    case "signature":
+    case "ecm":
+    case "eccm":
+    case "decoy":
+    case "commandAura":
+    case "hangar":
+    case "mineLayer":
+    case "boarding":
       break;
   }
 }
@@ -334,6 +363,154 @@ export function analyseShipDesign(
   }
 
   // ---------------------------------------------------------------------------
+  // Hardwire-connection validation.
+  //
+  // Each connection in grid.connections must pair compatible module kinds:
+  //   ammo    — source: magazine, sink: finite-ammo weapon (ammoCapacity set).
+  //   power   — source: power plant, sink: any module with powerDraw > 0.
+  //   manning — source: command module, sink: any module with crewRequired > 0.
+  //
+  // Valid connections exempt their sinks from the corresponding reachability
+  // fault (noAmmoSource / unreachableStation) because the conduit satisfies
+  // the resource need without crew logistics.
+  //
+  // Validated regardless of grid connectivity — the error is in the connection
+  // declaration itself, not in the crew path graph.
+  // ---------------------------------------------------------------------------
+
+  /** Slot keys (col,row) of stations whose manning need is covered by a valid
+   *  manning conduit. These are exempt from unreachableStation. */
+  const manningHardwiredSlots = new Set<string>();
+  /** Slot keys (col,row) of finite-ammo weapons whose ammo need is covered by a
+   *  valid ammo conduit. These are exempt from noAmmoSource. */
+  const ammoHardwiredSlots = new Set<string>();
+
+  if (cellCount > 0) {
+    for (const conn of grid.connections) {
+      const { from, to, resource } = conn;
+      const toKey = `${to.col},${to.row}`;
+
+      const fromCell = grid.cells[from.row * grid.cols + from.col];
+      const toCell = grid.cells[to.row * grid.cols + to.col];
+
+      // Both endpoints must be module cells (not hull, floor, or empty).
+      if (fromCell === undefined || fromCell.kind !== "module") {
+        faults.push({
+          kind: "invalidHardwire",
+          severity: "error",
+          from,
+          to,
+          resource,
+          reason: "source cell is not a module",
+        });
+        continue;
+      }
+      if (toCell === undefined || toCell.kind !== "module") {
+        faults.push({
+          kind: "invalidHardwire",
+          severity: "error",
+          from,
+          to,
+          resource,
+          reason: "sink cell is not a module",
+        });
+        continue;
+      }
+
+      const fromDef = catalog.module(fromCell.moduleId);
+      const toDef = catalog.module(toCell.moduleId);
+
+      // Unknown modules are reported as unknownModule faults elsewhere; skip
+      // the hardwire check rather than double-reporting.
+      if (fromDef === undefined || toDef === undefined) continue;
+
+      if (resource === "ammo") {
+        if (fromDef.effect.kind !== "magazine") {
+          faults.push({
+            kind: "invalidHardwire",
+            severity: "error",
+            from,
+            to,
+            resource,
+            reason: `ammo conduit source must be a magazine (found ${fromDef.effect.kind})`,
+          });
+          continue;
+        }
+        if (
+          toDef.effect.kind !== "weapon" ||
+          toDef.effect.ammoCapacity === undefined
+        ) {
+          faults.push({
+            kind: "invalidHardwire",
+            severity: "error",
+            from,
+            to,
+            resource,
+            reason:
+              toDef.effect.kind !== "weapon"
+                ? `ammo conduit sink must be a weapon (found ${toDef.effect.kind})`
+                : "ammo conduit sink weapon has no ammoCapacity (unlimited ammo weapon)",
+          });
+          continue;
+        }
+        // Valid ammo conduit — the sink weapon is covered.
+        ammoHardwiredSlots.add(toKey);
+      } else if (resource === "power") {
+        if (fromDef.effect.kind !== "power") {
+          faults.push({
+            kind: "invalidHardwire",
+            severity: "error",
+            from,
+            to,
+            resource,
+            reason: `power conduit source must be a power plant (found ${fromDef.effect.kind})`,
+          });
+          continue;
+        }
+        if (toDef.powerDraw <= 0) {
+          faults.push({
+            kind: "invalidHardwire",
+            severity: "error",
+            from,
+            to,
+            resource,
+            reason: "power conduit sink module has no power draw",
+          });
+          continue;
+        }
+        // Valid power conduit — no reachability fault to suppress (power
+        // reachability is not checked as a design fault), but the link is valid.
+      } else {
+        // resource === "manning"
+        if (fromDef.command !== true) {
+          faults.push({
+            kind: "invalidHardwire",
+            severity: "error",
+            from,
+            to,
+            resource,
+            reason: `manning conduit source must be a command module (found ${fromDef.effect.kind})`,
+          });
+          continue;
+        }
+        if (toDef.crewRequired <= 0) {
+          faults.push({
+            kind: "invalidHardwire",
+            severity: "error",
+            from,
+            to,
+            resource,
+            reason: "manning conduit sink module requires no crew",
+          });
+          continue;
+        }
+        // Valid manning conduit — the sink station is covered.
+        manningHardwiredSlots.add(toKey);
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Reachability faults — require crew pathfinding over the walkable surface.
   //
   // We compute these only when the grid has occupied cells and is connected
@@ -381,6 +558,7 @@ export function analyseShipDesign(
     // We build the reachability set once and reuse it for the unmannedAimUnit
     // warning check further below (aim units also depend on crew reachability).
     let reachableFromAnyQuarters: Set<string> | undefined;
+    // Stations covered by a valid manning conduit are exempt.
     if (quartersPositions.length > 0) {
       // Build the union of all cells reachable from any quarters cell. We start
       // from each quarters cell and collect the flood-fill, then union the sets.
@@ -394,6 +572,8 @@ export function analyseShipDesign(
 
       for (const station of crewedStations) {
         const key = `${station.col},${station.row}`;
+        // A valid manning conduit covers this station — no fault.
+        if (manningHardwiredSlots.has(key)) continue;
         if (!reachableFromAnyQuarters.has(key)) {
           faults.push({
             kind: "unreachableStation",
@@ -408,9 +588,13 @@ export function analyseShipDesign(
 
     // No-ammo-source fault: a finite-ammo weapon with no magazine reachable via
     // a walkable path. Only checked when at least one such weapon exists.
+    // Weapons covered by a valid ammo conduit are exempt.
     if (finiteAmmoWeapons.length > 0 && magazinePositions.length === 0) {
-      // No magazines at all — every finite-ammo weapon is affected.
+      // No magazines at all — every finite-ammo weapon not covered by a conduit
+      // is affected.
       for (const weapon of finiteAmmoWeapons) {
+        const key = `${weapon.col},${weapon.row}`;
+        if (ammoHardwiredSlots.has(key)) continue;
         faults.push({
           kind: "noAmmoSource",
           severity: "error",
@@ -421,7 +605,8 @@ export function analyseShipDesign(
       }
     } else if (finiteAmmoWeapons.length > 0 && magazinePositions.length > 0) {
       // Build reachability sets from each magazine position once, then test
-      // each weapon. A weapon is faulted only if no magazine can reach it.
+      // each weapon. A weapon is faulted only if no magazine can reach it and
+      // it is not covered by a valid ammo conduit.
       const reachableFromAnyMagazine = new Set<string>();
       for (const magPos of magazinePositions) {
         for (const key of reachableFrom(grid, magPos)) {
@@ -431,6 +616,7 @@ export function analyseShipDesign(
 
       for (const weapon of finiteAmmoWeapons) {
         const key = `${weapon.col},${weapon.row}`;
+        if (ammoHardwiredSlots.has(key)) continue;
         if (!reachableFromAnyMagazine.has(key)) {
           faults.push({
             kind: "noAmmoSource",

@@ -79,21 +79,70 @@ export const GridCell = z.discriminatedUnion("kind", [
 ]);
 export type GridCell = z.infer<typeof GridCell>;
 
+/** A resource a hardwire conduit can carry directly between two module cells,
+ *  removing the crew need for the linked sink at the cost of a fixed, severable
+ *  one-to-one link:
+ *   - "ammo"    — a magazine feeds a finite-ammo weapon with zero latency.
+ *   - "power"   — a reactor wires a power-drawing module at any distance.
+ *   - "manning" — a command/control node mans a station with no crew present.
+ */
+export const HardwireResource = z.enum(["ammo", "power", "manning"]);
+export type HardwireResource = z.infer<typeof HardwireResource>;
+
+/** Integer grid coordinate of a cell, used to address hardwire endpoints. */
+export const CellCoord = z.object({
+  col: z.number().int().min(0),
+  row: z.number().int().min(0),
+});
+export type CellCoord = z.infer<typeof CellCoord>;
+
+/**
+ * A hardwire conduit between two module cells. `from` is the resource source
+ * (magazine / reactor / command), `to` the consumer sink. Source/sink module
+ * compatibility is checked by the design validator, not the schema; the schema
+ * only guarantees the endpoints are distinct and in bounds.
+ */
+export const Connection = z.object({
+  from: CellCoord,
+  to: CellCoord,
+  resource: HardwireResource,
+});
+export type Connection = z.infer<typeof Connection>;
+
 /**
  * A rectangular tile grid. `cells` is a flat, row-major array of length
  * `cols * rows`: the cell at (col, row) lives at index `row * cols + col`,
  * with col increasing left-to-right (+x) and row increasing top-to-bottom
  * (+y). Dimensions are integers of at least 1, and the cell count is validated
  * to equal `cols * rows` so a malformed grid fails loudly at parse time.
+ *
+ * `connections` are hardwire conduits between module cells; it defaults to an
+ * empty array so grids authored before hardwiring parse unchanged.
  */
 export const TileGrid = z
   .object({
     cols: z.number().int().min(1),
     rows: z.number().int().min(1),
     cells: z.array(GridCell),
+    connections: z.array(Connection).default([]),
   })
   .refine((g) => g.cells.length === g.cols * g.rows, {
     message: "cells length must equal cols * rows",
     path: ["cells"],
-  });
+  })
+  .refine(
+    (g) =>
+      g.connections.every(
+        (c) =>
+          c.from.col < g.cols &&
+          c.from.row < g.rows &&
+          c.to.col < g.cols &&
+          c.to.row < g.rows &&
+          !(c.from.col === c.to.col && c.from.row === c.to.row),
+      ),
+    {
+      message: "connection endpoints must be distinct and within the grid",
+      path: ["connections"],
+    },
+  );
 export type TileGrid = z.infer<typeof TileGrid>;

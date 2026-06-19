@@ -76,6 +76,11 @@ export const ShieldEffect = z.object({
   capacity: z.number().min(0),
   rechargeRate: z.number().min(0),
   rechargeDelay: z.number().int().min(0),
+  /** Adaptive shield: an extra fraction added to the effective recharge rate for
+   *  every tick the shield has gone untouched, so a shield left alone recovers
+   *  ever faster (capped by the engine). Omitted = a conventional shield whose
+   *  recharge never ramps. */
+  adaptiveRampRate: z.number().min(0).optional(),
 });
 export type ShieldEffect = z.infer<typeof ShieldEffect>;
 
@@ -84,6 +89,13 @@ export const ArmourEffect = z.object({
   kind: z.literal("armour"),
   hitpoints: z.number().min(0),
   damageReduction: zeroToOne,
+  /** Reactive armour: an extra damage-reduction fraction applied to a hit and
+   *  then spent, recharging over `reactiveWindow` ticks before it can absorb
+   *  again. Both omitted = conventional passive armour. */
+  reactiveReduction: zeroToOne.optional(),
+  /** Ticks the reactive layer takes to recharge after absorbing a hit. Only
+   *  meaningful alongside `reactiveReduction`. */
+  reactiveWindow: z.number().int().min(0).optional(),
 });
 export type ArmourEffect = z.infer<typeof ArmourEffect>;
 
@@ -246,6 +258,10 @@ export const SensorEffect = z.object({
   minRange: z.number().optional(),
   /** Maximum electronically steerable range (variable units only). */
   maxRange: z.number().optional(),
+  /** When true, this sensor can acquire cloaked enemies within its detection
+   *  range — an active scan defeats passive cloak. Omitted = a passive sensor
+   *  that cannot see through cloak. The counter to the cloak stealth tech. */
+  pierceCloak: z.boolean().optional(),
 });
 export type SensorEffect = z.infer<typeof SensorEffect>;
 
@@ -326,6 +342,157 @@ export const ReactionWheelEffect = z.object({
   torque: z.number().min(0),
 });
 export type ReactionWheelEffect = z.infer<typeof ReactionWheelEffect>;
+ /**
+ * Effect payload for a blink / jump drive. Teleports the host ship by up to
+ * `jumpRange` world units on a `cooldown`, instead of (or as well as) thrusting
+ * there. Two modes:
+ *   - "tactical" — short range, short cooldown: a combat reposition. The engine
+ *     picks the destination from the ship's stance (close on / flank the target
+ *     when aggressive, open the range when evasive).
+ *   - "escape"   — long range, long cooldown: an emergency disengage fired once
+ *     the ship's structure fraction falls below `escapeThreshold`.
+ */
+export const BlinkEffect = z.object({
+  kind: z.literal("blink"),
+  mode: z.enum(["tactical", "escape"]),
+  /** Maximum teleport distance in world units. */
+  jumpRange: z.number().min(0),
+  /** Ticks between jumps. */
+  cooldown: z.number().int().min(0),
+  /** Structure fraction (0..1) at or below which an "escape" drive fires. Only
+   *  meaningful when mode === "escape". */
+  escapeThreshold: zeroToOne.optional(),
+});
+export type BlinkEffect = z.infer<typeof BlinkEffect>;
+
+/** Effect payload for an afterburner: a temporary thrust/turn surge on a
+ *  cooldown. `thrustBoost`/`turnBoost` are multipliers (>= 1) applied to the
+ *  ship's thrust and turn rate for `duration` ticks, then it recharges over the
+ *  remainder of `cooldown`. */
+export const AfterburnerEffect = z.object({
+  kind: z.literal("afterburner"),
+  thrustBoost: z.number().min(1),
+  turnBoost: z.number().min(1),
+  duration: z.number().int().min(1),
+  cooldown: z.number().int().min(0),
+});
+export type AfterburnerEffect = z.infer<typeof AfterburnerEffect>;
+
+/** Effect payload for a reactor overcharge: temporarily raises the ship's power
+ *  ceiling by `powerSurge` units for `duration` ticks on a `cooldown`, letting
+ *  more modules stay online through a brownout at the cost of a recharge gap. */
+export const OverchargeEffect = z.object({
+  kind: z.literal("overcharge"),
+  powerSurge: z.number().min(0),
+  duration: z.number().int().min(1),
+  cooldown: z.number().int().min(0),
+});
+export type OverchargeEffect = z.infer<typeof OverchargeEffect>;
+
+/** Effect payload for a cloak: while active the ship cannot be acquired as a
+ *  target. Firing any weapon drops the cloak for `decloakTicks`, after which it
+ *  re-engages. Countered by an enemy `SensorEffect` with `pierceCloak` in range. */
+export const CloakEffect = z.object({
+  kind: z.literal("cloak"),
+  /** Ticks the ship stays visible after firing before the cloak re-engages. */
+  decloakTicks: z.number().int().min(0),
+});
+export type CloakEffect = z.infer<typeof CloakEffect>;
+
+/** Effect payload for signature reduction: always-on partial stealth that
+ *  shrinks the range at which enemies can acquire this ship to
+ *  `acquisitionMultiplier` of their normal detection range (0..1). */
+export const SignatureEffect = z.object({
+  kind: z.literal("signature"),
+  acquisitionMultiplier: zeroToOne,
+});
+export type SignatureEffect = z.infer<typeof SignatureEffect>;
+
+/** Effect payload for ECM / jamming: degrades incoming fire aimed at this ship.
+ *  `trackingReduction` scales down attacker projectile tracking against it and
+ *  `lockBreakChance` is the per-tick chance an enemy missile loses lock.
+ *  Countered by an attacker's `EccmEffect`. */
+export const EcmEffect = z.object({
+  kind: z.literal("ecm"),
+  trackingReduction: zeroToOne,
+  lockBreakChance: zeroToOne,
+});
+export type EcmEffect = z.infer<typeof EcmEffect>;
+
+/** Effect payload for ECCM: counters enemy ECM by restoring a fraction
+ *  (`trackingRestore`, 0..1) of this ship's own weapon tracking / missile lock
+ *  that an enemy `EcmEffect` would otherwise strip away. */
+export const EccmEffect = z.object({
+  kind: z.literal("eccm"),
+  trackingRestore: zeroToOne,
+});
+export type EccmEffect = z.infer<typeof EccmEffect>;
+
+/** Effect payload for a decoy launcher: on a `cooldown`, emits `decoyCount`
+ *  false contacts that enemies may target and fire at for `duration` ticks.
+ *  Each decoy has `decoyHp` so point-defence and weapons can clear them. */
+export const DecoyEffect = z.object({
+  kind: z.literal("decoy"),
+  decoyCount: z.number().int().min(1),
+  duration: z.number().int().min(1),
+  cooldown: z.number().int().min(0),
+  decoyHp: z.number().min(0),
+});
+export type DecoyEffect = z.infer<typeof DecoyEffect>;
+
+/** Effect payload for a command/coordination aura: buffs friendly ships within
+ *  `radius` world units, adding `accuracyBonus` to their effective tracking/hit
+ *  and `rangeBonus` (both 0..1 fractions) to their weapon range. A module
+ *  carrying this effect is typically also flagged `command`. */
+export const CommandAuraEffect = z.object({
+  kind: z.literal("commandAura"),
+  radius: z.number().min(0),
+  accuracyBonus: zeroToOne,
+  rangeBonus: zeroToOne,
+});
+export type CommandAuraEffect = z.infer<typeof CommandAuraEffect>;
+
+/** Effect payload for a hangar / carrier bay: launches up to `droneCount`
+ *  autonomous drones (replaced on a `launchCooldown` as they die), each a small
+ *  combatant with `droneHp`, `droneDamage`, `droneRange` and `droneSpeed`.
+ *  `droneLifetime`, when set, expires a drone after that many ticks; omitted
+ *  means the drone persists until destroyed. */
+export const HangarEffect = z.object({
+  kind: z.literal("hangar"),
+  droneCount: z.number().int().min(1),
+  launchCooldown: z.number().int().min(0),
+  droneHp: z.number().min(0),
+  droneDamage: z.number().min(0),
+  droneRange: z.number().min(0),
+  droneSpeed: z.number().min(0),
+  droneLifetime: z.number().int().min(1).optional(),
+});
+export type HangarEffect = z.infer<typeof HangarEffect>;
+
+/** Effect payload for a mine layer: deploys up to `mineCount` static proximity
+ *  mines (laid on a `layCooldown`), each dealing `mineDamage` within
+ *  `mineRadius` once it has finished its `armingDelay`. */
+export const MineLayerEffect = z.object({
+  kind: z.literal("mineLayer"),
+  mineCount: z.number().int().min(1),
+  mineDamage: z.number().min(0),
+  mineRadius: z.number().min(0),
+  layCooldown: z.number().int().min(0),
+  armingDelay: z.number().int().min(0),
+});
+export type MineLayerEffect = z.infer<typeof MineLayerEffect>;
+
+/** Effect payload for a boarding launcher: on a `cooldown`, fires `podCount`
+ *  pods carrying `troops` at an enemy within `range`. A pod that reaches its
+ *  target disables enemy modules (proportional to `troops`) on contact. */
+export const BoardingEffect = z.object({
+  kind: z.literal("boarding"),
+  podCount: z.number().int().min(1),
+  troops: z.number().int().min(1),
+  range: z.number().min(0),
+  cooldown: z.number().int().min(0),
+});
+export type BoardingEffect = z.infer<typeof BoardingEffect>;
 
 /**
  * Discriminated union of all module effects. New module kinds extend this.
@@ -345,6 +512,18 @@ export const ModuleEffect = z.discriminatedUnion("kind", [
   CommsEffect,
   RcsEffect,
   ReactionWheelEffect,
+  BlinkEffect,
+  AfterburnerEffect,
+  OverchargeEffect,
+  CloakEffect,
+  SignatureEffect,
+  EcmEffect,
+  EccmEffect,
+  DecoyEffect,
+  CommandAuraEffect,
+  HangarEffect,
+  MineLayerEffect,
+  BoardingEffect,
 ]);
 export type ModuleEffect = z.infer<typeof ModuleEffect>;
 

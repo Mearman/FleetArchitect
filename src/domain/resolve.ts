@@ -225,6 +225,24 @@ function baseHpFor(kind: ResolvedModule["kind"]): number {
       return 12;
     case "reactionWheel":
       return 20;
+    // Tech modules (factions update). Stealth/ECM/sensor-grade electronics are
+    // fragile; bays (hangar) and launchers (mine/boarding) are sturdier mounts.
+    case "cloak":
+    case "signature":
+    case "ecm":
+    case "eccm":
+    case "decoy":
+    case "overcharge":
+    case "commandAura":
+      return 18;
+    case "blink":
+    case "afterburner":
+      return 22;
+    case "mineLayer":
+    case "boarding":
+      return 30;
+    case "hangar":
+      return 45;
   }
 }
 

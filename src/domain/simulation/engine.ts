@@ -1841,6 +1841,18 @@ function stationNeedsCrew(m: SimModule): boolean {
     case "hull":
     case "rcs":
     case "reactionWheel":
+    case "blink": // tech modules (factions update): inert dispatch here; crewRequired still gates manning, active behaviour added in later phases
+    case "afterburner":
+    case "overcharge":
+    case "cloak":
+    case "signature":
+    case "ecm":
+    case "eccm":
+    case "decoy":
+    case "commandAura":
+    case "hangar":
+    case "mineLayer":
+    case "boarding":
       return false;
   }
 }
@@ -2109,6 +2121,18 @@ function recomputeAggregates(ship: SimShip): void {
       case "comms":  // Phase A: inert — no aggregate effect (link logic is Phase C)
       case "rcs":          // torque handled in the modular shipForceAndTorque path
       case "reactionWheel": // torque handled in the modular shipForceAndTorque path
+      case "blink": // tech modules (factions update): no aggregate contribution; active per-tick behaviour handled in the tick loop in later phases
+      case "afterburner":
+      case "overcharge":
+      case "cloak":
+      case "signature":
+      case "ecm":
+      case "eccm":
+      case "decoy":
+      case "commandAura":
+      case "hangar":
+      case "mineLayer":
+      case "boarding":
         break;
     }
   }

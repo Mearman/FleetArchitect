@@ -19,7 +19,7 @@ function makeGrid(rows: readonly string[], tokens: Record<string, GridCell>): Ti
       cells.push(cell);
     }
   }
-  return { cols, rows: rows.length, cells };
+  return { cols, rows: rows.length, cells, connections: [] };
 }
 
 const TERRAN: Record<string, GridCell> = {

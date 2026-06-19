@@ -30,6 +30,7 @@ function armedFighter(id: string): ShipDesign {
         { kind: "module", moduleId: "mod-reactor-fusion", facing: 0 },
         { kind: "module", moduleId: "mod-crew-quarters", facing: 0 },
       ],
+      connections: [],
     },
     createdAt: nowIso(),
     updatedAt: nowIso(),

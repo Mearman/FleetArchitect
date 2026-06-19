@@ -76,6 +76,18 @@ export const ShipSnapshot = z.object({
           "comms",
           "rcs",
           "reactionWheel",
+          "blink",
+          "afterburner",
+          "overcharge",
+          "cloak",
+          "signature",
+          "ecm",
+          "eccm",
+          "decoy",
+          "commandAura",
+          "hangar",
+          "mineLayer",
+          "boarding",
         ]),
         /** Position in ship-local (design) coordinates, for rendering. */
         x: z.number(),
@@ -238,6 +250,57 @@ export const AwarenessSnapshot = z.object({
 });
 export type AwarenessSnapshot = z.infer<typeof AwarenessSnapshot>;
 
+/** An autonomous drone launched from a hangar, at a tick. A small independent
+ *  combatant: it has its own position, heading and HP and is rendered like a
+ *  miniature ship in its owner's faction colours. */
+export const DroneSnapshot = z.object({
+  instanceId: EntityId,
+  ownerId: EntityId,
+  side: z.enum(["attacker", "defender"]),
+  x: z.number(),
+  y: z.number(),
+  facing: z.number().optional(),
+  hp: z.number(),
+  maxHp: z.number(),
+  alive: z.boolean(),
+});
+export type DroneSnapshot = z.infer<typeof DroneSnapshot>;
+
+/** A deployed proximity mine at a tick. `armed` is false during its arming
+ *  delay (it cannot detonate yet); the renderer can show a disarmed mine dimly. */
+export const MineSnapshot = z.object({
+  instanceId: EntityId,
+  side: z.enum(["attacker", "defender"]),
+  x: z.number(),
+  y: z.number(),
+  armed: z.boolean(),
+});
+export type MineSnapshot = z.infer<typeof MineSnapshot>;
+
+/** A false contact emitted by a decoy launcher at a tick. Enemies may target
+ *  and fire at it until it is destroyed or its `ticksLeft` expires. */
+export const DecoySnapshot = z.object({
+  instanceId: EntityId,
+  ownerId: EntityId,
+  side: z.enum(["attacker", "defender"]),
+  x: z.number(),
+  y: z.number(),
+  hp: z.number(),
+  ticksLeft: z.number().int().min(0),
+});
+export type DecoySnapshot = z.infer<typeof DecoySnapshot>;
+
+/** A boarding pod in flight at a tick, travelling from its launcher toward the
+ *  enemy ship `targetId`. On contact it disables modules on the target. */
+export const BoardingPodSnapshot = z.object({
+  instanceId: EntityId,
+  side: z.enum(["attacker", "defender"]),
+  x: z.number(),
+  y: z.number(),
+  targetId: EntityId,
+});
+export type BoardingPodSnapshot = z.infer<typeof BoardingPodSnapshot>;
+
 /** A single frame of recorded battle state, for replay rendering. */
 export const BattleFrame = z.object({
   tick: z.number().int().min(0),
@@ -248,8 +311,24 @@ export const BattleFrame = z.object({
    * the sensor/comms system (Phase C) was active, so older replays parse cleanly.
    */
   awareness: AwarenessSnapshot.optional(),
+  /** New-entity arrays. Each is omitted when empty so frames without that
+   *  mechanic stay byte-identical to replays recorded before it existed. */
+  drones: z.array(DroneSnapshot).optional(),
+  mines: z.array(MineSnapshot).optional(),
+  decoys: z.array(DecoySnapshot).optional(),
+  pods: z.array(BoardingPodSnapshot).optional(),
 });
 export type BattleFrame = z.infer<typeof BattleFrame>;
+
+/** Per-ship identity carried once per battle (not per tick): the faction and
+ *  side of each combatant, keyed by instance id, so the renderer can colour
+ *  ships by faction without bloating every frame's ship snapshots. */
+export const ShipRosterEntry = z.object({
+  instanceId: EntityId,
+  faction: z.string().min(1),
+  side: z.enum(["attacker", "defender"]),
+});
+export type ShipRosterEntry = z.infer<typeof ShipRosterEntry>;
 
 /** A completed battle, with enough data to replay it. */
 export const BattleResult = z.object({
@@ -259,6 +338,12 @@ export const BattleResult = z.object({
   ticks: z.number().int().min(0),
   playedAt: IsoTimestamp,
   frames: z.array(BattleFrame),
+  /**
+   * Faction/side of each combatant, for faction-coloured rendering. Optional so
+   * replays recorded before the factions update still parse; the renderer falls
+   * back to side-only colour when absent.
+   */
+  roster: z.array(ShipRosterEntry).optional(),
 });
 export type BattleResult = z.infer<typeof BattleResult>;
 

@@ -59,7 +59,7 @@ function blankGrid(cols: number, rows: number): TileGrid {
   }));
   const centre = Math.floor(rows / 2) * cols + Math.floor(cols / 2);
   cells[centre] = { kind: "module", moduleId: "mod-reactor-fusion", facing: 0 };
-  return { cols, rows, cells };
+  return { cols, rows, cells, connections: [] };
 }
 
 function blankDesign(): WorkingDesign {
@@ -283,7 +283,15 @@ export function ShipDesignerRoute() {
           cells.push(existing ?? { kind: "empty" });
         }
       }
-      return { ...prev, grid: { cols, rows, cells } };
+      // Drop any hardwire connection whose endpoints fall outside the new bounds.
+      const connections = prev.grid.connections.filter(
+        (cn) =>
+          cn.from.col < cols &&
+          cn.from.row < rows &&
+          cn.to.col < cols &&
+          cn.to.row < rows,
+      );
+      return { ...prev, grid: { cols, rows, cells, connections } };
     });
     setSelected(null);
   }

@@ -18,6 +18,7 @@ function design(): ShipDesign {
       { kind: "module", moduleId: "mod-pulse-laser", facing: Math.PI },
       { kind: "module", moduleId: "mod-reactor-fusion", facing: 0 },
     ],
+    connections: [],
   };
   return {
     id: "d-1",
@@ -79,6 +80,7 @@ describe("resolveFleetToCombatShips (grid)", () => {
           { kind: "hull", tile: "block" },
           { kind: "module", moduleId: "mod-reactor-fusion", facing: 0 },
         ],
+        connections: [],
       },
     };
     const [ship] = resolveFleetToCombatShips(

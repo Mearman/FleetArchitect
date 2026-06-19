@@ -65,7 +65,7 @@ function corvette(id: string): ShipDesign {
     id,
     name: id,
     faction: "Terran",
-    grid: { cols: 4, rows: 2, cells: cells(rows) },
+    grid: { cols: 4, rows: 2, cells: cells(rows), connections: [] },
     createdAt: nowIso(),
     updatedAt: nowIso(),
   };

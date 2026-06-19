@@ -22,6 +22,7 @@ function sampleDesign(): ShipDesign {
         { kind: "module", moduleId: "mod-reactor-fusion", facing: 0 },
         { kind: "hull", tile: "block" },
       ],
+      connections: [],
     },
     createdAt: nowIso(),
     updatedAt: nowIso(),
