@@ -1,6 +1,7 @@
 import { Anchor, AppShell, Badge, Container, Group, Text } from "@mantine/core";
 import { Link, Outlet } from "react-router-dom";
 import { appShell } from "./theme.css";
+import { buildMeta } from "./buildMeta";
 
 const navItems = [
   { to: "/", label: "Home" },
@@ -21,6 +22,17 @@ export function AppLayout() {
             <Badge size="xs" variant="light" color="gray">
               alpha
             </Badge>
+            {buildMeta && (
+              <Anchor
+                size="xs"
+                c="dimmed"
+                href={buildMeta.href}
+                target="_blank"
+                rel="noreferrer noopener"
+              >
+                {buildMeta.label}
+              </Anchor>
+            )}
           </Group>
           <Group gap="lg" wrap="nowrap">
             {navItems.map((item) => (
