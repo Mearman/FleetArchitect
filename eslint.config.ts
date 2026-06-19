@@ -6,7 +6,16 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["dist", "coverage", "pnpm-lock.yaml"],
+    ignores: ["dist", "coverage", "pnpm-lock.yaml", ".claude"],
+  },
+  {
+    // Pin the TSConfig root so the parser isn't confused by stray
+    // tsconfig.json files elsewhere in the tree (e.g. registered git
+    // worktrees under .claude/). Required because lint-staged runs eslint
+    // at commit time.
+    languageOptions: {
+      parserOptions: { tsconfigRootDir: import.meta.dirname },
+    },
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
