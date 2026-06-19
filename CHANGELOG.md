@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/Mearman/FleetArchitect/compare/v1.1.0...v1.2.0) (2026-06-19)
+
+
+### Features
+
+* **build:** enable React Compiler via a post-transform babel pass ([d6686b1](https://github.com/Mearman/FleetArchitect/commit/d6686b127bfc39b343fac248cd6c8a6c7e277a9e))
+
 # [1.1.0](https://github.com/Mearman/FleetArchitect/compare/v1.0.0...v1.1.0) (2026-06-19)
 
 
