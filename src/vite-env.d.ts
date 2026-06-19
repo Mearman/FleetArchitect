@@ -6,3 +6,5 @@ declare const __BUILD_HASH__: string;
 declare const __BUILD_TAG__: string;
 /** GitHub OWNER/REPO slug parsed from the git remote (build time). */
 declare const __BUILD_REPO__: string;
+/** ISO timestamp of the release tag, or the commit when untagged (build time). */
+declare const __BUILD_DATE__: string;

@@ -1,4 +1,4 @@
-import { Anchor, AppShell, Badge, Container, Group, Text } from "@mantine/core";
+import { Anchor, AppShell, Badge, Container, Group, Text, Tooltip } from "@mantine/core";
 import { Link, Outlet } from "react-router-dom";
 import { appShell } from "./theme.css";
 import { buildMeta } from "./buildMeta";
@@ -23,15 +23,17 @@ export function AppLayout() {
               alpha
             </Badge>
             {buildMeta && (
-              <Anchor
-                size="xs"
-                c="dimmed"
-                href={buildMeta.href}
-                target="_blank"
-                rel="noreferrer noopener"
-              >
-                {buildMeta.label}
-              </Anchor>
+              <Tooltip label={buildMeta.title} position="bottom" withArrow openDelay={200}>
+                <Anchor
+                  size="xs"
+                  c="dimmed"
+                  href={buildMeta.href}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                >
+                  {buildMeta.label}
+                </Anchor>
+              </Tooltip>
             )}
           </Group>
           <Group gap="lg" wrap="nowrap">

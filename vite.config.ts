@@ -26,12 +26,17 @@ function git(command: string): string {
 
 // Build-time metadata injected into the bundle for the top-bar link. `buildTag`
 // is non-empty only when HEAD is exactly a release tag; `buildRepo` is the
-// OWNER/REPO slug parsed from the git remote.
+// OWNER/REPO slug parsed from the git remote; `buildDate` is the tag's creation
+// date for releases or the commit date otherwise.
 const buildHash = git("git rev-parse --short HEAD");
 const buildTag = git("git describe --tags --exact-match HEAD");
 const buildRepo = git("git config --get remote.origin.url")
   .replace(/^.*github\.com[:/]/, "")
   .replace(/\.git$/, "");
+const buildDate =
+  buildTag !== ""
+    ? git(`git for-each-ref --format='%(creatordate:iso-strict)' refs/tags/${buildTag}`)
+    : git("git log -1 --format=%cI HEAD");
 
 export default defineConfig({
   base,
@@ -40,6 +45,7 @@ export default defineConfig({
     __BUILD_HASH__: JSON.stringify(buildHash),
     __BUILD_TAG__: JSON.stringify(buildTag),
     __BUILD_REPO__: JSON.stringify(buildRepo),
+    __BUILD_DATE__: JSON.stringify(buildDate),
   },
   resolve: {
     alias: {
