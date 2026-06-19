@@ -1,4 +1,5 @@
-pnpm test
+# History-shape guards only (fast). The full test suite runs on pre-push so
+# commits stay fast and can be small/atomic.
 
 # Enforce linear history on main — reject merge commits.
 branch=$(git rev-parse --abbrev-ref HEAD)

@@ -1,0 +1,4 @@
+# Run the full suite before pushing. pre-commit carries only the fast
+# history-shape guards (no merge commits on main, no squash merges) so commits
+# stay quick and atomic; the test gate lives here, run once per push.
+pnpm test
