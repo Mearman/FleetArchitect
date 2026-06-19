@@ -1014,7 +1014,7 @@ function toSimShip(ship: CombatShip, rng: () => number): SimShip {
   const weapons = ship.stats.weapons.map((w) => w.effect);
   const base: SimShip = {
     instanceId: ship.instanceId,
-    faction: ship.faction ?? "",
+    faction: ship.faction,
     side: ship.side,
     classification: ship.classification,
     x: ship.position.x,
@@ -6081,7 +6081,7 @@ export function runBattle(inputs: BattleInputs): BattleResult {
     // can colour ships by faction without bloating per-tick snapshots.
     roster: inputs.ships.map((s) => ({
       instanceId: s.instanceId,
-      faction: s.faction ?? "",
+      faction: s.faction,
       side: s.side,
     })),
   };

@@ -17,7 +17,7 @@ export interface CombatShip {
   /** The faction this ship's design belongs to, copied from `ShipDesign.faction`
    *  by the resolver. Carried through to the battle roster so the renderer can
    *  colour combatants by faction without bloating per-tick snapshots. */
-  faction?: string;
+  faction: string;
   side: "attacker" | "defender";
   stats: ShipStats;
   position: Vec2;
