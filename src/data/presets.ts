@@ -150,6 +150,94 @@ function swarmGrid(rows: readonly string[]): TileGrid {
   return gridFromMapWith(rows, SWARM_TOKENS);
 }
 
+/** Single-character tokens for the ASCII grid authoring map — Crystalline parts. */
+const CRYSTAL_TOKENS: Record<string, GridCell> = {
+  ".": { kind: "empty" },
+  "#": { kind: "hull", tile: "block" },
+  "~": { kind: "floor" },
+  "F": { kind: "module", moduleId: "cry-power-crystal", facing: 0 },
+  "X": { kind: "module", moduleId: "cry-quantum-lattice", facing: 0 },
+  "C": { kind: "module", moduleId: "cry-resonator-core", facing: 0 },
+  "L": { kind: "module", moduleId: "cry-prism-beam", facing: 0 },
+  "H": { kind: "module", moduleId: "cry-phase-lance", facing: 0 },
+  "S": { kind: "module", moduleId: "cry-adaptive-shield-mk1", facing: 0 },
+  "E": { kind: "module", moduleId: "cry-thruster", facing: Math.PI },
+  "B": { kind: "module", moduleId: "cry-blink-drive", facing: 0 },
+  "K": { kind: "module", moduleId: "cry-phase-cloak", facing: 0 },
+};
+
+/** Single-character tokens for the ASCII grid authoring map — Foundry parts. */
+const FOUNDRY_TOKENS: Record<string, GridCell> = {
+  ".": { kind: "empty" },
+  "#": { kind: "hull", tile: "block" },
+  "~": { kind: "floor" },
+  "F": { kind: "module", moduleId: "fnd-reactor-mk1", facing: 0 },
+  "X": { kind: "module", moduleId: "fnd-reactor-mk2", facing: 0 },
+  "C": { kind: "module", moduleId: "fnd-crew-barracks", facing: 0 },
+  "A": { kind: "module", moduleId: "fnd-autocannon", facing: 0 },
+  "G": { kind: "module", moduleId: "fnd-magazine", facing: 0 },
+  "D": { kind: "module", moduleId: "fnd-bulkhead", facing: 0 },
+  "R": { kind: "module", moduleId: "fnd-reactive-armour", facing: 0 },
+  "W": { kind: "module", moduleId: "fnd-repair-bay", facing: 0 },
+  "E": { kind: "module", moduleId: "fnd-thruster", facing: Math.PI },
+  "P": { kind: "module", moduleId: "fnd-grav-drive", facing: Math.PI },
+  "M": { kind: "module", moduleId: "fnd-mine-layer", facing: 0 },
+};
+
+/** Single-character tokens for the ASCII grid authoring map — Corsair parts. */
+const CORSAIR_TOKENS: Record<string, GridCell> = {
+  ".": { kind: "empty" },
+  "#": { kind: "hull", tile: "block" },
+  "~": { kind: "floor" },
+  "F": { kind: "module", moduleId: "cor-reactor", facing: 0 },
+  "C": { kind: "module", moduleId: "cor-crew-quarters", facing: 0 },
+  "M": { kind: "module", moduleId: "cor-raider-missile", facing: 0 },
+  "W": { kind: "module", moduleId: "cor-swarm-missile", facing: 0 },
+  "G": { kind: "module", moduleId: "cor-magazine", facing: 0 },
+  "E": { kind: "module", moduleId: "cor-raider-engine", facing: Math.PI },
+  "K": { kind: "module", moduleId: "cor-cloak", facing: 0 },
+  "B": { kind: "module", moduleId: "cor-blink-drive", facing: 0 },
+  "J": { kind: "module", moduleId: "cor-scrambler", facing: 0 },
+  "O": { kind: "module", moduleId: "cor-boarding-pod", facing: 0 },
+};
+
+/** Single-character tokens for the ASCII grid authoring map — Synthetic parts. */
+const SYNTHETIC_TOKENS: Record<string, GridCell> = {
+  ".": { kind: "empty" },
+  "#": { kind: "hull", tile: "block" },
+  "~": { kind: "floor" },
+  "P": { kind: "module", moduleId: "syn-processor", facing: 0 },
+  "X": { kind: "module", moduleId: "syn-quantum-core", facing: 0 },
+  "C": { kind: "module", moduleId: "syn-precise-cannon", facing: 0 },
+  "R": { kind: "module", moduleId: "syn-railgun", facing: 0 },
+  "G": { kind: "module", moduleId: "syn-magazine", facing: 0 },
+  "E": { kind: "module", moduleId: "syn-thruster", facing: Math.PI },
+  "I": { kind: "module", moduleId: "syn-pd-array", facing: 0 },
+  "N": { kind: "module", moduleId: "syn-sensor-array", facing: 0 },
+  "H": { kind: "module", moduleId: "syn-drone-hangar", facing: 0 },
+  "A": { kind: "module", moduleId: "syn-coordination-aura", facing: 0 },
+};
+
+/** Parse an ASCII map using the Crystalline token set. */
+function crystalGrid(rows: readonly string[]): TileGrid {
+  return gridFromMapWith(rows, CRYSTAL_TOKENS);
+}
+
+/** Parse an ASCII map using the Foundry token set. */
+function foundryGrid(rows: readonly string[]): TileGrid {
+  return gridFromMapWith(rows, FOUNDRY_TOKENS);
+}
+
+/** Parse an ASCII map using the Corsair token set. */
+function corsairGrid(rows: readonly string[]): TileGrid {
+  return gridFromMapWith(rows, CORSAIR_TOKENS);
+}
+
+/** Parse an ASCII map using the Synthetic token set. */
+function syntheticGrid(rows: readonly string[]): TileGrid {
+  return gridFromMapWith(rows, SYNTHETIC_TOKENS);
+}
+
 // Authoring note on orientation: ships face +x (to the right). A cell's world
 // x grows with its column, so the RIGHTMOST columns are the prow (forward) and
 // the LEFTMOST are the stern — engines (`E`/`P`, `j`/`u`) sit at the left edge
@@ -448,6 +536,82 @@ const designData: ShipDesign[] = [
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
   },
+
+  // ---------------------------------------------------------------------------
+  // Crystalline Concord — phase skirmishers: adaptive shields, blink, cloak.
+  // ---------------------------------------------------------------------------
+  {
+    id: "preset-ship-shard",
+    name: "Shard",
+    faction: "Crystalline",
+    // A frigate built to phase in and out: an adaptive shield and prism beam
+    // over a crystal spine, with a blink drive to reposition and a phase-cloak
+    // to close unobserved. Brittle hull — it relies on shields and mobility.
+    grid: crystalGrid([
+      "..##..",
+      "ECSFLK",
+      "..##..",
+    ]),
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+  },
+
+  // ---------------------------------------------------------------------------
+  // Foundry Combine — slow, heavily-armoured slabs.
+  // ---------------------------------------------------------------------------
+  {
+    id: "preset-ship-anvil",
+    name: "Anvil",
+    faction: "Foundry",
+    // A frigate that is more plating than ship: forged bulkheads over an
+    // autocannon and a damage-control bay, with a shell magazine feeding the
+    // gun. No shields — it absorbs fire with raw structure and welds it shut.
+    grid: foundryGrid([
+      "#DDDD#",
+      "ECFWAG",
+      "#DDDD#",
+    ]),
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+  },
+
+  // ---------------------------------------------------------------------------
+  // Corsair Reavers — fast missile raiders.
+  // ---------------------------------------------------------------------------
+  {
+    id: "preset-ship-reaver",
+    name: "Reaver",
+    faction: "Corsair",
+    // A raider frigate: a missile rack and raid cannon over a hot raid drive,
+    // with a magazine for a sustained volley and a scrambler to blunt return
+    // fire. Light scrap hull — it strikes and runs.
+    grid: corsairGrid([
+      ".####.",
+      "ECFMGJ",
+      ".####.",
+    ]),
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+  },
+
+  // ---------------------------------------------------------------------------
+  // Synthetic Collective — hardwired, crewless drone hulls.
+  // ---------------------------------------------------------------------------
+  {
+    id: "preset-ship-node",
+    name: "Node",
+    faction: "Synthetic",
+    // A crewless frigate: an AI processor runs the whole ship with no quarters,
+    // hardwiring power and ammo directly. A precise cannon and an interceptor
+    // array screen the fleet, fed from an integral slug reservoir.
+    grid: syntheticGrid([
+      ".####.",
+      "EPCGIN",
+      ".####.",
+    ]),
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+  },
 ];
 
 // Fleet doctrines — each a distinct set of orders the ships in it share.
@@ -505,6 +669,46 @@ const broodOrders: Orders = {
   retreatThreshold: 0.1,
   focusFire: true,
   rangeKeepingBand: 0.5,
+};
+/** Orders for Crystalline phase fleets: kite at range, blink away from trouble. */
+const phaseOrders: Orders = {
+  ...defaultOrders,
+  stance: "evasive",
+  targetPriority: "weakest",
+  engageRange: "long",
+  retreatThreshold: 0.35,
+  focusFire: true,
+  rangeKeepingBand: 0.6,
+};
+/** Orders for Foundry siege fleets: hold ground and outlast at range. */
+const siegeOrders: Orders = {
+  ...defaultOrders,
+  stance: "defensive",
+  targetPriority: "strongest",
+  engageRange: "medium",
+  retreatThreshold: 0.1,
+  focusFire: true,
+  rangeKeepingBand: 0.3,
+};
+/** Orders for Corsair raid fleets: close fast, hit hard, scatter. */
+const raidOrders: Orders = {
+  ...defaultOrders,
+  stance: "aggressive",
+  targetPriority: "nearest",
+  engageRange: "short",
+  retreatThreshold: 0.2,
+  focusFire: false,
+  rangeKeepingBand: 0.25,
+};
+/** Orders for Synthetic nets: a defensive screen that picks off the weakest. */
+const netOrders: Orders = {
+  ...defaultOrders,
+  stance: "defensive",
+  targetPriority: "weakest",
+  engageRange: "medium",
+  retreatThreshold: 0.25,
+  focusFire: true,
+  rangeKeepingBand: 0.4,
 };
 
 const fleetData: Fleet[] = [
@@ -635,6 +839,74 @@ const fleetData: Fleet[] = [
       { designId: "preset-ship-carrion", position: { x: -370, y: 170 }, facing: 0, orders: hiveOrders },
       { designId: "preset-ship-drone", position: { x: -400, y: -60 }, facing: 0, orders: hiveOrders },
       { designId: "preset-ship-drone", position: { x: -400, y: 60 }, facing: 0, orders: hiveOrders },
+    ],
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+  },
+
+  // --- Crystalline Concord fleets ---
+  {
+    id: "preset-fleet-concord",
+    name: "Phase Lance",
+    faction: "Crystalline",
+    // A phase skirmish line: Shards kite at range behind adaptive shields,
+    // blinking clear of trouble and cloaking on the approach.
+    ships: [
+      { designId: "preset-ship-shard", position: { x: -300, y: -120 }, facing: 0, orders: phaseOrders },
+      { designId: "preset-ship-shard", position: { x: -300, y: -40 }, facing: 0, orders: phaseOrders },
+      { designId: "preset-ship-shard", position: { x: -300, y: 40 }, facing: 0, orders: phaseOrders },
+      { designId: "preset-ship-shard", position: { x: -300, y: 120 }, facing: 0, orders: phaseOrders },
+    ],
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+  },
+
+  // --- Foundry Combine fleets ---
+  {
+    id: "preset-fleet-foundry",
+    name: "Iron Wall",
+    faction: "Foundry",
+    // A slow armour wall: Anvils hold ground and outlast the enemy, welding
+    // shut whatever gets through the bulkheads.
+    ships: [
+      { designId: "preset-ship-anvil", position: { x: -300, y: -130 }, facing: 0, orders: siegeOrders },
+      { designId: "preset-ship-anvil", position: { x: -300, y: -45 }, facing: 0, orders: siegeOrders },
+      { designId: "preset-ship-anvil", position: { x: -300, y: 45 }, facing: 0, orders: siegeOrders },
+      { designId: "preset-ship-anvil", position: { x: -300, y: 130 }, facing: 0, orders: siegeOrders },
+    ],
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+  },
+
+  // --- Corsair Reaver fleets ---
+  {
+    id: "preset-fleet-reavers",
+    name: "Raid Pack",
+    faction: "Corsair",
+    // A raid pack: Reavers close fast under scrambler cover to loose missile
+    // volleys, then scatter before the response lands.
+    ships: [
+      { designId: "preset-ship-reaver", position: { x: -320, y: -130 }, facing: 0, orders: raidOrders },
+      { designId: "preset-ship-reaver", position: { x: -320, y: -45 }, facing: 0, orders: raidOrders },
+      { designId: "preset-ship-reaver", position: { x: -320, y: 45 }, facing: 0, orders: raidOrders },
+      { designId: "preset-ship-reaver", position: { x: -320, y: 130 }, facing: 0, orders: raidOrders },
+    ],
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+  },
+
+  // --- Synthetic Collective fleets ---
+  {
+    id: "preset-fleet-collective",
+    name: "Drone Net",
+    faction: "Synthetic",
+    // A defensive net: Nodes screen the fleet with interceptor arrays and pick
+    // off the weakest contacts, crewless and co-ordinated.
+    ships: [
+      { designId: "preset-ship-node", position: { x: -300, y: -130 }, facing: 0, orders: netOrders },
+      { designId: "preset-ship-node", position: { x: -300, y: -45 }, facing: 0, orders: netOrders },
+      { designId: "preset-ship-node", position: { x: -300, y: 45 }, facing: 0, orders: netOrders },
+      { designId: "preset-ship-node", position: { x: -300, y: 130 }, facing: 0, orders: netOrders },
     ],
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
