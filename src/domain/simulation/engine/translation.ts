@@ -113,9 +113,19 @@ export function computeTranslationCommand(
     const ex = enemyDeployment.x - ship.x;
     const ey = enemyDeployment.y - ship.y;
     if (isRetreating(ship)) return progradeAlong(Math.atan2(-ey, -ex));
-    // Advance-to-contact: close on the centroid at want = 0, arriving at low
-    // speed so the ship can engage the instant it acquires a target.
-    return stopInTimeToward(ship, enemyDeployment.x, enemyDeployment.y, 0);
+    // Advance-to-contact: close on the centroid but hold at the ship's
+    // engagement range from it (not want = 0). Advancing to the exact centroid
+    // would put the ship on top of wherever the enemy deployed — and when a
+    // target is acquired there the bearing is singular (atan2 of ~0), which
+    // spins the ship. Holding at engagement range keeps the approach
+    // well-conditioned and hands off seamlessly to range-keeping once a target
+    // appears (same desired range).
+    return stopInTimeToward(
+      ship,
+      enemyDeployment.x,
+      enemyDeployment.y,
+      anomalyAdjustedRange(ship.orders, ship.weapons, anomaly),
+    );
   }
 
   // Target present.
