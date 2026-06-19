@@ -137,7 +137,7 @@ function attacker(opts: {
   return {
     instanceId: opts.id,
     designId: `design-${opts.id}`,
-    side: "attacker",
+    faction: "test",side: "attacker",
     stats,
     position: { x: opts.x, y: opts.y },
     facing: opts.facing ?? 0,
@@ -185,6 +185,7 @@ function defender(opts: {
   return {
     instanceId: opts.id,
     designId: `design-${opts.id}`,
+    faction: "test",
     side: "defender",
     stats,
     position: { x: opts.x, y: opts.y },

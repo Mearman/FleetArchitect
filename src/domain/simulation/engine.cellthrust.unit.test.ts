@@ -107,6 +107,7 @@ function modularShip(
   return {
     instanceId: id,
     designId: `d-${id}`,
+    faction: "test",
     side,
     stats,
     position,
@@ -143,6 +144,7 @@ function dummy(id: string, x: number, y = 0): CombatShip {
   return {
     instanceId: id,
     designId: `d-${id}`,
+    faction: "test",
     side: "defender",
     stats,
     position: { x, y },

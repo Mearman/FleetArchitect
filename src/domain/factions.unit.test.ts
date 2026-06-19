@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { catalog } from "@/data/catalog";
 import { createId, nowIso } from "@/domain/id";
 import { analyseShipDesign } from "@/domain/stats";
-import type { GridCell, TileGrid } from "@/schema/grid";
+import type { GridCell, HullTileType, TileGrid } from "@/schema/grid";
 import type { ShipDesign } from "@/schema/ship";
 
 // ---------------------------------------------------------------------------
@@ -207,4 +207,86 @@ describe("faction-specific hull tile stats", () => {
     // Terran block (mass 6) + fusion reactor (mass 10) = 16
     expect(swarmStats.mass).toBeLessThan(terranStats.mass);
   });
+});
+
+// ---------------------------------------------------------------------------
+// Six-faction catalogue completeness (factions update)
+// ---------------------------------------------------------------------------
+
+describe("catalogue faction completeness", () => {
+  const EXPECTED_FACTIONS: string[] = ["Terran", "Swarm", "Crystalline", "Foundry", "Corsair", "Synthetic"];
+  const TILES: readonly HullTileType[] = ["block", "edge", "corner", "strut"];
+
+  it("reports all six factions", () => {
+    const factions = new Set(catalog().factions());
+    for (const f of EXPECTED_FACTIONS) {
+      expect(factions.has(f), `missing faction ${f}`).toBe(true);
+    }
+  });
+
+  it("every module id is unique across the whole catalogue", () => {
+    const ids = catalog().allModules().map((m) => m.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  for (const faction of EXPECTED_FACTIONS) {
+    it(`${faction} has a command module, an engine, a weapon, and all four hull tiles`, () => {
+      const mods = catalog().modulesForFaction(faction);
+      expect(mods.some((m) => m.command === true), `${faction} needs a command module`).toBe(true);
+      expect(mods.some((m) => m.effect.kind === "engine"), `${faction} needs an engine`).toBe(true);
+      expect(mods.some((m) => m.effect.kind === "weapon"), `${faction} needs a weapon`).toBe(true);
+      for (const tile of TILES) {
+        expect(
+          catalog().hullTileFor(faction, tile),
+          `${faction} missing ${tile} hull tile`,
+        ).toBeDefined();
+      }
+    });
+
+    it(`${faction} can build a valid ship from its own parts`, () => {
+      // Assemble the smallest valid ship from this faction's parts: a command
+      // module, an engine, a weapon, and a crew module / magazine as needed.
+      // Prefer a weapon without a finite magazine so no ammo source is required;
+      // if every weapon needs ammo, add the faction's magazine too.
+      const mods = catalog().modulesForFaction(faction);
+      const command = mods.find((m) => m.command === true);
+      const engine = mods.find((m) => m.effect.kind === "engine");
+      const weapon =
+        mods.find((m) => m.effect.kind === "weapon" && m.effect.ammoCapacity === undefined) ??
+        mods.find((m) => m.effect.kind === "weapon");
+      const crew = mods.find((m) => m.effect.kind === "crew");
+      const magazine = mods.find((m) => m.effect.kind === "magazine");
+      if (command === undefined || engine === undefined || weapon === undefined) {
+        throw new Error(`${faction} missing a command/engine/weapon module`);
+      }
+      // Lay modules out left-to-right (a 4-connected row), engines facing aft.
+      const cells: GridCell[] = [
+        { kind: "module", moduleId: command.id, facing: 0 },
+        { kind: "module", moduleId: weapon.id, facing: 0 },
+        { kind: "module", moduleId: engine.id, facing: Math.PI },
+      ];
+      const weaponNeedsAmmo =
+        weapon.effect.kind === "weapon" && weapon.effect.ammoCapacity !== undefined;
+      if (weaponNeedsAmmo) {
+        if (magazine === undefined) {
+          throw new Error(`${faction} weapon needs ammo but has no magazine`);
+        }
+        cells.push({ kind: "module", moduleId: magazine.id, facing: 0 });
+      }
+      const placedDefs = cells
+        .filter((c): c is Extract<GridCell, { kind: "module" }> => c.kind === "module")
+        .map((c) => mods.find((m) => m.id === c.moduleId))
+        .filter((m): m is NonNullable<typeof m> => m !== undefined);
+      const crewRequired = placedDefs.reduce((s, m) => s + m.crewRequired, 0);
+      if (crewRequired > 0) {
+        if (crew === undefined) {
+          throw new Error(`${faction} needs crew but has no crew module`);
+        }
+        cells.push({ kind: "module", moduleId: crew.id, facing: 0 });
+      }
+      const grid: TileGrid = { cols: cells.length, rows: 1, cells, connections: [] };
+      const { valid, faults } = analyseShipDesign(design(faction, grid), catalog());
+      expect(valid, `${faction} minimal ship invalid: ${JSON.stringify(faults)}`).toBe(true);
+    });
+  }
 });

@@ -108,6 +108,7 @@ function hammerShip(id: string, x: number): CombatShip {
   return {
     instanceId: id,
     designId: `d-${id}`,
+    faction: "test",
     side: "attacker",
     stats,
     position: { x, y: 0 },
@@ -155,6 +156,7 @@ function columnShip(id: string, x: number, hullHp: number): CombatShip {
   return {
     instanceId: id,
     designId: `d-${id}`,
+    faction: "test",
     side: "defender",
     stats,
     position: { x, y: 0 },

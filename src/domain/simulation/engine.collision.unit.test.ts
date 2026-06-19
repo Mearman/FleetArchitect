@@ -89,6 +89,7 @@ function rammer(
   return {
     instanceId: id,
     designId: `d-${id}`,
+    faction: "test",
     side,
     stats: stats({ thrust: 1 }),
     position,

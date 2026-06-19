@@ -168,7 +168,8 @@ function ship(
 ): CombatShip {
   return {
     instanceId: id,
-    designId: `d-${id}`,
+    designId: `d-`,
+    faction: "test",
     side,
     stats: statsFor(100_000, opts.cost ?? 100),
     position: { x, y },
@@ -500,7 +501,8 @@ describe("engine.awareness — faithful fog (no omniscience)", () => {
     };
     return {
       instanceId: id,
-      designId: `d-${id}`,
+      designId: `d-`,
+      faction: "test",
       side,
       stats,
       position: { x, y: 0 },
@@ -755,7 +757,7 @@ describe("engine.awareness — ghosts", () => {
         {
           instanceId: "d1",
           designId: "dd1",
-          side: "defender",
+          faction: "test",side: "defender",
           stats: statsFor(1, 100),
           position: { x: 150, y: 0 },
           facing: Math.PI,

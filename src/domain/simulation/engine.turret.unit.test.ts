@@ -109,6 +109,7 @@ function weaponShip(id: string, weapon: WeaponEffect): CombatShip {
   return {
     instanceId: id,
     designId: `d-${id}`,
+    faction: "test",
     side: "attacker",
     stats: statsBlock(),
     position: { x: 0, y: 0 },
@@ -124,6 +125,7 @@ function targetAt(id: string, x: number, y: number): CombatShip {
   return {
     instanceId: id,
     designId: `d-${id}`,
+    faction: "test",
     side: "defender",
     stats: { ...statsBlock(), structure: 1_000_000 },
     position: { x, y },

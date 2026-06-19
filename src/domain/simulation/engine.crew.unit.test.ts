@@ -107,6 +107,7 @@ function shooterShip(
   return {
     instanceId: id,
     designId: `d-${id}`,
+    faction: "test",
     side: "attacker",
     stats: statsFor(structure),
     position: { x, y: 0 },
@@ -123,6 +124,7 @@ function toughTarget(id: string, x: number): CombatShip {
   return {
     instanceId: id,
     designId: `d-${id}`,
+    faction: "test",
     side: "defender",
     stats: statsFor(1_000_000),
     position: { x, y: 0 },
@@ -435,6 +437,7 @@ describe("engine.crew — break-apart partition", () => {
     return {
       instanceId: id,
       designId: `d-${id}`,
+      faction: "test",
       side: "attacker",
       stats: { ...statsFor(99999), weapons: [{ slotId: "s", effect: beam({ damage: 50, range: 500, cooldown: 1 }) }] },
       position: { x, y: 0 },
@@ -462,6 +465,7 @@ describe("engine.crew — break-apart partition", () => {
     return {
       instanceId: id,
       designId: `d-${id}`,
+      faction: "test",
       side: "defender",
       stats: { ...statsFor(5000), thrust: 0, turnRate: 0 },
       position: { x, y: 0 },

@@ -101,7 +101,8 @@ function rcsShip(
 ): CombatShip {
   return {
     instanceId: id,
-    designId: `d-${id}`,
+    designId: `d-`,
+    faction: "test",
     side,
     stats: shipStats({}),
     position: pos,
@@ -137,7 +138,8 @@ function noTorqueShip(
 ): CombatShip {
   return {
     instanceId: id,
-    designId: `d-${id}`,
+    designId: `d-`,
+    faction: "test",
     side,
     stats: shipStats({}),
     position: pos,
@@ -296,7 +298,8 @@ describe("bang-bang attitude control", () => {
     function lowMoiShip(id: string, side: "attacker" | "defender"): CombatShip {
       return {
         instanceId: id,
-        designId: `d-${id}`,
+        designId: `d-`,
+        faction: "test",
         side,
         stats: shipStats({}),
         position: { x: 0, y: 0 },
@@ -320,7 +323,8 @@ describe("bang-bang attitude control", () => {
     function highMoiShip(id: string, side: "attacker" | "defender"): CombatShip {
       return {
         instanceId: id,
-        designId: `d-${id}`,
+        designId: `d-`,
+        faction: "test",
         side,
         stats: shipStats({}),
         position: { x: 100, y: 0 },

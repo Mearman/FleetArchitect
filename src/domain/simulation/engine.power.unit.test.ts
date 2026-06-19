@@ -127,6 +127,7 @@ function modularAttacker(
   return {
     instanceId: id,
     designId: `d-${id}`,
+    faction: "test",
     side: "attacker",
     stats,
     position: { x: 0, y: 0 },
@@ -162,6 +163,7 @@ function toughTarget(id: string, x: number): CombatShip {
   return {
     instanceId: id,
     designId: `d-${id}`,
+    faction: "test",
     side: "defender",
     stats,
     position: { x, y: 0 },
@@ -267,6 +269,7 @@ describe("engine.per-module power grid", () => {
       return {
         instanceId: id,
         designId: `d-${id}`,
+        faction: "test",
         side: "attacker",
         stats,
         position: { x: 0, y: 0 },
