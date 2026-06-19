@@ -133,6 +133,14 @@ export const ShipSnapshot = z.object({
    */
   comX: z.number().optional(),
   comY: z.number().optional(),
+  /**
+   * The instance id of the ship this ship is currently targeting, or undefined
+   * when it has no live target. Emitted by the engine from the runtime
+   * targeting decision each tick; carried through interpolation as discrete
+   * nearest-frame state. Used by the battle overlay renderer to draw targeting
+   * indicators. Optional for backward compatibility with older replays.
+   */
+  targetId: EntityId.optional(),
 });
 export type ShipSnapshot = z.infer<typeof ShipSnapshot>;
 

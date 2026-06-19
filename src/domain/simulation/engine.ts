@@ -7205,6 +7205,12 @@ function snapshot(
         // origin so legacy replays stay byte-compatible with pre-rigid-body
         // recordings; modular ships with offset CoM always emit it.
         ...(s.comX !== 0 || s.comY !== 0 ? { comX: s.comX, comY: s.comY } : {}),
+        // Current targeting decision (the instance id of the ship this ship is
+        // aiming at this tick, or undefined when it has no live target). Emitted
+        // from the deterministic pickTarget result so frame determinism is
+        // preserved; omitted when there is no target so frames recorded before
+        // this field stay byte-identical.
+        ...(s.target !== undefined ? { targetId: s.target } : {}),
       };
       if (s.brokeOff === true) s.brokeOff = false;
       if (s.modules === undefined) return base;
