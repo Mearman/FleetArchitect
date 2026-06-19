@@ -3,7 +3,6 @@ import { resolveFleetToCombatShips } from "@/domain/resolve";
 import { runBattle } from "@/domain/simulation/engine";
 import { catalog } from "@/data/catalog";
 import { presetDesigns, presetFleets } from "@/data/presets";
-import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleInputs } from "@/domain/simulation/types";
 import type { BattleResult } from "@/schema/battle";
 
@@ -27,6 +26,16 @@ import type { BattleResult } from "@/schema/battle";
  * these guards catches it.
  */
 
+/**
+ * Tick cap for the lethality guards. The presets are under-thrusted for the
+ * layered-cell mass model (Phase 14 re-authors them), so the crewed matchups
+ * stalemate; the one active guard checks the crewless Swarm fast path still
+ * resolves. `DEFAULT_MAX_TICKS` is sized for light-lag battles and would make
+ * each preset stalemate run minutes, so these guards use the close-quarters
+ * completion cap the presets were calibrated against.
+ */
+const LETHALITY_GUARD_TICKS = 3600;
+
 const cat = catalog();
 const designs = new Map(presetDesigns.map((d) => [d.id, d]));
 const fleet = (id: string) => presetFleets.find((f) => f.id === id);
@@ -40,7 +49,7 @@ function buildInputs(attackerId: string, defenderId: string, seed = 42): BattleI
     defenderFleetId: defenderId,
     anomaly: "none",
     seed,
-    maxTicks: DEFAULT_MAX_TICKS,
+    maxTicks: LETHALITY_GUARD_TICKS,
   };
 }
 

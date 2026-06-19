@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { resolveFleetToCombatShips } from "@/domain/resolve";
-import { cellToLocal } from "@/domain/grid";
+import { cellToLocal, deriveRadius } from "@/domain/grid";
 import { catalog } from "@/data/catalog";
 import { nowIso } from "@/domain/id";
 import { defaultOrders } from "@/schema/fleet";
@@ -126,5 +126,33 @@ describe("resolveFleetToCombatShips (grid)", () => {
     expect(def?.facing).toBeCloseTo(Math.PI, 6);
     // The two sides are mirror images across x = 0.
     expect(def?.position.x).toBeCloseTo(-(att?.position.x ?? 0), 6);
+  });
+
+  it("derives the edge inset from ship radius + weapon range (just-out-of-range start)", () => {
+    // Phase 1 grounding: the deployment edge inset is no longer a hand-set
+    // constant but `maxShipRadius + maxWeaponRange`, so two opposing fleets
+    // begin just outside mutual weapon range and must close (or be out-ranged)
+    // to engage. The probe design carries a pulse laser; its edge inset is its
+    // radius plus the pulse laser's range. A mirror match deploys each side at
+    // the same inset, so the gap between the two formation lines is twice the
+    // inset — just over twice the weapon range, i.e. both sides out of range.
+    const designs = new Map([["d-1", design()]]);
+    const [att] = resolveFleetToCombatShips(fleet(), designs, catalog(), "attacker");
+    const [def] = resolveFleetToCombatShips(fleet(), designs, catalog(), "defender");
+    if (att === undefined || def === undefined) return;
+    const radius = deriveRadius(design().grid);
+    const pulseLaser = catalog().module("mod-pulse-laser");
+    if (pulseLaser === undefined || pulseLaser.effect.kind !== "weapon") {
+      throw new Error("test fixture: mod-pulse-laser must be a weapon");
+    }
+    const weaponRange = pulseLaser.effect.range;
+    // Attacker forms up radius-inside its edge so its hull doesn't clip past.
+    expect(Math.abs(att.position.x)).toBeCloseTo(radius + weaponRange - radius, 6);
+    // The two sides sit symmetric about the midline.
+    expect(att.position.x).toBeCloseTo(-def.position.x, 6);
+    // The separation between the two formation lines exceeds the weapon range,
+    // so neither side can fire at tick 0.
+    const gap = def.position.x - att.position.x;
+    expect(gap).toBeGreaterThan(weaponRange);
   });
 });

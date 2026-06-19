@@ -323,6 +323,11 @@ describe("engine.anomalies", () => {
     // by the 1/distance gravity well and takes continuous damage once
     // it crosses inside. The control (none) shows the same ship held
     // in place.
+    //
+    // The battle cap is capped well below `DEFAULT_MAX_TICKS`: the behaviour
+    // under test (the ship crossing the lethal radius and dying) plays out
+    // within a few hundred ticks, and the weaponless 99999-structure defender
+    // otherwise stalemates to the full cap.
     const mkShip = (anomaly: BattleAnomaly) =>
       runBattle(
         inputs(
@@ -337,6 +342,8 @@ describe("engine.anomalies", () => {
             defender({ id: "d1", x: 0, y: 0, structure: 99999, orders: { engageRange: "hold" } }),
           ],
           anomaly,
+          1,
+          800,
         ),
       );
     const none = mkShip("none");

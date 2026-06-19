@@ -3,7 +3,6 @@ import { resolveFleetToCombatShips } from "@/domain/resolve";
 import { runBattle } from "@/domain/simulation/engine";
 import { catalog } from "@/data/catalog";
 import { presetDesigns, presetFleets } from "@/data/presets";
-import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleInputs } from "@/domain/simulation/types";
 import { pathCacheStats, resetPathCacheStats } from "@/domain/simulation/engine/crew-pathfinding";
 
@@ -28,6 +27,17 @@ import { pathCacheStats, resetPathCacheStats } from "@/domain/simulation/engine/
  * unit tests.
  */
 
+/**
+ * Tick cap for the preset-matchup completion guards. The presets are
+ * under-thrusted against the layered-cell mass model (Phase 14 re-authors them)
+ * so these matchups stalemate; the guards only check the crew code runs to
+ * completion without error, not that the battle resolves at astronomical scale.
+ * `DEFAULT_MAX_TICKS` is sized for light-lag battles and would make each
+ * stalemate run minutes, so these guards use the close-quarters completion cap
+ * the presets were calibrated against.
+ */
+const PRESET_COMPLETION_TICKS = 3600;
+
 const cat = catalog();
 const designs = new Map(presetDesigns.map((d) => [d.id, d]));
 const fleet = (id: string) => presetFleets.find((f) => f.id === id);
@@ -41,18 +51,18 @@ function buildInputs(attackerId: string, defenderId: string, seed = 42): BattleI
     defenderFleetId: defenderId,
     anomaly: "none",
     seed,
-    maxTicks: DEFAULT_MAX_TICKS,
+    maxTicks: PRESET_COMPLETION_TICKS,
   };
 }
 
 describe("engine.crew-perf — preset matchups still resolve", () => {
-  // These run full 3600-tick preset battles (~3.5s each on dev hardware), so
-  // they need a timeout well above vitest's 5s default.
+  // These run full preset battles (~3.5s each on dev hardware at the
+  // completion cap), so they need a timeout well above vitest's 5s default.
   it("the 464-crew battle runs to completion without error", () => {
     // Battle Line vs Armoured Spearhead: the heaviest crewed preset. This
     // exercises the full crew path cache, batched assignment, and topology
-    // invalidation under load (464 crew, 9 ships, 3600 ticks). A crash or hang
-    // here would surface a regression in the optimised crew code.
+    // invalidation under load (464 crew, 9 ships). A crash or hang here would
+    // surface a regression in the optimised crew code.
     const result = runBattle(buildInputs("preset-fleet-battleline", "preset-fleet-spearhead"));
     expect(result.frames.length).toBeGreaterThan(0);
     expect(result.winner).toBeDefined();

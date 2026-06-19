@@ -264,12 +264,23 @@ export interface BattleInputs {
 
 /**
  * Canonical fixed sim tick rate. The engine produces exactly one BattleFrame
- * per tick; the UI maps playback-seconds to ticks through this constant.
+ * per tick; the UI maps playback-seconds to ticks through this constant. A
+ * fixed simulation rate (an explicit unit/rate spec) so `SPEED_OF_LIGHT_M_PER_TICK`
+ * and every per-tick rate are deterministic.
  */
 export const TICKS_PER_SECOND = 30;
 
-/** Safety cap so a stalemated battle terminates. ~2 min at TICKS_PER_SECOND. */
-export const DEFAULT_MAX_TICKS = 3600;
+/**
+ * Safety cap so a stalemated battle terminates. With the world now at real-metre
+ * scale and `SPEED_OF_LIGHT_M_PER_TICK ≈ 9.99e6 m/tick`, a battle that spans
+ * light-lag distances (Phase 8/9) can take many hundreds of ticks for light
+ * alone to cross the engagement, and far longer for ships closing under
+ * catalogue thrust to come into weapon range. The cap is raised from the old
+ * 3600 to give a full light-second-scale engagement room to resolve while still
+ * terminating a truly stalemated battle in bounded time. ~10 min at
+ * `TICKS_PER_SECOND`. An explicit rate/limit spec.
+ */
+export const DEFAULT_MAX_TICKS = 18_000;
 
 /**
  * Wall-clock interval between streamed frame batches, in milliseconds. The

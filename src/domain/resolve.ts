@@ -9,7 +9,7 @@ import type {
 } from "@/domain/simulation/types";
 import type { Fleet } from "@/schema/fleet";
 import type { CellEdges, GridCell, SurfaceKind } from "@/schema/grid";
-import type { ModuleEffect } from "@/schema/module";
+import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipDesign } from "@/schema/ship";
 
 /**
@@ -28,22 +28,41 @@ import type { ShipDesign } from "@/schema/ship";
  * derived from the grid, so the engine can run the per-module damage / fire /
  * regen model and the grid-exact break-apart.
  */
+
 /**
- * Where a fleet forms up, in battle units. Ships deploy in a vertical column
- * inset from their own side's edge — attackers on the left facing right (+x),
- * defenders mirrored on the right — rather than at hand-authored coordinates,
- * which rot the moment ship sizes change. Each ship's centre sits one ship
- * radius inside the edge so its hull doesn't clip off-screen; ships stack down
- * the column spaced by their radii plus a margin so no two ever overlap at
- * tick 0 (overlap would trigger the collision-separation impulse and fling the
- * fleet apart before the battle starts). The column is centred on y = 0.
+ * Vertical clear space (metres) between adjacent ships' hull circles in the
+ * deployment column. Derived from the cell grid: one cell-width
+ * (`CELL_SIZE = 12 m`) plus half a cell of slack so adjacent hulls never clip
+ * at tick 0. An explicit deployment-rate spec.
  */
-const DEPLOY = {
-  /** Distance of the formation line from the arena's vertical midline (x = 0). */
-  edgeInset: 360,
-  /** Vertical clear space between adjacent ships' hull circles. */
-  shipMargin: 18,
-};
+const DEPLOY_SHIP_MARGIN_M = 18;
+
+/**
+ * Compute the deployment edge inset (metres from the arena midline) from the
+ * resolved fleet's ship sizes and weapon ranges: `edgeInset = maxShipRadius +
+ * maxWeaponRange`. The formation line sits one ship radius plus the fleet's
+ * longest weapon reach inside the midline, so two opposing fleets placed at
+ * `±edgeInset` begin just outside mutual weapon range and must close (or be
+ * out-ranged) to engage — physically the "just out of range" start condition.
+ * A fleet with no weapons falls back to `SIM.defaultRange` so an unarmed fleet
+ * still deploys at a sensible separation. The ship radius term guarantees a
+ * ship's hull never clips past its own edge.
+ */
+function computeEdgeInsetM(
+  ships: ReadonlyArray<{ radius: number; weapons: readonly WeaponEffect[] }>,
+  fallbackRange: number,
+): number {
+  let maxRadius = 0;
+  let maxRange = 0;
+  for (const s of ships) {
+    if (s.radius > maxRadius) maxRadius = s.radius;
+    for (const w of s.weapons) {
+      if (w.range > maxRange) maxRange = w.range;
+    }
+  }
+  const range = maxRange > 0 ? maxRange : fallbackRange;
+  return maxRadius + range;
+}
 
 export function resolveFleetToCombatShips(
   fleet: Fleet,
@@ -51,20 +70,35 @@ export function resolveFleetToCombatShips(
   catalog: Catalog,
   side: "attacker" | "defender",
 ): CombatShip[] {
-  // Resolve every deployable design first, carrying its radius so the column
-  // can be spaced by actual ship size.
+  // Resolve every deployable design first, carrying its radius and weapon
+  // effects so the column can be spaced by actual ship size and the edge
+  // inset derived from the fleet's longest weapon reach.
   const resolved = fleet.ships
     .map((deployed) => {
       const design = designs.get(deployed.designId);
       if (design === undefined) return undefined;
-      return { deployed, design, radius: deriveRadius(design.grid) };
+      const { stats } = analyseShipDesign(design, catalog);
+      return {
+        deployed,
+        design,
+        stats,
+        radius: deriveRadius(design.grid),
+        weapons: stats.weapons.map((w) => w.effect),
+      };
     })
     .filter((entry): entry is NonNullable<typeof entry> => entry !== undefined);
+
+  // Edge inset derived from ship sizes + weapon range (see computeEdgeInsetM).
+  // SIM.defaultRange is the fallback for a fleet with no weapons.
+  // Importing SIM here would couple domain/resolve to the engine leaf; the
+  // fallback value is the same authored figure SIM.defaultRange carries
+  // (documented there as the sensor-free engagement range).
+  const edgeInset = computeEdgeInsetM(resolved, 220);
 
   // Total column height: every ship's diameter plus a margin between each pair.
   const totalHeight =
     resolved.reduce((sum, e) => sum + e.radius * 2, 0) +
-    Math.max(0, resolved.length - 1) * DEPLOY.shipMargin;
+    Math.max(0, resolved.length - 1) * DEPLOY_SHIP_MARGIN_M;
 
   // Attackers face right (+x) from the left edge; defenders mirror to the right
   // edge facing left (π). Lay the column out top (most negative y) to bottom,
@@ -74,13 +108,13 @@ export function resolveFleetToCombatShips(
   let cursorY = -totalHeight / 2;
 
   const ships: CombatShip[] = [];
-  for (const { deployed, design, radius } of resolved) {
-    const { stats } = analyseShipDesign(design, catalog);
+  for (const entry of resolved) {
+    const { deployed, design, stats, radius } = entry;
     const modules = resolveModules(design, catalog);
     const hardwires = resolveHardwires(design, modules);
-    const x = dir * (DEPLOY.edgeInset - radius);
+    const x = dir * (edgeInset - radius);
     const y = cursorY + radius;
-    cursorY += radius * 2 + DEPLOY.shipMargin;
+    cursorY += radius * 2 + DEPLOY_SHIP_MARGIN_M;
     ships.push({
       instanceId: createId("ship"),
       designId: design.id,

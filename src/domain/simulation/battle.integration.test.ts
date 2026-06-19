@@ -133,8 +133,14 @@ describe("battle pipeline (resolve -> runBattle)", () => {
       ...resolveFleetToCombatShips(defender, designs, catalog(), "defender"),
     ];
 
-    const a = runBattle({ ships, attackerFleetId: attacker.id, defenderFleetId: defender.id, anomaly: "none", seed: 7, maxTicks: DEFAULT_MAX_TICKS });
-    const b = runBattle({ ships, attackerFleetId: attacker.id, defenderFleetId: defender.id, anomaly: "none", seed: 7, maxTicks: DEFAULT_MAX_TICKS });
+    // Determinism is a property of identical inputs, not of battle length: a
+    // few hundred ticks exercise every code path (movement, weapons, crew,
+    // power, awareness) far enough to prove byte-identity without running the
+    // full stalemate cap twice. `DEFAULT_MAX_TICKS` is sized for light-lag
+    // battles; running it twice here would time out the test for no gain.
+    const DETERMINISM_TICKS = 600;
+    const a = runBattle({ ships, attackerFleetId: attacker.id, defenderFleetId: defender.id, anomaly: "none", seed: 7, maxTicks: DETERMINISM_TICKS });
+    const b = runBattle({ ships, attackerFleetId: attacker.id, defenderFleetId: defender.id, anomaly: "none", seed: 7, maxTicks: DETERMINISM_TICKS });
     expect(b.frames).toEqual(a.frames);
     expect(b.winner).toBe(a.winner);
     expect(b.ticks).toBe(a.ticks);

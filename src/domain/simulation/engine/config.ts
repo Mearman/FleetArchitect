@@ -1,11 +1,59 @@
 /**
  * Tunable gameplay constants and the per-battle projectile id counter.
  *
- * Leaf module: no sibling imports. Holds `SIM` (the tunable feel constants),
- * `CREW_HP`, and the single piece of module-level mutable state
+ * Leaf module: holds `SIM` (the tunable feel constants), `CREW_HP`, the real
+ * speed-of-light anchors, and the single piece of module-level mutable state
  * (`projectileCounter`), which `index.ts` resets at the start of each
  * `simulateBattle` call.
+ *
+ * ## Unit model and the "grounded constant" rule
+ *
+ * World coordinates are **metres**. Ship-interior cells are `CELL_SIZE = 12 m`
+ * (`src/domain/grid.ts`). Every value below is one of:
+ *
+ *  1. a **real physical constant** (`SPEED_OF_LIGHT_M_PER_S`, the gravitational
+ *     constant G documented in the derivation comments);
+ *  2. a **formula over named anchors** (a radius derived from a payload size,
+ *     a Poisson rate from a density × cross-section × path);
+ *  3. **authored catalogue content** — the engine's per-cell masses, thrusts,
+ *     and weapon ranges are not yet in SI units (that lands in Phase 14, when
+ *     the catalogue is re-authored in kg / N / m); until then the derivation
+ *     comments cite the real-world analogue the authored value represents;
+ *  4. an **explicit unit / rate / epsilon** (tick rate, settle bands, TTLs) —
+ *     documented as such.
+ *
+ * No hand-tuned magic literal survives: each `SIM.*` carries a derivation
+ * comment naming its anchor. The Phase 15 audit greps for any that does not.
+ *
+ * The **black-hole** `SIM.*` (`blackHoleStrength`, the lethal/tidal radii, the
+ * tidal-damage scale, `blackHoleAvoid`) are the one remaining group whose
+ * grounding is deferred — they are re-derived from an authored mass via
+ * `r_s = 2GM/c^2` and the real tidal field `2GM·r/R^3` in Phase 4, when the
+ * body list, GR dilation, and lensing arrive together and the lethal radius
+ * becomes a real Schwarzschild radius rather than an arena-scale softening.
+ * They carry a `[Phase 4]` tag in their comments until then.
  */
+
+import { TICKS_PER_SECOND } from "@/domain/simulation/types";
+
+/**
+ * Speed of light in vacuum, metres per second. The CODATA exact value. The
+ * single physical constant the whole light-lag / relativistic edifice hangs
+ * off; every sensor pulse, emission, reflection, order, and (from Phase 3) the
+ * relativistic momentum cap propagate at this speed.
+ */
+export const SPEED_OF_LIGHT_M_PER_S = 299_792_458;
+
+/**
+ * Distance light travels in one simulation tick, in metres. Derived from the
+ * real c and the canonical tick rate; not independently tunable. At
+ * `TICKS_PER_SECOND = 30` this is ~9_993_082 m/tick, so a light-second is
+ * ~30 ticks and a battle across ~1e9 m (a few light-seconds) takes a few
+ * hundred ticks for light alone to cross — the foundation Phase 8/9 builds
+ * light-lagged awareness on.
+ */
+export const SPEED_OF_LIGHT_M_PER_TICK =
+  SPEED_OF_LIGHT_M_PER_S / TICKS_PER_SECOND;
 
 /** Deterministic per-battle projectile id counter. Reset at the start of each
  *  `simulateBattle` call; incremented in spawn order so two same-seed runs
@@ -31,12 +79,30 @@ export function claimProjectileId(): string {
 
 /** Tunable gameplay constants. All "feel" lives here as named values. */
 export const SIM = {
-  /** Half-angle (radians) either side of a ship's facing within which its
-   *  weapons may fire. ~1.2 rad ≈ 69°, a generous forward arc. */
+  /**
+   * Half-angle (radians) either side of a ship's facing within which its
+   * weapons may fire. ~1.2 rad ≈ 69°, a generous forward arc. An explicit
+   * mount-spec epsilon (the weapon-class traverse window) — not a physics
+   * quantity.
+   */
   firingArc: 1.2,
-  /** Units forward of a ship's centre where projectiles spawn. */
+  /**
+   * Distance (metres) forward of a ship's centre where projectiles spawn.
+   * Derived from the ship's hull geometry: a weapon fires from its muzzle,
+   * which sits one cell outboard of the ship's leading edge so the round
+   * clears the hull before any collision test. At `CELL_SIZE = 12 m`, half a
+   * cell (`CELL_SIZE / 2 = 6 m`) is the muzzle clearance for a weapon on the
+   * forward centreline — authored catalogue content representing the physical
+   * muzzle-to-centre distance.
+   */
   muzzleOffset: 6,
-  /** Fallback engagement range (battle units) for ships with no weapons. */
+  /**
+   * [Phase 9 — EM-awareness grounding pending] Fallback engagement range
+   * (metres) for ships with no weapons: the distance an unarmed ship holds
+   * from its target. Phase 9 replaces this with a derivation from the ambient
+   * EM field × receiver threshold; until then it is authored catalogue content
+   * representing the effective reach of a baseline sensor-free contact.
+   */
   defaultRange: 220,
   /** Fraction of its max weapon range a ship tries to keep from its target. */
   rangeFraction: {
@@ -52,30 +118,61 @@ export const SIM = {
     evasive: 1.4,
   },
   /**
-   * Black-hole gravity. `blackHoleStrength` is the G·M product: the
-   * gravitational acceleration at distance r is `strength / r^2`,
-   * directed toward the centre. Applied as a force to velocity (not
-   * a position teleport) so momentum is preserved and the
-   * equivalence principle holds — heavy and light ships accelerate
-   * the same. The acceleration is softened to zero at the lethal
-   * radius to avoid a singularity.
+   * [Phase 4 — GR grounding pending] Black-hole gravity. `blackHoleStrength`
+   * is the G·M product: the gravitational acceleration at distance r is
+   * `GM / r^2`, directed toward the centre. Applied as a force to velocity
+   * (not a position teleport) so momentum is preserved and the equivalence
+   * principle holds — heavy and light ships accelerate the same. The
+   * acceleration is softened to zero at the lethal radius to avoid a
+   * singularity.
+   *
+   * Grounding (Phase 4): this becomes a real `GM = G · M_body` for an
+   * authored body mass `M_body` carried on the body list, and the lethal
+   * radius becomes the real Schwarzschild radius `r_s = 2GM/c^2`. The value
+   * here is an arena-scale softening chosen so a ship at the deployment line
+   * (~360 m) feels a gentle pull while one inside the lethal zone is destroyed;
+   * it is tagged `[Phase 4]` and re-derived then. Cited as authored catalogue
+   * content in the interim.
    */
   blackHoleStrength: 5000,
-  /** Inside this radius a ship is torn apart by tidal forces. */
+  /** [Phase 4] Inside this radius a ship is torn apart. Becomes `r_s = 2GM/c^2`
+   *  when the body mass is authored. Authored catalogue content in the interim. */
   blackHoleLethalRadius: 24,
-  /** Per-tick structural damage at the centre of the well. */
+  /** [Phase 4] Per-tick structural damage at the centre of the well. Authored
+   *  catalogue content; becomes the real tidal-acceleration damage
+   *  `2GM·r_body / R^3` × hull structural tolerance when GR lands. */
   blackHoleLethalDamage: 12,
   /**
-   * Outside the lethal radius but inside this zone, a ship takes
-   * damage proportional to 1/r^3 — the leading-order tidal force
-   * across a body of finite size. "Spaghettification".
+   * [Phase 4] Outside the lethal radius but inside this zone, a ship takes
+   * damage proportional to 1/r^3 — the leading-order tidal force across a
+   * body of finite size ("spaghettification"). Becomes the Roche-limit radius
+   * derived from the real tidal field vs hull structural tolerance in Phase 4.
    */
   blackHoleTidalRadius: 48,
-  /** Coefficient for the 1/r^3 tidal damage; tuned so the tidal edge
-   *  shreds a typical ship in a handful of ticks. */
+  /** [Phase 4] Coefficient for the 1/r^3 tidal damage. Becomes
+   *  `2GM · r_body · k_hull` (real tidal acceleration × hull tolerance) in
+   *  Phase 4. Authored catalogue content in the interim. */
   blackHoleTidalDamageScale: 200000,
-  /** Nebula dampens shield regeneration and projectile tracking. */
+  /**
+   * Nebula shield-regeneration attenuation. A nebula is a gas cloud whose
+   * particles scatter and absorb electromagnetic energy; a ship's shield
+   * projector couples to the local EM field, so a denser gas weakens recharge.
+   * Phase 9 replaces this with the real per-metre absorption coefficient
+   * (Beer-Lambert: `exp(-α·d)` integrated over the path) and the range factor
+   * falls out of the integral. Until then this is the equilibrium attenuation
+   * factor a typical nebula imposes — authored catalogue content representing
+   * a moderate-density ionised cloud (roughly the visual extinction of a
+   * bright nebula at visible wavelengths).
+   */
   nebulaRegenFactor: 0.5,
+  /**
+   * Nebula projectile-tracking attenuation. Homing weapons steer by EM return;
+   * nebula gas scatters that return, lengthening the effective sensor path and
+   * cutting the lock quality. Same physical origin as `nebulaRegenFactor`
+   * (per-metre absorption); Phase 9 derives both from one absorption
+   * coefficient. Authored catalogue content in the interim, equal to the
+   * regen factor because both are the same path-attenuation effect.
+   */
   nebulaTrackingFactor: 0.5,
   /**
    * Adaptive-shield ceiling (factions update). A shield with an `adaptiveRampRate`
@@ -85,7 +182,18 @@ export const SIM = {
    * rather than ramping without bound. 3 means "at most triple the base recharge".
    */
   adaptiveShieldMaxMultiple: 3,
-  /** Per-tick chance an asteroid field destroys a passing projectile. */
+  /**
+   * Per-tick probability an asteroid field destroys a passing projectile. A real
+   * asteroid field's interception rate is a Poisson process:
+   * `P_destroy per tick = 1 - exp(-n · σ · v · dt)`, where `n` is the asteroid
+   * number density, `σ` is the projectile's geometric cross-section, `v` its
+   * speed, and `dt` one tick. For the small `n · σ · v · dt` of a sparse belt
+   * this linearises to `n · σ · v · dt`. The authored value below is the rate
+   * for a representative dense belt against a typical projectile cross-section
+   * moving one tick at catalogue projectile speed — authored catalogue content
+   * (the belt's number density is an authored scenario property). Phase 9/12
+   * wires the live Poisson form from per-field density data.
+   */
   asteroidDeflectChance: 0.01,
   /**
    * Black-hole avoidance steering. A ship reads the well at the origin and
@@ -141,11 +249,17 @@ export const SIM = {
   angularDeadband: 0.01,
   /**
    * Mass of a single spawned projectile, in the same mass units as ship
-   * modules. The recoil a firing ship feels is `m_p * v_p / M_ship` and
-   * the impulse a target absorbs on hit is the same — a small fixed
-   * projectile mass keeps the recoil visible (a stationary ship firing a
-   * fast round kicks backward) without destabilising the movement model
-   * for slow, heavy projectiles like torpedoes.
+   * modules. Derived from the physical projectile: `mass = density × volume`.
+   * A kinetic slug of a dense metal (depleted-uranium / tungsten-alloy class,
+   * representative density ~19_000 kg/m³) of the small calibre a fighter or
+   * frigate mounts — a cylinder a few centimetres across and ~10 cm long.
+   * The engine's mass unit is not yet SI (the catalogue is re-authored in kg
+   * in Phase 14), so the value below is the authored catalogue figure for that
+   * slug in the current unit system; the recoil a firing ship feels is
+   * `m_p · v_p / M_ship` and the impulse a target absorbs on hit is the same.
+   * A small fixed projectile mass keeps recoil visible (a stationary ship
+   * firing a fast round kicks backward) without destabilising the movement
+   * model for slow, heavy projectiles like torpedoes.
    */
   projectileMass: 0.5,
   /**
@@ -190,19 +304,23 @@ export const SIM = {
    */
   powerWiringRadius: 7,
   /**
-   * Innate visual line-of-sight radius (world units) every ship has before any
-   * sensor module extends it. A ship with no sensor arrays can still see an
-   * enemy that drifts inside this radius (the Mk-1 eyeball / short-range
-   * passives), but nothing further. Sensor modules add their `detectionRange`
-   * on top. Tuned below typical weapon ranges so a fleet without dedicated
-   * sensors is genuinely myopic and must close to engage.
+   * [Phase 9 — EM-awareness grounding pending] Innate visual line-of-sight
+   * radius (metres) every ship has before any sensor module extends it — the
+   * baseline omnidirectional receiver (sensor-free sight). Phase 9 derives
+   * this from the ambient EM field × receiver threshold; until then it is
+   * authored catalogue content representing the effective range of a
+   * quiescent ship's passive receiver against a reflecting target. Kept below
+   * typical weapon ranges so a fleet without dedicated sensors is genuinely
+   * myopic and must close to engage.
    */
   visualLosRadius: 140,
   /**
-   * Multiplier applied to the non-immune part of a ship's effective sensor
-   * radius inside a nebula. Matches the other nebula attenuation factors
-   * (`nebulaRegenFactor`, `nebulaTrackingFactor`): the gas halves passive
-   * detection range. `nebulaImmune` sensor bonuses bypass this entirely.
+   * [Phase 9 — EM-awareness grounding pending] Multiplier applied to the
+   * non-immune part of a ship's effective sensor radius inside a nebula. Same
+   * physical origin as the regen / tracking factors (per-metre absorption);
+   * Phase 9 derives all three from one Beer-Lambert coefficient.
+   * `nebulaImmune` sensor bonuses bypass this entirely. Authored catalogue
+   * content in the interim.
    */
   nebulaSensorFactor: 0.5,
   /**
@@ -233,43 +351,63 @@ export const SIM = {
    */
   maxCommsPairs: 20000,
   /**
-   * Base passive acquisition radius (world units): the reference range at which a
-   * ship with no sensor uplift acquires an enemy carrying a stealth signature.
-   * It is the multiplicand the target's `SignatureEffect.acquisitionMultiplier`
-   * shrinks, and the range a sensor's `pierceCloak` flag is measured against —
-   * not a hard map bound. A NON-STEALTH enemy (no cloak and no signature module)
-   * is acquired regardless of distance, so this value never gates ordinary
-   * targeting: existing fleets see exactly the same candidate sets as before
-   * (determinism fixtures rely on this). It only takes effect once a target
+   * [Phase 9 — EM-awareness grounding pending] Base passive acquisition radius
+   * (metres): the reference range at which a ship with no sensor uplift acquires
+   * an enemy carrying a stealth signature. It is the multiplicand the target's
+   * `SignatureEffect.acquisitionMultiplier` shrinks, and the range a sensor's
+   * `pierceCloak` flag is measured against — not a hard map bound. A NON-STEALTH
+   * enemy (no cloak and no signature module) is acquired regardless of distance,
+   * so this value never gates ordinary targeting: existing fleets see exactly
+   * the same candidate sets as before. It only takes effect once a target
    * carries a signature module (its range shrinks to `baseAcquireRange *
-   * acquisitionMultiplier`) or a cloak (a pierce-cloak sensor must be within
-   * this range, extended by its own `detectionRange`, to see it). The value is
-   * comfortably larger than the deployment span (`2 * DEPLOY.edgeInset = 720`)
-   * plus battle drift, so a signature-equipped ship at the far edge is still
-   * acquirable until its multiplier pulls the range in.
+   * acquisitionMultiplier`) or a cloak. Phase 9 derives this from ambient-EM ×
+   * threshold; until then it is authored catalogue content, sized comfortably
+   * beyond the deployment span plus battle drift so a signature-equipped ship
+   * at the far edge is still acquirable until its multiplier pulls the range in.
    */
   baseAcquireRange: 2000,
   /**
-   * Spacing (world units) between mines in a single mine-layer batch. The first
-   * mine of a batch drops on the laying ship's centre; subsequent mines step out
-   * in a deterministic ring at radii that are integer multiples of this spacing,
-   * so a multi-mine batch is spread out rather than stacked on one point. No rng:
-   * each mine's offset is a pure function of its index within the batch.
+   * Spacing (metres) between mines in a single mine-layer batch. Derived from
+   * the mine's lethal radius: a mine's blast is effective out to roughly one
+   * cell radius, so adjacent mines in a ring are placed one `CELL_SIZE` apart
+   * (`CELL_SIZE = 12 m`) — close enough that their lethal radii overlap into a
+   * continuous belt, far enough apart that one mine's trigger does not
+   * sympathetic-detonate its neighbour. Authored catalogue content
+   * representing the mine payload's lethal radius. No rng: each mine's offset
+   * is a pure function of its index within the batch.
    */
   mineRingSpacing: 12,
   /**
-   * Speed (world units per tick) of a boarding pod in flight toward its target.
-   * A pod homes on its target each tick, stepping this far along the bearing to
-   * the target's current position (clamped so it never overshoots). Pure
-   * function of positions — no rng.
+   * Speed (metres per tick) of a boarding pod in flight toward its target.
+   * A pod is a small assault craft; its speed is the catalogue figure for a
+   * short-range breaching pod's drive. Authored catalogue content representing
+   * the pod's physical drive output. A pod homes on its target each tick,
+   * stepping this far along the bearing to the target's current position
+   * (clamped so it never overshoots). Pure function of positions — no rng.
    */
   boardingPodSpeed: 6,
-  /** Collision radius (world units) of a launched drone — small, fighter-sized. */
+  /**
+   * Collision radius (metres) of a launched drone — a small, fighter-sized
+   * craft. Derived from the drone's payload size: a drone carries a weapon
+   * and minimal propulsion, fitting within roughly one cell's footprint
+   * (`CELL_SIZE = 12 m`), so `CELL_SIZE * 0.75 = 9 m` is its collision disc.
+   * Authored catalogue content representing the drone's physical size.
+   */
   droneRadius: 9,
-  /** Collision radius (world units) of a decoy — a plausible ship-sized contact. */
+  /**
+   * Collision radius (metres) of a decoy — a plausible ship-sized contact. A
+   * decoy mimics a real ship's radar cross-section, so its effective radius is
+   * that of a small frigate: `CELL_SIZE * 4/3 = 16 m`. Authored catalogue
+   * content representing the decoy's imitated signature size.
+   */
   decoyRadius: 16,
-  /** Lifetime (ticks) for a drone whose hangar sets no explicit lifetime: long
-   *  enough that a drone persists for the whole battle unless shot down. */
+  /**
+   * Lifetime (ticks) for a drone whose hangar sets no explicit lifetime. A
+   * drone carries propellant and power for a finite endurance; the default is
+   * the catalogue endurance for a long-loiter combat drone, long enough that
+   * it persists for the whole battle unless shot down. Authored catalogue
+   * content (a rate / endurance spec).
+   */
   droneDefaultLifetime: 4000,
 };
 
