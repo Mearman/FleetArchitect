@@ -11,6 +11,15 @@ import { SIM } from "./config";
 import { isCharged, isOperational } from "./crew";
 import { angleDifference, gridRadius } from "./setup";
 import type { SimModule, SimShip } from "./types";
+/**
+ * Which engines the force/torque computation should fire. The translation
+ * controller chooses a thrust direction each tick; engines whose local force
+ * does not contribute to that direction are not fired (so a balanced fore+aft
+ * ship does not have its engines cancel). "all" fires every engine regardless
+ * of direction — the default for tests and direct callers that are not using
+ * the translation controller.
+ */
+export type ThrustMode = "all" | "prograde" | "retrograde";
 
 /** Thrust contributed by engine modules (subtracted from the aggregate to
  *  recover the hull base, since stats.thrust already sums them in). */
@@ -332,6 +341,7 @@ export function shipForceAndTorque(
   ship: SimShip,
   turnSign: number,
   shouldThrust: boolean,
+  thrustMode: ThrustMode = "all",
 ): { fx: number; fy: number; torque: number; maxTorque: number } {
   if (ship.modules === undefined) return { fx: 0, fy: 0, torque: 0, maxTorque: 0 };
   let fx = 0;
@@ -351,6 +361,16 @@ export function shipForceAndTorque(
       if (!shouldThrust) continue;
       const t = effect.thrust;
       if (t <= 0) continue;
+      // The translation controller directs thrust along a chosen axis. Only
+      // engines whose local force contributes to the commanded direction fire:
+      // prograde mode fires engines with forward (+x local) force, retrograde
+      // mode fires engines with rearward (-x local) force. "all" (the default,
+      // used by tests and direct callers) fires every engine regardless. This
+      // is what lets a balanced fore+aft ship actually move — without the
+      // filter, its forward and rear engines cancel.
+      const fxLocalSign = -Math.cos(m.facing);
+      if (thrustMode === "prograde" && fxLocalSign <= 0) continue;
+      if (thrustMode === "retrograde" && fxLocalSign >= 0) continue;
       // A module's `facing` is its exhaust direction (where the nozzle/flame
       // points), matching how engines are authored — a rear-mounted engine
       // faces aft (π). Newton's third law: the thrust on the ship is OPPOSITE
@@ -399,6 +419,114 @@ export function shipForceAndTorque(
     }
   }
   return { fx, fy, torque, maxTorque };
+}
+
+/**
+ * Maximum forward (prograde) and reverse (retrograde) thrust the ship's alive,
+ * powered, manned, and charged engines can deliver along the ship's local +/-x
+ * axis. For each engine the local force vector is `-(cos(facing), sin(facing))
+ * · thrust` (the exhaust-opposite convention used by `shipForceAndTorque`); the
+ * component that pushes the ship forward (+x local) is the dot product with
+ * (+1, 0), clamped at 0, and the component that pushes it rearward (-x local)
+ * is the dot product with (-1, 0), clamped at 0. Canted engines contribute only
+ * their forward/aft component; the orthogonal part is ignored by the kinematic
+ * controller and shows up as lateral drift — the intended emergent behaviour
+ * for asymmetric fits.
+ *
+ * Afterburner is NOT folded in here: the caller applies `boost.thrust` to the
+ * chosen direction, matching the existing integration pattern. The two values
+ * are pure functions of module geometry; the caller divides by mass to get
+ * accelerations for the stop-in-time controller (`a = thrust / mass`).
+ *
+ * A ship with only rear-facing engines (the common test-fixture case: exhaust
+ * aft ⇒ forward thrust) has `prograde > 0` and `retrograde = 0` — it must flip
+ * pi to brake. A ship with fore+aft thrusters has both positive and brakes
+ * directly.
+ */
+export function availableThrust(
+  ship: SimShip,
+): { prograde: number; retrograde: number; lateral: number } {
+  // Aggregated (non-modular) ship: a scalar-thrust abstraction with no module
+  // geometry. The legacy movement branch drives it along ship.facing in either
+  // direction, so it is modelled as a balanced ship that can brake directly —
+  // prograde, retrograde, and lateral all equal its scalar `thrust`. (Phase 1
+  // removes aggregated ships entirely; until then the controller must not
+  // freeze them.)
+  if (ship.modules === undefined) {
+    return { prograde: ship.thrust, retrograde: ship.thrust, lateral: ship.thrust };
+  }
+  let prograde = 0;
+  let retrograde = 0;
+  let lateralPlus = 0;
+  let lateralMinus = 0;
+  for (const m of ship.modules) {
+    if (!m.alive) continue;
+    if (!m.powered || !m.manned || !isCharged(m)) continue;
+    const effect = m.effect;
+    if (effect.kind !== "engine") continue;
+    const t = effect.thrust;
+    if (t <= 0) continue;
+    // Local force on the ship is opposite the exhaust direction.
+    const fxLocal = -Math.cos(m.facing) * t;
+    const fyLocal = -Math.sin(m.facing) * t;
+    // An engine is lateral when its force is more ±y than ±x (exhaust nearer
+    // ±π/2); otherwise it is fore/aft. Fore/aft contributes prograde (+x) or
+    // retrograde (−x); lateral contributes +y or −y. `lateral` is the
+    // symmetric per-direction budget (min of the two sides) so the controller
+    // can command either direction up to the same limit.
+    if (Math.abs(fyLocal) > Math.abs(fxLocal)) {
+      if (fyLocal > 0) lateralPlus += fyLocal;
+      else lateralMinus += -fyLocal;
+    } else if (fxLocal > 0) prograde += fxLocal;
+    else if (fxLocal < 0) retrograde += -fxLocal;
+  }
+  return {
+    prograde,
+    retrograde,
+    lateral: Math.min(lateralPlus, lateralMinus),
+  };
+}
+
+/**
+ * Linear force from the ship's lateral (RCS translation) engines fired at
+ * signed throttle `lateral` (positive = local +y, negative = −y). A lateral
+ * engine is one whose force is more ±y than ±x; only those pushing the
+ * commanded direction fire, each at `|lateral|` throttle. This is the channel
+ * that lets a ship cancel perpendicular drift WITHOUT turning to face it — so
+ * facing (to aim weapons) and translation (to station-keep) decouple.
+ *
+ * The net force is applied at the centre of mass (zero torque): like a real
+ * RCS translation controller, the flight computer fires the thruster
+ * combination that produces pure translation, differentially throttling to
+ * cancel the geometric torque. Modelling the cancellation here (rather than
+ * demanding the fixture place thrusters exactly on the CoM line) keeps the
+ * translation channel independent of the attitude channel — a translation
+ * command never spins the ship.
+ */
+export function lateralForceAndTorque(
+  ship: SimShip,
+  lateral: number,
+): { fx: number; fy: number; torque: number } {
+  if (ship.modules === undefined || lateral === 0) {
+    return { fx: 0, fy: 0, torque: 0 };
+  }
+  let fy = 0;
+  const throttle = Math.min(1, Math.abs(lateral));
+  for (const m of ship.modules) {
+    if (!m.alive || !m.powered || !m.manned || !isCharged(m)) continue;
+    const effect = m.effect;
+    if (effect.kind !== "engine") continue;
+    const t = effect.thrust;
+    if (t <= 0) continue;
+    const lxUnit = -Math.cos(m.facing);
+    const lyUnit = -Math.sin(m.facing);
+    if (Math.abs(lyUnit) <= Math.abs(lxUnit)) continue; // fore/aft, not lateral
+    // Fire only engines that push the commanded lateral direction.
+    if (lateral > 0 && lyUnit <= 0) continue;
+    if (lateral < 0 && lyUnit >= 0) continue;
+    fy += lyUnit * t * throttle;
+  }
+  return { fx: 0, fy, torque: 0 };
 }
 
 /**
@@ -523,9 +651,13 @@ export function geometricTorque(ship: SimShip, shouldThrust: boolean): number {
  *  the side of braking early rather than late — preventing overshoot.
  *
  *  Stopping angle eStop = w² / (2·αBrake): angle consumed braking |w| → 0.
+ *  (Slight overestimate vs the exact discrete distance — see
+ *  `discreteStoppingAngle`. Load-bearing: causes earlier braking so the ship
+ *  arrives within the settle deadband.)
  *
- *  Settle deadband: if |e| ≤ deadband and |w| ≤ α (one tick of braking
- *  brings |w| to zero): command 0 for the caller to snap to rest.
+ *  Settle deadband: if |e| ≤ deadband: command 0 for the caller to snap to
+ *  rest. Without angular damping, clamping within the deadband is the only
+ *  thing that prevents a bang-bang limit cycle around the target heading.
  *
  *  Brake if: spinning toward target and would overshoot (eStop ≥ |e|), OR
  *  spinning away from target — command −sign(w).
@@ -540,29 +672,29 @@ export function geometricTorque(ship: SimShip, shouldThrust: boolean): number {
  * no RNG, clock, or Map/Set iteration-order dependence.
  */
 /**
- * Simulate discrete braking from angular velocity `w` using a braking angular
- * acceleration of `alphaBrake` per tick, with `angularDamping` applied each
- * tick, returning the total angle traversed until the ship stops (angVel
- * magnitude ≤ 0). This is the exact discrete stopping distance for the
- * engine's integration model, accounting for damping.
+ * Stopping angle for an angular velocity `w` braking at a constant angular
+ * acceleration `alphaBrake` per tick. Returns the continuous closed form
+ * `w^2 / (2 * alphaBrake)`, which slightly overestimates the actual
+ * forward-Euler discrete stopping distance (the integrator decrements
+ * velocity before adding it to the heading, so the true stop is ~|w|/2
+ * shorter). The overestimate is deliberate and load-bearing for the bang-bang
+ * attitude controller: braking a tick early makes the ship arrive at the
+ * target heading with angVel at or below one tick of braking authority
+ * (`|w| <= alpha`), which is exactly the condition the post-integration
+ * deadband settle snap needs to clamp the ship cleanly to rest. Using the
+ * exact discrete distance instead causes a stable limit cycle under
+ * frictionless integration (no damping to decay the residual angVel).
+ *
+ * Returns `Infinity` when `alphaBrake <= 0` (no commandable braking
+ * authority — the ship cannot stop its spin and coasts forever; the
+ * controller then never commands a brake, the correct emergent behaviour).
  *
  * Returns the angle (positive, unsigned) consumed from |w| to 0.
- *
- * Bounded to `maxIter` iterations (well above any reachable angVel /
- * alphaBrake ratio for realistic scenarios) for guaranteed termination.
  */
 export function discreteStoppingAngle(w: number, alphaBrake: number): number {
   if (alphaBrake <= 0) return Infinity;
-  let vel = Math.abs(w);
-  let angle = 0;
-  const maxIter = 512; // far beyond any realistic angVel / alphaBrake ratio
-  for (let i = 0; i < maxIter; i += 1) {
-    // Apply one tick of braking: decelerate then damp.
-    vel = (vel - alphaBrake) * SIM.angularDamping;
-    if (vel <= 0) break;
-    angle += vel;
-  }
-  return angle;
+  const wAbs = Math.abs(w);
+  return (wAbs * wAbs) / (2 * alphaBrake);
 }
 
 export function commandedTurn(
@@ -584,8 +716,18 @@ export function commandedTurn(
   const gTorque = geometricTorque(ship, shouldThrust);
   const gAlpha = I > 0 ? gTorque / I : 0;
 
-  // Settle deadband: close enough to target and slow enough to snap to rest.
-  if (Math.abs(e) <= SIM.angularDeadband && Math.abs(w) <= alpha) {
+  // Settle deadband: the ship is close enough to the target that this tick's
+  // angular displacement will carry it across (or it is within the static
+  // heading tolerance). Command no turn so the post-integration snap in
+  // moveShips clamps the ship cleanly to rest at the target heading. Without
+  // angular damping the snap is the only thing that ends the bang-bang limit
+  // cycle around the target: the discrete controller cannot zero angVel
+  // exactly at the target under forward Euler, so without the clamp the ship
+  // oscillates forever. Using |w| (the per-tick angular step) as the deadband
+  // when |w| > angularDeadband ensures the snap fires the tick the ship
+  // reaches the target, not a tick later when it has already overshot. The
+  // alpha > 0 guard above ensured the ship has real steering authority.
+  if (Math.abs(e) <= Math.max(Math.abs(w), SIM.angularDeadband)) {
     return 0;
   }
 
@@ -593,15 +735,17 @@ export function commandedTurn(
   // (-mct) against the geometric disturbance. When geo torque is in the same
   // direction as spin (hindrance), effective braking is reduced; when it
   // opposes spin (helps brake), effective braking is enhanced. Clamped to 0 if
-  // the geometric torque overwhelms the commandable authority — the ship cannot
-  // actively decelerate but damping will eventually bleed the spin.
+  // the geometric torque overwhelms the commandable authority — without
+  // damping the ship cannot actively decelerate, so it coasts on spin until the
+  // engines stop firing or are destroyed. This is the correct emergent
+  // behaviour for an unbalanced thrust arrangement.
   const spinSign = w > 0 ? 1 : w < 0 ? -1 : 0;
   const hindrance = spinSign * gAlpha > 0 ? spinSign * gAlpha : 0;
   const alphaBrake = Math.max(alpha - hindrance, 0);
 
-  // Discrete stopping angle: the exact angle consumed braking |w| → 0 in the
-  // engine's damped integration model, simulated tick by tick. More accurate
-  // than the continuous formula w²/(2α) when angularDamping < 1.
+  // Stopping angle: `w²/(2·alphaBrake)`. See discreteStoppingAngle for why
+  // the slight overestimate vs the exact discrete distance is load-bearing
+  // for convergence under frictionless integration.
   const eStop = discreteStoppingAngle(w, alphaBrake);
 
   // Brake if spinning toward the target but would overshoot, or spinning away.

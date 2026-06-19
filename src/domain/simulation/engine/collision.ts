@@ -88,7 +88,19 @@ export function resolveShipCollisions(hash: SpatialHash<ShipCell>): void {
 
   for (const entry of hash.entries()) {
     const { ship: a, wx, wy } = entry.payload;
-    for (const other of hash.candidates(wx, wy, CELL_CONTACT_DISTANCE)) {
+    // Swept anti-tunnelling: widen the candidate query radius by the ship's
+    // per-tick displacement so a fast-approaching pair registers a contact
+    // before they interpenetrate. The hash is built once at the start of
+    // collision resolution using each cell's position at that instant;
+    // without the sweep two ships passing at a relative speed above
+    // CELL_SIZE per tick can have cell centres in non-adjacent buckets and
+    // tunnel through each other. Querying with each ship's own speed is
+    // sufficient: the unordered pair is resolved once (by instanceId tie-
+    // break), so it is found when iterating whichever of the two ships is
+    // moving faster. The static narrow-phase test below (unchanged) keeps
+    // the contact depth consistent.
+    const aSpeed = Math.hypot(a.velX, a.velY);
+    for (const other of hash.candidates(wx, wy, CELL_CONTACT_DISTANCE + aSpeed)) {
       const b = other.payload.ship;
       if (a === b) continue;
       // Resolve each unordered pair once: only consider a < b by instanceId.

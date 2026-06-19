@@ -130,29 +130,13 @@ export const SIM = {
     asteroidField: 0.8,
   },
   /**
-   * Per-tick multiplicative drag on linear and angular velocity. A small drag
-   * is a gameplay compromise: real space is frictionless (ships would coast
-   * forever), but unbounded drift makes battles unreadable. 0.97 ≈ 0.5 s
-   * half-life at 30 ticks/s — momentum is felt, but ships settle.
-   */
-  linearDamping: 0.97,
-  /**
-   * Per-tick multiplicative drag on angular velocity — the rotational analogue
-   * of `linearDamping`, and like it a deliberate small non-physical bleed: real
-   * space is frictionless, so a torqued ship would otherwise spin forever, and
-   * the attitude controller's braking only lands angVel exactly on zero in the
-   * continuous limit. Close to 1 so a real tumble still reads as momentum (the
-   * controller, not damping, does the deliberate braking) while a settled ship
-   * cannot jitter forever on residual spin from off-centre thruster torque or a
-   * collision kick. There is NO maximum angular speed — this only decays spin,
-   * it never caps it.
-   */
-  angularDamping: 0.98,
-  /**
    * Heading error (radians) within which the attitude controller commands no
    * turn — the ship is considered on aim. ~0.6°, below visual notice, so
    * off-centre thruster torque or a residual fraction of a degree cannot make
-   * the controller chatter the turn command around a settled heading.
+   * the controller chatter the turn command around a settled heading. Also the
+   * arrival tolerance for the translation controller: a ship with closing
+   * speed at or below `ARRIVAL_CLOSING_SPEED_MPS` and heading error within this
+   * band snaps to rest.
    */
   angularDeadband: 0.01,
   /**
@@ -288,6 +272,25 @@ export const SIM = {
    *  enough that a drone persists for the whole battle unless shot down. */
   droneDefaultLifetime: 4000,
 };
+
+/** Closing speed (world-units per tick) below which the translation controller
+ *  considers the ship "arrived" on its desired bearing and stops fine-tuning.
+ *  The one numerical settle epsilon in the movement model — every other
+ *  quantity is kinematics over actual thrust and mass (`a = thrust / mass`,
+ *  `vMax = sqrt(2·a·d)`, `dBrake = v² / (2·a)`), the ships' actual engine force
+ *  vectors, and the existing `SIM.angularDeadband` heading band. No speed cap,
+ *  no damping, no hand-tuned thresholds. */
+export const ARRIVAL_CLOSING_SPEED_MPS = 0.05;
+
+/** Max heading error (radians) at which the main engine may fire. A ship still
+ *  turning onto its commanded heading would otherwise thrust along the
+ *  intermediate headings and inject lateral velocity that, with no damping,
+ *  compounds into a drift — so the engine waits until the ship is within this
+ *  band of the heading before firing (RCS/reaction wheels still turn the ship).
+ *  PI/4 is the band at which thrust is still >= ~70% along the heading
+ *  (cos(PI/4)); beyond it the lateral component dominates. A settle epsilon in
+ *  the same category as `angularDeadband` and `ARRIVAL_CLOSING_SPEED_MPS`. */
+export const THRUST_ALIGNMENT_RAD = Math.PI / 4;
 
 /** Starting hit points of a freshly spawned crew member. */
 export const CREW_HP = 10;

@@ -1,14 +1,23 @@
 /**
  * Per-tick ship movement: stance-derived desired range, black-hole avoidance
- * steering, retreat/closing decisions, and the integration of forces into
- * velocity and position.
+ * steering, the stop-in-time translation controller, and the integration of
+ * forces into velocity and position. Movement is frictionless Newtonian:
+ * velocity persists, the controller commands prograde/retrograde thrust to
+ * hold the desired range, and there is no damping or speed cap.
  */
 
 import type { BattleInputs } from "../types";
 
-import { SIM } from "./config";
-import { commandedTurn, maxCommandableTorque, shipForceAndTorque } from "./physics";
-import { angleDifference, anomalyAdjustedRange, blackHoleAvoidWeight, rotateLocal } from "./setup";
+import { SIM, THRUST_ALIGNMENT_RAD } from "./config";
+import {
+  availableThrust,
+  commandedTurn,
+  lateralForceAndTorque,
+  maxCommandableTorque,
+  shipForceAndTorque,
+} from "./physics";
+import { angleDifference, blackHoleAvoidWeight, rotateLocal } from "./setup";
+import { computeTranslationCommand } from "./translation";
 import { afterburnerMultipliers } from "./tech";
 import type { SimShip } from "./types";
 
@@ -109,7 +118,7 @@ export function moveShips(
     if (anomaly === "blackHole") {
       const dist = Math.hypot(ship.x, ship.y);
       if (dist > 0) {
-        // Soften the singularity at r → 0 by clamping the effective r
+        // Soften the singularity at r -> 0 by clamping the effective r
         // to the lethal radius, so the acceleration stays finite.
         const effectiveR = Math.max(dist, SIM.blackHoleLethalRadius);
         const accelMag = SIM.blackHoleStrength / (effectiveR * effectiveR);
@@ -140,81 +149,21 @@ export function moveShips(
     if (!ship.alive) continue;
     const target = ship.target !== undefined ? byId.get(ship.target) : undefined;
 
-    let desiredFacing: number;
-    let shouldThrust: boolean;
-    let reverse = false;
-
-    if (target === undefined) {
-      // Advance-to-contact: this ship has zero awareness (no live contact and
-      // no ghost), so it cannot pick a target. Rather than hold blind, it
-      // closes on where the enemy deployed — steering toward the OPPOSING
-      // side's initial deployment centroid (a fixed reference captured at
-      // battle start, never live enemy positions). A retreating blind ship
-      // instead flees away from that reference, back toward its own lines. With
-      // no opposing reference at all (the enemy fielded nothing) there is
-      // nowhere to advance to, so the ship holds.
-      const enemyDeployment =
-        ship.side === "attacker" ? deployment.defender : deployment.attacker;
-      if (enemyDeployment === undefined) continue;
-      const ex = enemyDeployment.x - ship.x;
-      const ey = enemyDeployment.y - ship.y;
-      // A hold-order ship holds position even when blind: hold means do not
-      // engage, full stop, so a blind hold ship pins and waits rather than
-      // advancing toward an enemy it cannot see. Every other engage-range value
-      // advances to contact — close, short, and long-range ships all seek the
-      // enemy and let their range band take over once they acquire a target.
-      // A retreating blind ship flees back toward its own lines (away from the
-      // enemy reference) regardless of engage-range, because retreat overrides
-      // every other order. `angleDifference` handles wrapping, so the raw atan2
-      // result is fine.
-      if (ship.orders.engageRange === "hold" && !isRetreating(ship)) {
-        desiredFacing = ship.facing;
-        shouldThrust = false;
-      } else {
-        desiredFacing = isRetreating(ship)
-          ? Math.atan2(-ey, -ex)
-          : Math.atan2(ey, ex);
-        shouldThrust = true;
-      }
-    } else {
-      const dx = target.x - ship.x;
-      const dy = target.y - ship.y;
-      const dist = Math.hypot(dx, dy);
-
-      // Each ship's rangeKeepingBand determines how wide the "at range" dead-
-      // zone is. A wider band means the ship tolerates being further from its
-      // ideal range before correcting — cautious captains set wide bands,
-      // aggressive ones set narrow ones so they close quickly. The inner edge
-      // of the dead-zone is `1 - rangeKeepingBand` of `want`; the outer edge is
-      // `want` itself (outside `want` always closes).
-      const band = ship.orders.rangeKeepingBand;
-      if (isRetreating(ship)) {
-        // Turn tail and flee; retreating ships do not fire.
-        desiredFacing = Math.atan2(-dy, -dx);
-        shouldThrust = true;
-      } else if (ship.orders.engageRange === "hold") {
-        desiredFacing = Math.atan2(dy, dx);
-        shouldThrust = false;
-      } else {
-        // Close in when the anomaly punishes time-of-flight (nebula, asteroid
-        // field); unchanged for black hole and none.
-        const want = anomalyAdjustedRange(ship.orders, ship.weapons, anomaly);
-        if (dist > want) {
-          desiredFacing = Math.atan2(dy, dx);
-          shouldThrust = true;
-        } else if (dist < want * (1 - band)) {
-          // Too close — face the target and reverse-thrust to back off while
-          // keeping guns on it. A Newtonian kiting maneuver that decelerates
-          // instead of just turning tail.
-          desiredFacing = Math.atan2(dy, dx);
-          shouldThrust = true;
-          reverse = true;
-        } else {
-          desiredFacing = Math.atan2(dy, dx);
-          shouldThrust = false;
-        }
-      }
-    }
+    // Translation controller: a pure kinematic stop-in-time decision that
+    // returns the world-space thrust direction, the heading the attitude
+    // controller should aim for, and whether to fire engines this tick.
+    // Replaces the old desired-range/steering + reverse block; see its
+    // docstring for the full decision table.
+    const cmd = computeTranslationCommand(ship, target, anomaly, deployment);
+    let desiredFacing = cmd.desiredFacing;
+    let shouldThrust = cmd.shouldThrust;
+    const thrustMode = cmd.thrustMode;
+    // Survival override: set by black-hole avoidance below. When true the
+    // orient-before-burn gate is bypassed — the ship burns to escape even
+    // before it has finished turning onto the escape heading, because a
+    // partial-alignment thrust still beats coasting into the well while the
+    // attitude controller rotates it. Cleared otherwise.
+    let forceFire = false;
 
     // Formation-keeping: when formationKeeping > 0, blend the desired facing
     // with the direction toward the fleet's centroid. The blend is a weighted
@@ -258,9 +207,12 @@ export function moveShips(
         desiredFacing = desiredFacing + angDiff * avoidWeight;
         // Inside the danger zone, burn to escape — never sit still next to the
         // hole. A retreating ship is already thrusting; this guarantees a
-        // holding or at-range ship also fires its engines to climb out.
+        // holding or at-range ship also fires its engines to climb out. The
+        // forceFire flag bypasses the orient-before-burn gate so the engine
+        // fires immediately, before the ship has fully turned onto the escape
+        // heading.
         shouldThrust = true;
-        reverse = false;
+        forceFire = true;
       }
     }
 
@@ -285,56 +237,89 @@ export function moveShips(
     // movement maths is unchanged for them.
     const boost = afterburnerMultipliers(ship, shouldThrust);
 
-    // Linear: thrust accelerates velocity.
+    // Linear: thrust accelerates velocity. Velocity PERSISTS — real space is
+    // frictionless, so a ship that stops thrusting keeps its momentum and only
+    // changes velocity when the controller commands prograde/retrograde thrust
+    // or a collision impulse lands. There is no damping bleed and no speed
+    // cap; the only thing limiting speed is kinematics (the controller brakes
+    // in time to hold the desired range) and the ship's actual engine force.
     //
     // Modular ships (per-cell thrust): each alive engine contributes a
-    // force vector F_local = (cos(facing) * thrust, sin(facing) * thrust).
-    // We sum those forces, rotate the net into world space by `ship.facing`,
-    // and add F/m to velocity. Engines at the ship's centre contribute no
-    // torque; off-centre engines contribute r × F. The reverse flag flips
-    // the sign of every engine's contribution (a kiting ship reverses every
-    // thruster at once), so the ship thrusts away from the target. No
-    // explicit maxSpeed clamp — the only thing limiting speed is the
-    // accumulated engine force, which is the realistic behaviour: a heavily
-    // engineered ship accelerates faster than a stripped-down one, and
-    // once engines shut off, linear damping bleeds the velocity to zero.
+    // force vector F_local = -(cos(exhaust), sin(exhaust)) * thrust. We sum
+    // those forces, rotate the net into world space by `ship.facing`, and add
+    // F/m to velocity. Engines at the ship's centre contribute no torque;
+    // off-centre engines contribute r x F. The translation controller sets
+    // `desiredFacing` so the ship's local +x axis aligns with the commanded
+    // world thrust direction — firing the engines then produces a world force
+    // along that direction. For an aft-only ship that must brake, the
+    // controller flips the desired heading by PI so the rear engines point
+    // along the ship's velocity and their forward push becomes a braking force.
     //
     // Aggregated (legacy) ships keep the scalar-thrust model: force points
-    // along ship.facing (or opposite), magnitude is `thrust`. The
-    // per-tick acceleration cap is `thrust / mass` (F = m·a) and the speed
-    // is clamped to `thrust` so heavier ships are sluggish to build speed
-    // and have the same top speed as lighter ones.
+    // along ship.facing, magnitude is `thrust`. The per-tick acceleration cap
+    // is `thrust / mass` (F = m*a) and the speed is clamped to `thrust` so
+    // heavier ships are sluggish to build speed and have the same top speed as
+    // lighter ones. (Phase 1 deletes this branch entirely.)
     if (ship.modules !== undefined) {
-      // Engines, RCS, and reaction wheels for the commanded turn sign. Engine
-      // r × F torque (and linear force) applies only when the ship is actively
+      // Engines, RCS, and reaction wheel for the commanded turn sign. Engine
+      // r x F torque (and linear force) applies only when the ship is actively
       // thrusting; RCS and reaction wheels (pure-torque sources) apply their
       // commanded torque every tick regardless of thrust. When the ship is
-      // holding position or braking (`shouldThrust = false`), engines are off
+      // holding position or coasting (`shouldThrust = false`), engines are off
       // and produce neither force nor geometric torque — only the commandable
       // attitude sources (RCS, wheels, gimbal) are active.
-      const { fx, fy, torque } = shipForceAndTorque(ship, turnSign, shouldThrust);
-      const dir = reverse ? -1 : 1;
+      //
+      // Orient before you burn: a fixed-direction main engine fired while the
+      // ship is still turning onto its heading thrusts along the INTERMEDIATE
+      // headings, injecting lateral velocity that persists (no damping) and
+      // compounds into a drift over a long battle. So the engine fires only
+      // once the ship is aligned with the commanded heading within
+      // `THRUST_ALIGNMENT_RAD` — the same principle as the flip-and-brake
+      // engine cut, generalised to every thrust command. RCS and reaction
+      // wheels still turn the ship regardless (they are pure-torque sources).
+      const alignedForThrust =
+        Math.abs(angleDifference(ship.facing, desiredFacing)) <= THRUST_ALIGNMENT_RAD;
+      const engineFire = shouldThrust && (alignedForThrust || forceFire);
+      const { fx, fy, torque } = shipForceAndTorque(ship, turnSign, engineFire, thrustMode);
       // Afterburner scales the net engine force (and the resulting torque) for
       // the duration of its window; identity multiplier leaves it untouched.
-      const lx = shouldThrust ? dir * fx * boost.thrust : 0;
-      const ly = shouldThrust ? dir * fy * boost.thrust : 0;
-      const world = rotateLocal(ship.facing, lx, ly);
+      // Throttle scales it further so a fine correction (cancelling a small
+      // residual under recoil) does not slam full thrust and over-correct.
+      const throttle = cmd.throttle ?? 1;
+      const lx = engineFire ? fx * boost.thrust * throttle : 0;
+      const ly = engineFire ? fy * boost.thrust * throttle : 0;
+      // Universal lateral (RCS) damper: cancel the velocity perpendicular to
+      // the ship's facing, every tick, independent of the radial translation
+      // controller. This is what keeps a ship from drifting sideways — lateral
+      // thrusters fire to oppose perpendicular motion (recoil, turn-coupling)
+      // without turning the ship, so it stays aimed at its target. The command
+      // is the proportional throttle that arrests `vPerp` in one tick, clamped
+      // to the lateral budget. Pure CoM translation (no torque — see
+      // `lateralForceAndTorque`), so it never spins the ship.
+      const latBudget = availableThrust(ship).lateral;
+      const aLat = latBudget / Math.max(ship.mass, 1);
+      let lateralCmd = 0;
+      if (aLat > 0) {
+        const perpX = -Math.sin(ship.facing);
+        const perpY = Math.cos(ship.facing);
+        const vPerp = ship.velX * perpX + ship.velY * perpY;
+        lateralCmd = Math.max(-1, Math.min(1, -vPerp / aLat));
+      }
+      const lat = lateralForceAndTorque(ship, lateralCmd);
+      const world = rotateLocal(ship.facing, lx + lat.fx, ly + lat.fy);
       const invMass = 1 / Math.max(ship.mass, 1);
       ship.velX += world.x * invMass;
       ship.velY += world.y * invMass;
-      ship.velX *= SIM.linearDamping;
-      ship.velY *= SIM.linearDamping;
-      // Newtonian rotation: α = torque / I. No angular speed cap.
-      const angularAccel = ship.momentOfInertia > 0 ? torque / ship.momentOfInertia : 0;
+      // Newtonian rotation: alpha = torque / I. The lateral engines' torque is
+      // included so the attitude controller sees (and counters) any unbalanced
+      // lateral firing; a balanced RCS pair contributes none.
+      const totalTorque = torque + lat.torque;
+      const angularAccel = ship.momentOfInertia > 0 ? totalTorque / ship.momentOfInertia : 0;
       ship.angVel += angularAccel;
-      // Deliberate small non-physical angular damping (mirrors linearDamping):
-      // keeps a settled ship from drifting on floating-point residuals without
-      // meaningfully opposing a real turn.
-      ship.angVel *= SIM.angularDamping;
     } else {
       // Legacy aggregated ship: no module geometry, so its commandable torque
       // is a scalar authority derived from ShipStats.turnRate. Scaling by mass
-      // gives `α = torque / I = (turnRate · mass) / (mass · legacyMoI) =
+      // gives `alpha = torque / I = (turnRate * mass) / (mass * legacyMoI) =
       // turnRate / legacyMoI`, an agility independent of the absolute mass —
       // an agile hull (high turnRate) spins up fast, a sluggish one slowly —
       // under the SAME `angVel += torque / I` integration as modular ships and
@@ -343,15 +328,16 @@ export function moveShips(
       const torque = turnSign * torqueAuthority;
       const angularAccel = ship.momentOfInertia > 0 ? torque / ship.momentOfInertia : 0;
       ship.angVel += angularAccel;
-      ship.angVel *= SIM.angularDamping;
 
       // Afterburner raises both the top speed and the acceleration for its
       // window; identity multiplier leaves the legacy scalar model unchanged.
+      // The controller has already set `desiredFacing` so thrusting along it
+      // moves the ship in the commanded world direction (for a braking
+      // command, desiredFacing is flipped PI so forward thrust becomes a brake).
       const maxSpeed = ship.thrust * boost.thrust;
       const accel = (ship.thrust * boost.thrust) / Math.max(ship.mass, 1);
-      const dir = reverse ? -1 : 1;
-      const desiredVX = shouldThrust ? dir * Math.cos(ship.facing) * maxSpeed : 0;
-      const desiredVY = shouldThrust ? dir * Math.sin(ship.facing) * maxSpeed : 0;
+      const desiredVX = shouldThrust ? Math.cos(ship.facing) * maxSpeed : 0;
+      const desiredVY = shouldThrust ? Math.sin(ship.facing) * maxSpeed : 0;
       const dvx = desiredVX - ship.velX;
       const dvy = desiredVY - ship.velY;
       const dvLen = Math.hypot(dvx, dvy);
@@ -366,20 +352,31 @@ export function moveShips(
         ship.velX *= k;
         ship.velY *= k;
       }
-      ship.velX *= SIM.linearDamping;
-      ship.velY *= SIM.linearDamping;
     }
 
     // Deadband settle: snap the ship cleanly onto the target heading when the
-    // controller has commanded 0 (|e| ≤ deadband and |w| ≤ α) AND there is
-    // real torque authority (α > 0). Applied AFTER torque integration so any
-    // residual angVel change from that tick is included before the snap, and the
-    // ship does not then drift away from the settled heading on the next tick.
-    // A ship with zero authority (alpha === 0) genuinely cannot steer — no snap.
+    // controller has commanded 0 (|e| <= angularDeadband — see commandedTurn's
+    // settle deadband) AND there is real torque authority (alpha > 0). Applied
+    // AFTER torque integration so any residual angVel change from that tick is
+    // included before the snap, and the ship does not then drift away from the
+    // settled heading on the next tick. A ship with zero authority (alpha === 0)
+    // genuinely cannot steer — no snap.
+    //
+    // This snap is load-bearing for convergence under frictionless integration:
+    // the bang-bang controller cannot zero angVel exactly at the target under
+    // forward Euler, so without damping a ship oscillates around the target
+    // forever (a stable limit cycle of amplitude ~one braking tick). Clamping
+    // angVel to 0 and facing to desiredFacing when within the heading deadband
+    // is the "close enough, settle" step that ends the cycle. A ship genuinely
+    // spinning (e.g. uncommanded rotation from off-centre thrust it cannot
+    // counter) never has |e| <= deadband against a stable desiredFacing for
+    // long, so this does not clamp active manoeuvres — only the residual
+    // discretisation overshoot of a ship that has arrived.
     if (
       turnSign === 0 &&
       alpha > 0 &&
-      Math.abs(angleDifference(ship.facing, desiredFacing)) <= SIM.angularDeadband
+      Math.abs(angleDifference(ship.facing, desiredFacing)) <=
+        Math.max(Math.abs(ship.angVel), SIM.angularDeadband)
     ) {
       ship.angVel = 0;
       ship.facing = desiredFacing;
@@ -390,3 +387,4 @@ export function moveShips(
     ship.y += ship.velY;
   }
 }
+
