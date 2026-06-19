@@ -1,7 +1,7 @@
 {
   "name": "fleet-architect",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
   "description": "A modern browser-based reimagining of Gratuitous Space Battles. Design ships, architect fleets, and watch deterministic autonomous space battles play out.",
   "scripts": {
