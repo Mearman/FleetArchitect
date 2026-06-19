@@ -81,6 +81,34 @@ const MODULE_COLOUR: Record<string, string> = {
   repair: "#80d4a0",
   sensor: "#40d0d0",
   comms: "#a0c0ff",
+  // Tech modules (factions update).
+  blink: "#9ad0ff",
+  afterburner: "#ffb347",
+  overcharge: "#ffd24d",
+  cloak: "#b39ddb",
+  signature: "#9575cd",
+  ecm: "#4dd0e1",
+  eccm: "#26c6da",
+  decoy: "#cfd8dc",
+  commandAura: "#f0c060",
+  hangar: "#90caf9",
+  mineLayer: "#ff7043",
+  boarding: "#e57373",
+};
+
+/**
+ * Per-faction hull/accent palette (factions update). The hull base tints a
+ * faction's structural cells; the accent marks it at a glance. Side allegiance
+ * (attacker/defender) is shown separately via an outline ring so a mirror match
+ * stays legible. Factions absent from the map fall back to the side colour.
+ */
+const FACTION_PALETTE: Record<string, { hull: string; accent: string }> = {
+  Terran: { hull: "#7e88a0", accent: "#d65a5a" },
+  Swarm: { hull: "#5e8c4a", accent: "#8bd450" },
+  Crystalline: { hull: "#8a6fc9", accent: "#5fd0e0" },
+  Foundry: { hull: "#6b6f78", accent: "#ff8c3a" },
+  Corsair: { hull: "#7a5a3a", accent: "#ffc04a" },
+  Synthetic: { hull: "#9aa6b0", accent: "#4fd0e6" },
 };
 
 /**
@@ -436,6 +464,19 @@ export function BattleRoute() {
   // within one frame of reopening.
   const [statusFrame, setStatusFrame] = useState<BattleFrame | null>(null);
 
+  // Per-ship faction from the battle roster, so the canvas can tint each ship by
+  // its faction palette. Built once per result; absent on replays recorded before
+  // the factions update, in which case ships fall back to the side colour.
+  const factionByInstance = useMemo(() => {
+    const map = new Map<string, string>();
+    if (result !== null && result.roster !== undefined) {
+      for (const entry of result.roster) {
+        map.set(entry.instanceId, entry.faction);
+      }
+    }
+    return map;
+  }, [result]);
+
   // Keep the canvas backing store matched to its CSS display size, with a DPR
   // multiplier for crisp lines. Without this the backing is the HTML default
   // 300×150 regardless of how big the canvas renders, and the browser scales
@@ -549,7 +590,12 @@ export function BattleRoute() {
       for (const s of frame.ships) {
         const px = sx(s.x);
         const py = sy(s.y);
-        const base = s.side === "attacker" ? "#ff6b5a" : "#5ab0ff";
+        // Faction accent tints the hull; the side colour is shown separately as
+        // an outline ring so allegiance stays legible in a mirror match. Falls
+        // back to the side colour for replays recorded before the factions update.
+        const faction = factionByInstance.get(s.instanceId);
+        const palette = faction !== undefined ? FACTION_PALETTE[faction] : undefined;
+        const base = palette?.accent ?? (s.side === "attacker" ? "#ff6b5a" : "#5ab0ff");
         const max = maxHp.get(s.instanceId);
 
         if (!s.alive) {
@@ -575,6 +621,17 @@ export function BattleRoute() {
           }
           hullRadiusPx = (Math.sqrt(maxDistSq) + CELL_SIZE) * scale + 3;
         }
+
+        // Side outline ring (factions update): with hulls tinted by faction, a
+        // thin ring in the side colour keeps attacker/defender legible at a
+        // glance, including same-faction mirror matches.
+        ctx.strokeStyle = s.side === "attacker" ? "#ff6b5a" : "#5ab0ff";
+        ctx.lineWidth = 1.5;
+        ctx.globalAlpha = 0.8;
+        ctx.beginPath();
+        ctx.arc(px, py, hullRadiusPx + 2, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
 
         const maxShield = max?.shield ?? s.shield;
         if (maxShield > 0) {
@@ -737,7 +794,7 @@ export function BattleRoute() {
         ctx.fillRect(px - barW / 2, py + 10, barW * frac, 3);
       }
     },
-    [bounds, maxHp, activeAnomaly, activeSeed, showFog],
+    [bounds, maxHp, activeAnomaly, activeSeed, showFog, factionByInstance],
   );
 
   /**
