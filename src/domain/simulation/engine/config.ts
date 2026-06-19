@@ -51,25 +51,6 @@ export const SIM = {
     defensive: 1.15,
     evasive: 1.4,
   },
-  /** Approximate collision radius per hull classification, in battle units. */
-  radius: {
-    fighter: 9,
-    frigate: 16,
-    cruiser: 26,
-    dreadnought: 38,
-  },
-  /**
-   * Base structural mass of each hull class, added to the sum of installed
-   * module masses to give a ship's total mass. Acceleration is
-   * `thrust / mass`, so heavier ships build speed more slowly even
-   * though their top speed (set by `thrust`) is unchanged.
-   */
-  hullMass: {
-    fighter: 5,
-    frigate: 15,
-    cruiser: 40,
-    dreadnought: 100,
-  },
   /**
    * Black-hole gravity. `blackHoleStrength` is the G·M product: the
    * gravitational acceleration at distance r is `strength / r^2`,
@@ -174,18 +155,6 @@ export const SIM = {
    * the controller chatter the turn command around a settled heading.
    */
   angularDeadband: 0.01,
-  /**
-   * Moment of inertia per unit mass for legacy (non-modular) ships, which
-   * have no module distribution to derive one from. Treated as a uniform
-   * disc of radius `sqrt(mass)/2` would give MoI = m·r²/2; we use the
-   * simpler `MoI = mass * legacyMoI` so a single constant governs the
-   * relative weight of linear vs angular acceleration. Larger values
-   * make the ship harder to spin (more "stubborn"); smaller values make
-   * off-axis thrust twitchy. Modular ships ignore this constant — their
-   * moment of inertia is derived from their module mass distribution
-   * about the centre of mass each time aggregates recompute.
-   */
-  legacyMoI: 5,
   /**
    * Mass of a single spawned projectile, in the same mass units as ship
    * modules. The recoil a firing ship feels is `m_p * v_p / M_ship` and

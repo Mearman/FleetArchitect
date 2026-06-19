@@ -4,7 +4,6 @@
  */
 
 import { CELL_SIZE } from "@/domain/grid";
-import type { ShipClassification } from "@/schema/armor";
 import { DEFAULT_WEAPON_AMMO } from "@/schema/module";
 import type { WeaponEffect } from "@/schema/module";
 import type { Orders } from "@/schema/fleet";
@@ -14,10 +13,6 @@ import { CREW_HP, SIM } from "./config";
 import { compareByCell } from "./crew-pathfinding";
 import { recomputeAggregates, sumWeaponThrust } from "./physics";
 import type { SimModule, SimShip } from "./types";
-
-export function radiusFor(classification: ShipClassification): number {
-  return SIM.radius[classification];
-}
 
 /**
  * Broad-phase bounding radius of a modular ship's cells about the ship origin:
@@ -182,15 +177,16 @@ export function toSimShip(ship: CombatShip, rng: () => number): SimShip {
     armourReduction: ship.stats.damageReduction,
     thrust: ship.stats.thrust,
     turnRate: ship.stats.turnRate,
-    mass: SIM.hullMass[ship.classification] + ship.stats.mass,
-    // Non-modular ships default to a CoM at their position pivot and the
-    // legacy scalar moment of inertia. recomputeAggregates overrides both
-    // for modular ships (the only path that calls it).
+    // Neutral placeholders: every modular ship has these overwritten by
+    // recomputeAggregates (which derives mass, MoI, radius, and CoM from
+    // the alive module grid). The values here are never read for a real
+    // ship — they exist only so the SimShip literal type-checks before the
+    // modular branch below fills them in.
+    mass: 0,
     comX: 0,
     comY: 0,
-    momentOfInertia:
-      (SIM.hullMass[ship.classification] + ship.stats.mass) * SIM.legacyMoI,
-    radius: radiusFor(ship.classification),
+    momentOfInertia: 0,
+    radius: 0,
     cost: ship.stats.cost,
     weapons,
     // Stagger initial cooldowns so weapons don't all fire on tick 0.

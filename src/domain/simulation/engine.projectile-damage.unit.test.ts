@@ -2,17 +2,13 @@ import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { CombatShip, BattleInputs } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
-import type { ShipClassification } from "@/schema/armor";
 import type { WeaponEffect } from "@/schema/module";
-import type { ShipStats } from "@/domain/stats";
+import { modularShip, targetDummy } from "./engine.factions-tech-helpers";
 
 /**
  * Sonnet-tier: the projectile damage path — shields absorb first, excess
  * spills to structure (reduced by armour), the shield-recharge delay
  * resets on hit, and homing projectiles track a moving target.
- *
- * Helper duplicated so this file is self-contained.
  */
 
 function weapon(over: Partial<WeaponEffect>): WeaponEffect {
@@ -43,41 +39,44 @@ function makeShip(opts: {
   shieldRechargeDelay?: number;
   damageReduction?: number;
   weapons?: WeaponEffect[];
-  classification?: ShipClassification;
-  orders?: Partial<typeof defaultOrders>;
+  orders?: { engageRange?: "short" | "medium" | "long" | "hold" };
 }): CombatShip {
   const weapons = opts.weapons ?? [];
-  const stats: ShipStats = {
-    mass: 10,
-    cost: 100,
-    powerDraw: 0,
-    powerOutput: 0,
-    powerNet: 0,
-    crewRequired: 0,
-    crewCapacity: 0,
-    crewNet: 0,
-    structure: opts.structure ?? 200,
-    damageReduction: opts.damageReduction ?? 0,
-    shieldCapacity: opts.shield ?? 0,
-    shieldRechargeRate: opts.shieldRechargeRate ?? 1,
-    shieldRechargeDelay: opts.shieldRechargeDelay ?? 60,
-    thrust: 0.5,
-    turnRate: 0.1,
-    weapons: weapons.map((w) => ({ slotId: `slot-${opts.id}`, effect: w })),
-    compartments: 0,
-  airtightCompartments: 0,
-};
-  return {
-    instanceId: opts.id,
-    designId: `design-${opts.id}`,
-    faction: "test",
+  // The attacker is a full modular ship (engine, reaction wheel, weapon
+  // modules). The defender is a target dummy: a modular ship whose on-axis
+  // cells are transparent to damage, so hits flow through to hull structure
+  // — preserving the legacy "structure is the damage sink" semantics these
+  // assertions were written for.
+  if (weapons.length > 0) {
+    return modularShip({
+      id: opts.id,
+      side: opts.side,
+      x: opts.x,
+      y: opts.y,
+      facing: opts.facing,
+      structure: opts.structure,
+      shield: opts.shield,
+      shieldRechargeRate: opts.shieldRechargeRate,
+      shieldRechargeDelay: opts.shieldRechargeDelay,
+      damageReduction: opts.damageReduction,
+      thrust: 0.5,
+      turnRate: 0.1,
+      weapons: opts.weapons,
+      orders: opts.orders,
+    });
+  }
+  return targetDummy({
+    id: opts.id,
     side: opts.side,
-    stats,
-    position: { x: opts.x, y: opts.y },
-    facing: opts.facing ?? 0,
-    orders: { ...defaultOrders, ...opts.orders },
-    classification: (opts.classification ?? "frigate"),
-  };
+    x: opts.x,
+    y: opts.y,
+    structure: opts.structure,
+    shield: opts.shield,
+    shieldRechargeRate: opts.shieldRechargeRate,
+    shieldRechargeDelay: opts.shieldRechargeDelay,
+    damageReduction: opts.damageReduction,
+    orders: opts.orders,
+  });
 }
 
 function inputs(ships: CombatShip[]): BattleInputs {
@@ -142,9 +141,19 @@ describe("engine.projectile-damage", () => {
     expect(hit.structure).toBe(initial.structure);
   });
 
-  it("excess damage spills to structure, reduced by armour", () => {
-    // Shield 10, damage 30, armour 0.5 → shield absorbs 10, 20 spills to
-    // structure, effective reduction 0.5 ⇒ structure takes 10.
+  it("excess damage depletes the armour surface layer before reaching structure", () => {
+    // The modular damage model is layered: pooled shield absorbs first; spill
+    // then strikes a cell, whose armour surface layer (maxSurfaceHp) depletes
+    // before the scaffold, and only overflow past every cell on the
+    // penetration path reaches hull structure. This replaced the legacy scalar
+    // `damageReduction` (a flat fraction off the structure hit) with a
+    // per-cell ablative layer.
+    //
+    // Fixture: defender shield 10, one on-axis armoured cell carrying 15
+    // surface HP and 0 scaffold. Attacker fires 30 damage. Shield absorbs 10,
+    // 20 spills; the armour surface absorbs 15 of that, the cell dies (no
+    // scaffold), and the remaining 5 reaches structure. Structure takes 5 —
+    // exactly the amount beyond the armour layer.
     const result = runBattle(
       inputs([
         makeShip({
@@ -155,15 +164,17 @@ describe("engine.projectile-damage", () => {
           facing: 0,
           weapons: [weapon({ damage: 30, range: 400, cooldown: 5 })],
         }),
-        makeShip({
+        targetDummy({
           id: "d1",
           side: "defender",
           x: 50,
           y: 0,
           structure: 500,
           shield: 10,
-          damageReduction: 0.5,
           orders: { engageRange: "hold" },
+          absorbingCells: 1,
+          absorbingSurfaceHp: 15,
+          absorbingScaffoldHp: 0,
         }),
       ]),
     );
@@ -176,12 +187,13 @@ describe("engine.projectile-damage", () => {
         break;
       }
     }
-    expect(hit, "structure should take spillover damage").toBeDefined();
+    expect(hit, "structure should take damage once the armour layer is breached").toBeDefined();
     if (hit === undefined) return;
     // Shield fully depleted by the absorbed portion.
     expect(hit.shield).toBe(0);
-    // Spill 20 × (1 − 0.5) = 10 structure damage.
-    expect(initial.structure - hit.structure).toBe(10);
+    // Of the 20 spill beyond the shield, the armour surface absorbed 15; only
+    // the 5 beyond the armour layer reached structure.
+    expect(initial.structure - hit.structure).toBe(5);
   });
 
   it("a homing projectile tracks and hits a moving target", () => {

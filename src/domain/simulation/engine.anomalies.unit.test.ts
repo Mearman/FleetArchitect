@@ -8,6 +8,7 @@ import { defaultOrders } from "@/schema/fleet";
 import type { ShipClassification } from "@/schema/armor";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
+import { targetDummy } from "./engine.factions-tech-helpers";
 
 
 const OPEN_EDGES: CellEdges = {
@@ -161,11 +162,12 @@ function attacker(opts: {
   };
 }
 
-/** The defender: a legacy aggregated ship. Shields come from stats so nebula
- *  regen attenuation (which reads `ship.shieldRechargeRate`) applies; structure
- *  is the direct damage sink so `totalHitsOn` sees every projectile hit without
- *  per-module HP absorbing it first. Detection of the attacker is not needed —
- *  the defender is a target dummy. */
+/** The defender: a modular target dummy. A high-HP bridge sits off the line
+ *  of fire so the ship survives the attacker's barrage, while a row of
+ *  on-axis cells either pass damage straight through (bare cells, for the
+ *  structure-decrement and shield-regen tests) or carry enough scaffold HP
+ *  to absorb several shots before dying (for the asteroid-field test, which
+ *  counts cell losses as its landed-hit proxy). */
 function defender(opts: {
   id: string;
   x: number;
@@ -176,38 +178,26 @@ function defender(opts: {
   shieldRechargeDelay?: number;
   classification?: ShipClassification;
   orders?: Partial<typeof defaultOrders>;
+  /** Scaffold HP of each on-axis absorbing cell. Defaults to 0 (bare cells
+   *  that pass damage straight to structure). Set above the per-shot damage
+   *  so each cell absorbs several hits before dying, for fixture patterns
+   *  that count landed hits via cell losses. */
+  absorbingScaffoldHp?: number;
 }): CombatShip {
-  const stats: ShipStats = {
-    mass: 10,
-    cost: 100,
-    powerDraw: 0,
-    powerOutput: 0,
-    powerNet: 0,
-    crewRequired: 0,
-    crewCapacity: 0,
-    crewNet: 0,
-    structure: opts.structure ?? 500,
-    damageReduction: 0,
-    shieldCapacity: opts.shield ?? 0,
-    shieldRechargeRate: opts.shieldRechargeRate ?? 0,
-    shieldRechargeDelay: opts.shieldRechargeDelay ?? 60,
-    thrust: 0.5,
-    turnRate: 0.1,
-    weapons: [],
-    compartments: 0,
-  airtightCompartments: 0,
-};
-  return {
-    instanceId: opts.id,
-    designId: `design-${opts.id}`,
-    faction: "test",
+  return targetDummy({
+    id: opts.id,
     side: "defender",
-    stats,
-    position: { x: opts.x, y: opts.y },
-    facing: Math.PI,
-    orders: { ...defaultOrders, ...opts.orders },
-    classification: opts.classification ?? "frigate",
-  };
+    x: opts.x,
+    y: opts.y,
+    structure: opts.structure,
+    shield: opts.shield,
+    shieldRechargeRate: opts.shieldRechargeRate,
+    shieldRechargeDelay: opts.shieldRechargeDelay,
+    classification: opts.classification,
+    absorbingCells: 60,
+    absorbingScaffoldHp: opts.absorbingScaffoldHp,
+    orders: opts.orders,
+  });
 }
 
 function inputs(ships: CombatShip[], anomaly: BattleAnomaly, seed = 1, maxTicks = DEFAULT_MAX_TICKS): BattleInputs {
@@ -221,16 +211,19 @@ function inputs(ships: CombatShip[], anomaly: BattleAnomaly, seed = 1, maxTicks 
   };
 }
 
-function totalHitsOn(result: ReturnType<typeof runBattle>, targetId: string): number {
-  let hits = 0;
-  let prev = result.frames[0]?.ships.find((s) => s.instanceId === targetId)?.structure ?? 0;
-  for (const frame of result.frames) {
-    const s = frame.ships.find((x) => x.instanceId === targetId);
-    if (s === undefined) continue;
-    if (s.structure < prev) hits += 1;
-    prev = s.structure;
-  }
-  return hits;
+/** Count on-axis absorbing cells destroyed over the battle. Each cell's
+ *  scaffold HP exceeds the per-shot damage, so a cell only dies after several
+ *  landed hits — making the cell-loss count a stable proxy for "how many
+ *  projectiles landed", which the asteroid field's per-tick projectile
+ *  destruction reduces. Structure itself never moves (cells absorb every
+ *  shot), so counting structure decrements (the legacy metric) would see
+ *  zero events in either battle. */
+function cellsDestroyed(result: ReturnType<typeof runBattle>, targetId: string): number {
+  const first = result.frames[0]?.ships.find((s) => s.instanceId === targetId);
+  const initialAlive = first?.modules?.filter((m) => m.alive).length ?? 0;
+  const last = result.frames.at(-1)?.ships.find((s) => s.instanceId === targetId);
+  const finalAlive = last?.modules?.filter((m) => m.alive).length ?? 0;
+  return initialAlive - finalAlive;
 }
 
 function shieldAt(result: ReturnType<typeof runBattle>, tick: number, id: string): number {
@@ -260,6 +253,10 @@ describe("engine.anomalies", () => {
               x: 100,
               y: 0,
               structure: 99999,
+              // Scaffold HP above the per-shot damage (10) so each cell absorbs
+              // several hits before dying — giving a large sample of cell-loss
+              // events whose count the asteroid field can reduce.
+              absorbingScaffoldHp: 100,
               orders: { engageRange: "hold" },
             }),
           ],
@@ -270,9 +267,9 @@ describe("engine.anomalies", () => {
       );
     const none = mkAttacker("none");
     const field = mkAttacker("asteroidField");
-    const noneHits = totalHitsOn(none, "d1");
-    const fieldHits = totalHitsOn(field, "d1");
-    expect(noneHits, "control battle should produce hits").toBeGreaterThan(0);
+    const noneHits = cellsDestroyed(none, "d1");
+    const fieldHits = cellsDestroyed(field, "d1");
+    expect(noneHits, "control battle should destroy cells").toBeGreaterThan(0);
     expect(fieldHits).toBeLessThan(noneHits);
   });
 

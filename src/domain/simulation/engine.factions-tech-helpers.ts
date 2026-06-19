@@ -8,6 +8,9 @@
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
 import type { CellEdges } from "@/schema/grid";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
+import type { ShipClassification } from "@/schema/armor";
+import { defaultOrders } from "@/schema/fleet";
+import type { Orders } from "@/schema/fleet";
 import type { ShipStats } from "@/domain/stats";
 import type { runBattle } from "@/domain/simulation/engine";
 
@@ -45,6 +48,7 @@ export function moduleOf(
   maxHp = 50,
   mass = 5,
   powerDraw = 0,
+  maxSurfaceHp = 0,
 ): ResolvedModule {
   // For engine modules, carry the effect's `facing` onto the ResolvedModule so
   // `toSimModule` copies it to `SimModule.facing`, which `cellThrustForceAndTorque`
@@ -61,7 +65,7 @@ export function moduleOf(
     y: row * 24,
     surface: "deck",
     edges: OPEN_EDGES,
-    maxSurfaceHp: 0,
+    maxSurfaceHp,
     maxScaffoldHp: maxHp,
     mass,
     powerDraw,
@@ -91,6 +95,34 @@ export function commandModule(col: number, row: number): ResolvedModule {
     command: true,
   };
 }
+
+/**
+ * Moment of inertia of a set of resolved modules about their mass-weighted
+ * centroid, mirroring `recomputeAggregates`'s derivation: Σ m·|r − r_com|².
+ * Used to size a reaction wheel so a test fixture's angular agility matches
+ * a requested `turnRate` regardless of the grid's layout.
+ */
+function momentOfInertiaOf(modules: readonly ResolvedModule[]): number {
+  let massSum = 0;
+  let mx = 0;
+  let my = 0;
+  for (const m of modules) {
+    massSum += m.mass;
+    mx += m.mass * m.x;
+    my += m.mass * m.y;
+  }
+  if (massSum <= 0) return 1;
+  const cx = mx / massSum;
+  const cy = my / massSum;
+  let moi = 0;
+  for (const m of modules) {
+    const dx = m.x - cx;
+    const dy = m.y - cy;
+    moi += m.mass * (dx * dx + dy * dy);
+  }
+  return Math.max(moi, 1);
+}
+
 
 export function baseStats(over: Partial<ShipStats> = {}): ShipStats {
   return {
@@ -143,3 +175,312 @@ export function shipAt(
   if (ship === undefined) throw new Error(`ship ${id} missing from tick ${tick}`);
   return ship;
 }
+
+/**
+ * Build a minimal modular CombatShip from legacy-style scalar opts.
+ *
+ * The engine's per-module path is the only supported one for real ships
+ * (the legacy aggregated path is gone). Tests that used to build a
+ * non-modular CombatShip — handing `stats.thrust` / `stats.turnRate` /
+ * `stats.shieldCapacity` and expecting the engine to apply them directly —
+ * must instead provide modules whose effects aggregate to the same values.
+ * This helper wires up a compact grid that does so:
+ *
+ *  - a command (bridge) cell at the origin — required for `hasAliveCommand`,
+ *  - a rear-facing engine cell carrying `opts.thrust` (exhaust aft ⇒ forward),
+ *  - a reaction-wheel cell sized so angular agility scales with `opts.turnRate`,
+ *  - an omni sensor cell so the ship acquires targets at any test range,
+ *  - one cell per weapon in `opts.weapons`,
+ *  - a shield cell when `opts.shield > 0`.
+ *
+ * `stats.thrust` mirrors the engine's thrust so `recomputeAggregates`'s
+ * `hullBaseThrust` floor is zero and the live thrust equals `opts.thrust`;
+ * the shield stats likewise mirror the shield module so the shield pool
+ * starts full at `opts.shield`. Modules are crewless and draw-free, so they
+ * are always manned and charged and never go idle.
+ */
+export function modularShip(opts: {
+  id: string;
+  side: "attacker" | "defender";
+  x: number;
+  y: number;
+  facing?: number;
+  structure?: number;
+  shield?: number;
+  shieldRechargeRate?: number;
+  shieldRechargeDelay?: number;
+  damageReduction?: number;
+  thrust?: number;
+  turnRate?: number;
+  weapons?: WeaponEffect[];
+  classification?: ShipClassification;
+  orders?: Partial<Orders>;
+  /** Scaffold HP of the hull/engine/sensor cells. Defaults to 50. Set to 0
+   *  for a target dummy whose modules should be transparent to damage so
+   *  every hit flows through to hull structure (mirroring the legacy
+   *  aggregated damage sink). A 0-HP cell is alive for collision/radius but
+   *  passes all damage through `damageCell` on the first hit. */
+  moduleHp?: number;
+}): CombatShip {
+  const prefix = opts.id;
+  const weapons = opts.weapons ?? [];
+  const thrust = opts.thrust ?? 0;
+  const turnRate = opts.turnRate ?? 0;
+  const shieldCapacity = opts.shield ?? 0;
+  const moduleHp = opts.moduleHp ?? 50;
+  const modules: ResolvedModule[] = [
+    // Command bridge — also gives the ship a non-zero footprint and mass.
+    {
+      ...moduleOf(`${prefix}-cmd`, { kind: "hull" }, 0, 0, moduleHp, 5, 0),
+      command: true,
+    },
+  ];
+  // Engine: exhaust aft (facing π) ⇒ thrust along +x (the ship's forward axis).
+  if (thrust > 0) {
+    modules.push(
+      moduleOf(
+        `${prefix}-eng`,
+        { kind: "engine", thrust, facing: Math.PI },
+        -1,
+        0,
+        moduleHp,
+        5,
+        0,
+      ),
+    );
+  }
+  // Reaction wheel: pure commandable torque, available whether or not the
+  // ship is thrusting. The torque rating is derived from the grid's actual
+  // moment of inertia so the resulting angular acceleration matches the
+  // legacy scalar model (alpha = turnRate / legacyMoI, where legacyMoI was
+  // 5). Computing MoI from the real cell distribution keeps the agility
+  // comparable however the grid is laid out.
+  if (turnRate > 0) {
+    // Preview the reaction wheel's own cell so MoI accounts for it.
+    const preview = moduleOf(
+      `${prefix}-rw`,
+      { kind: "reactionWheel", torque: 0 },
+      0,
+      -1,
+      moduleHp,
+      5,
+      0,
+    );
+    const moi = momentOfInertiaOf([...modules, preview]);
+    // alpha = torque / MoI; target alpha = turnRate / 5 (the legacy model).
+    const torque = (moi * turnRate) / 5;
+    modules.push(
+      moduleOf(
+        `${prefix}-rw`,
+        { kind: "reactionWheel", torque },
+        0,
+        -1,
+        moduleHp,
+        5,
+        0,
+      ),
+    );
+  }
+  // Omni sensor so the ship acquires enemies at any separation the tests
+  // use (the innate visual circle alone is too short for the wide fixtures).
+  modules.push(
+    moduleOf(
+      `${prefix}-sen`,
+      {
+        kind: "sensor",
+        sensorType: "omni",
+        arc: Math.PI,
+        bearing: 0,
+        detectionRange: 4000,
+        nebulaImmune: false,
+      },
+      1,
+      0,
+      moduleHp,
+      5,
+      0,
+    ),
+  );
+  // Weapon modules — the per-module fire path rebuilds `ship.weapons` from
+  // these, so the stats-level weapon list no longer drives firing.
+  for (let i = 0; i < weapons.length; i += 1) {
+    const w = weapons[i];
+    if (w === undefined) continue;
+    modules.push(moduleOf(`${prefix}-w${i}`, w, 0, 1 + i, moduleHp, 5, 0));
+  }
+  // Shield module — its `capacity` becomes the ship's shield pool. The
+  // stats-level shieldCapacity mirrors it so the initial shield value
+  // (set in toSimShip before recompute) already matches the pool ceiling.
+  if (shieldCapacity > 0) {
+    modules.push(
+      moduleOf(
+        `${prefix}-shd`,
+        {
+          kind: "shield",
+          capacity: shieldCapacity,
+          rechargeRate: opts.shieldRechargeRate ?? 0,
+          rechargeDelay: opts.shieldRechargeDelay ?? 60,
+        },
+        -1,
+        -1,
+        50,
+        5,
+        0,
+      ),
+    );
+  }
+  const stats: ShipStats = baseStats({
+    mass: 10,
+    structure: opts.structure ?? 100,
+    damageReduction: opts.damageReduction ?? 0,
+    thrust,
+    turnRate,
+    shieldCapacity,
+    shieldRechargeRate: opts.shieldRechargeRate ?? 0,
+    shieldRechargeDelay: opts.shieldRechargeDelay ?? 60,
+    weapons: weapons.map((w) => ({ slotId: `${prefix}-w`, effect: w })),
+  });
+  return {
+    instanceId: opts.id,
+    designId: `design-${opts.id}`,
+    faction: "test",
+    side: opts.side,
+    stats,
+    position: { x: opts.x, y: opts.y },
+    facing: opts.facing ?? 0,
+    orders: { ...defaultOrders, ...opts.orders },
+    classification: opts.classification ?? "frigate",
+    modules,
+  };
+}
+
+/**
+ * Build a target-dummy CombatShip: a modular ship that is hittable but
+ * routes incoming damage straight to hull structure (after any pooled
+ * shield), mirroring the legacy aggregated damage sink that several engine
+ * tests were written against.
+ *
+ * The layout places a high-HP command bridge one row off the ship's
+ * primary axis so it is never on a projectile's penetration path (the
+ * path only includes cells within half a cell of the line of fire). A
+ * row of zero-HP hull cells sits ON the axis: each is alive for the
+ * collision hash (so the ship is hittable) but `damageCell` kills it
+ * instantly and passes the full amount through, so the shot reaches
+ * `spillToStructure` undiminished. The bridge survives every hit, so
+ * `hasAliveCommand` stays true and the break-apart pass (which kills a
+ * ship whose every module is dead) never fires — the dummy stays alive
+ * and on the board for the whole battle.
+ *
+ * `facing` defaults to π so the dummy faces the attacker (its forward
+ * axis points toward decreasing x, where incoming fire comes from),
+ * matching the orientation the legacy fixtures used.
+ */
+export function targetDummy(opts: {
+  id: string;
+  side: "attacker" | "defender";
+  x: number;
+  y: number;
+  facing?: number;
+  structure?: number;
+  shield?: number;
+  shieldRechargeRate?: number;
+  shieldRechargeDelay?: number;
+  damageReduction?: number;
+  classification?: ShipClassification;
+  orders?: Partial<Orders>;
+  /** How many hull cells line the primary axis. More cells means more hits
+   *  reach structure before the axis is shot clear and the dummy stops
+   *  presenting an on-line target. Defaults to 5. */
+  absorbingCells?: number;
+  /** Surface (armour) layer HP of each on-axis absorbing cell. Defaults to 0
+   *  (bare cells, no surface layer). Set above zero to model a cell whose
+   *  armour depletes before its scaffold or underlying structure takes damage. */
+  absorbingSurfaceHp?: number;
+  /** Scaffold HP of each on-axis absorbing cell. Defaults to 0 (cells die on
+   *  first contact and pass all damage onward). Set above zero so cells absorb
+   *  multiple shots before dying, for fixture patterns that count landed hits
+   *  rather than structure decrements. */
+  absorbingScaffoldHp?: number;
+}): CombatShip {
+  const prefix = opts.id;
+  const shieldCapacity = opts.shield ?? 0;
+  const absorbingCount = opts.absorbingCells ?? 5;
+  const absorbingSurfaceHp = opts.absorbingSurfaceHp ?? 0;
+  const absorbingScaffoldHp = opts.absorbingScaffoldHp ?? 0;
+  const modules: ResolvedModule[] = [
+    // Bridge one row off the primary (x) axis: alive and high-HP so the
+    // ship never dies from losing its on-axis cells. At row 1 its world-y
+    // is one cell off the line of fire, so `penetrationPath` excludes it.
+    {
+      ...moduleOf(`${prefix}-cmd`, { kind: "hull" }, 0, 1, 99999, 5, 0),
+      command: true,
+    },
+    // A high-HP keeper cell one row further off-axis, edge-adjacent to the
+    // bridge. When the on-axis absorbing cells die the bridge stays
+    // connected to the keeper, so the survivor is a single connected
+    // component (no break-apart split) and `hasAliveCommand` keeps the
+    // ship on the board.
+    moduleOf(`${prefix}-keep`, { kind: "hull" }, 0, 2, 99999, 5, 0),
+  ];
+  // On-axis hull cells along the primary (row 0) axis. These are the
+  // cells a projectile travelling along the ship's facing finds. Defaults
+  // mirror the original dummy (0 surface, 0 scaffold) so each cell is alive
+  // for the collision hash but dies in one tick, passing all damage onward;
+  // the surface/scaffold options model an armoured or multi-hit cell.
+  for (let i = 0; i < absorbingCount; i += 1) {
+    modules.push(
+      moduleOf(
+        `${prefix}-ab${i}`,
+        { kind: "hull" },
+        i,
+        0,
+        absorbingScaffoldHp,
+        5,
+        0,
+        absorbingSurfaceHp,
+      ),
+    );
+  }
+  if (shieldCapacity > 0) {
+    modules.push(
+      moduleOf(
+        `${prefix}-shd`,
+        {
+          kind: "shield",
+          capacity: shieldCapacity,
+          rechargeRate: opts.shieldRechargeRate ?? 0,
+          rechargeDelay: opts.shieldRechargeDelay ?? 60,
+        },
+        -1,
+        1,
+        99999,
+        5,
+        0,
+      ),
+    );
+  }
+  const stats: ShipStats = baseStats({
+    mass: 10,
+    structure: opts.structure ?? 100,
+    damageReduction: opts.damageReduction ?? 0,
+    thrust: 0,
+    turnRate: 0,
+    shieldCapacity,
+    shieldRechargeRate: opts.shieldRechargeRate ?? 0,
+    shieldRechargeDelay: opts.shieldRechargeDelay ?? 60,
+    weapons: [],
+  });
+  return {
+    instanceId: opts.id,
+    designId: `design-${opts.id}`,
+    faction: "test",
+    side: opts.side,
+    stats,
+    position: { x: opts.x, y: opts.y },
+    facing: opts.facing ?? Math.PI,
+    orders: { ...defaultOrders, ...opts.orders },
+    classification: opts.classification ?? "frigate",
+    modules,
+  };
+}
+

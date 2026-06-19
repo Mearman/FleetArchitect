@@ -2,10 +2,7 @@ import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { CombatShip, BattleInputs } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
-import type { ShipClassification } from "@/schema/armor";
-import type { WeaponEffect } from "@/schema/module";
-import type { ShipStats } from "@/domain/stats";
+import { modularShip } from "./engine.factions-tech-helpers";
 
 /**
  * Haiku-tier: the steering model applies torque (an angular acceleration)
@@ -15,8 +12,6 @@ import type { ShipStats } from "@/domain/stats";
  * the static `turnRate` would have produced on its own over the same
  * number of ticks — the difference is the contribution of persisting
  * angVel.
- *
- * Helper duplicated so this file is self-contained.
  */
 
 function makeShip(opts: {
@@ -27,40 +22,19 @@ function makeShip(opts: {
   facing?: number;
   structure?: number;
   turnRate?: number;
-  weapons?: WeaponEffect[];
-  classification?: ShipClassification;
 }): CombatShip {
-  const stats: ShipStats = {
-    mass: 10,
-    cost: 100,
-    powerDraw: 0,
-    powerOutput: 0,
-    powerNet: 0,
-    crewRequired: 0,
-    crewCapacity: 0,
-    crewNet: 0,
-    structure: opts.structure ?? 100,
-    damageReduction: 0,
-    shieldCapacity: 0,
-    shieldRechargeRate: 1,
-    shieldRechargeDelay: 30,
-    thrust: 0.5,
-    turnRate: opts.turnRate ?? 0.05,
-    weapons: (opts.weapons ?? []).map((w) => ({ slotId: `slot-${opts.id}`, effect: w })),
-    compartments: 0,
-  airtightCompartments: 0,
-};
-  return {
-    instanceId: opts.id,
-    designId: `design-${opts.id}`,
-    faction: "test",
+  return modularShip({
+    id: opts.id,
     side: opts.side,
-    stats,
-    position: { x: opts.x, y: opts.y },
-    facing: opts.facing ?? 0,
-    orders: defaultOrders,
-    classification: (opts.classification ?? "frigate"),
-  };
+    x: opts.x,
+    y: opts.y,
+    facing: opts.facing,
+    structure: opts.structure,
+    // A reaction wheel sized from turnRate gives the attacker real
+    // commandable torque authority under the modular attitude model.
+    turnRate: opts.turnRate ?? 0.05,
+    thrust: 0.5,
+  });
 }
 
 function inputs(ships: CombatShip[]): BattleInputs {
