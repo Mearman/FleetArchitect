@@ -7,6 +7,44 @@
 import type { SimModule, SimShip } from "./types";
 import { UNREACHABLE } from "./config";
 
+/**
+ * Instrumentation counters for the crew path cache. Write-only side effects:
+ * incrementing them never changes `findCrewPath`'s return value or the
+ * simulation's decisions, so byte-identical determinism is preserved. Exposed
+ * via `resetPathCacheStats` / `pathCacheStats` for the performance guard in
+ * `engine.crew-perf.unit.test`, which asserts a deterministic cache-hit rate
+ * instead of a hardware-dependent wall-clock budget.
+ */
+let pathCacheHits = 0;
+let pathCacheMisses = 0;
+
+/** Zero the cache counters; call before a battle whose effectiveness you want
+ *  to measure. */
+export function resetPathCacheStats(): void {
+  pathCacheHits = 0;
+  pathCacheMisses = 0;
+}
+
+export interface PathCacheStats {
+  hits: number;
+  misses: number;
+  total: number;
+  /** hits / total (1 when there were no lookups, so a no-op battle doesn't
+   *  trip the guard). */
+  hitRate: number;
+}
+
+/** Snapshot of the cache counters since the last reset. */
+export function pathCacheStats(): PathCacheStats {
+  const total = pathCacheHits + pathCacheMisses;
+  return {
+    hits: pathCacheHits,
+    misses: pathCacheMisses,
+    total,
+    hitRate: total > 0 ? pathCacheHits / total : 1,
+  };
+}
+
 /** Total order on cells by (col, row), used wherever crew or modules must be
  *  scanned in a fixed, RNG-free order. */
 export function compareByCell(
@@ -119,9 +157,11 @@ export function findCrewPath(
     if (inner !== undefined) {
       const cached = inner.get(toN);
       if (cached !== undefined) {
+        pathCacheHits++;
         return cached === UNREACHABLE ? undefined : cached;
       }
     }
+    pathCacheMisses++;
     const path = computeCrewPathAStar(cells, from, to);
     if (inner !== undefined) {
       inner.set(toN, path ?? UNREACHABLE);
@@ -132,6 +172,7 @@ export function findCrewPath(
     }
     return path;
   }
+  pathCacheMisses++;
   return computeCrewPathAStar(cells, from, to);
 }
 

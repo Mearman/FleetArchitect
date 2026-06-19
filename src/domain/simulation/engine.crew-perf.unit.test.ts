@@ -5,6 +5,7 @@ import { catalog } from "@/data/catalog";
 import { presetDesigns, presetFleets } from "@/data/presets";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleInputs } from "@/domain/simulation/types";
+import { pathCacheStats, resetPathCacheStats } from "@/domain/simulation/engine/crew-pathfinding";
 
 /**
  * Crew path-cache optimisation: performance and determinism guards.
@@ -76,22 +77,20 @@ describe("engine.crew-perf — preset matchups still resolve", () => {
   }, 15000);
 });
 
-describe("engine.crew-perf — performance budget", () => {
-  it("the 464-crew preset battle completes within a generous time budget", () => {
-    // A performance guard: the crewed Battle-Line-vs-Spearhead battle (the
-    // heaviest crew preset) must stay well under the uncached baseline. With
-    // the per-ship path cache, batched assignment, and pathIndex stepping,
-    // measured wall-clock is ~1.4s on dev hardware but ~5-6s on a CI runner
-    // (CI is several times slower). The budget (12s) is sized to be stable on
-    // slow CI while still catching a caching regression: uncached A* pushed
-    // this battle to ~5s on dev hardware (~19s at CI's slowdown), which would
-    // blow past 12s. The battle may run up to the 3600-tick cap depending on
-    // the pre-existing base-engine non-determinism, so this guards per-tick
-    // crew overhead, not battle duration.
-    const inputs = buildInputs("preset-fleet-battleline", "preset-fleet-spearhead");
-    const t0 = performance.now();
-    runBattle(inputs);
-    const elapsed = performance.now() - t0;
-    expect(elapsed, "crewed battle should complete within the perf budget").toBeLessThan(12000);
+describe("engine.crew-perf — cache effectiveness", () => {
+  it("the crew path cache serves the overwhelming majority of lookups", () => {
+    // Deterministic guard for the per-ship path cache. Its whole point is to
+    // avoid recomputing A* every tick, and cache effectiveness is a pure
+    // function of the (deterministic) battle — not the hardware — so we assert
+    // a hit rate rather than a wall-clock budget, which flaked on slow CI
+    // runners. The heaviest crewed preset (Battle Line vs Armoured Spearhead,
+    // 464 crew) reuses paths heavily: a healthy hit rate is ~98%. A regression
+    // that removes or bypasses the cache drops this to ~0 and fails here
+    // immediately and reproducibly, on any machine.
+    resetPathCacheStats();
+    runBattle(buildInputs("preset-fleet-battleline", "preset-fleet-spearhead"));
+    const { hitRate, total } = pathCacheStats();
+    expect(total, "crew path lookups actually ran").toBeGreaterThan(0);
+    expect(hitRate, "crew path cache hit rate").toBeGreaterThan(0.9);
   }, 30000);
 });
