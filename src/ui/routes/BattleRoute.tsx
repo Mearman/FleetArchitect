@@ -17,6 +17,8 @@ import {
   Text,
   Title,
   Tooltip,
+  Popover,
+  Switch,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import {
@@ -57,6 +59,8 @@ import {
   screenToWorld,
 } from "./battleCamera";
 import type { Bounds, Camera } from "./battleCamera";
+import { OVERLAYS, OVER_SHIP_IDS, UNDER_SHIP_IDS } from "./overlays";
+import type { OverlayDef, OverlayScope } from "./overlays";
 import * as styles from "./BattleRoute.css";
 
 const PROJECTILE_COLOUR: Record<WeaponType, string> = {
@@ -379,6 +383,17 @@ export function BattleRoute() {
   const [statusOpen, setStatusOpen] = useState(false);
   /** Whether the fog-of-war / awareness overlay is shown (default: on). */
   const [showFog, setShowFog] = useState(true);
+  /**
+   * Per-overlay on/scope state, seeded from each OverlayDef's defaults. The
+   * draw loop reads this each rAF to decide which overlays to dispatch and
+   * which ships are in scope. Keyed by overlay id.
+   */
+  const [overlays, setOverlays] = useState<Record<string, { on: boolean; scope: OverlayScope }>>(
+    () =>
+      Object.fromEntries(
+        OVERLAYS.map((o) => [o.id, { on: o.defaultOn, scope: o.defaultScope }]),
+      ),
+  );
 
   /** Pointer-drag state for panning, tracked in a ref to avoid re-renders. */
   const dragRef = useRef<{
@@ -531,7 +546,7 @@ export function BattleRoute() {
    * re-creating the callback (and so without restarting the loop).
    */
   const drawFrame = useCallback(
-    (frame: BattleFrame) => {
+    (frame: BattleFrame, tick: number, frames: readonly BattleFrame[]) => {
       const canvas = canvasRef.current;
       if (canvas === null) return;
       const ctx = canvas.getContext("2d");
@@ -579,6 +594,36 @@ export function BattleRoute() {
         const shipPos: ShipScreenPositions = shipScreenPos;
         drawFogAndAwareness(ctx, frame.awareness, t, bounds, shipPos);
       }
+
+      // Battle overlays: dispatched by layer relative to the ship loop. Each
+      // enabled overlay's draw is called with a fresh OverlayCtx carrying the
+      // frame, transform, integer tick, frame history, follow id, and an
+      // inScope predicate built from the overlay's current scope + follow id.
+      // Overlays are pure draw consumers; they never touch BattleRoute state
+      // directly, which keeps the overlay layer the single seam later agents
+      // extend. Reading `overlays` from the closure here re-creates drawFrame
+      // only when overlay state changes (mirrors the showFog pattern).
+      const followId = cameraRef.current.followId;
+      const drawOverlays = (ids: ReadonlySet<string>): void => {
+        for (const def of OVERLAYS) {
+          if (!ids.has(def.id)) continue;
+          const state = overlays[def.id];
+          if (state === undefined || !state.on) continue;
+          const scope = state.scope;
+          def.draw({
+            ctx,
+            frame,
+            t,
+            followId,
+            tick,
+            frames,
+            inScope: (ship) => scope === "all" || ship.instanceId === followId,
+          });
+        }
+      };
+
+      // Under-ship layer: focus ring, sensor coverage, movement trail.
+      drawOverlays(UNDER_SHIP_IDS);
 
       for (const p of frame.projectiles) {
         const colour = PROJECTILE_COLOUR[p.kind];
@@ -793,8 +838,11 @@ export function BattleRoute() {
           frac > 0.5 ? "#7bd88f" : frac > 0.25 ? "#ffcc5a" : "#ff5a5a";
         ctx.fillRect(px - barW / 2, py + 10, barW * frac, 3);
       }
+
+      // Over-ship layer: target lock, damage pulse.
+      drawOverlays(OVER_SHIP_IDS);
     },
-    [bounds, maxHp, activeAnomaly, activeSeed, showFog, factionByInstance],
+    [bounds, maxHp, activeAnomaly, activeSeed, showFog, factionByInstance, overlays],
   );
 
   /**
@@ -888,7 +936,7 @@ export function BattleRoute() {
       const fractionalTick = playbackTimeRef.current * TICKS_PER_SECOND;
       const frames = framesRef.current;
       const frame = interpolateFrame(frames, fractionalTick);
-      drawFrame(frame);
+      drawFrame(frame, Math.floor(fractionalTick), frames);
 
       // Mirror the discrete-nearest frame into state for the status panel, but
       // only when the panel is open and the integer tick has moved — avoiding a
@@ -922,8 +970,9 @@ export function BattleRoute() {
   useEffect(() => {
     if (!hasFrames) return;
     const fractionalTick = playbackTimeRef.current * TICKS_PER_SECOND;
-    const frame = interpolateFrame(framesRef.current, fractionalTick);
-    drawFrame(frame);
+    const frames = framesRef.current;
+    const frame = interpolateFrame(frames, fractionalTick);
+    drawFrame(frame, Math.floor(fractionalTick), frames);
   }, [canvasSize, hasFrames, drawFrame]);
 
   /**
@@ -1488,6 +1537,58 @@ export function BattleRoute() {
                     <IconLayoutSidebarRightExpand size={16} />
                   </ActionIcon>
                 </Tooltip>
+                <Popover width={260} position="top-end" withArrow shadow="md">
+                  <Popover.Target>
+                    <Tooltip label="Battle overlays">
+                      <ActionIcon variant="default">
+                        <IconSettings size={16} />
+                      </ActionIcon>
+                    </Tooltip>
+                  </Popover.Target>
+                  <Popover.Dropdown>
+                    <Stack gap={6}>
+                      <Text size="xs" fw={600}>
+                        Overlays
+                      </Text>
+                      {OVERLAYS.map((def: OverlayDef) => {
+                        const state = overlays[def.id];
+                        if (state === undefined) return null;
+                        return (
+                          <Group key={def.id} gap={8} align="center" wrap="nowrap">
+                            <Switch
+                              size="xs"
+                              label={def.label}
+                              checked={state.on}
+                              onChange={(e) =>
+                                setOverlays((prev) => ({
+                                  ...prev,
+                                  [def.id]: { ...state, on: e.currentTarget.checked },
+                                }))
+                              }
+                            />
+                            <SegmentedControl
+                              size="xs"
+                              value={state.scope}
+                              onChange={(val) =>
+                                setOverlays((prev) => ({
+                                  ...prev,
+                                  [def.id]: {
+                                    ...state,
+                                    scope: val === "all" ? "all" : "active",
+                                  },
+                                }))
+                              }
+                              data={[
+                                { label: "Active", value: "active" },
+                                { label: "All", value: "all" },
+                              ]}
+                            />
+                          </Group>
+                        );
+                      })}
+                    </Stack>
+                  </Popover.Dropdown>
+                </Popover>
               </Group>
 
               {statusOpen && statusFrame !== null && (
@@ -1589,8 +1690,9 @@ export function BattleRoute() {
               const newTime = val / TICKS_PER_SECOND;
               playbackTimeRef.current = newTime;
               setPlaybackTime(newTime);
-              const frame = interpolateFrame(framesRef.current, val);
-              drawFrame(frame);
+              const frames = framesRef.current;
+              const frame = interpolateFrame(frames, val);
+              drawFrame(frame, Math.floor(val), frames);
             }}
           />
         </Stack>
