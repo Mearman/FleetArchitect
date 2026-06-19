@@ -1,0 +1,217 @@
+import type { Fleet } from "@/schema/fleet";
+
+import { PRESET_TIME } from "@/data/presets/tokens";
+import {
+  broodOrders,
+  hiveOrders,
+  lineOrders,
+  netOrders,
+  phaseOrders,
+  raidOrders,
+  siegeOrders,
+  skirmishOrders,
+  spearheadOrders,
+  strikeOrders,
+} from "@/data/presets/orders";
+
+export const fleetData: Fleet[] = [
+  // --- Terran fleets ---
+  {
+    id: "preset-fleet-battleline",
+    name: "Battle Line",
+    faction: "Terran",
+    // A defensive capital line: twin battleships anchor a wall of shield
+    // brawlers, holding at long range and focusing the strongest threat.
+    ships: [
+      { designId: "preset-ship-leviathan", position: { x: -300, y: -70 }, facing: 0, orders: lineOrders },
+      { designId: "preset-ship-leviathan", position: { x: -300, y: 70 }, facing: 0, orders: lineOrders },
+      { designId: "preset-ship-bulwark", position: { x: -350, y: -180 }, facing: 0, orders: lineOrders },
+      { designId: "preset-ship-bulwark", position: { x: -350, y: 0 }, facing: 0, orders: lineOrders },
+      { designId: "preset-ship-bulwark", position: { x: -350, y: 180 }, facing: 0, orders: lineOrders },
+    ],
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+  },
+  {
+    id: "preset-fleet-strike",
+    name: "Strike Wing",
+    faction: "Terran",
+    // A balanced mixed-arms wing: paired gunships and torpedo boats for weight,
+    // a screen of fast fighters to flank.
+    ships: [
+      { designId: "preset-ship-gunship", position: { x: -300, y: -90 }, facing: 0, orders: strikeOrders },
+      { designId: "preset-ship-gunship", position: { x: -300, y: 90 }, facing: 0, orders: strikeOrders },
+      { designId: "preset-ship-torpedo", position: { x: -320, y: 0 }, facing: 0, orders: strikeOrders },
+      { designId: "preset-ship-wasp", position: { x: -360, y: -170 }, facing: 0, orders: strikeOrders },
+      { designId: "preset-ship-wasp", position: { x: -360, y: 170 }, facing: 0, orders: strikeOrders },
+      { designId: "preset-ship-sabre", position: { x: -380, y: -60 }, facing: 0, orders: strikeOrders },
+      { designId: "preset-ship-sabre", position: { x: -380, y: 60 }, facing: 0, orders: strikeOrders },
+    ],
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+  },
+  {
+    id: "preset-fleet-spearhead",
+    name: "Armoured Spearhead",
+    faction: "Terran",
+    // A heavy aggressive thrust: the Titan dreadnought punches in flanked by
+    // armour brawlers and a gunship, all driving to medium range and focusing
+    // fire on the strongest target.
+    ships: [
+      { designId: "preset-ship-titan", position: { x: -260, y: 0 }, facing: 0, orders: spearheadOrders },
+      { designId: "preset-ship-aegis", position: { x: -360, y: -150 }, facing: 0, orders: spearheadOrders },
+      { designId: "preset-ship-aegis", position: { x: -360, y: 150 }, facing: 0, orders: spearheadOrders },
+      { designId: "preset-ship-gunship", position: { x: -400, y: 0 }, facing: 0, orders: spearheadOrders },
+    ],
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+  },
+  {
+    id: "preset-fleet-picket",
+    name: "Picket Screen",
+    faction: "Terran",
+    // A cheap fast screen: a large cloud of interceptors and skirmishers that
+    // swarms and harasses, picking off the weakest targets.
+    ships: [
+      { designId: "preset-ship-wasp", position: { x: -340, y: -180 }, facing: 0, orders: skirmishOrders },
+      { designId: "preset-ship-wasp", position: { x: -340, y: -90 }, facing: 0, orders: skirmishOrders },
+      { designId: "preset-ship-wasp", position: { x: -340, y: 90 }, facing: 0, orders: skirmishOrders },
+      { designId: "preset-ship-wasp", position: { x: -340, y: 180 }, facing: 0, orders: skirmishOrders },
+      { designId: "preset-ship-sabre", position: { x: -380, y: -135 }, facing: 0, orders: skirmishOrders },
+      { designId: "preset-ship-sabre", position: { x: -380, y: -45 }, facing: 0, orders: skirmishOrders },
+      { designId: "preset-ship-sabre", position: { x: -380, y: 45 }, facing: 0, orders: skirmishOrders },
+      { designId: "preset-ship-sabre", position: { x: -380, y: 135 }, facing: 0, orders: skirmishOrders },
+    ],
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+  },
+  // --- Swarm fleets ---
+  {
+    id: "preset-fleet-drone-swarm",
+    name: "Drone Swarm",
+    faction: "Swarm",
+    // The signature Swarm rush: a wall of expendable drones that closes fast
+    // and overwhelms by numbers, with acid flankers on the wings.
+    ships: [
+      { designId: "preset-ship-drone", position: { x: -340, y: -200 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-drone", position: { x: -340, y: -150 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-drone", position: { x: -340, y: -100 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-drone", position: { x: -340, y: -50 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-drone", position: { x: -360, y: 0 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-drone", position: { x: -340, y: 50 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-drone", position: { x: -340, y: 100 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-drone", position: { x: -340, y: 150 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-drone", position: { x: -340, y: 200 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-carrion", position: { x: -320, y: -120 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-carrion", position: { x: -320, y: 120 }, facing: 0, orders: hiveOrders },
+    ],
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+  },
+  {
+    id: "preset-fleet-hive-assault",
+    name: "Hive Assault",
+    faction: "Swarm",
+    // The combined assault: twin Hive Lords lead a pack of ravagers and drones
+    // in an all-out close-range charge.
+    ships: [
+      { designId: "preset-ship-hive-lord", position: { x: -290, y: -80 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-hive-lord", position: { x: -290, y: 80 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-ravager", position: { x: -360, y: -160 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-ravager", position: { x: -360, y: 0 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-ravager", position: { x: -360, y: 160 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-drone", position: { x: -420, y: -200 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-drone", position: { x: -420, y: -100 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-drone", position: { x: -420, y: 100 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-drone", position: { x: -420, y: 200 }, facing: 0, orders: hiveOrders },
+    ],
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+  },
+  {
+    id: "preset-fleet-brood-flight",
+    name: "Brood Flight",
+    faction: "Swarm",
+    // An artillery brood: a rank of spitters stings from the back while carrion
+    // wings and drones screen and run down anything that closes.
+    ships: [
+      { designId: "preset-ship-spitter", position: { x: -300, y: -110 }, facing: 0, orders: broodOrders },
+      { designId: "preset-ship-spitter", position: { x: -300, y: 0 }, facing: 0, orders: broodOrders },
+      { designId: "preset-ship-spitter", position: { x: -300, y: 110 }, facing: 0, orders: broodOrders },
+      { designId: "preset-ship-carrion", position: { x: -370, y: -170 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-carrion", position: { x: -370, y: 170 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-drone", position: { x: -400, y: -60 }, facing: 0, orders: hiveOrders },
+      { designId: "preset-ship-drone", position: { x: -400, y: 60 }, facing: 0, orders: hiveOrders },
+    ],
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+  },
+
+  // --- Crystalline Concord fleets ---
+  {
+    id: "preset-fleet-concord",
+    name: "Phase Lance",
+    faction: "Crystalline",
+    // A phase skirmish line: Shards kite at range behind adaptive shields,
+    // blinking clear of trouble and cloaking on the approach.
+    ships: [
+      { designId: "preset-ship-shard", position: { x: -300, y: -120 }, facing: 0, orders: phaseOrders },
+      { designId: "preset-ship-shard", position: { x: -300, y: -40 }, facing: 0, orders: phaseOrders },
+      { designId: "preset-ship-shard", position: { x: -300, y: 40 }, facing: 0, orders: phaseOrders },
+      { designId: "preset-ship-shard", position: { x: -300, y: 120 }, facing: 0, orders: phaseOrders },
+    ],
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+  },
+
+  // --- Foundry Combine fleets ---
+  {
+    id: "preset-fleet-foundry",
+    name: "Iron Wall",
+    faction: "Foundry",
+    // A slow armour wall: Anvils hold ground and outlast the enemy, welding
+    // shut whatever gets through the bulkheads.
+    ships: [
+      { designId: "preset-ship-anvil", position: { x: -300, y: -130 }, facing: 0, orders: siegeOrders },
+      { designId: "preset-ship-anvil", position: { x: -300, y: -45 }, facing: 0, orders: siegeOrders },
+      { designId: "preset-ship-anvil", position: { x: -300, y: 45 }, facing: 0, orders: siegeOrders },
+      { designId: "preset-ship-anvil", position: { x: -300, y: 130 }, facing: 0, orders: siegeOrders },
+    ],
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+  },
+
+  // --- Corsair Reaver fleets ---
+  {
+    id: "preset-fleet-reavers",
+    name: "Raid Pack",
+    faction: "Corsair",
+    // A raid pack: Reavers close fast under scrambler cover to loose missile
+    // volleys, then scatter before the response lands.
+    ships: [
+      { designId: "preset-ship-reaver", position: { x: -320, y: -130 }, facing: 0, orders: raidOrders },
+      { designId: "preset-ship-reaver", position: { x: -320, y: -45 }, facing: 0, orders: raidOrders },
+      { designId: "preset-ship-reaver", position: { x: -320, y: 45 }, facing: 0, orders: raidOrders },
+      { designId: "preset-ship-reaver", position: { x: -320, y: 130 }, facing: 0, orders: raidOrders },
+    ],
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+  },
+
+  // --- Synthetic Collective fleets ---
+  {
+    id: "preset-fleet-collective",
+    name: "Drone Net",
+    faction: "Synthetic",
+    // A defensive net: Nodes screen the fleet with interceptor arrays and pick
+    // off the weakest contacts, crewless and co-ordinated.
+    ships: [
+      { designId: "preset-ship-node", position: { x: -300, y: -130 }, facing: 0, orders: netOrders },
+      { designId: "preset-ship-node", position: { x: -300, y: -45 }, facing: 0, orders: netOrders },
+      { designId: "preset-ship-node", position: { x: -300, y: 45 }, facing: 0, orders: netOrders },
+      { designId: "preset-ship-node", position: { x: -300, y: 130 }, facing: 0, orders: netOrders },
+    ],
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+  },
+];
