@@ -6,7 +6,7 @@
 
 import type { SimCrew } from "../types";
 
-import { isOperational, resetCrewForFragment } from "./crew";
+import { resetCrewForFragment } from "./crew";
 import { comTangentialVelocity, localCentreOfMass, recomputeAggregates } from "./physics";
 import { angleDifference, normaliseAngle, worldToLocal } from "./setup";
 import type { SimModule, SimShip } from "./types";
@@ -67,11 +67,13 @@ export function applyDamage(
     ship.shieldUntouchedTicks = 0;
   }
   const spill = toShield - shieldAbsorbed;
-  // Reactive armour: when structural damage gets through, a charged reactive
-  // layer absorbs an extra fraction of the hit and then spends itself, recharging
-  // over its window. Opt-in — a ship with no reactive armour layer reduces nothing
-  // and the structural amount is unchanged.
-  const rawStructure = applyReactiveArmour(ship, bypass + spill);
+  // Reactive armour (factions update) is part of the Phase 4 unified-damage
+  // work. Its data lives on the per-faction armor layer material
+  // (`LayerMaterial.reactiveReduction`/`reactiveWindow`) and the per-module
+  // `reactiveCharge` timer; the pipeline that consumes them lands alongside
+  // the joules refactor. For Phase 2 the full shield-bypass + spill amount
+  // flows onward to structural damage unchanged.
+  const rawStructure = bypass + spill;
 
   if (ship.modules !== undefined) {
     applyModuleDamage(ship, rawStructure, armourPiercing, impactX, impactY, shotAngle, path);
@@ -137,11 +139,8 @@ export function applyModuleDamage(
     for (const cell of path) {
       if (remaining <= 0) return;
       if (!cell.alive || cell === shield) continue;
-      cell.hp -= remaining;
-      if (cell.hp > 0) return; // this cell absorbed the rest
-      remaining = -cell.hp;
-      cell.hp = 0;
-      cell.alive = false;
+      remaining = damageCell(cell, remaining);
+      if (remaining <= 0) return; // this cell absorbed the rest
     }
     // Overflow past the last cell on the path falls to the hull structure.
     if (remaining > 0) spillToStructure(ship, remaining, armourPiercing);
@@ -155,53 +154,50 @@ export function applyModuleDamage(
       spillToStructure(ship, remaining, armourPiercing);
       return;
     }
-    target.hp -= remaining;
-    if (target.hp > 0) return; // module absorbed the whole hit
-    remaining = -target.hp;
-    target.hp = 0;
-    target.alive = false;
+    remaining = damageCell(target, remaining);
   }
 }
 
 /**
- * Reduce a structural hit by the best charged reactive armour layer on the ship
- * (factions update), then spend that layer so it must recharge over its window
- * before it can absorb again. Returns the amount that gets through after the
- * reactive cut; the caller distributes that to modules/structure exactly as it
- * did before.
- *
- * Opt-in and deterministic. A module qualifies only when it is an alive, operational
- * armour module carrying a `reactiveReduction` whose layer is charged
- * (`reactiveCharge === 0`). Modules are scanned in array order and the strongest
- * eligible `reactiveReduction` is chosen (the best plate takes the hit), so the
- * outcome is order-independent. When nothing qualifies — the universal case for a
- * ship without reactive armour, where no module sets `reactiveCharge` and none
- * carries `reactiveReduction` — the amount passes through untouched, so the
- * damage path is byte-identical to before.
- *
- * The single recharge window means one reactive plate blunts one hit per window,
- * regardless of the fraction, which bounds the mechanic: a steady stream of fire
- * overwhelms it once the layer is spent.
+ * Apply damage to a single cell, depleting outer layer first: surface HP
+ * (armor or deck) before scaffold HP (`hp`). Returns the leftover damage that
+ * spills onward once the cell is destroyed (scaffold HP exhausted). When the
+ * surface layer is gone but the scaffold survives, the cell remains alive and
+ * no spill occurs — only scaffold destruction destroys the cell and severs
+ * the graph.
  */
-export function applyReactiveArmour(ship: SimShip, amount: number): number {
-  if (amount <= 0 || ship.modules === undefined) return amount;
-  let best: SimModule | undefined;
-  let bestReduction = 0;
-  for (const m of ship.modules) {
-    if (m.effect.kind !== "armour") continue;
-    if (m.effect.reactiveReduction === undefined) continue;
-    if (m.reactiveCharge > 0 || !isOperational(m)) continue;
-    if (m.effect.reactiveReduction > bestReduction) {
-      bestReduction = m.effect.reactiveReduction;
-      best = m;
-    }
+function damageCell(cell: SimModule, amount: number): number {
+  let remaining = amount;
+  // Surface layer first (armor / deck). Bare cells have maxSurfaceHp === 0 so
+  // this pass is skipped and the damage hits the scaffold directly.
+  if (cell.surfaceHp > 0) {
+    cell.surfaceHp -= remaining;
+    if (cell.surfaceHp > 0) return 0;
+    remaining = -cell.surfaceHp;
+    cell.surfaceHp = 0;
   }
-  if (best === undefined || best.effect.kind !== "armour") return amount;
-  // Spend the layer: it recharges over `reactiveWindow` ticks (0 = ready again
-  // next tick, the schema default when only `reactiveReduction` is given).
-  best.reactiveCharge = best.effect.reactiveWindow ?? 0;
-  return amount * (1 - bestReduction);
+  // Scaffold layer next.
+  cell.hp -= remaining;
+  if (cell.hp > 0) return 0;
+  remaining = -cell.hp;
+  cell.hp = 0;
+  cell.alive = false;
+  return remaining;
 }
+
+/**
+ * Reduce a structural hit by the best charged reactive armour layer on the ship.
+ *
+ * Phase 2 note: reactive armour was previously an equipment-module effect
+ * (`ArmourEffect.reactiveReduction`). Armour is now a cell surface and the
+ * reactive fields live on the per-faction armor layer material
+ * (`LayerMaterial.reactiveReduction` / `reactiveWindow`). The damage pipeline
+ * that consumes them lands in Phase 4 alongside the joules refactor; for
+ * Phase 2 the call site in `applyDamage` passes the full shield-bypass +
+ * spill amount onward unchanged. This helper is removed — Phase 4 will
+ * reintroduce it inspecting the ship's armor layer material and the
+ * per-module `reactiveCharge` timer.
+ */
 
 /** Apply leftover structural damage to the hull, armour-reduced, and kill the
  *  ship if its integrity runs out. */
@@ -297,16 +293,34 @@ export function splitBreakApart(
   if (ship.modules === undefined) return [];
   const alive = ship.modules.filter((m) => m.alive);
   if (alive.length === 0) return [];
-  // Hull modules are the connectivity anchor for break-apart. A ship
-  // whose module set doesn't include any hull cell at all never splits:
-  // it's a single rigid body regardless of how far apart its modules
-  // sit. This matches the design intent that break-apart is a feature
-  // of hull-segmented ships, not a side effect of module distance in
-  // ship designs that haven't adopted hull cells. A destroyed hull
-  // cell still anchors the ship — the ship was designed with a hull,
-  // it just happens to be a destroyed hull cell now.
-  const hasAnyHull = ship.modules.some((m) => m.effect.kind === "hull");
-  if (!hasAnyHull) return [];
+  // Every solid cell is scaffold-anchored by definition (scaffold is the
+  // structural connectivity base of every built cell), so break-apart runs on
+  // every modular ship — the previous hull-anchor gate is gone, since under
+  // the layered-cell model there is no separate "hull cell" kind to gate on;
+  // the scaffold itself is the anchor.
+  //
+  // The one remaining guard: the ship must actually be a grid (at least one
+  // pair of cells shares a grid edge). Synthetic fixtures that place modules
+  // at non-adjacent positions bypass the grid entirely and have no graph to
+  // split; a real design always has at least one edge-adjacency because cells
+  // come from a `TileGrid`. We check the full module set (including destroyed
+  // cells) so a ship whose only bridge cell just died still qualifies — the
+  // split it is about to undergo is the very reason break-apart exists.
+  const allByCell = new Map<string, SimModule>();
+  for (const m of ship.modules) allByCell.set(`${m.col},${m.row}`, m);
+  let hasGridAdjacency = false;
+  for (const m of ship.modules) {
+    if (
+      allByCell.has(`${m.col - 1},${m.row}`) ||
+      allByCell.has(`${m.col + 1},${m.row}`) ||
+      allByCell.has(`${m.col},${m.row - 1}`) ||
+      allByCell.has(`${m.col},${m.row + 1}`)
+    ) {
+      hasGridAdjacency = true;
+      break;
+    }
+  }
+  if (!hasGridAdjacency) return [];
 
   // Union-Find over alive modules, grouped by exact 4-connected (edge-sharing)
   // grid adjacency. Only alive modules are nodes: a destroyed hull cell no
@@ -348,7 +362,9 @@ export function splitBreakApart(
       byCell.get(cellKey(m.col, m.row + 1)),
     ];
     for (const n of edgeNeighbours) {
-      if (n !== undefined) union(m, n);
+      if (n !== undefined) {
+        union(m, n);
+      }
     }
   }
 
@@ -429,6 +445,7 @@ export function splitBreakApart(
     for (const m of list) {
       if (!survivorSet.has(m)) {
         m.alive = false;
+        m.surfaceHp = 0;
         m.hp = 0;
       }
     }

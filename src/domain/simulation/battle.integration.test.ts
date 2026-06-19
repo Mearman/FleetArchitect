@@ -6,6 +6,7 @@ import { catalog } from "@/data/catalog";
 import { createId, nowIso } from "@/domain/id";
 import { defaultOrders } from "@/schema/fleet";
 import type { Fleet } from "@/schema/fleet";
+import type { CellEdges, GridCell } from "@/schema/grid";
 import type { ShipDesign } from "@/schema/ship";
 
 /**
@@ -17,7 +18,16 @@ import type { ShipDesign } from "@/schema/ship";
 
 function armedFighter(id: string): ShipDesign {
   // A pulse laser, a fusion reactor (command + power), and crew quarters on a
-  // single connected row — the grid equivalent of the old wasp loadout.
+  // single connected row of deck cells — the grid equivalent of the old wasp
+  // loadout.
+  const OPEN: CellEdges = { n: "open", e: "open", s: "open", w: "open", doorStates: {} };
+  const deck = (moduleId: string): GridCell => ({
+    kind: "solid",
+    scaffold: true,
+    surface: "deck",
+    edges: OPEN,
+    equipment: { moduleId, facing: 0 },
+  });
   return {
     id,
     name: id,
@@ -26,9 +36,9 @@ function armedFighter(id: string): ShipDesign {
       cols: 3,
       rows: 1,
       cells: [
-        { kind: "module", moduleId: "mod-pulse-laser", facing: 0 },
-        { kind: "module", moduleId: "mod-reactor-fusion", facing: 0 },
-        { kind: "module", moduleId: "mod-crew-quarters", facing: 0 },
+        deck("mod-pulse-laser"),
+        deck("mod-reactor-fusion"),
+        deck("mod-crew-quarters"),
       ],
       connections: [],
       shape: { outlineMode: "hexadecilinear" },

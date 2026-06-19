@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import type { CombatShip, BattleInputs } from "@/domain/simulation/types";
 import { defaultOrders } from "@/schema/fleet";
-import type { ShipClassification } from "@/schema/hull";
+import type { ShipClassification } from "@/schema/armor";
 import type { WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
 
@@ -46,7 +46,6 @@ function makeShip(opts: {
   const weapons = opts.weapons ?? [];
   const stats: ShipStats = {
     mass: 10,
-    massCapacity: 100,
     cost: 100,
     powerDraw: 0,
     powerOutput: 0,
@@ -66,7 +65,9 @@ function makeShip(opts: {
     // which require the ship to have acquired its target at the band's range.
     // The ships are fully sensor-equipped so detection isn't the variable under
     // test; fog of war is covered by the awareness suite.
-  };
+    compartments: 0,
+  airtightCompartments: 0,
+};
   return {
     instanceId: opts.id,
     designId: `design-${opts.id}`,

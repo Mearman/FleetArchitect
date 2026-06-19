@@ -1,5 +1,5 @@
 import type { GridCell, TileGrid } from "@/schema/grid";
-import type { ShipClassification } from "@/schema/hull";
+import type { ShipClassification } from "@/schema/armor";
 import type { Vec2 } from "@/schema/primitives";
 
 /**
@@ -50,9 +50,9 @@ export function cellAt(
   return grid.cells[cellIndex(col, row, grid)];
 }
 
-/** Whether a cell is occupied (a hull tile or a module), as opposed to empty. */
+/** Whether a cell is occupied (a built solid cell), as opposed to empty. */
 export function isOccupied(cell: GridCell | undefined): boolean {
-  return cell !== undefined && cell.kind !== "empty";
+  return cell !== undefined && cell.kind === "solid";
 }
 
 /**
@@ -191,29 +191,65 @@ export function deriveRadius(grid: TileGrid): number {
 }
 
 /**
- * Whether a cell is walkable by crew — true for hull, module, and floor cells;
- * false for empty cells and undefined (out-of-bounds). The crew pathfinder
- * treats every solid/decked cell as traversable; `floor` is dedicated corridor
- * space, but weapons, engines, and hull are also surfaces crew can walk across.
+ * Whether a cell is walkable by crew — true only for solid cells whose surface
+ * is `deck`. Bare scaffold, armor, empty cells, and out-of-bounds are not
+ * walkable. A weapon mounted on a deck cell is reachable; a weapon mounted on
+ * a bare cell is not (and surfaces as an `unreachableStation` fault).
  */
 export function isWalkable(cell: GridCell | undefined): boolean {
-  if (cell === undefined) return false;
-  return cell.kind === "hull" || cell.kind === "module" || cell.kind === "floor";
+  return cell !== undefined && cell.kind === "solid" && cell.surface === "deck";
+}
+
+/** The compass direction from `from` to `to`, or `undefined` if the two cells
+ *  are not 4-connected neighbours. */
+export function edgeDirection(
+  from: { col: number; row: number },
+  to: { col: number; row: number },
+): "n" | "e" | "s" | "w" | undefined {
+  if (to.row === from.row - 1 && to.col === from.col) return "n";
+  if (to.row === from.row + 1 && to.col === from.col) return "s";
+  if (to.col === from.col + 1 && to.row === from.row) return "e";
+  if (to.col === from.col - 1 && to.row === from.row) return "w";
+  return undefined;
 }
 
 /**
- * The 4-connected in-bounds neighbours of (col, row) whose cells are walkable.
- * Reuses `neighbours4` and `isWalkable`; the crew pathfinder calls this to
- * discover the next reachable cells from any position.
+ * Whether the edge from `from` to `to` is passable for crew. Requires both
+ * cells to be walkable (deck surface) and the shared edge — read off `from`'s
+ * edge record in the direction of `to` — to be `open` or a door in the `open`
+ * state. Walls, closed doors, armor, and bare cells all block.
+ */
+export function edgePassable(
+  from: { col: number; row: number },
+  to: { col: number; row: number },
+  grid: TileGrid,
+): boolean {
+  const fromCell = cellAt(from.col, from.row, grid);
+  const toCell = cellAt(to.col, to.row, grid);
+  if (fromCell === undefined || fromCell.kind !== "solid") return false;
+  if (toCell === undefined || toCell.kind !== "solid") return false;
+  if (fromCell.surface !== "deck" || toCell.surface !== "deck") return false;
+  const dir = edgeDirection(from, to);
+  if (dir === undefined) return false;
+  const edge = fromCell.edges[dir];
+  if (edge === "open") return true;
+  if (edge === "door") return fromCell.edges.doorStates[dir] === "open";
+  return false; // wall
+}
+
+/**
+ * The 4-connected in-bounds neighbours of (col, row) reachable by crew: deck
+ * cells whose shared edge is open or an open door. Reuses `neighbours4` and
+ * `edgePassable`; the crew pathfinder calls this to discover the next
+ * reachable cells from any position.
  */
 export function walkableNeighbours4(
   col: number,
   row: number,
   grid: TileGrid,
 ): { col: number; row: number }[] {
-  return neighbours4(col, row, grid).filter((n) =>
-    isWalkable(cellAt(n.col, n.row, grid)),
-  );
+  const here = { col, row };
+  return neighbours4(col, row, grid).filter((n) => edgePassable(here, n, grid));
 }
 
 /**

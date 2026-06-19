@@ -6,7 +6,7 @@ import { catalog } from "@/data/catalog";
 import { createId, nowIso } from "@/domain/id";
 import { defaultOrders } from "@/schema/fleet";
 import type { Fleet } from "@/schema/fleet";
-import type { GridCell } from "@/schema/grid";
+import type { CellEdges, GridCell } from "@/schema/grid";
 import type { ShipDesign } from "@/schema/ship";
 
 /**
@@ -22,17 +22,26 @@ import type { ShipDesign } from "@/schema/ship";
  */
 
 function cells(rows: readonly string[]): GridCell[] {
+  const OPEN: CellEdges = { n: "open", e: "open", s: "open", w: "open", doorStates: {} };
+  const WALL: CellEdges = { n: "wall", e: "wall", s: "wall", w: "wall", doorStates: {} };
+  const deck = (moduleId: string, facing = 0): GridCell => ({
+    kind: "solid",
+    scaffold: true,
+    surface: "deck",
+    edges: OPEN,
+    equipment: { moduleId, facing },
+  });
   const tokens: Record<string, GridCell> = {
     ".": { kind: "empty" },
-    "#": { kind: "hull", tile: "block" },
-    L: { kind: "module", moduleId: "mod-pulse-laser", facing: 0 },
-    R: { kind: "module", moduleId: "mod-railgun", facing: 0 },
-    G: { kind: "module", moduleId: "mod-munitions-magazine", facing: 0 },
-    F: { kind: "module", moduleId: "mod-reactor-fusion", facing: 0 },
-    C: { kind: "module", moduleId: "mod-crew-quarters", facing: 0 },
-    E: { kind: "module", moduleId: "mod-engine-ion", facing: Math.PI },
-    S: { kind: "module", moduleId: "mod-sensor-passive", facing: 0 },
-    W: { kind: "module", moduleId: "mod-rcs-thrusters", facing: 0 },
+    "#": { kind: "solid", scaffold: true, surface: "armor", edges: WALL },
+    L: deck("mod-pulse-laser"),
+    R: deck("mod-railgun"),
+    G: deck("mod-munitions-magazine"),
+    F: deck("mod-reactor-fusion"),
+    C: deck("mod-crew-quarters"),
+    E: deck("mod-engine-ion", Math.PI),
+    S: deck("mod-sensor-passive"),
+    W: deck("mod-rcs-thrusters"),
   };
   const out: GridCell[] = [];
   for (const row of rows) {

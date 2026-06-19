@@ -84,21 +84,6 @@ export const ShieldEffect = z.object({
 });
 export type ShieldEffect = z.infer<typeof ShieldEffect>;
 
-/** Effect payload for armour plating (structure + damage reduction). */
-export const ArmourEffect = z.object({
-  kind: z.literal("armour"),
-  hitpoints: z.number().min(0),
-  damageReduction: zeroToOne,
-  /** Reactive armour: an extra damage-reduction fraction applied to a hit and
-   *  then spent, recharging over `reactiveWindow` ticks before it can absorb
-   *  again. Both omitted = conventional passive armour. */
-  reactiveReduction: zeroToOne.optional(),
-  /** Ticks the reactive layer takes to recharge after absorbing a hit. Only
-   *  meaningful alongside `reactiveReduction`. */
-  reactiveWindow: z.number().int().min(0).optional(),
-});
-export type ArmourEffect = z.infer<typeof ArmourEffect>;
-
 /**
  * Effect payload for a propulsion module.
  *
@@ -500,7 +485,6 @@ export type BoardingEffect = z.infer<typeof BoardingEffect>;
 export const ModuleEffect = z.discriminatedUnion("kind", [
   WeaponEffect,
   ShieldEffect,
-  ArmourEffect,
   EngineEffect,
   PowerPlantEffect,
   CrewEffect,

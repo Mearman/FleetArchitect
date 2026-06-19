@@ -1,3 +1,4 @@
+import type { CellEdges } from "@/schema/grid";
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
@@ -5,6 +6,15 @@ import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulati
 import { defaultOrders } from "@/schema/fleet";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
+
+
+const OPEN_EDGES: CellEdges = {
+  n: "open",
+  e: "open",
+  s: "open",
+  w: "open",
+  doorStates: {},
+};
 
 /**
  * Crew core: physical crew members spawn from crew quarters, walk the walkable
@@ -57,7 +67,10 @@ function moduleOf(
     row,
     x: opts.x ?? col,
     y: opts.y ?? row,
-    maxHp,
+    maxSurfaceHp: 0,
+    maxScaffoldHp: maxHp,
+    surface: "deck",
+    edges: OPEN_EDGES,
     mass: opts.mass ?? 5,
     powerDraw: opts.powerDraw ?? 0,
     crewRequired: opts.crewRequired ?? 0,
@@ -79,7 +92,6 @@ function moduleOf(
 function statsFor(structure: number): ShipStats {
   return {
     mass: 10,
-    massCapacity: 1000,
     cost: 100,
     powerDraw: 0,
     powerOutput: 0,
@@ -95,7 +107,9 @@ function statsFor(structure: number): ShipStats {
     thrust: 0.5,
     turnRate: 0.1,
     weapons: [],
-  };
+    compartments: 0,
+  airtightCompartments: 0,
+};
 }
 
 function shooterShip(

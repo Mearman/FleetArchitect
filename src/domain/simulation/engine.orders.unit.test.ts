@@ -1,10 +1,20 @@
+import type { CellEdges } from "@/schema/grid";
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import type { CombatShip, BattleInputs, ResolvedModule } from "@/domain/simulation/types";
 import { defaultOrders } from "@/schema/fleet";
-import type { ShipClassification } from "@/schema/hull";
+import type { ShipClassification } from "@/schema/armor";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
+
+
+const OPEN_EDGES: CellEdges = {
+  n: "open",
+  e: "open",
+  s: "open",
+  w: "open",
+  doorStates: {},
+};
 
 /**
  * Unit tests for the tactical order system (Phase I2).
@@ -53,7 +63,10 @@ function moduleOf(
     row,
     x: col,
     y: row,
-    maxHp: 500,
+    maxSurfaceHp: 0,
+    maxScaffoldHp: 500,
+    surface: "deck",
+    edges: OPEN_EDGES,
     mass: 1,
     powerDraw: 0,
     crewRequired: 0,
@@ -124,7 +137,6 @@ function stats(opts: {
   const weapons = opts.weapons ?? [];
   return {
     mass: 10,
-    massCapacity: 100,
     cost: opts.cost ?? 100,
     powerDraw: 0,
     powerOutput: 0,
@@ -143,7 +155,9 @@ function stats(opts: {
     thrust: 0,
     turnRate: 0,
     weapons: weapons.map((w, i) => ({ slotId: `slot-${i}`, effect: w })),
-  };
+    compartments: 0,
+  airtightCompartments: 0,
+};
 }
 
 function makeShip(opts: {

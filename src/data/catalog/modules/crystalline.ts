@@ -148,25 +148,7 @@ export const crystallineModules: ModuleDefinition[] = [
       rechargeDelay: 65,
       adaptiveRampRate: 0.06,
     },
-  },
-  {
-    id: "cry-crystal-hull",
-    faction: "Crystalline",
-    name: "Crystal Lattice Plate",
-    description: "A thin conductive crystal layer adding a little structure. Better than nothing, but the Concord's hull is its weak point.",
-    category: "defence",
-    mass: 10,
-    cost: 35,
-    powerDraw: 0,
-    crewRequired: 0,
-    techLevel: 1,
-    effect: {
-      kind: "armour",
-      hitpoints: 50,
-      damageReduction: 0.15,
-    },
-  },
-  // --- Propulsion: sluggish engines, plus the blink drive that defines them ---
+  },  // --- Propulsion: sluggish engines, plus the blink drive that defines them ---
   {
     id: "cry-thruster",
     faction: "Crystalline",

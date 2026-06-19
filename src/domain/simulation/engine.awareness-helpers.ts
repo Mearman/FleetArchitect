@@ -1,5 +1,6 @@
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
 import type { BattleAnomaly } from "@/schema/battle";
+import type { CellEdges } from "@/schema/grid";
 import { defaultOrders } from "@/schema/fleet";
 import type {
   CommsEffect,
@@ -27,7 +28,6 @@ import type { runBattle } from "@/domain/simulation/engine";
 export function statsFor(structure: number, cost = 100): ShipStats {
   return {
     mass: 10,
-    massCapacity: 1000,
     cost,
     powerDraw: 0,
     powerOutput: 0,
@@ -45,8 +45,18 @@ export function statsFor(structure: number, cost = 100): ShipStats {
     thrust: 0,
     turnRate: 0,
     weapons: [],
+    compartments: 0,
+    airtightCompartments: 0,
   };
 }
+
+const OPEN_EDGES: CellEdges = {
+  n: "open",
+  e: "open",
+  s: "open",
+  w: "open",
+  doorStates: {},
+};
 
 export function moduleOf(
   slotId: string,
@@ -72,7 +82,10 @@ export function moduleOf(
     row,
     x: col,
     y: row,
-    maxHp: 50,
+    surface: "deck",
+    edges: OPEN_EDGES,
+    maxSurfaceHp: 0,
+    maxScaffoldHp: 50,
     mass: 5,
     powerDraw: opts.powerDraw ?? 0,
     crewRequired: opts.crewRequired ?? 0,

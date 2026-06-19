@@ -1,3 +1,4 @@
+import type { CellEdges } from "@/schema/grid";
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import { CELL_SIZE } from "@/domain/grid";
@@ -6,6 +7,15 @@ import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulati
 import { defaultOrders } from "@/schema/fleet";
 import type { ModuleEffect, PointDefenseEffect, WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
+
+
+const OPEN_EDGES: CellEdges = {
+  n: "open",
+  e: "open",
+  s: "open",
+  w: "open",
+  doorStates: {},
+};
 
 /**
  * Point-defence weapons: a modular defender carrying an alive, powered,
@@ -71,7 +81,10 @@ function moduleOf(
     repairRate: 0,
     x: col * CELL_SIZE,
     y: row * CELL_SIZE,
-    maxHp,
+    maxSurfaceHp: 0,
+    maxScaffoldHp: maxHp,
+    surface: "deck",
+    edges: OPEN_EDGES,
     mass,
     powerDraw,
     crewRequired: 0,
@@ -99,7 +112,6 @@ function modularAttacker(id: string): CombatShip {
   ];
   const stats: ShipStats = {
     mass: 10,
-    massCapacity: 100,
     cost: 100,
     powerDraw: 0,
     powerOutput: 0,
@@ -115,7 +127,9 @@ function modularAttacker(id: string): CombatShip {
     thrust: 0.9,
     turnRate: 0.15,
     weapons: [],
-  };
+    compartments: 0,
+  airtightCompartments: 0,
+};
   return {
     instanceId: id,
     designId: `d-${id}`,
@@ -149,7 +163,6 @@ function modularDefender(id: string, withPd: boolean): CombatShip {
   }
   const stats: ShipStats = {
     mass: 10,
-    massCapacity: 100,
     cost: 100,
     powerDraw: 0,
     powerOutput: 0,
@@ -169,7 +182,9 @@ function modularDefender(id: string, withPd: boolean): CombatShip {
     thrust: 0.9,
     turnRate: 0.15,
     weapons: [],
-  };
+    compartments: 0,
+  airtightCompartments: 0,
+};
   return {
     instanceId: id,
     designId: `d-${id}`,

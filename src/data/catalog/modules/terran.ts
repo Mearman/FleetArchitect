@@ -156,42 +156,7 @@ export const terranModules: ModuleDefinition[] = [
       rechargeDelay: 150,
     },
   },
-  // --- Defence: armour ---
-  {
-    id: "mod-armour-titanium",
-    faction: "Terran",
-    name: "Titanium Plating",
-    description: "Adds hull structure and shaves a quarter off incoming hull damage.",
-    category: "defence",
-    mass: 16,
-    cost: 40,
-    powerDraw: 0,
-    crewRequired: 0,
-    techLevel: 1,
-    effect: {
-      kind: "armour",
-      hitpoints: 40,
-      damageReduction: 0.2,
-    },
-  },
-  {
-    id: "mod-armour-ablative",
-    faction: "Terran",
-    name: "Ablative Hull",
-    description: "Dense reactive plating. Lots of structure and heavy damage reduction.",
-    category: "defence",
-    mass: 30,
-    cost: 90,
-    powerDraw: 0,
-    crewRequired: 0,
-    techLevel: 2,
-    effect: {
-      kind: "armour",
-      hitpoints: 70,
-      damageReduction: 0.35,
-    },
-  },
-  // --- Propulsion ---
+  // --- Defence: armour ---    // --- Propulsion ---
   {
     id: "mod-engine-ion",
     faction: "Terran",

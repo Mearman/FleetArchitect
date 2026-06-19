@@ -39,11 +39,11 @@ export function GridBoard({
             aria-label={`cell ${col},${row}`}
           >
             <span className={cellInner}>
-              {cell.kind === "module" ? (
+              {cell.kind === "solid" && cell.equipment !== undefined ? (
                 <span
                   className={facingTick}
                   style={{
-                    transform: `rotate(${cell.facing + Math.PI / 2}rad)`,
+                    transform: `rotate(${cell.equipment.facing + Math.PI / 2}rad)`,
                   }}
                 />
               ) : null}

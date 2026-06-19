@@ -1,9 +1,19 @@
+import type { CellEdges } from "@/schema/grid";
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
 import { defaultOrders } from "@/schema/fleet";
 import type { ModuleEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
+
+
+const OPEN_EDGES: CellEdges = {
+  n: "open",
+  e: "open",
+  s: "open",
+  w: "open",
+  doorStates: {},
+};
 
 /**
  * Bang-bang attitude control: ships spin up under torque, coast, then brake to
@@ -15,7 +25,6 @@ import type { ShipStats } from "@/domain/stats";
 function shipStats(over: Partial<ShipStats>): ShipStats {
   return {
     mass: 10,
-    massCapacity: 100,
     cost: 0,
     powerDraw: 0,
     powerOutput: 0,
@@ -36,7 +45,9 @@ function shipStats(over: Partial<ShipStats>): ShipStats {
     // other across the test geometry and the controller (not advance-to-contact
     // under fog) is the variable under test; fog is covered by the awareness suite.
     ...over,
-  };
+    compartments: 0,
+  airtightCompartments: 0,
+};
 }
 
 function moduleOf(
@@ -54,7 +65,10 @@ function moduleOf(
     row: Math.round(y),
     x,
     y,
-    maxHp: 50,
+    maxSurfaceHp: 0,
+    maxScaffoldHp: 50,
+    surface: "deck",
+    edges: OPEN_EDGES,
     mass: 5,
     powerDraw: 0,
     crewRequired: 0,

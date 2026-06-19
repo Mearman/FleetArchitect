@@ -130,10 +130,11 @@ export function boardShip(ship: SimShip, pod: SimPod): void {
   const local = worldToLocal(ship, pod.x, pod.y);
   const ix = local === undefined ? ship.comX : local.x;
   const iy = local === undefined ? ship.comY : local.y;
-  // Candidates: alive functional modules, by distance from the impact point.
+  // Candidates: alive functional modules (not armor plate — boarding disables
+  // equipment, not structure), by distance from the impact point.
   const candidates = ship.modules
     .filter(
-      (m) => m.alive && m.kind !== "hull" && !m.command,
+      (m) => m.alive && m.surface !== "armor" && !m.command,
     )
     .map((m) => {
       const ddx = m.x - ix;
@@ -148,6 +149,7 @@ export function boardShip(ship: SimShip, pod: SimPod): void {
     const c = candidates[i];
     if (c === undefined) break;
     c.m.alive = false;
+    c.m.surfaceHp = 0;
     c.m.hp = 0;
   }
   recomputeAggregates(ship);

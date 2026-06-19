@@ -343,7 +343,6 @@ export function stationNeedsCrew(m: SimModule): boolean {
     case "sensor":
     case "comms":
       return true;
-    case "armour":
     case "crew":
     case "repair":
     case "hull":

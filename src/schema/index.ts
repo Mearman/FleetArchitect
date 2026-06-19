@@ -5,7 +5,7 @@
  */
 export * from "./primitives";
 export * from "./module";
-export * from "./hull";
+export * from "./armor";
 export * from "./ship";
 export * from "./ai";
 export * from "./fleet";

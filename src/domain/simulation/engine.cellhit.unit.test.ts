@@ -1,3 +1,4 @@
+import type { CellEdges } from "@/schema/grid";
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import { CELL_SIZE } from "@/domain/grid";
@@ -6,6 +7,15 @@ import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulati
 import { defaultOrders } from "@/schema/fleet";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
+
+
+const OPEN_EDGES: CellEdges = {
+  n: "open",
+  e: "open",
+  s: "open",
+  w: "open",
+  doorStates: {},
+};
 
 /**
  * Projectile-vs-cell hits. A projectile strikes the frontmost occupied cell on
@@ -19,7 +29,6 @@ import type { ShipStats } from "@/domain/stats";
 function stats(over: Partial<ShipStats> = {}): ShipStats {
   return {
     mass: 10,
-    massCapacity: 100,
     cost: 100,
     powerDraw: 0,
     powerOutput: 0,
@@ -36,7 +45,9 @@ function stats(over: Partial<ShipStats> = {}): ShipStats {
     turnRate: 0,
     weapons: [],
     ...over,
-  };
+    compartments: 0,
+  airtightCompartments: 0,
+};
 }
 
 function moduleOf(
@@ -56,7 +67,10 @@ function moduleOf(
     row,
     x: col * CELL_SIZE,
     y: row * CELL_SIZE,
-    maxHp,
+    maxSurfaceHp: 0,
+    maxScaffoldHp: maxHp,
+    surface: "deck",
+    edges: OPEN_EDGES,
     mass,
     powerDraw: 0,
     crewRequired: 0,

@@ -1,7 +1,7 @@
 import type { ShipStats } from "@/domain/stats";
 import type { Orders } from "@/schema/fleet";
-import type { HardwireResource } from "@/schema/grid";
-import type { ShipClassification } from "@/schema/hull";
+import type { CellEdges, HardwireResource, SurfaceKind } from "@/schema/grid";
+import type { ShipClassification } from "@/schema/armor";
 import type { ModuleEffect } from "@/schema/module";
 import type { BattleAnomaly, BattleSide } from "@/schema/battle";
 import type { Vec2 } from "@/schema/primitives";
@@ -77,8 +77,20 @@ export interface ResolvedModule {
    *  selection, muzzle offsets, and rendering. */
   x: number;
   y: number;
-  /** Starting (and maximum) hit points. */
-  maxHp: number;
+  /** The cell's surface kind (bare/deck/armor). Drives walkability (`deck`
+   *  only), equipment placement rules, and damage-layer depletion order. */
+  surface: SurfaceKind;
+  /** The cell's four edge states (open/wall/door + door states). Carried onto
+   *  the SimModule so the engine's A* and airtightness logic can read edges
+   *  without re-walking the grid each tick. */
+  edges: CellEdges;
+  /** Starting (and maximum) HP of the surface layer (armor or deck). Zero for
+   *  `bare` cells (no surface layer). Damage depletes this layer before it
+   *  reaches the scaffold layer. */
+  maxSurfaceHp: number;
+  /** Starting (and maximum) HP of the scaffold layer. When scaffold HP reaches
+   *  zero the cell is destroyed and break-apart may sever the graph. */
+  maxScaffoldHp: number;
   /** Mass contributed to the ship's total mass. */
   mass: number;
   /** Power drawn from the reactor each tick to run this module. */

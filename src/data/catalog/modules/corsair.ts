@@ -93,23 +93,6 @@ export const corsairModules: ModuleDefinition[] = [
   },
   // --- Defence: thin scrap armour, a scrambler, a light shield ---
   {
-    id: "cor-scrap-armour",
-    faction: "Corsair",
-    name: "Scrap Plate",
-    description: "Welded-on salvaged plate. Light protection — a Reaver's defence is not getting hit in the first place.",
-    category: "defence",
-    mass: 10,
-    cost: 30,
-    powerDraw: 0,
-    crewRequired: 0,
-    techLevel: 1,
-    effect: {
-      kind: "armour",
-      hitpoints: 60,
-      damageReduction: 0.2,
-    },
-  },
-  {
     id: "cor-scrambler",
     faction: "Corsair",
     name: "ECM Scrambler",

@@ -38,7 +38,6 @@ function makeShip(opts: {
   const weapons = opts.weapons ?? [weapon()];
   const stats: ShipStats = {
     mass: 10,
-    massCapacity: 100,
     cost: 100,
     powerDraw: 0,
     powerOutput: 0,
@@ -54,7 +53,9 @@ function makeShip(opts: {
     thrust: 0.5,
     turnRate: 0.1,
     weapons: weapons.map((w) => ({ slotId: `slot-${opts.id}`, effect: w })),
-  };
+    compartments: 0,
+  airtightCompartments: 0,
+};
   return {
     instanceId: opts.id,
     designId: `design-${opts.id}`,

@@ -91,6 +91,10 @@ describe("engine.crew-perf — cache effectiveness", () => {
     runBattle(buildInputs("preset-fleet-battleline", "preset-fleet-spearhead"));
     const { hitRate, total } = pathCacheStats();
     expect(total, "crew path lookups actually ran").toBeGreaterThan(0);
-    expect(hitRate, "crew path cache hit rate").toBeGreaterThan(0.9);
+    // Phase 2 lowered the hit rate slightly: crew now walks deck-only through
+    // edge-gated corridors (rather than across every solid cell), so the
+    // walkable graph is sparser and paths vary more. A healthy rate is still
+    // ~89%; a regression that bypasses the cache drops this to ~0.
+    expect(hitRate, "crew path cache hit rate").toBeGreaterThan(0.85);
   }, 30000);
 });

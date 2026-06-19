@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ShipClassification } from "./hull";
+import { ShipClassification } from "./armor";
 
 /**
  * Canonical schema for ship and crew AI behaviour. Phase 0 of the realism
@@ -46,7 +46,6 @@ export type CrewPriority = z.infer<typeof CrewPriority>;
 export const ModuleKind = z.enum([
   "weapon",
   "shield",
-  "armour",
   "engine",
   "power",
   "crew",

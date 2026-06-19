@@ -2,86 +2,137 @@ import { z } from "zod";
 import { EntityId } from "./primitives";
 
 /**
- * A ship is an authoritative 2D tile grid. Every cell is one of three kinds:
- * empty space, a structural hull tile, or an installed module. The grid is the
- * single source of truth for a ship's shape, mass, connectivity, and the
- * position of every module — there is no separate slot list and no hull id.
+ * A ship is an authoritative 2D tile grid of layered cells: every built cell is
+ * scaffold (the structural connectivity base) carrying an optional surface
+ * (bare / deck / armor), per-edge walls or doors, and at most one equipment
+ * module. The grid is the single source of truth for a ship's shape, mass,
+ * connectivity, and the position of every module.
  */
 
-/** The structural hull-tile shapes. Each carries its own mass and hp via the
- *  catalog (see HullTileType in the hull schema); the grid cell only records
- *  which shape sits in the cell so the renderer can draw it and the engine can
- *  anchor break-apart on it. */
-export const HullTileType = z.enum(["corner", "edge", "strut", "block"]);
-export type HullTileType = z.infer<typeof HullTileType>;
+// ---------------------------------------------------------------------------
+// Edge / door / surface vocabulary.
+// ---------------------------------------------------------------------------
 
-/** An empty cell: open space inside the grid's bounding box. */
-export const EmptyCell = z.object({
-  kind: z.literal("empty"),
-});
-export type EmptyCell = z.infer<typeof EmptyCell>;
+/** The state of one of a cell's four edges: open space, a wall, or a door. */
+export const EdgeKind = z.enum(["open", "wall", "door"]);
+export type EdgeKind = z.infer<typeof EdgeKind>;
 
-/** A structural hull cell carrying one of the hull-tile shapes. */
-export const HullCell = z.object({
-  kind: z.literal("hull"),
-  tile: HullTileType,
-});
-export type HullCell = z.infer<typeof HullCell>;
+/** The state of a door edge: open (passable but leaks air) or closed
+ *  (airtight barrier, blocks movement). */
+export const DoorState = z.enum(["open", "closed"]);
+export type DoorState = z.infer<typeof DoorState>;
+
+/** The surface layered on a cell's scaffold.
+ *  - `bare`   — framing only; not walkable; equipment-placeable.
+ *  - `deck`   — airtight crew floor; walkable; equipment-placeable.
+ *  - `armor`  — solid, impassable plate; not walkable; no equipment. */
+export const SurfaceKind = z.enum(["bare", "deck", "armor"]);
+export type SurfaceKind = z.infer<typeof SurfaceKind>;
 
 /**
- * A cell occupied by an installed module. `moduleId` references the bundled
- * catalog; `facing` is the module's mount direction in radians, ship-local
- * (0 = along +x, i.e. forward). Weapons fire along it and engines thrust along
- * it, exactly as the old per-slot facing did.
- *
- * The optional per-instance comms/sensor fields are only meaningful for cells
- * whose module has a CommsEffect or SensorEffect; they are absent on all other
- * cell kinds so existing grids parse unchanged. `commsBearing`/`commsRange`
- * configure comms modules; `sensorBearing`/`sensorRangeSetting` configure
- * sensor modules in exactly the same way.
+ * Per-edge record for a cell. `doorStates` is keyed by direction; a state is
+ * present exactly on edges whose kind is `door` (enforced by `SolidCell`'s
+ * refine) and absent on every other edge. The default is an empty object so a
+ * cell authored without doors parses without naming the field.
  */
-export const ModuleCell = z.object({
-  kind: z.literal("module"),
+export const CellEdges = z.object({
+  n: EdgeKind,
+  e: EdgeKind,
+  s: EdgeKind,
+  w: EdgeKind,
+  doorStates: z
+    .object({
+      n: DoorState.optional(),
+      e: DoorState.optional(),
+      s: DoorState.optional(),
+      w: DoorState.optional(),
+    })
+    .default({}),
+});
+export type CellEdges = z.infer<typeof CellEdges>;
+
+/**
+ * Equipment carried on a solid cell (at most one per cell). Replaces the old
+ * `ModuleCell`. Carries the per-instance comms/sensor override fields verbatim
+ * so resolve's existing per-instance logic ports with no semantic change.
+ */
+export const CellEquipment = z.object({
   moduleId: EntityId,
   facing: z.number(),
   /** Per-instance logical channel override for comms modules. */
   channel: z.number().int().min(0).optional(),
-  /** Per-instance fixed-facing bearing override for comms modules (radians). */
+  /** Per-instance fixed-bearing bearing override for comms modules (radians). */
   commsBearing: z.number().optional(),
   /** Per-instance range setting for variable-type comms modules (world units). */
   commsRange: z.number().optional(),
-  /** Per-instance fixed-facing bearing override for directional/dish sensor
+  /** Per-instance fixed-bearing override for directional/dish sensor
    *  modules (radians). */
   sensorBearing: z.number().optional(),
   /** Per-instance range setting for variable-type sensor modules (world units). */
   sensorRangeSetting: z.number().optional(),
 });
-export type ModuleCell = z.infer<typeof ModuleCell>;
+export type CellEquipment = z.infer<typeof CellEquipment>;
+
+// ---------------------------------------------------------------------------
+// Grid cells.
+// ---------------------------------------------------------------------------
+
+/** Absent from the ship. */
+export const EmptyCell = z.object({ kind: z.literal("empty") });
+export type EmptyCell = z.infer<typeof EmptyCell>;
 
 /**
- * A walkable interior decking cell. Floor tiles are solid — they have mass and
- * HP like a light structural plate — but provide no module function. They are
- * dedicated corridor and crew-quarters space that crew can walk through to reach
- * stations. Hull and module cells are also walkable; `floor` is the explicit
- * interior-decking kind that a designer paints to build corridors.
+ * A built cell. Every built cell has scaffold (the structural connectivity
+ * base; break-apart follows 4-connected scaffold adjacency). `surface` layers
+ * on the scaffold: `bare` (framing only, not walkable), `deck` (airtight crew
+ * floor, walkable, equipment-placeable), or `armor` (impassable solid, high
+ * HP/mass, no equipment). `edges` govern crew movement and airtightness
+ * between deck cells. `equipment` is optional and only legal on `bare`/`deck`
+ * (enforced by refine).
  */
-export const FloorCell = z.object({
-  kind: z.literal("floor"),
-});
-export type FloorCell = z.infer<typeof FloorCell>;
+export const SolidCell = z
+  .object({
+    kind: z.literal("solid"),
+    /** Every built cell carries scaffold; the literal collapses the type and
+     *  prevents a meaningless `scaffold: false` state. */
+    scaffold: z.literal(true),
+    surface: SurfaceKind,
+    edges: CellEdges,
+    equipment: CellEquipment.optional(),
+  })
+  .refine((c) => c.surface !== "armor" || c.equipment === undefined, {
+    message: "armor cells cannot carry equipment",
+    path: ["equipment"],
+  })
+  .refine(
+    (c) => {
+      // doorState must be present exactly on door edges, absent on others.
+      const dirs: readonly ("n" | "e" | "s" | "w")[] = ["n", "e", "s", "w"];
+      for (const dir of dirs) {
+        const isDoor = c.edges[dir] === "door";
+        const hasState = c.edges.doorStates[dir] !== undefined;
+        if (isDoor !== hasState) return false;
+      }
+      return true;
+    },
+    {
+      message: "doorStates must be present exactly on door edges",
+      path: ["edges"],
+    },
+  );
+export type SolidCell = z.infer<typeof SolidCell>;
 
 /** Discriminated union over the cell kinds. New cell kinds extend this. */
-export const GridCell = z.discriminatedUnion("kind", [
-  EmptyCell,
-  HullCell,
-  ModuleCell,
-  FloorCell,
-]);
+export const GridCell = z.discriminatedUnion("kind", [EmptyCell, SolidCell]);
 export type GridCell = z.infer<typeof GridCell>;
 
-/** A resource a hardwire conduit can carry directly between two module cells,
- *  removing the crew need for the linked sink at the cost of a fixed, severable
- *  one-to-one link:
+// ---------------------------------------------------------------------------
+// Hardwires, coordinates, outline metadata, the tile grid.
+// ---------------------------------------------------------------------------
+
+/** A resource a hardwire conduit can carry directly between two equipment
+ *  cells, removing the crew need for the linked sink at the cost of a fixed,
+ *  severable one-to-one link:
  *   - "ammo"    — a magazine feeds a finite-ammo weapon with zero latency.
  *   - "power"   — a reactor wires a power-drawing module at any distance.
  *   - "manning" — a command/control node mans a station with no crew present.
@@ -97,10 +148,10 @@ export const CellCoord = z.object({
 export type CellCoord = z.infer<typeof CellCoord>;
 
 /**
- * A hardwire conduit between two module cells. `from` is the resource source
- * (magazine / reactor / command), `to` the consumer sink. Source/sink module
- * compatibility is checked by the design validator, not the schema; the schema
- * only guarantees the endpoints are distinct and in bounds.
+ * A hardwire conduit between two equipment cells. `from` is the resource
+ * source (magazine / reactor / command), `to` the consumer sink. Source/sink
+ * module compatibility is checked by the design validator, not the schema; the
+ * schema only guarantees the endpoints are distinct and in bounds.
  */
 export const Connection = z.object({
   from: CellCoord,
@@ -111,7 +162,7 @@ export type Connection = z.infer<typeof Connection>;
 
 /**
  * Chamfer resolution at which the hull outline polygon is traced around the
- * ship's protective shell (armour cells plus wall/door edges). The outline
+ * ship's protective shell (armor cells plus wall/door edges). The outline
  * itself is computed in a later phase (`src/domain/outline.ts`); the grid
  * only records the author's preferred resolution so the same grid renders
  * identically everywhere.
@@ -142,13 +193,14 @@ export type GridShape = z.infer<typeof GridShape>;
  * A rectangular tile grid. `cells` is a flat, row-major array of length
  * `cols * rows`: the cell at (col, row) lives at index `row * cols + col`,
  * with col increasing left-to-right (+x) and row increasing top-to-bottom
- * (+y). Dimensions are integers of at least 1, and the cell count is validated
- * to equal `cols * rows` so a malformed grid fails loudly at parse time.
+ * (+y). Dimensions are integers of at least 1, and the cell count is
+ * validated to equal `cols * rows` so a malformed grid fails loudly at parse
+ * time.
  *
- * `connections` are hardwire conduits between module cells; it defaults to an
- * empty array so grids authored before hardwiring parse unchanged. `shape`
- * carries outline-render metadata; it defaults to a `hexadecilinear`
- * outline so existing grids parse unchanged.
+ * `connections` are hardwire conduits between equipment cells; it defaults to
+ * an empty array so grids authored before hardwiring parse unchanged. `shape`
+ * carries outline-render metadata; it defaults to a `hexadecilinear` outline
+ * so existing grids parse unchanged.
  */
 export const TileGrid = z
   .object({

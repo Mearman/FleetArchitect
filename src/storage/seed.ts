@@ -23,8 +23,21 @@ import { getMeta, setMeta, storage } from "@/storage/db";
  * wheels) so it has real commandable turn authority under the torque-driven
  * attitude model — centre-line-only designs could not rotate at all without it.
  * This bump reseeds the combined set over either feature's v4.
+ *
+ * Version 6: factions-tech — Crystalline, Foundry, Corsair, Synthetic factions
+ * added alongside the existing Terran and Swarm, each with starter ships.
+ *
+ * Version 7: layered-cell migration (Phase 2). The grid cell model changes
+ * from empty/hull/module/floor to empty/solid: every built cell is scaffold
+ * carrying a surface (bare/deck/armor), four edge states, and optional
+ * equipment. Armour equipment modules are gone (armour is now a cell surface);
+ * their stats moved onto per-faction layer materials. Crew walkability is
+ * deck-only and edge-gated. Break-apart anchors on scaffold (every solid
+ * cell), not on a hull-effect gate. Designs saved under the previous cell
+ * model are not migrated — this bump reseeds the preset set so the new
+ * bundled designs replace any prior-version copies.
  */
-const PRESETS_VERSION = 6;
+const PRESETS_VERSION = 7;
 const VERSION_KEY = "presetsVersion";
 
 /**

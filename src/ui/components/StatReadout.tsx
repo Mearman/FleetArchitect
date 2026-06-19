@@ -1,4 +1,4 @@
-import { Box, Group, Progress, SimpleGrid, Stack, Text } from "@mantine/core";
+import { SimpleGrid, Stack, Text } from "@mantine/core";
 import type { ShipStats } from "@/domain/stats";
 
 interface StatReadoutProps {
@@ -28,14 +28,12 @@ function StatCell({ label, children, tone = "normal" }: CellProps) {
 
 /**
  * Compact read-out of a resolved ship's aggregate stats. Power and crew nets go
- * red when the ship cannot sustain itself; mass shows against the hull budget.
+ * red when the ship cannot sustain itself; mass is reported as a raw figure
+ * (the mass budget was retired — heavy ships are slower via F = ma rather than
+ * undeployable). Compartments are advisory: airtightness flags whether the
+ * crew interior will hold atmosphere once the engine consumes it.
  */
 export function StatReadout({ stats }: StatReadoutProps) {
-  const massCapacity = stats.massCapacity;
-  const massFraction = Math.min(1, stats.mass / Math.max(massCapacity, 1));
-  const massTone: CellProps["tone"] =
-    stats.mass > massCapacity ? "bad" : "normal";
-
   return (
     <Stack gap="md">
       <SimpleGrid cols={{ base: 2, sm: 3 }} spacing="md">
@@ -63,23 +61,11 @@ export function StatReadout({ stats }: StatReadoutProps) {
         </StatCell>
         <StatCell label="Thrust">{stats.thrust.toFixed(2)}</StatCell>
         <StatCell label="Turn">{stats.turnRate.toFixed(3)}</StatCell>
+        <StatCell label="Mass">{stats.mass.toFixed(0)}</StatCell>
+        <StatCell label="Compartments">
+          {stats.airtightCompartments}/{stats.compartments} airtight
+        </StatCell>
       </SimpleGrid>
-
-      <Box>
-        <Group justify="space-between" mb={4}>
-          <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
-            Mass
-          </Text>
-          <Text size="xs" fw={600} c={massTone === "bad" ? "red.4" : "gray.1"}>
-            {stats.mass.toFixed(0)} / {massCapacity}
-          </Text>
-        </Group>
-        <Progress
-          value={massFraction * 100}
-          color={massTone === "bad" ? "red" : "indigo"}
-          size="sm"
-        />
-      </Box>
     </Stack>
   );
 }

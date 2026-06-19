@@ -6,9 +6,19 @@
  */
 
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
+import type { CellEdges } from "@/schema/grid";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
 import type { runBattle } from "@/domain/simulation/engine";
+
+/** All-open deck edges for test fixtures. */
+const OPEN_EDGES: CellEdges = {
+  n: "open",
+  e: "open",
+  s: "open",
+  w: "open",
+  doorStates: {},
+};
 
 export function beam(over: Partial<WeaponEffect> = {}): WeaponEffect {
   return {
@@ -49,7 +59,10 @@ export function moduleOf(
     row,
     x: col * 24,
     y: row * 24,
-    maxHp,
+    surface: "deck",
+    edges: OPEN_EDGES,
+    maxSurfaceHp: 0,
+    maxScaffoldHp: maxHp,
     mass,
     powerDraw,
     crewRequired: 0,
@@ -82,7 +95,6 @@ export function commandModule(col: number, row: number): ResolvedModule {
 export function baseStats(over: Partial<ShipStats> = {}): ShipStats {
   return {
     mass: 10,
-    massCapacity: 100,
     cost: 100,
     powerDraw: 0,
     powerOutput: 0,
@@ -98,6 +110,8 @@ export function baseStats(over: Partial<ShipStats> = {}): ShipStats {
     thrust: 0.8,
     turnRate: 0.15,
     weapons: [],
+    compartments: 0,
+    airtightCompartments: 0,
     ...over,
   };
 }

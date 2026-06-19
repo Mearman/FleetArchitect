@@ -2,8 +2,17 @@ import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
 import { defaultOrders } from "@/schema/fleet";
+import type { CellEdges } from "@/schema/grid";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
+
+const OPEN_EDGES: CellEdges = {
+  n: "open",
+  e: "open",
+  s: "open",
+  w: "open",
+  doorStates: {},
+};
 
 /**
  * ECM (jamming) and ECCM (counter) in the projectile/weapon path.
@@ -69,7 +78,10 @@ function moduleOf(
     row,
     x: col * 24,
     y: row * 24,
-    maxHp,
+    surface: "deck",
+    edges: OPEN_EDGES,
+    maxSurfaceHp: 0,
+    maxScaffoldHp: maxHp,
     mass,
     powerDraw,
     crewRequired: 0,
@@ -120,7 +132,6 @@ function rowLayout(weapons: ResolvedModule[], extras: ResolvedModule[]): Resolve
 function baseStats(over: Partial<ShipStats> = {}): ShipStats {
   return {
     mass: 10,
-    massCapacity: 100,
     cost: 100,
     powerDraw: 0,
     powerOutput: 0,
@@ -137,7 +148,9 @@ function baseStats(over: Partial<ShipStats> = {}): ShipStats {
     turnRate: 0,
     weapons: [],
     ...over,
-  };
+    compartments: 0,
+  airtightCompartments: 0,
+};
 }
 
 function ship(opts: {

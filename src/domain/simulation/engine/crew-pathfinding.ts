@@ -4,6 +4,7 @@
  * and the cell-key helpers shared with break-apart.
  */
 
+import { edgeDirection } from "@/domain/grid";
 import type { SimModule, SimShip } from "./types";
 import { UNREACHABLE } from "./config";
 
@@ -306,6 +307,8 @@ export function computeCrewPathAStar(
     }
 
     const currentG = gScore.get(currentKey) ?? Infinity;
+    const currentMod = cells.get(currentKey);
+    if (currentMod === undefined) continue;
     // Visit the four edge neighbours in a fixed order; the tie-break in the open
     // set makes the chosen path canonical regardless of insertion order here.
     const candidates = [
@@ -316,8 +319,17 @@ export function computeCrewPathAStar(
     ];
     for (const n of candidates) {
       const nKey = crewCellKey(n.col, n.row);
-      if (!cells.has(nKey)) continue; // not a walkable alive cell
+      const nMod = cells.get(nKey);
+      if (nMod === undefined) continue; // not a walkable alive cell
+      if (nMod.surface !== "deck") continue; // only deck is walkable
       if (closed.has(nKey)) continue; // already finalised
+      // Edge-gated passability: read the shared edge off the current cell's
+      // edge record in the direction of `n`. Walls and closed doors block.
+      const dir = edgeDirection(current, n);
+      if (dir === undefined) continue;
+      const edge = currentMod.edges[dir];
+      if (edge === "wall") continue;
+      if (edge === "door" && currentMod.edges.doorStates[dir] !== "open") continue;
       const tentativeG = currentG + 1;
       if (tentativeG < (gScore.get(nKey) ?? Infinity)) {
         cameFrom.set(nKey, { col: current.col, row: current.row });
@@ -338,7 +350,9 @@ export function aliveCellMap(ship: SimShip): Map<string, SimModule> {
   const map = new Map<string, SimModule>();
   if (ship.modules === undefined) return map;
   for (const m of ship.modules) {
-    if (m.alive) map.set(crewCellKey(m.col, m.row), m);
+    // Crew can only occupy deck cells: bare scaffold and armor surfaces are
+    // not walkable, so they are excluded from the path graph even when alive.
+    if (m.alive && m.surface === "deck") map.set(crewCellKey(m.col, m.row), m);
   }
   return map;
 }

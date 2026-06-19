@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { analyseShipDesign } from "@/domain/stats";
 import { catalog } from "@/data/catalog";
 import { createId, nowIso } from "@/domain/id";
-import type { GridCell, TileGrid } from "@/schema/grid";
+import type { CellEdges, GridCell, TileGrid } from "@/schema/grid";
 import type { ShipDesign } from "@/schema/ship";
 
 /**
@@ -18,15 +18,25 @@ import type { ShipDesign } from "@/schema/ship";
 // ---------------------------------------------------------------------------
 
 /** ASCII grid helpers for building test designs. Subset of stats.unit.test.ts tokens. */
+const OPEN: CellEdges = { n: "open", e: "open", s: "open", w: "open", doorStates: {} };
+const WALL: CellEdges = { n: "wall", e: "wall", s: "wall", w: "wall", doorStates: {} };
+const deck = (moduleId: string): GridCell => ({
+  kind: "solid",
+  scaffold: true,
+  surface: "deck",
+  edges: OPEN,
+  equipment: { moduleId, facing: 0 },
+});
 const TOKENS: Record<string, GridCell> = {
   ".": { kind: "empty" },
-  "#": { kind: "hull", tile: "block" },
-  F: { kind: "module", moduleId: "mod-reactor-fusion", facing: 0 },
-  C: { kind: "module", moduleId: "mod-crew-quarters", facing: 0 },
-  R: { kind: "module", moduleId: "mod-railgun", facing: 0 },
-  G: { kind: "module", moduleId: "mod-munitions-magazine", facing: 0 },
-  A: { kind: "module", moduleId: "mod-armour-titanium", facing: 0 },
-  L: { kind: "module", moduleId: "mod-pulse-laser", facing: 0 },
+  "#": { kind: "solid", scaffold: true, surface: "armor", edges: WALL },
+  F: deck("mod-reactor-fusion"),
+  C: deck("mod-crew-quarters"),
+  R: deck("mod-railgun"),
+  G: deck("mod-munitions-magazine"),
+  // `A` formerly the titanium armour module; armour is now a cell surface.
+  A: { kind: "solid", scaffold: true, surface: "armor", edges: WALL },
+  L: deck("mod-pulse-laser"),
 };
 
 function grid(
@@ -67,9 +77,10 @@ function design(g: TileGrid): ShipDesign {
 
 describe("engine.hardwire — analyseShipDesign validation", () => {
   it("armour used as ammo source raises invalidHardwire", () => {
-    // Grid: F (reactor/command) — A (armour) — R (railgun, finite ammo)
-    // Connection: armour (col 1) → railgun (col 2), resource: ammo
-    // This is invalid because the source must be a magazine.
+    // Grid: F (reactor/command) — A (armour surface, no equipment) — R (railgun, finite ammo)
+    // Connection: armour (col 1) → railgun (col 2), resource: ammo.
+    // Armour is now a cell surface with no equipment, so the conduit's source
+    // carries no module at all — invalid because a source must be a magazine.
     const g = grid(
       ["FAR"],
       [{ from: { col: 1, row: 0 }, to: { col: 2, row: 0 }, resource: "ammo" }],
@@ -79,7 +90,7 @@ describe("engine.hardwire — analyseShipDesign validation", () => {
     expect(hwFaults.length, "armour→weapon ammo conduit should raise invalidHardwire").toBeGreaterThan(0);
     if (hwFaults[0]?.kind === "invalidHardwire") {
       expect(hwFaults[0].resource).toBe("ammo");
-      expect(hwFaults[0].reason).toMatch(/magazine/);
+      expect(hwFaults[0].reason).toMatch(/source cell carries no equipment/);
     }
   });
 
@@ -138,18 +149,19 @@ describe("engine.hardwire — analyseShipDesign validation", () => {
   });
 
   it("non-module cell used as source raises invalidHardwire", () => {
-    // Grid (1 row, 3 cols): F (col 0) — # hull block (col 1) — R railgun (col 2)
-    // Connection: hull block (col 1) → railgun (col 2), resource: ammo
-    // Invalid because source must be a module cell.
+    // Grid (1 row, 3 cols): F (col 0) — # armor surface (col 1) — R railgun (col 2)
+    // Connection: armor (col 1) → railgun (col 2), resource: ammo.
+    // Armour is a cell surface with no equipment, so it cannot be a conduit
+    // source. Phase 2: armour is a surface, not an equipment cell.
     const g = grid(
       ["F#R"],
       [{ from: { col: 1, row: 0 }, to: { col: 2, row: 0 }, resource: "ammo" }],
     );
     const { faults } = analyseShipDesign(design(g), catalog());
     const hwFaults = faults.filter((f) => f.kind === "invalidHardwire");
-    expect(hwFaults.length, "hull cell as source should raise invalidHardwire").toBeGreaterThan(0);
+    expect(hwFaults.length, "armor cell as source should raise invalidHardwire").toBeGreaterThan(0);
     if (hwFaults[0]?.kind === "invalidHardwire") {
-      expect(hwFaults[0].reason).toMatch(/source cell is not a module/);
+      expect(hwFaults[0].reason).toMatch(/source cell carries no equipment/);
     }
   });
 });

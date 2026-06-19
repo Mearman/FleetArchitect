@@ -1,4 +1,4 @@
-import type { HullTileType, TileGrid } from "@/schema/grid";
+import type { TileGrid } from "@/schema/grid";
 
 /** Default grid dimensions for a fresh design. */
 export const DEFAULT_COLS = 5;
@@ -6,9 +6,6 @@ export const DEFAULT_ROWS = 5;
 
 /** Maximum grid dimension (columns or rows) the designer will allow. */
 export const MAX_DIM = 12;
-
-/** The four hull tile varieties the palette exposes for painting. */
-export const HULL_TILES: HullTileType[] = ["block", "edge", "corner", "strut"];
 
 /** The four cardinal facings, in radians, ship-local (0 = forward / +x). */
 export const FACINGS: { value: string; label: string }[] = [
@@ -28,11 +25,17 @@ export interface WorkingDesign {
   grid: TileGrid;
 }
 
-/** The thing the user is painting with. `empty` clears a cell; `hull` paints a
- *  hull tile of the chosen type; `module` paints a module cell; `floor` paints
- *  walkable interior decking (corridor or crew-quarters space). */
+/** The thing the user is painting with. `empty` clears a cell; `scaffold-bare`,
+ *  `scaffold-deck`, and `scaffold-armor` paint a built cell with that surface
+ *  (and all-open edges); `equipment` paints an equipment module on a deck cell.
+ *
+ *  This is the minimal Phase 2 brush set: enough to reproduce every preset
+ *  shape and let a player build a layered ship. The full Phase 8 designer UX
+ *  adds wall/door edge toggles, airtightness feedback, and surface
+ *  add/remove on existing scaffold cells. */
 export type Brush =
   | { kind: "empty" }
-  | { kind: "hull"; tile: HullTileType }
-  | { kind: "module"; moduleId: string }
-  | { kind: "floor" };
+  | { kind: "scaffold-bare" }
+  | { kind: "scaffold-deck" }
+  | { kind: "scaffold-armor" }
+  | { kind: "equipment"; moduleId: string };

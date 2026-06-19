@@ -131,25 +131,7 @@ export const syntheticModules: ModuleDefinition[] = [
       rechargeRate: 1.6,
       rechargeDelay: 60,
     },
-  },
-  {
-    id: "syn-reinforced-frame",
-    faction: "Synthetic",
-    name: "Reinforced Frame",
-    description: "Machined composite bracing. Solid, unspectacular structure and reduction — the Collective trusts its screens more than its plate.",
-    category: "defence",
-    mass: 14,
-    cost: 50,
-    powerDraw: 0,
-    crewRequired: 0,
-    techLevel: 1,
-    effect: {
-      kind: "armour",
-      hitpoints: 90,
-      damageReduction: 0.3,
-    },
-  },
-  // --- Propulsion: efficient, average engines ---
+  },  // --- Propulsion: efficient, average engines ---
   {
     id: "syn-thruster",
     faction: "Synthetic",

@@ -12,10 +12,8 @@ function describe(fault: DesignFault): string {
       return "No command module — add a reactor (it doubles as the bridge).";
     case "unknownModule":
       return `Cell (${fault.col}, ${fault.row}) references an unknown module (${fault.moduleId}).`;
-    case "unknownHullTile":
-      return `Cell (${fault.col}, ${fault.row}) uses an unknown hull tile (${fault.tile}).`;
-    case "massExceeded":
-      return `Mass ${fault.mass.toFixed(0)} exceeds the grid budget ${fault.capacity}.`;
+    case "unknownLayerMaterial":
+      return `Cell (${fault.col}, ${fault.row}) has no ${fault.layer} layer material for this design's faction.`;
     case "powerDeficit":
       return `Power deficit of ${Math.abs(fault.net).toFixed(0)} — add a reactor.`;
     case "crewDeficit":

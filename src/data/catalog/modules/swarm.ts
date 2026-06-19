@@ -124,25 +124,7 @@ export const swarmModules: ModuleDefinition[] = [
       tracking: 1.5,
     },
     pointDefense: true,
-  },
-  {
-    id: "swm-carapace-plating",
-    faction: "Swarm",
-    name: "Carapace Plating",
-    description: "Thickened bio-armour that absorbs incoming kinetic impacts.",
-    category: "defence",
-    mass: 12,
-    cost: 45,
-    powerDraw: 0,
-    crewRequired: 0,
-    techLevel: 1,
-    effect: {
-      kind: "armour",
-      hitpoints: 100,
-      damageReduction: 0.3,
-    },
-  },
-  // --- Propulsion ---
+  },  // --- Propulsion ---
   {
     id: "swm-flagellum-drive",
     faction: "Swarm",

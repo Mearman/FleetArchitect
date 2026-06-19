@@ -243,7 +243,6 @@ describe("engine.awareness — faithful fog (no omniscience)", () => {
   ): CombatShip {
     const stats: ShipStats = {
       mass: 10,
-      massCapacity: 1000,
       cost: 100,
       powerDraw: 0,
       powerOutput: 0,
@@ -259,7 +258,9 @@ describe("engine.awareness — faithful fog (no omniscience)", () => {
       thrust: 0.6,
       turnRate: 0.2,
       weapons: [],
-    };
+        compartments: 0,
+    airtightCompartments: 0,
+};
     return {
       instanceId: id,
       designId: `d-`,

@@ -1,48 +1,46 @@
-import type { HullTileDefinition } from "@/schema/hull";
-import type { HullTileType } from "@/schema/grid";
+import type { LayerMaterial } from "@/schema/armor";
 import type { ModuleDefinition } from "@/schema/module";
 import type { EntityId } from "@/schema/primitives";
 
 /**
- * Read-only lookup over the bundled module and hull-tile catalog. The catalog
- * is static and ships with the app, so ship grids reference modules by id and
- * hull cells by tile type rather than embedding their stats.
+ * Read-only lookup over the bundled module and per-faction layer-material
+ * catalog. The catalog is static and ships with the app, so ship grids
+ * reference modules by id and surface cells by their layer kind + faction
+ * rather than embedding their stats.
  */
 export interface Catalog {
   module(id: EntityId): ModuleDefinition | undefined;
   allModules(): readonly ModuleDefinition[];
   /** Modules belonging to the given faction only. */
   modulesForFaction(faction: string): readonly ModuleDefinition[];
-  /** Faction-unaware hull tile lookup (first faction's variant wins). Prefer
-   *  `hullTileFor` when the design's faction is known. */
-  hullTile(type: HullTileType): HullTileDefinition | undefined;
-  /** Faction-aware hull tile lookup: returns the tile variant for the given
-   *  faction and type, or `undefined` if no such combination exists. */
-  hullTileFor(faction: string, type: HullTileType): HullTileDefinition | undefined;
-  allHullTiles(): readonly HullTileDefinition[];
-  /** Hull tiles belonging to the given faction only. */
-  hullTilesForFaction(faction: string): readonly HullTileDefinition[];
+  /** The layer material for the given faction + layer, or undefined. */
+  layerMaterial(faction: string, layer: LayerMaterial["layer"]): LayerMaterial | undefined;
+  /** Convenience: the faction's armor material. */
+  armorMaterial(faction: string): LayerMaterial | undefined;
+  /** Convenience: the faction's scaffold material. */
+  scaffoldMaterial(faction: string): LayerMaterial | undefined;
+  /** Convenience: the faction's deck material. */
+  deckMaterial(faction: string): LayerMaterial | undefined;
+  /** All layer materials in the catalog. */
+  allLayerMaterials(): readonly LayerMaterial[];
   /** The distinct faction names present in the catalog. */
   factions(): readonly string[];
 }
 
 export function createCatalog(
   modules: readonly ModuleDefinition[],
-  hullTiles: readonly HullTileDefinition[],
+  layerMaterials: readonly LayerMaterial[],
 ): Catalog {
   const moduleMap = new Map(modules.map((m) => [m.id, m]));
-  // Hull tiles are keyed by (faction, type) because each faction has its own
-  // variant of block/edge/corner/strut with different stats.
-  const hullTileMap = new Map(hullTiles.map((t) => [`${t.faction}:${t.type}`, t]));
-  // Legacy single-key map for faction-unaware callers: first definition wins
-  // per type (Terran is always first in the bundled catalog data).
-  const hullTileByType = new Map(
-    [...hullTiles].reverse().map((t) => [t.type, t]),
+  const layerMap = new Map(
+    layerMaterials.map((m) => [`${m.faction}:${m.layer}`, m]),
   );
+  const layerBy = (faction: string, layer: LayerMaterial["layer"]): LayerMaterial | undefined =>
+    layerMap.get(`${faction}:${layer}`);
 
   const factionSet: Set<string> = new Set([
     ...modules.map((m) => m.faction),
-    ...hullTiles.map((t) => t.faction),
+    ...layerMaterials.map((m) => m.faction),
   ]);
   const factionList = [...factionSet].sort();
 
@@ -50,10 +48,11 @@ export function createCatalog(
     module: (id) => moduleMap.get(id),
     allModules: () => modules,
     modulesForFaction: (faction) => modules.filter((m) => m.faction === faction),
-    hullTile: (type) => hullTileByType.get(type),
-    hullTileFor: (faction, type) => hullTileMap.get(`${faction}:${type}`),
-    allHullTiles: () => hullTiles,
-    hullTilesForFaction: (faction) => hullTiles.filter((t) => t.faction === faction),
+    layerMaterial: layerBy,
+    armorMaterial: (faction) => layerBy(faction, "armor"),
+    scaffoldMaterial: (faction) => layerBy(faction, "scaffold"),
+    deckMaterial: (faction) => layerBy(faction, "deck"),
+    allLayerMaterials: () => layerMaterials,
     factions: () => factionList,
   };
 }

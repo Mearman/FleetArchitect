@@ -106,11 +106,11 @@ export const designData: ShipDesignInput[] = [
     // means no magazine required. A broad Mk II shield wall fronts a laser bank;
     // triple fusion reactors and a deep crew and engine block run it.
     grid: gridFromMap([
-      ".JWSAL.",
-      "EFCSSAL",
-      "EFFCSAL",
-      "EFCSSAL",
-      ".JWSAL.",
+      ".JWS~L.",
+      "EFCSS~L",
+      "EFFCS~L",
+      "EFCSS~L",
+      ".JWS~L.",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -123,11 +123,11 @@ export const designData: ShipDesignInput[] = [
     // shield soaks punishment while railgun turrets answer. The magazine (G) in
     // the central corridor feeds all railguns; slow but unyielding.
     grid: gridFromMap([
-      ".JDDsR.",
+      ".J~~sR.",
       "EFCCGsR",
       "EXFWGsR",
       "EFCCGsR",
-      ".JDDsR.",
+      ".J~~sR.",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -142,11 +142,11 @@ export const designData: ShipDesignInput[] = [
     // needed to man torpedoes and missiles; titanium armour and shields protect
     // the fragile innards.
     grid: gridFromMap([
-      "..AJMM...",
-      ".EFCCAWTT",
-      "EXFGCA#TT",
-      ".EFCCAWTT",
-      "..AJMM...",
+      "..~JMM...",
+      ".EFCC~WTT",
+      "EXFGC~#TT",
+      ".EFCC~WTT",
+      "..~JMM...",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -197,11 +197,11 @@ export const designData: ShipDesignInput[] = [
     // C cells (crew quarters) line the central corridor; G (magazine) cells sit
     // between the crew block and the weapon batteries so crew can haul ammo.
     grid: gridFromMap([
-      "...JWSDRML...",
-      ".EXCCWDRRMLL.",
-      "EXFCCGDRRMMLL",
-      ".EXCCWDRRMLL.",
-      "...JWSDRML...",
+      "...JWS~RML...",
+      ".EXCCW~RRMLL.",
+      "EXFCCG~RRMMLL",
+      ".EXCCW~RRMLL.",
+      "...JWS~RML...",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -245,7 +245,7 @@ export const designData: ShipDesignInput[] = [
     grid: swarmGrid([
       "..xa..",
       "j=gaa.",
-      "ugcgaa",
+      "ug~gaa",
       "j=gaa.",
       "..xa..",
     ]),
@@ -260,11 +260,11 @@ export const designData: ShipDesignInput[] = [
     // self-knitting carapace, a metabolic core, and a cluster of flagella and
     // pulse jets. No discrete ammo weapons so no ammon sac needed.
     grid: swarmGrid([
-      ".jxcaa..",
-      "jgczaaa.",
-      "ugmcraaa",
-      "jgczaaa.",
-      ".jxcaa..",
+      ".jx~aa..",
+      "jg~zaaa.",
+      "ugm~raaa",
+      "jg~zaaa.",
+      ".jx~aa..",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -279,7 +279,7 @@ export const designData: ShipDesignInput[] = [
     grid: swarmGrid([
       "..xsnn...",
       ".jgzsnnn.",
-      "ugmcrsnnn",
+      "ugm~rsnnn",
       ".jgzsnnn.",
       "..xsnn...",
     ]),
@@ -304,13 +304,13 @@ export const designData: ShipDesignInput[] = [
     // organs (y) for hive-net coverage, and adds pseudopod clusters (x) plus
     // gyral organs (z) on the spine so the capital can come about.
     grid: swarmGrid([
-      "...xcnnnk...",
+      "...x~nnnk...",
       "..jgzrsnnnnh",
-      ".jgmcrsannny",
-      "ugmmcrsaannn",
-      ".jgmcrsannny",
+      ".jgm~rsannny",
+      "ugmm~rsaannn",
+      ".jgm~rsannny",
       "..jgzrsnnnnh",
-      "...xcnnnk...",
+      "...x~nnnk...",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -346,9 +346,9 @@ export const designData: ShipDesignInput[] = [
     // autocannon and a damage-control bay, with a shell magazine feeding the
     // gun. No shields — it absorbs fire with raw structure and welds it shut.
     grid: foundryGrid([
-      "#DDDD#",
+      "#~~~~#",
       "ECFWAG",
-      "#DDDD#",
+      "#~~~~#",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,

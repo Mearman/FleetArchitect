@@ -1,12 +1,22 @@
+import type { CellEdges } from "@/schema/grid";
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleAnomaly } from "@/schema/battle";
 import type { CombatShip, BattleInputs, ResolvedModule } from "@/domain/simulation/types";
 import { defaultOrders } from "@/schema/fleet";
-import type { ShipClassification } from "@/schema/hull";
+import type { ShipClassification } from "@/schema/armor";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
+
+
+const OPEN_EDGES: CellEdges = {
+  n: "open",
+  e: "open",
+  s: "open",
+  w: "open",
+  doorStates: {},
+};
 
 /**
  * Opus-tier: the three spatial anomalies, each of which mutates an
@@ -59,7 +69,10 @@ function moduleOf(
     row,
     x: col,
     y: row,
-    maxHp: 50,
+    maxSurfaceHp: 0,
+    maxScaffoldHp: 50,
+    surface: "deck",
+    edges: OPEN_EDGES,
     mass: 5,
     powerDraw: 0,
     crewRequired: 0,
@@ -108,7 +121,6 @@ function attacker(opts: {
   const weapons = opts.weapons ?? [];
   const stats: ShipStats = {
     mass: 10,
-    massCapacity: 100,
     cost: 100,
     powerDraw: 0,
     powerOutput: 0,
@@ -124,7 +136,9 @@ function attacker(opts: {
     thrust: 0.5,
     turnRate: 0.1,
     weapons: weapons.map((w) => ({ slotId: `slot-${opts.id}`, effect: w })),
-  };
+    compartments: 0,
+  airtightCompartments: 0,
+};
   const modules: ResolvedModule[] = [
     moduleOf(`${opts.id}-cmd`, { kind: "power", output: 1000 }, 0, 0, true),
     moduleOf(`${opts.id}-eng`, { kind: "engine", thrust: 0.5, facing: Math.PI }, -1, 0),
@@ -165,7 +179,6 @@ function defender(opts: {
 }): CombatShip {
   const stats: ShipStats = {
     mass: 10,
-    massCapacity: 100,
     cost: 100,
     powerDraw: 0,
     powerOutput: 0,
@@ -181,7 +194,9 @@ function defender(opts: {
     thrust: 0.5,
     turnRate: 0.1,
     weapons: [],
-  };
+    compartments: 0,
+  airtightCompartments: 0,
+};
   return {
     instanceId: opts.id,
     designId: `design-${opts.id}`,

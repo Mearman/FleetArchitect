@@ -30,7 +30,6 @@ function weapon(): WeaponEffect {
 function makeShip(id: string, side: "attacker" | "defender", x: number): CombatShip {
   const stats: ShipStats = {
     mass: 10,
-    massCapacity: 100,
     cost: 100,
     powerDraw: 0,
     powerOutput: 0,
@@ -46,7 +45,9 @@ function makeShip(id: string, side: "attacker" | "defender", x: number): CombatS
     thrust: 0.5,
     turnRate: 0.1,
     weapons: [{ slotId: `slot-${id}`, effect: weapon() }],
-  };
+    compartments: 0,
+  airtightCompartments: 0,
+};
   return {
     instanceId: id,
     designId: `design-${id}`,

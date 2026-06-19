@@ -11,9 +11,14 @@ import { ShipDesign } from "@/schema/ship";
  * can be passed around in a link (data URL) without a server. The catalog
  * (hulls/modules) is bundled and versioned with the app, so only the entity
  * itself is encoded — the payload stays small.
+ *
+ * Version 2: layered-cell migration (Phase 2). The grid cell model changes
+ * from empty/hull/module/floor to empty/solid; v1 links fail loudly with a
+ * `ShareDecodeError` (no migration). The encode/decode logic is otherwise
+ * unchanged — it round-trips the schema, which now carries the new cell shape.
  */
 
-export const SHARE_VERSION = 1;
+export const SHARE_VERSION = 2;
 
 const ShareEnvelope = z.object({
   v: z.literal(SHARE_VERSION),

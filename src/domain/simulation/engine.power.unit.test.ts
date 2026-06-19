@@ -1,3 +1,4 @@
+import type { CellEdges } from "@/schema/grid";
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
@@ -5,6 +6,15 @@ import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulati
 import { defaultOrders } from "@/schema/fleet";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
+
+
+const OPEN_EDGES: CellEdges = {
+  n: "open",
+  e: "open",
+  s: "open",
+  w: "open",
+  doorStates: {},
+};
 
 /**
  * Per-module power grid: when a ship's reactor can't sustain its weapons'
@@ -70,7 +80,10 @@ function moduleOf(
     row: Math.round(y),
     x,
     y,
-    maxHp,
+    maxSurfaceHp: 0,
+    maxScaffoldHp: maxHp,
+    surface: "deck",
+    edges: OPEN_EDGES,
     mass,
     powerDraw,
     crewRequired: 0,
@@ -107,7 +120,6 @@ function modularAttacker(
   ];
   const stats: ShipStats = {
     mass: 10,
-    massCapacity: 100,
     cost: 100,
     powerDraw: 0,
     powerOutput: 0,
@@ -123,7 +135,9 @@ function modularAttacker(
     thrust: 0.9,
     turnRate: 0.15,
     weapons: [],
-  };
+    compartments: 0,
+  airtightCompartments: 0,
+};
   return {
     instanceId: id,
     designId: `d-${id}`,
@@ -143,7 +157,6 @@ function toughTarget(id: string, x: number): CombatShip {
   const weapon = beam();
   const stats: ShipStats = {
     mass: 10,
-    massCapacity: 100,
     cost: 100,
     powerDraw: 0,
     powerOutput: 0,
@@ -159,7 +172,9 @@ function toughTarget(id: string, x: number): CombatShip {
     thrust: 0.5,
     turnRate: 0.1,
     weapons: [{ slotId: "s", effect: weapon }],
-  };
+    compartments: 0,
+  airtightCompartments: 0,
+};
   return {
     instanceId: id,
     designId: `d-${id}`,
@@ -249,7 +264,6 @@ describe("engine.per-module power grid", () => {
       const weapon = cannon({ damage: 25, range: 500 });
       const stats: ShipStats = {
         mass: 10,
-        massCapacity: 100,
         cost: 100,
         powerDraw: 0,
         powerOutput: 0,
@@ -265,7 +279,9 @@ describe("engine.per-module power grid", () => {
         thrust: 0.5,
         turnRate: 0.1,
         weapons: [{ slotId: "s", effect: weapon }],
-      };
+            compartments: 0,
+      airtightCompartments: 0,
+};
       return {
         instanceId: id,
         designId: `d-${id}`,

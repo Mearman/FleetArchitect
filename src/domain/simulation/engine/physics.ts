@@ -162,7 +162,7 @@ export function recomputeAggregates(ship: SimShip): void {
   // exactly the mass of the cells it is built from. The legacy aggregated
   // path (no modules) keeps the per-class hull mass via toSimShip.
   let mass = 0;
-  let armourReduction = 0;
+  const armourReduction = 0;
   let shieldCapacity = 0;
   let shieldRechargeRate = 0;
   let shieldRechargeDelay = 0;
@@ -199,9 +199,6 @@ export function recomputeAggregates(ship: SimShip): void {
         if (effect.adaptiveRampRate !== undefined) {
           shieldAdaptiveRamp = Math.max(shieldAdaptiveRamp, effect.adaptiveRampRate);
         }
-        break;
-      case "armour":
-        armourReduction = Math.max(armourReduction, effect.damageReduction);
         break;
       case "engine":
         thrust += effect.thrust;

@@ -33,7 +33,6 @@ import {
   type Brush,
   type WorkingDesign,
   FACINGS,
-  HULL_TILES,
   MAX_DIM,
 } from "./designerConstants";
 import {
@@ -49,7 +48,7 @@ export function ShipDesignerRoute() {
   const designs = useShipDesigns();
   const factions = catalog().factions();
   const [working, setWorking] = useState<WorkingDesign>(() => blankDesign());
-  const [brush, setBrush] = useState<Brush>({ kind: "hull", tile: "block" });
+  const [brush, setBrush] = useState<Brush>({ kind: "scaffold-armor" });
   const [selected, setSelected] = useState<{ col: number; row: number } | null>(
     null,
   );
@@ -93,9 +92,9 @@ export function ShipDesignerRoute() {
     setWorking((prev) => {
       const idx = selected.row * prev.grid.cols + selected.col;
       const cell = prev.grid.cells[idx];
-      if (cell === undefined || cell.kind !== "module") return prev;
+      if (cell === undefined || cell.kind !== "solid" || cell.equipment === undefined) return prev;
       const cells = prev.grid.cells.slice();
-      cells[idx] = { ...cell, facing };
+      cells[idx] = { ...cell, equipment: { ...cell.equipment, facing } };
       return { ...prev, grid: { ...prev.grid, cells } };
     });
   }
@@ -106,9 +105,9 @@ export function ShipDesignerRoute() {
     setWorking((prev) => {
       const idx = selected.row * prev.grid.cols + selected.col;
       const cell = prev.grid.cells[idx];
-      if (cell === undefined || cell.kind !== "module") return prev;
+      if (cell === undefined || cell.kind !== "solid" || cell.equipment === undefined) return prev;
       const cells = prev.grid.cells.slice();
-      cells[idx] = { ...cell, channel };
+      cells[idx] = { ...cell, equipment: { ...cell.equipment, channel } };
       return { ...prev, grid: { ...prev.grid, cells } };
     });
   }
@@ -119,9 +118,9 @@ export function ShipDesignerRoute() {
     setWorking((prev) => {
       const idx = selected.row * prev.grid.cols + selected.col;
       const cell = prev.grid.cells[idx];
-      if (cell === undefined || cell.kind !== "module") return prev;
+      if (cell === undefined || cell.kind !== "solid" || cell.equipment === undefined) return prev;
       const cells = prev.grid.cells.slice();
-      cells[idx] = { ...cell, commsBearing };
+      cells[idx] = { ...cell, equipment: { ...cell.equipment, commsBearing } };
       return { ...prev, grid: { ...prev.grid, cells } };
     });
   }
@@ -132,9 +131,9 @@ export function ShipDesignerRoute() {
     setWorking((prev) => {
       const idx = selected.row * prev.grid.cols + selected.col;
       const cell = prev.grid.cells[idx];
-      if (cell === undefined || cell.kind !== "module") return prev;
+      if (cell === undefined || cell.kind !== "solid" || cell.equipment === undefined) return prev;
       const cells = prev.grid.cells.slice();
-      cells[idx] = { ...cell, commsRange };
+      cells[idx] = { ...cell, equipment: { ...cell.equipment, commsRange } };
       return { ...prev, grid: { ...prev.grid, cells } };
     });
   }
@@ -145,9 +144,9 @@ export function ShipDesignerRoute() {
     setWorking((prev) => {
       const idx = selected.row * prev.grid.cols + selected.col;
       const cell = prev.grid.cells[idx];
-      if (cell === undefined || cell.kind !== "module") return prev;
+      if (cell === undefined || cell.kind !== "solid" || cell.equipment === undefined) return prev;
       const cells = prev.grid.cells.slice();
-      cells[idx] = { ...cell, sensorBearing };
+      cells[idx] = { ...cell, equipment: { ...cell.equipment, sensorBearing } };
       return { ...prev, grid: { ...prev.grid, cells } };
     });
   }
@@ -158,9 +157,9 @@ export function ShipDesignerRoute() {
     setWorking((prev) => {
       const idx = selected.row * prev.grid.cols + selected.col;
       const cell = prev.grid.cells[idx];
-      if (cell === undefined || cell.kind !== "module") return prev;
+      if (cell === undefined || cell.kind !== "solid" || cell.equipment === undefined) return prev;
       const cells = prev.grid.cells.slice();
-      cells[idx] = { ...cell, sensorRangeSetting };
+      cells[idx] = { ...cell, equipment: { ...cell.equipment, sensorRangeSetting } };
       return { ...prev, grid: { ...prev.grid, cells } };
     });
   }
@@ -234,10 +233,16 @@ export function ShipDesignerRoute() {
   const grid = working.grid;
   const selectedCell =
     selected === null ? undefined : cellAt(selected.col, selected.row, grid);
-  // Resolved definition for the selected module cell (undefined if no module selected).
+  // Resolved definition for the selected equipment cell (undefined if no
+  // equipment selected).
   const selectedModuleDef =
-    selectedCell?.kind === "module"
-      ? catalog().module(selectedCell.moduleId)
+    selectedCell?.kind === "solid" && selectedCell.equipment !== undefined
+      ? catalog().module(selectedCell.equipment.moduleId)
+      : undefined;
+  // Facing of the selected equipment cell (if any), for the SegmentedControl.
+  const selectedFacing =
+    selectedCell?.kind === "solid" && selectedCell.equipment !== undefined
+      ? selectedCell.equipment.facing
       : undefined;
 
   return (
@@ -310,13 +315,13 @@ export function ShipDesignerRoute() {
                 value={working.faction}
                 onChange={(f) => {
                   if (f !== null) {
-                    // Switching faction clears the brush if it's a module from
+                    // Switching faction clears the brush if it's equipment from
                     // the old faction — avoid leaving an invalid brush selected.
                     setBrush((prev) => {
-                      if (prev.kind !== "module") return prev;
+                      if (prev.kind !== "equipment") return prev;
                       const mod = catalog().module(prev.moduleId);
                       if (mod === undefined || mod.faction !== f) {
-                        return { kind: "hull", tile: "block" };
+                        return { kind: "scaffold-armor" };
                       }
                       return prev;
                     });
@@ -350,24 +355,28 @@ export function ShipDesignerRoute() {
                     Grid
                   </Text>
                   <GridBoard grid={grid} selected={selected} onPaint={paint} />
-                  {selectedCell !== undefined && selectedCell.kind === "module" ? (
+                  {selectedCell !== undefined &&
+                  selectedCell.kind === "solid" &&
+                  selectedCell.equipment !== undefined &&
+                  selectedFacing !== undefined ? (
                     <Stack gap={4} mt="sm">
                       <Text size="xs" c="dimmed">
-                        Facing of selected module cell
+                        Facing of selected equipment cell
                       </Text>
                       <SegmentedControl
                         size="xs"
                         data={FACINGS}
-                        value={`${selectedCell.facing}`}
+                        value={`${selectedFacing}`}
                         onChange={(v) => setSelectedFacing(Number(v))}
                       />
                     </Stack>
                   ) : null}
                   {selectedCell !== undefined &&
-                  selectedCell.kind === "module" &&
+                  selectedCell.kind === "solid" &&
+                  selectedCell.equipment !== undefined &&
                   selectedModuleDef?.effect.kind === "comms" ? (
                     <CommsConfig
-                      cell={selectedCell}
+                      cell={selectedCell.equipment}
                       effect={selectedModuleDef.effect}
                       onChannelChange={setSelectedCommsChannel}
                       onBearingChange={setSelectedCommsBearing}
@@ -375,10 +384,11 @@ export function ShipDesignerRoute() {
                     />
                   ) : null}
                   {selectedCell !== undefined &&
-                  selectedCell.kind === "module" &&
+                  selectedCell.kind === "solid" &&
+                  selectedCell.equipment !== undefined &&
                   selectedModuleDef?.effect.kind === "sensor" ? (
                     <SensorConfig
-                      cell={selectedCell}
+                      cell={selectedCell.equipment}
                       effect={selectedModuleDef.effect}
                       onBearingChange={setSelectedSensorBearing}
                       onRangeChange={setSelectedSensorRangeSetting}
@@ -402,40 +412,43 @@ export function ShipDesignerRoute() {
                       Erase (empty)
                     </Button>
                     <Group gap={4}>
-                      {HULL_TILES.map((tile) => (
-                        <Button
-                          key={tile}
-                          size="xs"
-                          variant={
-                            brush.kind === "hull" && brush.tile === tile
-                              ? "filled"
-                              : "light"
-                          }
-                          onClick={() => setBrush({ kind: "hull", tile })}
-                        >
-                          {tile}
-                        </Button>
-                      ))}
                       <Button
                         size="xs"
-                        variant={brush.kind === "floor" ? "filled" : "light"}
-                        color="yellow"
-                        onClick={() => setBrush({ kind: "floor" })}
-                        title="Paint walkable interior decking — corridors and crew space"
+                        variant={brush.kind === "scaffold-armor" ? "filled" : "light"}
+                        onClick={() => setBrush({ kind: "scaffold-armor" })}
+                        title="Solid, impassable armor plate — high HP/mass, no equipment, no walkable surface"
                       >
-                        floor / corridor
+                        armor
+                      </Button>
+                      <Button
+                        size="xs"
+                        variant={brush.kind === "scaffold-deck" ? "filled" : "light"}
+                        color="yellow"
+                        onClick={() => setBrush({ kind: "scaffold-deck" })}
+                        title="Walkable crew floor — corridors and equipment-mounting surface"
+                      >
+                        deck
+                      </Button>
+                      <Button
+                        size="xs"
+                        variant={brush.kind === "scaffold-bare" ? "filled" : "light"}
+                        color="gray"
+                        onClick={() => setBrush({ kind: "scaffold-bare" })}
+                        title="Low-mass framing — scaffold-connected, not walkable"
+                      >
+                        bare
                       </Button>
                     </Group>
                     <Select
-                      label="Module"
-                      placeholder="Pick a module to paint"
+                      label="Equipment"
+                      placeholder="Pick a module to mount on deck"
                       data={moduleDefs.map((m) => ({
                         value: m.id,
                         label: `${m.name} — ${m.cost} pts`,
                       }))}
-                      value={brush.kind === "module" ? brush.moduleId : null}
+                      value={brush.kind === "equipment" ? brush.moduleId : null}
                       onChange={(moduleId) =>
-                        moduleId !== null && setBrush({ kind: "module", moduleId })
+                        moduleId !== null && setBrush({ kind: "equipment", moduleId })
                       }
                       searchable
                     />

@@ -1,25 +1,31 @@
 import { describe, expect, it } from "vitest";
-import { catalog, hullTiles, modules } from "@/data/catalog";
+import { catalog, layerMaterials, modules } from "@/data/catalog";
 import { createCatalog } from "@/domain/catalog";
 import { createId, nowIso } from "@/domain/id";
 import { analyseShipDesign } from "@/domain/stats";
-import type { GridCell, TileGrid } from "@/schema/grid";
+import type { CellEdges, GridCell, TileGrid } from "@/schema/grid";
 import type { ModuleDefinition } from "@/schema/module";
 import type { ShipDesign } from "@/schema/ship";
 
+/** All-open edges for deck cells in test fixtures. */
+const OPEN: CellEdges = { n: "open", e: "open", s: "open", w: "open", doorStates: {} };
+
 /** Authoring helper: parse a one-string-per-row ASCII map into a TileGrid.
- *  `.` empty, `#` hull block, `L` pulse laser, `R` railgun, `F` fusion
- *  reactor (command), `C` crew quarters, `G` munitions magazine, `~` floor —
- *  enough tokens to build the fixtures below. */
+ *  `.` empty, `#` armor surface, `~` deck corridor, `L` pulse laser,
+ *  `R` railgun, `F` fusion reactor (command), `C` crew quarters,
+ *  `G` munitions magazine — enough tokens to build the fixtures below.
+ *
+ *  Every equipment token sits on a deck cell (all-open edges) so crew can
+ *  reach every station through the walkable surface. */
 const TOKENS: Record<string, GridCell> = {
   ".": { kind: "empty" },
-  "#": { kind: "hull", tile: "block" },
-  "L": { kind: "module", moduleId: "mod-pulse-laser", facing: 0 },
-  "R": { kind: "module", moduleId: "mod-railgun", facing: 0 },
-  "F": { kind: "module", moduleId: "mod-reactor-fusion", facing: 0 },
-  "C": { kind: "module", moduleId: "mod-crew-quarters", facing: 0 },
-  "G": { kind: "module", moduleId: "mod-munitions-magazine", facing: 0 },
-  "~": { kind: "floor" },
+  "#": { kind: "solid", scaffold: true, surface: "armor", edges: { n: "wall", e: "wall", s: "wall", w: "wall", doorStates: {} } },
+  "~": { kind: "solid", scaffold: true, surface: "deck", edges: OPEN },
+  "L": { kind: "solid", scaffold: true, surface: "deck", edges: OPEN, equipment: { moduleId: "mod-pulse-laser", facing: 0 } },
+  "R": { kind: "solid", scaffold: true, surface: "deck", edges: OPEN, equipment: { moduleId: "mod-railgun", facing: 0 } },
+  "F": { kind: "solid", scaffold: true, surface: "deck", edges: OPEN, equipment: { moduleId: "mod-reactor-fusion", facing: 0 } },
+  "C": { kind: "solid", scaffold: true, surface: "deck", edges: OPEN, equipment: { moduleId: "mod-crew-quarters", facing: 0 } },
+  "G": { kind: "solid", scaffold: true, surface: "deck", edges: OPEN, equipment: { moduleId: "mod-munitions-magazine", facing: 0 } },
 };
 
 function grid(rows: readonly string[]): TileGrid {
@@ -53,8 +59,6 @@ function design(g: TileGrid): ShipDesign {
 
 // ---------------------------------------------------------------------------
 // Extra module definitions for sensor/comms tests.
-// The bundled catalog does not yet have sensor/comms modules (added in a
-// parallel phase), so we build them inline and inject via createCatalog.
 // ---------------------------------------------------------------------------
 
 const sensorModuleDef: ModuleDefinition = {
@@ -121,23 +125,20 @@ const commsDishDef: ModuleDefinition = {
 function extendedCatalog() {
   return createCatalog(
     [...modules, sensorModuleDef, commsOmniDef, commsDishDef],
-    hullTiles,
+    layerMaterials,
   );
 }
 
-// Token extensions for the grid helper — used in sensor/comms tests only.
-// We use a separate helper so the extended tokens do not bleed into the base
-// suite (which has its own TOKENS map keyed by single characters).
 function sensorCommsGrid(rows: readonly string[]): TileGrid {
   const EXTENDED_TOKENS: Record<string, GridCell> = {
     ".": { kind: "empty" },
-    "#": { kind: "hull", tile: "block" },
-    "F": { kind: "module", moduleId: "mod-reactor-fusion", facing: 0 },
-    "C": { kind: "module", moduleId: "mod-crew-quarters", facing: 0 },
-    "~": { kind: "floor" },
-    "S": { kind: "module", moduleId: "test-sensor-array", facing: 0 },
-    "O": { kind: "module", moduleId: "test-comms-omni", facing: 0 },
-    "D": { kind: "module", moduleId: "test-comms-dish", facing: 0 },
+    "#": { kind: "solid", scaffold: true, surface: "armor", edges: { n: "wall", e: "wall", s: "wall", w: "wall", doorStates: {} } },
+    "~": { kind: "solid", scaffold: true, surface: "deck", edges: OPEN },
+    "F": { kind: "solid", scaffold: true, surface: "deck", edges: OPEN, equipment: { moduleId: "mod-reactor-fusion", facing: 0 } },
+    "C": { kind: "solid", scaffold: true, surface: "deck", edges: OPEN, equipment: { moduleId: "mod-crew-quarters", facing: 0 } },
+    "S": { kind: "solid", scaffold: true, surface: "deck", edges: OPEN, equipment: { moduleId: "test-sensor-array", facing: 0 } },
+    "O": { kind: "solid", scaffold: true, surface: "deck", edges: OPEN, equipment: { moduleId: "test-comms-omni", facing: 0 } },
+    "D": { kind: "solid", scaffold: true, surface: "deck", edges: OPEN, equipment: { moduleId: "test-comms-dish", facing: 0 } },
   };
   const cols = rows[0]?.length ?? 0;
   const cells: GridCell[] = [];
@@ -160,7 +161,7 @@ describe("analyseShipDesign", () => {
 
   it("validates a fully supplied armed fighter and sums cost", () => {
     // Pulse laser + fusion reactor (command + power) + crew quarters, all
-    // edge-connected in a row.
+    // edge-connected in a row on deck cells.
     const { valid, stats, faults } = analyseShipDesign(
       design(grid(["LFC"])),
       catalog(),
@@ -174,7 +175,6 @@ describe("analyseShipDesign", () => {
   });
 
   it("flags a power and crew deficit for a lone weapon with no reactor", () => {
-    // A single pulse laser: no power, no command module, no crew supply.
     const { valid, faults } = analyseShipDesign(design(grid(["L"])), catalog());
     expect(valid).toBe(false);
     const kinds = faults.map((f) => f.kind);
@@ -184,8 +184,6 @@ describe("analyseShipDesign", () => {
   });
 
   it("flags a design with no command module", () => {
-    // Crew quarters keep crew positive, but nothing is a command module, and
-    // there's no power supply.
     const { valid, faults } = analyseShipDesign(design(grid(["#C"])), catalog());
     expect(valid).toBe(false);
     expect(faults.some((f) => f.kind === "noCommand")).toBe(true);
@@ -198,10 +196,14 @@ describe("analyseShipDesign", () => {
     expect(faults.some((f) => f.kind === "disconnected")).toBe(true);
   });
 
-  it("derives a mass budget that scales with the occupied-cell count", () => {
-    const small = analyseShipDesign(design(grid(["LFC"])), catalog());
-    const big = analyseShipDesign(design(grid(["LFC", "L#C"])), catalog());
-    expect(big.stats.massCapacity).toBeGreaterThan(small.stats.massCapacity);
+  it("sums structure across scaffold + surface layers per solid cell", () => {
+    // A single armor cell: scaffold HP + armor HP.
+    const { stats } = analyseShipDesign(design(grid(["#"])), catalog());
+    const scaffold = catalog().scaffoldMaterial("Terran");
+    const armor = catalog().armorMaterial("Terran");
+    expect(scaffold).toBeDefined();
+    expect(armor).toBeDefined();
+    expect(stats.structure).toBe((scaffold?.hp ?? 0) + (armor?.hp ?? 0));
   });
 
   // ---------------------------------------------------------------------------
@@ -209,8 +211,6 @@ describe("analyseShipDesign", () => {
   // ---------------------------------------------------------------------------
 
   it("does not flag noAmmoSource when a railgun has a magazine on the same connected ship", () => {
-    // F (fusion reactor, command) + C (crew quarters) + R (railgun, finite ammo)
-    // + G (magazine). All connected. No fault.
     const { valid, faults } = analyseShipDesign(
       design(grid(["FCRG"])),
       catalog(),
@@ -220,7 +220,6 @@ describe("analyseShipDesign", () => {
   });
 
   it("flags noAmmoSource when a railgun has no magazine anywhere on the ship", () => {
-    // F (command) + C (crew quarters) + R (railgun, finite ammo). No magazine.
     const { faults } = analyseShipDesign(
       design(grid(["FCR"])),
       catalog(),
@@ -230,7 +229,6 @@ describe("analyseShipDesign", () => {
   });
 
   it("does not flag noAmmoSource for a pulse laser (unlimited ammo)", () => {
-    // F + C + L (pulse laser, no ammoCapacity). No magazine needed.
     const { faults } = analyseShipDesign(
       design(grid(["FCL"])),
       catalog(),
@@ -239,20 +237,16 @@ describe("analyseShipDesign", () => {
   });
 
   it("does not flag unreachableStation when no crew quarters exist", () => {
-    // A ship with crewed modules but no crew quarters: crewDeficit fires,
-    // but NOT unreachableStation (the missing quarters is a separate concern).
-    // F (command) + L (laser, crewRequired=1). No crew quarters.
     const { faults } = analyseShipDesign(
       design(grid(["FL"])),
       catalog(),
     );
     expect(faults.map((f) => f.kind)).not.toContain("unreachableStation");
-    // crewDeficit should fire since no capacity
     expect(faults.some((f) => f.kind === "crewDeficit")).toBe(true);
   });
 
   it("does not flag unreachableStation when crew quarters can reach all crewed stations", () => {
-    // F (command) + C (quarters) + L (laser). All connected. C reaches L via hull.
+    // F (command) + C (quarters) + L (laser). All deck cells, connected.
     const { faults } = analyseShipDesign(
       design(grid(["FCL"])),
       catalog(),
@@ -260,34 +254,20 @@ describe("analyseShipDesign", () => {
     expect(faults.map((f) => f.kind)).not.toContain("unreachableStation");
   });
 
-  it("flags unreachableStation when a crewed module is isolated from all crew quarters by empty cells", () => {
-    // Disconnected grid: FC on the left, L on the right, gap in the middle.
-    // The disconnected fault fires too, but unreachableStation is also present
-    // (it is computed when the grid passes isConnected4, so this test uses an
-    // arrangement where the station is actually disconnected from the quarters
-    // but the grid is otherwise 4-connected by hull).
-    //
-    // Design: C-F-#-L where # is a hull block. The ship is connected (4-adj)
-    // but IF we use floor-only isolation we can test this. The simpler test
-    // here: verify a connected design with quarters does NOT raise the fault.
-    //
-    // For isolated station test: the disconnected fault gates the reachability
-    // check (it runs only on isConnected4 ships), so we cannot produce an
-    // unreachableStation on a connected ship via cell kind alone — they are all
-    // walkable. The fault is meaningful in the engine for phase C+ crew routing.
-    // We verify the negative case (no spurious fault on a good design):
+  it("flags unreachableStation when an armor cell seals a crewed station off from quarters", () => {
+    // Layout: C ~ # L — the armor cell '#' between the deck corridor and the
+    // laser blocks the crew path (armor's wall edges are impermeable). The
+    // ship is scaffold-connected (so isConnected4 passes and the
+    // reachability check runs), but the walkable graph is severed.
+    // F (command) placed to keep the design otherwise valid.
     const { faults } = analyseShipDesign(
-      design(grid(["CF#L"])),
+      design(grid(["FC~#L"])),
       catalog(),
     );
-    // This is a connected ship with crew quarters: unreachableStation must NOT fire.
-    expect(faults.map((f) => f.kind)).not.toContain("unreachableStation");
+    expect(faults.some((f) => f.kind === "unreachableStation")).toBe(true);
   });
 
-  it("accepts a ship with floor corridor cells and counts them in the occupied mass budget", () => {
-    // F (command) + ~ (floor corridor) + C (crew quarters) + R (railgun) + G (magazine).
-    // The floor cell is walkable and occupied; it should not break connectivity,
-    // and the design should be valid.
+  it("accepts a ship with deck corridor cells and counts them in the occupied mass", () => {
     const { valid, faults } = analyseShipDesign(
       design(grid(["FC~RG"])),
       catalog(),
@@ -301,7 +281,6 @@ describe("analyseShipDesign", () => {
   // ---------------------------------------------------------------------------
 
   it("noSensors: a valid design without a sensor module produces a warning but stays valid", () => {
-    // F (command, power) + C (crew). Valid in every error respect, but no sensor.
     const { valid, faults } = analyseShipDesign(
       design(sensorCommsGrid(["FC"])),
       extendedCatalog(),
@@ -313,7 +292,6 @@ describe("analyseShipDesign", () => {
   });
 
   it("noSensors: a design with a sensor module does NOT produce a noSensors fault", () => {
-    // F + S (sensor) + C. Has a sensor — no noSensors fault.
     const { faults } = analyseShipDesign(
       design(sensorCommsGrid(["FSC"])),
       extendedCatalog(),
@@ -322,7 +300,6 @@ describe("analyseShipDesign", () => {
   });
 
   it("noRelay: a design with exactly one comms unit produces a warning but stays valid", () => {
-    // F + O (single omni comms) + C. Only one comms unit so noRelay fires.
     const { valid, faults } = analyseShipDesign(
       design(sensorCommsGrid(["FOSC"])),
       extendedCatalog(),
@@ -334,7 +311,6 @@ describe("analyseShipDesign", () => {
   });
 
   it("noRelay: two comms units does NOT produce a noRelay fault", () => {
-    // F + O + O (two omni units, same channel) + S + C.
     const { faults } = analyseShipDesign(
       design(sensorCommsGrid(["FOOSC"])),
       extendedCatalog(),
@@ -343,7 +319,6 @@ describe("analyseShipDesign", () => {
   });
 
   it("commsIsland: a comms unit whose channel is not shared by any other unit on the ship produces a warning", () => {
-    // F + O (channel 0) + S + C. One comms unit on channel 0 — island.
     const { valid, faults } = analyseShipDesign(
       design(sensorCommsGrid(["FOSC"])),
       extendedCatalog(),
@@ -355,7 +330,6 @@ describe("analyseShipDesign", () => {
   });
 
   it("commsIsland: two comms units on the same channel does NOT produce a commsIsland fault", () => {
-    // F + O + O (both channel 0) + S + C.
     const { faults } = analyseShipDesign(
       design(sensorCommsGrid(["FOOSC"])),
       extendedCatalog(),
@@ -364,45 +338,26 @@ describe("analyseShipDesign", () => {
   });
 
   it("unmannedAimUnit: a dish comms unit with no reachable crew quarters produces a warning", () => {
-    // The dish requires 2 crew. The design has crew quarters (C) but separated
-    // from the dish (D) by an empty cell — they're not reachable from each other.
-    // Layout: C F . D where . is empty (disconnected overall too).
-    // For a connected design we use two separate ships isn't possible — instead
-    // we test that a dish module with crew quarters reachable does NOT warn,
-    // and that a dish with no crew quarters at all fires unmannedAimUnit.
-    //
-    // Actually unmannedAimUnit only fires when quarters EXIST but can't reach.
-    // Test: connected design with crew quarters — dish must be reachable from C.
-    // F + C + ~ + D (corridor connects them). Should NOT warn.
-    const { faults: noWarnFaults } = analyseShipDesign(
-      design(sensorCommsGrid(["FC~DSC"])),
+    // Layout: F C ~ # D S — armor cell seals the dish off from crew quarters.
+    // The ship is scaffold-connected, but the walkable graph is severed so the
+    // dish's cell is unreachable from quarters → unmannedAimUnit fires.
+    const { faults } = analyseShipDesign(
+      design(sensorCommsGrid(["FC~#DS"])),
       extendedCatalog(),
     );
-    expect(noWarnFaults.map((f) => f.kind)).not.toContain("unmannedAimUnit");
-
-    // For the warning case: we need crew quarters and a dish where the dish
-    // cannot be walked to from any quarters. This is impossible in a connected
-    // grid (all cells are walkable). Therefore the test verifies the positive
-    // path (reachable dish doesn't warn) and documents that unmannedAimUnit
-    // only fires on designs where a non-walkable barrier separates them —
-    // which triggers a disconnected fault first, gating out this check.
-    // The warning remains meaningful for future engine use.
+    expect(faults.some((f) => f.kind === "unmannedAimUnit")).toBe(true);
   });
 
   it("unmannedAimUnit: a dish comms unit with crew required but no crew quarters produces crewDeficit, not unmannedAimUnit", () => {
-    // No crew quarters at all. crewDeficit fires, but NOT unmannedAimUnit
-    // (the unmannedAimUnit check requires quarters to exist).
     const { faults } = analyseShipDesign(
       design(sensorCommsGrid(["FDS"])),
       extendedCatalog(),
     );
     expect(faults.map((f) => f.kind)).not.toContain("unmannedAimUnit");
-    // crewDeficit fires because the dish needs crew and there's none.
     expect(faults.some((f) => f.kind === "crewDeficit")).toBe(true);
   });
 
   it("warning-level faults do not affect valid: a design with only warning faults is valid", () => {
-    // F + C: valid structure, but will produce noSensors (no sensor module).
     const { valid, faults } = analyseShipDesign(
       design(sensorCommsGrid(["FC"])),
       extendedCatalog(),
@@ -415,8 +370,6 @@ describe("analyseShipDesign", () => {
   });
 
   it("warning-level faults carry severity: warning, never error", () => {
-    // F + S + O + O + C: two comms units sharing channel 0, plus sensor.
-    // Expect NO error faults and only the noRelay/commsIsland-free state.
     const { faults } = analyseShipDesign(
       design(sensorCommsGrid(["FOOSC"])),
       extendedCatalog(),

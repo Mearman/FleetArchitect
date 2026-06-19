@@ -8,7 +8,7 @@ import type {
   ResolvedModule,
 } from "@/domain/simulation/types";
 import type { Fleet } from "@/schema/fleet";
-import type { GridCell } from "@/schema/grid";
+import type { CellEdges, GridCell, SurfaceKind } from "@/schema/grid";
 import type { ModuleEffect } from "@/schema/module";
 import type { ShipDesign } from "@/schema/ship";
 
@@ -24,9 +24,9 @@ import type { ShipDesign } from "@/schema/ship";
  * actually meet across the map instead of stacking up.
  *
  * Each resolved ship carries the per-cell module instances (with initial hit
- * points and the module effect) and its classification, derived from the grid,
- * so the engine can run the per-module damage / fire / regen model and the
- * grid-exact break-apart.
+ * points, surface/edges, and the module effect) and its classification,
+ * derived from the grid, so the engine can run the per-module damage / fire /
+ * regen model and the grid-exact break-apart.
  */
 /**
  * Where a fleet forms up, in battle units. Ships deploy in a vertical column
@@ -99,37 +99,50 @@ export function resolveFleetToCombatShips(
 }
 
 /**
- * Build the per-cell module instances for a ship design. Every occupied cell
- * becomes a `ResolvedModule`: hull cells resolve to kind "hull" with the tile's
- * mass and hp; module cells resolve to their catalog module. Empty cells and
- * floor cells are skipped — floor is walkable interior decking that contributes
- * to the walkable path graph (read directly from the grid by the crew engine)
- * but has no module behaviour of its own. Each module's `(x, y)` is the cell's
- * ship-local centre from `cellToLocal`, and its integer `(col, row)` are carried
- * through so break-apart can union over exact 4-connected neighbours.
+ * Build the per-cell module instances for a ship design. Every solid cell
+ * becomes a `ResolvedModule` carrying its `surface` and `edges`, scaffold HP
+ * (from the scaffold material) and surface HP (from the surface material: 0
+ * for `bare`, the deck material's HP for `deck`, the armor material's HP for
+ * `armor). Cells with equipment also carry the module effect and its
+ * per-instance config. Each module's `(x, y)` is the cell's ship-local centre
+ * from `cellToLocal`, and its integer `(col, row)` are carried through so
+ * break-apart can union over exact 4-connected neighbours.
  */
 function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] {
   const grid = design.grid;
   const out: ResolvedModule[] = [];
   for (const { col, row } of footprint(grid)) {
     const cell = grid.cells[row * grid.cols + col];
-    if (cell === undefined) continue;
+    if (cell === undefined || cell.kind !== "solid") continue;
     const local = cellToLocal(col, row, grid);
     const slotId = `cell-${col}-${row}`;
 
-    if (cell.kind === "hull") {
-      const tile = catalog.hullTile(cell.tile);
-      if (tile === undefined) continue;
+    const scaffold = catalog.scaffoldMaterial(design.faction);
+    const surface = surfaceMaterialFor(cell.surface, catalog, design.faction);
+    const maxSurfaceHp = surface?.hp ?? 0;
+    const maxScaffoldHp = scaffold?.hp ?? 0;
+    const surfaceMass = surface?.mass ?? 0;
+    const scaffoldMass = scaffold?.mass ?? 0;
+
+    const equipment = cell.equipment;
+    const moduleDef = equipment !== undefined ? catalog.module(equipment.moduleId) : undefined;
+    if (equipment !== undefined && moduleDef === undefined) {
+      // Unknown equipment is reported as a fault by analyseShipDesign; here we
+      // still emit a module so the cell exists in the engine's grid, with a
+      // hull-effect placeholder carrying the layer masses/HPs.
       out.push({
         slotId,
-        moduleId: `hull-${cell.tile}`,
+        moduleId: equipment.moduleId,
         kind: "hull",
         col,
         row,
         x: local.x,
         y: local.y,
-        maxHp: tile.hp,
-        mass: tile.mass,
+        surface: cell.surface,
+        edges: cell.edges,
+        maxSurfaceHp,
+        maxScaffoldHp,
+        mass: surfaceMass + scaffoldMass,
         powerDraw: 0,
         crewRequired: 0,
         effect: { kind: "hull" },
@@ -141,8 +154,6 @@ function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] 
         weaponFacing: 0,
         turretArc: 0,
         turretTurnRate: 0,
-        // A hull cell is not a comms or sensor module: channel and bearings
-        // carry 0 and are never read by the awareness phase.
         channel: 0,
         commsBearing: 0,
         sensorBearing: 0,
@@ -150,53 +161,91 @@ function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] 
       continue;
     }
 
-    if (cell.kind === "module") {
-      const moduleDef = catalog.module(cell.moduleId);
-      if (moduleDef === undefined) continue;
+    if (moduleDef === undefined) {
+      // No equipment: a structural-only cell (scaffold + surface). Carries a
+      // hull-effect placeholder so the engine treats it as a connectivity
+      // anchor with the layer masses/HPs.
       out.push({
         slotId,
-        moduleId: moduleDef.id,
-        kind: moduleDef.effect.kind,
+        moduleId: `cell-${cell.surface}`,
+        kind: "hull",
         col,
         row,
         x: local.x,
         y: local.y,
-        maxHp: baseHpFor(moduleDef.effect.kind),
-        mass: moduleDef.mass,
-        powerDraw: moduleDef.powerDraw,
-        crewRequired: moduleDef.crewRequired,
-        effect: moduleDef.effect,
-        command: moduleDef.command === true,
-        repairRate: repairRateFor(moduleDef.effect),
-        // Directional shield defaults: a missing arc means a full-sphere
-        // shield, a missing facing defaults to 0 (along +x).
-        shieldArc: moduleDef.shieldArc ?? Math.PI * 2,
-        shieldFacing: moduleDef.shieldFacing ?? 0,
-        // The cell's facing is the module's mount direction (ship-local):
-        // engines thrust along it, weapons fire along it.
-        facing: engineFacingFor(moduleDef.effect, cell),
-        weaponFacing: weaponFacingFor(moduleDef.effect, cell),
-        // Turret traverse comes off the weapon effect; non-turret and
-        // non-weapon modules carry 0 (a fixed mount).
-        turretArc: turretArcFor(moduleDef.effect),
-        turretTurnRate: turretTurnRateFor(moduleDef.effect),
-        // Comms config: the per-instance cell override when present, else the
-        // comms effect's own value. Non-comms modules carry 0 and never read it.
-        channel: commsChannelFor(moduleDef.effect, cell),
-        commsBearing: commsBearingFor(moduleDef.effect, cell),
-        ...(commsRangeFor(cell) !== undefined
-          ? { commsRange: commsRangeFor(cell) }
-          : {}),
-        // Sensor config: the per-instance cell override when present, else the
-        // sensor effect's own bearing. Non-sensor modules carry 0 and never read it.
-        sensorBearing: sensorBearingFor(moduleDef.effect, cell),
-        ...(sensorRangeSettingFor(cell) !== undefined
-          ? { sensorRangeSetting: sensorRangeSettingFor(cell) }
-          : {}),
+        surface: cell.surface,
+        edges: cell.edges,
+        maxSurfaceHp,
+        maxScaffoldHp,
+        mass: surfaceMass + scaffoldMass,
+        powerDraw: 0,
+        crewRequired: 0,
+        effect: { kind: "hull" },
+        command: false,
+        repairRate: 0,
+        shieldArc: Math.PI * 2,
+        shieldFacing: 0,
+        facing: 0,
+        weaponFacing: 0,
+        turretArc: 0,
+        turretTurnRate: 0,
+        channel: 0,
+        commsBearing: 0,
+        sensorBearing: 0,
       });
+      continue;
     }
+
+    out.push({
+      slotId,
+      moduleId: moduleDef.id,
+      kind: moduleDef.effect.kind,
+      col,
+      row,
+      x: local.x,
+      y: local.y,
+      surface: cell.surface,
+      edges: cell.edges,
+      maxSurfaceHp,
+      maxScaffoldHp,
+      mass: moduleDef.mass + surfaceMass + scaffoldMass,
+      powerDraw: moduleDef.powerDraw,
+      crewRequired: moduleDef.crewRequired,
+      effect: moduleDef.effect,
+      command: moduleDef.command === true,
+      repairRate: repairRateFor(moduleDef.effect),
+      shieldArc: moduleDef.shieldArc ?? Math.PI * 2,
+      shieldFacing: moduleDef.shieldFacing ?? 0,
+      facing: engineFacingFor(moduleDef.effect, cell),
+      weaponFacing: weaponFacingFor(moduleDef.effect, cell),
+      turretArc: turretArcFor(moduleDef.effect),
+      turretTurnRate: turretTurnRateFor(moduleDef.effect),
+      channel: commsChannelFor(moduleDef.effect, cell),
+      commsBearing: commsBearingFor(moduleDef.effect, cell),
+      ...(commsRangeFor(cell) !== undefined
+        ? { commsRange: commsRangeFor(cell) }
+        : {}),
+      sensorBearing: sensorBearingFor(moduleDef.effect, cell),
+      ...(sensorRangeSettingFor(cell) !== undefined
+        ? { sensorRangeSetting: sensorRangeSettingFor(cell) }
+        : {}),
+    });
   }
   return out;
+}
+
+/** Resolve the surface material for a cell's surface kind in the given faction.
+ *  `bare` resolves to undefined (no surface layer; scaffold is the only
+ *  structural layer). `deck` and `armor` resolve to the faction's deck /
+ *  armor material respectively. */
+function surfaceMaterialFor(
+  surface: SurfaceKind,
+  catalog: Catalog,
+  faction: string,
+): { hp: number; mass: number } | undefined {
+  if (surface === "bare") return undefined;
+  if (surface === "deck") return catalog.deckMaterial(faction);
+  return catalog.armorMaterial(faction);
 }
 
 /**
@@ -204,7 +253,7 @@ function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] 
  * engine can consume. Each connection's `from`/`to` cell coordinates are mapped
  * to the slot id of the module occupying that cell (the same `cell-<col>-<row>`
  * convention `resolveModules` uses). Only connections whose endpoints are both
- * module cells (present in `modules`) are resolved; the schema already
+ * equipment cells (present in `modules`) are resolved; the schema already
  * guarantees the endpoints are in-bounds and distinct, and the design validator
  * reports incompatible source/sink pairings, so well-formed links are resolved
  * directly here. A design with no connections yields an empty array, so an
@@ -230,60 +279,6 @@ function resolveHardwires(
   return out;
 }
 
-function baseHpFor(kind: ResolvedModule["kind"]): number {
-  switch (kind) {
-    case "weapon":
-      return 15;
-    case "shield":
-      return 20;
-    case "armour":
-      return 30;
-    case "engine":
-      return 20;
-    case "power":
-      return 15;
-    case "crew":
-      return 10;
-    case "pointDefense":
-      return 15;
-    case "repair":
-      return 15;
-    case "hull":
-      return 40;
-    case "magazine":
-      return 25;
-    // Phase A: sensor and comms modules are inert system components.
-    // HP matches a mid-range electronics module — more fragile than armour,
-    // sturdier than crew quarters.
-    case "sensor":
-      return 12;
-    case "comms":
-      return 12;
-    case "rcs":
-      return 12;
-    case "reactionWheel":
-      return 20;
-    // Tech modules (factions update). Stealth/ECM/sensor-grade electronics are
-    // fragile; bays (hangar) and launchers (mine/boarding) are sturdier mounts.
-    case "cloak":
-    case "signature":
-    case "ecm":
-    case "eccm":
-    case "decoy":
-    case "overcharge":
-    case "commandAura":
-      return 18;
-    case "blink":
-    case "afterburner":
-      return 22;
-    case "mineLayer":
-    case "boarding":
-      return 30;
-    case "hangar":
-      return 45;
-  }
-}
-
 /** Read the per-tick HP-heal rate off a module's effect. Only repair modules
  *  have one; every other kind contributes 0. */
 function repairRateFor(effect: ModuleEffect): number {
@@ -291,18 +286,18 @@ function repairRateFor(effect: ModuleEffect): number {
   return 0;
 }
 
-/** Engine thrust direction (radians, ship-local): the cell's facing for an
- *  engine, 0 for everything else (their facing is unused by the engine). */
+/** Engine thrust direction (radians, ship-local): the cell equipment's facing
+ *  for an engine, 0 for everything else (their facing is unused by the engine). */
 function engineFacingFor(effect: ModuleEffect, cell: GridCell): number {
   if (effect.kind !== "engine") return 0;
-  return cell.kind === "module" ? cell.facing : 0;
+  return cell.kind === "solid" && cell.equipment !== undefined ? cell.equipment.facing : 0;
 }
 
-/** Weapon fire direction (radians, ship-local): the cell's facing for a
- *  weapon, 0 for everything else. */
+/** Weapon fire direction (radians, ship-local): the cell equipment's facing
+ *  for a weapon, 0 for everything else. */
 function weaponFacingFor(effect: ModuleEffect, cell: GridCell): number {
   if (effect.kind !== "weapon") return 0;
-  return cell.kind === "module" ? cell.facing : 0;
+  return cell.kind === "solid" && cell.equipment !== undefined ? cell.equipment.facing : 0;
 }
 
 /** Turret traverse half-arc (radians) for a weapon; 0 (fixed mount) otherwise. */
@@ -317,46 +312,49 @@ function turretTurnRateFor(effect: ModuleEffect): number {
   return effect.turretTurnRate ?? 0;
 }
 
-/** Comms channel: the cell's per-instance override when set, else the comms
- *  effect's own channel. 0 for non-comms modules (never read). */
+/** Comms channel: the cell equipment's per-instance override when set, else
+ *  the comms effect's own channel. 0 for non-comms modules (never read). */
 function commsChannelFor(effect: ModuleEffect, cell: GridCell): number {
   if (effect.kind !== "comms") return 0;
-  if (cell.kind === "module" && cell.channel !== undefined) return cell.channel;
+  if (cell.kind === "solid" && cell.equipment?.channel !== undefined) return cell.equipment.channel;
   return effect.channel;
 }
 
-/** Comms mount bearing (radians, ship-local): the cell's per-instance override
- *  when set, else the comms effect's bearing. 0 for non-comms modules. */
+/** Comms mount bearing (radians, ship-local): the cell equipment's per-instance
+ *  override when set, else the comms effect's bearing. 0 for non-comms modules. */
 function commsBearingFor(effect: ModuleEffect, cell: GridCell): number {
   if (effect.kind !== "comms") return 0;
-  if (cell.kind === "module" && cell.commsBearing !== undefined) {
-    return cell.commsBearing;
+  if (cell.kind === "solid" && cell.equipment?.commsBearing !== undefined) {
+    return cell.equipment.commsBearing;
   }
   return effect.bearing;
 }
 
-/** Per-instance variable-comms range setting from the cell, or undefined when
- *  the cell set none. Only meaningful for variable comms modules; the engine
- *  ignores it on every other kind. */
+/** Per-instance variable-comms range setting from the cell equipment, or
+ *  undefined when none was set. Only meaningful for variable comms modules;
+ *  the engine ignores it on every other kind. */
 function commsRangeFor(cell: GridCell): number | undefined {
-  if (cell.kind !== "module") return undefined;
-  return cell.commsRange;
+  if (cell.kind !== "solid" || cell.equipment === undefined) return undefined;
+  return cell.equipment.commsRange;
 }
 
-/** Sensor mount bearing (radians, ship-local): the cell's per-instance override
- *  when set, else the sensor effect's bearing. 0 for non-sensor modules. */
+/** Sensor mount bearing (radians, ship-local): the cell equipment's per-instance
+ *  override when set, else the sensor effect's bearing. 0 for non-sensor modules. */
 function sensorBearingFor(effect: ModuleEffect, cell: GridCell): number {
   if (effect.kind !== "sensor") return 0;
-  if (cell.kind === "module" && cell.sensorBearing !== undefined) {
-    return cell.sensorBearing;
+  if (cell.kind === "solid" && cell.equipment?.sensorBearing !== undefined) {
+    return cell.equipment.sensorBearing;
   }
   return effect.bearing;
 }
 
-/** Per-instance variable-sensor range setting from the cell, or undefined when
- *  the cell set none. Only meaningful for variable sensor modules; the engine
- *  ignores it on every other kind. */
+/** Per-instance variable-sensor range setting from the cell equipment, or
+ *  undefined when none was set. Only meaningful for variable sensor modules;
+ *  the engine ignores it on every other kind. */
 function sensorRangeSettingFor(cell: GridCell): number | undefined {
-  if (cell.kind !== "module") return undefined;
-  return cell.sensorRangeSetting;
+  if (cell.kind !== "solid" || cell.equipment === undefined) return undefined;
+  return cell.equipment.sensorRangeSetting;
 }
+
+// Re-exported for engine consumers that need the edge shape.
+export type { CellEdges };

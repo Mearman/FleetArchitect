@@ -4,7 +4,7 @@
  */
 
 import { CELL_SIZE } from "@/domain/grid";
-import type { ShipClassification } from "@/schema/hull";
+import type { ShipClassification } from "@/schema/armor";
 import { DEFAULT_WEAPON_AMMO } from "@/schema/module";
 import type { WeaponEffect } from "@/schema/module";
 import type { Orders } from "@/schema/fleet";
@@ -246,8 +246,12 @@ export function toSimModule(m: ResolvedModule, rng: () => number): SimModule {
     row: m.row,
     x: m.x,
     y: m.y,
-    hp: m.maxHp,
-    maxHp: m.maxHp,
+    surface: m.surface,
+    edges: m.edges,
+    surfaceHp: m.maxSurfaceHp,
+    maxSurfaceHp: m.maxSurfaceHp,
+    hp: m.maxScaffoldHp,
+    maxHp: m.maxScaffoldHp,
     mass: m.mass,
     powerDraw: m.powerDraw,
     effect,

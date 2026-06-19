@@ -3,7 +3,7 @@ import { analyseShipDesign } from "@/domain/stats";
 import { DEFAULT_FLEET_BUDGET } from "@/domain/points";
 import { catalog } from "@/data/catalog";
 import { presetDesigns, presetFleets } from "@/data/presets";
-import type { ModuleCell } from "@/schema/grid";
+import type { SolidCell } from "@/schema/grid";
 
 describe("bundled presets", () => {
   it("ships every preset design as a valid build with no faults", () => {
@@ -62,8 +62,10 @@ describe("bundled presets", () => {
     );
     const hasSensor = presetDesigns.some((design) =>
       design.grid.cells.some(
-        (cell): cell is ModuleCell =>
-          cell.kind === "module" && sensorModuleIds.has(cell.moduleId),
+        (cell): cell is SolidCell =>
+          cell.kind === "solid" &&
+          cell.equipment !== undefined &&
+          sensorModuleIds.has(cell.equipment.moduleId),
       ),
     );
     expect(hasSensor, "no preset design carries a sensor module").toBe(true);
@@ -78,8 +80,10 @@ describe("bundled presets", () => {
     );
     const hasComms = presetDesigns.some((design) =>
       design.grid.cells.some(
-        (cell): cell is ModuleCell =>
-          cell.kind === "module" && commsModuleIds.has(cell.moduleId),
+        (cell): cell is SolidCell =>
+          cell.kind === "solid" &&
+          cell.equipment !== undefined &&
+          commsModuleIds.has(cell.equipment.moduleId),
       ),
     );
     expect(hasComms, "no preset design carries a comms module").toBe(true);

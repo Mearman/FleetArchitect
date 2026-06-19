@@ -5,6 +5,8 @@ import {
   occupiedCount,
   reachableFrom,
 } from "@/domain/grid";
+import { computeCompartments } from "@/domain/interior";
+import type { LayerMaterial } from "@/schema/armor";
 import type { GridCell, HardwireResource } from "@/schema/grid";
 import type { ModuleDefinition, WeaponEffect } from "@/schema/module";
 import type { ShipDesign } from "@/schema/ship";
@@ -26,8 +28,6 @@ export interface ResolvedWeapon {
 /** Aggregated, derived stats for a fully-resolved ship design. */
 export interface ShipStats {
   mass: number;
-  /** Mass budget for this grid, derived from the number of occupied cells. */
-  massCapacity: number;
   cost: number;
   powerDraw: number;
   powerOutput: number;
@@ -35,6 +35,10 @@ export interface ShipStats {
   crewRequired: number;
   crewCapacity: number;
   crewNet: number;
+  /** Aggregate HP of every solid cell's surface layer (armor + deck) plus
+   *  scaffold HP. Outer-first depletion (Phase 2) reduces surface HP before
+   *  scaffold HP; once scaffold HP reaches zero the cell is destroyed and
+   *  break-apart may sever the graph. */
   structure: number;
   damageReduction: number;
   shieldCapacity: number;
@@ -43,6 +47,13 @@ export interface ShipStats {
   thrust: number;
   turnRate: number;
   weapons: readonly ResolvedWeapon[];
+  /** Advisory: total compartments in the design (deck regions connected
+   *  through open edges / open doors). Surfaced for designer feedback; the
+   *  engine does not yet consume it. */
+  compartments: number;
+  /** Advisory: how many of those compartments are airtight (every perimeter
+   *  edge is wall / closed door / armor). Surfaced for designer feedback. */
+  airtightCompartments: number;
 }
 
 /** A reason a ship design cannot be built as-is (error), or an advisory note (warning). */
@@ -52,19 +63,19 @@ export type DesignFault =
   | { kind: "disconnected"; severity: "error" }
   | { kind: "noCommand"; severity: "error" }
   | { kind: "unknownModule"; severity: "error"; col: number; row: number; moduleId: EntityId }
-  | { kind: "unknownHullTile"; severity: "error"; col: number; row: number; tile: string }
-  | { kind: "massExceeded"; severity: "error"; mass: number; capacity: number }
+  | { kind: "unknownLayerMaterial"; severity: "error"; col: number; row: number; layer: LayerMaterial["layer"] }
   | { kind: "powerDeficit"; severity: "error"; net: number }
   | { kind: "crewDeficit"; severity: "error"; net: number }
   /** Parts from more than one faction are present on this design. A valid
-   *  ship uses tiles and modules exclusively from the design's own faction. */
+   *  ship uses layer materials and modules exclusively from the design's own
+   *  faction. */
   | { kind: "crossFaction"; severity: "error"; expected: string; found: string[] }
   /**
    * A station that needs crew (crewRequired > 0) has no walkable path from any
    * crew-quarters cell. Only raised when at least one crew-quarters module exists
    * (a ship with no quarters simply has no crew — that is the crewDeficit case).
-   * Both the station and the quarters must be on the walkable surface (hull,
-   * module, or floor cells) connected by 4-adjacent edges.
+   * Walkability is deck-only and edge-gated: a closed door or wall on the shared
+   * edge blocks the path.
    */
   | { kind: "unreachableStation"; severity: "error"; col: number; row: number; moduleId: EntityId }
   /**
@@ -102,7 +113,7 @@ export type DesignFault =
    *   - "ammo"    — source must be a magazine; sink must be a finite-ammo weapon.
    *   - "power"   — source must be a power plant; sink must draw power (powerDraw > 0).
    *   - "manning" — source must be a command module; sink must require crew (crewRequired > 0).
-   * A fault is raised when either endpoint is not a module cell, is an unknown
+   * A fault is raised when either endpoint is not an equipment cell, is an unknown
    * module, or is a module of the wrong kind for the declared resource.
    */
   | {
@@ -124,19 +135,9 @@ interface MutableStats extends Omit<ShipStats, "weapons"> {
   weapons: ResolvedWeapon[];
 }
 
-/**
- * Mass budget per occupied cell, in mass units. A grid's total budget scales
- * with how many cells it uses, so larger hulls legitimately carry more mass;
- * a design that overstuffs its cells with the heaviest modules exceeds it.
- * Tuned so a typical mixed loadout fits comfortably while an all-heavy build
- * does not.
- */
-export const MASS_BUDGET_PER_CELL = 18;
-
-function emptyStats(massCapacity: number): MutableStats {
+function emptyStats(): MutableStats {
   return {
     mass: 0,
-    massCapacity,
     cost: 0,
     powerDraw: 0,
     powerOutput: 0,
@@ -152,6 +153,8 @@ function emptyStats(massCapacity: number): MutableStats {
     thrust: 0,
     turnRate: 0,
     weapons: [],
+    compartments: 0,
+    airtightCompartments: 0,
   };
 }
 
@@ -178,14 +181,10 @@ function applyModule(
         effect.rechargeDelay,
       );
       break;
-    case "armour":
-      stats.structure += effect.hitpoints;
-      stats.damageReduction = Math.max(stats.damageReduction, effect.damageReduction);
-      break;
     case "engine":
       stats.thrust += effect.thrust;
       // No per-engine turn rate: a modular ship turns from real torque
-      // (engine r × F, gimbal vectoring, RCS, reaction wheels), derived in the
+      // (engine r × F, gimbal vectoring, RCS, reaction wheel), derived in the
       // engine from the cell geometry — not from a summed scalar. ShipStats.turnRate
       // stays the scalar agility of the legacy aggregated path only.
       break;
@@ -219,34 +218,42 @@ function applyModule(
   }
 }
 
-/** Mass of a single grid cell: a hull tile's mass, a module's mass, or 0 for
- *  an empty cell or a reference the catalog doesn't know (which is reported as
- *  a fault separately, so a zero-mass contribution there is harmless).
+/** Mass of a single grid cell, summed across its layers and (if present)
+ *  equipment. The layer masses are per-faction catalogue data; an unknown
+ *  faction or layer resolves to zero mass, which is reported as a separate
+ *  `unknownLayerMaterial` fault in `analyseShipDesign` so a silent zero does
+ *  not mask a real problem.
  *
- *  Pass the design's faction so the faction-specific tile variant (with its
- *  correct mass) is used rather than any arbitrary faction's variant. */
+ *  Pass the design's faction so the faction-specific layer material (with its
+ *  correct mass) is used. */
 export function cellMass(cell: GridCell, catalog: Catalog, faction?: string): number {
-  if (cell.kind === "hull") {
-    const tile = faction !== undefined
-      ? (catalog.hullTileFor(faction, cell.tile) ?? catalog.hullTile(cell.tile))
-      : catalog.hullTile(cell.tile);
-    return tile?.mass ?? 0;
+  if (cell.kind !== "solid") return 0;
+  let sum = 0;
+  const scaffold = faction !== undefined ? catalog.scaffoldMaterial(faction) : undefined;
+  if (scaffold !== undefined) sum += scaffold.mass;
+  if (cell.surface === "armor") {
+    const armor = faction !== undefined ? catalog.armorMaterial(faction) : undefined;
+    if (armor !== undefined) sum += armor.mass;
+  } else if (cell.surface === "deck") {
+    const deck = faction !== undefined ? catalog.deckMaterial(faction) : undefined;
+    if (deck !== undefined) sum += deck.mass;
   }
-  if (cell.kind === "module") return catalog.module(cell.moduleId)?.mass ?? 0;
-  return 0;
+  if (cell.equipment !== undefined) {
+    sum += catalog.module(cell.equipment.moduleId)?.mass ?? 0;
+  }
+  return sum;
 }
 
-/** Collect the set of faction names used by module cells in the grid.
- *  Hull tile cells only record a tile _type_ (block/edge/corner/strut) which is
- *  shared across factions; the faction is resolved from the catalog at render/
- *  stat time using the design's declared faction. Cross-faction violations are
- *  therefore only detectable through explicitly-identified modules.
- *  Unknown modules are skipped (those are reported as separate faults). */
+/** Collect the set of faction names used by equipment cells in the grid.
+ *  Layer-material cells only record a surface kind (bare/deck/armor) which is
+ *  shared across factions; the faction is resolved from the catalog at stat
+ *  time using the design's declared faction. Cross-faction violations are
+ *  therefore only detectable through explicitly-identified equipment. */
 function partFactions(grid: ShipDesign["grid"], catalog: Catalog): Set<string> {
   const factions = new Set<string>();
   for (const cell of grid.cells) {
-    if (cell.kind === "module") {
-      const mod = catalog.module(cell.moduleId);
+    if (cell.kind === "solid" && cell.equipment !== undefined) {
+      const mod = catalog.module(cell.equipment.moduleId);
       if (mod !== undefined) factions.add(mod.faction);
     }
   }
@@ -256,10 +263,9 @@ function partFactions(grid: ShipDesign["grid"], catalog: Catalog): Set<string> {
 /**
  * Resolve a ship design against the catalog, producing aggregated stats and any
  * build-constraint faults. Pure and deterministic. The grid is the source of
- * truth: mass, structure, thrust, and the rest are summed over its occupied
- * cells. A valid design has all occupied cells 4-connected, at least one
- * command module, mass within the cell-derived budget, and a non-negative
- * power and crew balance.
+ * truth: mass, structure, thrust, and the rest are summed over its solid
+ * cells. A valid design has all solid cells 4-connected (scaffold adjacency),
+ * at least one command module, and a non-negative power and crew balance.
  */
 export function analyseShipDesign(
   design: ShipDesign,
@@ -268,8 +274,7 @@ export function analyseShipDesign(
   const grid = design.grid;
   const faults: DesignFault[] = [];
   const cellCount = occupiedCount(grid);
-  const massCapacity = cellCount * MASS_BUDGET_PER_CELL;
-  const stats = emptyStats(massCapacity);
+  const stats = emptyStats();
 
   let hasCommand = false;
   let hasSensor = false;
@@ -281,26 +286,38 @@ export function analyseShipDesign(
   for (const { col, row } of footprint(grid)) {
     const cell = grid.cells[row * grid.cols + col];
     if (cell === undefined) continue;
+    if (cell.kind !== "solid") continue;
     const slotId = `cell-${col}-${row}`;
 
-    if (cell.kind === "hull") {
-      // Use the faction-aware lookup so Swarm tiles use Swarm stats, not Terran.
-      const tile =
-        catalog.hullTileFor(design.faction, cell.tile) ??
-        catalog.hullTile(cell.tile);
-      if (tile === undefined) {
-        faults.push({ kind: "unknownHullTile", severity: "error", col, row, tile: cell.tile });
-        continue;
+    // Surface + scaffold HP contribution. A cell with an unknown layer
+    // material reports a fault rather than silently contributing zero.
+    const scaffold = catalog.scaffoldMaterial(design.faction);
+    if (scaffold === undefined) {
+      faults.push({ kind: "unknownLayerMaterial", severity: "error", col, row, layer: "scaffold" });
+    } else {
+      stats.structure += scaffold.hp;
+    }
+    if (cell.surface === "armor") {
+      const armor = catalog.armorMaterial(design.faction);
+      if (armor === undefined) {
+        faults.push({ kind: "unknownLayerMaterial", severity: "error", col, row, layer: "armor" });
+      } else {
+        stats.structure += armor.hp;
+        stats.damageReduction = Math.max(stats.damageReduction, armor.damageReduction);
       }
-      // Hull tiles are pure structure: they contribute mass and hull HP.
-      stats.structure += tile.hp;
-      continue;
+    } else if (cell.surface === "deck") {
+      const deck = catalog.deckMaterial(design.faction);
+      if (deck === undefined) {
+        faults.push({ kind: "unknownLayerMaterial", severity: "error", col, row, layer: "deck" });
+      } else {
+        stats.structure += deck.hp;
+      }
     }
 
-    if (cell.kind === "module") {
-      const moduleDef = catalog.module(cell.moduleId);
+    if (cell.equipment !== undefined) {
+      const moduleDef = catalog.module(cell.equipment.moduleId);
       if (moduleDef === undefined) {
-        faults.push({ kind: "unknownModule", severity: "error", col, row, moduleId: cell.moduleId });
+        faults.push({ kind: "unknownModule", severity: "error", col, row, moduleId: cell.equipment.moduleId });
         continue;
       }
       if (moduleDef.command === true) hasCommand = true;
@@ -308,19 +325,19 @@ export function analyseShipDesign(
       if (moduleDef.effect.kind === "comms") {
         // Resolve the effective channel: per-instance override wins over the
         // module definition's default channel.
-        const effectiveChannel = cell.channel ?? moduleDef.effect.channel;
+        const effectiveChannel = cell.equipment.channel ?? moduleDef.effect.channel;
         const existing = commsUnitsByChannel.get(effectiveChannel);
         if (existing !== undefined) {
-          existing.push({ col, row, moduleId: cell.moduleId });
+          existing.push({ col, row, moduleId: cell.equipment.moduleId });
         } else {
-          commsUnitsByChannel.set(effectiveChannel, [{ col, row, moduleId: cell.moduleId }]);
+          commsUnitsByChannel.set(effectiveChannel, [{ col, row, moduleId: cell.equipment.moduleId }]);
         }
         // Track aim units (dish or laser) that require crew.
         if (
           (moduleDef.effect.commsType === "dish" || moduleDef.effect.commsType === "laser") &&
           moduleDef.crewRequired > 0
         ) {
-          aimUnitPositions.push({ col, row, moduleId: cell.moduleId });
+          aimUnitPositions.push({ col, row, moduleId: cell.equipment.moduleId });
         }
       }
       applyModule(stats, moduleDef, slotId);
@@ -331,6 +348,14 @@ export function analyseShipDesign(
   stats.powerNet = stats.powerOutput - stats.powerDraw;
   stats.crewNet = stats.crewCapacity - stats.crewRequired;
 
+  // Compartment advisory metrics: deck regions connected through open edges
+  // and open doors, with each compartment flagged airtight if every perimeter
+  // edge is wall / closed door / armor. Surfaced for designer feedback; the
+  // engine does not yet consume airtightness.
+  const compartments = computeCompartments(grid);
+  stats.compartments = compartments.length;
+  stats.airtightCompartments = compartments.filter((c) => c.airtight).length;
+
   if (cellCount === 0) {
     faults.push({ kind: "empty", severity: "error" });
   } else if (!isConnected4(grid)) {
@@ -338,9 +363,6 @@ export function analyseShipDesign(
   }
   if (cellCount > 0 && !hasCommand) {
     faults.push({ kind: "noCommand", severity: "error" });
-  }
-  if (stats.mass > massCapacity) {
-    faults.push({ kind: "massExceeded", severity: "error", mass: stats.mass, capacity: massCapacity });
   }
   if (stats.powerNet < 0) {
     faults.push({ kind: "powerDeficit", severity: "error", net: stats.powerNet });
@@ -365,7 +387,7 @@ export function analyseShipDesign(
   // ---------------------------------------------------------------------------
   // Hardwire-connection validation.
   //
-  // Each connection in grid.connections must pair compatible module kinds:
+  // Each connection in grid.connections must pair compatible equipment kinds:
   //   ammo    — source: magazine, sink: finite-ammo weapon (ammoCapacity set).
   //   power   — source: power plant, sink: any module with powerDraw > 0.
   //   manning — source: command module, sink: any module with crewRequired > 0.
@@ -393,32 +415,32 @@ export function analyseShipDesign(
       const fromCell = grid.cells[from.row * grid.cols + from.col];
       const toCell = grid.cells[to.row * grid.cols + to.col];
 
-      // Both endpoints must be module cells (not hull, floor, or empty).
-      if (fromCell === undefined || fromCell.kind !== "module") {
+      // Both endpoints must be equipment cells (solid cells carrying equipment).
+      if (fromCell === undefined || fromCell.kind !== "solid" || fromCell.equipment === undefined) {
         faults.push({
           kind: "invalidHardwire",
           severity: "error",
           from,
           to,
           resource,
-          reason: "source cell is not a module",
+          reason: "source cell carries no equipment",
         });
         continue;
       }
-      if (toCell === undefined || toCell.kind !== "module") {
+      if (toCell === undefined || toCell.kind !== "solid" || toCell.equipment === undefined) {
         faults.push({
           kind: "invalidHardwire",
           severity: "error",
           from,
           to,
           resource,
-          reason: "sink cell is not a module",
+          reason: "sink cell carries no equipment",
         });
         continue;
       }
 
-      const fromDef = catalog.module(fromCell.moduleId);
-      const toDef = catalog.module(toCell.moduleId);
+      const fromDef = catalog.module(fromCell.equipment.moduleId);
+      const toDef = catalog.module(toCell.equipment.moduleId);
 
       // Unknown modules are reported as unknownModule faults elsewhere; skip
       // the hardwire check rather than double-reporting.
@@ -513,7 +535,7 @@ export function analyseShipDesign(
   // ---------------------------------------------------------------------------
   // Reachability faults — require crew pathfinding over the walkable surface.
   //
-  // We compute these only when the grid has occupied cells and is connected
+  // We compute these only when the grid has solid cells and is connected
   // (otherwise the connectivity and empty faults already describe the problem).
   // Disconnected grids have an undefined reachable graph, so checking paths
   // inside them would produce misleading results.
@@ -530,15 +552,15 @@ export function analyseShipDesign(
 
     for (const { col, row } of footprint(grid)) {
       const cell = grid.cells[row * grid.cols + col];
-      if (cell === undefined || cell.kind !== "module") continue;
-      const moduleDef = catalog.module(cell.moduleId);
+      if (cell === undefined || cell.kind !== "solid" || cell.equipment === undefined) continue;
+      const moduleDef = catalog.module(cell.equipment.moduleId);
       if (moduleDef === undefined) continue;
 
       if (moduleDef.effect.kind === "crew") {
         quartersPositions.push({ col, row });
       }
       if (moduleDef.crewRequired > 0) {
-        crewedStations.push({ col, row, moduleId: cell.moduleId });
+        crewedStations.push({ col, row, moduleId: cell.equipment.moduleId });
       }
       if (moduleDef.effect.kind === "magazine") {
         magazinePositions.push({ col, row });
@@ -547,7 +569,7 @@ export function analyseShipDesign(
         moduleDef.effect.kind === "weapon" &&
         moduleDef.effect.ammoCapacity !== undefined
       ) {
-        finiteAmmoWeapons.push({ col, row, moduleId: cell.moduleId });
+        finiteAmmoWeapons.push({ col, row, moduleId: cell.equipment.moduleId });
       }
     }
 

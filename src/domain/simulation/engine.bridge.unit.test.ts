@@ -1,3 +1,4 @@
+import type { CellEdges } from "@/schema/grid";
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
@@ -5,6 +6,15 @@ import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulati
 import { defaultOrders } from "@/schema/fleet";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
+
+
+const OPEN_EDGES: CellEdges = {
+  n: "open",
+  e: "open",
+  s: "open",
+  w: "open",
+  doorStates: {},
+};
 
 /**
  * Bridge / command-module rule: a modular ship needs at least one alive
@@ -47,7 +57,10 @@ function moduleOf(
     row: Math.round(y),
     x,
     y,
-    maxHp,
+    maxSurfaceHp: 0,
+    maxScaffoldHp: maxHp,
+    surface: "deck",
+    edges: OPEN_EDGES,
     mass,
     powerDraw,
     crewRequired: 0,
@@ -71,7 +84,6 @@ function moduleOf(
 function dummy(id: string, x: number): CombatShip {
   const stats: ShipStats = {
     mass: 10,
-    massCapacity: 100,
     cost: 100,
     powerDraw: 0,
     powerOutput: 0,
@@ -87,7 +99,9 @@ function dummy(id: string, x: number): CombatShip {
     thrust: 0,
     turnRate: 0,
     weapons: [],
-  };
+    compartments: 0,
+  airtightCompartments: 0,
+};
   return {
     instanceId: id,
     designId: `d-${id}`,
@@ -121,7 +135,6 @@ function modularAttacker(id: string, commandHp: number): CombatShip {
   ];
   const stats: ShipStats = {
     mass: 10,
-    massCapacity: 100,
     cost: 100,
     powerDraw: 0,
     powerOutput: 0,
@@ -137,7 +150,9 @@ function modularAttacker(id: string, commandHp: number): CombatShip {
     thrust: 0.5,
     turnRate: 0.1,
     weapons: [],
-  };
+    compartments: 0,
+  airtightCompartments: 0,
+};
   return {
     instanceId: id,
     designId: `d-${id}`,

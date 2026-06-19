@@ -5,8 +5,11 @@ import { catalog } from "@/data/catalog";
 import { nowIso } from "@/domain/id";
 import { defaultOrders } from "@/schema/fleet";
 import type { Fleet } from "@/schema/fleet";
-import type { TileGrid } from "@/schema/grid";
+import type { CellEdges, TileGrid } from "@/schema/grid";
 import type { ShipDesign } from "@/schema/ship";
+
+const OPEN: CellEdges = { n: "open", e: "open", s: "open", w: "open", doorStates: {} };
+const WALL: CellEdges = { n: "wall", e: "wall", s: "wall", w: "wall", doorStates: {} };
 
 /** A two-cell ship: a pulse laser facing aft (π) at (col 0, row 0) and a
  *  fusion reactor at (col 1, row 0). */
@@ -15,8 +18,8 @@ function design(): ShipDesign {
     cols: 2,
     rows: 1,
     cells: [
-      { kind: "module", moduleId: "mod-pulse-laser", facing: Math.PI },
-      { kind: "module", moduleId: "mod-reactor-fusion", facing: 0 },
+      { kind: "solid", scaffold: true, surface: "deck", edges: OPEN, equipment: { moduleId: "mod-pulse-laser", facing: Math.PI } },
+      { kind: "solid", scaffold: true, surface: "deck", edges: OPEN, equipment: { moduleId: "mod-reactor-fusion", facing: 0 } },
     ],
     connections: [],
     shape: { outlineMode: "hexadecilinear" },
@@ -78,15 +81,15 @@ describe("resolveFleetToCombatShips (grid)", () => {
     expect(ship?.classification).toBe("fighter");
   });
 
-  it("resolves hull cells to kind 'hull' carrying the tile's mass and hp", () => {
+  it("resolves armor cells to a 'hull'-effect module carrying the armor layer material's mass + surface HP", () => {
     const d: ShipDesign = {
       ...design(),
       grid: {
         cols: 2,
         rows: 1,
         cells: [
-          { kind: "hull", tile: "block" },
-          { kind: "module", moduleId: "mod-reactor-fusion", facing: 0 },
+          { kind: "solid", scaffold: true, surface: "armor", edges: WALL },
+          { kind: "solid", scaffold: true, surface: "deck", edges: OPEN, equipment: { moduleId: "mod-reactor-fusion", facing: 0 } },
         ],
         connections: [],
         shape: { outlineMode: "hexadecilinear" },
@@ -98,13 +101,15 @@ describe("resolveFleetToCombatShips (grid)", () => {
       catalog(),
       "attacker",
     );
-    const hull = (ship?.modules ?? []).find((m) => m.kind === "hull");
-    const tile = catalog().hullTile("block");
-    expect(hull).toBeDefined();
-    expect(tile).toBeDefined();
-    if (hull === undefined || tile === undefined) return;
-    expect(hull.mass).toBe(tile.mass);
-    expect(hull.maxHp).toBe(tile.hp);
+    const armor = (ship?.modules ?? []).find((m) => m.surface === "armor");
+    const armorMaterial = catalog().armorMaterial("Terran");
+    expect(armor).toBeDefined();
+    expect(armorMaterial).toBeDefined();
+    if (armor === undefined || armorMaterial === undefined) return;
+    // Mass sums the armor + scaffold material masses.
+    const scaffold = catalog().scaffoldMaterial("Terran");
+    expect(armor.mass).toBe(armorMaterial.mass + (scaffold?.mass ?? 0));
+    expect(armor.maxSurfaceHp).toBe(armorMaterial.hp);
   });
 
   it("deploys the attacker left of the midline facing right and the defender mirrored", () => {

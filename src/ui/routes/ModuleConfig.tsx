@@ -1,6 +1,6 @@
 import { Select, Slider, Stack, Text } from "@mantine/core";
 import type { CommsEffect, SensorEffect } from "@/schema/module";
-import type { ModuleCell } from "@/schema/grid";
+import type { CellEquipment } from "@/schema/grid";
 
 /**
  * Per-instance comms configuration panel for a selected comms module cell.
@@ -14,7 +14,7 @@ export function CommsConfig({
   onBearingChange,
   onRangeChange,
 }: {
-  cell: ModuleCell;
+  cell: CellEquipment;
   effect: CommsEffect;
   onChannelChange: (channel: number) => void;
   onBearingChange: (bearing: number) => void;
@@ -118,7 +118,7 @@ export function SensorConfig({
   onBearingChange,
   onRangeChange,
 }: {
-  cell: ModuleCell;
+  cell: CellEquipment;
   effect: SensorEffect;
   onBearingChange: (bearing: number) => void;
   onRangeChange: (range: number) => void;

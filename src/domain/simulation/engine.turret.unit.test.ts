@@ -1,3 +1,4 @@
+import type { CellEdges } from "@/schema/grid";
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
@@ -5,6 +6,15 @@ import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulati
 import { defaultOrders } from "@/schema/fleet";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
+
+
+const OPEN_EDGES: CellEdges = {
+  n: "open",
+  e: "open",
+  s: "open",
+  w: "open",
+  doorStates: {},
+};
 
 /**
  * Independently-rotating turrets. A weapon with `turretTurnRate > 0` slews a
@@ -57,7 +67,10 @@ function moduleOf(
     row: Math.round(y),
     x,
     y,
-    maxHp: 50,
+    maxSurfaceHp: 0,
+    maxScaffoldHp: 50,
+    surface: "deck",
+    edges: OPEN_EDGES,
     mass: 5,
     powerDraw: 0,
     crewRequired: 0,
@@ -80,7 +93,6 @@ function moduleOf(
 function statsBlock(): ShipStats {
   return {
     mass: 10,
-    massCapacity: 100,
     cost: 100,
     powerDraw: 0,
     powerOutput: 0,
@@ -96,7 +108,9 @@ function statsBlock(): ShipStats {
     thrust: 0,
     turnRate: 0,
     weapons: [],
-  };
+    compartments: 0,
+  airtightCompartments: 0,
+};
 }
 
 /** An attacker at the origin facing +x with a single weapon and a command

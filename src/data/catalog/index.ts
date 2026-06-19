@@ -1,8 +1,8 @@
 import { createCatalog, type Catalog } from "@/domain/catalog";
-import { HullTileDefinition } from "@/schema/hull";
+import { LayerMaterial } from "@/schema/armor";
 import { ModuleDefinition } from "@/schema/module";
 
-import { hullTileData } from "./hull-tiles";
+import { layerMaterialData } from "./layer-materials";
 import { terranModules } from "./modules/terran";
 import { swarmModules } from "./modules/swarm";
 import { crystallineModules } from "./modules/crystalline";
@@ -11,10 +11,10 @@ import { corsairModules } from "./modules/corsair";
 import { syntheticModules } from "./modules/synthetic";
 
 /**
- * The bundled starter catalog. Hull tiles and modules are authored as plain
- * objects and validated against the schema at load time, so a malformed entry
- * fails loudly rather than producing a broken ship. A larger catalog is pure
- * content and can be expanded without touching engine or UI code.
+ * The bundled starter catalog. Layer materials and modules are authored as
+ * plain objects and validated against the schema at load time, so a malformed
+ * entry fails loudly rather than producing a broken ship. A larger catalog is
+ * pure content and can be expanded without touching engine or UI code.
  *
  * Scale notes for the simulation engine: `range` is in "battle units"; `thrust`
  * is acceleration per tick; `cooldown` is ticks between shots.
@@ -34,8 +34,8 @@ const moduleData: ModuleDefinition[] = [
   ...syntheticModules,
 ];
 
-export const hullTiles: readonly HullTileDefinition[] = hullTileData.map((tile) =>
-  HullTileDefinition.parse(tile),
+export const layerMaterials: readonly LayerMaterial[] = layerMaterialData.map((m) =>
+  LayerMaterial.parse(m),
 );
 export const modules: readonly ModuleDefinition[] = moduleData.map((mod) =>
   ModuleDefinition.parse(mod),
@@ -46,7 +46,7 @@ let catalogSingleton: Catalog | undefined;
 /** Process-wide catalog singleton over the bundled data. */
 export function catalog(): Catalog {
   if (catalogSingleton === undefined) {
-    catalogSingleton = createCatalog(modules, hullTiles);
+    catalogSingleton = createCatalog(modules, layerMaterials);
   }
   return catalogSingleton;
 }

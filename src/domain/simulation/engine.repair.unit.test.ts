@@ -1,3 +1,4 @@
+import type { CellEdges } from "@/schema/grid";
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
@@ -5,6 +6,15 @@ import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulati
 import { defaultOrders } from "@/schema/fleet";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
+
+
+const OPEN_EDGES: CellEdges = {
+  n: "open",
+  e: "open",
+  s: "open",
+  w: "open",
+  doorStates: {},
+};
 
 /**
  * Per-module repair: a dedicated repair module on a ship heals the HP of one
@@ -49,7 +59,10 @@ function moduleOf(
     row: Math.round(y),
     x,
     y,
-    maxHp,
+    maxSurfaceHp: 0,
+    maxScaffoldHp: maxHp,
+    surface: "deck",
+    edges: OPEN_EDGES,
     mass,
     powerDraw,
     crewRequired: 0,
@@ -74,7 +87,6 @@ function hammerShip(id: string, x: number): CombatShip {
   const weapon = beam({ damage: 4, range: 500, cooldown: 1 });
   const stats: ShipStats = {
     mass: 10,
-    massCapacity: 100,
     cost: 100,
     powerDraw: 0,
     powerOutput: 0,
@@ -90,7 +102,9 @@ function hammerShip(id: string, x: number): CombatShip {
     thrust: 0.5,
     turnRate: 0.1,
     weapons: [{ slotId: "s", effect: weapon }],
-  };
+    compartments: 0,
+  airtightCompartments: 0,
+};
   return {
     instanceId: id,
     designId: `d-${id}`,
@@ -129,7 +143,6 @@ function modularDefender(id: string, x: number, repairRate: number): CombatShip 
   ];
   const stats: ShipStats = {
     mass: 10,
-    massCapacity: 100,
     cost: 100,
     powerDraw: 0,
     powerOutput: 0,
@@ -145,7 +158,9 @@ function modularDefender(id: string, x: number, repairRate: number): CombatShip 
     thrust: 0.9, // 0.5 hull base + 0.4 engine
     turnRate: 0.15,
     weapons: [],
-  };
+    compartments: 0,
+  airtightCompartments: 0,
+};
   return {
     instanceId: id,
     designId: `d-${id}`,
