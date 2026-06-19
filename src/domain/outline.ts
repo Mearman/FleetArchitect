@@ -1,3 +1,4 @@
+import type { TileGrid } from "@/schema/grid";
 import { z } from "zod";
 import { CELL_SIZE } from "@/domain/grid";
 import type { Vec2 } from "@/schema/primitives";
@@ -462,6 +463,28 @@ export function extractShellLegacy(grid: {
   const cells = new Set<number>();
   for (let i = 0; i < grid.cells.length; i += 1) {
     if (grid.cells[i]!.kind !== "empty") cells.add(i);
+  }
+  return { cols: grid.cols, rows: grid.rows, cells };
+}
+
+
+// ---------------------------------------------------------------------------
+// Layered-cell shell extractor: builds the Shell from a SolidCell grid by
+// taking the armor cells (the protective shell the outline traces around).
+// Complements extractShellLegacy (which bridges the pre-layered TileGrid).
+// ---------------------------------------------------------------------------
+
+/** Build the outline Shell from a layered-cell grid: the set of armor-cell
+ *  indices (row-major `row * cols + col`), with the grid's dimensions. The
+ *  outline is traced around armor cells (the protective shell); deck/scaffold
+ *  cells without armor are not part of the shell. */
+export function extractShell(grid: TileGrid): Shell {
+  const cells = new Set<number>();
+  for (let i = 0; i < grid.cells.length; i += 1) {
+    const cell = grid.cells[i];
+    if (cell !== undefined && cell.kind === "solid" && cell.surface === "armor") {
+      cells.add(i);
+    }
   }
   return { cols: grid.cols, rows: grid.rows, cells };
 }
