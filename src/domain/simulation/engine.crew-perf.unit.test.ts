@@ -79,18 +79,19 @@ describe("engine.crew-perf — preset matchups still resolve", () => {
 describe("engine.crew-perf — performance budget", () => {
   it("the 464-crew preset battle completes within a generous time budget", () => {
     // A performance guard: the crewed Battle-Line-vs-Spearhead battle (the
-    // heaviest crew preset) must complete well under the pre-optimisation ~5s
-    // baseline. With the per-ship path cache, batched assignment, and pathIndex
-    // stepping, measured wall-clock is ~1.4s on dev hardware. The budget (5s)
-    // is generous enough for slower CI hardware while still catching a caching
-    // regression (uncached A* pushed this battle to ~5s; removing the cache
-    // entirely would exceed the budget). The battle may run up to the 3600-tick
-    // cap depending on the pre-existing base-engine non-determinism, so this
-    // guards per-tick crew overhead, not battle duration.
+    // heaviest crew preset) must stay well under the uncached baseline. With
+    // the per-ship path cache, batched assignment, and pathIndex stepping,
+    // measured wall-clock is ~1.4s on dev hardware but ~5-6s on a CI runner
+    // (CI is several times slower). The budget (12s) is sized to be stable on
+    // slow CI while still catching a caching regression: uncached A* pushed
+    // this battle to ~5s on dev hardware (~19s at CI's slowdown), which would
+    // blow past 12s. The battle may run up to the 3600-tick cap depending on
+    // the pre-existing base-engine non-determinism, so this guards per-tick
+    // crew overhead, not battle duration.
     const inputs = buildInputs("preset-fleet-battleline", "preset-fleet-spearhead");
     const t0 = performance.now();
     runBattle(inputs);
     const elapsed = performance.now() - t0;
-    expect(elapsed, "crewed battle should complete within the perf budget").toBeLessThan(5000);
-  }, 15000);
+    expect(elapsed, "crewed battle should complete within the perf budget").toBeLessThan(12000);
+  }, 30000);
 });
