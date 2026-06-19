@@ -193,4 +193,37 @@ describe("engine.targeting", () => {
     );
     expect(firstHitTarget(result, ["d1", "d2", "d3"])).toBe("d2");
   });
+
+  it("emits targetId on the ship snapshot for an engaging ship with a live target", () => {
+    // A ship that can see and fire on an enemy must carry targetId on at least
+    // one frame once it has acquired its target; the field is omitted (not null)
+    // when no target is held. Guards the engine snapshot wiring that feeds the
+    // battle overlay renderer.
+    const result = runBattle(
+      inputs([
+        makeShip({
+          id: "a1",
+          side: "attacker",
+          x: 0,
+          y: 0,
+          weapons: [weapon()],
+          orders: { targetPriority: "nearest" },
+        }),
+        makeShip({
+          id: "d1",
+          side: "defender",
+          x: 60,
+          y: 0,
+          structure: 500,
+          orders: { engageRange: "hold" },
+        }),
+      ]),
+    );
+    const attackerFrames = result.frames.map((f) => f.ships.find((s) => s.instanceId === "a1"));
+    // At least one frame must carry a targetId pointing at the defender. The
+    // field appears once the attacker acquires its target and tracks until the
+    // target dies or breaks line of sight.
+    const targetingFrame = attackerFrames.find((s) => s !== undefined && s.targetId !== undefined);
+    expect(targetingFrame?.targetId).toBe("d1");
+  });
 });
