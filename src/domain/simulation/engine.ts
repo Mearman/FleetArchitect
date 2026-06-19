@@ -9,17 +9,23 @@ import type { ShipClassification } from "@/schema/hull";
 import { DEFAULT_WEAPON_AMMO } from "@/schema/module";
 import type {
   CommsEffect,
+  CloakEffect,
+  DecoyEffect,
+  EcmEffect,
+  HangarEffect,
   ModuleEffect,
   PointDefenseEffect,
   SensorEffect,
   WeaponEffect,
   WeaponType,
 } from "@/schema/module";
+import { defaultOrders } from "@/schema/fleet";
 import type { Orders } from "@/schema/fleet";
 import type {
   BattleInputs,
   BattleSummary,
   CombatShip,
+  ResolvedHardwire,
   ResolvedModule,
   SimCrew,
 } from "./types";
@@ -107,6 +113,14 @@ const SIM = {
   /** Nebula dampens shield regeneration and projectile tracking. */
   nebulaRegenFactor: 0.5,
   nebulaTrackingFactor: 0.5,
+  /**
+   * Adaptive-shield ceiling (factions update). A shield with an `adaptiveRampRate`
+   * recharges ever faster the longer it goes untouched — its effective rate is the
+   * base rate times `1 + rampRate * ticksUntouched`. This caps that multiplier so
+   * a shield left alone indefinitely tops out at this multiple of its base rate
+   * rather than ramping without bound. 3 means "at most triple the base recharge".
+   */
+  adaptiveShieldMaxMultiple: 3,
   /** Per-tick chance an asteroid field destroys a passing projectile. */
   asteroidDeflectChance: 0.01,
   /**
@@ -282,6 +296,45 @@ const SIM = {
    * when the cap fires. Sized far above any realistic fleet's comms-unit count.
    */
   maxCommsPairs: 20000,
+  /**
+   * Base passive acquisition radius (world units): the reference range at which a
+   * ship with no sensor uplift acquires an enemy carrying a stealth signature.
+   * It is the multiplicand the target's `SignatureEffect.acquisitionMultiplier`
+   * shrinks, and the range a sensor's `pierceCloak` flag is measured against —
+   * not a hard map bound. A NON-STEALTH enemy (no cloak and no signature module)
+   * is acquired regardless of distance, so this value never gates ordinary
+   * targeting: existing fleets see exactly the same candidate sets as before
+   * (determinism fixtures rely on this). It only takes effect once a target
+   * carries a signature module (its range shrinks to `baseAcquireRange *
+   * acquisitionMultiplier`) or a cloak (a pierce-cloak sensor must be within
+   * this range, extended by its own `detectionRange`, to see it). The value is
+   * comfortably larger than the deployment span (`2 * DEPLOY.edgeInset = 720`)
+   * plus battle drift, so a signature-equipped ship at the far edge is still
+   * acquirable until its multiplier pulls the range in.
+   */
+  baseAcquireRange: 2000,
+  /**
+   * Spacing (world units) between mines in a single mine-layer batch. The first
+   * mine of a batch drops on the laying ship's centre; subsequent mines step out
+   * in a deterministic ring at radii that are integer multiples of this spacing,
+   * so a multi-mine batch is spread out rather than stacked on one point. No rng:
+   * each mine's offset is a pure function of its index within the batch.
+   */
+  mineRingSpacing: 12,
+  /**
+   * Speed (world units per tick) of a boarding pod in flight toward its target.
+   * A pod homes on its target each tick, stepping this far along the bearing to
+   * the target's current position (clamped so it never overshoots). Pure
+   * function of positions — no rng.
+   */
+  boardingPodSpeed: 6,
+  /** Collision radius (world units) of a launched drone — small, fighter-sized. */
+  droneRadius: 9,
+  /** Collision radius (world units) of a decoy — a plausible ship-sized contact. */
+  decoyRadius: 16,
+  /** Lifetime (ticks) for a drone whose hangar sets no explicit lifetime: long
+   *  enough that a drone persists for the whole battle unless shot down. */
+  droneDefaultLifetime: 4000,
 };
 
 /**
@@ -319,6 +372,9 @@ interface GhostContact {
 /** Mutable per-ship runtime state carried across ticks. */
 interface SimShip {
   instanceId: string;
+  /** Faction this ship belongs to, carried from the resolved CombatShip so the
+   *  run can build the battle roster without re-reading the design. */
+  faction: string;
   side: "attacker" | "defender";
   classification: ShipClassification;
   x: number;
@@ -336,6 +392,33 @@ interface SimShip {
   shieldRechargeRate: number;
   shieldRechargeDelay: number;
   shieldRegenCountdown: number;
+  /**
+   * Adaptive shields (factions update). The aggregate per-tick ramp rate
+   * (`adaptiveRampRate`) of the ship's shields: the extra fraction of the base
+   * recharge rate added for every tick the shield has gone untouched. Derived
+   * in `recomputeAggregates` as the max across alive, functional shield modules
+   * (the best generator governs), so a ship with no adaptive shield carries 0
+   * and recharges exactly as before. Read only by the shield-regen step.
+   */
+  shieldAdaptiveRamp: number;
+  /**
+   * Adaptive shields: consecutive ticks the shield has gone untouched, capped so
+   * the bonus cannot grow without bound. Reset to 0 in `applyDamage` whenever the
+   * shield pool absorbs any damage, and incremented each tick by the shield-regen
+   * step. Stays 0 (never incremented past 0 to any effect) for a ship with no
+   * adaptive shield, since the regen step only ramps when `shieldAdaptiveRamp > 0`.
+   */
+  shieldUntouchedTicks: number;
+  /**
+   * Command aura (factions update). The best (max) friendly aura bonuses
+   * covering this ship this tick: an added fraction to weapon range
+   * (`auraRangeBonus`) and to firing accuracy (`auraAccuracyBonus`). Recomputed
+   * each tick in `applyCommandAuras` before firing, then read by `fireWeapons`
+   * and `spawnProjectile`. Both stay 0 when no aura covers the ship — and a
+   * battle with no aura modules never sets them — so non-aura play is unchanged.
+   */
+  auraRangeBonus: number;
+  auraAccuracyBonus: number;
   armourReduction: number;
   thrust: number;
   turnRate: number;
@@ -426,6 +509,15 @@ interface SimShip {
    *  thrust floor. Set only when modules are present. */
   hullBaseThrust?: number;
   /**
+   * Resolved hardwire conduits carried from the CombatShip: fixed one-to-one
+   * source-to-sink links by slot id, each carrying one resource. Present only
+   * when the design had `connections` (otherwise undefined), so the per-tick
+   * loop short-circuits the hardwire path for every unhardwired ship and
+   * behaviour stays byte-identical. The link behaviour itself lands in a later
+   * stage; here the loop can read these to find each sink's feeding source.
+   */
+  hardwires?: ResolvedHardwire[];
+  /**
    * True on the tick this ship was created as a break-away chunk from a
    * parent ship. Cleared by snapshot so the flag highlights only the
    * split frame, not every frame the chunk exists.
@@ -449,6 +541,47 @@ interface SimShip {
    * the targeting block can read it. Keyed by enemyId for stable lookup.
    */
   awareness: Map<string, Contact>;
+   /**
+   * Stealth detectability (factions update). The most recent tick on which this
+   * ship fired any weapon, used by the cloak rule: a cloaked ship drops its
+   * cloak for `decloakTicks` after firing, so it is detectable while
+   * `currentTick - lastFiredTick < decloakTicks`. Initialised to
+   * `Number.NEGATIVE_INFINITY` ("never fired") so a ship that has not yet fired
+   * is fully cloaked, and so the subtraction can never spuriously place a recent
+   * shot inside the decloak window. Only read for ships carrying a cloak module;
+   * a non-cloak ship's value is never consulted, and it is never snapshotted, so
+   * carrying it changes no frame output for existing battles.
+   */
+  lastFiredTick: number;
+  /**
+   * Phantom ship (factions update): a lightweight, non-real combatant launched
+   * by a hangar (drone) or decoy launcher (decoy) rather than deployed from a
+   * fleet. Present only on phantoms; every real ship leaves it undefined so the
+   * existing pipelines treat them exactly as before.
+   *
+   * A phantom IS a full SimShip so the targeting, projectile, point-defence and
+   * damage pipelines strike it without special-casing — enemies can acquire and
+   * shoot a drone or decoy exactly as they would a real ship. Phantoms are
+   * deliberately excluded from the things only real ships do: they never fire or
+   * move via the normal loops (a drone homes and strikes in a bespoke step; a
+   * decoy is static), they never count for victory, and they are never elected
+   * as a focus-fire target. Their hit points live in `structure`/`maxStructure`
+   * like any ship; when depleted (or their `ticksLeft` expires) they are removed.
+   */
+  phantom?: {
+    kind: "drone" | "decoy";
+    /** Owning real ship's instance id (for re-counting a hangar's live drones). */
+    ownerId: string;
+    /** Ticks before the phantom expires on its own (decoys use `duration`;
+     *  drones use their `droneLifetime` if set, else a large default). */
+    ticksLeft: number;
+    /** Drone-only: damage dealt each tick to an enemy in `range`. 0 for decoys. */
+    damage: number;
+    /** Drone-only: range at which a drone strikes its target. 0 for decoys. */
+    range: number;
+    /** Drone-only: homing speed in world units per tick. 0 for decoys. */
+    speed: number;
+  };
 }
 
 /**
@@ -554,6 +687,23 @@ interface SimModule {
   turretArc: number;
   turretTurnRate: number;
   /**
+   * Hardwire conduits where this module is the consumer (sink): the resolved
+   * links feeding it directly from a named source module. Empty (and omitted)
+   * unless the design hardwired this cell as a sink. The per-tick loop reads
+   * these to feed the module from its source's stored resource; the source is
+   * looked up by `sourceSlotId` against the ship's modules, and the link is
+   * dead if either endpoint module is destroyed. Behaviour lands in a later
+   * stage — this only carries the structure.
+   */
+  hardwireSinks?: ResolvedHardwire[];
+  /**
+   * Hardwire conduits where this module is the source: the resolved links it
+   * feeds. Carried so a source can divide its stored ammo / power output across
+   * its hardwired sinks (no dynamic reallocation). Empty (and omitted) unless
+   * the design hardwired this cell as a source.
+   */
+  hardwireSources?: ResolvedHardwire[];
+  /**
    * Live barrel angle (radians, ship-local) for a turret weapon. Slews toward
    * the target bearing each tick at `turretTurnRate`, clamped to
    * `[weaponFacing - turretArc, weaponFacing + turretArc]`. Firing direction
@@ -605,6 +755,47 @@ interface SimModule {
    * sensor modules; undefined and unused on every other kind.
    */
   sensorRangeSetting?: number;
+   /**
+   * Movement/power tech timers (factions update). All default to 0 and are only
+   * ever non-zero on the matching tech module, so a ship without these modules
+   * carries them at their defaults and behaves byte-identically.
+   *
+   * `techCooldown` is the shared recharge counter for the one-shot tech kinds
+   * (`blink`, `afterburner`, `overcharge`): ticks remaining before the module
+   * may fire/activate again. `techActive` is the active-duration counter for the
+   * sustained kinds (`afterburner`, `overcharge`): ticks of boost remaining. A
+   * blink drive uses only `techCooldown` (its effect is the instant teleport,
+   * with no active window). Decremented once per tick in `stepTechCooldowns`.
+   */
+  techCooldown: number;
+  techActive: number;
+  /**
+   * Reactive armour recharge counter (factions update). Ticks remaining before
+   * an armour module's reactive layer is charged and can absorb its extra
+   * `reactiveReduction` fraction again. 0 means charged (ready). Set to the
+   * module's `reactiveWindow` the moment the layer absorbs a hit, then counted
+   * down once per tick in `stepTechCooldowns`. Only ever non-zero on an armour
+   * module carrying `reactiveReduction`, so a passive-armour or non-armour
+   * module keeps it at 0 for its whole life and the reactive path is inert.
+   */
+  reactiveCharge: number;
+  /**
+   * Mine-layer recharge counter (factions update). Ticks remaining before a
+   * mine-layer module may lay its next batch. 0 means ready. Set to the effect's
+   * `layCooldown` the moment a batch is laid, then counted down once per tick in
+   * `stepTechCooldowns`. Only ever non-zero on a mine-layer module, so every
+   * other module keeps it at 0 for its whole life and the lay path is inert.
+   */
+  mineCooldown: number;
+  /**
+   * Boarding launcher recharge counter (factions update). Ticks remaining
+   * before a boarding module may launch its next pod salvo. 0 means ready. Set
+   * to the effect's `cooldown` the moment a salvo launches, then counted down
+   * once per tick in `stepTechCooldowns`. Only ever non-zero on a boarding
+   * module, so every other module keeps it at 0 for its whole life and the
+   * launch path is inert.
+   */
+  boardingCooldown: number;
 }
 
 /** Mutable in-flight projectile. */
@@ -637,6 +828,50 @@ interface SimProjectile {
   ownerId: string;
   ownerSide: "attacker" | "defender";
   targetId: string;
+}
+
+/**
+ * A deployed proximity mine (factions update — mine-layer module). A static
+ * world entity laid by a ship's mine-layer: it sits where it was dropped, arms
+ * after `armingLeft` reaches 0, then detonates on the first enemy ship inside
+ * `radius`, dealing `damage` through the normal damage path. Mines never move
+ * and never damage their own side. Detonated mines are filtered out of the
+ * world array the tick they fire, so the array only ever holds live mines.
+ *
+ * `ownerInstanceId` / `ownerSlotId` identify the laying ship and module so a
+ * layer can be capped to one live batch at a time (it does not re-lay while any
+ * mine it laid is still alive). They never feed back into damage — a mine harms
+ * by `side`, not by owner — and are not snapshotted.
+ */
+interface SimMine {
+  id: string;
+  side: "attacker" | "defender";
+  x: number;
+  y: number;
+  ownerInstanceId: string;
+  ownerSlotId: string;
+  /** Ticks remaining before the mine is armed; <= 0 means armed (can detonate). */
+  armingLeft: number;
+  damage: number;
+  radius: number;
+}
+
+/**
+ * A boarding pod in flight (factions update — boarding module). Launched toward
+ * a chosen enemy within range, it homes on its `targetInstanceId` each tick at
+ * `SIM.boardingPodSpeed`. On contact (within the target's collision radius) it
+ * boards: `troops` of the target's nearest alive functional modules are
+ * disabled, degrading the ship, then the pod is consumed. A pod whose target
+ * dies or vanishes before contact expires and is filtered out. `troops` is the
+ * module-disable budget carried from the launcher effect; it is not snapshotted.
+ */
+interface SimPod {
+  id: string;
+  side: "attacker" | "defender";
+  x: number;
+  y: number;
+  targetInstanceId: string;
+  troops: number;
 }
 
 function radiusFor(classification: ShipClassification): number {
@@ -779,6 +1014,7 @@ function toSimShip(ship: CombatShip, rng: () => number): SimShip {
   const weapons = ship.stats.weapons.map((w) => w.effect);
   const base: SimShip = {
     instanceId: ship.instanceId,
+    faction: ship.faction ?? "",
     side: ship.side,
     classification: ship.classification,
     x: ship.position.x,
@@ -794,6 +1030,14 @@ function toSimShip(ship: CombatShip, rng: () => number): SimShip {
     shieldRechargeRate: ship.stats.shieldRechargeRate,
     shieldRechargeDelay: ship.stats.shieldRechargeDelay,
     shieldRegenCountdown: 0,
+    // Adaptive shields and command auras default to inert: no ramp, no
+    // untouched streak, no aura bonuses. recomputeAggregates derives the ramp
+    // for modular ships with adaptive shields; the legacy aggregated path has
+    // no module to carry an adaptiveRampRate, so it stays 0 and unchanged.
+    shieldAdaptiveRamp: 0,
+    shieldUntouchedTicks: 0,
+    auraRangeBonus: 0,
+    auraAccuracyBonus: 0,
     armourReduction: ship.stats.damageReduction,
     thrust: ship.stats.thrust,
     turnRate: ship.stats.turnRate,
@@ -816,12 +1060,23 @@ function toSimShip(ship: CombatShip, rng: () => number): SimShip {
     // No awareness yet — computeAwareness fills these from tick 0 onward.
     ghosts: [],
     awareness: new Map(),
+    // Never fired yet: a cloaked ship begins fully cloaked, and no decloak
+    // window is open. Read only by the cloak detectability rule.
+    lastFiredTick: Number.NEGATIVE_INFINITY,
   };
 
   // Per-module path: build SimModule[] from the resolved modules and let
   // recomputeAggregates derive the live combat stats from the alive set.
   if (ship.modules !== undefined && ship.modules.length > 0) {
     base.modules = ship.modules.map((m) => toSimModule(m, rng));
+    // Carry the resolved hardwires onto the ship and index them onto the sink
+    // and source SimModules so the per-tick loop can read a module's feeding
+    // links directly. Omitted entirely on unhardwired designs so behaviour is
+    // byte-identical (no fields touched, no iteration).
+    if (ship.hardwires !== undefined && ship.hardwires.length > 0) {
+      base.hardwires = ship.hardwires;
+      attachHardwires(base.modules, ship.hardwires);
+    }
     base.hullBaseThrust = ship.stats.thrust - sumWeaponThrust(ship);
     base.crew = spawnCrew(base.instanceId, base.modules);
     recomputeAggregates(base);
@@ -902,7 +1157,44 @@ facing: m.facing,
     ...(m.sensorRangeSetting !== undefined
       ? { sensorRangeSetting: m.sensorRangeSetting }
       : {}),
+    // Tech timers start idle: ready to fire (no cooldown) and inactive (no
+    // active window). A non-tech module keeps both at 0 for its whole life.
+    techCooldown: 0,
+    techActive: 0,
+    // Reactive armour starts charged (0 = ready). Non-armour and passive-armour
+    // modules never set it, so it stays 0 and the reactive path stays inert.
+    reactiveCharge: 0,
+    // Mine-layer starts ready (0 = can lay). Only a mine-layer module ever sets
+    // it, so every other module keeps it at 0 and never lays anything.
+    mineCooldown: 0,
+    // Boarding launcher starts ready (0 = can launch). Only a boarding module
+    // ever sets it, so every other module keeps it at 0 and never launches.
+    boardingCooldown: 0,
   };
+}
+
+/**
+ * Index a ship's resolved hardwires onto its SimModules: each link is recorded
+ * on its source module (`hardwireSources`) and its sink module
+ * (`hardwireSinks`), so the per-tick loop can read a module's feeding source or
+ * fed sinks without scanning the whole ship's link list. Only called when the
+ * design had connections, so unhardwired ships never gain these arrays and stay
+ * byte-identical. A link whose endpoint slot id has no matching module (e.g. it
+ * referenced a non-module cell) is skipped — the resolver already filters those,
+ * so this is belt-and-braces, not a behavioural fallback.
+ */
+function attachHardwires(
+  modules: SimModule[],
+  hardwires: readonly ResolvedHardwire[],
+): void {
+  const bySlot = new Map(modules.map((m) => [m.slotId, m]));
+  for (const link of hardwires) {
+    const source = bySlot.get(link.sourceSlotId);
+    const sink = bySlot.get(link.sinkSlotId);
+    if (source === undefined || sink === undefined) continue;
+    (source.hardwireSources ??= []).push(link);
+    (sink.hardwireSinks ??= []).push(link);
+  }
 }
 
 /**
@@ -1464,11 +1756,51 @@ function rechargeAndConsume(ship: SimShip): void {
     if (wired.has(crewCellKey(m.col, m.row))) m.charge = SIM.chargeBufferMax;
   }
 
+  // 1b. Explicit power conduits: a power-drawing module with a live power
+  //     hardwire to an alive reactor refills to full regardless of distance —
+  //     the any-distance generalisation of the proximity wiring above, tied to a
+  //     specific reactor instead of any reactor in reach. A severed link (the
+  //     named reactor dead) refills nothing, so the module drops back onto
+  //     proximity wiring / crew hauling. Skipped entirely on designs with no
+  //     power hardwires (`hardwireSinks` omitted), keeping them byte-identical.
+  refillHardwiredPower(ship);
+
   // 2. Spend a tick of charge from operating modules.
   for (const m of ship.modules) {
     if (m.powerDraw <= 0) continue;
     if (!m.alive || !m.powered || !m.manned || m.charge <= 0) continue;
     m.charge = Math.max(0, m.charge - m.powerDraw);
+  }
+}
+
+/**
+ * Refill every power-drawing module that has a live power hardwire to an alive
+ * reactor, to a full local buffer, regardless of distance. This is the explicit,
+ * any-distance counterpart to the proximity wiring in `rechargeAndConsume`: each
+ * link names one reactor, and the conduit is dead the moment that reactor (or the
+ * sink) dies. A ship with no power hardwires never enters the loop body (every
+ * module's `hardwireSinks` is omitted), so its charge state is unchanged.
+ *
+ * A reactor produces power every tick, so an output divided across several
+ * hardwired sinks still tops each one to full — there is no finite store to
+ * apportion the way ammo magazines need. Iterated in module (col, row) array
+ * order; the result is order-independent (each sink is set, not accumulated), so
+ * determinism holds.
+ */
+function refillHardwiredPower(ship: SimShip): void {
+  if (ship.modules === undefined) return;
+  const bySlot = new Map(ship.modules.map((m) => [m.slotId, m]));
+  for (const sink of ship.modules) {
+    if (sink.powerDraw <= 0 || !sink.alive) continue;
+    if (sink.hardwireSinks === undefined) continue;
+    for (const link of sink.hardwireSinks) {
+      if (link.resource !== "power") continue;
+      const source = bySlot.get(link.sourceSlotId);
+      if (source !== undefined && source.alive && source.effect.kind === "power") {
+        sink.charge = SIM.chargeBufferMax;
+        break;
+      }
+    }
   }
 }
 
@@ -1530,6 +1862,19 @@ function isCharged(m: SimModule): boolean {
  * Whether a crew member has finished its current leg: it has no steps left on
  * its path and is standing on the cell of its current `targetSlotId`. A member
  * still walking (`pathIndex < path.length`) or with no target has not arrived.
+ * Whether a module is fully functional this tick: alive, within the brownout
+ * ceiling (`powered`), manned, and locally charged. The same gate the firing
+ * loop and the aggregate thrust total apply, factored out so the tech step can
+ * ask the question without repeating the four-way conjunction.
+ */
+function isOperational(m: SimModule): boolean {
+  return m.alive && m.powered && m.manned && isCharged(m);
+}
+
+/**
+ * Whether a crew member has finished its current leg: its path is empty and it
+ * is standing on the cell of its current `targetSlotId`. A member still walking
+ * (non-empty path) or with no target has not arrived.
  */
 function hasArrived(crew: SimCrew, bySlot: ReadonlyMap<string, SimModule>): boolean {
   if (crew.path.length - crew.pathIndex > 0 || crew.targetSlotId === undefined) return false;
@@ -1675,6 +2020,109 @@ function ammoShortfall(weapon: SimModule): number {
 }
 
 /**
+ * Whether a finite-ammo weapon is fed by a live ammo conduit: it has at least
+ * one ammo link whose named source is a magazine that is still alive and still
+ * holds rounds. A magazine that has died or run dry severs the conduit, dropping
+ * the weapon back onto the crew-haul economy. A weapon with no ammo capacity
+ * (unlimited) is never resupplied, so it is never considered conduit-fed.
+ */
+function hasLiveAmmoHardwire(
+  weapon: SimModule,
+  bySlot: ReadonlyMap<string, SimModule>,
+): boolean {
+  if (weapon.hardwireSinks === undefined) return false;
+  if (weapon.effect.kind !== "weapon" || weapon.effect.ammoCapacity === undefined) {
+    return false;
+  }
+  for (const link of weapon.hardwireSinks) {
+    if (link.resource !== "ammo") continue;
+    const source = bySlot.get(link.sourceSlotId);
+    if (
+      source !== undefined &&
+      source.alive &&
+      source.effect.kind === "magazine" &&
+      source.ammoStored > 0
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Refill every finite-ammo weapon fed by a live ammo conduit, drawing directly
+ * from its magazine's `ammoStored` each tick with no crew haul. A magazine's
+ * remaining store is divided across its hardwired sinks deterministically: sinks
+ * are served in module (col, row) array order, each taking up to an even share of
+ * the magazine's current store (and no more than it is short of capacity), so the
+ * apportionment is a pure function of the alive set and never depends on Map or
+ * Set iteration order. A severed link (the magazine dead or empty) refills
+ * nothing — `hasLiveAmmoHardwire` already excludes it, and the share is floored
+ * at the store actually present.
+ *
+ * Skipped entirely on designs with no ammo hardwires (every weapon's
+ * `hardwireSinks` is omitted), so their ammo state is byte-identical to before.
+ */
+function refillHardwiredAmmo(ship: SimShip): void {
+  if (ship.modules === undefined) return;
+  const bySlot = new Map(ship.modules.map((m) => [m.slotId, m]));
+
+  // Group conduit-fed sinks by their feeding magazine so a magazine's store is
+  // shared fairly across the weapons it serves. A weapon may name more than one
+  // magazine; it is assigned to the first live one in its link order, matching
+  // the single-source-per-link conduit model (no dynamic reallocation).
+  const sinksByMagazine = new Map<string, SimModule[]>();
+  for (const sink of ship.modules) {
+    if (!sink.alive || sink.hardwireSinks === undefined) continue;
+    if (sink.effect.kind !== "weapon" || sink.effect.ammoCapacity === undefined) continue;
+    for (const link of sink.hardwireSinks) {
+      if (link.resource !== "ammo") continue;
+      const source = bySlot.get(link.sourceSlotId);
+      if (
+        source === undefined ||
+        !source.alive ||
+        source.effect.kind !== "magazine" ||
+        source.ammoStored <= 0
+      ) {
+        continue;
+      }
+      const existing = sinksByMagazine.get(source.slotId);
+      if (existing === undefined) {
+        sinksByMagazine.set(source.slotId, [sink]);
+      } else {
+        existing.push(sink);
+      }
+      break;
+    }
+  }
+
+  // Iterate magazines in module (col, row) array order for a stable share order.
+  for (const source of ship.modules) {
+    if (source.effect.kind !== "magazine") continue;
+    const sinks = sinksByMagazine.get(source.slotId);
+    if (sinks === undefined || sinks.length === 0) continue;
+    // Sinks are collected in module array order above, which is (col, row) order
+    // because `ship.modules` is built in that order by the resolver.
+    let remaining = sinks.length;
+    for (const sink of sinks) {
+      if (source.ammoStored <= 0) break;
+      // Even share of the store still in the magazine across the sinks not yet
+      // served, so the division is balanced and integer-stable: the last sink
+      // gets whatever rounds the earlier shares left behind.
+      const share = Math.floor(source.ammoStored / remaining);
+      remaining -= 1;
+      if (sink.effect.kind !== "weapon") continue;
+      const cap = sink.effect.ammoCapacity;
+      if (cap === undefined) continue;
+      const transfer = Math.min(share, Math.max(0, cap - sink.ammo));
+      if (transfer <= 0) continue;
+      sink.ammo += transfer;
+      source.ammoStored -= transfer;
+    }
+  }
+}
+
+/**
  * Reset a crew member's task after a break-apart so it re-plans within its new
  * fragment next tick. A member's target or haul route may now live on a
  * different fragment, so the safe, deterministic move is to clear the
@@ -1733,6 +2181,26 @@ function chooseAmmoRun(
   claimedWeapons: ReadonlySet<string>,
 ): { source: SimModule; sink: SimModule; path: { col: number; row: number }[] } | undefined {
   if (dryWeapons.length === 0 || magazines.length === 0) return undefined;
+  if (ship.modules === undefined) return undefined;
+  const modules = ship.modules;
+  const bySlot = new Map(modules.map((m) => [m.slotId, m]));
+  const weapons = modules
+    .filter(
+      (m) =>
+        m.alive &&
+        m.effect.kind === "weapon" &&
+        m.effect.ammoCapacity !== undefined &&
+        ammoShortfall(m) >= SIM.ammoRunAmount &&
+        !claimedWeapons.has(m.slotId) &&
+        // A weapon fed by a live ammo conduit refills directly from its
+        // magazine each tick, so no crew haul job is ever created for it. The
+        // conduit is dead once its named magazine dies, at which point the
+        // weapon re-enters the crew-haul economy here.
+        !hasLiveAmmoHardwire(m, bySlot),
+    )
+    .slice()
+    .sort(compareByCell);
+  if (weapons.length === 0) return undefined;
 
   for (const sink of dryWeapons) {
     if (claimedWeapons.has(sink.slotId)) continue;
@@ -1918,9 +2386,18 @@ function advanceCrew(crew: SimCrew, cells: ReadonlyMap<string, SimModule>): void
  * when at least `crewRequired` crew occupy its cell. Crew standing on a cell
  * count toward manning regardless of their job label, so a member that has just
  * arrived mans the station the same tick.
+ *
+ * Manning conduit: a station with a live manning hardwire — a link whose named
+ * source module is still alive — counts as manned without crew, modelling a
+ * fixed control run from a command/quarters source straight into the station.
+ * The link is severed (and the station reverts to needing crew) the moment its
+ * source module dies. Crewless designs and designs with no manning hardwires
+ * never enter this branch (`hardwireSinks` is omitted), so their manning is
+ * derived exactly as before and the snapshots stay byte-identical.
  */
 function recomputeManning(ship: SimShip): void {
   if (ship.modules === undefined || ship.crew === undefined) return;
+  const bySlot = new Map(ship.modules.map((m) => [m.slotId, m]));
   const counts = new Map<string, number>();
   for (const c of ship.crew) {
     const k = crewCellKey(c.col, c.row);
@@ -1932,8 +2409,30 @@ function recomputeManning(ship: SimShip): void {
       continue;
     }
     const present = counts.get(crewCellKey(m.col, m.row)) ?? 0;
-    m.manned = present >= m.crewRequired;
+    if (present >= m.crewRequired) {
+      m.manned = true;
+      continue;
+    }
+    m.manned = hasLiveManningHardwire(m, bySlot);
   }
+}
+
+/**
+ * Whether a sink module is manned through a live manning hardwire: it has at
+ * least one manning link whose named source module is still alive. A dead source
+ * severs the link, so a sink fed only by dead sources falls back to needing crew.
+ */
+function hasLiveManningHardwire(
+  sink: SimModule,
+  bySlot: ReadonlyMap<string, SimModule>,
+): boolean {
+  if (sink.hardwireSinks === undefined) return false;
+  for (const link of sink.hardwireSinks) {
+    if (link.resource !== "manning") continue;
+    const source = bySlot.get(link.sourceSlotId);
+    if (source !== undefined && source.alive) return true;
+  }
+  return false;
 }
 
 /** Thrust contributed by engine modules (subtracted from the aggregate to
@@ -2029,6 +2528,17 @@ function recomputeAggregates(ship: SimShip): void {
       supply += m.effect.output;
     }
   }
+  // Reactor overcharge (factions update): every active overcharge module lifts
+  // the power ceiling by its `powerSurge` for the duration of its window, so
+  // more consumers stay online through a brownout. Activation lives in
+  // `stepOvercharge` (driven by the brownout below); here we only fold in the
+  // surge of modules already active. A ship with no active overcharge
+  // contributes nothing, so the power budget is unchanged.
+  for (const m of ship.modules) {
+    if (m.effect.kind === "overcharge" && m.techActive > 0 && isOperational(m)) {
+      supply += m.effect.powerSurge;
+    }
+  }
 
   // 2. Start every alive module powered; we'll disable the hungriest to
   //    fit the budget. Reactors themselves draw nothing.
@@ -2079,6 +2589,7 @@ function recomputeAggregates(ship: SimShip): void {
   let shieldCapacity = 0;
   let shieldRechargeRate = 0;
   let shieldRechargeDelay = 0;
+  let shieldAdaptiveRamp = 0;
   const weapons: WeaponEffect[] = [];
   const cooldowns: number[] = [];
 
@@ -2104,6 +2615,13 @@ function recomputeAggregates(ship: SimShip): void {
         shieldCapacity += effect.capacity;
         shieldRechargeRate += effect.rechargeRate;
         shieldRechargeDelay = Math.max(shieldRechargeDelay, effect.rechargeDelay);
+        // Adaptive shields: the best generator governs the whole-ship ramp, so a
+        // mix of conventional and adaptive shields ramps at the strongest one's
+        // rate rather than summing into a runaway. Omitted (conventional) shields
+        // contribute 0, leaving the ship's ramp at 0 and the regen unchanged.
+        if (effect.adaptiveRampRate !== undefined) {
+          shieldAdaptiveRamp = Math.max(shieldAdaptiveRamp, effect.adaptiveRampRate);
+        }
         break;
       case "armour":
         armourReduction = Math.max(armourReduction, effect.damageReduction);
@@ -2143,6 +2661,7 @@ function recomputeAggregates(ship: SimShip): void {
   ship.maxShield = shieldCapacity;
   ship.shieldRechargeRate = shieldRechargeRate;
   ship.shieldRechargeDelay = shieldRechargeDelay;
+  ship.shieldAdaptiveRamp = shieldAdaptiveRamp;
   ship.shield = Math.min(ship.shield, shieldCapacity);
   ship.weapons = weapons;
   ship.weaponCooldowns = cooldowns;
@@ -2217,6 +2736,7 @@ interface EnemyView {
 function visibleEnemyViews(
   ship: SimShip,
   enemies: readonly SimShip[],
+  tick: number,
 ): EnemyView[] {
   const enemyById = new Map(enemies.map((e) => [e.instanceId, e]));
   const views: EnemyView[] = [];
@@ -2226,6 +2746,14 @@ function visibleEnemyViews(
     // the other enemy list (focus election passes a single side's list); only
     // act on a live enemy present in this list.
     if (enemy === undefined || !enemy.alive) continue;
+    // Stealth acquisition gate (factions update): even an enemy the ship is
+    // aware of (seen via sensors/fog) cannot be locked onto while it is cloaked
+    // or beyond the viewer's signature-reduced acquisition range, unless a
+    // pierce-cloak sensor defeats the cloak. A target with neither stealth
+    // module is always detectable, so a non-stealth battle's visible set — and
+    // thus its targeting — is byte-identical to before.
+    const distSq = (contact.x - ship.x) ** 2 + (contact.y - ship.y) ** 2;
+    if (!isDetectable(ship, enemy, distSq, tick)) continue;
     views.push({
       instanceId: enemy.instanceId,
       // Position comes from the contact (the ghost's last-known x/y, or the
@@ -2243,6 +2771,197 @@ function visibleEnemyViews(
     p.instanceId < q.instanceId ? -1 : p.instanceId > q.instanceId ? 1 : 0,
   );
   return views;
+}
+
+/**
+ * The cloak effect of a ship that is currently cloaking it, or undefined.
+ *
+ * A ship is cloaked when it carries at least one alive/operational cloak module
+ * AND it has not fired within that module's `decloakTicks` window. The decloak
+ * window opens on the tick the ship last fired (`lastFiredTick`, set in
+ * `fireWeapons`) and stays open for `decloakTicks` ticks afterwards. While the
+ * window is open the cloak is dropped, so the ship is acquirable like any other.
+ *
+ * When several cloak modules are fitted the longest `decloakTicks` governs (the
+ * ship stays exposed for the worst of them after firing); the modules are
+ * scanned in fixed (col, row) order so the choice is deterministic. Returns
+ * undefined when the ship has no operational cloak or is inside its decloak
+ * window — in both cases the cloak is not hiding it this tick.
+ */
+function activeCloak(ship: SimShip, tick: number): CloakEffect | undefined {
+  if (ship.modules === undefined) return undefined;
+  let best: CloakEffect | undefined;
+  for (const m of ship.modules) {
+    if (m.effect.kind !== "cloak") continue;
+    if (!isOperational(m)) continue;
+    const cloak = m.effect;
+    // Within the decloak window the cloak is down: ignore this module.
+    if (tick - ship.lastFiredTick < cloak.decloakTicks) continue;
+    if (best === undefined || cloak.decloakTicks > best.decloakTicks) {
+      best = cloak;
+    }
+  }
+  return best;
+}
+
+/**
+ * The signature multiplier currently reducing how far enemies can acquire this
+ * ship: the smallest `acquisitionMultiplier` across its alive/operational
+ * signature modules (the best stealth coating governs), or 1 when it carries
+ * none — i.e. no reduction. Modules are scanned in fixed (col, row) order so the
+ * tie-break (equal multipliers) is deterministic, though the result is identical
+ * for ties since the value, not the module, is returned.
+ */
+function signatureMultiplier(ship: SimShip): number {
+  if (ship.modules === undefined) return 1;
+  let multiplier = 1;
+  for (const m of ship.modules) {
+    if (m.effect.kind !== "signature") continue;
+    if (!isOperational(m)) continue;
+    if (m.effect.acquisitionMultiplier < multiplier) {
+      multiplier = m.effect.acquisitionMultiplier;
+    }
+  }
+  return multiplier;
+}
+
+/**
+ * The viewer's effective passive acquisition range (world units): the base
+ * acquisition radius plus the sum of every alive/operational sensor module's
+ * `detectionRange`. Sensors are additive — bolting on more arrays sees further.
+ * A viewer with no sensor modules sees out to `SIM.baseAcquireRange`, which for
+ * a non-stealth target is unbounded in effect (that target is always
+ * detectable; see `isDetectable`), so this range only ever gates stealthed prey.
+ */
+function viewerAcquireRange(viewer: SimShip): number {
+  let range = SIM.baseAcquireRange;
+  if (viewer.modules === undefined) return range;
+  for (const m of viewer.modules) {
+    if (m.effect.kind !== "sensor") continue;
+    if (!isOperational(m)) continue;
+    range += m.effect.detectionRange;
+  }
+  return range;
+}
+
+/**
+ * Whether the viewer has an alive/operational pierce-cloak sensor whose
+ * effective range covers `distance` — an active scan that defeats a passive
+ * cloak. Each pierce-cloak sensor reaches `SIM.baseAcquireRange + detectionRange`
+ * (the same additive model as `viewerAcquireRange`, but counting only the
+ * pierce-cloak arrays, since a plain sensor extends ordinary acquisition without
+ * seeing through cloak). Scanned in fixed (col, row) order; short-circuits on
+ * the first sensor in range.
+ */
+function viewerPiercesCloakAt(viewer: SimShip, distance: number): boolean {
+  if (viewer.modules === undefined) return false;
+  for (const m of viewer.modules) {
+    if (m.effect.kind !== "sensor") continue;
+    if (m.effect.pierceCloak !== true) continue;
+    if (!isOperational(m)) continue;
+    if (distance <= SIM.baseAcquireRange + m.effect.detectionRange) return true;
+  }
+  return false;
+}
+
+/**
+ * Whether `viewer` can currently acquire `target` as a firing/targeting
+ * candidate, given the squared distance between them. This is the stealth
+ * acquisition gate that filters the candidate enemy set in `pickTarget` and
+ * `electFocusTarget`, and validates a shot in `fireWeapons`.
+ *
+ * Opt-in by construction: a target with neither an operational cloak nor an
+ * operational signature module is ALWAYS detectable, regardless of distance —
+ * exactly the pre-stealth behaviour, so existing fleets produce byte-identical
+ * targeting (the determinism fixtures rely on this).
+ *
+ * Cloak: an operational cloak (outside its post-fire decloak window) hides the
+ * target outright UNLESS the viewer has a pierce-cloak sensor in range. A
+ * cloaked target is invisible even if it also carries a signature module — the
+ * cloak is the stronger effect.
+ *
+ * Signature: an operational signature module shrinks the viewer's effective
+ * acquisition range to `viewerAcquireRange(viewer) * acquisitionMultiplier`; the
+ * target is acquired only within that reduced range.
+ *
+ * The computation is a pure function of the two ships' module states, their
+ * separation, and the tick — no rng is drawn, so the random stream is untouched
+ * by stealth and stays the same length regardless of detection outcomes.
+ */
+function isDetectable(
+  viewer: SimShip,
+  target: SimShip,
+  distanceSq: number,
+  tick: number,
+): boolean {
+  const cloak = activeCloak(target, tick);
+  if (cloak !== undefined) {
+    // Cloaked: only an in-range pierce-cloak sensor can see it.
+    return viewerPiercesCloakAt(viewer, Math.sqrt(distanceSq));
+  }
+  const multiplier = signatureMultiplier(target);
+  // Fast path and opt-in guarantee: a target with no signature reduction is
+  // detectable at any distance, so non-stealth targeting is unchanged.
+  if (multiplier >= 1) return true;
+  const effectiveRange = viewerAcquireRange(viewer) * multiplier;
+  return distanceSq <= effectiveRange * effectiveRange;
+}
+
+/**
+ * The strongest ECM (jamming) effect operational on a ship — the one degrading
+ * fire aimed AT it. The strongest is the module with the largest
+ * `trackingReduction` (the heaviest jammer dominates); modules are scanned in
+ * fixed (col, row) order so the choice is deterministic even on ties. Returns
+ * undefined when the ship carries no alive/operational ECM, in which case
+ * incoming fire is untouched — the opt-in default that keeps non-ECM battles
+ * byte-identical.
+ */
+function targetEcm(ship: SimShip): EcmEffect | undefined {
+  if (ship.modules === undefined) return undefined;
+  let best: EcmEffect | undefined;
+  for (const m of ship.modules) {
+    if (m.effect.kind !== "ecm") continue;
+    if (!isOperational(m)) continue;
+    const ecm = m.effect;
+    if (best === undefined || ecm.trackingReduction > best.trackingReduction) {
+      best = ecm;
+    }
+  }
+  return best;
+}
+
+/**
+ * The fraction of ECM-stripped tracking/lock that an attacker's ECCM restores:
+ * the largest `trackingRestore` across its alive/operational ECCM modules (the
+ * best counter governs), clamped to 1, or 0 when the attacker carries none.
+ * Modules are scanned in fixed (col, row) order so the tie-break is
+ * deterministic. An attacker with no ECCM gets 0 restore, so an ECM target
+ * degrades its fire by the full reduction — and a battle with no ECCM is
+ * unaffected by this function (it always returns 0).
+ */
+function attackerEccmRestore(ship: SimShip): number {
+  if (ship.modules === undefined) return 0;
+  let restore = 0;
+  for (const m of ship.modules) {
+    if (m.effect.kind !== "eccm") continue;
+    if (!isOperational(m)) continue;
+    if (m.effect.trackingRestore > restore) restore = m.effect.trackingRestore;
+  }
+  return restore > 1 ? 1 : restore;
+}
+
+/**
+ * The net tracking-reduction fraction an `attacker`'s fire suffers when aimed at
+ * `target`, after the target's ECM jams the lock and the attacker's ECCM claws
+ * some of it back: `max(0, trackingReduction - trackingRestore)`. Returns 0 when
+ * the target carries no operational ECM, so a projectile spawned against a
+ * non-ECM ship keeps its full tracking — non-ECM battles are byte-identical.
+ */
+function netTrackingReduction(attacker: SimShip, target: SimShip): number {
+  const ecm = targetEcm(target);
+  if (ecm === undefined) return 0;
+  const net = ecm.trackingReduction - attackerEccmRestore(attacker);
+  return net > 0 ? net : 0;
 }
 
 /**
@@ -2342,8 +3061,12 @@ function pickTarget(
   ship: SimShip,
   enemies: readonly SimShip[],
   focusTargetId: string | undefined,
+  tick: number,
 ): EnemyView | undefined {
-  const visible = visibleEnemyViews(ship, enemies);
+  // Visible = enemies in awareness (fog/sensors) AND locked-on (stealth gate),
+  // filtered inside `visibleEnemyViews`. A non-stealth battle's candidate set is
+  // unchanged, so targeting stays byte-identical for fleets without stealth tech.
+  const visible = visibleEnemyViews(ship, enemies, tick);
   if (visible.length === 0) return undefined;
 
   // Focus-fire: defer to the fleet-agreed target, but only if this ship can
@@ -2381,11 +3104,14 @@ function electFocusTarget(
   side: "attacker" | "defender",
   ships: readonly SimShip[],
   enemies: readonly SimShip[],
+  tick: number,
 ): string | undefined {
-  const living = enemies.filter((e) => e.alive);
+  // Only real ships are focus-election candidates and voters — a fleet should
+  // never agree to focus-fire a drone or decoy, and phantoms carry no doctrine.
+  const living = enemies.filter((e) => e.alive && e.phantom === undefined);
   if (living.length === 0) return undefined;
   const voters = ships.filter(
-    (s) => s.alive && s.side === side && s.orders.focusFire,
+    (s) => s.alive && s.side === side && s.orders.focusFire && s.phantom === undefined,
   );
   if (voters.length === 0) return undefined;
 
@@ -2396,7 +3122,7 @@ function electFocusTarget(
   // consistent with what each voter would pick alone.
   const totals = new Map<string, number>();
   for (const voter of voters) {
-    const visible = visibleEnemyViews(voter, living);
+    const visible = visibleEnemyViews(voter, living, tick);
     for (const enemy of visible) {
       const s = scoreEnemy(voter, enemy, visible);
       totals.set(enemy.instanceId, (totals.get(enemy.instanceId) ?? 0) + s);
@@ -2471,8 +3197,18 @@ function applyDamage(
   if (shieldAbsorbed > 0) {
     ship.shieldRegenCountdown = ship.shieldRechargeDelay;
   }
+  if (shieldAbsorbed > 0) {
+    // Adaptive shields: any hit to the shield pool resets the untouched streak,
+    // so the recharge ramp restarts from the base rate. A ship with no adaptive
+    // shield reads `shieldAdaptiveRamp === 0` later, so this reset is harmless.
+    ship.shieldUntouchedTicks = 0;
+  }
   const spill = toShield - shieldAbsorbed;
-  const rawStructure = bypass + spill;
+  // Reactive armour: when structural damage gets through, a charged reactive
+  // layer absorbs an extra fraction of the hit and then spends itself, recharging
+  // over its window. Opt-in — a ship with no reactive armour layer reduces nothing
+  // and the structural amount is unchanged.
+  const rawStructure = applyReactiveArmour(ship, bypass + spill);
 
   if (ship.modules !== undefined) {
     applyModuleDamage(ship, rawStructure, armourPiercing, impactX, impactY, shotAngle, path);
@@ -2562,6 +3298,46 @@ function applyModuleDamage(
     target.hp = 0;
     target.alive = false;
   }
+}
+
+/**
+ * Reduce a structural hit by the best charged reactive armour layer on the ship
+ * (factions update), then spend that layer so it must recharge over its window
+ * before it can absorb again. Returns the amount that gets through after the
+ * reactive cut; the caller distributes that to modules/structure exactly as it
+ * did before.
+ *
+ * Opt-in and deterministic. A module qualifies only when it is an alive, operational
+ * armour module carrying a `reactiveReduction` whose layer is charged
+ * (`reactiveCharge === 0`). Modules are scanned in array order and the strongest
+ * eligible `reactiveReduction` is chosen (the best plate takes the hit), so the
+ * outcome is order-independent. When nothing qualifies — the universal case for a
+ * ship without reactive armour, where no module sets `reactiveCharge` and none
+ * carries `reactiveReduction` — the amount passes through untouched, so the
+ * damage path is byte-identical to before.
+ *
+ * The single recharge window means one reactive plate blunts one hit per window,
+ * regardless of the fraction, which bounds the mechanic: a steady stream of fire
+ * overwhelms it once the layer is spent.
+ */
+function applyReactiveArmour(ship: SimShip, amount: number): number {
+  if (amount <= 0 || ship.modules === undefined) return amount;
+  let best: SimModule | undefined;
+  let bestReduction = 0;
+  for (const m of ship.modules) {
+    if (m.effect.kind !== "armour") continue;
+    if (m.effect.reactiveReduction === undefined) continue;
+    if (m.reactiveCharge > 0 || !isOperational(m)) continue;
+    if (m.effect.reactiveReduction > bestReduction) {
+      bestReduction = m.effect.reactiveReduction;
+      best = m;
+    }
+  }
+  if (best === undefined || best.effect.kind !== "armour") return amount;
+  // Spend the layer: it recharges over `reactiveWindow` ticks (0 = ready again
+  // next tick, the schema default when only `reactiveReduction` is given).
+  best.reactiveCharge = best.effect.reactiveWindow ?? 0;
+  return amount * (1 - bestReduction);
 }
 
 /** Apply leftover structural damage to the hull, armour-reduced, and kill the
@@ -2916,6 +3692,7 @@ function makeChunkShip(
   const chunkModules: SimModule[] = modules.map((m) => ({ ...m }));
   const chunk: SimShip = {
     instanceId,
+    faction: parent.faction,
     side: parent.side,
     classification: parent.classification,
     x: parent.x,
@@ -2936,6 +3713,13 @@ function makeChunkShip(
     shieldRechargeRate: 0,
     shieldRechargeDelay: 0,
     shieldRegenCountdown: 0,
+    // A fresh chunk starts with no shield (reset above) so its adaptive ramp and
+    // untouched streak begin at zero; recomputeAggregates re-derives the ramp
+    // from the chunk's own shield modules. Auras are recomputed each tick.
+    shieldAdaptiveRamp: 0,
+    shieldUntouchedTicks: 0,
+    auraRangeBonus: 0,
+    auraAccuracyBonus: 0,
     armourReduction: 0,
     thrust: 0,
     turnRate: 0,
@@ -2974,6 +3758,9 @@ function makeChunkShip(
       pathIndex: c.pathIndex,
     })),
     hullBaseThrust: parent.hullBaseThrust,
+    // A fragment inherits the parent's last-fired tick, so a chunk that breaks
+    // off a ship that just fired carries the same open decloak window.
+    lastFiredTick: parent.lastFiredTick,
   };
   // Force a clean recompute so chunk aggregates match its own modules.
   // This derives the chunk's own ship-local centre of mass (comX/comY).
@@ -3005,6 +3792,7 @@ function spawnProjectile(
   muzzleLocalY: number,
   target: SimShip,
   rng: () => number,
+  accuracyBonus: number,
 ): SimProjectile {
   const aimAngle = Math.atan2(target.y - owner.y, target.x - owner.x);
   // The weapon's mount direction (ship-local) is added to the ship's world
@@ -3014,7 +3802,12 @@ function spawnProjectile(
   // aim — a side-mounted weapon is just as accurate as a forward one,
   // measured against its own muzzle direction.
   const mountAngle = owner.facing + weaponFacing;
-  const spread = weapon.spread > 0 ? ranged(rng, -weapon.spread, weapon.spread) : 0;
+  // Command-aura accuracy tightens the spread cone by its fraction (0 leaves it
+  // untouched). The rng is still drawn whenever the weapon has any spread — same
+  // stream length regardless of the buff — only the bound it scales by narrows, so
+  // determinism holds and an unbuffed shot is byte-identical.
+  const aimedSpread = weapon.spread * (1 - accuracyBonus);
+  const spread = weapon.spread > 0 ? ranged(rng, -aimedSpread, aimedSpread) : 0;
   const angle = aimAngle + spread;
   const muzzleX = owner.x + Math.cos(mountAngle) * SIM.muzzleOffset;
   const muzzleY = owner.y + Math.sin(mountAngle) * SIM.muzzleOffset;
@@ -3039,7 +3832,13 @@ function spawnProjectile(
     muzzleLocalX,
     muzzleLocalY,
     damage: weapon.damage,
-    tracking: weapon.tracking,
+    // Command-aura accuracy raises homing tracking by its fraction so a buffed
+    // missile corrects onto its target faster; 0 leaves it at the weapon's rate.
+    // ECM on the target then degrades the lock: the net reduction (target ECM
+    // minus the firing ship's ECCM, floored at 0) scales the homing rate down at
+    // spawn. With no ECM on the target this factor is 1, so the projectile keeps
+    // its full tracking and an ECM-free battle is byte-identical.
+    tracking: weapon.tracking * (1 + accuracyBonus) * (1 - netTrackingReduction(owner, target)),
     shieldPiercing: weapon.shieldPiercing,
     armourPiercing: weapon.armourPiercing,
     range: weapon.range,
@@ -3098,6 +3897,786 @@ function isRetreating(ship: SimShip): boolean {
     ship.maxStructure > 0 &&
     ship.structure / ship.maxStructure < ship.orders.retreatThreshold
   );
+}
+
+/**
+ * Whether a ship's combat posture this tick is offensive — closing on or
+ * pressing the target rather than backing off. Drives a tactical blink drive's
+ * jump direction: aggressive and balanced stances jump *toward* the target,
+ * defensive and evasive stances jump *away* from the nearest enemy. A retreating
+ * ship (structure below its retreat threshold) is always treated as opening the
+ * range regardless of stance.
+ */
+function isClosingStance(ship: SimShip): boolean {
+  if (isRetreating(ship)) return false;
+  return ship.orders.stance === "aggressive" || ship.orders.stance === "balanced";
+}
+
+/**
+ * Centroid of every alive enemy ship from `ship`'s perspective, or undefined
+ * when no enemy is alive. Pure function of positions, iterated in array order;
+ * the running sum is order-independent. Used by blink drives to jump directly
+ * away from the mass of the enemy fleet.
+ */
+function enemyCentroid(
+  ship: SimShip,
+  ships: readonly SimShip[],
+): { x: number; y: number } | undefined {
+  let cx = 0;
+  let cy = 0;
+  let count = 0;
+  for (const e of ships) {
+    if (!e.alive || e.side === ship.side) continue;
+    cx += e.x;
+    cy += e.y;
+    count += 1;
+  }
+  return count > 0 ? { x: cx / count, y: cy / count } : undefined;
+}
+
+/**
+ * Tick every ship module's tech timers down by one (factions update): an active
+ * boost window (`techActive`) counts toward expiry, and a recharging drive
+ * (`techCooldown`) counts toward readiness. Run once per tick per ship in array
+ * order, modules in (col, row) order, so the timers advance deterministically.
+ * A module with all its timers at 0 (every non-tech module, an idle ready tech
+ * module, and a charged reactive plate) is untouched, so the step is a no-op for
+ * ships without the tech. The reactive armour recharge counter advances here too.
+ */
+function stepTechCooldowns(ship: SimShip): void {
+  if (ship.modules === undefined) return;
+  for (const m of ship.modules) {
+    if (m.techActive > 0) m.techActive -= 1;
+    if (m.techCooldown > 0) m.techCooldown -= 1;
+    // Reactive armour layer recharges toward ready (0). Only ever above 0 on an
+    // armour module that has just absorbed a hit, so this is inert otherwise.
+    if (m.reactiveCharge > 0) m.reactiveCharge -= 1;
+    // Mine-layer recharges toward ready (0). Only ever above 0 on a mine-layer
+    // that has just laid a batch, so this is inert otherwise.
+    if (m.mineCooldown > 0) m.mineCooldown -= 1;
+    // Boarding launcher recharges toward ready (0). Only ever above 0 on a
+    // boarding module that has just launched a salvo, so this is inert otherwise.
+    if (m.boardingCooldown > 0) m.boardingCooldown -= 1;
+  }
+}
+
+/**
+ * Deterministic ship-local offset for mine index `i` within a batch. Index 0
+ * lands on the ship centre; later mines step out in a fixed ring whose radius
+ * grows every `MINES_PER_RING` mines, with the angle spread evenly around the
+ * circle by index. Pure function of the index — no rng, no ship state — so two
+ * runs with the same seed lay every mine at the same place. */
+function mineBatchOffset(i: number): { dx: number; dy: number } {
+  if (i <= 0) return { dx: 0, dy: 0 };
+  const ring = Math.floor((i - 1) / MINES_PER_RING) + 1;
+  const indexInRing = (i - 1) % MINES_PER_RING;
+  const angle = (indexInRing / MINES_PER_RING) * (Math.PI * 2);
+  const r = ring * SIM.mineRingSpacing;
+  return { dx: Math.cos(angle) * r, dy: Math.sin(angle) * r };
+}
+
+/** Mines per ring before the batch steps out to the next, larger ring. */
+const MINES_PER_RING = 6;
+
+/**
+ * Lay mines for every ready, operational mine-layer module on a ship, appending
+ * the new mines to `mines`. Opt-in: a ship with no alive, operational, ready
+ * mine-layer adds nothing, so a battle with no mine-layers never grows the array
+ * (and so emits no `mines` snapshot, staying byte-identical to baseline).
+ *
+ * Cap rule: a layer lays a fresh batch only when its `mineCooldown` has elapsed
+ * AND it has no mine of its own still alive in the world (matched by owner ship
+ * + slot). This bounds the world to at most one live batch per layer, so a long
+ * battle can never spawn unbounded mines, and the cooldown still paces re-laying
+ * once a batch has been spent. Placement is the deterministic batch ring around
+ * the ship's current centre; each mine arms after the effect's `armingDelay`.
+ *
+ * Ids come from `nextMineId`, a per-run monotonic counter combined with the
+ * owner instance id and tick, so they are unique and reproducible across runs.
+ */
+function layMines(
+  ship: SimShip,
+  mines: SimMine[],
+  tick: number,
+  nextMineId: (ownerId: string, tick: number) => string,
+): void {
+  if (ship.modules === undefined) return;
+  for (const m of ship.modules) {
+    if (m.effect.kind !== "mineLayer") continue;
+    if (m.mineCooldown > 0 || !isOperational(m)) continue;
+    // Cap: do not re-lay while this layer's previous batch is still alive.
+    const hasLiveBatch = mines.some(
+      (mine) =>
+        mine.ownerInstanceId === ship.instanceId && mine.ownerSlotId === m.slotId,
+    );
+    if (hasLiveBatch) continue;
+    const effect = m.effect;
+    for (let i = 0; i < effect.mineCount; i++) {
+      const { dx, dy } = mineBatchOffset(i);
+      mines.push({
+        id: nextMineId(ship.instanceId, tick),
+        side: ship.side,
+        x: ship.x + dx,
+        y: ship.y + dy,
+        ownerInstanceId: ship.instanceId,
+        ownerSlotId: m.slotId,
+        armingLeft: effect.armingDelay,
+        damage: effect.mineDamage,
+        radius: effect.mineRadius,
+      });
+    }
+    m.mineCooldown = effect.layCooldown;
+  }
+}
+
+/**
+ * Advance every mine one tick: count down its arming delay, then detonate any
+ * armed mine that has an enemy ship inside its radius against the nearest such
+ * enemy (full damage through the standard `applyDamage` path, so shields, armour
+ * and modules all apply). A mine never harms its own side. Returns the surviving
+ * (un-detonated) mines, mirroring `updateProjectiles` — detonated mines are
+ * simply not carried forward, so the array only ever holds live mines.
+ *
+ * Deterministic: mines step in array (creation) order; the nearest enemy is
+ * chosen by squared distance with the ship array order as the tie-break, so two
+ * runs with the same seed detonate identical mines against identical targets.
+ */
+function updateMines(
+  mines: readonly SimMine[],
+  ships: readonly SimShip[],
+): SimMine[] {
+  const survivors: SimMine[] = [];
+  for (const mine of mines) {
+    if (mine.armingLeft > 0) {
+      survivors.push({ ...mine, armingLeft: mine.armingLeft - 1 });
+      continue;
+    }
+    // Armed: find the nearest enemy ship inside the blast radius.
+    const radiusSq = mine.radius * mine.radius;
+    let nearest: SimShip | undefined;
+    let nearestSq = Number.POSITIVE_INFINITY;
+    for (const ship of ships) {
+      if (!ship.alive || ship.side === mine.side) continue;
+      const dx = ship.x - mine.x;
+      const dy = ship.y - mine.y;
+      const dSq = dx * dx + dy * dy;
+      if (dSq > radiusSq) continue;
+      // Strict-less keeps the first ship in array order on an exact tie.
+      if (dSq < nearestSq) {
+        nearest = ship;
+        nearestSq = dSq;
+      }
+    }
+    if (nearest === undefined) {
+      survivors.push(mine);
+      continue;
+    }
+    // Detonate: damage the nearest enemy and consume the mine (drop it).
+    applyDamage(nearest, mine.damage, 0, 0, mine.x, mine.y);
+  }
+  return survivors;
+}
+
+/**
+ * Launch boarding pods for every ready, operational boarding module on a ship,
+ * appending the new pods to `pods`. A module fires only when it is off cooldown
+ * and there is a detectable enemy within the effect's `range`; it targets the
+ * nearest such enemy and launches `podCount` pods carrying `troops` apiece, then
+ * goes on cooldown. Opt-in: a ship with no alive, operational, ready boarding
+ * module adds nothing, so a battle with no boarding modules never grows the
+ * array (and emits no `pods` snapshot, staying byte-identical to baseline).
+ *
+ * Detectability reuses the stealth acquisition gate, so a cloaked/low-signature
+ * ship cannot be boarded unless the launcher can detect it. Deterministic:
+ * modules scan in (col, row) order; the nearest detectable enemy is chosen by
+ * squared distance with ship array order as the tie-break; pod ids come from
+ * `nextPodId`, a per-run monotonic counter combined with owner id and tick.
+ */
+function launchPods(
+  ship: SimShip,
+  pods: SimPod[],
+  ships: readonly SimShip[],
+  tick: number,
+  nextPodId: (ownerId: string, tick: number) => string,
+): void {
+  if (ship.modules === undefined) return;
+  for (const m of ship.modules) {
+    if (m.effect.kind !== "boarding") continue;
+    if (m.boardingCooldown > 0 || !isOperational(m)) continue;
+    const effect = m.effect;
+    // Find the nearest detectable enemy inside launch range.
+    const rangeSq = effect.range * effect.range;
+    let target: SimShip | undefined;
+    let nearestSq = Number.POSITIVE_INFINITY;
+    for (const enemy of ships) {
+      if (!enemy.alive || enemy.side === ship.side) continue;
+      const dx = enemy.x - ship.x;
+      const dy = enemy.y - ship.y;
+      const dSq = dx * dx + dy * dy;
+      if (dSq > rangeSq) continue;
+      if (!isDetectable(ship, enemy, dSq, tick)) continue;
+      // Strict-less keeps the first ship in array order on an exact tie.
+      if (dSq < nearestSq) {
+        target = enemy;
+        nearestSq = dSq;
+      }
+    }
+    if (target === undefined) continue;
+    for (let i = 0; i < effect.podCount; i += 1) {
+      pods.push({
+        id: nextPodId(ship.instanceId, tick),
+        side: ship.side,
+        x: ship.x,
+        y: ship.y,
+        targetInstanceId: target.instanceId,
+        troops: effect.troops,
+      });
+    }
+    m.boardingCooldown = effect.cooldown;
+  }
+}
+
+/**
+ * Advance every pod one tick: home on its target, and on contact board it. A
+ * pod whose target is gone or dead expires (is dropped). A pod that reaches its
+ * target (within the target's collision radius) boards: it disables `troops` of
+ * the target's alive functional modules nearest the impact point, then the pod
+ * is consumed. Returns the surviving (un-boarded, in-flight) pods, mirroring
+ * `updateMines`/`updateProjectiles` — consumed and expired pods are simply not
+ * carried forward, so the array only ever holds live pods.
+ *
+ * Module selection on boarding: the pod's world position is transformed into the
+ * target's ship-local space; among alive functional modules (not pure hull, not
+ * the command module — boarding suppresses systems, it does not one-shot the
+ * bridge) the `troops` nearest to that local point are disabled, chosen by
+ * squared local distance with module array `(col, row)` order as the tie-break.
+ * The aggregates are recomputed so the disablement reflects in the ship's combat
+ * stats immediately. Deterministic: pods step in array (creation) order; every
+ * distance/order choice is a pure function of state, no rng.
+ */
+function updatePods(pods: readonly SimPod[], ships: readonly SimShip[]): SimPod[] {
+  const byId = new Map(ships.map((s) => [s.instanceId, s]));
+  const survivors: SimPod[] = [];
+  for (const pod of pods) {
+    const target = byId.get(pod.targetInstanceId);
+    if (target === undefined || !target.alive) continue; // target gone: pod expires
+    // Home toward the target's current centre, clamped so the pod never overshoots.
+    const dx = target.x - pod.x;
+    const dy = target.y - pod.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist <= target.radius) {
+      // Contact: board the target and consume the pod.
+      boardShip(target, pod);
+      continue;
+    }
+    const step = Math.min(SIM.boardingPodSpeed, dist);
+    survivors.push({
+      ...pod,
+      x: pod.x + (dx / dist) * step,
+      y: pod.y + (dy / dist) * step,
+    });
+  }
+  return survivors;
+}
+
+/**
+ * Disable `pod.troops` of `ship`'s alive functional modules nearest the pod's
+ * impact point (the pod's current world position, transformed into ship-local
+ * space), then recompute the ship's aggregates so the loss shows in its combat
+ * stats. Functional = any non-hull, non-command module, so boarding suppresses
+ * weapons/engines/shields/etc. but cannot one-shot the bridge. Modules are
+ * scanned in array `(col, row)` order and chosen by squared local distance with
+ * that order as the tie-break — a pure function of state, no rng.
+ */
+function boardShip(ship: SimShip, pod: SimPod): void {
+  if (ship.modules === undefined) return;
+  // Transform the pod's impact point into ship-local space. worldToLocal returns
+  // undefined only for undefined inputs, and pod.x/pod.y are always defined, so
+  // this never falls through in practice; the guard boards the centre-of-mass
+  // systems rather than skipping, so a degenerate impact still degrades the ship.
+  const local = worldToLocal(ship, pod.x, pod.y);
+  const ix = local === undefined ? ship.comX : local.x;
+  const iy = local === undefined ? ship.comY : local.y;
+  // Candidates: alive functional modules, by distance from the impact point.
+  const candidates = ship.modules
+    .filter(
+      (m) => m.alive && m.kind !== "hull" && !m.command,
+    )
+    .map((m) => {
+      const ddx = m.x - ix;
+      const ddy = m.y - iy;
+      return { m, dSq: ddx * ddx + ddy * ddy };
+    });
+  // Stable sort by distance; array order is the tie-break (sort is stable in
+  // modern engines, and the map preserves module (col, row) order).
+  candidates.sort((a, b) => a.dSq - b.dSq);
+  const toDisable = Math.min(pod.troops, candidates.length);
+  for (let i = 0; i < toDisable; i += 1) {
+    const c = candidates[i];
+    if (c === undefined) break;
+    c.m.alive = false;
+    c.m.hp = 0;
+  }
+  recomputeAggregates(ship);
+}
+
+// ---------------------------------------------------------------------------
+// Phantom combatants (factions update): drones launched by hangars and decoys
+// launched by decoy launchers. Both are lightweight SimShips (see the `phantom`
+// field) so enemies can target and shoot them through the normal pipelines; they
+// are skipped as firers/movers/colliders and instead home/strike (drones) or sit
+// as a targetable pool (decoys) in the bespoke steps below.
+// ---------------------------------------------------------------------------
+
+/** A fresh drone SimShip, launched from `owner` toward the fight. Deterministic:
+ *  every field is a pure function of the effect + positions + id; no rng. */
+function makeDrone(
+  id: string,
+  owner: SimShip,
+  effect: HangarEffect,
+): SimShip {
+  const lifetime = effect.droneLifetime ?? SIM.droneDefaultLifetime;
+  return {
+    instanceId: id,
+    faction: owner.faction,
+    side: owner.side,
+    classification: "fighter",
+    x: owner.x,
+    y: owner.y,
+    facing: owner.facing,
+    velX: 0,
+    velY: 0,
+    angVel: 0,
+    structure: effect.droneHp,
+    maxStructure: effect.droneHp,
+    shield: 0,
+    maxShield: 0,
+    shieldRechargeRate: 0,
+    shieldRechargeDelay: 0,
+    shieldRegenCountdown: 0,
+    shieldAdaptiveRamp: 0,
+    shieldUntouchedTicks: 0,
+    auraRangeBonus: 0,
+    auraAccuracyBonus: 0,
+    armourReduction: 0,
+    thrust: 0,
+    turnRate: 0,
+    mass: 1,
+    comX: 0,
+    comY: 0,
+    momentOfInertia: 1,
+    radius: SIM.droneRadius,
+    cost: 0,
+    weapons: [],
+    weaponCooldowns: [],
+    orders: defaultOrders,
+    target: undefined,
+    alive: true,
+    ghosts: [],
+    awareness: new Map(),
+    lastFiredTick: Number.NEGATIVE_INFINITY,
+    phantom: {
+      kind: "drone",
+      ownerId: owner.instanceId,
+      ticksLeft: lifetime,
+      damage: effect.droneDamage,
+      range: effect.droneRange,
+      speed: effect.droneSpeed,
+    },
+  };
+}
+
+/** A fresh decoy SimShip: a static, targetable hit-point pool that expires. */
+function makeDecoy(
+  id: string,
+  owner: SimShip,
+  effect: DecoyEffect,
+  offset: { dx: number; dy: number },
+): SimShip {
+  return {
+    instanceId: id,
+    faction: owner.faction,
+    side: owner.side,
+    classification: "fighter",
+    x: owner.x + offset.dx,
+    y: owner.y + offset.dy,
+    facing: owner.facing,
+    velX: 0,
+    velY: 0,
+    angVel: 0,
+    structure: effect.decoyHp,
+    maxStructure: effect.decoyHp,
+    shield: 0,
+    maxShield: 0,
+    shieldRechargeRate: 0,
+    shieldRechargeDelay: 0,
+    shieldRegenCountdown: 0,
+    shieldAdaptiveRamp: 0,
+    shieldUntouchedTicks: 0,
+    auraRangeBonus: 0,
+    auraAccuracyBonus: 0,
+    armourReduction: 0,
+    thrust: 0,
+    turnRate: 0,
+    mass: 1,
+    comX: 0,
+    comY: 0,
+    momentOfInertia: 1,
+    radius: SIM.decoyRadius,
+    cost: 0,
+    weapons: [],
+    weaponCooldowns: [],
+    orders: defaultOrders,
+    target: undefined,
+    alive: true,
+    ghosts: [],
+    awareness: new Map(),
+    lastFiredTick: Number.NEGATIVE_INFINITY,
+    phantom: {
+      kind: "decoy",
+      ownerId: owner.instanceId,
+      ticksLeft: effect.duration,
+      damage: 0,
+      range: 0,
+      speed: 0,
+    },
+  };
+}
+
+/**
+ * Top up a ship's drones from every ready, operational hangar module. A hangar
+ * maintains up to `droneCount` live drones; every `launchCooldown` it launches
+ * one replacement if the wing is below strength. Opt-in: a ship with no hangar
+ * launches nothing, so a battle without hangars grows no phantoms.
+ */
+function launchDrones(
+  owner: SimShip,
+  ships: SimShip[],
+  tick: number,
+  nextPhantomId: (ownerId: string, kind: string, tick: number) => string,
+): void {
+  if (owner.modules === undefined || !owner.alive) return;
+  for (const m of owner.modules) {
+    if (m.effect.kind !== "hangar") continue;
+    if (m.techCooldown > 0 || !isOperational(m)) continue;
+    const effect = m.effect;
+    const live = ships.filter(
+      (s) =>
+        s.alive &&
+        s.phantom?.kind === "drone" &&
+        s.phantom.ownerId === owner.instanceId,
+    ).length;
+    if (live >= effect.droneCount) continue; // wing at strength
+    ships.push(makeDrone(nextPhantomId(owner.instanceId, "drone", tick), owner, effect));
+    m.techCooldown = effect.launchCooldown;
+  }
+}
+
+/**
+ * Launch a decoy module's full salvo of false contacts in a deterministic ring
+ * around the ship, then put the launcher on cooldown. Opt-in: no decoy module,
+ * no phantoms.
+ */
+function launchDecoys(
+  owner: SimShip,
+  ships: SimShip[],
+  tick: number,
+  nextPhantomId: (ownerId: string, kind: string, tick: number) => string,
+): void {
+  if (owner.modules === undefined || !owner.alive) return;
+  for (const m of owner.modules) {
+    if (m.effect.kind !== "decoy") continue;
+    if (m.techCooldown > 0 || !isOperational(m)) continue;
+    const effect = m.effect;
+    for (let i = 0; i < effect.decoyCount; i += 1) {
+      const angle = (i / effect.decoyCount) * Math.PI * 2;
+      const r = SIM.decoyRadius * 2;
+      ships.push(
+        makeDecoy(
+          nextPhantomId(owner.instanceId, "decoy", tick),
+          owner,
+          effect,
+          { dx: Math.cos(angle) * r, dy: Math.sin(angle) * r },
+        ),
+      );
+    }
+    m.techCooldown = effect.cooldown;
+  }
+}
+
+/**
+ * Advance every phantom one tick in place. Drones home on the nearest real
+ * enemy and strike it for their per-tick damage when in range (via the normal
+ * `applyDamage`, so shields/armour apply); decoys merely count down. A phantom
+ * whose `ticksLeft` expires (or whose structure was already depleted by enemy
+ * fire) is marked `alive = false` in place — exactly how a dead real ship is
+ * handled — so every existing `.alive` filter then excludes it from targeting,
+ * focus and victory without a separate prune pass. Deterministic: phantoms
+ * iterate in array (creation) order; the nearest enemy is chosen by squared
+ * distance with ship array order as the tie-break; no rng.
+ */
+function stepPhantoms(ships: readonly SimShip[]): void {
+  for (const s of ships) {
+    if (s.phantom === undefined || !s.alive) continue;
+    const ph = s.phantom;
+    ph.ticksLeft -= 1;
+    if (ph.ticksLeft <= 0) {
+      s.alive = false;
+      continue;
+    }
+    if (ph.kind === "drone") {
+      // Home on the nearest real enemy and strike if in range.
+      let nearest: SimShip | undefined;
+      let nearestSq = Number.POSITIVE_INFINITY;
+      for (const e of ships) {
+        if (!e.alive || e.side === s.side || e.phantom !== undefined) continue;
+        const dx = e.x - s.x;
+        const dy = e.y - s.y;
+        const dSq = dx * dx + dy * dy;
+        if (dSq < nearestSq) {
+          nearest = e;
+          nearestSq = dSq;
+        }
+      }
+      if (nearest !== undefined) {
+        const dx = nearest.x - s.x;
+        const dy = nearest.y - s.y;
+        const dist = Math.hypot(dx, dy);
+        s.facing = dist > 0 ? Math.atan2(dy, dx) : s.facing;
+        const step = Math.min(ph.speed, dist);
+        s.x += (dx / (dist || 1)) * step;
+        s.y += (dy / (dist || 1)) * step;
+        if (dist <= ph.range) {
+          applyDamage(nearest, ph.damage, 0, 0, s.x, s.y);
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Fire any ready blink drive on a ship at the start of its movement, teleporting
+ * the hull and putting the drive on cooldown. Opt-in: a ship with no alive,
+ * operational, ready blink module is untouched, so non-blink ships move exactly
+ * as before. Deterministic — destination is a pure function of positions and
+ * stance, no rng. Modules are scanned in (col, row) order; the first ready drive
+ * of each mode that finds a valid jump fires (one jump per drive per cooldown).
+ *
+ * tactical: jump up to `jumpRange` toward the current target when the stance is
+ *   closing, or directly away from the nearest enemy when defensive/evasive/
+ *   retreating. The toward-target jump is clamped so it never overshoots the
+ *   target (a blink that would pass through the target stops on it).
+ * escape: only when `structure / maxStructure <= escapeThreshold`; jump up to
+ *   `jumpRange` directly away from the centroid of all alive enemies.
+ *
+ * Velocity is preserved across the teleport (the drive moves the hull, not its
+ * momentum), so a blinking ship keeps coasting in whatever direction it was
+ * already travelling — deterministic and physically tidy.
+ */
+function applyBlink(
+  ship: SimShip,
+  byId: ReadonlyMap<string, SimShip>,
+  ships: readonly SimShip[],
+): void {
+  if (ship.modules === undefined) return;
+  for (const m of ship.modules) {
+    if (m.effect.kind !== "blink") continue;
+    if (m.techCooldown > 0 || !isOperational(m)) continue;
+    const effect = m.effect;
+
+    let destX: number | undefined;
+    let destY: number | undefined;
+
+    if (effect.mode === "escape") {
+      // Emergency disengage: only when wounded past the threshold.
+      if (effect.escapeThreshold === undefined) continue;
+      if (ship.maxStructure <= 0) continue;
+      if (ship.structure / ship.maxStructure > effect.escapeThreshold) continue;
+      const centroid = enemyCentroid(ship, ships);
+      if (centroid === undefined) continue;
+      const away = jumpAwayFrom(ship, centroid.x, centroid.y, effect.jumpRange);
+      destX = away.x;
+      destY = away.y;
+    } else {
+      // tactical: close on the target when pressing, open the range otherwise.
+      if (isClosingStance(ship)) {
+        const target = ship.target !== undefined ? byId.get(ship.target) : undefined;
+        if (target === undefined || !target.alive) continue;
+        const toward = jumpToward(ship, target.x, target.y, effect.jumpRange);
+        destX = toward.x;
+        destY = toward.y;
+      } else {
+        const centroid = enemyCentroid(ship, ships);
+        if (centroid === undefined) continue;
+        const away = jumpAwayFrom(ship, centroid.x, centroid.y, effect.jumpRange);
+        destX = away.x;
+        destY = away.y;
+      }
+    }
+
+    if (destX === undefined || destY === undefined) continue;
+    ship.x = destX;
+    ship.y = destY;
+    m.techCooldown = effect.cooldown;
+  }
+}
+
+/**
+ * The point reached by jumping up to `range` from the ship toward (tx, ty),
+ * clamped so the jump never overshoots the destination: if the target is within
+ * `range`, the jump lands exactly on it. A zero-distance target (already on top)
+ * leaves the ship where it is.
+ */
+function jumpToward(
+  ship: SimShip,
+  tx: number,
+  ty: number,
+  range: number,
+): { x: number; y: number } {
+  const dx = tx - ship.x;
+  const dy = ty - ship.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist <= 0) return { x: ship.x, y: ship.y };
+  const step = Math.min(dist, range);
+  return { x: ship.x + (dx / dist) * step, y: ship.y + (dy / dist) * step };
+}
+
+/**
+ * The point reached by jumping `range` from the ship directly away from
+ * (fromX, fromY). When the ship is exactly on the reference point (no defined
+ * direction), it stays put rather than picking an arbitrary heading.
+ */
+function jumpAwayFrom(
+  ship: SimShip,
+  fromX: number,
+  fromY: number,
+  range: number,
+): { x: number; y: number } {
+  const dx = ship.x - fromX;
+  const dy = ship.y - fromY;
+  const dist = Math.hypot(dx, dy);
+  if (dist <= 0) return { x: ship.x, y: ship.y };
+  return { x: ship.x + (dx / dist) * range, y: ship.y + (dy / dist) * range };
+}
+
+/**
+ * Decide whether to engage an afterburner this tick and return the combined
+ * thrust/turn multipliers to apply to the ship's movement. Opt-in: a ship with
+ * no afterburner module returns the identity (1, 1) and is unaffected.
+ *
+ * Activation rule: when the ship has movement intent this tick (`wantsToMove` —
+ * it is closing, kiting, fleeing, or escaping the black hole), each alive,
+ * operational afterburner module that is ready (`techCooldown === 0`) and not
+ * already active engages for `duration` ticks and starts its `cooldown`. An
+ * already-active module keeps contributing its boost until its window expires.
+ * A ship holding station (no movement intent) does not waste a charge.
+ *
+ * The returned multipliers are the product of every active module's
+ * `thrustBoost` / `turnBoost`, so stacked afterburners compound. Modules are
+ * scanned in (col, row) order; the result is order-independent (a product).
+ */
+function afterburnerMultipliers(
+  ship: SimShip,
+  wantsToMove: boolean,
+): { thrust: number; turn: number } {
+  if (ship.modules === undefined) return { thrust: 1, turn: 1 };
+  let thrust = 1;
+  let turn = 1;
+  for (const m of ship.modules) {
+    if (m.effect.kind !== "afterburner") continue;
+    if (!isOperational(m)) continue;
+    if (m.techActive <= 0 && wantsToMove && m.techCooldown === 0) {
+      m.techActive = m.effect.duration;
+      m.techCooldown = m.effect.cooldown;
+    }
+    if (m.techActive > 0) {
+      thrust *= m.effect.thrustBoost;
+      turn *= m.effect.turnBoost;
+    }
+  }
+  return { thrust, turn };
+}
+
+/**
+ * Whether a ship is in a power brownout this tick: an alive consumer module
+ * (weapon, PD, or shield) that `recomputeAggregates` had to take offline to fit
+ * the reactor budget. Mirrors the cut set the brownout loop produces, so a ship
+ * whose whole demand fits its supply reports no brownout. Pure read of the
+ * `powered` flags the latest recompute left.
+ */
+function isBrownedOut(ship: SimShip): boolean {
+  if (ship.modules === undefined) return false;
+  for (const m of ship.modules) {
+    if (!m.alive || m.powerDraw <= 0) continue;
+    const kind = m.effect.kind;
+    if (kind !== "weapon" && kind !== "pointDefense" && kind !== "shield") continue;
+    if (!m.powered) return true;
+  }
+  return false;
+}
+
+/**
+ * Engage a ready reactor overcharge when the ship is browning out (factions
+ * update). Called after `recomputeAggregates` has settled the power budget: if a
+ * consumer is offline for want of supply and an alive, operational overcharge
+ * module is ready (`techCooldown === 0`, not already active), fire it for
+ * `duration` ticks and start its `cooldown`, then return true so the caller can
+ * re-run aggregates and bring the surge to bear this same tick. Opt-in: a ship
+ * with no overcharge module, or one not browned out, returns false and is
+ * untouched. Modules scanned in (col, row) order; the first ready module fires.
+ */
+function stepOvercharge(ship: SimShip): boolean {
+  if (ship.modules === undefined) return false;
+  if (!isBrownedOut(ship)) return false;
+  for (const m of ship.modules) {
+    if (m.effect.kind !== "overcharge") continue;
+    if (!isOperational(m)) continue;
+    if (m.techActive > 0 || m.techCooldown > 0) continue;
+    m.techActive = m.effect.duration;
+    m.techCooldown = m.effect.cooldown;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Recompute every ship's command-aura bonuses for the tick (factions update).
+ * A ship with an alive, operational command-aura module projects its
+ * `rangeBonus` / `accuracyBonus` to every friendly ship (itself included) within
+ * `radius` world units. Each beneficiary takes the *max* bonus covering it — auras
+ * do not stack — so layering carriers only ever raises a ship to the strongest
+ * single aura, which bounds the buff regardless of fleet size.
+ *
+ * Deterministic and opt-in. Bonuses are reset to 0 on every ship first, then
+ * raised by each source in array order; the max is order-independent. A battle
+ * with no aura module touches nothing past the reset to the value the ship
+ * already holds (0), so byte output is unchanged. Run after movement and before
+ * firing so the buff reflects this tick's positions.
+ */
+function applyCommandAuras(ships: readonly SimShip[]): void {
+  for (const s of ships) {
+    s.auraRangeBonus = 0;
+    s.auraAccuracyBonus = 0;
+  }
+  for (const source of ships) {
+    if (!source.alive || source.modules === undefined) continue;
+    for (const m of source.modules) {
+      if (m.effect.kind !== "commandAura") continue;
+      if (!isOperational(m)) continue;
+      const aura = m.effect;
+      const radiusSq = aura.radius * aura.radius;
+      for (const ally of ships) {
+        if (!ally.alive || ally.side !== source.side) continue;
+        const dx = ally.x - source.x;
+        const dy = ally.y - source.y;
+        if (dx * dx + dy * dy > radiusSq) continue;
+        if (aura.rangeBonus > ally.auraRangeBonus) ally.auraRangeBonus = aura.rangeBonus;
+        if (aura.accuracyBonus > ally.auraAccuracyBonus) {
+          ally.auraAccuracyBonus = aura.accuracyBonus;
+        }
+      }
+    }
+  }
 }
 
 /** A ship cell placed in the broad-phase: the owning ship, the cell, and its
@@ -4092,9 +5671,13 @@ export function* simulateBattle(
   const rng = mulberry32(inputs.seed >>> 0);
   projectileCounter = 0;
   const ships = inputs.ships.map((s) => toSimShip(s, rng));
-  const attackers = ships.filter((s) => s.side === "attacker");
-  const defenders = ships.filter((s) => s.side === "defender");
-  const byId = new Map(ships.map((s) => [s.instanceId, s]));
+  // Per-side ship lists and the id index are rebuilt each tick (top of the loop)
+  // so they pick up phantoms (drones/decoys) and break-away chunks added during
+  // a tick. Phantoms are full SimShips so enemies can target them; the victory
+  // check and focus election filter phantoms out explicitly.
+  let attackers = ships.filter((s) => s.side === "attacker");
+  let defenders = ships.filter((s) => s.side === "defender");
+  let byId = new Map(ships.map((s) => [s.instanceId, s]));
 
   // Initial deployment reference: each side's centroid at the moment of
   // deployment, captured once before any ship moves. A ship with zero awareness
@@ -4107,12 +5690,38 @@ export function* simulateBattle(
     defender: fleetCentroid(ships, "defender"),
   };
   let projectiles: SimProjectile[] = [];
+  // Deployed mines live here for the whole run, advanced each tick like
+  // projectiles. Empty unless a mine-layer module lays into it, so a battle
+  // with no mine-layers keeps it empty and emits no `mines` snapshots.
+  let mines: SimMine[] = [];
   // Deterministic counter for break-away chunk ids. Each split consumes
   // one tick + one chunk-index slot so two battles with the same seed
   // produce the same chunk ids. Counter is private to this run.
   let chunkSeq = 0;
   const nextChunkId = (parentId: string, tick: number): string =>
     `${parentId}#chunk#${tick}#${chunkSeq += 1}`;
+  // Deterministic counter for mine ids, combined with the laying ship's id and
+  // the lay tick so ids are unique and reproducible across identical runs. No
+  // rng, no clock — a pure function of spawn order.
+  let mineSeq = 0;
+  const nextMineId = (ownerId: string, tick: number): string =>
+    `${ownerId}#mine#${tick}#${mineSeq += 1}`;
+  // In-flight boarding pods live here for the whole run, advanced each tick like
+  // projectiles/mines. Empty unless a boarding module launches into it, so a
+  // battle with no boarding modules keeps it empty and emits no `pods` snapshots.
+  let pods: SimPod[] = [];
+  // Deterministic counter for boarding-pod ids, combined with the launching
+  // ship's id and the launch tick so ids are unique and reproducible across
+  // identical runs. No rng, no clock — a pure function of spawn order.
+  let podSeq = 0;
+  const nextPodId = (ownerId: string, tick: number): string =>
+    `${ownerId}#pod#${tick}#${podSeq += 1}`;
+  // Deterministic counter for phantom (drone/decoy) ids, combined with the
+  // launching ship's id, the kind and the launch tick so ids are unique and
+  // reproducible across identical runs. No rng, no clock.
+  let phantomSeq = 0;
+  const nextPhantomId = (ownerId: string, kind: string, tick: number): string =>
+    `${ownerId}#${kind}#${tick}#${phantomSeq += 1}`;
 
   // Occluders are a pure function of (anomaly, seed): compute them once here
   // (drawing from a salted, separate rng inside computeOccluders, never the
@@ -4128,7 +5737,7 @@ export function* simulateBattle(
   // Number of post-initial frames yielded, matching the previous
   // `frames.length - 1`: the tick-0 frame is excluded from the count.
   let ticks = 0;
-  yield snapshot(0, ships, projectiles, frame0Awareness);
+  yield snapshot(0, ships, projectiles, frame0Awareness, mines, pods);
 
   let winner: BattleSide = "draw";
   let resolved = false;
@@ -4140,6 +5749,13 @@ export function* simulateBattle(
     //    draws ZERO times from the battle rng. The returned snapshot is recorded
     //    on this tick's frame at the end of the loop body.
     const awareness = computeAwareness(ships, byId, occluders, inputs.anomaly);
+    // 0. Refresh the per-side ship lists and id index from the live `ships`
+    //    array so they include phantoms (drones/decoys) and break-away chunks
+    //    added on a previous tick. Phantoms are full SimShips, so the targeting,
+    //    projectile and damage pipelines strike them without special-casing.
+    attackers = ships.filter((s) => s.side === "attacker");
+    defenders = ships.filter((s) => s.side === "defender");
+    byId = new Map(ships.map((s) => [s.instanceId, s]));
 
     // 1. Targeting.
     // Elect focus-fire targets once per tick per side. A ship with
@@ -4147,14 +5763,29 @@ export function* simulateBattle(
     // independently. Computing the election outside the per-ship loop keeps
     // determinism: every ship on a side sees the same fleet target for this
     // tick, not a target that shifts as earlier ships set their own.
-    const attackerFocusTarget = electFocusTarget("attacker", ships, defenders);
-    const defenderFocusTarget = electFocusTarget("defender", ships, attackers);
+    const attackerFocusTarget = electFocusTarget("attacker", ships, defenders, tick);
+    const defenderFocusTarget = electFocusTarget("defender", ships, attackers, tick);
     for (const ship of ships) {
       if (!ship.alive) continue;
       const enemies = ship.side === "attacker" ? defenders : attackers;
       const focusTarget =
         ship.side === "attacker" ? attackerFocusTarget : defenderFocusTarget;
-      ship.target = pickTarget(ship, enemies, focusTarget)?.instanceId;
+      ship.target = pickTarget(ship, enemies, focusTarget, tick)?.instanceId;
+    }
+
+    // 1b. Tech timers (factions update). Advance every movement/power tech
+    //     module's active-window and cooldown counters one tick, then fire any
+    //     ready blink drive (teleporting the hull before the movement integrator
+    //     runs, so the jumped-to position is where the ship thrusts from this
+    //     tick). Both steps are opt-in: a ship with no tech modules has all
+    //     timers at 0 and no blink modules, so neither touches its state.
+    for (const ship of ships) {
+      if (!ship.alive) continue;
+      stepTechCooldowns(ship);
+    }
+    for (const ship of ships) {
+      if (!ship.alive) continue;
+      applyBlink(ship, byId, ships);
     }
 
     // 2. Movement + facing.
@@ -4166,8 +5797,44 @@ export function* simulateBattle(
     //     other. All sides are solid — friendlies collide too.
     resolveShipCollisions(buildShipCellHash(ships));
 
+    // 2c. Command auras (factions update). With positions settled for the tick,
+    //     recompute each ship's best friendly aura bonus so the firing step below
+    //     reads the current buff. Opt-in: a no-op (every bonus reset to 0, then
+    //     left there) for a battle with no command-aura module, so byte output is
+    //     unchanged.
+    applyCommandAuras(ships);
+
+    // 2d. Mine laying (factions update). With positions settled, every ready,
+    //     operational mine-layer drops its batch at the ship's current centre.
+    //     Opt-in: a no-op (array untouched) for a battle with no mine-layer
+    //     module, so byte output is unchanged for them.
+    for (const ship of ships) {
+      if (!ship.alive || ship.modules === undefined) continue;
+      layMines(ship, mines, tick, nextMineId);
+    }
+
+    // 2e. Boarding pod launches (factions update). With positions settled, every
+    //     ready, operational boarding module with a detectable enemy in range
+    //     launches its pod salvo. Opt-in: a no-op for a battle with no boarding
+    //     module, so byte output is unchanged for them.
+    for (const ship of ships) {
+      if (!ship.alive || ship.modules === undefined) continue;
+      launchPods(ship, pods, ships, tick, nextPodId);
+    }
+
+    // 2f. Phantom launches (factions update). Hangars top up their drone wings
+    //     and decoy launchers emit their false contacts, pushing phantom
+    //     SimShips into `ships`. They are targetable from next tick (the
+    //     per-side lists refresh at the top of the loop). Opt-in: a no-op for a
+    //     battle with no hangar/decoy module, so byte output is unchanged.
+    for (const ship of ships) {
+      if (!ship.alive || ship.modules === undefined) continue;
+      launchDrones(ship, ships, tick, nextPhantomId);
+      launchDecoys(ship, ships, tick, nextPhantomId);
+    }
+
     // 3. Weapon firing (creates projectiles; hitscan applies damage at once).
-    projectiles = projectiles.concat(fireWeapons(ships, byId, rng));
+    projectiles = projectiles.concat(fireWeapons(ships, byId, rng, tick));
 
     // 3b. PD cooldowns tick down so a battery that just fired can fire again
     //     the next tick. Tick here (before projectile resolution) so a PD
@@ -4185,12 +5852,46 @@ export function* simulateBattle(
     // 4. Projectile travel, homing, asteroid deflection, and collision.
     projectiles = updateProjectiles(projectiles, byId, inputs.anomaly, rng);
 
+    // 4-mines. Mines (factions update). Arm down, then detonate any armed mine
+    //     with an enemy in range against the nearest such enemy (via applyDamage,
+    //     so shields/armour/modules apply). Detonated mines are dropped. Runs in
+    //     the same damage phase as projectiles so the aggregate recompute below
+    //     reflects modules a mine destroyed this tick. A no-op when no mines
+    //     exist, so byte output is unchanged for battles without mine-layers.
+    mines = updateMines(mines, ships);
+
+    // 4-pods. Boarding pods (factions update). Home toward their targets and
+    //     board on contact, disabling modules (so shields/armour/weapons drop)
+    //     via recomputeAggregates inside boardShip. Runs in the same damage
+    //     phase so the aggregate recompute below reflects modules a boarding
+    //     disabled this tick. A no-op when no pods exist, so byte output is
+    //     unchanged for battles without boarding modules.
+    pods = updatePods(pods, ships);
+
+    // 4-phantoms. Drones and decoys (factions update). Drones home on the
+    //     nearest real enemy and strike it (via applyDamage); decoys merely
+    //     count down. Expired or destroyed phantoms are marked dead in place.
+    //     Runs in the damage phase so the aggregate recompute below reflects
+    //     anything a drone destroyed this tick. A no-op when no phantoms exist.
+    stepPhantoms(ships);
+
     // 4b. Recompute aggregate stats from the alive module set, so a module
     //     destroyed this tick (hitscan or projectile) is reflected in the
     //     shield pool, thrust, and weapon list before regen and the snapshot,
     //     and carried into the next tick's movement and firing.
     for (const ship of ships) {
       if (ship.modules !== undefined) recomputeAggregates(ship);
+    }
+
+    // 4b-overcharge. Reactor overcharge (factions update). With the power budget
+    //     settled, any ship still browning out fires a ready overcharge module;
+    //     a second aggregate pass then folds the surge into the budget so the
+    //     newly-lifted ceiling powers more modules this same tick. Opt-in: a no-op
+    //     for ships with no overcharge module or no brownout, so byte output is
+    //     unchanged for them.
+    for (const ship of ships) {
+      if (ship.modules === undefined) continue;
+      if (stepOvercharge(ship)) recomputeAggregates(ship);
     }
 
     // 4b-crew. Crew AI + movement. After aggregates settle `powered`, each
@@ -4202,6 +5903,17 @@ export function* simulateBattle(
     for (const ship of ships) {
       if (!ship.alive || ship.modules === undefined) continue;
       updateCrew(ship);
+    }
+
+    // 4b-ammo. Ammo conduits: refill every conduit-fed weapon directly from its
+    //     magazine's store, dividing each magazine across its hardwired sinks.
+    //     Runs after crew (which never haul to a conduit-fed weapon) and at the
+    //     same latency as a crew deposit — rounds land this tick and fire next —
+    //     and independently of crew, so a crewless hardwired ship is resupplied
+    //     too. A no-op on designs with no ammo hardwires, preserving byte output.
+    for (const ship of ships) {
+      if (!ship.alive || ship.modules === undefined) continue;
+      refillHardwiredAmmo(ship);
     }
 
     // 4c. Break-apart: if the alive modules on a modular ship no longer
@@ -4262,13 +5974,33 @@ export function* simulateBattle(
     // 5. Shield regeneration.
     const regenFactor = inputs.anomaly === "nebula" ? SIM.nebulaRegenFactor : 1;
     for (const ship of ships) {
-      if (!ship.alive || ship.shield >= ship.maxShield) continue;
+      if (!ship.alive) continue;
+      // Adaptive shields: count the ticks since the shield was last touched. A hit
+      // this tick already reset the streak to 0 in applyDamage, so incrementing
+      // here advances any shield that went untouched. Only the regen below reads
+      // it, and only when the ship's ramp is non-zero, so a conventional shield's
+      // streak never affects anything. The streak is bounded by the multiplier
+      // cap, so it need not grow without limit.
+      if (ship.shieldAdaptiveRamp > 0) {
+        const cap = Math.ceil(
+          (SIM.adaptiveShieldMaxMultiple - 1) / ship.shieldAdaptiveRamp,
+        );
+        if (ship.shieldUntouchedTicks < cap) ship.shieldUntouchedTicks += 1;
+      }
+      if (ship.shield >= ship.maxShield) continue;
       if (ship.shieldRegenCountdown > 0) {
         ship.shieldRegenCountdown -= 1;
       } else {
+        // Effective rate ramps with the untouched streak for an adaptive shield,
+        // capped at `adaptiveShieldMaxMultiple` times the base rate; a
+        // conventional shield (ramp 0) keeps its flat base rate exactly.
+        const rampMultiple = Math.min(
+          SIM.adaptiveShieldMaxMultiple,
+          1 + ship.shieldAdaptiveRamp * ship.shieldUntouchedTicks,
+        );
         ship.shield = Math.min(
           ship.maxShield,
-          ship.shield + ship.shieldRechargeRate * regenFactor,
+          ship.shield + ship.shieldRechargeRate * rampMultiple * regenFactor,
         );
       }
     }
@@ -4291,12 +6023,13 @@ export function* simulateBattle(
       }
     }
 
-    yield snapshot(tick, ships, projectiles, awareness);
+    yield snapshot(tick, ships, projectiles, awareness, mines, pods);
     ticks += 1;
 
-    // 6. Termination.
-    const attackerAlive = attackers.some((s) => s.alive);
-    const defenderAlive = defenders.some((s) => s.alive);
+    // 6. Termination. Only real ships decide the battle — a side whose hulls
+    //    are all gone loses even if its drones are still in the air.
+    const attackerAlive = attackers.some((s) => s.alive && s.phantom === undefined);
+    const defenderAlive = defenders.some((s) => s.alive && s.phantom === undefined);
     if (!attackerAlive && !defenderAlive) {
       winner = "draw";
       resolved = true;
@@ -4344,6 +6077,13 @@ export function runBattle(inputs: BattleInputs): BattleResult {
     ticks: summary.ticks,
     playedAt: nowIso(),
     frames,
+    // Faction/side of each combatant, carried once per battle so the renderer
+    // can colour ships by faction without bloating per-tick snapshots.
+    roster: inputs.ships.map((s) => ({
+      instanceId: s.instanceId,
+      faction: s.faction ?? "",
+      side: s.side,
+    })),
   };
 }
 
@@ -4351,8 +6091,13 @@ function leadingSide(
   attackers: readonly SimShip[],
   defenders: readonly SimShip[],
 ): BattleSide {
+  // Only real ships count toward the leading side — phantoms (drones/decoys)
+  // are transient and must not swing a timeout decision.
   const total = (group: readonly SimShip[]) =>
-    group.reduce((sum, s) => sum + s.structure + s.shield, 0);
+    group.reduce(
+      (sum, s) => (s.phantom === undefined ? sum + s.structure + s.shield : sum),
+      0,
+    );
   const a = total(attackers);
   const d = total(defenders);
   if (a > d) return "attacker";
@@ -4726,7 +6471,7 @@ function fleetCentroid(
   let cy = 0;
   let count = 0;
   for (const s of ships) {
-    if (!s.alive || s.side !== side) continue;
+    if (!s.alive || s.side !== side || s.phantom !== undefined) continue;
     cx += s.x;
     cy += s.y;
     count += 1;
@@ -4747,6 +6492,8 @@ function moveShips(
   const centroidDefender = fleetCentroid(ships, "defender");
   for (const ship of ships) {
     if (!ship.alive) continue;
+    // Phantoms (drones/decoys) move in their own bespoke step, not here.
+    if (ship.phantom !== undefined) continue;
 
     // Black-hole gravity: a real 1/r^2 acceleration toward the centre,
     // applied to velocity (not position) so momentum is preserved and the
@@ -4926,6 +6673,11 @@ function moveShips(
     const mct = maxCommandableTorque(ship, shouldThrust);
     const alpha = ship.momentOfInertia > 0 ? mct / ship.momentOfInertia : 0;
     const turnSign = commandedTurn(ship, desiredFacing, mct, shouldThrust);
+    // Afterburner (factions update): when the ship has movement intent this
+    // tick, fire any ready afterburner and fold its thrust/turn surge into the
+    // integrator below. Identity (1, 1) for ships without the tech, so the
+    // movement maths is unchanged for them.
+    const boost = afterburnerMultipliers(ship, shouldThrust);
 
     // Linear: thrust accelerates velocity.
     //
@@ -4956,8 +6708,10 @@ function moveShips(
       // attitude sources (RCS, wheels, gimbal) are active.
       const { fx, fy, torque } = shipForceAndTorque(ship, turnSign, shouldThrust);
       const dir = reverse ? -1 : 1;
-      const lx = shouldThrust ? dir * fx : 0;
-      const ly = shouldThrust ? dir * fy : 0;
+      // Afterburner scales the net engine force (and the resulting torque) for
+      // the duration of its window; identity multiplier leaves it untouched.
+      const lx = shouldThrust ? dir * fx * boost.thrust : 0;
+      const ly = shouldThrust ? dir * fy * boost.thrust : 0;
       const world = rotateLocal(ship.facing, lx, ly);
       const invMass = 1 / Math.max(ship.mass, 1);
       ship.velX += world.x * invMass;
@@ -4985,8 +6739,10 @@ function moveShips(
       ship.angVel += angularAccel;
       ship.angVel *= SIM.angularDamping;
 
-      const maxSpeed = ship.thrust;
-      const accel = ship.thrust / Math.max(ship.mass, 1);
+      // Afterburner raises both the top speed and the acceleration for its
+      // window; identity multiplier leaves the legacy scalar model unchanged.
+      const maxSpeed = ship.thrust * boost.thrust;
+      const accel = (ship.thrust * boost.thrust) / Math.max(ship.mass, 1);
       const dir = reverse ? -1 : 1;
       const desiredVX = shouldThrust ? dir * Math.cos(ship.facing) * maxSpeed : 0;
       const desiredVY = shouldThrust ? dir * Math.sin(ship.facing) * maxSpeed : 0;
@@ -5033,16 +6789,30 @@ function fireWeapons(
   ships: readonly SimShip[],
   byId: Map<string, SimShip>,
   rng: () => number,
+  tick: number,
 ): SimProjectile[] {
   const fired: SimProjectile[] = [];
   for (const ship of ships) {
     if (!ship.alive || isRetreating(ship)) continue;
+    // Phantoms never fire via this loop — a drone strikes in its bespoke step.
+    if (ship.phantom !== undefined) continue;
     const target = ship.target !== undefined ? byId.get(ship.target) : undefined;
     if (target === undefined || !target.alive) continue;
 
     const toTarget = Math.atan2(target.y - ship.y, target.x - ship.x);
     const facingError = Math.abs(angleDifference(ship.facing, toTarget));
     const dist = Math.hypot(target.x - ship.x, target.y - ship.y);
+    // Stealth fire gate: a ship cannot fire at a target it can no longer detect.
+    // Movement between the targeting step and here can carry a signature target
+    // out of acquisition range or let a target re-cloak, so re-validate against
+    // the post-movement positions. A non-stealth target is always detectable, so
+    // this never blocks a shot for fleets carrying no stealth tech.
+    if (!isDetectable(ship, target, dist * dist, tick)) continue;
+    // Command-aura buffs (factions update): a covered ship reaches `rangeBonus`
+    // further and bears on a target within a `accuracyBonus`-wider forward arc.
+    // Both are 0 for an unbuffed ship, so the gates below are identical to before.
+    const rangeScale = 1 + ship.auraRangeBonus;
+    const firingArc = SIM.firingArc * (1 + ship.auraAccuracyBonus);
 
     // Per-module path: iterate the ship's own weapon modules, reading and
     // writing each module's cooldown and ammo (so destruction is reflected
@@ -5074,19 +6844,22 @@ function fireWeapons(
         if (!m.powered) continue; // reactor can't sustain it this tick
         if (!m.manned) continue; // nobody crewing the gun — it can't fire
         if (!isCharged(m)) continue; // local charge buffer empty — no juice
-        if (dist > weapon.range) continue;
+        if (dist > weapon.range * rangeScale) continue;
         // Fire gate: a turret fires when its slewed barrel bears on the target
         // (independent of where the ship is pointing); a fixed mount fires
         // only when the ship's own heading brings the target into the forward
-        // firing arc, exactly as before turrets existed.
-        if (isTurret ? !turretCanBear : facingError > SIM.firingArc) continue;
+        // firing arc (aura-widened), exactly as before turrets existed.
+        if (isTurret ? !turretCanBear : facingError > firingArc) continue;
         if (m.ammo <= 0) continue; // out of ammo; no resupply yet
         // A genuine, in-range shot: spend a round and reset the cycle. Firing
         // direction and recoil use the live barrel angle (which equals the
         // mount facing on a fixed mount), not the static mount direction.
         m.ammo -= 1;
         m.cooldown = weapon.cooldown;
-        fireOne(ship, weapon, m.turretAngle, m.x, m.y, target, rng, fired);
+        // Firing drops a cloak for `decloakTicks`: record the tick so the
+        // stealth gate exposes a cloaked ship while the window is open.
+        ship.lastFiredTick = tick;
+        fireOne(ship, weapon, m.turretAngle, m.x, m.y, target, rng, fired, ship.auraAccuracyBonus);
       }
       continue;
     }
@@ -5101,14 +6874,16 @@ function fireWeapons(
         ship.weaponCooldowns[i] = cooldown - 1;
         continue;
       }
-      if (dist > weapon.range) continue;
-      if (facingError > SIM.firingArc) continue;
+      if (dist > weapon.range * rangeScale) continue;
+      if (facingError > firingArc) continue;
 
       ship.weaponCooldowns[i] = weapon.cooldown;
+      // Firing drops a cloak for `decloakTicks` (see the per-module path above).
+      ship.lastFiredTick = tick;
       // Legacy aggregated path reads facing off the weapon effect (default 0).
       // No per-module muzzle position, so the recoil lever arm is the ship's
       // origin (0, 0) — the legacy CoM.
-      fireOne(ship, weapon, weapon.facing ?? 0, 0, 0, target, rng, fired);
+      fireOne(ship, weapon, weapon.facing ?? 0, 0, 0, target, rng, fired, ship.auraAccuracyBonus);
     }
   }
   return fired;
@@ -5131,17 +6906,22 @@ function fireOne(
   target: SimShip,
   rng: () => number,
   fired: SimProjectile[],
+  accuracyBonus: number,
 ): void {
   if (weapon.projectileSpeed <= 0) {
     // Hitscan: the beam strikes the target's edge nearest the shooter.
     // The shot angle (used by directional shields) is the shooter's bearing
     // relative to the target, i.e. the direction the energy is travelling.
+    // A hitscan beam already strikes whatever it is fired at, so the accuracy
+    // buff adds nothing here — its benefit is the wider firing arc upstream.
     const angle = Math.atan2(target.y - ship.y, target.x - ship.x);
     const ix = target.x + Math.cos(angle) * target.radius;
     const iy = target.y + Math.sin(angle) * target.radius;
     applyDamage(target, weapon.damage, weapon.shieldPiercing, weapon.armourPiercing, ix, iy, angle);
   } else {
-    fired.push(spawnProjectile(ship, weapon, weaponFacing, muzzleLocalX, muzzleLocalY, target, rng));
+    fired.push(
+      spawnProjectile(ship, weapon, weaponFacing, muzzleLocalX, muzzleLocalY, target, rng, accuracyBonus),
+    );
   }
 }
 
@@ -5271,6 +7051,25 @@ function updateProjectiles(
     if (p.tracking > 0) {
       const target = byId.get(p.targetId);
       if (target !== undefined && target.alive) {
+        // ECM lock-break: a guided round homing onto a ship with operational ECM
+        // rolls each tick to lose its lock. The chance is the target's
+        // `lockBreakChance` scaled by (1 - the firing ship's ECCM restore), so a
+        // well-defended attacker breaks lock less often. The rng is drawn exactly
+        // once per guided projectile per tick that is targeting an ECM ship — in
+        // projectile array (creation) order — so the stream stays the same length
+        // regardless of the roll's outcome. A target with no operational ECM
+        // never reaches this draw, so an ECM-free battle is byte-identical.
+        const ecm = targetEcm(target);
+        if (ecm !== undefined) {
+          const owner = byId.get(p.ownerId);
+          const restore = owner !== undefined ? attackerEccmRestore(owner) : 0;
+          const breakChance = ecm.lockBreakChance * (1 - restore);
+          if (rng() < breakChance) p.tracking = 0;
+        }
+      }
+      // Re-read after a possible lock-break: a round that just went ballistic
+      // (tracking now 0) holds its heading this tick instead of steering.
+      if (p.tracking > 0 && target !== undefined && target.alive) {
         const speed = Math.hypot(p.vx, p.vy);
         const desired = Math.atan2(target.y - p.y, target.x - p.x);
         const current = Math.atan2(p.vy, p.vx);
@@ -5376,11 +7175,18 @@ function snapshot(
   ships: readonly SimShip[],
   projectiles: readonly SimProjectile[],
   awareness: AwarenessSnapshot,
+  mines: readonly SimMine[],
+  pods: readonly SimPod[],
 ): BattleFrame {
+  // Partition real ships from phantoms (drones/decoys) so phantoms never appear
+  // in the `ships` array — they render from their own dedicated arrays instead.
+  const realShips = ships.filter((s) => s.phantom === undefined);
+  const drones = ships.filter((s) => s.phantom?.kind === "drone" && s.alive);
+  const decoys = ships.filter((s) => s.phantom?.kind === "decoy" && s.alive);
   return {
     tick,
     awareness,
-    ships: ships.map((s) => {
+    ships: realShips.map((s) => {
       const base = {
         instanceId: s.instanceId,
         side: s.side,
@@ -5455,6 +7261,62 @@ function snapshot(
       };
     }),
     projectiles: projectiles.map((p) => ({ id: p.id, x: p.x, y: p.y, kind: p.kind })),
+    // Deployed mines (factions update). Omitted when none are live so frames
+    // for battles without mine-layers stay byte-identical to baseline.
+    ...(mines.length > 0
+      ? {
+          mines: mines.map((mine) => ({
+            instanceId: mine.id,
+            side: mine.side,
+            x: mine.x,
+            y: mine.y,
+            armed: mine.armingLeft <= 0,
+          })),
+        }
+      : {}),
+    // In-flight boarding pods (factions update). Omitted when none are live so
+    // frames for battles without boarding modules stay byte-identical to baseline.
+    ...(pods.length > 0
+      ? {
+          pods: pods.map((pod) => ({
+            instanceId: pod.id,
+            side: pod.side,
+            x: pod.x,
+            y: pod.y,
+            targetId: pod.targetInstanceId,
+          })),
+        }
+      : {}),
+    // Active drones (factions update). Omitted when none are live.
+    ...(drones.length > 0
+      ? {
+          drones: drones.map((s) => ({
+            instanceId: s.instanceId,
+            ownerId: s.phantom?.ownerId ?? "",
+            side: s.side,
+            x: s.x,
+            y: s.y,
+            facing: s.facing,
+            hp: s.structure,
+            maxHp: s.maxStructure,
+            alive: s.alive,
+          })),
+        }
+      : {}),
+    // Active decoys (factions update). Omitted when none are live.
+    ...(decoys.length > 0
+      ? {
+          decoys: decoys.map((s) => ({
+            instanceId: s.instanceId,
+            ownerId: s.phantom?.ownerId ?? "",
+            side: s.side,
+            x: s.x,
+            y: s.y,
+            hp: s.structure,
+            ticksLeft: s.phantom?.ticksLeft ?? 0,
+          })),
+        }
+      : {}),
   };
 }
 
