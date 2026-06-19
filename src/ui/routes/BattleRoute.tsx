@@ -48,6 +48,7 @@ import type { BattleAnomaly as BattleAnomalyType, BattleFrame, BattleResult } fr
 import type { Fleet } from "@/schema/fleet";
 import type { WeaponType } from "@/schema/module";
 import { interpolateFrame } from "@/ui/interpolateFrame";
+import { orderShipsForRender } from "@/ui/renderOrder";
 import { drawAnomaly } from "./battleAnomaly";
 import { drawFogAndAwareness } from "./battleFog";
 import type { ShipScreenPositions } from "./battleFog";
@@ -632,7 +633,9 @@ export function BattleRoute() {
         ctx.fillRect(sx(p.x) - 1, sy(p.y) - 1, 2.5, 2.5);
       }
 
-      for (const s of frame.ships) {
+      // Back-to-front by world-y so closer (lower) ships overlap further ones,
+      // rather than the snapshot's attackers-then-defenders array order.
+      for (const s of orderShipsForRender(frame.ships)) {
         const px = sx(s.x);
         const py = sy(s.y);
         // Faction accent tints the hull; the side colour is shown separately as
