@@ -53,6 +53,19 @@ export default tseslint.config(
     },
   },
   {
+    // Max source file length. The largest cohesive module after the engine /
+    // catalog / presets split is ~690 lines (stats.ts); 800 gives headroom
+    // while blocking god-files (the former engine.ts was 7335). Scoped to .ts
+    // source for now — the .tsx routes (BattleRoute.tsx, ShipDesignerRoute.tsx)
+    // still exceed it and are a follow-up split. Tests are excluded: they are
+    // fixture-heavy by nature.
+    files: ["src/**/*.ts"],
+    ignores: ["**/*.test.ts", "**/*.css.ts"],
+    rules: {
+      "max-lines": ["error", { max: 800, skipBlankLines: false, skipComments: false }],
+    },
+  },
+  {
     files: ["vite.config.ts", "eslint.config.ts"],
     languageOptions: {
       globals: { ...globals.node },
