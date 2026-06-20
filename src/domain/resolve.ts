@@ -165,6 +165,13 @@ function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] 
     const maxScaffoldHp = scaffold?.hp ?? 0;
     const surfaceMass = surface?.mass ?? 0;
     const scaffoldMass = scaffold?.mass ?? 0;
+    // The cell's surface (armour) damage-reduction and reactive-armour fields,
+    // carried so the per-cell damage pipeline can absorb a fraction of each hit
+    // and spend a reactive charge. Zero for bare/deck cells and for armour
+    // materials with no reactive plating.
+    const surfaceReduction = surface?.damageReduction ?? 0;
+    const reactiveReduction = surface?.reactiveReduction ?? 0;
+    const reactiveWindow = surface?.reactiveWindow ?? 0;
 
     const equipment = cell.equipment;
     const moduleDef = equipment !== undefined ? catalog.module(equipment.moduleId) : undefined;
@@ -184,6 +191,9 @@ function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] 
         edges: cell.edges,
         maxSurfaceHp,
         maxScaffoldHp,
+        surfaceReduction,
+        reactiveReduction,
+        reactiveWindow,
         mass: surfaceMass + scaffoldMass,
         powerDraw: 0,
         crewRequired: 0,
@@ -219,6 +229,9 @@ function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] 
         edges: cell.edges,
         maxSurfaceHp,
         maxScaffoldHp,
+        surfaceReduction,
+        reactiveReduction,
+        reactiveWindow,
         mass: surfaceMass + scaffoldMass,
         powerDraw: 0,
         crewRequired: 0,
@@ -250,6 +263,9 @@ function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] 
       edges: cell.edges,
       maxSurfaceHp,
       maxScaffoldHp,
+      surfaceReduction,
+      reactiveReduction,
+      reactiveWindow,
       mass: moduleDef.mass + surfaceMass + scaffoldMass,
       powerDraw: moduleDef.powerDraw,
       crewRequired: moduleDef.crewRequired,
@@ -279,15 +295,43 @@ function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] 
 /** Resolve the surface material for a cell's surface kind in the given faction.
  *  `bare` resolves to undefined (no surface layer; scaffold is the only
  *  structural layer). `deck` and `armor` resolve to the faction's deck /
- *  armor material respectively. */
+ *  armor material respectively. The reactive fields are carried only by armour
+ *  (deck and scaffold never have reactive plating), so the damage pipeline can
+ *  consume them per cell. */
 function surfaceMaterialFor(
   surface: SurfaceKind,
   catalog: Catalog,
   faction: string,
-): { hp: number; mass: number } | undefined {
+):
+  | {
+      hp: number;
+      mass: number;
+      damageReduction: number;
+      reactiveReduction: number;
+      reactiveWindow: number;
+    }
+  | undefined {
   if (surface === "bare") return undefined;
-  if (surface === "deck") return catalog.deckMaterial(faction);
-  return catalog.armorMaterial(faction);
+  if (surface === "deck") {
+    const deck = catalog.deckMaterial(faction);
+    if (deck === undefined) return undefined;
+    return {
+      hp: deck.hp,
+      mass: deck.mass,
+      damageReduction: deck.damageReduction,
+      reactiveReduction: 0,
+      reactiveWindow: 0,
+    };
+  }
+  const armor = catalog.armorMaterial(faction);
+  if (armor === undefined) return undefined;
+  return {
+    hp: armor.hp,
+    mass: armor.mass,
+    damageReduction: armor.damageReduction,
+    reactiveReduction: armor.reactiveReduction ?? 0,
+    reactiveWindow: armor.reactiveWindow ?? 0,
+  };
 }
 
 /**

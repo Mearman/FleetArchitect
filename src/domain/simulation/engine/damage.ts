@@ -71,12 +71,11 @@ export function applyDamage(
     ship.shieldUntouchedTicks = 0;
   }
   const spill = toShield - shieldAbsorbed;
-  // Reactive armour (factions update) is part of the Phase 4 unified-damage
-  // work. Its data lives on the per-faction armor layer material
-  // (`LayerMaterial.reactiveReduction`/`reactiveWindow`) and the per-module
-  // `reactiveCharge` timer; the pipeline that consumes them lands alongside
-  // the joules refactor. For Phase 2 the full shield-bypass + spill amount
-  // flows onward to structural damage unchanged.
+  // What gets past the shield (the pierced fraction plus any spill). Per-cell
+  // armour — passive reduction and the reactive plate — is applied downstream in
+  // `damageCell` as each cell is struck, so the routing decides per cell whether
+  // its plate is charged. The legacy aggregated path applies the ship-wide
+  // `armourReduction` instead, having no cells to consult.
   const rawStructure = bypass + spill;
 
   if (ship.modules !== undefined) {
@@ -143,7 +142,7 @@ export function applyModuleDamage(
     for (const cell of path) {
       if (remaining <= 0) return;
       if (!cell.alive || cell === shield) continue;
-      remaining = damageCell(cell, remaining);
+      remaining = damageCell(cell, remaining, armourPiercing);
       if (remaining <= 0) return; // this cell absorbed the rest
     }
     // Overflow past the last cell on the path falls to the hull structure.
@@ -158,7 +157,7 @@ export function applyModuleDamage(
       spillToStructure(ship, remaining, armourPiercing);
       return;
     }
-    remaining = damageCell(target, remaining);
+    remaining = damageCell(target, remaining, armourPiercing);
   }
 }
 
@@ -278,16 +277,31 @@ function detonate(ship: SimShip, source: SimModule): void {
 /**
  * Apply damage to a single cell, depleting outer layer first: surface HP
  * (armor or deck) before scaffold HP (`hp`). Returns the leftover damage that
- * spills onward once the cell is destroyed (scaffold HP exhausted). When the
- * surface layer is gone but the scaffold survives, the cell remains alive and
- * no spill occurs — only scaffold destruction destroys the cell and severs
- * the graph.
+ * spills onward once the cell is destroyed (scaffold HP exhausted). While the
+ * surface survives the cell stays alive and nothing spills — only scaffold
+ * destruction kills the cell and severs the graph.
+ *
+ * The cell's armour absorbs a fraction of the hit before depleting surface HP:
+ * the passive `surfaceReduction` always, plus `reactiveReduction` while the plate
+ * is charged (`reactiveCharge === 0`) — which then spends its charge
+ * (`reactiveWindow`, counted down by `stepTechCooldowns`). Both scale by the
+ * hit's `armourPiercing`. Damage and the material `hp` share energy units, so
+ * the subtraction is an energy balance; past the surface the scaffold is undimmed.
  */
-function damageCell(cell: SimModule, amount: number): number {
+function damageCell(cell: SimModule, amount: number, armourPiercing: number): number {
   let remaining = amount;
-  // Surface layer first (armor / deck). Bare cells have maxSurfaceHp === 0 so
-  // this pass is skipped and the damage hits the scaffold directly.
+  // Surface layer first; bare cells (maxSurfaceHp 0) skip straight to scaffold.
   if (cell.surfaceHp > 0) {
+    // Armour absorption: passive plate plus, while charged, the reactive bonus —
+    // both pierce-scaled, clamped to [0, 1] so a hit can never become healing.
+    const pierce = 1 - armourPiercing;
+    let reduction = cell.surfaceReduction * pierce;
+    if (cell.reactiveReduction > 0 && cell.reactiveCharge === 0) {
+      reduction += cell.reactiveReduction * pierce;
+      cell.reactiveCharge = cell.reactiveWindow; // spend it; recharges over the window
+    }
+    if (reduction > 1) reduction = 1;
+    remaining *= 1 - reduction;
     cell.surfaceHp -= remaining;
     if (cell.surfaceHp > 0) return 0;
     remaining = -cell.surfaceHp;
@@ -301,20 +315,6 @@ function damageCell(cell: SimModule, amount: number): number {
   cell.alive = false;
   return remaining;
 }
-
-/**
- * Reduce a structural hit by the best charged reactive armour layer on the ship.
- *
- * Phase 4 note: reactive armour was previously an equipment-module effect
- * (`ArmourEffect.reactiveReduction`). Armour is now a cell surface and the
- * reactive fields live on the per-faction armor layer material
- * (`LayerMaterial.reactiveReduction` / `reactiveWindow`). The damage pipeline
- * that consumes them lands in Phase 4 alongside the joules refactor; for
- * Phase 4 the call site in `applyDamage` passes the full shield-bypass +
- * spill amount onward unchanged. This helper is removed — a later phase will
- * reintroduce it inspecting the ship's armor layer material and the
- * per-module `reactiveCharge` timer.
- */
 
 /** Apply leftover structural damage to the hull, armour-reduced, and kill the
  *  ship if its integrity runs out. */

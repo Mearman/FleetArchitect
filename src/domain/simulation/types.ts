@@ -122,6 +122,24 @@ export interface ResolvedModule {
   /** Starting (and maximum) HP of the scaffold layer. When scaffold HP reaches
    *  zero the cell is destroyed and break-apart may sever the graph. */
   maxScaffoldHp: number;
+  /**
+   * Fraction (0..1) of an incoming hit the surface (armour) layer absorbs
+   * before it depletes surface HP — the armour material's `damageReduction`,
+   * carried per cell so the modular damage pipeline applies it the way the
+   * legacy aggregated path applies the ship-wide `armourReduction`. Zero for
+   * bare cells and for surfaces with no reduction (deck, or armour authored at
+   * 0). Scaled by a hit's `armourPiercing` at consumption time.
+   */
+  surfaceReduction: number;
+  /**
+   * Reactive-armour behaviour carried from the armour material. When
+   * `reactiveReduction > 0` the cell's surface layer, while charged, absorbs an
+   * extra `reactiveReduction` fraction of a hit and then spends its charge,
+   * recharging over `reactiveWindow` ticks. Both zero for bare/deck cells and
+   * for passive (non-reactive) armour, so the reactive path stays inert there.
+   */
+  reactiveReduction: number;
+  reactiveWindow: number;
   /** Mass contributed to the ship's total mass. */
   mass: number;
   /** Power drawn from the reactor each tick to run this module. */

@@ -185,18 +185,26 @@ describe("engine.movement-modes", () => {
     expect(Math.abs(attackerAt(result, 60, "a1").y)).toBeLessThan(1);
   });
 
-  // SKIP — Pending Phase 4 (damage): the modular model routes damage through
-  // module HP first and only depletes hull structure at ship-death, so
-  // structure never crosses the retreat threshold while the attacker is
-  // alive. Re-enable once Phase 4's unified damage gives structure-
-  // independent depletion (or the retreat condition reads module loss).
-  it.skip("retreating: a damaged attacker faces away and flees", () => {
-    // The defender hits the attacker enough to drop structure below the
-    // retreatThreshold but leaves it alive (two hits of 40 from 100 → 20),
-    // then we assert the attacker orients away and flees.
+  it("retreating: a damaged attacker faces away and flees", () => {
+    // The defender chips the attacker just past its retreat threshold but leaves
+    // it alive, then we assert the attacker orients away and flees.
+    //
+    // Retreat threshold is 0.85, NOT 0.5: under the modular damage model a hit
+    // depletes the struck cells' HP and spills to hull structure only when a
+    // cell is destroyed, so combined HP (structure + module HP) tracks the
+    // ship's alive-cell mass. By the time a modular ship has lost half its
+    // combined HP it has lost half its cells — which means its core has been
+    // shot away and it is structurally dead (no command / severed graph), so a
+    // 0.5 threshold is never crossed while the ship is alive: the crossing IS
+    // the death. A combat-effectiveness threshold near the top of the HP band
+    // (retreat after shedding ~15%) fires while the ship is still whole and
+    // manoeuvrable, which is the point being tested — the retreat manoeuvre,
+    // not the death throes.
+    //
     // The 130 wu separation is within the innate visual radius so both ships
-    // detect each other from tick 0 without a sensor module — the test is
-    // about the retreat manoeuvre, not detection.
+    // detect each other from tick 0 without a sensor module — the test is about
+    // the retreat manoeuvre, not detection.
+    const retreatThreshold = 0.85;
     const result = runBattle(
       inputs([
         makeShip({
@@ -205,7 +213,7 @@ describe("engine.movement-modes", () => {
           x: 0,
           y: 0,
           weapons: [weapon({ damage: 1, range: 600, cooldown: 20 })],
-          orders: { retreatThreshold: 0.5 },
+          orders: { retreatThreshold },
         }),
         makeShip({
           id: "d1",
@@ -213,23 +221,19 @@ describe("engine.movement-modes", () => {
           x: 0,
           y: 130,
           structure: 99999,
-          // One big hit (100 → 40, below the 0.5 threshold) with a cooldown
-          // long enough that no second shot lands during the sample window, so
-          // the attacker stays alive and visibly retreating. (A second hit at
-          // ~40 ticks would kill it mid-turn before the now-realistic, slower
-          // rotation has swung it around and carried it clear.)
-          weapons: [weapon({ damage: 500, range: 400, cooldown: 400 })],
+          // A hit drops the attacker past the 0.85 threshold early (the 15-tick
+          // cooldown keeps the first shot inside the short sample window); once
+          // retreating the attacker accelerates clear and outruns further
+          // damage, so it stays alive and visibly fleeing.
+          weapons: [weapon({ damage: 35, range: 400, cooldown: 15 })],
           orders: { engageRange: "hold" },
         }),
       ]),
     );
-    // Once the effective HP fraction (structure + module HP) drops below the
-    // 0.5 retreat threshold the attacker should be retreating. The modular
-    // model routes damage through module HP first (spilling to structure only
-    // on module destruction), so the scan checks the combined fraction.
-    // Find when the attacker's effective HP (structure + module HP) drops below
-    // the retreat threshold. The baseline is the initial total HP (at tick 0
-    // everything is undamaged, so that IS the max).
+    // Find when the attacker's effective HP fraction (structure + module HP)
+    // first drops below its retreat threshold — the tick the retreat manoeuvre
+    // engages. The baseline is the initial total HP (at tick 0 everything is
+    // undamaged, so that IS the max).
     const f0 = result.frames[0];
     const a0 = f0?.ships.find((s) => s.instanceId === "a1");
     const initialHp = (a0?.structure ?? 0) + (a0?.modules ?? []).reduce((sum, m) => sum + (m.hp ?? 0), 0);
@@ -238,7 +242,7 @@ describe("engine.movement-modes", () => {
       const ship = frame.ships.find((s) => s.instanceId === "a1");
       if (ship?.alive !== true) continue;
       const hp = (ship.structure ?? 0) + (ship.modules ?? []).reduce((sum, m) => sum + (m.hp ?? 0), 0);
-      if (initialHp > 0 && hp / initialHp < 0.5) {
+      if (initialHp > 0 && hp / initialHp < retreatThreshold) {
         retreatTick = frame.tick;
         break;
       }

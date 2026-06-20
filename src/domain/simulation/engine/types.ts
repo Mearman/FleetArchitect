@@ -399,6 +399,24 @@ export interface SimModule {
   surfaceHp: number;
   /** Starting (and maximum) HP of the surface layer. */
   maxSurfaceHp: number;
+  /**
+   * Fraction (0..1) of an incoming hit this cell's surface (armour) layer
+   * absorbs before it depletes surface HP — the armour material's
+   * `damageReduction`, applied per cell in `damageCell` (scaled by the hit's
+   * `armourPiercing`). Zero for bare/deck cells, so the reduction path is inert
+   * there. Copied off the `ResolvedModule` in `toSimModule`; fixed for life.
+   */
+  surfaceReduction: number;
+  /**
+   * Reactive-armour fields carried from the armour material. While the cell has
+   * a surface layer and `reactiveCharge === 0` (ready), a surface hit absorbs an
+   * extra `reactiveReduction` fraction (pierce-scaled) and then sets
+   * `reactiveCharge = reactiveWindow`, recharging over that many ticks (counted
+   * down in `stepTechCooldowns`). Both zero for passive armour and bare/deck
+   * cells, so the reactive path is inert for them.
+   */
+  reactiveReduction: number;
+  reactiveWindow: number;
   /** Current HP of the scaffold layer. When this reaches zero the cell is
    *  destroyed (`alive = false`) and break-apart may sever the graph. */
   hp: number;

@@ -3,7 +3,8 @@ import { CELL_SIZE } from "@/domain/grid";
 import { runBattle } from "@/domain/simulation/engine";
 import { applyCollisionDamage } from "@/domain/simulation/engine/collision";
 import type { ShipContact } from "@/domain/simulation/engine/collision";
-import { resolveChainReactions } from "@/domain/simulation/engine/damage";
+import { applyDamage, resolveChainReactions } from "@/domain/simulation/engine/damage";
+import { stepTechCooldowns } from "@/domain/simulation/engine/mines";
 import { toSimShip } from "@/domain/simulation/engine/setup";
 import type { SimShip } from "@/domain/simulation/engine/types";
 import { mulberry32 } from "@/domain/simulation/rng";
@@ -50,6 +51,9 @@ function moduleOf(
     edges: OPEN,
     maxSurfaceHp: 0,
     maxScaffoldHp,
+    surfaceReduction: 0,
+    reactiveReduction: 0,
+    reactiveWindow: 0,
     mass,
     powerDraw: 0,
     crewRequired: 0,
@@ -463,5 +467,87 @@ describe("engine.damage — determinism", () => {
     const second = mk();
     expect(second.frames).toEqual(first.frames);
     expect(second.winner).toBe(first.winner);
+  });
+});
+
+describe("engine.damage — per-cell armour reduction and reactive plating", () => {
+  /** A single high-HP armour cell with the given passive and reactive reduction,
+   *  built as a one-cell ship so a hit lands on it directly. The cell is the
+   *  bridge so the ship cannot lose its command and die mid-test. */
+  function armourCell(over: {
+    surfaceReduction?: number;
+    reactiveReduction?: number;
+    reactiveWindow?: number;
+  }): SimShip {
+    const base = moduleOf("c1", { kind: "hull" }, 0, 0, 1000, 5, true);
+    const cell: ResolvedModule = {
+      ...base,
+      surface: "armor",
+      maxSurfaceHp: 1000,
+      surfaceReduction: over.surfaceReduction ?? 0,
+      reactiveReduction: over.reactiveReduction ?? 0,
+      reactiveWindow: over.reactiveWindow ?? 0,
+    };
+    return buildSim("armour", [cell]);
+  }
+
+  it("passive surface reduction absorbs its fraction of a hit", () => {
+    const ship = armourCell({ surfaceReduction: 0.5 });
+    const cell = findModule(ship, "c1");
+    const before = cell.surfaceHp;
+    // 100 damage at 0.5 reduction → 50 reaches the plate.
+    applyDamage(ship, 100, 0, 0, ship.x, ship.y, 0);
+    expect(cell.surfaceHp).toBeCloseTo(before - 50, 6);
+  });
+
+  it("a charged reactive plate stacks its bonus on the first hit, then spends its charge", () => {
+    // Passive 0.5 + reactive 0.3 = 0.8 absorbed on the first hit; the plate then
+    // recharges over 90 ticks. With reactiveCharge > 0 only the passive 0.5
+    // applies, so the second (in-window) hit lands harder.
+    const ship = armourCell({
+      surfaceReduction: 0.5,
+      reactiveReduction: 0.3,
+      reactiveWindow: 90,
+    });
+    const cell = findModule(ship, "c1");
+    expect(cell.reactiveCharge).toBe(0); // born ready
+
+    const h0 = cell.surfaceHp;
+    applyDamage(ship, 100, 0, 0, ship.x, ship.y, 0); // 100 * (1 - 0.8) = 20 lands
+    expect(cell.surfaceHp).toBeCloseTo(h0 - 20, 6);
+    expect(cell.reactiveCharge).toBe(90); // charge spent
+
+    const h1 = cell.surfaceHp;
+    applyDamage(ship, 100, 0, 0, ship.x, ship.y, 0); // reactive on cooldown → 100 * (1 - 0.5) = 50
+    expect(cell.surfaceHp).toBeCloseTo(h1 - 50, 6);
+  });
+
+  it("the reactive plate recharges over its window and absorbs the extra fraction again", () => {
+    const ship = armourCell({
+      surfaceReduction: 0.5,
+      reactiveReduction: 0.3,
+      reactiveWindow: 3,
+    });
+    const cell = findModule(ship, "c1");
+    applyDamage(ship, 100, 0, 0, ship.x, ship.y, 0);
+    expect(cell.reactiveCharge).toBe(3);
+    // Three ticks of recharge bring it back to ready (0).
+    stepTechCooldowns(ship);
+    stepTechCooldowns(ship);
+    stepTechCooldowns(ship);
+    expect(cell.reactiveCharge).toBe(0);
+
+    const h = cell.surfaceHp;
+    applyDamage(ship, 100, 0, 0, ship.x, ship.y, 0); // reactive ready again → 0.8 absorbed
+    expect(cell.surfaceHp).toBeCloseTo(h - 20, 6);
+  });
+
+  it("armour-piercing scales the per-cell reduction down", () => {
+    // Passive 0.5 at 0.5 armourPiercing → effective 0.25 absorbed, so 75 lands.
+    const ship = armourCell({ surfaceReduction: 0.5 });
+    const cell = findModule(ship, "c1");
+    const before = cell.surfaceHp;
+    applyDamage(ship, 100, 0, 0.5, ship.x, ship.y, 0);
+    expect(cell.surfaceHp).toBeCloseTo(before - 75, 6);
   });
 });

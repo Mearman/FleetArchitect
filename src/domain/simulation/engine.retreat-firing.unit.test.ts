@@ -99,10 +99,13 @@ describe("engine.retreat-firing", () => {
   // gate never trips. Re-enable once Phase 4's unified damage gives
   // structure-independent depletion (or the retreat condition reads module
   // loss).
-  it.skip("a ship damaged below its retreatThreshold fires no further projectiles", () => {
+  it("a ship damaged below its retreatThreshold fires no further projectiles", () => {
     // Attacker: low retreatThreshold, a cannon (visible projectiles).
     // Defender: holds position, hitscan with damage 60 — enough to drop the
     // attacker from 100 → 40 (below the 0.5 threshold) in a single hit.
+    // The 130 wu separation sits inside the innate visual radius so both
+    // sensorless legacy ships detect each other from tick 0 without a sensor
+    // module — the test is about the retreat-fire gate, not detection.
     const result = runBattle(
       inputs([
         makeShip({
@@ -117,7 +120,7 @@ describe("engine.retreat-firing", () => {
           id: "d1",
           side: "defender",
           x: 0,
-          y: 200,
+          y: 130,
           structure: 99999,
           weapons: [weapon({ damage: 60, range: 500, cooldown: 5 })],
           orders: { engageRange: "hold" },
