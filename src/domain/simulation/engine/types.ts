@@ -120,6 +120,10 @@ export interface SimShip {
    */
   momentOfInertia: number;
   radius: number;
+  /** Chamfered hull outline polygon (computed from the grid at resolve time
+   *  via computeOutline over the armor shell; re-derived on break-apart).
+   *  Render-only — collision stays per-cell. */
+  outline?: { x: number; y: number }[][];
   cost: number;
   weapons: readonly WeaponEffect[];
   weaponCooldowns: number[];

@@ -506,6 +506,7 @@ export function snapshot(
         vx: s.velX,
         vy: s.velY,
         facing: s.facing,
+        ...(s.outline !== undefined ? { outline: s.outline } : {}),
         structure: s.structure,
         shield: s.shield,
         alive: s.alive,
