@@ -1,3 +1,17 @@
+# [1.7.0](https://github.com/Mearman/FleetArchitect/compare/v1.6.0...v1.7.0) (2026-06-20)
+
+
+### Features
+
+* **presets:** re-author ships at 1 m scale and force preset reseed ([3c1cc54](https://github.com/Mearman/FleetArchitect/commit/3c1cc543ed72ece8bb866fd1a575c3f73dbbf861))
+* **shipgen:** pure subdivision generator for 1 m layered hulls ([eac5a78](https://github.com/Mearman/FleetArchitect/commit/eac5a78c269b29d791d6b37427829fbb0174b0cd))
+
+
+### Performance Improvements
+
+* **render,engine:** cache static ship sprites; bound O(n^2) damage/power paths ([59461c3](https://github.com/Mearman/FleetArchitect/commit/59461c38c57449e59f813d87501091e93a349409))
+* **snapshot:** derive cell positions from ship pose; emit static grid once ([2c73822](https://github.com/Mearman/FleetArchitect/commit/2c738222e7b82e12e35c8aa63bd3f130033f721a))
+
 # [1.6.0](https://github.com/Mearman/FleetArchitect/compare/v1.5.0...v1.6.0) (2026-06-20)
 
 
