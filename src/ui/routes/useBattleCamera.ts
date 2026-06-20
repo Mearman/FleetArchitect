@@ -92,8 +92,10 @@ export function useBattleCamera({
   useEffect(() => {
     const canvas = canvasRef.current;
     if (canvas === null) return;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const setBacking = () => {
+      // Sample DPR inside the closure so a display-density change (e.g. moving
+      // the window to a different monitor) triggers a correct resize.
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const cw = canvas.clientWidth;
       const ch = canvas.clientHeight;
       if (cw === 0 || ch === 0) return;
@@ -104,14 +106,14 @@ export function useBattleCamera({
       // when a new battle reuses the same-sized canvas element.
       if (canvas.width !== desiredW) canvas.width = desiredW;
       if (canvas.height !== desiredH) canvas.height = desiredH;
+      // Populate canvasSize on initial mount as well as on subsequent resizes,
+      // so the playback hook has a valid size before the first ResizeObserver
+      // callback fires.
+      setCanvasSize({ width: cw, height: ch });
     };
     setBacking();
     const observer = new ResizeObserver(() => {
       setBacking();
-      const cw = canvas.clientWidth;
-      const ch = canvas.clientHeight;
-      if (cw === 0 || ch === 0) return;
-      setCanvasSize({ width: cw, height: ch });
     });
     observer.observe(canvas);
     return () => observer.disconnect();

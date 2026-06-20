@@ -291,6 +291,51 @@ export function BattleRoute() {
     });
   }
 
+  /**
+   * Toggle play/pause. Restarts from the top when paused at the true end of
+   * a finished battle; mid-stream it resumes rather than rewinds. Defined
+   * before the early-return guard so the space-bar effect can reference it.
+   */
+  const onTogglePlay = () => {
+    if (simulation.result !== null && currentTick >= simulation.result.ticks) {
+      playbackTimeRef.current = 0;
+      playback.setPlaybackTime(0);
+    }
+    playback.setPlaying((p) => !p);
+  };
+
+  /**
+   * A ref kept current by an effect below, so the space-bar keydown listener
+   * always calls the latest `onTogglePlay` without re-registering.
+   */
+  const onTogglePlayRef = useRef(onTogglePlay);
+  useEffect(() => {
+    onTogglePlayRef.current = onTogglePlay;
+  });
+
+  // Space-bar toggles play/pause when the canvas is active. The listener
+  // registers once (gated on hasFrames) and reads the latest handler via ref,
+  // so it never goes stale. We guard against focusable input elements so
+  // typing a seed or fleet name is unaffected.
+  useEffect(() => {
+    if (!hasFrames) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code !== "Space") return;
+      const target = e.target;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLButtonElement
+      ) {
+        return;
+      }
+      e.preventDefault();
+      onTogglePlayRef.current();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [hasFrames]);
+
   // --- Early return: loading ----------------------------------------------
   if (fleets === undefined || designs === undefined) {
     return <Text c="dimmed">Loading…</Text>;
@@ -302,17 +347,6 @@ export function BattleRoute() {
       : simulation.result?.winner === "defender"
         ? "#5ab0ff"
         : "gray";
-
-  const onTogglePlay = () => {
-    // Restart from the top only when we are paused at the true end of
-    // a finished battle. Mid-stream the "end" is just the leading edge,
-    // so a play press there resumes rather than rewinds.
-    if (simulation.result !== null && currentTick >= simulation.result.ticks) {
-      playbackTimeRef.current = 0;
-      playback.setPlaybackTime(0);
-    }
-    playback.setPlaying((p) => !p);
-  };
 
   const onSeek = (val: number) => {
     playback.setPlaying(false);

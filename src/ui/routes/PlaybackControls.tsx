@@ -74,6 +74,8 @@ export function PlaybackControls({
             { value: "0.5", label: "0.5x" },
             { value: "1", label: "1x" },
             { value: "2", label: "2x" },
+            { value: "4", label: "4x" },
+            { value: "8", label: "8x" },
           ]}
           value={String(speed)}
           onChange={(val) => onSpeedChange(Number(val))}

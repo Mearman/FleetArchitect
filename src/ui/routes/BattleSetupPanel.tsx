@@ -1,5 +1,6 @@
 import { Button, Group, NativeSelect, NumberInput, SegmentedControl, Stack, Text, Tooltip } from "@mantine/core";
 import { IconArrowsShuffle, IconRefresh, IconSwords } from "@tabler/icons-react";
+import { Link } from "react-router-dom";
 import { BattleAnomaly } from "@/schema/battle";
 import type { BattleAnomaly as BattleAnomalyType } from "@/schema/battle";
 import { ANOMALY_LABEL } from "./battleConstants";
@@ -49,6 +50,18 @@ export function BattleSetupPanel({
   onEngage,
   onRandomBattle,
 }: BattleSetupPanelProps) {
+  if (!hasFleets) {
+    return (
+      <Text size="sm" c="dimmed">
+        No fleets yet.{" "}
+        <Text component={Link} to="/fleets" size="sm" c="blue" td="underline">
+          Build or import a fleet
+        </Text>{" "}
+        to get started.
+      </Text>
+    );
+  }
+
   return (
     <Stack gap="sm">
       <Group gap="sm" grow align="flex-start">
@@ -116,6 +129,7 @@ export function BattleSetupPanel({
           leftSection={<IconSwords size={18} />}
           onClick={onEngage}
           loading={computing}
+          disabled={attackerId === null || defenderId === null || computing}
         >
           Engage
         </Button>
