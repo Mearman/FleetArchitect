@@ -9,11 +9,13 @@ import type { Vec2 } from "@/schema/primitives";
  */
 
 /**
- * World size of one grid cell, in battle units. Chosen so a hand-laid grid of
- * a few cells spans roughly the same footprint the old hand-placed slot
- * positions did (the old fighter sat within about ±14 units, a frigate ±28),
- * keeping firing ranges, speeds, and collision radii in the same regime as the
- * pre-grid catalog without needing to re-tune the engine constants.
+ * World size of one grid cell, in metres. Each cell is 12 m across. Chosen so
+ * a hand-laid grid of a few cells spans roughly the same footprint the old
+ * hand-placed slot positions did (the old fighter sat within about ±14 m, a
+ * frigate ±28 m), keeping firing ranges, speeds, and collision radii in the
+ * same regime as the pre-grid catalog without needing to re-tune the engine
+ * constants. Consistent with `src/domain/simulation/engine/config.ts`, which
+ * declares world coordinates are metres and cites `CELL_SIZE = 12 m`.
  */
 export const CELL_SIZE = 12;
 
@@ -174,9 +176,9 @@ export function deriveMass(
 }
 
 /**
- * Bounding radius (battle units) of the occupied cells about the ship-local
- * origin: the distance to the farthest cell centre plus half a cell, so the
- * radius encloses the whole footprint. Zero for an empty grid. Used as the
+ * Bounding radius (metres) of the occupied cells about the ship-local origin:
+ * the distance to the farthest cell centre plus half a cell, so the radius
+ * encloses the whole footprint. Zero for an empty grid. Used as the
  * broad-phase collision bound, the grid analogue of the old per-class radius.
  */
 export function deriveRadius(grid: TileGrid): number {
