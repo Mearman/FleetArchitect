@@ -5,8 +5,11 @@
  * hazard (a hit transfers momentum, routed through the unified damage pipeline
  * in Phase 5) and a line-of-sight occluder (it shadows EM rays in Phase 9).
  *
- * Use-deferred (Phase 12): the entity and its honest motion are modelled here;
- * spawning on destruction, hazard damage, and occlusion wiring come later.
+ * Spawning on destruction and per-tick drift are now wired into the battle tick
+ * loop (`engine/index.ts`): a destroyed hull leaves one fragment carrying its
+ * centre-of-mass momentum, advanced each tick. Use-deferred (Phase 12): the
+ * hazard damage and EM occlusion consequences come later — debris is honest
+ * drifting mass, snapshotted for the renderer, with no gameplay effect yet.
  */
 
 import type { Vec2 } from "@/schema/primitives";

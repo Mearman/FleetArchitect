@@ -388,6 +388,22 @@ export const EmissionSnapshot = z.object({
 });
 export type EmissionSnapshot = z.infer<typeof EmissionSnapshot>;
 
+/** A piece of wreckage drifting at a tick (Phase 12). Spawned when a ship is
+ *  destroyed, it keeps the parent's centre-of-mass velocity (Newton's first law)
+ *  and drifts frictionlessly thereafter. `mass` is in kg and `radius` is the
+ *  derived bounding radius (metres); the renderer can draw it as a tumbling
+ *  fragment scaled by its radius. */
+export const DebrisSnapshot = z.object({
+  id: EntityId,
+  x: z.number(),
+  y: z.number(),
+  vx: z.number(),
+  vy: z.number(),
+  mass: z.number().min(0),
+  radius: z.number().min(0),
+});
+export type DebrisSnapshot = z.infer<typeof DebrisSnapshot>;
+
 /** A single frame of recorded battle state, for replay rendering. */
 export const BattleFrame = z.object({
   tick: z.number().int().min(0),
@@ -408,6 +424,9 @@ export const BattleFrame = z.object({
   /** Continuous EM emissions this tick (Phase 9 reception model). Omitted when
    *  empty so frames recorded before EM reception stay byte-identical. */
   emissions: z.array(EmissionSnapshot).optional(),
+  /** Wreckage drifting this tick (Phase 12). Omitted while no ship has yet been
+   *  destroyed so frames recorded before debris existed stay byte-identical. */
+  debris: z.array(DebrisSnapshot).optional(),
 });
 export type BattleFrame = z.infer<typeof BattleFrame>;
 

@@ -684,6 +684,22 @@ export const SIM = {
    * Classification: authored catalogue content
    */
   collisionDamageFraction: 0.3,
+
+  /**
+   * [Phase 12 — debris] Fraction of a destroyed ship's structural mass that
+   * survives as a single trackable wreckage fragment. A real hull break-up
+   * scatters its mass across a spectrum of fragment sizes, most of them dust and
+   * shrapnel below any broad-phase tracking bound; the sim coalesces the
+   * trackable remainder into one drifting body per kill. Around half the mass
+   * persisting as coherent wreckage (the rest vaporised, ejected as fine
+   * particles, or lost to the blast) is the conventional hypervelocity-impact
+   * coarse-fragment estimate; the fragment then keeps the parent's momentum
+   * exactly (Newton's first law) and drifts frictionlessly.
+   *
+   * Classification: authored catalogue content (use-deferred — debris carries no
+   * hazard or occlusion consequence yet, only honest drifting mass)
+   */
+  debrisMassFraction: 0.5,
 };
 
 /** Closing speed (world-units per tick) below which the translation controller

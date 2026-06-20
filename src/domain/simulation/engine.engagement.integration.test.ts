@@ -157,3 +157,79 @@ describe("engagement: ships close and fight", () => {
     expect(Math.cos(def.facing ?? 0), "defender should face toward the enemy (−x)").toBeLessThan(0);
   });
 });
+
+/**
+ * Debris wiring (Phase 12): a destroyed hull must leave drifting wreckage in the
+ * live tick loop, not just in the isolated `debris.ts` unit. An asymmetric
+ * three-against-one brawl reliably kills the outnumbered side, so debris appears
+ * in the snapshot; the wreckage carries positive mass and a derived radius and
+ * is byte-identical across two same-seed runs.
+ */
+// Three attackers gang up on a single defender — a guaranteed kill rather than
+// the symmetric stalemate the mirror match settles into. The fleet/ship ids are
+// fixed (not freshly generated per call) so two same-seed runs over the same
+// inputs produce identical debris ids — the determinism contract is "same
+// inputs, same output", and the ids derive from the destroyed ship's instanceId.
+function lopsidedInputs() {
+  const design = corvette("design-lopsided");
+  const designs = new Map([[design.id, design]]);
+  const attacker = fleetOf("fleet-attacker", design.id, -250, [-60, 0, 60]);
+  const defender = fleetOf("fleet-defender", design.id, -250, [0]);
+  const ships = [
+    ...resolveFleetToCombatShips(attacker, designs, catalog(), "attacker"),
+    ...resolveFleetToCombatShips(defender, designs, catalog(), "defender"),
+  ];
+  return { ships, attackerFleetId: attacker.id, defenderFleetId: defender.id };
+}
+
+function runLopsided(seed: number) {
+  const { ships, attackerFleetId, defenderFleetId } = lopsidedInputs();
+  return runBattle({
+    ships,
+    attackerFleetId,
+    defenderFleetId,
+    anomaly: "none",
+    seed,
+    maxTicks: DEFAULT_MAX_TICKS,
+  });
+}
+
+describe("debris: destroyed hulls leave drifting wreckage", () => {
+  it("spawns debris when a ship is destroyed in the live tick loop", () => {
+    const res = runLopsided(3);
+    // The outnumbered defender should be destroyed, so at least one frame must
+    // carry debris with positive mass and a derived bounding radius.
+    const withDebris = res.frames.find((f) => f.debris !== undefined && f.debris.length > 0);
+    expect(withDebris, "a destroyed hull should leave debris in some frame").toBeDefined();
+    for (const d of withDebris?.debris ?? []) {
+      expect(d.mass).toBeGreaterThan(0);
+      expect(d.radius).toBeGreaterThan(0);
+    }
+  });
+
+  it("never sheds a debris fragment once spawned (the field only grows)", () => {
+    const res = runLopsided(3);
+    let maxSoFar = 0;
+    for (const f of res.frames) {
+      const count = f.debris?.length ?? 0;
+      // Debris persists — the count is monotonically non-decreasing across the
+      // battle (a fragment is never removed before occlusion/hazard wiring).
+      expect(count).toBeGreaterThanOrEqual(maxSoFar);
+      maxSoFar = count;
+    }
+    expect(maxSoFar, "the lopsided brawl should have produced wreckage").toBeGreaterThan(0);
+  });
+
+  it("produces byte-identical debris across two same-seed runs", () => {
+    // Reuse the SAME resolved inputs for both runs — `resolveFleetToCombatShips`
+    // mints fresh instanceIds each call, and debris ids derive from the destroyed
+    // ship's instanceId, so re-resolving would change the ids without any engine
+    // non-determinism. Determinism is a property of identical inputs.
+    const { ships, attackerFleetId, defenderFleetId } = lopsidedInputs();
+    const run = () =>
+      runBattle({ ships, attackerFleetId, defenderFleetId, anomaly: "none", seed: 3, maxTicks: DEFAULT_MAX_TICKS });
+    const a = run();
+    const b = run();
+    expect(b.frames.map((f) => f.debris ?? [])).toEqual(a.frames.map((f) => f.debris ?? []));
+  });
+});
