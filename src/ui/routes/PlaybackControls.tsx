@@ -1,4 +1,4 @@
-import { Badge, Button, Group, SegmentedControl, Slider, Text, Tooltip } from "@mantine/core";
+import { Badge, Button, Group, SegmentedControl, Slider, Stack, Text, Tooltip } from "@mantine/core";
 import { IconFocus2, IconPlayerPause, IconPlayerPlay } from "@tabler/icons-react";
 import type { Camera } from "./battleCamera";
 
@@ -38,7 +38,7 @@ export function PlaybackControls({
   onSeek,
 }: PlaybackControlsProps) {
   return (
-    <>
+    <Stack gap="xs">
       <Group gap="md" align="center" wrap="wrap">
         <Button
           variant="light"
@@ -82,6 +82,6 @@ export function PlaybackControls({
         />
       </Group>
       <Slider min={0} max={maxTick} value={currentTick} onChange={(val) => onSeek(val)} />
-    </>
+    </Stack>
   );
 }

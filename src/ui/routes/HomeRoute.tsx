@@ -9,6 +9,7 @@ import {
   Text,
   Title,
 } from "@mantine/core";
+import { IconArrowRight } from "@tabler/icons-react";
 import { Link } from "react-router-dom";
 
 const features = [
@@ -62,7 +63,7 @@ export function HomeRoute() {
                   </Text>
                   <Group mt="auto">
                     <Text size="sm" fw={600} c="indigo.4">
-                      Open →
+                      Open <IconArrowRight size={14} aria-hidden />
                     </Text>
                   </Group>
                 </Stack>
@@ -74,7 +75,7 @@ export function HomeRoute() {
 
       <Text size="xs" c="dimmed">
         Fleets and designs are saved in your browser (IndexedDB). Share them via
-        a link until the sync server is online.
+        a link.
       </Text>
     </Stack>
     </Container>

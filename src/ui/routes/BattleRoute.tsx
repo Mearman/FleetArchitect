@@ -18,10 +18,13 @@ import {
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import {
+  IconAdjustments,
   IconEye,
   IconEyeOff,
   IconLayoutSidebarRightExpand,
   IconMaximize,
+  IconMinus,
+  IconPlus,
   IconSettings,
   IconSwords,
 } from "@tabler/icons-react";
@@ -345,11 +348,11 @@ export function BattleRoute() {
     );
   }
 
-  const winnerColour =
+  const winnerBadgeColor =
     simulation.result?.winner === "attacker"
-      ? "#ff6b5a"
+      ? "red"
       : simulation.result?.winner === "defender"
-        ? "#5ab0ff"
+        ? "blue"
         : "gray";
 
   const onSeek = (val: number) => {
@@ -369,7 +372,7 @@ export function BattleRoute() {
         <Title order={1}>Battle Arena</Title>
         <Group gap="xs">
           {simulation.result !== null && (
-            <Badge size="lg" color="gray" style={{ color: winnerColour }}>
+            <Badge size="lg" color={winnerBadgeColor}>
               {simulation.result.winner === "draw"
                 ? "Draw"
                 : `${simulation.result.winner.toUpperCase()} WINS`}
@@ -417,7 +420,7 @@ export function BattleRoute() {
               </Stack>
             ) : (
               <Stack align="center" gap="xs">
-                <IconSwords size={40} color="#6b7280" />
+                <IconSwords size={40} color="var(--mantine-color-dimmed)" />
                 <Text c="dimmed">Pick two fleets and engage to watch the battle.</Text>
               </Stack>
             )}
@@ -462,7 +465,7 @@ export function BattleRoute() {
                       camera.setCamera((c) => ({ ...c, zoom: clampZoom(c.zoom * 1.4) }))
                     }
                   >
-                    +
+                    <IconPlus size={16} />
                   </ActionIcon>
                 </Tooltip>
                 <Tooltip label="Zoom out">
@@ -473,7 +476,7 @@ export function BattleRoute() {
                       camera.setCamera((c) => ({ ...c, zoom: clampZoom(c.zoom / 1.4) }))
                     }
                   >
-                    −
+                    <IconMinus size={16} />
                   </ActionIcon>
                 </Tooltip>
                 <Tooltip label="Fit whole battle (reset camera)">
@@ -500,8 +503,8 @@ export function BattleRoute() {
                 <Popover width={260} position="top-end" withArrow shadow="md">
                   <Popover.Target>
                     <Tooltip label="Battle overlays">
-                      <ActionIcon variant="default">
-                        <IconSettings size={16} />
+                      <ActionIcon variant="default" aria-label="Battle overlays">
+                        <IconAdjustments size={16} />
                       </ActionIcon>
                     </Tooltip>
                   </Popover.Target>

@@ -8,7 +8,13 @@ import { MODULE_LABEL } from "./battleConstants";
  */
 export function ModuleStatusPanel({ frame }: { frame: BattleFrame }) {
   const withModules = frame.ships.filter((s) => s.modules !== undefined && s.modules.length > 0);
-  if (withModules.length === 0) return null;
+  if (withModules.length === 0) {
+    return (
+      <Paper p="sm" withBorder>
+        <Text size="xs" c="dimmed">No module data</Text>
+      </Paper>
+    );
+  }
   return (
     <Paper p="sm" withBorder>
       <Stack gap={6}>
@@ -16,7 +22,10 @@ export function ModuleStatusPanel({ frame }: { frame: BattleFrame }) {
           Modules
         </Text>
         {withModules.map((s) => {
-          const sideColour = s.side === "attacker" ? "#ff6b5a" : "#5ab0ff";
+          const sideColour =
+            s.side === "attacker"
+              ? "var(--mantine-color-red-5)"
+              : "var(--mantine-color-blue-5)";
           return (
             <Group key={s.instanceId} gap="xs" wrap="nowrap" align="center">
               <Box
