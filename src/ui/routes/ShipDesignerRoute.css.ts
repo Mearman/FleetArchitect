@@ -93,89 +93,60 @@ export const edgeDoorOpen = [
   }),
 ];
 
-/** Position an edge indicator on the north side of its cell. The width spans
- *  the cell minus the border; the height is the edge thickness. */
-const edgeNorth = style({
+/** Position an edge indicator on the north/south/east/west side of its cell.
+ *  Exported so `designerGrid.ts` can assemble the lookup function without
+ *  re-exporting a function (vanilla-extract .css.ts files may only export
+ *  plain serialisable values — strings, numbers, arrays, objects). */
+export const edgeNorth = style({
   top: 0,
   left: 0,
   right: 0,
   height: EDGE_THICKNESS_PX,
 });
-const edgeSouth = style({
+export const edgeSouth = style({
   bottom: 0,
   left: 0,
   right: 0,
   height: EDGE_THICKNESS_PX,
 });
-const edgeEast = style({
+export const edgeEast = style({
   top: 0,
   bottom: 0,
   right: 0,
   width: EDGE_THICKNESS_PX,
 });
-const edgeWest = style({
+export const edgeWest = style({
   top: 0,
   bottom: 0,
   left: 0,
   width: EDGE_THICKNESS_PX,
 });
 
-/** A door edge uses a thinner bar so the closed/open distinction is visible
- *  alongside walls. */
-const doorNorth = style({
+/** Door position classes: thinner inset bars distinguishing open/closed state. */
+export const doorNorth = style({
   top: 1,
   left: 2,
   right: 2,
   height: DOOR_THICKNESS_PX,
 });
-const doorSouth = style({
+export const doorSouth = style({
   bottom: 1,
   left: 2,
   right: 2,
   height: DOOR_THICKNESS_PX,
 });
-const doorEast = style({
+export const doorEast = style({
   top: 2,
   bottom: 2,
   right: 1,
   width: DOOR_THICKNESS_PX,
 });
-const doorWest = style({
+export const doorWest = style({
   top: 2,
   bottom: 2,
   left: 1,
   width: DOOR_THICKNESS_PX,
 });
-
-/** Resolve the position class for an edge indicator of the given kind on the
- *  given side. Walls use the full-width bar; doors use the thinner inset bar. */
-export function edgePositionClass(
-  kind: "wall" | "door",
-  dir: "n" | "e" | "s" | "w",
-): string {
-  if (kind === "wall") {
-    switch (dir) {
-      case "n":
-        return edgeNorth;
-      case "e":
-        return edgeEast;
-      case "s":
-        return edgeSouth;
-      case "w":
-        return edgeWest;
-    }
-  }
-  switch (dir) {
-    case "n":
-      return doorNorth;
-    case "e":
-      return doorEast;
-    case "s":
-      return doorSouth;
-    case "w":
-      return doorWest;
-  }
-}
 
 /** Airtightness overlay: a red ring drawn around cells in a breached
  *  compartment, signalling that the compartment's perimeter is not sealed and

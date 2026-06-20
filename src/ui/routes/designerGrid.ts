@@ -15,6 +15,35 @@ import {
   DEFAULT_ROWS,
   MAX_DIM,
 } from "./designerConstants";
+import {
+  doorEast,
+  doorNorth,
+  doorSouth,
+  doorWest,
+  edgeEast,
+  edgeNorth,
+  edgeSouth,
+  edgeWest,
+} from "./ShipDesignerRoute.css";
+
+/** Resolve the CSS class that positions an edge indicator on the given side.
+ *  Kept here (not in the .css.ts file) because vanilla-extract requires .css.ts
+ *  files to export only plain serialisable values — no functions. */
+export function edgePositionClass(
+  kind: "wall" | "door",
+  dir: "n" | "e" | "s" | "w",
+): string {
+  if (kind === "wall") {
+    if (dir === "n") return edgeNorth;
+    if (dir === "e") return edgeEast;
+    if (dir === "s") return edgeSouth;
+    return edgeWest;
+  }
+  if (dir === "n") return doorNorth;
+  if (dir === "e") return doorEast;
+  if (dir === "s") return doorSouth;
+  return doorWest;
+}
 
 /** All-open edges for cells painted by the designer when no edge brush is
  *  active. Walls and doors are added afterwards via the edge brushes. */

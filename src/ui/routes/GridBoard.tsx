@@ -1,11 +1,10 @@
 import type { EdgeKind, SolidCell, TileGrid } from "@/schema/grid";
-import { cellColour, cellLabel } from "./designerGrid";
+import { cellColour, cellLabel, edgePositionClass } from "./designerGrid";
 import {
   breachOverlay,
   cellInner,
   edgeDoorClosed,
   edgeDoorOpen,
-  edgePositionClass,
   edgeWall,
   facingTick,
   gridBoard,
