@@ -6,7 +6,7 @@
 import { CELL_SIZE } from "@/domain/grid";
 import { SpatialHash, cellWorldPosition } from "@/domain/simulation/spatial-hash";
 
-import { SIM } from "./config";
+import { SIM, SPEED_OF_LIGHT_M_PER_TICK } from "./config";
 import { applyDamage } from "./damage";
 import { localPointToWorld, worldToLocal } from "./setup";
 import type { SimModule, SimShip } from "./types";
@@ -197,9 +197,13 @@ function pairKey(a: SimShip, b: SimShip): string {
  * energy into structural damage on both ships — Newton's third law: the rammer
  * and the rammed both suffer.
  *
- * The collision KE is `0.5 * reducedMass * |v_rel|^2`, where the reduced mass is
- * `m_r = (m1 * m2) / (m1 + m2)` and `v_rel` is the two ships' relative linear
- * velocity. `SIM.collisionDamageFraction` of that energy is dealt as damage,
+ * The collision KE uses the relativistic form evaluated via the numerically
+ * stable identity `KE = m_r · v² / (√(1−β²) · (1+√(1−β²)))`, where
+ * `β² = |v_rel|² / c²` (clamped below 1) and the reduced mass is
+ * `m_r = (m1 * m2) / (m1 + m2)`. This equals `(γ−1) · m_r · c²` but avoids
+ * catastrophic cancellation when β ≪ 1, reducing to the Newtonian
+ * `½ · m_r · |v_rel|²` at sub-light speeds to full floating-point precision.
+ * `SIM.collisionDamageFraction` of that energy is dealt as damage,
  * split between the two ships in inverse proportion to mass (the lighter ship is
  * the one that decelerates harder, so it absorbs the larger share of the
  * energy). The damage strikes the contact-side modules — the cells nearest the
@@ -217,7 +221,16 @@ export function applyCollisionDamage(contacts: readonly ShipContact[]): void {
     const reducedMass = (ma * mb) / (ma + mb);
     const relSpeedSq = c.relVx * c.relVx + c.relVy * c.relVy;
     if (relSpeedSq <= 0) continue;
-    const collisionKE = 0.5 * reducedMass * relSpeedSq;
+    // Relativistic KE using the numerically stable identity:
+    //   (γ − 1) · c² = v² / (√(1 − β²) · (1 + √(1 − β²)))
+    // This avoids catastrophic cancellation in (γ − 1) when β ≪ 1, and
+    // reduces to the Newtonian ½v² at sub-light speeds to full floating-point
+    // precision. β² is clamped strictly below 1 to guard against rounding
+    // overshoot — in practice sim speeds are many orders of magnitude below c.
+    const cSq = SPEED_OF_LIGHT_M_PER_TICK * SPEED_OF_LIGHT_M_PER_TICK;
+    const betaSq = Math.min(relSpeedSq / cSq, 1 - Number.EPSILON);
+    const sqrtOneMinusBetaSq = Math.sqrt(1 - betaSq);
+    const collisionKE = (reducedMass * relSpeedSq) / (sqrtOneMinusBetaSq * (1 + sqrtOneMinusBetaSq));
     const totalDamage = collisionKE * SIM.collisionDamageFraction;
     if (totalDamage <= 0) continue;
     // Split inversely to mass: the lighter ship takes the larger share. Shares
