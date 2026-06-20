@@ -3,6 +3,7 @@ import {
   Badge,
   Button,
   Checkbox,
+  Container,
   Group,
   NumberInput,
   Paper,
@@ -204,6 +205,7 @@ export function FleetBuilderRoute() {
   const canBuild = designs.length > 0;
 
   return (
+    <Container size="xl" py="lg">
     <Stack gap="lg">
       <Title order={2}>Fleet Builder</Title>
 
@@ -610,5 +612,6 @@ export function FleetBuilderRoute() {
         </Stack>
       </Group>
     </Stack>
+    </Container>
   );
 }

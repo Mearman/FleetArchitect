@@ -4,6 +4,7 @@ import {
   Button,
   Checkbox,
   Collapse,
+  Container,
   Divider,
   Grid,
   Group,
@@ -424,6 +425,7 @@ export function ShipDesignerRoute() {
   const innerWidthPx = grid.cols * CELL_PITCH_PX * zoom;
 
   return (
+    <Container size="xl" py="lg">
     <Stack gap="lg">
       <Group justify="space-between" align="flex-end">
         <Title order={2}>Ship Designer</Title>
@@ -785,5 +787,6 @@ export function ShipDesignerRoute() {
         </Grid.Col>
       </Grid>
     </Stack>
+    </Container>
   );
 }

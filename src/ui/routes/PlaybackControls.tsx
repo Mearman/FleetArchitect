@@ -39,7 +39,7 @@ export function PlaybackControls({
 }: PlaybackControlsProps) {
   return (
     <>
-      <Group gap="md" align="center">
+      <Group gap="md" align="center" wrap="wrap">
         <Button
           variant="light"
           leftSection={playing ? <IconPlayerPause size={16} /> : <IconPlayerPlay size={16} />}

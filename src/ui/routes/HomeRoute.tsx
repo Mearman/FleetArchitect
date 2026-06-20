@@ -2,6 +2,7 @@ import {
   Alert,
   Anchor,
   Card,
+  Container,
   Grid,
   Group,
   Stack,
@@ -30,6 +31,7 @@ const features = [
 
 export function HomeRoute() {
   return (
+    <Container size="xl" py="lg">
     <Stack gap="xl">
       <Stack gap="xs">
         <Title order={1}>Fleet Architect</Title>
@@ -75,5 +77,6 @@ export function HomeRoute() {
         a link until the sync server is online.
       </Text>
     </Stack>
+    </Container>
   );
 }
