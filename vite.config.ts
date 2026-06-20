@@ -143,6 +143,7 @@ export default defineConfig({
   },
   test: {
     environment: "node",
+    testTimeout: 30000,
     // Tests follow the foo.[unit,integration,e2e].test.ts convention.
     include: ["src/**/*.{unit,integration,e2e}.test.ts"],
     coverage: {

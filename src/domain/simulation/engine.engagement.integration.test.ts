@@ -74,7 +74,34 @@ function corvette(id: string): ShipDesign {
     id,
     name: id,
     faction: "Terran",
-    grid: { cols: 4, rows: 2, cells: cells(rows), connections: [], shape: { outlineMode: "hexadecilinear" } },
+    grid: {
+      cols: 4,
+      rows: 2,
+      cells: cells(rows),
+      // Hardwires for power, manning, and ammo supply:
+      // - Power flows from reactor (2,0) to all other modules
+      // - Manning flows from crew (1,0) to the railgun (3,0)
+      // - Ammo flows from magazine (2,1) to railgun (3,0)
+      connections: [
+        // Power: reactor (2,0) → engine (0,0)
+        { from: { col: 2, row: 0 }, to: { col: 0, row: 0 }, resource: "power" },
+        // Power: reactor (2,0) → crew (1,0)
+        { from: { col: 2, row: 0 }, to: { col: 1, row: 0 }, resource: "power" },
+        // Power: reactor (2,0) → railgun (3,0)
+        { from: { col: 2, row: 0 }, to: { col: 3, row: 0 }, resource: "power" },
+        // Power: reactor (2,0) → RCS (0,1)
+        { from: { col: 2, row: 0 }, to: { col: 0, row: 1 }, resource: "power" },
+        // Power: reactor (2,0) → sensor (1,1)
+        { from: { col: 2, row: 0 }, to: { col: 1, row: 1 }, resource: "power" },
+        // Power: reactor (2,0) → magazine (2,1)
+        { from: { col: 2, row: 0 }, to: { col: 2, row: 1 }, resource: "power" },
+        // Manning: crew (1,0) → railgun (3,0)
+        { from: { col: 1, row: 0 }, to: { col: 3, row: 0 }, resource: "manning" },
+        // Ammo: magazine (2,1) → railgun (3,0)
+        { from: { col: 2, row: 1 }, to: { col: 3, row: 0 }, resource: "ammo" },
+      ],
+      shape: { outlineMode: "hexadecilinear" },
+    },
     createdAt: nowIso(),
     updatedAt: nowIso(),
     source: "user",
