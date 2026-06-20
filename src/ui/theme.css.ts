@@ -5,6 +5,25 @@ export const appShell = style({
   minHeight: "100dvh",
 });
 
+/** Base style for all nav links — plain text, no underline. */
+export const navLinkBase = style({
+  fontSize: "0.875rem",
+  fontWeight: 500,
+  color: "inherit",
+  textDecoration: "none",
+  transition: "color 0.15s ease",
+  ":hover": {
+    color: "var(--mantine-color-indigo-3)",
+    textDecoration: "none",
+  },
+});
+
+/** Applied on top of navLinkBase when the route is active. */
+export const navLinkActive = style({
+  fontWeight: 700,
+  color: "var(--mantine-color-indigo-3)",
+});
+
 globalStyle(":root", {
   colorScheme: "dark",
 });
