@@ -26,6 +26,8 @@ import { layMines, stepTechCooldowns, updateMines } from "./mines";
 import type { DeploymentReference } from "./movement";
 import { fleetCentroid, moveShips } from "./movement";
 import { launchDecoys, launchDrones, stepPhantoms } from "./phantoms";
+import { stepPulses } from "./pulse-step";
+import type { SimPulse } from "./pulses";
 import { hasAliveCommand, recomputeAggregates } from "./physics";
 import { toSimShip } from "./setup";
 import { electFocusTarget, pickTarget } from "./targeting";
@@ -100,6 +102,14 @@ export function* simulateBattle(
   let phantomSeq = 0;
   const nextPhantomId = (ownerId: string, kind: string, tick: number): string =>
     `${ownerId}#${kind}#${tick}#${phantomSeq += 1}`;
+  // Active-radar pulses (Phase 8) live here for the whole run, advanced each tick
+  // like projectiles/mines. Empty unless an active-mode sensor emits into it, so a
+  // battle with no active radar keeps it empty and emits no `pulses` snapshots.
+  const pulses: SimPulse[] = [];
+  // Deterministic monotonic counter for pulse (and reflection) ids, reset to 0
+  // at battle start so two same-seed runs produce byte-identical pulse ids. No
+  // rng, no clock — a pure function of spawn order, mirroring mineSeq.
+  let pulseSeq = 0;
 
   // Occluders are a pure function of (anomaly, seed): compute them once here
   // (drawing from a salted, separate rng inside computeOccluders, never the
@@ -115,7 +125,7 @@ export function* simulateBattle(
   // Number of post-initial frames yielded, matching the previous
   // `frames.length - 1`: the tick-0 frame is excluded from the count.
   let ticks = 0;
-  yield snapshot(0, ships, projectiles, frame0Awareness, mines, pods);
+  yield snapshot(0, ships, projectiles, frame0Awareness, mines, pods, pulses);
 
   let winner: BattleSide = "draw";
   let resolved = false;
@@ -134,6 +144,15 @@ export function* simulateBattle(
     attackers = ships.filter((s) => s.side === "attacker");
     defenders = ships.filter((s) => s.side === "defender");
     byId = new Map(ships.map((s) => [s.instanceId, s]));
+
+    // 0b. Active-radar pulse field (Phase 8). Each active-mode sensor emits a
+    //     light-speed pulse; live pulses expand by c and scatter reflections off
+    //     enemies they sweep across; a reflection that has completed its round
+    //     trip writes a light-lagged contact onto the emitter's freshly computed
+    //     awareness (hence after computeAwareness, before targeting reads it).
+    //     Opt-in: a no-op (array stays empty) for a battle with no active sensor,
+    //     so byte output is unchanged for passive-only fleets.
+    pulseSeq = stepPulses(ships, byId, pulses, inputs.anomaly, tick, pulseSeq);
 
     // 0c. AI interpreter (Phase 7 wiring). Evaluate each ship's stance + rules
     //     against the frame state and write the resulting hold-fire decision
@@ -447,7 +466,7 @@ export function* simulateBattle(
       }
     }
 
-    yield snapshot(tick, ships, projectiles, awareness, mines, pods);
+    yield snapshot(tick, ships, projectiles, awareness, mines, pods, pulses);
     ticks += 1;
 
     // 6. Termination. Only real ships decide the battle — a side whose hulls
@@ -536,6 +555,7 @@ export function snapshot(
   awareness: AwarenessSnapshot,
   mines: readonly SimMine[],
   pods: readonly SimPod[],
+  pulses: readonly SimPulse[],
 ): BattleFrame {
   // Partition real ships from phantoms (drones/decoys) so phantoms never appear
   // in the `ships` array — they render from their own dedicated arrays instead.
@@ -706,6 +726,22 @@ export function snapshot(
             y: s.y,
             hp: s.structure,
             ticksLeft: s.phantom?.ticksLeft ?? 0,
+          })),
+        }
+      : {}),
+    // Active-radar pulses (Phase 8). Omitted when none are live so frames for
+    // battles without active sensors stay byte-identical to baseline.
+    ...(pulses.length > 0
+      ? {
+          pulses: pulses.map((p) => ({
+            id: p.id,
+            emitterId: p.emitterId,
+            ...(p.reflectedFrom !== undefined ? { reflectedFrom: p.reflectedFrom } : {}),
+            x: p.originX,
+            y: p.originY,
+            radius: p.radius,
+            bearing: p.bearing,
+            arc: p.arc,
           })),
         }
       : {}),

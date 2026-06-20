@@ -354,6 +354,24 @@ export const BoardingPodSnapshot = z.object({
 });
 export type BoardingPodSnapshot = z.infer<typeof BoardingPodSnapshot>;
 
+/** An active-radar pulse in flight at a tick (Phase 8). An expanding sphere of
+ *  EM at world origin (x, y) with current `radius`; the renderer draws it as an
+ *  expanding ring. An outbound ping has `reflectedFrom` absent; a reflection
+ *  (a return scattered off the enemy ship `reflectedFrom`) carries that id so the
+ *  renderer can tint returns differently. `bearing`/`arc` describe the
+ *  illuminated cone (arc >= PI is a full sphere). */
+export const PulseSnapshot = z.object({
+  id: z.number().int(),
+  emitterId: EntityId,
+  reflectedFrom: EntityId.optional(),
+  x: z.number(),
+  y: z.number(),
+  radius: z.number().min(0),
+  bearing: z.number(),
+  arc: z.number(),
+});
+export type PulseSnapshot = z.infer<typeof PulseSnapshot>;
+
 /** A single frame of recorded battle state, for replay rendering. */
 export const BattleFrame = z.object({
   tick: z.number().int().min(0),
@@ -370,6 +388,7 @@ export const BattleFrame = z.object({
   mines: z.array(MineSnapshot).optional(),
   decoys: z.array(DecoySnapshot).optional(),
   pods: z.array(BoardingPodSnapshot).optional(),
+  pulses: z.array(PulseSnapshot).optional(),
 });
 export type BattleFrame = z.infer<typeof BattleFrame>;
 
