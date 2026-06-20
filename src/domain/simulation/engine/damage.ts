@@ -8,6 +8,7 @@ import type { SimCrew } from "../types";
 
 import { resetCrewForFragment } from "./crew";
 import { comTangentialVelocity, localCentreOfMass, recomputeAggregates } from "./physics";
+import { makeResourceState } from "./resource-step";
 import { angleDifference, normaliseAngle, worldToLocal } from "./setup";
 import type { SimModule, SimShip } from "./types";
 
@@ -645,5 +646,10 @@ export function makeChunkShip(
   // parent's pooled shield doesn't carry over.
   chunk.shield = 0;
   chunk.maxShield = 0;
+  // A fresh fragment gets its own resource state derived from its module set
+  // (Phase 12 wiring): the chunk is a new ship with its own cells, so its
+  // thermal/propellant/atmosphere/power fields start from the chunk's own
+  // mass and module layout, not the parent's (now-stale) field.
+  chunk.resource = makeResourceState(chunk);
   return chunk;
 }

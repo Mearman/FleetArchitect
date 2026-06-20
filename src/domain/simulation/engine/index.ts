@@ -26,6 +26,7 @@ import type { DeploymentReference } from "./movement";
 import { fleetCentroid, moveShips } from "./movement";
 import { launchDecoys, launchDrones, stepPhantoms } from "./phantoms";
 import { hasAliveCommand, recomputeAggregates } from "./physics";
+import { resourceStep } from "./resource-step";
 import { toSimShip } from "./setup";
 import { electFocusTarget, pickTarget } from "./targeting";
 import { applyBlink, applyCommandAuras, stepOvercharge } from "./tech";
@@ -290,6 +291,20 @@ export function* simulateBattle(
     for (const ship of ships) {
       if (!ship.alive || ship.modules === undefined) continue;
       updateCrew(ship);
+    }
+
+    // 4b-resource. Resource & environment step (Phase 12 wiring, use-deferred).
+    //     Advance each ship's thermal, propellant, atmosphere, and power state
+    //     one tick so the honest underlying simulation runs underneath the
+    //     gameplay layer. Runs after crew (so the atmosphere substance reads
+    //     settled crew positions) and before break-apart (so a chunk inherits a
+    //     resource state in the next pass). No consequence is enforced — no
+    //     overheat shutdown, brownout, asphyxiation, or dry-tank derelict. A
+    //     no-op for ships with no resource state (legacy aggregated path and
+    //     phantoms), so byte output is unchanged for them.
+    for (const ship of ships) {
+      if (!ship.alive) continue;
+      resourceStep(ship);
     }
 
     // 4b-ammo. Ammo conduits: refill every conduit-fed weapon directly from its

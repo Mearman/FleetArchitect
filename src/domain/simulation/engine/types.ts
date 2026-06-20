@@ -14,6 +14,35 @@ import type { CrewPriority, Rule, ShipStance } from "@/schema/ai";
 import type { ResolvedHardwire, SimCrew } from "../types";
 
 import type { UNREACHABLE } from "./config";
+import type { EnergyBuffer } from "./power";
+import type { RectangularTransportGraph } from "./transport-graph";
+
+/**
+ * Per-ship resource state (Phase 12 wiring, use-deferred). The three
+ * transport-field φ arrays — thermal (temperature, K), propellant (fuel mass,
+ * kg), atmosphere (gas mass, kg) — plus the power energy buffer. Advanced each
+ * tick by `resourceStep`; values are computed and exposed but consequences
+ * (overheat shutdown, brownout, asphyxiation, dry-tank derelict) are NOT
+ * enforced. The cell-index bounds map a module's `(col, row)` onto the dense
+ * φ arrays via `i = (row − minRow) · cols + (col − minCol)`.
+ */
+export interface ResourceState {
+  cols: number;
+  rows: number;
+  minCol: number;
+  minRow: number;
+  thermal: number[];
+  propellant: number[];
+  atmosphere: number[];
+  powerBuffer: EnergyBuffer;
+}
+
+/** Cached transport graph for a ship's current topology (Phase 12 wiring).
+ *  Rebuilt when the alive-cell fingerprint changes. */
+export interface CachedTransportGraph {
+  graph: RectangularTransportGraph;
+  fingerprint: number;
+}
 
 /**
  * A live awareness contact: an enemy this observer (or a relaying ally on its
@@ -217,6 +246,25 @@ export interface SimShip {
    * change. The map is stable between module deaths — exactly the same
    * invariant the path cache relies on. */
   aliveCells?: Map<string, SimModule>;
+  /**
+   * Per-ship resource state (Phase 12 wiring, use-deferred). The thermal,
+   * propellant, atmosphere, and power fields advanced each tick by
+   * `resourceStep`. Present only on modular ships (the only kind with a cell
+   * graph to transport over); `undefined` on the legacy aggregated path and on
+   * phantoms, so they carry no resource state and the step is a no-op for
+   * them. Built once in `toSimShip`; the values are computed and exposed but
+   * no consequence is enforced — the honest simulation runs underneath the
+   * gameplay layer.
+   */
+  resource?: ResourceState;
+  /**
+   * Cached transport graph for the ship's current cell topology (Phase 12
+   * wiring). Rebuilt lazily by `resourceStep` when the topology fingerprint
+   * changes; cleared alongside the path cache by `refreshPathCache` so a
+   * module death or chunk split invalidates it. The graph is a pure function
+   * of the alive module set, so it is stable between topology changes.
+   */
+  resourceGraph?: CachedTransportGraph;
   /** Hull base thrust, used by recomputeAggregates to recover the non-engine
    *  thrust floor. Set only when modules are present. */
   hullBaseThrust?: number;

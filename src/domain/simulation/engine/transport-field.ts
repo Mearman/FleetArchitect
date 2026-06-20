@@ -375,6 +375,10 @@ export function stepTransportField(
     deltaAccum.push({ advection: 0, diffusion: 0, source: 0, boundary: 0 });
   }
 
+  // Convert boundary cells to a Set once — the inner loop checks every cell
+  // against this on every sub-step, and Array.includes is O(n), making the
+  // per-tick cost O(cells^2). A Set makes it O(cells).
+  const boundarySet = new Set(field.boundaryCells);
   for (let step = 0; step < subSteps; step += 1) {
     const next = current.slice();
     for (let cell = 0; cell < n; cell += 1) {
@@ -387,7 +391,7 @@ export function stepTransportField(
       // amount actually removed this sub-step at what the cell holds above
       // its floor — a cell cannot vent more mass than it contains.
       let bnd = 0;
-      if (field.boundaryCells.includes(cell)) {
+      if (boundarySet.has(cell)) {
         const bf = field.substance.boundaryFlux?.(cell, current);
         if (bf !== undefined && bf.scalarFlux > 0) {
           const available = (current[cell] ?? 0) - floor;

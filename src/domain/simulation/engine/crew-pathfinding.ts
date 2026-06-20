@@ -125,6 +125,7 @@ export function refreshPathCache(ship: SimShip): void {
     ship.pathCache = new Map();
     ship.wiringReach = undefined; // topology changed: wiring BFS is stale
     ship.aliveCells = undefined; // topology changed: cell index is stale
+    ship.resourceGraph = undefined; // topology changed: transport graph is stale
     ship.topologyFingerprint = fingerprint;
   } else if (ship.pathCache === undefined) {
     ship.pathCache = new Map();
