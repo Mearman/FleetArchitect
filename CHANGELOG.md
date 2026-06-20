@@ -1,3 +1,10 @@
+# [1.4.0](https://github.com/Mearman/FleetArchitect/compare/v1.3.1...v1.4.0) (2026-06-20)
+
+
+### Features
+
+* **sim:** crew door-toggling — open on crossing, close when clear (Phase 2) ([933f895](https://github.com/Mearman/FleetArchitect/commit/933f895054c8187b9e4996f38827d4a90cdf3872))
+
 ## [1.3.1](https://github.com/Mearman/FleetArchitect/compare/v1.3.0...v1.3.1) (2026-06-20)
 
 
