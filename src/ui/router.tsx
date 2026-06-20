@@ -5,6 +5,7 @@ import { FleetBuilderRoute } from "./routes/FleetBuilderRoute";
 import { HomeRoute } from "./routes/HomeRoute";
 import { ImportRoute } from "./routes/ImportRoute";
 import { ShipDesignerRoute } from "./routes/ShipDesignerRoute";
+import { RouteErrorPage } from "./RouteErrorPage";
 
 /**
  * Hash router: GitHub Pages serves a single index.html, so client-side routes
@@ -14,6 +15,7 @@ export const router = createHashRouter([
   {
     path: "/",
     element: <AppLayout />,
+    errorElement: <RouteErrorPage />,
     children: [
       { index: true, element: <HomeRoute /> },
       { path: "ships", element: <ShipDesignerRoute /> },

@@ -14,6 +14,7 @@ import { useDisclosure } from "@mantine/hooks";
 import { NavLink, Outlet } from "react-router-dom";
 import { appShell, navLinkActive, navLinkBase } from "./theme.css";
 import { buildMeta } from "./buildMeta";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 const navItems = [
   { to: "/", label: "Home" },
@@ -109,7 +110,9 @@ export function AppLayout() {
       </Drawer>
 
       <AppShell.Main>
-        <Outlet />
+        <ErrorBoundary>
+          <Outlet />
+        </ErrorBoundary>
       </AppShell.Main>
     </AppShell>
   );
