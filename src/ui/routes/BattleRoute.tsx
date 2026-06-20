@@ -338,7 +338,11 @@ export function BattleRoute() {
 
   // --- Early return: loading ----------------------------------------------
   if (fleets === undefined || designs === undefined) {
-    return <Text c="dimmed">Loading…</Text>;
+    return (
+      <Text c="dimmed" role="status" aria-live="polite">
+        Loading…
+      </Text>
+    );
   }
 
   const winnerColour =
@@ -362,7 +366,7 @@ export function BattleRoute() {
   return (
     <Stack gap="md">
       <Group justify="space-between" align="center">
-        <Title order={2}>Battle Arena</Title>
+        <Title order={1}>Battle Arena</Title>
         <Group gap="xs">
           {simulation.result !== null && (
             <Badge size="lg" color="gray" style={{ color: winnerColour }}>
@@ -430,6 +434,7 @@ export function BattleRoute() {
                 onPointerMove={camera.handlePointerMove}
                 onPointerUp={camera.handlePointerUp}
                 onPointerCancel={camera.handlePointerUp}
+                aria-label="Battle canvas — drag to pan, scroll or use +/− buttons to zoom"
               />
 
               <Badge
@@ -452,6 +457,7 @@ export function BattleRoute() {
                 <Tooltip label="Zoom in">
                   <ActionIcon
                     variant="default"
+                    aria-label="Zoom in"
                     onClick={() =>
                       camera.setCamera((c) => ({ ...c, zoom: clampZoom(c.zoom * 1.4) }))
                     }
@@ -462,6 +468,7 @@ export function BattleRoute() {
                 <Tooltip label="Zoom out">
                   <ActionIcon
                     variant="default"
+                    aria-label="Zoom out"
                     onClick={() =>
                       camera.setCamera((c) => ({ ...c, zoom: clampZoom(c.zoom / 1.4) }))
                     }

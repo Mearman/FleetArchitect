@@ -157,7 +157,11 @@ export function ShipDesignerRoute() {
   }, [historyOpen, working.id]);
 
   if (designs === undefined) {
-    return <Text c="dimmed">Loading…</Text>;
+    return (
+      <Text c="dimmed" role="status" aria-live="polite">
+        Loading…
+      </Text>
+    );
   }
 
   /** Paint a whole cell with the active cell-brush. Edge brushes are
@@ -428,7 +432,7 @@ export function ShipDesignerRoute() {
     <Container size="xl" py="lg">
     <Stack gap="lg">
       <Group justify="space-between" align="flex-end">
-        <Title order={2}>Ship Designer</Title>
+        <Title order={1}>Ship Designer</Title>
         {readOnly ? (
           <Badge size="lg" color="grape" leftSection={<IconLock size={14} />}>
             Preset — read only
@@ -478,6 +482,7 @@ export function ShipDesignerRoute() {
                           <ActionIcon
                             color="red"
                             variant="subtle"
+                            aria-label={`Delete design ${design.name}`}
                             onClick={() => remove(design.id)}
                           >
                             <IconTrash size={14} />

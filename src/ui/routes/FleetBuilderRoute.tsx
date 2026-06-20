@@ -147,7 +147,11 @@ export function FleetBuilderRoute() {
   const overBudget = total > DEFAULT_FLEET_BUDGET;
 
   if (fleets === undefined || designs === undefined) {
-    return <Text c="dimmed">Loading…</Text>;
+    return (
+      <Text c="dimmed" role="status" aria-live="polite">
+        Loading…
+      </Text>
+    );
   }
 
   function addShip(designId: string) {
@@ -237,7 +241,7 @@ export function FleetBuilderRoute() {
   return (
     <Container size="xl" py="lg">
     <Stack gap="lg">
-      <Title order={2}>Fleet Builder</Title>
+      <Title order={1}>Fleet Builder</Title>
 
       <Group grow align="flex-start">
         <TextInput
@@ -300,6 +304,7 @@ export function FleetBuilderRoute() {
                         <ActionIcon
                           color="red"
                           variant="subtle"
+                          aria-label={`Delete fleet ${fleet.name}`}
                           onClick={() => remove(fleet.id)}
                         >
                           <IconTrash size={14} />
