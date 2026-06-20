@@ -181,7 +181,7 @@ export function fireWeapons(
           turretCanBear = slew.canFire;
         }
         if (m.cooldown > 0) {
-          m.cooldown -= 1;
+          m.cooldown -= ship.dilationFactor;
           continue;
         }
         if (!m.powered) continue; // reactor can't sustain it this tick
@@ -214,7 +214,7 @@ export function fireWeapons(
       const cooldown = ship.weaponCooldowns[i];
       if (cooldown === undefined) continue;
       if (cooldown > 0) {
-        ship.weaponCooldowns[i] = cooldown - 1;
+        ship.weaponCooldowns[i] = cooldown - ship.dilationFactor;
         continue;
       }
       if (dist > weapon.range * rangeScale) continue;

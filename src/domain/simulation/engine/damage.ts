@@ -563,6 +563,7 @@ export function makeChunkShip(
     // Angular velocity is conserved verbatim — a rigid fragment leaves the
     // parent spinning at the same rate it was spinning as part of the whole.
     angVel: parent.angVel,
+    dilationFactor: 1,
     structure: chunkStructure,
     maxStructure: chunkStructure,
     shield: 0,

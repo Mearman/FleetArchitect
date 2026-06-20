@@ -9,6 +9,7 @@
 import type { BattleInputs } from "../types";
 
 import { SIM, THRUST_ALIGNMENT_RAD } from "./config";
+import { combinedDilation } from "./proper-time";
 import {
   availableThrust,
   commandedTurn,
@@ -400,6 +401,17 @@ export function moveShips(
     }
     ship.x += ship.velX;
     ship.y += ship.velY;
+    // Proper-time dilation (Phase 4): ships moving fast or deep in a gravity
+    // well age slower. Computed here (after velocity + position update, before
+    // the weapons/crew/shield steps that consume it). The black hole is at the
+    // origin; its gravitational potential is Phi = -GM/r (softened at r_s).
+    const speed = Math.hypot(ship.velX, ship.velY);
+    let phi = 0;
+    if (anomaly === "blackHole") {
+      const dist = Math.max(Math.hypot(ship.x, ship.y), SIM.blackHoleLethalRadius);
+      phi = -SIM.blackHoleStrength / dist;
+    }
+    ship.dilationFactor = combinedDilation(speed, phi);
   }
 }
 

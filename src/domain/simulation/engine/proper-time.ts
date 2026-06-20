@@ -37,6 +37,11 @@ export function velocityTimeDilation(speed: number): number {
   const beta = speed / SPEED_OF_LIGHT_M_PER_TICK;
   const b2 = beta * beta;
   if (b2 >= 1) return 0;
+  // Below float64 precision (beta^2 < ~1e-16) the dilation sqrt(1 - b2)
+  // rounds to 0.99999999999999xx — indistinguishable from 1 but enough
+  // to drift integer-rate cooldowns by a sub-tick per decrement. Return
+  // exactly 1 when the effect is below representable precision.
+  if (b2 < 1e-10) return 1;
   return Math.sqrt(1 - b2);
 }
 
@@ -48,6 +53,7 @@ export function velocityTimeDilation(speed: number): number {
 export function gravitationalTimeDilation(phi: number): number {
   const factor = 1 + (2 * phi) / (SPEED_OF_LIGHT_M_PER_S * SPEED_OF_LIGHT_M_PER_S);
   if (factor <= 0) return 0;
+  if (factor > 1 - 1e-12) return 1; // Below float precision.
   return Math.sqrt(factor);
 }
 

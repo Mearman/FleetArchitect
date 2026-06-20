@@ -158,6 +158,7 @@ export function toSimShip(ship: CombatShip, rng: () => number): SimShip {
     facing: ship.facing,
     velX: ship.velocity?.x ?? 0,
     velY: ship.velocity?.y ?? 0,
+    dilationFactor: 1,
     angVel: 0,
     structure: ship.stats.structure,
     maxStructure: ship.stats.structure,
