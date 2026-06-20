@@ -554,13 +554,13 @@ export function ShipDesignerRoute() {
                   min={ZOOM_MIN}
                   max={ZOOM_MAX}
                   step={ZOOM_STEP}
-                  w={120}
+                  style={{ flex: 1 }}
                 />
               </Stack>
             </Group>
 
             <Grid>
-              <Grid.Col span={{ base: 12, lg: 6 }}>
+              <Grid.Col span={{ base: 12, md: 6 }}>
                 <Paper p="md" withBorder>
                   <Group justify="space-between" mb="xs">
                     <Text size="sm" fw={600}>
@@ -640,7 +640,7 @@ export function ShipDesignerRoute() {
                 </Paper>
               </Grid.Col>
 
-              <Grid.Col span={{ base: 12, lg: 6 }}>
+              <Grid.Col span={{ base: 12, md: 6 }}>
                 <Stack gap="md">
                   <DesignerPalette
                     brush={brush}
@@ -741,13 +741,6 @@ export function ShipDesignerRoute() {
                     },
                   }}
                 />
-                <Button
-                  variant="light"
-                  leftSection={<IconCopy size={16} />}
-                  onClick={() => void copyAndLoad()}
-                >
-                  Copy design
-                </Button>
                 {readOnly ? (
                   <Button
                     variant="filled"
@@ -757,31 +750,38 @@ export function ShipDesignerRoute() {
                   >
                     Copy to edit
                   </Button>
-                ) : null}
+                ) : (
+                  <Button
+                    variant="light"
+                    leftSection={<IconCopy size={16} />}
+                    onClick={() => void copyAndLoad()}
+                  >
+                    Copy design
+                  </Button>
+                )}
               </Group>
-              <Group gap="sm">
-                {!readOnly && working.id !== null ? (
-                  <Tooltip label="View version history">
-                    <Button
-                      variant={historyOpen ? "light" : "subtle"}
-                      color={historyOpen ? "orange" : undefined}
-                      leftSection={<IconHistory size={16} />}
-                      onClick={() => void openHistory()}
-                    >
-                      History
-                    </Button>
-                  </Tooltip>
-                ) : null}
-                <Button
-                  onClick={() => void save()}
-                  disabled={readOnly}
-                  leftSection={
-                    readOnly ? <IconLock size={16} /> : <IconDeviceFloppy size={16} />
-                  }
-                >
-                  {readOnly ? "Read only" : "Save design"}
-                </Button>
-              </Group>
+              {!readOnly ? (
+                <Group gap="sm">
+                  {working.id !== null ? (
+                    <Tooltip label="View version history">
+                      <Button
+                        variant={historyOpen ? "light" : "subtle"}
+                        color={historyOpen ? "orange" : undefined}
+                        leftSection={<IconHistory size={16} />}
+                        onClick={() => void openHistory()}
+                      >
+                        History
+                      </Button>
+                    </Tooltip>
+                  ) : null}
+                  <Button
+                    onClick={() => void save()}
+                    leftSection={<IconDeviceFloppy size={16} />}
+                  >
+                    Save design
+                  </Button>
+                </Group>
+              ) : null}
             </Group>
           </Stack>
         </Grid.Col>

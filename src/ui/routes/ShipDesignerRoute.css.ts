@@ -26,6 +26,7 @@ export const gridCell = style({
   color: "#05060a",
   lineHeight: 1,
   userSelect: "none",
+  touchAction: "none",
 });
 
 /** Wrapper to position the facing tick relative to the cell content. */
@@ -162,7 +163,8 @@ export const breachOverlay = style({
  *  stretching the page. */
 export const zoomViewport = style({
   overflow: "auto",
-  maxHeight: 560,
+  maxHeight: "min(560px, 60vh)",
+  minHeight: 200,
   resize: "vertical",
   border: "1px solid rgba(140,160,220,0.18)",
   borderRadius: 4,

@@ -2,6 +2,24 @@ import { Select, Slider, Stack, Text } from "@mantine/core";
 import type { CommsEffect, SensorEffect } from "@/schema/module";
 import type { CellEquipment } from "@/schema/grid";
 
+// Channel options: 0–7 is a reasonable range for the designer.
+const CHANNEL_OPTIONS: { value: string; label: string }[] = Array.from(
+  { length: 8 },
+  (_, i) => ({ value: `${i}`, label: `Ch ${i}` }),
+);
+
+// Bearing options: the four cardinal directions plus diagonals (0°, 45°, …, 315°).
+const BEARING_OPTIONS: { value: string; label: string }[] = [
+  { value: "0",    label: "Fwd (0°)" },
+  { value: "45",   label: "45°" },
+  { value: "90",   label: "Stbd (90°)" },
+  { value: "135",  label: "135°" },
+  { value: "180",  label: "Aft (180°)" },
+  { value: "225",  label: "225°" },
+  { value: "270",  label: "Port (270°)" },
+  { value: "315",  label: "315°" },
+];
+
 /**
  * Per-instance comms configuration panel for a selected comms module cell.
  * Shows a channel selector always; a bearing control for directional/laser
@@ -33,24 +51,6 @@ export function CommsConfig({
 
   // Bearing expressed as degrees for display, stored as radians.
   const bearingDeg = Math.round((effectiveBearing * 180) / Math.PI);
-
-  // Channel options: 0–7 is a reasonable range for the designer.
-  const CHANNEL_OPTIONS: { value: string; label: string }[] = Array.from(
-    { length: 8 },
-    (_, i) => ({ value: `${i}`, label: `Ch ${i}` }),
-  );
-
-  // Bearing options: the four cardinal directions plus diagonals (0°, 45°, …, 315°).
-  const BEARING_OPTIONS: { value: string; label: string }[] = [
-    { value: "0",    label: "Fwd (0°)" },
-    { value: "45",   label: "45°" },
-    { value: "90",   label: "Stbd (90°)" },
-    { value: "135",  label: "135°" },
-    { value: "180",  label: "Aft (180°)" },
-    { value: "225",  label: "225°" },
-    { value: "270",  label: "Port (270°)" },
-    { value: "315",  label: "315°" },
-  ];
 
   const rangeMin = effect.minRange ?? 0;
   const rangeMax = effect.maxRange ?? effect.range;
@@ -136,18 +136,6 @@ export function SensorConfig({
 
   // Bearing expressed as degrees for display, stored as radians.
   const bearingDeg = Math.round((effectiveBearing * 180) / Math.PI);
-
-  // Bearing options: the four cardinal directions plus diagonals (0°, 45°, …, 315°).
-  const BEARING_OPTIONS: { value: string; label: string }[] = [
-    { value: "0",    label: "Fwd (0°)" },
-    { value: "45",   label: "45°" },
-    { value: "90",   label: "Stbd (90°)" },
-    { value: "135",  label: "135°" },
-    { value: "180",  label: "Aft (180°)" },
-    { value: "225",  label: "225°" },
-    { value: "270",  label: "Port (270°)" },
-    { value: "315",  label: "315°" },
-  ];
 
   const rangeMin = effect.minRange ?? 0;
   const rangeMax = effect.maxRange ?? effect.detectionRange;

@@ -1,4 +1,4 @@
-import { Badge, Button, Group, Paper, Select, Stack, Text } from "@mantine/core";
+import { Badge, Button, Group, Paper, Select, Stack, Text, Tooltip } from "@mantine/core";
 import { type Brush, ADDABLE_SURFACES } from "./designerConstants";
 import { brushLabel } from "./designerGrid";
 
@@ -34,51 +34,55 @@ export function DesignerPalette({
     <Paper p="md" withBorder>
       <Stack gap="xs">
         <Group gap={4}>
-          <Button
-            size="xs"
-            variant={brush.kind === "empty" ? "filled" : "light"}
-            color="gray"
-            onClick={() => onChange({ kind: "empty" })}
-            disabled={readOnly}
-            title="Remove the cell entirely (scaffold + all layers)"
-          >
-            Erase
-          </Button>
+          <Tooltip label="Remove the cell entirely (scaffold + all layers)">
+            <Button
+              size="xs"
+              variant={brush.kind === "empty" ? "filled" : "light"}
+              color="gray"
+              onClick={() => onChange({ kind: "empty" })}
+              disabled={readOnly}
+            >
+              Erase
+            </Button>
+          </Tooltip>
         </Group>
         <Stack gap={4}>
           <Text size="xs" c="dimmed">
             Scaffold + surface (paint a fresh cell)
           </Text>
           <Group gap={4}>
-            <Button
-              size="xs"
-              variant={brush.kind === "scaffold-armor" ? "filled" : "light"}
-              onClick={() => onChange({ kind: "scaffold-armor" })}
-              disabled={readOnly}
-              title="Solid, impassable armor plate — high HP/mass, no equipment, sealed perimeter"
-            >
-              armor
-            </Button>
-            <Button
-              size="xs"
-              variant={brush.kind === "scaffold-deck" ? "filled" : "light"}
-              color="yellow"
-              onClick={() => onChange({ kind: "scaffold-deck" })}
-              disabled={readOnly}
-              title="Walkable crew floor — corridors and equipment-mounting surface"
-            >
-              deck
-            </Button>
-            <Button
-              size="xs"
-              variant={brush.kind === "scaffold-bare" ? "filled" : "light"}
-              color="gray"
-              onClick={() => onChange({ kind: "scaffold-bare" })}
-              disabled={readOnly}
-              title="Low-mass framing — scaffold-connected, not walkable"
-            >
-              bare
-            </Button>
+            <Tooltip label="Solid, impassable armor plate — high HP/mass, no equipment, sealed perimeter">
+              <Button
+                size="xs"
+                variant={brush.kind === "scaffold-armor" ? "filled" : "light"}
+                onClick={() => onChange({ kind: "scaffold-armor" })}
+                disabled={readOnly}
+              >
+                armor
+              </Button>
+            </Tooltip>
+            <Tooltip label="Walkable crew floor — corridors and equipment-mounting surface">
+              <Button
+                size="xs"
+                variant={brush.kind === "scaffold-deck" ? "filled" : "light"}
+                color="yellow"
+                onClick={() => onChange({ kind: "scaffold-deck" })}
+                disabled={readOnly}
+              >
+                deck
+              </Button>
+            </Tooltip>
+            <Tooltip label="Low-mass framing — scaffold-connected, not walkable">
+              <Button
+                size="xs"
+                variant={brush.kind === "scaffold-bare" ? "filled" : "light"}
+                color="gray"
+                onClick={() => onChange({ kind: "scaffold-bare" })}
+                disabled={readOnly}
+              >
+                bare
+              </Button>
+            </Tooltip>
           </Group>
         </Stack>
         <Stack gap={4}>
@@ -87,36 +91,40 @@ export function DesignerPalette({
           </Text>
           <Group gap={4}>
             {ADDABLE_SURFACES.map((surface) => (
-              <Button
+              <Tooltip
                 key={surface}
-                size="xs"
-                variant={
-                  brush.kind === "add-surface" && brush.surface === surface
-                    ? "filled"
-                    : "light"
-                }
-                color={surface === "armor" ? "gray" : "yellow"}
-                onClick={() => onChange({ kind: "add-surface", surface })}
-                disabled={readOnly}
-                title={
+                label={
                   surface === "armor"
                     ? "Plate armor over an existing scaffold cell (strips equipment, seals edges)"
                     : "Lay a deck over an existing scaffold cell (walkable, equipment-mountable)"
                 }
               >
-                + {surface}
-              </Button>
+                <Button
+                  size="xs"
+                  variant={
+                    brush.kind === "add-surface" && brush.surface === surface
+                      ? "filled"
+                      : "light"
+                  }
+                  color={surface === "armor" ? "gray" : "yellow"}
+                  onClick={() => onChange({ kind: "add-surface", surface })}
+                  disabled={readOnly}
+                >
+                  + {surface}
+                </Button>
+              </Tooltip>
             ))}
-            <Button
-              size="xs"
-              variant={brush.kind === "remove-surface" ? "filled" : "light"}
-              color="gray"
-              onClick={() => onChange({ kind: "remove-surface" })}
-              disabled={readOnly}
-              title="Strip the surface off a scaffold cell, leaving bare framing"
-            >
-              − surface
-            </Button>
+            <Tooltip label="Strip the surface off a scaffold cell, leaving bare framing">
+              <Button
+                size="xs"
+                variant={brush.kind === "remove-surface" ? "filled" : "light"}
+                color="gray"
+                onClick={() => onChange({ kind: "remove-surface" })}
+                disabled={readOnly}
+              >
+                − surface
+              </Button>
+            </Tooltip>
           </Group>
         </Stack>
         <Stack gap={4}>
@@ -124,25 +132,27 @@ export function DesignerPalette({
             Edges (click an edge bar to toggle)
           </Text>
           <Group gap={4}>
-            <Button
-              size="xs"
-              variant={brush.kind === "edge-wall" ? "filled" : "light"}
-              onClick={() => onChange({ kind: "edge-wall" })}
-              disabled={readOnly}
-              title="Click an edge: toggles wall on/off"
-            >
-              wall
-            </Button>
-            <Button
-              size="xs"
-              variant={brush.kind === "edge-door" ? "filled" : "light"}
-              color="orange"
-              onClick={() => onChange({ kind: "edge-door" })}
-              disabled={readOnly}
-              title="Click an edge: toggles door; click an existing door to cycle open/closed"
-            >
-              door
-            </Button>
+            <Tooltip label="Click an edge: toggles wall on/off">
+              <Button
+                size="xs"
+                variant={brush.kind === "edge-wall" ? "filled" : "light"}
+                onClick={() => onChange({ kind: "edge-wall" })}
+                disabled={readOnly}
+              >
+                wall
+              </Button>
+            </Tooltip>
+            <Tooltip label="Click an edge: toggles door; click an existing door to cycle open/closed">
+              <Button
+                size="xs"
+                variant={brush.kind === "edge-door" ? "filled" : "light"}
+                color="orange"
+                onClick={() => onChange({ kind: "edge-door" })}
+                disabled={readOnly}
+              >
+                door
+              </Button>
+            </Tooltip>
           </Group>
         </Stack>
         <Select

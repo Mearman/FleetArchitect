@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import type { EdgeKind, SolidCell, TileGrid } from "@/schema/grid";
 import { cellColour, cellLabel, edgePositionClass } from "./designerGrid";
 import {
@@ -61,6 +62,20 @@ export function GridBoard({
    *  edge-indicator click. */
   onEdge: (col: number, row: number, dir: "n" | "e" | "s" | "w") => void;
 }) {
+  /** True while the pointer is held down inside the board — enables
+   *  drag-to-paint by calling onPaint as the pointer enters each cell. */
+  const isPainting = useRef(false);
+
+  useEffect(() => {
+    function handlePointerUp() {
+      isPainting.current = false;
+    }
+    window.addEventListener("pointerup", handlePointerUp);
+    return () => {
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+  }, []);
+
   return (
     <div
       className={gridBoard}
@@ -80,7 +95,13 @@ export function GridBoard({
             key={`${col}-${row}`}
             type="button"
             className={`${gridCellClass} ${isBreached ? breachOverlay : ""}`}
-            onClick={() => onPaint(col, row)}
+            onPointerDown={() => {
+              isPainting.current = true;
+              onPaint(col, row);
+            }}
+            onPointerEnter={() => {
+              if (isPainting.current) onPaint(col, row);
+            }}
             style={{
               background: cellColour(cell),
               outline: isSelected ? "2px solid #ffd86e" : "none",
