@@ -316,6 +316,32 @@ export function useBattleCanvas({
             }
           }
 
+          // Chamfered hull outline (Phase 11): drawn over the cells as a
+          // semi-transparent stroke in the side colour, tracing the armor
+          // shell's boundary through its chamfered corner vertices. Vertices
+          // are in ship-local world units; the surrounding translate/rotate
+          // already places them in world space, so only the display scale
+          // is applied.
+          if (s.outline !== undefined) {
+            ctx.strokeStyle = s.side === "attacker" ? "#ff6b5a" : "#5ab0ff";
+            ctx.lineWidth = 1;
+            ctx.globalAlpha = 0.5;
+            for (const loop of s.outline) {
+              if (loop.length < 2) continue;
+              const first = loop[0];
+              if (first === undefined) continue;
+              ctx.beginPath();
+              ctx.moveTo(first.x * scale, first.y * scale);
+              for (let i = 1; i < loop.length; i += 1) {
+                const v = loop[i];
+                if (v !== undefined) ctx.lineTo(v.x * scale, v.y * scale);
+              }
+              ctx.closePath();
+              ctx.stroke();
+            }
+            ctx.globalAlpha = 1;
+          }
+
           ctx.restore();
           ctx.globalAlpha = 1;
         } else {

@@ -141,6 +141,9 @@ export const ShipSnapshot = z.object({
    * indicators. Optional for backward compatibility with older replays.
    */
   targetId: EntityId.optional(),
+  /** Chamfered hull outline polygon loops (Vec2 vertices in ship-local metres).
+   *  Render-only; present on modular ships with armor cells. */
+  outline: z.array(z.array(z.object({ x: z.number(), y: z.number() }))).optional(),
 });
 export type ShipSnapshot = z.infer<typeof ShipSnapshot>;
 
