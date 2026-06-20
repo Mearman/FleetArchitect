@@ -14,6 +14,37 @@ import type { CrewPriority, Rule, ShipStance } from "@/schema/ai";
 import type { ResolvedHardwire, SimCrew } from "../types";
 
 import type { UNREACHABLE } from "./config";
+import type { EnergyBuffer } from "./power";
+import type { RectangularTransportGraph } from "./transport-graph";
+
+/**
+ * Per-ship resource state (Phase 12 wiring, use-deferred). The three
+ * transport-field φ arrays — thermal (temperature, K), propellant (fuel mass,
+ * kg), atmosphere (gas mass, kg) — plus the power energy buffer. Advanced each
+ * tick by `resourceStep`; values are computed and exposed but consequences
+ * (overheat shutdown, brownout, asphyxiation, dry-tank derelict) are NOT
+ * enforced.
+ *
+ * Cell indexing is module-sparse: `n = number of modules`, indices are
+ * assigned in sorted (col, row) order, and `moduleIndex` maps "col,row" keys
+ * to dense 0..n−1 indices. This avoids the O(bounding-box) cost of the
+ * rectangular approach for ships with widely spread modules.
+ */
+export interface ResourceState {
+  /** Sparse cell-to-index map: `"col,row"` → dense φ index (0..n−1). */
+  moduleIndex: ReadonlyMap<string, number>;
+  thermal: number[];
+  propellant: number[];
+  atmosphere: number[];
+  powerBuffer: EnergyBuffer;
+}
+
+/** Cached transport graph for a ship's current topology (Phase 12 wiring).
+ *  Rebuilt when the alive-cell fingerprint changes. */
+export interface CachedTransportGraph {
+  graph: RectangularTransportGraph;
+  fingerprint: number;
+}
 
 /**
  * A live awareness contact: an enemy this observer (or a relaying ally on its
@@ -294,6 +325,21 @@ export interface SimShip {
     /** Drone-only: homing speed in world units per tick. 0 for decoys. */
     speed: number;
   };
+  /**
+   * Per-ship resource state (Phase 12 wiring, use-deferred). The thermal,
+   * propellant, atmosphere, and power fields advanced each tick by
+   * `resourceStep`. Present only on modular ships; `undefined` on the legacy
+   * aggregated path and phantoms. Built once in `toSimShip`; values computed
+   * but no consequence is enforced.
+   */
+  resource?: ResourceState;
+  /**
+   * Cached transport graph for the ship's current cell topology (Phase 12
+   * wiring). Rebuilt lazily by `resourceStep` when the topology fingerprint
+   * changes; cleared alongside the path cache by `refreshPathCache` so a
+   * module death or chunk split invalidates it.
+   */
+  resourceGraph?: CachedTransportGraph;
 }
 
 /**

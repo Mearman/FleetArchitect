@@ -207,6 +207,21 @@ export interface TransportField {
   readonly faces: readonly TransportFace[];
   /** Boundary-face cell indices, in a fixed deterministic order. */
   readonly boundaryCells: readonly number[];
+  /**
+   * Optional pre-built per-cell face index: `facesFrom[cell]` lists every
+   * face whose `from` equals `cell`. When present, `stepTransportField` uses
+   * it directly instead of rebuilding the index on every call — important when
+   * the same graph is stepped three times per tick (thermal + propellant +
+   * atmosphere). Omitting it is safe: the integrator falls back to building the
+   * index itself (backward-compatible with existing tests and callers).
+   */
+  readonly facesFrom?: readonly (readonly TransportFace[])[];
+  /**
+   * Optional pre-built boundary cell Set for O(1) lookups. When present,
+   * `stepTransportField` uses it instead of constructing `new Set(boundaryCells)`
+   * on every call. Safe to omit: the integrator falls back automatically.
+   */
+  readonly boundaryCellSet?: ReadonlySet<number>;
 }
 
 /** Per-tick time step derived from the tick rate, seconds. The integrator
@@ -309,6 +324,7 @@ export interface TransportStepResult {
 export function stepTransportField(
   field: TransportField,
   phi: readonly number[],
+  options?: { diagnostics?: boolean },
 ): TransportStepResult {
   const n = phi.length;
   const subSteps = transportSubSteps(field.substance);
@@ -319,21 +335,29 @@ export function stepTransportField(
   let current = phi.slice();
   let momentumX = 0;
   let momentumY = 0;
-  const deltaAccum: TransportDelta[] = [];
-  for (let i = 0; i < n; i += 1) {
-    deltaAccum.push({ advection: 0, diffusion: 0, source: 0, boundary: 0 });
-  }
+  // Diagnostics are skipped by default (expensive allocation) — only computed
+  // when explicitly requested. No callers in the production path need them;
+  // tests that verify individual flux terms pass { diagnostics: true }.
+  const wantDiags = options?.diagnostics === true;
+  const deltaAccum: TransportDelta[] = wantDiags
+    ? Array.from({ length: n }, () => ({ advection: 0, diffusion: 0, source: 0, boundary: 0 }))
+    : [];
 
-  // Precompute: cell -> its faces. The flux functions previously iterated
-  // ALL faces per cell (O(cells x total_faces)); this lookup makes each cell's
-  // flux O(faces_per_cell ~= 4). Built once here, used every sub-step.
+  // Per-cell face index: facesByCell[cell] lists every face whose `from`
+  // equals `cell`. Re-used every sub-step. If the caller pre-built this
+  // (field.facesFrom), use it directly; otherwise build it once here.
   type Face = (typeof field.faces)[number];
-  const facesByCell: Face[][] = Array.from({ length: n }, () => []);
-  for (const face of field.faces) {
-    const list = facesByCell[face.from];
-    if (list !== undefined) list.push(face);
-  }
-  const boundarySet = new Set(field.boundaryCells);
+  const facesByCell: readonly (readonly Face[])[] = field.facesFrom ??
+    (() => {
+      const arr: Face[][] = Array.from({ length: n }, () => []);
+      for (const face of field.faces) {
+        const list = arr[face.from];
+        if (list !== undefined) list.push(face);
+      }
+      return arr;
+    })();
+  // Use the pre-built boundary set when available (avoids O(n) construction).
+  const boundarySet: ReadonlySet<number> = field.boundaryCellSet ?? new Set(field.boundaryCells);
   const D = field.substance.coefficient;
   const velocity = field.substance.velocity;
   for (let step = 0; step < subSteps; step += 1) {
@@ -385,15 +409,16 @@ export function stepTransportField(
         nextVal = floor;
       }
       next[cell] = nextVal;
-      // Accumulate per-sub-step into the diagnostics (scaled back to per-second
-      // for a clean reading regardless of sub-step count).
-      const perSecond = subSteps / TRANSPORT_DT_S;
-      const delta = deltaAccum[cell];
-      if (delta !== undefined) {
-        delta.advection += adv / perSecond;
-        delta.diffusion += dif / perSecond;
-        delta.source += src / perSecond;
-        delta.boundary += bnd / perSecond;
+      // Accumulate diagnostics only when explicitly requested.
+      if (wantDiags) {
+        const perSecond = subSteps / TRANSPORT_DT_S;
+        const delta = deltaAccum[cell];
+        if (delta !== undefined) {
+          delta.advection += adv / perSecond;
+          delta.diffusion += dif / perSecond;
+          delta.source += src / perSecond;
+          delta.boundary += bnd / perSecond;
+        }
       }
     }
     current = next;

@@ -20,6 +20,7 @@ import { SIM, resetProjectileCounter } from "./config";
 import { updateCrew } from "./crew";
 import { refillHardwiredAmmo } from "./crew-haul";
 import { crewCellKey } from "./crew-pathfinding";
+import { resourceStep } from "./resource-step";
 import { splitBreakApart } from "./damage";
 import { layMines, stepTechCooldowns, updateMines } from "./mines";
 import type { DeploymentReference } from "./movement";
@@ -301,6 +302,17 @@ export function* simulateBattle(
     for (const ship of ships) {
       if (!ship.alive || ship.modules === undefined) continue;
       refillHardwiredAmmo(ship);
+    }
+
+    // 4b-resource. Resource & environment step (Phase 12 wiring, use-deferred).
+    //     Advance each ship's thermal, propellant, atmosphere, and power state
+    //     one tick. Runs after crew (atmosphere reads settled positions) and
+    //     before break-apart (chunk inherits resource state next pass). No
+    //     consequence is enforced — no overheat, brownout, asphyxiation, or
+    //     dry-tank derelict. A no-op for ships with no resource state.
+    for (const ship of ships) {
+      if (!ship.alive) continue;
+      resourceStep(ship);
     }
 
     // 4c. Break-apart: if the alive modules on a modular ship no longer

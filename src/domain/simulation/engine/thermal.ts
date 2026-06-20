@@ -83,6 +83,13 @@ export function makeThermalSubstance(
     name: "thermal",
     coefficient: HULL_THERMAL_DIFFUSIVITY_M2_PER_S,
     // No advection: a solid hull does not flow.
+    // Temperature floor: a ship in space cannot cool below the cosmic microwave
+    // background. The Stefan-Boltzmann `T⁴ − T_space⁴` boundary flux already
+    // drives net outflux to zero at T = T_space, but the explicit integrator
+    // only applies positive (outflow) fluxes, so cells would undershoot without
+    // this floor. Clamping here enforces the physical invariant.
+    nonNegative: true,
+    floor: SPACE_TEMPERATURE_K,
     source: (cell) => sources.get(cell) ?? 0,
     boundaryFlux: (cell, phi): BoundaryFlux => {
       if (!radiators.has(cell)) {

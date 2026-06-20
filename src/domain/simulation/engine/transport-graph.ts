@@ -12,12 +12,26 @@
 
 import type { TransportFace } from "@/domain/simulation/engine/transport-field";
 import { TRANSPORT_GEOMETRY } from "@/domain/simulation/engine/transport-field";
+import { pipeKey } from "@/domain/simulation/engine/propellant";
 
-/** Result of building a rectangular transport graph: the flat face list and
- *  the indices of cells that touch the outer hull (the boundary cells). */
+/** Result of building a rectangular transport graph: the flat face list,
+ *  a pre-built per-cell face index, the boundary cell indices, and the
+ *  open interior face pair set for propellant pipe routing. */
 export interface RectangularTransportGraph {
   faces: TransportFace[];
+  /** Pre-built per-cell face index: `facesFrom[cell]` lists every face whose
+   *  `from` equals `cell`. Built once at graph construction, passed into
+   *  `TransportField.facesFrom` so `stepTransportField` need not rebuild it
+   *  on every substance call. */
+  facesFrom: readonly TransportFace[][];
   boundaryCells: number[];
+  /** Pre-built boundary cell Set for O(1) membership tests. Built once so
+   *  the per-tick resource step avoids rebuilding `new Set(boundaryCells)`. */
+  boundaryCellSet: ReadonlySet<number>;
+  /** Pre-built set of open interior face pair keys (numeric, via `pipeKey`),
+   *  used by the propellant substance to identify pipe segments. Built once
+   *  so the per-tick resource step avoids rebuilding it from faces. */
+  openInteriorPipes: ReadonlySet<number>;
 }
 
 /**
@@ -151,5 +165,25 @@ export function buildRectangularGraph(
 
   // Deterministic order: ascending cell index.
   const boundaryCells = [...boundarySet].sort((a, b) => a - b);
-  return { faces, boundaryCells };
+
+  // Pre-build per-cell face index once so stepTransportField need not
+  // rebuild it on every substance call (called 3 times per ship per tick).
+  const n = cols * rows;
+  const facesFrom: TransportFace[][] = Array.from({ length: n }, () => []);
+  for (const face of faces) {
+    const list = facesFrom[face.from];
+    if (list !== undefined) list.push(face);
+  }
+
+  // Pre-build open interior pipe set for propellant routing (numeric keys).
+  const openInteriorPipes = new Set<number>();
+  for (const face of faces) {
+    if (face.to === undefined || !face.open) continue;
+    openInteriorPipes.add(pipeKey(face.from, face.to));
+  }
+
+  // Pre-build boundary cell set for O(1) radiator lookups.
+  const boundaryCellSet = new Set(boundaryCells);
+
+  return { faces, facesFrom, boundaryCells, boundaryCellSet, openInteriorPipes };
 }

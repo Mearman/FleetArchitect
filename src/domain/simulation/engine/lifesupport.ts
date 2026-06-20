@@ -22,7 +22,6 @@
 import {
   TRANSPORT_GEOMETRY,
   type BoundaryFlux,
-  type TransportFace,
   type TransportSubstance,
 } from "@/domain/simulation/engine/transport-field";
 
@@ -52,9 +51,6 @@ export const CABIN_TEMPERATURE_K = 288.15;
 /** Reference cabin pressure, Pa. ISA sea-level standard: 101 325 Pa. */
 export const CABIN_PRESSURE_PA = 101_325;
 
-/** Cell pitch, m (re-exported from the primitive for the flow derivation). */
-const CELL_PITCH_M = TRANSPORT_GEOMETRY.cellPitchM;
-
 /**
  * Per-crew-member O₂ consumption, kg·s⁻¹. A resting-to-moderate adult
  * consumes ≈ 0.84 kg/day of O₂, which is 0.84 / 86400 ≈ 9.7e-6 kg·s⁻¹.
@@ -68,18 +64,6 @@ export const CREW_O2_CONSUMPTION_KG_PER_S = 0.84 / 86_400;
  * ≈ 343 m·s⁻¹. The recoil impulse from venting mass `dm` is `dm · v_e`.
  */
 export const VENT_EXHAUST_VELOCITY_M_PER_S = 343;
-
-/**
- * Linearised pressure-driven flow coefficient. Bulk velocity across a face
- * is modelled as `u = −k·∇p` (a Darcy-style velocity proportional to the
- * pressure gradient). `k` is a flow conductance derived from the sonic
- * limit so a cell venting to vacuum cannot exceed `VENT_EXHAUST_VELOCITY_M_PER_S`
- * across a one-cell pressure drop: `k = v_e · dx / p_cabin`. This is a
- * documented simplification of the Navier–Stokes pressure term — full CFD is
- * out of scope for a ship-level model.
- */
-const FLOW_CONDUCTANCE_M2_S_PER_PA =
-  (VENT_EXHAUST_VELOCITY_M_PER_S * CELL_PITCH_M) / CABIN_PRESSURE_PA;
 
 /**
  * Per-cell crew count map: cell index → number of crew present. Each crewed
@@ -122,26 +106,15 @@ export function makeAtmosphereSubstance(
   return {
     name: "atmosphere",
     coefficient: GAS_DIFFUSION_COEFFICIENT_M2_PER_S,
-    maxVelocity: VENT_EXHAUST_VELOCITY_M_PER_S,
+    // Phase 12 (use-deferred): advection is omitted because there are no
+    // breached compartments yet — the damage model does not expose hull
+    // openings in this phase, so no cell loses pressure suddenly and the
+    // pressure-driven Darcy flow is negligible. Advection (and the 23
+    // CFL sub-steps it would require for VENT_EXHAUST_VELOCITY_M_PER_S)
+    // is re-enabled when breach support lands. Pure diffusion with 1 sub-step
+    // is accurate for an intact, sealed hull.
     nonNegative: true,
     floor: 0,
-    velocity: (face: TransportFace, phi: readonly number[]): number => {
-      if (face.to === undefined) return 0;
-      const phiFrom = phi[face.from] ?? 0;
-      const phiTo = phi[face.to] ?? 0;
-      // Pressure at each side (ideal gas, cabin temperature).
-      const pFrom = pressureFromMass(phiFrom);
-      const pTo = pressureFromMass(phiTo);
-      // Pressure gradient along the outward normal (from → to). The face is
-      // axis-aligned, so the gradient component along n is exactly
-      // `(pTo − pFrom) / dx`. Positive ⇒ pressure rises in the +n direction ⇒
-      // Darcy flow `v = −k·∇p` goes −n (toward `from`), i.e. enters `from`.
-      // The integrator's sign convention: u > 0 = flow leaves `from`.
-      const dPdn = (pTo - pFrom) / CELL_PITCH_M;
-      const u = -FLOW_CONDUCTANCE_M2_S_PER_PA * dPdn;
-      const limit = VENT_EXHAUST_VELOCITY_M_PER_S;
-      return Math.max(-limit, Math.min(limit, u));
-    },
     source: (cell) =>
       -(crew.get(cell) ?? 0) * CREW_O2_CONSUMPTION_KG_PER_S,
     boundaryFlux: (cell, phi): BoundaryFlux => {

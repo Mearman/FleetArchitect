@@ -45,18 +45,23 @@ export const PROPELLANT_FLOW_SPEED_M_PER_S = 1.0;
  *  produced. The caller derives this from the live throttle / module state. */
 export type EngineThrustMap = ReadonlyMap<number, number>;
 
-/** Pipe adjacency: the set of (from, to) cell pairs that are plumbed
- *  together. Fuel flows along these edges toward the burning engine. */
-export type PipeAdjacency = ReadonlySet<string>;
+/** Pipe adjacency: the set of unordered cell-pair keys identifying plumbed
+ *  edges. Use `pipeKey` to build a key; fuel flows along these edges toward
+ *  the burning engine. Numeric keys avoid per-lookup string allocation. */
+export type PipeAdjacency = ReadonlySet<number>;
 
 /** Per-engine outward exhaust normal (ship-local). The nozzle points along
  *  this direction; thrust pushes the ship along −normal. */
 export type ExhaustNormals = ReadonlyMap<number, { nx: number; ny: number }>;
 
-/** Serialise a pipe edge into a stable string key. Order-independent: the
- *  pipe (a, b) and (b, a) share one key. */
-export function pipeKey(a: number, b: number): string {
-  return a < b ? `${a}-${b}` : `${b}-${a}`;
+/**
+ * Serialise an unordered cell pair into a stable numeric key. The stride is
+ * chosen large enough that no two distinct pairs `(a, b)` with a ≤ b share a
+ * key across any realistic ship grid (cells < 65536).
+ */
+const PIPE_KEY_STRIDE = 65536;
+export function pipeKey(a: number, b: number): number {
+  return a < b ? a * PIPE_KEY_STRIDE + b : b * PIPE_KEY_STRIDE + a;
 }
 
 /**
