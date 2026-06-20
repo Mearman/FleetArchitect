@@ -1,3 +1,23 @@
+# [1.6.0](https://github.com/Mearman/FleetArchitect/compare/v1.5.0...v1.6.0) (2026-06-20)
+
+
+### Features
+
+* **ai:** wire all 5 AiState outputs — focusFire, retreat, prioritiseRepair, rally, stance ([2c49fc6](https://github.com/Mearman/FleetArchitect/commit/2c49fc6e41eb76a14e21abe8e756ab72e1dbe9c5))
+* **schema:** add mode/sweepRate/emitStrength/passiveBands/gain to SensorEffect ([f4d451e](https://github.com/Mearman/FleetArchitect/commit/f4d451e52c70ae148fa55a8f89d4e4f6760f8791))
+* **schema:** expose surface hp, door states and resource state in battle snapshot ([a088c8b](https://github.com/Mearman/FleetArchitect/commit/a088c8ba30baaf168bb0ae65f01808b1e06b17dd))
+* **sim:** apply time dilation to shield recharge, repair, and crew advancement ([485198d](https://github.com/Mearman/FleetArchitect/commit/485198d8069d310199477625a4409f9f05b29245))
+* **sim:** compute hull outline for break-apart chunk ships ([22f0f77](https://github.com/Mearman/FleetArchitect/commit/22f0f77d3b039b65194764463bf323bde53a10be))
+* **sim:** live airtightness — hull breaches vent compartments and expose crew to vacuum ([f9130f8](https://github.com/Mearman/FleetArchitect/commit/f9130f8e770d48fd4485a5c396bb3636d7a1b1e6))
+* **sim:** n-body gravity with stable id-sorted accumulation; ground SIM.blackHole constants ([e9b670f](https://github.com/Mearman/FleetArchitect/commit/e9b670ff4022e5fe6f742935b232584d54278f20))
+* **sim:** relativistic collision KE via numerically stable identity ([b0b60aa](https://github.com/Mearman/FleetArchitect/commit/b0b60aa8c5f48b8daa898c31bb5b8955089852a0))
+* **sim:** relativistic p=gamma*m*v momentum integrator with closed-form velocity update ([d3fe0d6](https://github.com/Mearman/FleetArchitect/commit/d3fe0d6f63e9e4fb59609f9c128198852612532c))
+* **sim:** replace instant geometric detection with EM reception (Phase 9) ([96d3c70](https://github.com/Mearman/FleetArchitect/commit/96d3c70de1996d5a71806fed20bd8804b6ec0d17))
+* **sim:** restore reactive armour, joules damage accounting; re-enable skipped retreat tests ([6860ae4](https://github.com/Mearman/FleetArchitect/commit/6860ae4a5a30966b570abda579cb22a201592b50))
+* **sim:** wire Phase-10 optics — beam divergence, Doppler aberration, and gravitational lensing ([7956de5](https://github.com/Mearman/FleetArchitect/commit/7956de501cf0a2f1ad157448da8d57ed847d6c91))
+* **sim:** wire Phase-12 debris field into the live tick loop ([0a929e0](https://github.com/Mearman/FleetArchitect/commit/0a929e0ff9a32d520d6a9cde61b762cf1ab552fe))
+* **sim:** wire Phase-8 active radar pulses into tick loop with finite light-speed propagation ([ffa6a37](https://github.com/Mearman/FleetArchitect/commit/ffa6a3772ecb379a2247205b12d8cac09788867a))
+
 # [1.5.0](https://github.com/Mearman/FleetArchitect/compare/v1.4.0...v1.5.0) (2026-06-20)
 
 
