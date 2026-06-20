@@ -9,8 +9,8 @@
  * ## Unit model
  *
  * - **World coordinates** are metres (Phase 1). A ship-interior cell is
- *   `CELL_SIZE_M = 12 m` on a side (`src/domain/grid.ts`), so one cell covers
- *   `CELL_AREA_M2 = 144 m²`.
+ *   `CELL_SIZE` m on a side — the single metre-scale anchor in
+ *   `src/domain/grid.ts` — so one cell covers `CELL_AREA_M2 = CELL_SIZE² m²`.
  * - **Mass** is in kilograms. A built cell's mass is the sum of its layer
  *   masses (`scaffold` + optional `deck` or `armor`) plus any equipment; each
  *   layer mass is `arealDensity × CELL_AREA_M2`, where `arealDensity` is the
@@ -41,11 +41,14 @@
  *  - Machined alloy (Synthetic): ~6500 (titanium-class)
  */
 
-/** Side length of one ship-interior cell, in metres. */
-export const CELL_SIZE_M = 12;
+import { CELL_SIZE } from "@/domain/grid";
 
-/** Area of one ship-interior cell, in m². `CELL_SIZE_M²`. */
-export const CELL_AREA_M2 = CELL_SIZE_M * CELL_SIZE_M;
+/**
+ * Area of one ship-interior cell, in m². Derived from the single metre-scale
+ * anchor {@link CELL_SIZE} (`src/domain/grid.ts`) so the catalogue's per-cell
+ * masses follow the grid scale automatically: `CELL_SIZE²`.
+ */
+export const CELL_AREA_M2 = CELL_SIZE * CELL_SIZE;
 
 /**
  * Areal density (kg/m²) for each faction's scaffold layer — the structural

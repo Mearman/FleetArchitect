@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CELL_SIZE } from "@/domain/grid";
-import { SpatialHash, cellWorldPosition } from "@/domain/simulation/spatial-hash";
+import { WORLD_BUCKET_M, SpatialHash, cellWorldPosition } from "@/domain/simulation/spatial-hash";
 
 /**
  * The uniform spatial hash is a broad-phase: a point query must return a
@@ -105,10 +105,18 @@ describe("spatial-hash — nearestWithin matches brute force", () => {
   });
 
   it("honours the accept predicate", () => {
+    // Place two entries within the query radius: one at distance 1 that the
+    // predicate rejects, and one at distance 5 that it accepts. Use a radius
+    // of 6 (larger than the 5-metre point, independent of CELL_SIZE or
+    // WORLD_BUCKET_M) to ensure both entries are within the search disc.
     const hash = new SpatialHash<string>();
     hash.insert("near-reject", 1, 0);
     hash.insert("far-accept", 5, 0);
-    const got = hash.nearestWithin(0, 0, CELL_SIZE, (p) => p === "far-accept");
+    const radius = 6;
+    // Sanity: radius must fit within one world bucket so candidates() returns
+    // both entries from bucket 0 without edge-bucket confusion.
+    expect(radius).toBeLessThan(WORLD_BUCKET_M);
+    const got = hash.nearestWithin(0, 0, radius, (p) => p === "far-accept");
     expect(got?.payload).toBe("far-accept");
   });
 });

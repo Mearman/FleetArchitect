@@ -1,5 +1,6 @@
 import type { CellEdges } from "@/schema/grid";
 import { describe, expect, it } from "vitest";
+import { CELL_SIZE } from "@/domain/grid";
 import { runBattle } from "@/domain/simulation/engine";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
@@ -25,13 +26,27 @@ const OPEN_EDGES: CellEdges = {
  * along ship heading — the legacy behaviour preserved for everything that
  * never declared an explicit mount angle.
  *
- * Detection strategy: the muzzle sits 6 units from the ship along
- * `(ship.facing + weapon.facing)`. We use a slow projectile (speed 1) so the
- * projectile barely moves in one tick, and inspect the first frame's first
- * projectile — its (x, y) is essentially the muzzle position. A stationary
- * target on the +x axis gives every weapon a clear shot; the long cooldown
- * (1000) and matching range ensure exactly one shot fires.
+ * Detection strategy: the muzzle sits `SIM.muzzleOffset` (= `CELL_SIZE / 2`)
+ * units from the ship along `(ship.facing + weapon.facing)`. We use a slow
+ * projectile — `PROBE_SPEED`, a small fraction of the muzzle offset — so the
+ * projectile barely drifts in one tick, and inspect the first frame's first
+ * projectile, whose (x, y) is then essentially the muzzle position. The probe
+ * speed is anchored to `CELL_SIZE` so the drift stays small relative to the
+ * muzzle offset at any metre scale (the old absolute speed of 1 was only small
+ * against the former 6-unit offset; at a 1 m cell it would swamp the 0.5-unit
+ * offset and mask the muzzle direction). A stationary target on the +x axis
+ * gives every weapon a clear shot; the long cooldown (1000) and matching range
+ * ensure exactly one shot fires.
  */
+
+/** The muzzle clearance the engine spawns projectiles at, in world units. */
+const MUZZLE_OFFSET = CELL_SIZE / 2;
+
+/** Probe projectile speed: one-sixth of the muzzle offset, so a single tick of
+ *  drift is small against the offset and the first captured frame reads the
+ *  muzzle position. Mirrors the original 6:1 offset-to-drift ratio (offset 6,
+ *  speed 1) at the new scale. */
+const PROBE_SPEED = MUZZLE_OFFSET / 6;
 
 function cannon(over: Partial<WeaponEffect> = {}): WeaponEffect {
   return {
@@ -40,7 +55,7 @@ function cannon(over: Partial<WeaponEffect> = {}): WeaponEffect {
     damage: 0,
     range: 1000,
     cooldown: 1000,
-    projectileSpeed: 1,
+    projectileSpeed: PROBE_SPEED,
     tracking: 0,
     shieldPiercing: 0,
     armourPiercing: 0,
@@ -211,10 +226,11 @@ describe("engine.per-module facing", () => {
     expect(first, "the attacker should have spawned at least one projectile").toBeDefined();
     if (first === undefined) return;
     // Ship at (0, 0) facing 0 with weapon facing 0 — muzzle spawn is at
-    // (0 + cos(0)*6, 0 + sin(0)*6) = (6, 0); after one tick of drift toward
-    // the +x target the projectile is at roughly (7, 0). The defining
-    // property is that y is essentially 0 (forward = along ship heading).
-    expect(first.x).toBeGreaterThan(5);
+    // (cos(0)*MUZZLE_OFFSET, sin(0)*MUZZLE_OFFSET) = (MUZZLE_OFFSET, 0); after
+    // one tick of drift toward the +x target the projectile is just beyond the
+    // muzzle on the +x axis. The defining property is that y is essentially 0
+    // (forward = along ship heading) and x sits past the muzzle offset.
+    expect(first.x).toBeGreaterThan(MUZZLE_OFFSET);
     expect(Math.abs(first.y)).toBeLessThan(1e-6);
   });
 
@@ -223,13 +239,14 @@ describe("engine.per-module facing", () => {
     const first = firstProjectile(result);
     expect(first).toBeDefined();
     if (first === undefined) return;
-    // Ship facing 0, weapon facing +π/2 — muzzle spawn is at (0, 6). After
-    // one tick of drift toward (80, 0) the projectile is at roughly (0.998,
-    // ~5.93). The defining property is x ≈ 0 and y ≈ 6: the projectile
-    // spawned on the ship's +y side, even though the ship itself is
+    // Ship facing 0, weapon facing +π/2 — muzzle spawn is at (0, MUZZLE_OFFSET).
+    // After one tick of drift toward (80, 0) the projectile has crept a small
+    // probe step along +x while keeping its +y muzzle position. The defining
+    // property is x ≈ 0 (below the muzzle offset) and y ≈ MUZZLE_OFFSET: the
+    // projectile spawned on the ship's +y side, even though the ship itself is
     // pointing right at the target.
-    expect(first.x).toBeLessThan(2);
-    expect(first.y).toBeGreaterThan(5);
+    expect(first.x).toBeLessThan(MUZZLE_OFFSET);
+    expect(first.y).toBeGreaterThan(MUZZLE_OFFSET * 0.9);
   });
 
   it("a right-mounted weapon (facing -π/2) fires perpendicular to ship heading", () => {
@@ -237,11 +254,11 @@ describe("engine.per-module facing", () => {
     const first = firstProjectile(result);
     expect(first).toBeDefined();
     if (first === undefined) return;
-    // Mirror of the left case: muzzle spawn is at (0, -6); after one tick
-    // of drift the projectile is at roughly (0.998, ~-5.93). The projectile
-    // spawned on the ship's -y side.
-    expect(first.x).toBeLessThan(2);
-    expect(first.y).toBeLessThan(-5);
+    // Mirror of the left case: muzzle spawn is at (0, -MUZZLE_OFFSET); after one
+    // tick of drift the projectile keeps its -y muzzle position with a small +x
+    // probe step. The projectile spawned on the ship's -y side.
+    expect(first.x).toBeLessThan(MUZZLE_OFFSET);
+    expect(first.y).toBeLessThan(-MUZZLE_OFFSET * 0.9);
   });
 
   it("a rear-mounted weapon (facing π) fires backward relative to ship heading", () => {
@@ -249,12 +266,13 @@ describe("engine.per-module facing", () => {
     const first = firstProjectile(result);
     expect(first).toBeDefined();
     if (first === undefined) return;
-    // Ship facing 0, weapon facing π — muzzle spawn is at (-6, 0). After
-    // one tick of drift toward the +x target the projectile is at roughly
-    // (-5, 0): it spawned on the ship's -x side (behind it) and is just
-    // starting its long flight to the +x target.
-    expect(first.x).toBeLessThan(-4);
-    expect(first.x).toBeGreaterThan(-7);
+    // Ship facing 0, weapon facing π — muzzle spawn is at (-MUZZLE_OFFSET, 0).
+    // After one tick of drift toward the +x target the projectile has crept a
+    // small probe step back toward the origin but is still on the -x side: it
+    // spawned behind the ship and is just starting its long flight to the +x
+    // target. It stays between -MUZZLE_OFFSET and 0.
+    expect(first.x).toBeLessThan(0);
+    expect(first.x).toBeGreaterThan(-MUZZLE_OFFSET);
     expect(Math.abs(first.y)).toBeLessThan(1e-6);
   });
 
@@ -274,12 +292,12 @@ describe("engine.per-module facing", () => {
     expect(first).toBeDefined();
     if (first === undefined) return;
     // Ship at (0, 0) facing π/2 with weapon facing 0 — muzzle spawn is at
-    // (0 + cos(π/2)*6, 0 + sin(π/2)*6) = (0, 6). After one tick of drift
-    // toward (0, 80) the projectile is at roughly (0, 7). The mount is
-    // fixed in ship-local space; the world direction follows the ship's
-    // heading.
+    // (cos(π/2)*MUZZLE_OFFSET, sin(π/2)*MUZZLE_OFFSET) = (0, MUZZLE_OFFSET).
+    // After one tick of drift toward (0, 80) the projectile sits just past the
+    // muzzle on the +y axis. The mount is fixed in ship-local space; the world
+    // direction follows the ship's heading.
     expect(Math.abs(first.x)).toBeLessThan(1e-6);
-    expect(first.y).toBeGreaterThan(6);
+    expect(first.y).toBeGreaterThan(MUZZLE_OFFSET);
   });
 
   it("legacy weapon-only tests still pass (facing defaults to 0): regression check", () => {
@@ -293,7 +311,7 @@ describe("engine.per-module facing", () => {
     const first = firstProjectile(result);
     expect(first).toBeDefined();
     if (first === undefined) return;
-    expect(first.x).toBeGreaterThan(5);
+    expect(first.x).toBeGreaterThan(MUZZLE_OFFSET);
     expect(Math.abs(first.y)).toBeLessThan(1e-6);
   });
 

@@ -1,5 +1,6 @@
 import type { CellEdges } from "@/schema/grid";
 import { describe, expect, it } from "vitest";
+import { CELL_SIZE } from "@/domain/grid";
 import { runBattle } from "@/domain/simulation/engine";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
@@ -33,6 +34,9 @@ const OPEN_EDGES: CellEdges = {
  *    barrel can't move);
  *  - a turret with enough arc slews its barrel to π/2 and fires off-axis.
  */
+
+/** The muzzle clearance the engine spawns projectiles at, in world units. */
+const MUZZLE_OFFSET = CELL_SIZE / 2;
 
 function cannon(over: Partial<WeaponEffect> = {}): WeaponEffect {
   return {
@@ -213,15 +217,16 @@ describe("engine.turrets", () => {
 
   it("the projectile spawns from the slewed muzzle, not the ship's nose", () => {
     // With the barrel slewed to ≈ π/2 the muzzle sits on the ship's +y side,
-    // so the first projectile spawns near (0, +muzzleOffset) — not (+x, 0)
-    // where a forward mount would put it.
+    // so the first projectile spawns near (0, +MUZZLE_OFFSET) — not (+x, 0)
+    // where a forward mount would put it. The probe speed (0.01) is tiny, so
+    // the captured frame reads essentially the muzzle position.
     const turret = cannon({ turretArc: Math.PI, turretTurnRate: 0.3, projectileSpeed: 0.01 });
     const result = runBattle(inputs([weaponShip("a1", turret), targetAt("d1", 0, 80)]));
     const proj = firstProjectile(result);
     expect(proj).toBeDefined();
     if (proj === undefined) return;
-    expect(proj.y).toBeGreaterThan(4);
-    expect(Math.abs(proj.x)).toBeLessThan(2);
+    expect(proj.y).toBeGreaterThan(MUZZLE_OFFSET * 0.8);
+    expect(Math.abs(proj.x)).toBeLessThan(MUZZLE_OFFSET);
   });
 
   it("a fixed mount (turretTurnRate 0) does not fire at an off-axis target", () => {
@@ -243,7 +248,7 @@ describe("engine.turrets", () => {
     const proj = firstProjectile(result);
     expect(proj).toBeDefined();
     if (proj === undefined) return;
-    expect(proj.x).toBeGreaterThan(5);
+    expect(proj.x).toBeGreaterThan(MUZZLE_OFFSET);
     expect(Math.abs(proj.y)).toBeLessThan(1e-6);
   });
 

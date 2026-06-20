@@ -1,4 +1,4 @@
-import { CELL_SIZE } from "@/domain/grid";
+import { DREADNOUGHT_MAX_LENGTH_M } from "@/domain/grid";
 
 /**
  * A uniform spatial-hash broad-phase over occupied ship cells in world space.
@@ -6,14 +6,37 @@ import { CELL_SIZE } from "@/domain/grid";
  * Every alive ship contributes one entry per occupied cell, positioned at the
  * cell's world-space centre (the ship's pose composed with the cell's
  * ship-local centre). Entries are bucketed into a uniform grid whose bucket
- * size is one battle-grid cell (`CELL_SIZE`), so a point query touches only the
- * 3×3 block of buckets around it rather than scanning every cell in the battle.
+ * size is {@link WORLD_BUCKET_M} — a coarse *world* bucket, deliberately
+ * decoupled from the (now 1 m) ship-interior `CELL_SIZE`. A point query touches
+ * only the small block of buckets its radius spans rather than scanning every
+ * cell in the battle.
+ *
+ * Why decouple the bucket from `CELL_SIZE`: the bucket size is a broad-phase
+ * tuning, not a geometry fact. Sizing it to the interior cell (1 m) would make
+ * buckets far finer than any query needs — a swept-segment query over a
+ * thousand-metre per-tick displacement would walk a thousand bucket steps, and
+ * a ship would scatter its cells across hundreds of buckets. Sizing the bucket
+ * to the largest ship's span keeps a ship's cells in a handful of buckets and a
+ * weapon/collision query touching a small, near-constant block — the right
+ * granularity for the broad phase regardless of the interior resolution.
  *
  * The hash backs three formerly O(n²) scans: projectile-vs-cell hits,
  * ship-vs-ship cell-overlap collision, and (where it helps) targeting/PD. It is
  * pure and generic over the entry payload `S` so it can be unit-tested against a
  * brute-force reference on a small case.
  */
+
+/**
+ * World-space bucket size (metres) for the broad-phase spatial hash. Anchored
+ * to the largest ship's physical span ({@link DREADNOUGHT_MAX_LENGTH_M}) so a
+ * single ship's occupied cells fall into a small, bounded block of buckets and
+ * a typical contact/weapon query touches a near-constant number of buckets. It
+ * is a coarse world bucket, independent of the metre-scale `CELL_SIZE`: the
+ * hash stays correct for any bucket size (the span/pad/step all derive from it,
+ * so every query returns a superset of the true candidates), and this value is
+ * chosen purely so the broad phase is selective without being wastefully fine.
+ */
+export const WORLD_BUCKET_M = DREADNOUGHT_MAX_LENGTH_M;
 
 /** One occupied cell placed in world space, carrying an arbitrary payload. */
 export interface WorldCellEntry<S> {
@@ -24,9 +47,9 @@ export interface WorldCellEntry<S> {
   wy: number;
 }
 
-/** Integer bucket key for a world coordinate, derived from `CELL_SIZE`. */
+/** Integer bucket key for a world coordinate, derived from `WORLD_BUCKET_M`. */
 function bucketCoord(world: number): number {
-  return Math.floor(world / CELL_SIZE);
+  return Math.floor(world / WORLD_BUCKET_M);
 }
 
 function bucketKey(bx: number, by: number): string {
@@ -56,11 +79,11 @@ export class SpatialHash<S> {
    * Candidate entries whose bucket overlaps the query disc of the given radius
    * about (wx, wy). The result is a superset of the entries actually within
    * `radius` — the caller does the exact distance test. The bucket span is
-   * `ceil(radius / CELL_SIZE)` so a query radius larger than one cell still
-   * reaches every bucket it could touch.
+   * `ceil(radius / WORLD_BUCKET_M)` so a query radius larger than one bucket
+   * still reaches every bucket it could touch.
    */
   candidates(wx: number, wy: number, radius: number): WorldCellEntry<S>[] {
-    const span = Math.max(1, Math.ceil(radius / CELL_SIZE));
+    const span = Math.max(1, Math.ceil(radius / WORLD_BUCKET_M));
     const cx = bucketCoord(wx);
     const cy = bucketCoord(wy);
     const out: WorldCellEntry<S>[] = [];
@@ -83,17 +106,17 @@ export class SpatialHash<S> {
    * Why this exists: the disc query {@link candidates} scans the full square
    * block of buckets spanning its radius, so widening that radius by a ship's
    * per-tick displacement to catch tunnelling (the swept anti-tunnelling test in
-   * collision resolution) costs `O((displacement / CELL_SIZE)^2)` — fine at
+   * collision resolution) costs `O((displacement / WORLD_BUCKET_M)^2)` — fine at
    * combat speeds, catastrophic once the relativistic integrator drives a ship
-   * to a fraction of c (a displacement of ~1e6 m/tick spans ~80_000 buckets per
-   * axis → billions of empty-bucket probes per ship per tick). A ship can only
-   * tunnel along the LINE it travelled, not across the whole disc, so walking
-   * the buckets along that segment is both sufficient and `O(displacement /
-   * CELL_SIZE)` — linear, not quadratic.
+   * to a fraction of c (a displacement of ~1e6 m/tick spans thousands of buckets
+   * per axis → billions of empty-bucket probes per ship per tick). A ship can
+   * only tunnel along the LINE it travelled, not across the whole disc, so
+   * walking the buckets along that segment is both sufficient and
+   * `O(displacement / WORLD_BUCKET_M)` — linear, not quadratic.
    *
-   * The walk steps in `CELL_SIZE`-sized increments along the segment and gathers
-   * the `(2·pad+1)^2` block of buckets around each step, where `pad =
-   * ceil(radius / CELL_SIZE)` covers the perpendicular contact radius. Buckets
+   * The walk steps in `WORLD_BUCKET_M`-sized increments along the segment and
+   * gathers the `(2·pad+1)^2` block of buckets around each step, where `pad =
+   * ceil(radius / WORLD_BUCKET_M)` covers the perpendicular contact radius. Buckets
    * are visited in a fixed order (segment progression, then the padding block in
    * row-major order) and each entry is emitted at most once (deduped by a seen
    * set of bucket keys), so the result is a deterministic, order-stable superset
@@ -107,15 +130,15 @@ export class SpatialHash<S> {
     y1: number,
     radius: number,
   ): WorldCellEntry<S>[] {
-    const pad = Math.max(0, Math.ceil(radius / CELL_SIZE));
+    const pad = Math.max(0, Math.ceil(radius / WORLD_BUCKET_M));
     const out: WorldCellEntry<S>[] = [];
     const seenBuckets = new Set<string>();
     const dx = x1 - x0;
     const dy = y1 - y0;
     const length = Math.hypot(dx, dy);
-    // Number of CELL_SIZE-spaced samples along the segment (at least the two
-    // endpoints). Deterministic function of the segment length.
-    const steps = Math.max(1, Math.ceil(length / CELL_SIZE));
+    // Number of WORLD_BUCKET_M-spaced samples along the segment (at least the
+    // two endpoints). Deterministic function of the segment length.
+    const steps = Math.max(1, Math.ceil(length / WORLD_BUCKET_M));
     for (let i = 0; i <= steps; i += 1) {
       const t = i / steps;
       const sx = x0 + dx * t;

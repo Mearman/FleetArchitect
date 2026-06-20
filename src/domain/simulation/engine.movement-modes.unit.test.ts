@@ -113,10 +113,17 @@ describe("engine.movement-modes", () => {
     expect(attackerAt(result, 30, "a1").x).toBeGreaterThan(5);
   });
 
-  it("in-range band: the attacker holds position and aims at the target", () => {
+  it("in-range band: the attacker station-keeps at want range", () => {
     // want ≈ 165 (range 300 * medium fraction 0.55). With defaultOrders
     // rangeKeepingBand=0.3, the at-range zone is [want*(1-0.3), want]
-    // = [115.5, 165]. Place the defender at x=140 (inside the dead-zone).
+    // = [115.5, 165]. Place the defender at x=140 (inside the band).
+    //
+    // The station-keeper (stationKeep PD controller) actively drives the
+    // attacker to the want distance of 165 m from the defender. Starting
+    // at x=0 with the defender at x=140, the attacker manoeuvres toward
+    // x ≈ 140 - 165 = -25 so that the separation reaches want. After 60+
+    // ticks the attacker should be noticeably west of the origin, and at
+    // 100+ ticks it should be close to the target x≈-25.
     const result = runBattle(
       inputs([
         makeShip({
@@ -130,10 +137,14 @@ describe("engine.movement-modes", () => {
         makeShip({ id: "d1", side: "defender", x: 140, y: 0, structure: 99999 }),
       ]),
     );
-    // In the band the controller coasts — velocity persists. The fixture
-    // starts the attacker at rest (toSimShip zeroes velocity), so a ship at
-    // rest in the band stays at rest (no thrust, no velocity to bleed).
-    expect(Math.abs(attackerAt(result, 60, "a1").x)).toBeLessThan(10);
+    // The station-keeper moves the attacker toward want range: x should
+    // be negative (attacker backing away from the near defender) and
+    // the final separation should be close to want (165 m).
+    const latePos = attackerAt(result, 100, "a1");
+    expect(latePos.x).toBeLessThan(0);
+    const separation = Math.abs(140 - latePos.x);
+    expect(separation).toBeGreaterThan(140); // moved beyond the start separation of 140
+    expect(separation).toBeLessThan(200); // didn't overshoot dramatically
   });
 
   it("too close: opens range (kinematic kite)", () => {

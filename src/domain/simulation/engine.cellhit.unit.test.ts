@@ -92,8 +92,16 @@ function moduleOf(
   };
 }
 
+/** Defender stand-off distance (world units), several cells out from the
+ *  shooter and scaled to the cell size so the geometry is the same at any
+ *  metre scale. */
+const DEFENDER_DISTANCE = CELL_SIZE * 8;
+
 /** A slow cannon round so a single shot is easy to follow; high cooldown so
- *  only one fires within the window we inspect. */
+ *  only one fires within the window we inspect. The projectile step per tick
+ *  (`CELL_SIZE / 2`) is kept at or below the cell contact distance (`CELL_SIZE`)
+ *  so the round samples each cell on its path rather than tunnelling past a
+ *  column of cells only one cell apart. */
 function cannon(over: Partial<WeaponEffect> = {}): WeaponEffect {
   return {
     kind: "weapon",
@@ -101,7 +109,7 @@ function cannon(over: Partial<WeaponEffect> = {}): WeaponEffect {
     damage: 20,
     range: 1000,
     cooldown: 1,
-    projectileSpeed: 6,
+    projectileSpeed: CELL_SIZE / 2,
     tracking: 0,
     shieldPiercing: 0,
     armourPiercing: 0,
@@ -209,7 +217,7 @@ describe("engine.cellhit — frontmost cell", () => {
     // behind it. A single 20-damage round can't get through the front cell, so
     // only the front cell loses HP — the back cell is shadowed.
     const result = runBattle(
-      inputs([shooter(cannon({ damage: 20, cooldown: 1000 })), defenderColumn(60, [100, 100])]),
+      inputs([shooter(cannon({ damage: 20, cooldown: 1000 })), defenderColumn(DEFENDER_DISTANCE, [100, 100])]),
     );
     const frontHit = firstDamageFrame(result.frames, "cell0", 100);
     expect(frontHit, "the front cell must take the hit").toBeGreaterThan(0);
@@ -231,7 +239,7 @@ describe("engine.cellhit — penetration", () => {
     // is gone, would chew further into the rear, so we read the moment of
     // first penetration, not the end of the battle.)
     const result = runBattle(
-      inputs([shooter(cannon({ damage: 20, cooldown: 1 })), defenderColumn(60, [5, 100])]),
+      inputs([shooter(cannon({ damage: 20, cooldown: 1 })), defenderColumn(DEFENDER_DISTANCE, [5, 100])]),
     );
     const penetrationIdx = firstDamageFrame(result.frames, "cell1", 100);
     expect(penetrationIdx, "the rear cell must eventually be penetrated").toBeGreaterThan(0);
@@ -251,7 +259,7 @@ describe("engine.cellhit — penetration", () => {
     // than the first frame the back cell is touched — penetration is in path
     // order, never reaching the rear before the front is gone.
     const result = runBattle(
-      inputs([shooter(cannon({ damage: 8, cooldown: 1 })), defenderColumn(60, [10, 100])]),
+      inputs([shooter(cannon({ damage: 8, cooldown: 1 })), defenderColumn(DEFENDER_DISTANCE, [10, 100])]),
     );
     const frontGone = (() => {
       for (let i = 0; i < result.frames.length; i++) {

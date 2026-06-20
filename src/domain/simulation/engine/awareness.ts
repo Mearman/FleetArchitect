@@ -38,7 +38,7 @@ export function computeAwareness(
   // Direct enemy iteration in instanceId order (the `alive` set is already
   // sorted), not a spatial-hash broad-phase: a sensor radius routinely spans a
   // large fraction of the arena, so the broad-phase bucket sweep would touch a
-  // huge bucket block (radius/CELL_SIZE per axis) and is far slower than a plain
+  // large bucket block (radius/WORLD_BUCKET_M per axis) and is far slower than a plain
   // O(n^2) scan over the modest ship count. The result is identical and fully
   // deterministic.
   const directContacts = new Map<string, Contact[]>();

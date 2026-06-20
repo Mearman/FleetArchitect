@@ -1,5 +1,6 @@
 import type { CellEdges } from "@/schema/grid";
 import { describe, expect, it } from "vitest";
+import { CELL_SIZE } from "@/domain/grid";
 import { runBattle } from "@/domain/simulation/engine";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleAnomaly } from "@/schema/battle";
@@ -252,7 +253,11 @@ describe("engine.anomalies", () => {
               x: 0,
               y: 0,
               facing: 0,
-              weapons: [weapon()],
+              // A round that steps one cell size per tick so it samples each
+              // absorbing cell on the defender's row rather than tunnelling
+              // past them — the cell contact distance is now one (1 m) cell, so
+              // a fast round would jump clean over the column of cells.
+              weapons: [weapon({ projectileSpeed: CELL_SIZE })],
             }),
             defender({
               id: "d1",
@@ -381,8 +386,13 @@ describe("engine.anomalies", () => {
               x: -150,
               y: 40,
               facing: 0,
+              // Fire on the first tick (cooldown 1) so the round is in flight
+              // before the black hole drags the now-lighter ship into the well:
+              // at the 1 m cell scale the test ship is small enough that the
+              // unscaled arena gravity field consumes it within a few dozen
+              // ticks, so a long cooldown would never get a shot off.
               weapons: [
-                weapon({ damage: 1, range: 400, cooldown: 10, projectileSpeed }),
+                weapon({ damage: 1, range: 400, cooldown: 1, projectileSpeed }),
               ],
             }),
             defender({ id: "d1", x: 150, y: 40, structure: 99999 }),
@@ -390,22 +400,26 @@ describe("engine.anomalies", () => {
           anomaly,
         ),
       );
-    // y of the first projectile in flight at the given tick.
-    const projYAt = (result: ReturnType<typeof runBattle>, tick: number): number => {
-      const f = result.frames.find((frame) => frame.tick === tick);
-      if (f === undefined) throw new Error(`no frame ${tick}`);
+    // y of the first projectile in flight a few ticks after the first round is
+    // fired — far enough that the black hole's pull has bent its path, early
+    // enough that both battles still have a projectile aloft.
+    const TICKS_AFTER_FIRST_SHOT = 5;
+    const earlyProjY = (result: ReturnType<typeof runBattle>): number => {
+      const firstProjTick = result.frames.find((f) => f.projectiles.length > 0)?.tick;
+      if (firstProjTick === undefined) throw new Error("no projectile was ever fired");
+      const f = result.frames.find(
+        (frame) => frame.tick === firstProjTick + TICKS_AFTER_FIRST_SHOT,
+      );
+      if (f === undefined) throw new Error("no frame at the inspection tick");
       const p = f.projectiles[0];
-      if (p === undefined) throw new Error(`no projectile at tick ${tick}`);
+      if (p === undefined) throw new Error("no projectile at the inspection tick");
       return p.y;
     };
-    // Control: with no anomaly the projectile travels close to straight
-    // along y=40. We don't assert the exact value (the spawn spread /
-    // numerical integration leaves a small residual) — only that the
-    // black-hole battle deflects it toward the origin.
-    const noneY = projYAt(mk(4, "none"), 40);
-    // Black hole: the field pulls the projectile toward (0,0), so y
-    // drops meaningfully below the straight-line value.
-    const holeY = projYAt(mk(4, "blackHole"), 40);
+    // Control: with no anomaly the projectile travels straight along y=40.
+    const noneY = earlyProjY(mk(4, "none"));
+    // Black hole: the field pulls the projectile toward (0,0), so y drops below
+    // the straight-line value.
+    const holeY = earlyProjY(mk(4, "blackHole"));
     expect(Math.abs(noneY - 40)).toBeLessThan(1);
     expect(holeY).toBeLessThan(noneY);
     expect(holeY).toBeLessThan(40);

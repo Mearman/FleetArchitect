@@ -12,7 +12,15 @@ import type { ShipClassification } from "@/schema/armor";
 import { defaultOrders } from "@/schema/fleet";
 import type { Orders } from "@/schema/fleet";
 import type { ShipStats } from "@/domain/stats";
+import { CELL_SIZE } from "@/domain/grid";
 import type { runBattle } from "@/domain/simulation/engine";
+
+/** Cell pitch (world units) these fixtures lay their grid cells out on. Kept
+ *  at twice the engine cell size so a fixture's cells sit two contact-distances
+ *  apart — the spacing the original fixtures used (`24` at the former 12 m cell)
+ *  — now expressed against `CELL_SIZE` so it tracks the metre scale instead of
+ *  baking in a stale literal. */
+const FIXTURE_CELL_PITCH = CELL_SIZE * 2;
 
 /** All-open deck edges for test fixtures. */
 const OPEN_EDGES: CellEdges = {
@@ -61,8 +69,8 @@ export function moduleOf(
     kind: effect.kind,
     col,
     row,
-    x: col * 24,
-    y: row * 24,
+    x: col * FIXTURE_CELL_PITCH,
+    y: row * FIXTURE_CELL_PITCH,
     surface: "deck",
     edges: OPEN_EDGES,
     maxSurfaceHp,

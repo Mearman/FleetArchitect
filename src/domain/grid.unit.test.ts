@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   CELL_SIZE,
+  DREADNOUGHT_MAX_LENGTH_M,
+  SHIP_LENGTH_METRES,
   bounds,
   cellAt,
   cellToLocal,
@@ -168,14 +170,30 @@ describe("grid connectivity", () => {
 });
 
 describe("derived properties", () => {
-  it("classifies by occupied-cell count", () => {
-    expect(deriveClassification(grid(["##"]))).toBe("fighter"); // 2 cells
-    const frigate = grid(Array.from({ length: 5 }, () => "######"));
-    expect(deriveClassification(frigate)).toBe("frigate");
-    const cruiser = grid(Array.from({ length: 8 }, () => "#########"));
-    expect(deriveClassification(cruiser)).toBe("cruiser");
-    const dread = grid(Array.from({ length: 10 }, () => "############"));
-    expect(deriveClassification(dread)).toBe("dreadnought");
+  it("classifies by bounding-box length in metres", () => {
+    // fighter: longest axis ≤ SHIP_LENGTH_METRES.fighter (20 m). A 2-cell row
+    // spans 2 m — well within the fighter threshold.
+    expect(deriveClassification(grid(["##"]))).toBe("fighter");
+
+    // frigate: longest axis > 20 m and ≤ SHIP_LENGTH_METRES.frigate (60 m).
+    // Build a 1-row grid exactly SHIP_LENGTH_METRES.frigate cells wide (60 m).
+    const frigateRow = "#".repeat(SHIP_LENGTH_METRES.frigate);
+    expect(deriveClassification(grid([frigateRow]))).toBe("frigate");
+
+    // cruiser: longest axis > 60 m and ≤ SHIP_LENGTH_METRES.cruiser (150 m).
+    // Build a 1-row grid exactly SHIP_LENGTH_METRES.cruiser cells wide (150 m).
+    const cruiserRow = "#".repeat(SHIP_LENGTH_METRES.cruiser);
+    expect(deriveClassification(grid([cruiserRow]))).toBe("cruiser");
+
+    // dreadnought: longest axis > 150 m. Use a grid one cell beyond the cruiser
+    // threshold (151 m), which still fits within DREADNOUGHT_MAX_LENGTH_M.
+    const dreadRow = "#".repeat(SHIP_LENGTH_METRES.cruiser + 1);
+    expect(SHIP_LENGTH_METRES.cruiser + 1).toBeLessThanOrEqual(DREADNOUGHT_MAX_LENGTH_M);
+    expect(deriveClassification(grid([dreadRow]))).toBe("dreadnought");
+  });
+
+  it("classifies an empty grid as fighter", () => {
+    expect(deriveClassification(grid(["."]))).toBe("fighter");
   });
 
   it("sums cell masses via the resolver", () => {

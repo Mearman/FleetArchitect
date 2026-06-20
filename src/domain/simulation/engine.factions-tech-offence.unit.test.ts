@@ -328,15 +328,22 @@ describe("engine.factions-tech – determinism (non-tech designs)", () => {
    * modules. Two identical runs must produce byte-identical frames. A different
    * seed must produce different frames (weapon cooldown stagger differs).
    *
-   * Engine facing: Math.PI (exhaust aft → thrust forward) so ships actually
-   * close and fire, making weapon-cooldown stagger visible in the frames.
+   * Engine thrust is zero so the ship holds position and its beams bear
+   * consistently — the same convention as `powerStressedShip` above. The two
+   * ships start already inside each other's visual reception range (see the
+   * call sites), so they acquire a firing solution from the first ticks and the
+   * RNG-staggered weapon cooldown shows up in the frames immediately. A drifting
+   * fixture would instead spend the window manoeuvring (and, at the 1 m cell
+   * scale, a three-cell fixture has so little moment of inertia that an off-CoM
+   * engine torque spins it before it can settle on a heading), which is why this
+   * determinism fixture station-keeps rather than closing.
    */
   function plainModularShip(id: string, side: "attacker" | "defender", x: number): CombatShip {
     const weaponEffect = beam({ damage: 15, range: 350, cooldown: 8 });
     const modules: ResolvedModule[] = [
       moduleOf("p1", { kind: "power", output: 100 }, 0, 0, 50, 5, 0),
-      // facing: Math.PI = exhaust aft → thrust toward +x
-      moduleOf("e1", { kind: "engine", thrust: 0.8, facing: Math.PI }, 1, 0, 50, 5, 0),
+      // Engine thrust zero: the ship station-keeps so its beams bear steadily.
+      moduleOf("e1", { kind: "engine", thrust: 0, facing: Math.PI }, 1, 0, 50, 5, 0),
       // Weapon: no powerDraw so it's always charged; cooldown staggered by rng
       moduleOf("w1", weaponEffect, -1, 0, 50, 5, 0),
       // Phase 2: armour is a cell surface, not an equipment effect. The test
@@ -358,7 +365,7 @@ describe("engine.factions-tech – determinism (non-tech designs)", () => {
         shieldCapacity: 100,
         shieldRechargeRate: 2,
         shieldRechargeDelay: 10,
-        thrust: 0.8,
+        thrust: 0,
         turnRate: 0.15,
         weapons: [{ slotId: "w1", effect: weaponEffect }],
       }),
@@ -374,9 +381,11 @@ describe("engine.factions-tech – determinism (non-tech designs)", () => {
   }
 
   it("two identical runs with no tech modules produce byte-identical frames", () => {
+    // 120 m apart — inside the ~140 m visual reception radius, so the
+    // station-keeping ships hold a firing solution from the first ticks.
     const ships = [
       plainModularShip("a1", "attacker", 0),
-      plainModularShip("d1", "defender", 200),
+      plainModularShip("d1", "defender", 120),
     ];
     const run1 = runBattle(inputs(ships, 80, 42));
     const run2 = runBattle(inputs(ships, 80, 42));
@@ -386,9 +395,12 @@ describe("engine.factions-tech – determinism (non-tech designs)", () => {
   });
 
   it("a different seed produces different frames (weapon cooldown stagger differs)", () => {
+    // 120 m apart — inside the ~140 m visual reception radius, so both ships
+    // acquire a firing solution at once and the seed-dependent cooldown stagger
+    // diverges the frames within the first few ticks.
     const ships = [
       plainModularShip("a1", "attacker", 0),
-      plainModularShip("d1", "defender", 200),
+      plainModularShip("d1", "defender", 120),
     ];
     const run1 = runBattle(inputs(ships, 80, 42));
     const run2 = runBattle(inputs(ships, 80, 99));

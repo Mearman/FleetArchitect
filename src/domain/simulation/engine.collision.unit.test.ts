@@ -298,9 +298,12 @@ describe("engine.collision — ship-vs-ship", () => {
 
   it("friendlies are solid too (all-vs-all collision)", () => {
     // Two ships on the SAME side, started overlapping. They must be pushed
-    // apart by positional separation even though they are allies.
-    const a = rammer("a1", "attacker", { x: -2, y: 0 }, 0);
-    const b = rammer("a2", "attacker", { x: 2, y: 0 }, 0);
+    // apart by positional separation even though they are allies. Their centre
+    // cells start `START_GAP` apart — a third of the cell contact distance, so
+    // they overlap — and the separation must grow that gap.
+    const START_GAP = CELL_SIZE / 3;
+    const a = rammer("a1", "attacker", { x: -START_GAP / 2, y: 0 }, 0);
+    const b = rammer("a2", "attacker", { x: START_GAP / 2, y: 0 }, 0);
     // A lone enemy far away gives them something to target without
     // interfering.
     const enemy = rammer("d1", "defender", { x: 1000, y: 0 }, Math.PI);
@@ -310,8 +313,8 @@ describe("engine.collision — ship-vs-ship", () => {
     const sa = find(f1, "a1");
     const sb = find(f1, "a2");
     const gap = Math.hypot(sb.x - sa.x, sb.y - sa.y);
-    // They started 4 apart (overlapping); after one tick of separation the gap
-    // must have grown toward a non-overlapping distance.
-    expect(gap, "overlapping allies must be pushed apart").toBeGreaterThan(4);
+    // They started overlapping; after one tick of separation the gap must have
+    // grown toward a non-overlapping distance.
+    expect(gap, "overlapping allies must be pushed apart").toBeGreaterThan(START_GAP);
   });
 });

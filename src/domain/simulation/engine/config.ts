@@ -8,8 +8,9 @@
  *
  * ## Unit model and the "grounded constant" rule
  *
- * World coordinates are **metres**. Ship-interior cells are `CELL_SIZE = 12 m`
- * (`src/domain/grid.ts`). Every value below is one of:
+ * World coordinates are **metres**. Ship-interior cells are `CELL_SIZE` m
+ * (`src/domain/grid.ts`, the single metre-scale anchor, now 1 m per cell).
+ * Every value below is one of:
  *
  *  1. a **real physical constant** (`SPEED_OF_LIGHT_M_PER_S`, the gravitational
  *     constant G documented in the derivation comments);
@@ -35,6 +36,7 @@
  * lands and arena masses become kilograms.
  */
 
+import { CELL_SIZE } from "@/domain/grid";
 import { TICKS_PER_SECOND } from "@/domain/simulation/types";
 
 /**
@@ -188,30 +190,29 @@ export const SIM = {
    * Distance (metres) forward of a ship's centre where projectiles spawn.
    * Derived from the ship's hull geometry: a weapon fires from its muzzle,
    * which sits one cell outboard of the ship's leading edge so the round
-   * clears the hull before any collision test. At `CELL_SIZE = 12 m`, half a
-   * cell (`CELL_SIZE / 2 = 6 m`) is the muzzle clearance for a weapon on the
-   * forward centreline — authored catalogue content representing the physical
-   * muzzle-to-centre distance.
+   * clears the hull before any collision test. Half a cell (`CELL_SIZE / 2`)
+   * is the muzzle clearance for a weapon on the forward centreline — authored
+   * catalogue content representing the physical muzzle-to-centre distance, and
+   * it follows the cell scale automatically.
    *
    * Classification: derived-by-formula (`CELL_SIZE / 2`); the anchor is
    * authored catalogue content (muzzle-to-centre geometry).
    */
-  muzzleOffset: 6,
+  muzzleOffset: CELL_SIZE / 2,
   /**
    * Fallback engagement range (metres) for ships with no weapons: the distance
    * an unarmed ship holds from its target. Grounded (Phase 9) in the EM
    * reception model: an unarmed ship has no weapon reach to stand off by, so it
    * holds at the range its own baseline receiver can keep a continuous fix — the
    * innate visual radius `visualLosRadius` — extended by the half-cell muzzle
-   * clearance so it parks just outside contact. `visualLosRadius + muzzleOffset`
-   * recovers the historical ~146 m without an authored literal; the reach now
-   * derives from the same ambient-EM × noise-floor inverse-square the visual
-   * radius does.
+   * clearance (`CELL_SIZE / 2`) so it parks just outside contact. The reach is
+   * dominated by the EM-grounded visual radius and the muzzle term follows the
+   * cell scale; both derive from named anchors, with no authored literal.
    *
-   * Classification: derived-by-formula (`visualLosRadius + muzzleOffset`); the
+   * Classification: derived-by-formula (`visualLosRadius + CELL_SIZE / 2`); the
    * anchors are the EM-grounded visual radius and the authored muzzle clearance.
    */
-  defaultRange: VISUAL_LOS_RADIUS_M + 6,
+  defaultRange: VISUAL_LOS_RADIUS_M + CELL_SIZE / 2,
   /**
    * Fraction of its max weapon range a ship tries to keep from its target, per
    * range band. The fractions are a tactical doctrine (short / medium / long
@@ -587,16 +588,16 @@ export const SIM = {
    * Spacing (metres) between mines in a single mine-layer batch. Derived from
    * the mine's lethal radius: a mine's blast is effective out to roughly one
    * cell radius, so adjacent mines in a ring are placed one `CELL_SIZE` apart
-   * (`CELL_SIZE = 12 m`) — close enough that their lethal radii overlap into a
-   * continuous belt, far enough apart that one mine's trigger does not
-   * sympathetic-detonate its neighbour. Authored catalogue content
-   * representing the mine payload's lethal radius. No rng: each mine's offset
-   * is a pure function of its index within the batch.
+   * — close enough that their lethal radii overlap into a continuous belt, far
+   * enough apart that one mine's trigger does not sympathetic-detonate its
+   * neighbour. Authored catalogue content representing the mine payload's
+   * lethal radius. No rng: each mine's offset is a pure function of its index
+   * within the batch.
    *
    * Classification: derived-by-formula (`CELL_SIZE`); the anchor (mine lethal
    * radius ≈ one cell) is authored catalogue content.
    */
-  mineRingSpacing: 12,
+  mineRingSpacing: CELL_SIZE,
   /**
    * Speed (metres per tick) of a boarding pod in flight toward its target.
    * A pod is a small assault craft; its speed is the catalogue figure for a
@@ -612,24 +613,24 @@ export const SIM = {
   /**
    * Collision radius (metres) of a launched drone — a small, fighter-sized
    * craft. Derived from the drone's payload size: a drone carries a weapon
-   * and minimal propulsion, fitting within roughly one cell's footprint
-   * (`CELL_SIZE = 12 m`), so `CELL_SIZE * 0.75 = 9 m` is its collision disc.
-   * Authored catalogue content representing the drone's physical size.
+   * and minimal propulsion, fitting within roughly one cell's footprint, so
+   * `CELL_SIZE * 0.75` is its collision disc. Authored catalogue content
+   * representing the drone's physical size.
    *
    * Classification: derived-by-formula (`CELL_SIZE * 0.75`); the anchor
    * (drone ≈ one cell footprint) is authored catalogue content.
    */
-  droneRadius: 9,
+  droneRadius: CELL_SIZE * 0.75,
   /**
    * Collision radius (metres) of a decoy — a plausible ship-sized contact. A
    * decoy mimics a real ship's radar cross-section, so its effective radius is
-   * that of a small frigate: `CELL_SIZE * 4/3 = 16 m`. Authored catalogue
-   * content representing the decoy's imitated signature size.
+   * that of a small frigate: `CELL_SIZE * 4 / 3`. Authored catalogue content
+   * representing the decoy's imitated signature size.
    *
-   * Classification: derived-by-formula (`CELL_SIZE * 4/3`); the anchor
+   * Classification: derived-by-formula (`CELL_SIZE * 4 / 3`); the anchor
    * (decoy ≈ small-frigate signature) is authored catalogue content.
    */
-  decoyRadius: 16,
+  decoyRadius: (CELL_SIZE * 4) / 3,
   /**
    * Lifetime (ticks) for a drone whose hangar sets no explicit lifetime. A
    * drone carries propellant and power for a finite endurance; the default is
@@ -667,9 +668,14 @@ export const SIM = {
     /**
      * Blast radius (world units) within which an exploding module damages its
      * neighbours. Damage falls off linearly from the full yield at the blast
-     * centre to zero at this radius.
+     * centre to zero at this radius. Two cells across (`CELL_SIZE * 2`), so a
+     * module's blast reaches its immediate neighbours with the linear falloff
+     * and fades out one cell beyond — geometry that follows the cell scale.
+     *
+     * Classification: derived-by-formula (`CELL_SIZE * 2`); the anchor (a blast
+     * reaching the adjacent ring of cells) is authored catalogue content.
      */
-    radius: 24,
+    radius: CELL_SIZE * 2,
   },
   /**
    * Kinetic ship-ship collision damage (realism overhaul, Phase 4). The

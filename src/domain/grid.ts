@@ -9,31 +9,50 @@ import type { Vec2 } from "@/schema/primitives";
  */
 
 /**
- * World size of one grid cell, in metres. Each cell is 12 m across. Chosen so
- * a hand-laid grid of a few cells spans roughly the same footprint the old
- * hand-placed slot positions did (the old fighter sat within about ±14 m, a
- * frigate ±28 m), keeping firing ranges, speeds, and collision radii in the
- * same regime as the pre-grid catalog without needing to re-tune the engine
- * constants. Consistent with `src/domain/simulation/engine/config.ts`, which
- * declares world coordinates are metres and cites `CELL_SIZE = 12 m`.
+ * Metres spanned by one ship-interior grid cell. The single anchor for the
+ * battle's metre scale: a cell is a 1 m square of ship interior, so a ship's
+ * physical length in metres equals its occupied-cell span. Every world-space
+ * quantity that scales with cell size — `cellToLocal`, `deriveRadius`, the
+ * collision/muzzle/mine geometry in the engine, and the per-cell areal masses
+ * in the catalogue — derives from this one value, so re-anchoring the scale is
+ * a single-line change here.
  */
-export const CELL_SIZE = 12;
+export const METRES_PER_CELL = 1;
 
-/** Cell-count tiers for the derived size classification. A cell count at or
- *  below a tier's bound classifies as that tier. Named so the thresholds are
- *  self-documenting rather than magic numbers. */
-export const CLASSIFICATION_MAX_CELLS: {
+/**
+ * World size of one grid cell, in metres. Defined as {@link METRES_PER_CELL}
+ * so the metre scale has exactly one source of truth: cell-relative geometry
+ * everywhere multiplies by `CELL_SIZE`, and the catalogue's per-cell mass
+ * derives its cell area from it too. Each cell is now 1 m across (interiors are
+ * authored at 1 m resolution), so a ship's footprint in cells reads directly as
+ * its size in metres.
+ */
+export const CELL_SIZE = METRES_PER_CELL;
+
+/**
+ * Spec anchors: the canonical physical length (metres) of each ship class,
+ * used by the rescale to re-author hull grids so a built ship's occupied-cell
+ * span matches its real-world size. These classify intent — a fighter is a
+ * ~20 m strike craft, a frigate ~60 m, a cruiser ~150 m — and are consumed by
+ * the grid-authoring and stats layers, not by the engine directly.
+ */
+export const SHIP_LENGTH_METRES: {
   fighter: number;
   frigate: number;
   cruiser: number;
 } = {
-  /** Up to this many occupied cells is a fighter. */
-  fighter: 16,
-  /** Up to this many is a frigate. */
-  frigate: 45,
-  /** Up to this many is a cruiser; anything larger is a dreadnought. */
-  cruiser: 100,
+  fighter: 20,
+  frigate: 60,
+  cruiser: 150,
 };
+
+/**
+ * Spec anchor: the maximum physical length (metres) of a dreadnought-class
+ * hull. The largest ship the rescale targets; grids larger than the cruiser
+ * tier classify as dreadnoughts and are authored up to this bound.
+ */
+export const DREADNOUGHT_MAX_LENGTH_M = 300;
+
 
 /** Index into the flat row-major `cells` array for a (col, row) coordinate. */
 export function cellIndex(col: number, row: number, grid: TileGrid): number {
@@ -153,12 +172,27 @@ export function centroid(
   return { x: mx / massSum, y: my / massSum };
 }
 
-/** Derived size tier from the occupied-cell count. */
+/**
+ * Derived size tier from the hull's bounding-box length in metres. The longest
+ * axis of the occupied-cell bounding box (width or height) multiplied by
+ * `CELL_SIZE` gives the physical length. Thresholds are taken from
+ * {@link SHIP_LENGTH_METRES} and {@link DREADNOUGHT_MAX_LENGTH_M}:
+ * - ≤ fighter threshold → "fighter"
+ * - ≤ frigate threshold → "frigate"
+ * - ≤ cruiser threshold → "cruiser"
+ * - anything longer    → "dreadnought"
+ *
+ * An empty grid (no occupied cells) classifies as "fighter" by convention.
+ */
 export function deriveClassification(grid: TileGrid): ShipClassification {
-  const count = occupiedCount(grid);
-  if (count <= CLASSIFICATION_MAX_CELLS.fighter) return "fighter";
-  if (count <= CLASSIFICATION_MAX_CELLS.frigate) return "frigate";
-  if (count <= CLASSIFICATION_MAX_CELLS.cruiser) return "cruiser";
+  const b = bounds(grid);
+  if (b === undefined) return "fighter";
+  const widthM = (b.maxCol - b.minCol + 1) * CELL_SIZE;
+  const heightM = (b.maxRow - b.minRow + 1) * CELL_SIZE;
+  const lengthM = Math.max(widthM, heightM);
+  if (lengthM <= SHIP_LENGTH_METRES.fighter) return "fighter";
+  if (lengthM <= SHIP_LENGTH_METRES.frigate) return "frigate";
+  if (lengthM <= SHIP_LENGTH_METRES.cruiser) return "cruiser";
   return "dreadnought";
 }
 

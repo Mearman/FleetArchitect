@@ -135,7 +135,7 @@ function findModule(ship: SimShip, slotId: string) {
 describe("engine.damage — explosive chain reactions", () => {
   it("a destroyed reactor's blast damages adjacent cells", () => {
     // A central reactor with a high output (big blast) flanked by two ordinary
-    // cells one grid step away (well inside the 24-unit blast radius).
+    // cells one grid step away (one cell in from the CELL_SIZE*2 blast radius).
     const ship = buildSim("s1", [
       moduleOf("p1", { kind: "power", output: 200_000 }, 0, 0, 50, 5, true),
       moduleOf("n1", { kind: "hull" }, 1, 0, 1000),
@@ -152,8 +152,9 @@ describe("engine.damage — explosive chain reactions", () => {
 
     resolveChainReactions(ship);
 
-    // 200_000 * 0.001 = 200 J yield; at one cell (12 units) inside radius 24 the
-    // linear falloff is 1 - 12/24 = 0.5, so each neighbour takes 100 damage.
+    // 200_000 * 0.001 = 200 J yield; at one cell (CELL_SIZE units) inside radius
+    // CELL_SIZE*2 the linear falloff is 1 - 1/2 = 0.5, so each neighbour takes
+    // 100 damage.
     expect(reactor.exploded).toBe(true);
     expect(n1.hp).toBeLessThan(hpBefore);
     expect(n2.hp).toBeLessThan(hpBefore);
@@ -189,8 +190,9 @@ describe("engine.damage — explosive chain reactions", () => {
     const ship = buildSim("s3", [
       moduleOf("m1", { kind: "magazine", ammoStored: 10 }, 0, 0, 50, 5, true),
       moduleOf("m2", { kind: "magazine", ammoStored: 10 }, 1, 0, 20),
-      // One cell beyond m2 (two cells from m1, distance 24 = the blast radius,
-      // so m1's blast alone cannot reach it — only m2's chained blast can).
+      // One cell beyond m2 (two cells from m1, distance CELL_SIZE*2 = the blast
+      // radius, so m1's blast alone cannot reach it — only m2's chained blast
+      // can).
       moduleOf("n1", { kind: "hull" }, 2, 0, 500),
     ]);
     const m1 = findModule(ship, "m1");
