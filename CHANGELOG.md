@@ -1,3 +1,17 @@
+# [1.5.0](https://github.com/Mearman/FleetArchitect/compare/v1.4.0...v1.5.0) (2026-06-20)
+
+
+### Features
+
+* **a11y:** aria-labels, heading hierarchy, loading role=status, canvas label ([219e736](https://github.com/Mearman/FleetArchitect/commit/219e736b7b56c163cd16672ea7d0dddbe6d5ad0d))
+* **a11y:** error boundary — class ErrorBoundary + react-router errorElement ([31cbbf8](https://github.com/Mearman/FleetArchitect/commit/31cbbf8e4eb51846fdcc4c0834caa8ac00bceb11))
+* **a11y:** focus ring on grid cells, edge indicators as keyboard-accessible buttons ([1bc903a](https://github.com/Mearman/FleetArchitect/commit/1bc903adb412ffb565befdbebb9613bfdd2b8157))
+* **battle:** replay UX improvements and canvas responsiveness ([f02437e](https://github.com/Mearman/FleetArchitect/commit/f02437eb9325888acc631d2686734ff558b6139c))
+* **designer:** drag-to-paint, responsive layout, Tooltip palette, preset CTA ([c41f1c3](https://github.com/Mearman/FleetArchitect/commit/c41f1c3defd066b81450221a0ee000d09951015b))
+* **fleet-builder:** improve Fleet Builder UX ([f7d52c4](https://github.com/Mearman/FleetArchitect/commit/f7d52c474e0087efc2244485463fc587eab17d81))
+* **layout:** full-bleed canvas, Container per route, PlaybackControls wrap ([861b0e1](https://github.com/Mearman/FleetArchitect/commit/861b0e13276376266ef98fe015a9a91e01c9dbc9))
+* **nav:** active NavLink state, aria-current, mobile Burger + Drawer ([7fa0146](https://github.com/Mearman/FleetArchitect/commit/7fa0146af1193995f54ff610f6cd09fe0561eb97))
+
 # [1.4.0](https://github.com/Mearman/FleetArchitect/compare/v1.3.1...v1.4.0) (2026-06-20)
 
 
