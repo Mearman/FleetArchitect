@@ -36,8 +36,17 @@ import { getMeta, setMeta, storage } from "@/storage/db";
  * cell), not on a hull-effect gate. Designs saved under the previous cell
  * model are not migrated — this bump reseeds the preset set so the new
  * bundled designs replace any prior-version copies.
+ *
+ * Version 8: SI catalogue + balanced preset drives (Phase 14). The catalogue
+ * is re-authored in real SI units — masses in kilograms (derived from
+ * material density x volume), engine thrust in Newtons (massFlow x
+ * exhaustVelocity), per-cell layer masses as areal density x cell area.
+ * Preset ships are re-gridded with balanced drive sets (aft prograde + fore
+ * retrograde + lateral RCS translation) so they can close, brake at weapon
+ * range, and station-keep without flipping. Old stores hold the prior
+ * arbitrary-unit values; this bump reseeds.
  */
-const PRESETS_VERSION = 7;
+const PRESETS_VERSION = 8;
 const VERSION_KEY = "presetsVersion";
 
 /**

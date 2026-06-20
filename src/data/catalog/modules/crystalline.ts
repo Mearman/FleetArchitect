@@ -1,4 +1,8 @@
 import type { ModuleDefinition } from "@/schema/module";
+import {
+  driveThrustNewtons,
+  moduleMass,
+} from "../physics";
 
   // Crystalline Concord modules — energy beings in grown-crystal hulls. They
   // fight at range with hitscan beams that punch shields, behind the strongest
@@ -7,7 +11,11 @@ import type { ModuleDefinition } from "@/schema/module";
   // (lowest structure), power-hungry everything, eye-watering cost, and sluggish
   // conventional engines. Counters: heavy armour-piercing alpha (Foundry) cracks
   // their thin hull under the shields; sensor nets deny the cloak.
+  //
+  // Masses are in kilograms (see `../physics.ts`); thrust in Newtons.
   // ---------------------------------------------------------------------------
+
+const crystalThrustN = driveThrustNewtons("crystal");
 
 export const crystallineModules: ModuleDefinition[] = [
   // --- Weapons (hitscan beams, high shield-pierce, low armour-pierce) ---
@@ -17,7 +25,7 @@ export const crystallineModules: ModuleDefinition[] = [
     name: "Prism Beam",
     description: "Coherent light beam split through a focusing crystal. Long range, fast refire, chews through shields.",
     category: "weapon",
-    mass: 5,
+    mass: moduleMass("lightWeapon"),
     cost: 55,
     powerDraw: 9,
     crewRequired: 1,
@@ -41,7 +49,7 @@ export const crystallineModules: ModuleDefinition[] = [
     name: "Phase Lance",
     description: "Sustained resonant beam. Excellent range and shield penetration, mediocre against bare armour.",
     category: "weapon",
-    mass: 9,
+    mass: moduleMass("mediumWeapon"),
     cost: 120,
     powerDraw: 16,
     crewRequired: 2,
@@ -65,7 +73,7 @@ export const crystallineModules: ModuleDefinition[] = [
     name: "Spinal Resonance Lance",
     description: "A fixed-forward capital weapon: the entire prow is a focusing array. Devastating shield-bypassing damage on a long cooldown, but it only fires dead ahead.",
     category: "weapon",
-    mass: 22,
+    mass: moduleMass("heavyWeapon"),
     cost: 240,
     powerDraw: 30,
     crewRequired: 3,
@@ -92,7 +100,7 @@ export const crystallineModules: ModuleDefinition[] = [
     name: "Resonance Cannon",
     description: "Lobbed shard of coherent energy. A projectile option for when a beam's line of sight is unwanted; unlimited ammunition.",
     category: "weapon",
-    mass: 7,
+    mass: moduleMass("lightWeapon"),
     cost: 70,
     powerDraw: 10,
     crewRequired: 1,
@@ -117,7 +125,7 @@ export const crystallineModules: ModuleDefinition[] = [
     name: "Adaptive Bulwark Mk I",
     description: "A shield whose recharge ramps up the longer it goes untouched, recovering from a salvo far faster than a conventional deflector.",
     category: "defence",
-    mass: 6,
+    mass: moduleMass("shield"),
     cost: 90,
     powerDraw: 9,
     crewRequired: 1,
@@ -136,7 +144,7 @@ export const crystallineModules: ModuleDefinition[] = [
     name: "Adaptive Bulwark Mk II",
     description: "Capital adaptive shield: huge capacity and a steep recovery ramp, the Concord's defining protection.",
     category: "defence",
-    mass: 12,
+    mass: moduleMass("shield"),
     cost: 200,
     powerDraw: 18,
     crewRequired: 2,
@@ -155,12 +163,12 @@ export const crystallineModules: ModuleDefinition[] = [
     name: "Resonance Thruster",
     description: "A ponderous photon drive. Adequate, but the Concord repositions by blinking rather than thrusting.",
     category: "propulsion",
-    mass: 5,
+    mass: moduleMass("engine"),
     cost: 40,
     powerDraw: 5,
     crewRequired: 0,
     techLevel: 1,
-    effect: { kind: "engine", thrust: 0.35 },
+    effect: { kind: "engine", thrust: crystalThrustN },
   },
   {
     id: "cry-blink-drive",
@@ -168,7 +176,7 @@ export const crystallineModules: ModuleDefinition[] = [
     name: "Phase Blink Drive",
     description: "Folds the ship a short distance toward its target (or away when retreating). The Concord's signature mobility, far outclassing its thrusters.",
     category: "propulsion",
-    mass: 8,
+    mass: moduleMass("engine"),
     cost: 130,
     powerDraw: 12,
     crewRequired: 1,
@@ -187,7 +195,7 @@ export const crystallineModules: ModuleDefinition[] = [
     name: "Power Crystal",
     description: "A grown energy core. High output for its size to feed the Concord's power-hungry beams and shields; serves as the command node.",
     category: "system",
-    mass: 10,
+    mass: moduleMass("reactor"),
     cost: 100,
     powerDraw: 0,
     crewRequired: 1,
@@ -201,7 +209,7 @@ export const crystallineModules: ModuleDefinition[] = [
     name: "Quantum Lattice Core",
     description: "A capital resonance reactor. Enormous output to drive spinal lances and full adaptive-shield arrays.",
     category: "system",
-    mass: 18,
+    mass: moduleMass("reactorCompact"),
     cost: 230,
     powerDraw: 0,
     crewRequired: 2,
@@ -215,7 +223,7 @@ export const crystallineModules: ModuleDefinition[] = [
     name: "Resonator Core",
     description: "Sparse crew housing — the Concord need few minds aboard, but some are required to tend the focusing arrays.",
     category: "crew",
-    mass: 5,
+    mass: moduleMass("crew"),
     cost: 35,
     powerDraw: 2,
     crewRequired: 0,
@@ -228,7 +236,7 @@ export const crystallineModules: ModuleDefinition[] = [
     name: "Resonance Overcharger",
     description: "Briefly surges the ship's power ceiling, keeping arrays online through a brownout at the cost of a recharge gap.",
     category: "system",
-    mass: 6,
+    mass: moduleMass("shield"),
     cost: 80,
     powerDraw: 0,
     crewRequired: 1,
@@ -247,7 +255,7 @@ export const crystallineModules: ModuleDefinition[] = [
     name: "Phase Cloak",
     description: "Shifts the crystal hull out of phase so enemies cannot acquire it — until it fires. Pairs with the blink drive for hit-and-run strikes.",
     category: "system",
-    mass: 7,
+    mass: moduleMass("shield"),
     cost: 110,
     powerDraw: 10,
     crewRequired: 1,
@@ -263,7 +271,7 @@ export const crystallineModules: ModuleDefinition[] = [
     name: "Signature Damper",
     description: "Always-on field that shrinks the range at which enemies can detect the ship, complementing the phase-cloak.",
     category: "system",
-    mass: 4,
+    mass: moduleMass("sensor"),
     cost: 60,
     powerDraw: 4,
     crewRequired: 0,

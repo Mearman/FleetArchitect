@@ -29,11 +29,11 @@ export const fleetData: FleetInput[] = [
     // A defensive capital line: twin battleships anchor a wall of shield
     // brawlers, holding at long range and focusing the strongest threat.
     ships: [
-      { designId: "preset-ship-leviathan", position: { x: -300, y: -70 }, facing: 0, orders: lineOrders },
-      { designId: "preset-ship-leviathan", position: { x: -300, y: 70 }, facing: 0, orders: lineOrders },
-      { designId: "preset-ship-bulwark", position: { x: -350, y: -180 }, facing: 0, orders: lineOrders },
-      { designId: "preset-ship-bulwark", position: { x: -350, y: 0 }, facing: 0, orders: lineOrders },
-      { designId: "preset-ship-bulwark", position: { x: -350, y: 180 }, facing: 0, orders: lineOrders },
+      { designId: "preset-ship-leviathan", position: { x: -200, y: -70 }, facing: 0, orders: lineOrders },
+      { designId: "preset-ship-leviathan", position: { x: -200, y: 70 }, facing: 0, orders: lineOrders },
+      { designId: "preset-ship-bulwark", position: { x: -240, y: -180 }, facing: 0, orders: lineOrders },
+      { designId: "preset-ship-bulwark", position: { x: -240, y: 0 }, facing: 0, orders: lineOrders },
+      { designId: "preset-ship-bulwark", position: { x: -240, y: 180 }, facing: 0, orders: lineOrders },
     ],
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -45,13 +45,13 @@ export const fleetData: FleetInput[] = [
     // A balanced mixed-arms wing: paired gunships and torpedo boats for weight,
     // a screen of fast fighters to flank.
     ships: [
-      { designId: "preset-ship-gunship", position: { x: -300, y: -90 }, facing: 0, orders: strikeOrders },
-      { designId: "preset-ship-gunship", position: { x: -300, y: 90 }, facing: 0, orders: strikeOrders },
-      { designId: "preset-ship-torpedo", position: { x: -320, y: 0 }, facing: 0, orders: strikeOrders },
-      { designId: "preset-ship-wasp", position: { x: -360, y: -170 }, facing: 0, orders: strikeOrders },
-      { designId: "preset-ship-wasp", position: { x: -360, y: 170 }, facing: 0, orders: strikeOrders },
-      { designId: "preset-ship-sabre", position: { x: -380, y: -60 }, facing: 0, orders: strikeOrders },
-      { designId: "preset-ship-sabre", position: { x: -380, y: 60 }, facing: 0, orders: strikeOrders },
+      { designId: "preset-ship-gunship", position: { x: -120, y: -90 }, facing: 0, orders: strikeOrders },
+      { designId: "preset-ship-gunship", position: { x: -120, y: 90 }, facing: 0, orders: strikeOrders },
+      { designId: "preset-ship-torpedo", position: { x: -140, y: 0 }, facing: 0, orders: strikeOrders },
+      { designId: "preset-ship-wasp", position: { x: -160, y: -170 }, facing: 0, orders: strikeOrders },
+      { designId: "preset-ship-wasp", position: { x: -160, y: 170 }, facing: 0, orders: strikeOrders },
+      { designId: "preset-ship-sabre", position: { x: -180, y: -60 }, facing: 0, orders: strikeOrders },
+      { designId: "preset-ship-sabre", position: { x: -180, y: 60 }, facing: 0, orders: strikeOrders },
     ],
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -64,10 +64,10 @@ export const fleetData: FleetInput[] = [
     // armour brawlers and a gunship, all driving to medium range and focusing
     // fire on the strongest target.
     ships: [
-      { designId: "preset-ship-titan", position: { x: -260, y: 0 }, facing: 0, orders: spearheadOrders },
-      { designId: "preset-ship-aegis", position: { x: -360, y: -150 }, facing: 0, orders: spearheadOrders },
-      { designId: "preset-ship-aegis", position: { x: -360, y: 150 }, facing: 0, orders: spearheadOrders },
-      { designId: "preset-ship-gunship", position: { x: -400, y: 0 }, facing: 0, orders: spearheadOrders },
+      { designId: "preset-ship-titan", position: { x: -220, y: 0 }, facing: 0, orders: spearheadOrders },
+      { designId: "preset-ship-aegis", position: { x: -280, y: -150 }, facing: 0, orders: spearheadOrders },
+      { designId: "preset-ship-aegis", position: { x: -280, y: 150 }, facing: 0, orders: spearheadOrders },
+      { designId: "preset-ship-gunship", position: { x: -320, y: 0 }, facing: 0, orders: spearheadOrders },
     ],
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -79,14 +79,14 @@ export const fleetData: FleetInput[] = [
     // A cheap fast screen: a large cloud of interceptors and skirmishers that
     // swarms and harasses, picking off the weakest targets.
     ships: [
-      { designId: "preset-ship-wasp", position: { x: -340, y: -180 }, facing: 0, orders: skirmishOrders },
-      { designId: "preset-ship-wasp", position: { x: -340, y: -90 }, facing: 0, orders: skirmishOrders },
-      { designId: "preset-ship-wasp", position: { x: -340, y: 90 }, facing: 0, orders: skirmishOrders },
-      { designId: "preset-ship-wasp", position: { x: -340, y: 180 }, facing: 0, orders: skirmishOrders },
-      { designId: "preset-ship-sabre", position: { x: -380, y: -135 }, facing: 0, orders: skirmishOrders },
-      { designId: "preset-ship-sabre", position: { x: -380, y: -45 }, facing: 0, orders: skirmishOrders },
-      { designId: "preset-ship-sabre", position: { x: -380, y: 45 }, facing: 0, orders: skirmishOrders },
-      { designId: "preset-ship-sabre", position: { x: -380, y: 135 }, facing: 0, orders: skirmishOrders },
+      { designId: "preset-ship-wasp", position: { x: -140, y: -180 }, facing: 0, orders: skirmishOrders },
+      { designId: "preset-ship-wasp", position: { x: -140, y: -90 }, facing: 0, orders: skirmishOrders },
+      { designId: "preset-ship-wasp", position: { x: -140, y: 90 }, facing: 0, orders: skirmishOrders },
+      { designId: "preset-ship-wasp", position: { x: -140, y: 180 }, facing: 0, orders: skirmishOrders },
+      { designId: "preset-ship-sabre", position: { x: -180, y: -135 }, facing: 0, orders: skirmishOrders },
+      { designId: "preset-ship-sabre", position: { x: -180, y: -45 }, facing: 0, orders: skirmishOrders },
+      { designId: "preset-ship-sabre", position: { x: -180, y: 45 }, facing: 0, orders: skirmishOrders },
+      { designId: "preset-ship-sabre", position: { x: -180, y: 135 }, facing: 0, orders: skirmishOrders },
     ],
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,

@@ -1,18 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { computeOutline, extractShell } from "./outline";
-import type { TileGrid } from "@/schema/grid";
+import type { CellEdges, GridCell, TileGrid } from "@/schema/grid";
 
-const OPEN = { n: "open", e: "open", s: "open", w: "open", doorStates: {} };
+const OPEN: CellEdges = { n: "open", e: "open", s: "open", w: "open", doorStates: {} };
 
 /** Build a grid from an ASCII map of surface letters: '.' = empty, 'a' = armor,
  *  'd' = deck, 'b' = bare. */
-function gridFrom(rows: string[]): TileGrid {
-  const cols = rows[0].length;
-  const cells = [];
+function gridFrom(rows: readonly string[]): TileGrid {
+  const firstRow = rows[0];
+  if (firstRow === undefined) throw new Error("grid has no rows");
+  const cols = firstRow.length;
+  const cells: GridCell[] = [];
   for (const row of rows) {
     for (const ch of row) {
-      if (ch === ".") cells.push({ kind: "empty" });
-      else cells.push({ kind: "solid", scaffold: true, surface: ch === "a" ? "armor" : ch === "d" ? "deck" : "bare", edges: OPEN });
+      if (ch === ".") {
+        cells.push({ kind: "empty" });
+      } else {
+        const surface = ch === "a" ? "armor" : ch === "d" ? "deck" : "bare";
+        cells.push({ kind: "solid", scaffold: true, surface, edges: OPEN });
+      }
     }
   }
   return { cols, rows: rows.length, cells, connections: [], shape: { outlineMode: "hexadecilinear" } };
@@ -35,7 +41,9 @@ describe("outline.extractShell (layered)", () => {
     const shell = extractShell(g);
     const loops = computeOutline(shell, { outlineMode: "octilinear" });
     expect(loops.length).toBeGreaterThanOrEqual(1);
-    expect(loops[0].length).toBeGreaterThanOrEqual(4); // a closed polygon
+    const firstLoop = loops[0];
+    expect(firstLoop, "at least one outline loop is produced").toBeDefined();
+    expect(firstLoop!.length).toBeGreaterThanOrEqual(4); // a closed polygon
   });
 
   it("is deterministic", () => {

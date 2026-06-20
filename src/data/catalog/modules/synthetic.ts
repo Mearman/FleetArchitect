@@ -1,4 +1,8 @@
 import type { ModuleDefinition } from "@/schema/module";
+import {
+  driveThrustNewtons,
+  moduleMass,
+} from "../physics";
 
   // ---------------------------------------------------------------------------
   // Synthetic Collective modules — machine intelligences in precision-machined
@@ -12,7 +16,11 @@ import type { ModuleDefinition } from "@/schema/module";
   // struggle in a sustained brawl against heavy armour or long-range beams.
   // Counters: Foundry siege plasma overwhelms their modest shields; Crystalline
   // beams outrange and out-pierce their cannons.
+  //
+  // Masses are in kilograms (see `../physics.ts`); thrust in Newtons.
   // ---------------------------------------------------------------------------
+
+const precisionThrustN = driveThrustNewtons("precision");
 
 export const syntheticModules: ModuleDefinition[] = [
   // --- Weapons: accurate cannons and a heavy railgun ---
@@ -22,7 +30,7 @@ export const syntheticModules: ModuleDefinition[] = [
     name: "Targeting Cannon",
     description: "A computer-aimed cannon with tight spread and high tracking. Low per-hit damage but it lands almost every shot.",
     category: "weapon",
-    mass: 7,
+    mass: moduleMass("lightWeapon"),
     cost: 60,
     powerDraw: 5,
     crewRequired: 0,
@@ -47,7 +55,7 @@ export const syntheticModules: ModuleDefinition[] = [
     name: "Coilgun",
     description: "A magnetically accelerated slug with superb accuracy and armour-penetration on a traversing mount. The Collective's heavy punch.",
     category: "weapon",
-    mass: 14,
+    mass: moduleMass("mediumWeapon"),
     cost: 130,
     powerDraw: 12,
     crewRequired: 0,
@@ -74,7 +82,7 @@ export const syntheticModules: ModuleDefinition[] = [
     name: "Cutter Lance",
     description: "A short-range sustained beam for stripping shields and drones at close quarters. Accurate, unlimited ammunition, modest damage.",
     category: "weapon",
-    mass: 6,
+    mass: moduleMass("lightWeapon"),
     cost: 65,
     powerDraw: 8,
     crewRequired: 0,
@@ -99,7 +107,7 @@ export const syntheticModules: ModuleDefinition[] = [
     name: "Interceptor Array",
     description: "A dense, accurate point-defence network that shreds incoming missiles, torpedoes and boarding pods. The Collective's defining screen.",
     category: "defence",
-    mass: 7,
+    mass: moduleMass("pointDefense"),
     cost: 95,
     powerDraw: 6,
     crewRequired: 0,
@@ -120,7 +128,7 @@ export const syntheticModules: ModuleDefinition[] = [
     name: "Grid Shield",
     description: "A moderate regenerating shield. Not the Collective's strength, but enough to buy the point-defence net time to work.",
     category: "defence",
-    mass: 7,
+    mass: moduleMass("shield"),
     cost: 75,
     powerDraw: 7,
     crewRequired: 0,
@@ -138,12 +146,12 @@ export const syntheticModules: ModuleDefinition[] = [
     name: "Ion Thruster",
     description: "A clean, efficient drive. Unremarkable thrust and turn — the Collective meets its foes rather than chasing them.",
     category: "propulsion",
-    mass: 5,
+    mass: moduleMass("engine"),
     cost: 38,
     powerDraw: 4,
     crewRequired: 0,
     techLevel: 1,
-    effect: { kind: "engine", thrust: 0.55 },
+    effect: { kind: "engine", thrust: precisionThrustN },
   },
   // --- System: high-output processors (command), minimal crew, magazine ---
   {
@@ -152,7 +160,7 @@ export const syntheticModules: ModuleDefinition[] = [
     name: "Command Processor",
     description: "The ship's AI core and power plant in one. High output and no crew needed to run it — the command node of a hardwired hull.",
     category: "system",
-    mass: 11,
+    mass: moduleMass("reactor"),
     cost: 95,
     powerDraw: 0,
     crewRequired: 0,
@@ -166,7 +174,7 @@ export const syntheticModules: ModuleDefinition[] = [
     name: "Quantum Core",
     description: "A capital AI core. Vast output to run interceptor arrays and coilguns across a dreadnought with no crew.",
     category: "system",
-    mass: 19,
+    mass: moduleMass("reactorCompact"),
     cost: 210,
     powerDraw: 0,
     crewRequired: 0,
@@ -180,7 +188,7 @@ export const syntheticModules: ModuleDefinition[] = [
     name: "Maintenance Node",
     description: "Spare berths for the few organic or drone technicians a hardwired hull still needs for physical repairs.",
     category: "crew",
-    mass: 4,
+    mass: moduleMass("crew"),
     cost: 25,
     powerDraw: 2,
     crewRequired: 0,
@@ -193,7 +201,7 @@ export const syntheticModules: ModuleDefinition[] = [
     name: "Slug Reservoir",
     description: "Stores coilgun and cannon munitions, fed to the guns over the hardwired link.",
     category: "system",
-    mass: 8,
+    mass: moduleMass("magazine"),
     cost: 50,
     powerDraw: 0,
     crewRequired: 0,
@@ -207,7 +215,7 @@ export const syntheticModules: ModuleDefinition[] = [
     name: "Active Sensor Array",
     description: "Extends the ship's detection range and actively pierces cloak — the Collective's answer to stealth raiders, revealing what others cannot see.",
     category: "system",
-    mass: 6,
+    mass: moduleMass("sensor"),
     cost: 90,
     powerDraw: 6,
     crewRequired: 0,
@@ -228,7 +236,7 @@ export const syntheticModules: ModuleDefinition[] = [
     name: "ECCM Suite",
     description: "Restores tracking and lock stripped by enemy jamming. The Collective's networks cut through a Reaver scrambler.",
     category: "system",
-    mass: 5,
+    mass: moduleMass("sensor"),
     cost: 75,
     powerDraw: 5,
     crewRequired: 0,
@@ -244,7 +252,7 @@ export const syntheticModules: ModuleDefinition[] = [
     name: "Coordination Node",
     description: "Shares targeting solutions with nearby allies, extending their range and accuracy. A coordinator flagship turns a fleet into a single weapon.",
     category: "system",
-    mass: 8,
+    mass: moduleMass("shield"),
     cost: 110,
     powerDraw: 8,
     crewRequired: 0,
@@ -262,7 +270,7 @@ export const syntheticModules: ModuleDefinition[] = [
     name: "Drone Hangar",
     description: "Builds and launches autonomous combat drones that swarm the nearest enemy. The Collective's signature — a carrier that fights with a cloud of disposable craft.",
     category: "weapon",
-    mass: 14,
+    mass: moduleMass("heavyWeapon"),
     cost: 150,
     powerDraw: 10,
     crewRequired: 0,
@@ -283,7 +291,7 @@ export const syntheticModules: ModuleDefinition[] = [
     name: "Decoy Launcher",
     description: "Emits false contacts that draw enemy fire away from the fleet's real ships, then expire. Pairs with the interceptor array to exhaust an attacker's volley.",
     category: "defence",
-    mass: 7,
+    mass: moduleMass("pointDefense"),
     cost: 90,
     powerDraw: 6,
     crewRequired: 0,

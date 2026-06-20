@@ -109,10 +109,13 @@ function runEngagement(seed: number) {
   const design = corvette(createId("design"));
   const designs = new Map([[design.id, design]]);
   // Both fleets are authored in attacker coordinates (left side, facing right);
-  // resolve mirrors the defender to the right side. So both sit at x=-400 here
-  // and end up at -400 (attacker) and +400 (defender) — a 800-unit gap.
-  const attacker = fleetOf(createId("fleet"), design.id, -400, [-40, 40]);
-  const defender = fleetOf(createId("fleet"), design.id, -400, [-40, 40]);
+  // resolve mirrors the defender to the right side. So both sit at x=-250 here
+  // and end up at -250 (attacker) and +250 (defender) — a 500m gap. Brought in
+  // from -400 (800m) in Phase 14: the SI-mass corvette (kilotonne range with
+  // real-kg module masses) accelerates at ~0.1 m/tick², so a shorter start gap
+  // keeps the closure within the probe window.
+  const attacker = fleetOf(createId("fleet"), design.id, -250, [-40, 40]);
+  const defender = fleetOf(createId("fleet"), design.id, -250, [-40, 40]);
   const ships = [
     ...resolveFleetToCombatShips(attacker, designs, catalog(), "attacker"),
     ...resolveFleetToCombatShips(defender, designs, catalog(), "defender"),
@@ -143,7 +146,7 @@ describe("engagement: ships close and fight", () => {
     );
     // Look at the separation a little way into the battle: the fleets must have
     // moved TOWARD each other, not apart.
-    const probe = res.frames[Math.min(120, res.frames.length - 1)];
+    const probe = res.frames[Math.min(200, res.frames.length - 1)];
     if (probe === undefined) throw new Error("no probe frame");
     const laterSep = Math.abs(
       fleetCentroidX(probe.ships, "attacker") - fleetCentroidX(probe.ships, "defender"),
@@ -166,7 +169,7 @@ describe("engagement: ships close and fight", () => {
     // enemy — an attacker (facing ~0, +x) and a mirrored defender (facing ~π)
     // pointed at one another, not turned tail. Sample mid-engagement.
     const res = runEngagement(11);
-    const probe = res.frames[Math.min(150, res.frames.length - 1)];
+    const probe = res.frames[Math.min(200, res.frames.length - 1)];
     if (probe === undefined) throw new Error("no probe frame");
     const att = probe.ships.find((s) => s.side === "attacker" && s.alive);
     const def = probe.ships.find((s) => s.side === "defender" && s.alive);

@@ -109,11 +109,15 @@ describe("engine.crew-perf — cache effectiveness", () => {
     // ~0.88 for this matchup, ~0.64 on the default seed 42). The cache is still
     // doing real work — it serves a clear majority of lookups — but "~89%" was
     // calibrated to the damped regime and no longer holds. We therefore assert
-    // the rate stays above half: comfortably below the observed steady state, so
-    // it does not flake on a slow seed, yet far above the ~0 a bypassed or
-    // removed cache would produce. The cross-run byte-identity guards in
-    // engine.crew.unit.test.ts prove the cache does not change behaviour; this
-    // only proves it remains effective.
-    expect(hitRate, "crew path cache hit rate").toBeGreaterThan(0.5);
+    // the rate stays above two-fifths: comfortably below the observed steady
+    // state, so it does not flake on a slow seed, yet far above the ~0 a
+    // bypassed or removed cache would produce. Phase 14 further shifted the
+    // steady state: the SI catalogue re-authoring changed preset module layouts
+    // (more engines, sensors added), so the distinct (from, to) crew-path pairs
+    // shifted and the hit rate settled lower (~0.54 on the default seed). The
+    // threshold was lowered from 0.5 to 0.4 to match. The cross-run byte-identity
+    // guards in engine.crew.unit.test.ts prove the cache does not change
+    // behaviour; this only proves it remains effective.
+    expect(hitRate, "crew path cache hit rate").toBeGreaterThan(0.4);
   }, 30000);
 });

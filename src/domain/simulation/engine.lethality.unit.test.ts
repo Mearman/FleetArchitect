@@ -27,14 +27,17 @@ import type { BattleResult } from "@/schema/battle";
  */
 
 /**
- * Tick cap for the lethality guards. The presets are under-thrusted for the
- * layered-cell mass model (Phase 14 re-authors them), so the crewed matchups
- * stalemate; the one active guard checks the crewless Swarm fast path still
- * resolves. `DEFAULT_MAX_TICKS` is sized for light-lag battles and would make
- * each preset stalemate run minutes, so these guards use the close-quarters
- * completion cap the presets were calibrated against.
+ * Tick cap for the lethality guards. Phase 14 re-authored the presets in real
+ * SI units (kg / N / m) with balanced drive sets and closer deployment, so the
+ * crewed matchups resolve within this cap; the guards check they produce kills
+ * and a winner rather than stalemate. `DEFAULT_MAX_TICKS` is sized for
+ * light-lag battles and would make each preset stalemate run minutes, so these
+ * guards use the close-quarters completion cap the presets were calibrated
+ * against. Raised from 3600 to 5400 in Phase 14: the heavier SI-mass ships
+ * (kilotonne frigates) close and kill more slowly than the pre-SI fixtures did,
+ * so a longer cap is the honest calibration against the new mass model.
  */
-const LETHALITY_GUARD_TICKS = 3600;
+const LETHALITY_GUARD_TICKS = 5400;
 
 const cat = catalog();
 const designs = new Map(presetDesigns.map((d) => [d.id, d]));
@@ -72,24 +75,29 @@ function totalStructureDamage(result: BattleResult): number {
 }
 
 describe("engine.lethality — crewed Terran battles resolve decisively", () => {
-  // These run full preset battles (up to 3.6s on dev hardware), so need a
+  // These run full preset battles (several seconds on dev hardware), so need a
   // timeout well above vitest's 5s default.
-  // SKIP PENDING PHASE 1 + PHASE 9: the frictionless movement controller
-  // (Phase 3) is correct, but it exposed that the preset ships are
-  // under-thrusted for the new cell-sum mass model — aPro ~ 0.003, so they
-  // close and acquire targets too slowly for crewed battles to resolve within
-  // the tick cap (4 of 10 ships have a target by tick 1000; battles end with
-  // ~0-1 kills). The presets carry legacy thrust values (0.5/engine) against
-  // realistic-kg masses; Phase 1 (scale rebalance: METRES_PER_CELL, material
-  // densities, derived masses and thrust in real units) and Phase 9
-  // (re-author presets with fore/aft + RCS thrusters at the new scale) make
-  // the thrust/mass ratio coherent. Re-enable once those land.
-  it.skip("Battle Line vs Armoured Spearhead destroys ships (not a stalemate)", () => {
+  //
+  // Phase 14 re-enabled these guards. The catalogue was re-authored in real SI
+  // units (mass kg, thrust N, range m — see src/data/catalog/physics.ts) and
+  // the preset ships re-gridded with balanced drive sets (aft + fore + lateral
+  // engines, matching the modularShip fixture) so the thrust/mass ratio is
+  // coherent at the new scale. Deployment distances were brought in so the
+  // heavier SI-mass ships close and engage within the tick cap. The guard tick
+  // cap was raised from 3600 to 5400 to honestly calibrate against the new
+  // mass model (kilotonne frigates kill more slowly than the pre-SI fixtures).
+  //
+  // The assertions remain robust against the pre-existing base-engine
+  // non-determinism (large preset battles are not byte-identical run-to-run —
+  // see the engine.crew-perf header comment). They check properties that hold
+  // across runs: ships are destroyed, a winner is decided, and meaningful
+  // damage is dealt.
+  it("Battle Line vs Armoured Spearhead destroys ships (not a stalemate)", () => {
     // The headline stalemate matchup. On the un-tuned engine this ran the full
-    // 3600-tick cap with 9->9 alive and ~0 effective damage. The tuning must
+    // tick cap with 9->9 alive and ~0 effective damage. The tuning must
     // produce kills: at least one ship destroyed, a winner decided, and enough
     // structure damage that the fight was real (the stalemate dealt less than
-    // 100 total). Measured: 7 of 9 ships destroyed, 1500+ structure damage.
+    // 100 total).
     const result = runBattle(buildInputs("preset-fleet-battleline", "preset-fleet-spearhead"));
     const { dead } = aliveCount(result);
 
@@ -99,13 +107,11 @@ describe("engine.lethality — crewed Terran battles resolve decisively", () => 
       totalStructureDamage(result),
       "meaningful damage must be dealt (stalemate dealt negligible damage)",
     ).toBeGreaterThan(500);
-  }, 15000);
+  }, 30000);
 
-  // SKIP PENDING PHASE 1 + PHASE 9 — see the Battle Line skip above: preset
-  // ships are under-thrusted for the frictionless mass model, so this crewed
-  // matchup no longer resolves within the tick cap. Re-enable once the preset
-  // thrust/mass ratio is rebalanced.
-  it.skip("Strike Wing vs Picket Screen resolves with a winner and meaningful kills", () => {
+  // Re-enabled in Phase 14 alongside the Battle Line guard above: the preset
+  // thrust/mass ratio is now coherent at the SI scale.
+  it("Strike Wing vs Picket Screen resolves with a winner and meaningful kills", () => {
     // A faster crewed matchup that consistently produces a winner with both
     // sides taking meaningful losses. Phase 2's layered-cell migration changed
     // preset layouts (retired armour-equipment tokens became deck corridors),
@@ -118,7 +124,7 @@ describe("engine.lethality — crewed Terran battles resolve decisively", () => 
 
     expect(result.winner, "a winner must be decided").toBeDefined();
     expect(dead, "multiple ships must be destroyed").toBeGreaterThanOrEqual(6);
-  }, 15000);
+  }, 30000);
 
   it("the crewless Swarm baseline still resolves (fast path unbroken)", () => {
     // Crewless battles must not be slowed by the lethality tuning. The Swarm
@@ -129,5 +135,5 @@ describe("engine.lethality — crewed Terran battles resolve decisively", () => 
 
     expect(result.winner, "crewless battle must still resolve").toBeDefined();
     expect(dead, "crewless battle must still produce kills").toBeGreaterThan(0);
-  }, 15000);
+  }, 30000);
 });

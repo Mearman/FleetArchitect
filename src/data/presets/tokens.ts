@@ -97,7 +97,12 @@ function deckEquip(moduleId: string, facing = 0): GridCell {
  *  crewed), `K` gravimetric imager (wide nebula-immune cone). All face forward
  *  (bearing 0).
  *  Comms: `O` omni transceiver, `d` steerable relay dish, `b` laser backbone link.
- *  Manoeuvring: `J` RCS thrusters, `W` reaction wheel. */
+ *  Manoeuvring: `J` RCS thrusters, `W` reaction wheel.
+ *  Drive orientation: `E`/`P` fire AFT (π, driving the ship forward); `e`/`p`
+ *  fire FORWARD (0, retrograde braking); `>` fires UP (−π/2, lateral −y);
+ *  `<` fires DOWN (π/2, lateral +y). A competent combat ship mounts drive in
+ *  every direction so it can brake and translate without flipping — matching
+ *  the modularShip fixture's balanced engine set. */
 const TOKENS: Record<string, GridCell> = {
   ".": { kind: "empty" },
   "#": armorCell(),
@@ -117,6 +122,10 @@ const TOKENS: Record<string, GridCell> = {
   "D": armorCell(),
   "E": deckEquip("mod-engine-ion", Math.PI),
   "P": deckEquip("mod-engine-plasma", Math.PI),
+  "e": deckEquip("mod-engine-ion", 0),
+  "p": deckEquip("mod-engine-plasma", 0),
+  ">": deckEquip("mod-engine-ion", -Math.PI / 2),
+  "<": deckEquip("mod-engine-ion", Math.PI / 2),
   "F": deckEquip("mod-reactor-fusion", 0),
   "X": deckEquip("mod-reactor-antimatter", 0),
   "C": deckEquip("mod-crew-quarters", 0),
@@ -141,7 +150,10 @@ const TOKENS: Record<string, GridCell> = {
  *  Sensors: `e` electro-receptor membrane (omni), `y` chemosensor palp
  *  (directional cone). Both face forward (bearing 0).
  *  Comms: `h` pheromone net (omni), `i` synapse focus organ (dish), `k` biolaser spine.
- *  Manoeuvring: `x` pseudopod cluster, `z` gyral organ. */
+ *  Manoeuvring: `x` pseudopod cluster, `z` gyral organ.
+ *  Drive orientation: `j`/`u` fire AFT (π); `f`/`t` fire FORWARD (0, braking);
+ *  `>` fires UP (−π/2); `<` fires DOWN (π/2). A balanced engine set lets the
+ *  ship brake and strafe. */
 const SWARM_TOKENS: Record<string, GridCell> = {
   ".": { kind: "empty" },
   "#": armorCell(),
@@ -156,6 +168,10 @@ const SWARM_TOKENS: Record<string, GridCell> = {
   "c": armorCell(),
   "j": deckEquip("swm-flagellum-drive", Math.PI),
   "u": deckEquip("swm-pulse-jet", Math.PI),
+  "f": deckEquip("swm-flagellum-drive", 0),
+  "t": deckEquip("swm-pulse-jet", 0),
+  ">": deckEquip("swm-flagellum-drive", -Math.PI / 2),
+  "<": deckEquip("swm-flagellum-drive", Math.PI / 2),
   "g": deckEquip("swm-neural-ganglion", 0),
   "m": deckEquip("swm-metabolic-core", 0),
   "s": deckEquip("swm-spore-cloud", 0),
@@ -206,7 +222,9 @@ export function swarmGrid(rows: readonly string[]): TileGrid {
   return gridFromMapWith(rows, SWARM_TOKENS);
 }
 
-/** Single-character tokens for the ASCII grid authoring map — Crystalline parts. */
+/** Single-character tokens for the ASCII grid authoring map — Crystalline parts.
+ *  Drive orientation: `E` AFT (π), `e` FORWARD (0, braking), `>` UP (−π/2),
+ *  `<` DOWN (π/2). */
 const CRYSTAL_TOKENS: Record<string, GridCell> = {
   ".": { kind: "empty" },
   "#": armorCell(),
@@ -218,11 +236,16 @@ const CRYSTAL_TOKENS: Record<string, GridCell> = {
   "H": deckEquip("cry-phase-lance", 0),
   "S": deckEquip("cry-adaptive-shield-mk1", 0),
   "E": deckEquip("cry-thruster", Math.PI),
+  "e": deckEquip("cry-thruster", 0),
+  ">": deckEquip("cry-thruster", -Math.PI / 2),
+  "<": deckEquip("cry-thruster", Math.PI / 2),
   "B": deckEquip("cry-blink-drive", 0),
   "K": deckEquip("cry-phase-cloak", 0),
 };
 
-/** Single-character tokens for the ASCII grid authoring map — Foundry parts. */
+/** Single-character tokens for the ASCII grid authoring map — Foundry parts.
+ *  Drive orientation: `E` AFT (π), `P` AFT heavy (π), `e` FORWARD (0, braking),
+ *  `>` UP (−π/2), `<` DOWN (π/2). */
 const FOUNDRY_TOKENS: Record<string, GridCell> = {
   ".": { kind: "empty" },
   "#": armorCell(),
@@ -241,10 +264,15 @@ const FOUNDRY_TOKENS: Record<string, GridCell> = {
   "W": deckEquip("fnd-repair-bay", 0),
   "E": deckEquip("fnd-thruster", Math.PI),
   "P": deckEquip("fnd-grav-drive", Math.PI),
+  "e": deckEquip("fnd-thruster", 0),
+  ">": deckEquip("fnd-thruster", -Math.PI / 2),
+  "<": deckEquip("fnd-thruster", Math.PI / 2),
   "M": deckEquip("fnd-mine-layer", 0),
 };
 
-/** Single-character tokens for the ASCII grid authoring map — Corsair parts. */
+/** Single-character tokens for the ASCII grid authoring map — Corsair parts.
+ *  Drive orientation: `E` AFT (π), `e` FORWARD (0, braking), `>` UP (−π/2),
+ *  `<` DOWN (π/2). */
 const CORSAIR_TOKENS: Record<string, GridCell> = {
   ".": { kind: "empty" },
   "#": armorCell(),
@@ -255,13 +283,18 @@ const CORSAIR_TOKENS: Record<string, GridCell> = {
   "W": deckEquip("cor-swarm-missile", 0),
   "G": deckEquip("cor-magazine", 0),
   "E": deckEquip("cor-raider-engine", Math.PI),
+  "e": deckEquip("cor-raider-engine", 0),
+  ">": deckEquip("cor-raider-engine", -Math.PI / 2),
+  "<": deckEquip("cor-raider-engine", Math.PI / 2),
   "K": deckEquip("cor-cloak", 0),
   "B": deckEquip("cor-blink-drive", 0),
   "J": deckEquip("cor-scrambler", 0),
   "O": deckEquip("cor-boarding-pod", 0),
 };
 
-/** Single-character tokens for the ASCII grid authoring map — Synthetic parts. */
+/** Single-character tokens for the ASCII grid authoring map — Synthetic parts.
+ *  Drive orientation: `E` AFT (π), `e` FORWARD (0, braking), `>` UP (−π/2),
+ *  `<` DOWN (π/2). */
 const SYNTHETIC_TOKENS: Record<string, GridCell> = {
   ".": { kind: "empty" },
   "#": armorCell(),
@@ -272,6 +305,9 @@ const SYNTHETIC_TOKENS: Record<string, GridCell> = {
   "R": deckEquip("syn-railgun", 0),
   "G": deckEquip("syn-magazine", 0),
   "E": deckEquip("syn-thruster", Math.PI),
+  "e": deckEquip("syn-thruster", 0),
+  ">": deckEquip("syn-thruster", -Math.PI / 2),
+  "<": deckEquip("syn-thruster", Math.PI / 2),
   "I": deckEquip("syn-pd-array", 0),
   "N": deckEquip("syn-sensor-array", 0),
   "H": deckEquip("syn-drone-hangar", 0),

@@ -1,4 +1,8 @@
 import type { ModuleDefinition } from "@/schema/module";
+import {
+  driveThrustNewtons,
+  moduleMass,
+} from "../physics";
 
   // ---------------------------------------------------------------------------
   // Foundry Combine modules — furnace-forged war machines. The Foundry forgoes
@@ -11,7 +15,11 @@ import type { ModuleDefinition } from "@/schema/module";
   // engines, no shields (missile and beam alpha hurts), and they cannot catch
   // anything that refuses to close. Counters: Corsair missile saturation and
   // Crystalline blink-beam kiting exploit the lack of shields and speed.
+  //
+  // Masses are in kilograms (see `../physics.ts`); thrust in Newtons.
   // ---------------------------------------------------------------------------
+
+const thermalThrustN = driveThrustNewtons("thermal");
 
 export const foundryModules: ModuleDefinition[] = [
   // --- Weapons: slow, heavy, armour-piercing ---
@@ -21,7 +29,7 @@ export const foundryModules: ModuleDefinition[] = [
     name: "Autocannon",
     description: "Reliable rotary cannon. Moderate damage and armour-pierce on a brisk refire; the workhorse of a Foundry broadside.",
     category: "weapon",
-    mass: 10,
+    mass: moduleMass("mediumWeapon"),
     cost: 65,
     powerDraw: 6,
     crewRequired: 1,
@@ -46,7 +54,7 @@ export const foundryModules: ModuleDefinition[] = [
     name: "Heavy Cannon",
     description: "A massive kinetic gun on a traversing mount. High per-hit damage and strong armour-penetration, slow to reload.",
     category: "weapon",
-    mass: 16,
+    mass: moduleMass("heavyWeapon"),
     cost: 130,
     powerDraw: 10,
     crewRequired: 2,
@@ -73,7 +81,7 @@ export const foundryModules: ModuleDefinition[] = [
     name: "Siege Plasma Mortar",
     description: "Lobs a slow, devastating plasma bolt that melts through armour. The Foundry's signature capital weapon — short-ranged but brutal up close.",
     category: "weapon",
-    mass: 24,
+    mass: moduleMass("heavyWeapon"),
     cost: 220,
     powerDraw: 18,
     crewRequired: 3,
@@ -98,7 +106,7 @@ export const foundryModules: ModuleDefinition[] = [
     name: "Armour-Cracking Torpedo",
     description: "A heavy torpedo built to punch through plate. Long range and excellent armour-penetration, but point defences can shoot it down.",
     category: "weapon",
-    mass: 18,
+    mass: moduleMass("heavyWeapon"),
     cost: 150,
     powerDraw: 8,
     crewRequired: 2,
@@ -124,7 +132,7 @@ export const foundryModules: ModuleDefinition[] = [
     name: "Damage Control Bay",
     description: "Robotic welders that knit destroyed plating back together each tick, keeping a Foundry ship in a slugging match long after others would fold.",
     category: "defence",
-    mass: 9,
+    mass: moduleMass("shield"),
     cost: 95,
     powerDraw: 6,
     crewRequired: 1,
@@ -140,7 +148,7 @@ export const foundryModules: ModuleDefinition[] = [
     name: "Flak Battery",
     description: "With no shields to hide behind, the Foundry screens itself with flak that shreds incoming missiles and torpedoes.",
     category: "defence",
-    mass: 8,
+    mass: moduleMass("pointDefense"),
     cost: 85,
     powerDraw: 5,
     crewRequired: 1,
@@ -162,12 +170,12 @@ export const foundryModules: ModuleDefinition[] = [
     name: "Industrial Thruster",
     description: "A heavy-duty drive that can barely shift a Foundry slab. The Combine accepts being slow in exchange for being unkillable.",
     category: "propulsion",
-    mass: 7,
+    mass: moduleMass("engine"),
     cost: 35,
     powerDraw: 4,
     crewRequired: 0,
     techLevel: 1,
-    effect: { kind: "engine", thrust: 0.3 },
+    effect: { kind: "engine", thrust: thermalThrustN },
   },
   {
     id: "fnd-grav-drive",
@@ -175,12 +183,12 @@ export const foundryModules: ModuleDefinition[] = [
     name: "Gravimetric Drive",
     description: "A bigger drive for capitals. Still sluggish by any other faction's standard, but enough to bring a dreadnought into range.",
     category: "propulsion",
-    mass: 12,
+    mass: moduleMass("engine"),
     cost: 75,
     powerDraw: 8,
     crewRequired: 1,
     techLevel: 2,
-    effect: { kind: "engine", thrust: 0.5 },
+    effect: { kind: "engine", thrust: thermalThrustN * 2 },
   },
   // --- System: reactors, crew barracks, magazine ---
   {
@@ -189,7 +197,7 @@ export const foundryModules: ModuleDefinition[] = [
     name: "Forge Reactor",
     description: "A rugged fission plant feeding the guns and repair bays; the ship's command node.",
     category: "system",
-    mass: 12,
+    mass: moduleMass("reactor"),
     cost: 85,
     powerDraw: 0,
     crewRequired: 1,
@@ -203,7 +211,7 @@ export const foundryModules: ModuleDefinition[] = [
     name: "Industrial Core",
     description: "A capital power plant for dreadnoughts running siege plasma and multiple repair bays.",
     category: "system",
-    mass: 20,
+    mass: moduleMass("reactorCompact"),
     cost: 190,
     powerDraw: 0,
     crewRequired: 2,
@@ -217,7 +225,7 @@ export const foundryModules: ModuleDefinition[] = [
     name: "Crew Barracks",
     description: "Spartan habitation. Foundry ships are designed to be hardwired so a small crew can run a capital, but some hands are still needed.",
     category: "crew",
-    mass: 7,
+    mass: moduleMass("crew"),
     cost: 30,
     powerDraw: 2,
     crewRequired: 0,
@@ -230,7 +238,7 @@ export const foundryModules: ModuleDefinition[] = [
     name: "Shell Magazine",
     description: "Stores heavy munitions for the cannons, mortars and torpedo tubes. Crew haul shells to the guns.",
     category: "system",
-    mass: 9,
+    mass: moduleMass("magazine"),
     cost: 50,
     powerDraw: 0,
     crewRequired: 1,
@@ -244,7 +252,7 @@ export const foundryModules: ModuleDefinition[] = [
     name: "Proximity Mine Layer",
     description: "Drops armed minefields to deny approach. Pairs with the Foundry's lack of mobility — let the enemy come to the mines.",
     category: "weapon",
-    mass: 12,
+    mass: moduleMass("mediumWeapon"),
     cost: 110,
     powerDraw: 6,
     crewRequired: 1,

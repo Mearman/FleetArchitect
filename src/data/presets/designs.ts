@@ -54,11 +54,11 @@ export const designData: ShipDesignInput[] = [
     // Merged: keeps the scanner (V) and omni transceiver (O), and adds RCS
     // thrusters (J) on the nose and tail so the Sabre can actually slew.
     grid: gridFromMap([
-      "...JL..",
+      "..J~L..",
       ".E=#LV.",
-      "EFFCCLL",
+      "EFFCC~L",
       ".E=#LO.",
-      "...JL..",
+      "..J~L..",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -72,11 +72,11 @@ export const designData: ShipDesignInput[] = [
     // turrets — the whole ship is 4-connected so crew can walk from any
     // crew-quarters cell to the magazine and back. Plasma drives give good speed.
     grid: gridFromMap([
-      "..JM..",
-      "P=CFMM",
-      "PFCCGL",
-      "P=CFMM",
-      "..JM..",
+      "..J~Mv.",
+      "E=CFMM.",
+      "EFCCGLL",
+      "E=CFMM.",
+      "..J~Mv.",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -89,11 +89,11 @@ export const designData: ShipDesignInput[] = [
     // central magazine (G) fed by a floor corridor, twin fusion reactors, crew
     // quarters, and an engine bank. The Mk I shields protect the flanks.
     grid: gridFromMap([
-      "..JsRL..",
+      ".>JsRL..",
       ".EFC~sWR",
-      "EFFCG~#R",
+      "EFFCGv#R",
       ".EFC~sWR",
-      "..JsRL..",
+      ".<JeRL..",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -106,11 +106,11 @@ export const designData: ShipDesignInput[] = [
     // means no magazine required. A broad Mk II shield wall fronts a laser bank;
     // triple fusion reactors and a deep crew and engine block run it.
     grid: gridFromMap([
-      ".JWS~L.",
-      "EFCSS~L",
-      "EFFCS~L",
-      "EFCSS~L",
-      ".JWS~L.",
+      ".>JWS~L.",
+      ".EFCSS~L",
+      "EEFFCSvL",
+      ".EFCSS~L",
+      ".<JeWS~e",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -123,11 +123,11 @@ export const designData: ShipDesignInput[] = [
     // shield soaks punishment while railgun turrets answer. The magazine (G) in
     // the central corridor feeds all railguns; slow but unyielding.
     grid: gridFromMap([
-      ".J~~sR.",
-      "EFCCGsR",
-      "EXFWGsR",
-      "EFCCGsR",
-      ".J~~sR.",
+      ".>J~~sR.",
+      ".EFCCGsR",
+      "EXEFWGvR",
+      ".EFCCGsR",
+      ".<JeW~se",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -142,11 +142,11 @@ export const designData: ShipDesignInput[] = [
     // needed to man torpedoes and missiles; titanium armour and shields protect
     // the fragile innards.
     grid: gridFromMap([
-      "..~JMM...",
-      ".EFCC~WTT",
-      "EXFGC~#TT",
-      ".EFCC~WTT",
-      "..~JMM...",
+      ".>JeMM...",
+      ".EFCCEWTT",
+      "EXFGCv#TT",
+      ".EFCCEWTT",
+      ".<JeMM...",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -172,11 +172,11 @@ export const designData: ShipDesignInput[] = [
     // backbone links (b, rows 2/4 col 13) for fleet squad-net, and adds RCS (J)
     // plus reaction wheels (W) on the spine so the capital can come about.
     grid: gridFromMap([
-      "..JWSTRL..",
+      ".>JWSTRL..",
       ".EXCCTRRLO",
-      "EXFCCGTRRL",
+      "EXFCCGvRRL",
       ".EXCCGTRLO",
-      "..JWSTRL..",
+      ".<JeWSTRe.",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -197,11 +197,11 @@ export const designData: ShipDesignInput[] = [
     // C cells (crew quarters) line the central corridor; G (magazine) cells sit
     // between the crew block and the weapon batteries so crew can haul ammo.
     grid: gridFromMap([
-      "...JWS~RML...",
+      "..>JWSvRML...",
       ".EXCCW~RRMLL.",
       "EXFCCG~RRMMLL",
       ".EXCCW~RRMLL.",
-      "...JWS~RML...",
+      "..<JeWS~RMLe.",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -229,9 +229,9 @@ export const designData: ShipDesignInput[] = [
     // Merged: keeps the electro-receptor membrane (e) and pheromone net (h) for
     // hive-net awareness, and adds pseudopod clusters (x) so the Drone can turn.
     grid: swarmGrid([
-      ".xpe",
-      "jgpp",
-      ".xph",
+      ".>xpe",
+      "jgfpp",
+      ".<xph",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -243,11 +243,11 @@ export const designData: ShipDesignInput[] = [
     // Fighter: a fast acid flanker. Forward-swept acid claws strip armour at
     // knife range; paired flagella and a pulse jet make it the quickest hunter.
     grid: swarmGrid([
-      "..xa..",
-      "j=gaa.",
-      "ug~gaa",
-      "j=gaa.",
-      "..xa..",
+      "..>xa..",
+      "j=gfaa.",
+      "ug~gfaa",
+      "j=gfaa.",
+      "..<xa..",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -260,11 +260,11 @@ export const designData: ShipDesignInput[] = [
     // self-knitting carapace, a metabolic core, and a cluster of flagella and
     // pulse jets. No discrete ammo weapons so no ammon sac needed.
     grid: swarmGrid([
-      ".jx~aa..",
-      "jg~zaaa.",
-      "ugm~raaa",
-      "jg~zaaa.",
-      ".jx~aa..",
+      ".>jx~aa..",
+      "jgf~zaaa.",
+      "ugm~rfaaa",
+      "jgf~zaaa.",
+      ".<jx~aa..",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -277,11 +277,11 @@ export const designData: ShipDesignInput[] = [
     // downrange; spore clouds screen it. Neural stings have no ammoCapacity so
     // no ammon sac is required. Regen membranes and a metabolic core sustain it.
     grid: swarmGrid([
-      "..xsnn...",
-      ".jgzsnnn.",
-      "ugm~rsnnn",
-      ".jgzsnnn.",
-      "..xsnn...",
+      "..>xsnn...",
+      ".jgfzsnnn.",
+      "ugm~rfsnnn",
+      ".jgfzsnnn.",
+      "..<xsnn...",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -304,13 +304,13 @@ export const designData: ShipDesignInput[] = [
     // organs (y) for hive-net coverage, and adds pseudopod clusters (x) plus
     // gyral organs (z) on the spine so the capital can come about.
     grid: swarmGrid([
-      "...x~nnnk...",
-      "..jgzrsnnnnh",
-      ".jgm~rsannny",
-      "ugmm~rsaannn",
-      ".jgm~rsannny",
-      "..jgzrsnnnnh",
-      "...x~nnnk...",
+      "...>x~nnnk...",
+      "..jgfzrsnnnnh",
+      ".jgm~rfsannny",
+      "ugmm~rfsaannn",
+      ".jgm~rfsannny",
+      "..jgfzrsnnnnh",
+      "...<x~nnnk...",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -346,9 +346,9 @@ export const designData: ShipDesignInput[] = [
     // autocannon and a damage-control bay, with a shell magazine feeding the
     // gun. No shields — it absorbs fire with raw structure and welds it shut.
     grid: foundryGrid([
-      "#~~~~#",
-      "ECFWAG",
-      "#~~~~#",
+      "#~~~~>#",
+      "ECFWAGe",
+      "#~~~~<#",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -365,9 +365,9 @@ export const designData: ShipDesignInput[] = [
     // with a magazine for a sustained volley and a scrambler to blunt return
     // fire. Light scrap hull — it strikes and runs.
     grid: corsairGrid([
-      ".####.",
-      "ECFMGJ",
-      ".####.",
+      ".####>.",
+      "ECFMGJe",
+      ".####<.",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -384,9 +384,9 @@ export const designData: ShipDesignInput[] = [
     // hardwiring power and ammo directly. A precise cannon and an interceptor
     // array screen the fleet, fed from an integral slug reservoir.
     grid: syntheticGrid([
-      ".####.",
-      "EPCGIN",
-      ".####.",
+      ".####>.",
+      "EPCGINe",
+      ".####<.",
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
