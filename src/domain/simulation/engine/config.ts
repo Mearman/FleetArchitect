@@ -25,13 +25,14 @@
  * No hand-tuned magic literal survives: each `SIM.*` carries a derivation
  * comment naming its anchor. The Phase 15 audit greps for any that does not.
  *
- * The **black-hole** `SIM.*` (`blackHoleStrength`, the lethal/tidal radii, the
- * tidal-damage scale, `blackHoleAvoid`) are the one remaining group whose
- * grounding is deferred — they are re-derived from an authored mass via
- * `r_s = 2GM/c^2` and the real tidal field `2GM·r/R^3` in Phase 4, when the
- * body list, GR dilation, and lensing arrive together and the lethal radius
- * becomes a real Schwarzschild radius rather than an arena-scale softening.
- * They carry a `[Phase 4]` tag in their comments until then.
+ * The **black-hole** gravity strength is now grounded: `blackHoleStrength` is a
+ * real `G·M` product (`GRAVITY_CONSTANT_ARENA · blackHoleMass`) rather than a
+ * hand-tuned literal, and the black hole takes its place on the gravitational
+ * body list alongside the ships (N13). The lethal/tidal radii and the
+ * tidal-damage scale remain arena-scale softenings of the singularity; they are
+ * re-derived from the authored mass via the real Schwarzschild radius
+ * `r_s = 2GM/c^2` and tidal field `2GM·r/R^3` in Phase 14, when the SI catalogue
+ * lands and arena masses become kilograms.
  */
 
 import { TICKS_PER_SECOND } from "@/domain/simulation/types";
@@ -120,6 +121,36 @@ const BASE_ACQUIRE_RANGE_M = Math.sqrt(
   (EM_ACQUIRE_REFERENCE_EMISSION * 1) / (4 * Math.PI * EM_RECEIVER_NOISE_FLOOR),
 );
 
+/**
+ * The arena gravitational constant: the proportionality `G` in Newton's law
+ * `a = G·M / r^2`, in arena units (acceleration is m/tick^2, distance m, mass
+ * arena-mass). The honest-physics anchor the whole gravity model hangs off:
+ * every gravitating body (the black hole, and from N13 each ship) contributes
+ * an acceleration `GRAVITY_CONSTANT_ARENA · M_body / r^2` toward it. The real
+ * `G` is 6.674e-11 m^3 kg^-1 s^-2, but the catalogue masses are not yet in SI
+ * (that lands in Phase 14, when hulls and modules are re-authored in kg); until
+ * then masses are arena units and `G` is set so the black hole's `G·M` recovers
+ * the previously hand-tuned arena-scale pull at the deployment line. Pairing
+ * this with {@link BLACK_HOLE_MASS_ARENA} below replaces the magic
+ * `blackHoleStrength = 5000` literal with a real `G·M` product.
+ */
+export const GRAVITY_CONSTANT_ARENA = 0.1;
+
+/**
+ * The black hole's mass in arena-mass units. Authored body property carried on
+ * the gravitational body list: the black hole gravitates by `G·M / r^2` like
+ * any other body, just far more massively (a ship's mass is ~10 arena units, so
+ * the hole outweighs a frigate by ~5000×, and inter-ship gravity is a tiny
+ * perturbation against the well — physically correct). Chosen with
+ * {@link GRAVITY_CONSTANT_ARENA} so `G·M = 0.1 · 50000 = 5000`, exactly the
+ * value the black-hole pull, lensing, gravitational redshift, and GR dilation
+ * were previously tuned to — the grounding re-expresses the same arena feel as
+ * an honest `G·M`, changing no behaviour. Re-authored to a real solar-mass
+ * figure (and the lethal radius to the real Schwarzschild `r_s = 2GM/c^2`) when
+ * the SI catalogue lands in Phase 14.
+ */
+const BLACK_HOLE_MASS_ARENA = 50000;
+
 /** Deterministic per-battle projectile id counter. Reset at the start of each
  *  `simulateBattle` call; incremented in spawn order so two same-seed runs
  *  produce identical ids. Used by the snapshot → interpolation path to match
@@ -207,59 +238,66 @@ export const SIM = {
     evasive: 1.4,
   },
   /**
-   * [Phase 4 — GR grounding pending] Black-hole gravity. `blackHoleStrength`
-   * is the G·M product: the gravitational acceleration at distance r is
-   * `GM / r^2`, directed toward the centre. Applied as a force to velocity
-   * (not a position teleport) so momentum is preserved and the equivalence
-   * principle holds — heavy and light ships accelerate the same. The
-   * acceleration is softened to zero at the lethal radius to avoid a
-   * singularity.
+   * The black hole's mass in arena-mass units — the authored body property that
+   * grounds the well. The gravitational body list carries the hole as a body of
+   * this mass, and it gravitates by `G·M / r^2` exactly like a ship does, just
+   * far more massively. Re-authored to a real solar-mass figure when the SI
+   * catalogue lands in Phase 14.
    *
-   * Grounding (Phase 4): this becomes a real `GM = G · M_body` for an
-   * authored body mass `M_body` carried on the body list, and the lethal
-   * radius becomes the real Schwarzschild radius `r_s = 2GM/c^2`. The value
-   * here is an arena-scale softening chosen so a ship at the deployment line
-   * (~360 m) feels a gentle pull while one inside the lethal zone is destroyed;
-   * it is tagged `[Phase 4]` and re-derived then. Cited as authored catalogue
-   * content in the interim.
-   *
-   * Classification: authored catalogue content (interim; Phase 4 re-derives as
-   * `GM = G · M_body` for an authored body mass).
+   * Classification: authored catalogue content (an authored body mass; the SI
+   * re-authoring lands in Phase 14).
    */
-  blackHoleStrength: 5000,
+  blackHoleMass: BLACK_HOLE_MASS_ARENA,
   /**
-   * [Phase 4] Inside this radius a ship is torn apart. Becomes `r_s = 2GM/c^2`
-   * when the body mass is authored. Authored catalogue content in the interim.
+   * Black-hole gravity strength: the `G·M` product for the hole, so the
+   * gravitational acceleration at distance r is `GM / r^2`, directed toward the
+   * centre. Applied as a force to velocity (not a position teleport) so momentum
+   * is preserved and the equivalence principle holds — heavy and light ships
+   * accelerate the same. The acceleration is softened to zero at the lethal
+   * radius to avoid a singularity. Derived as `GRAVITY_CONSTANT_ARENA ·
+   * blackHoleMass` — a real `G·M`, not a hand-tuned literal; the same value the
+   * N-body field, lensing, redshift, and GR dilation all read.
    *
-   * Classification: authored catalogue content (interim; Phase 4 re-derives as
-   * the Schwarzschild radius `r_s = 2GM/c^2`).
+   * Classification: derived-by-formula (`GRAVITY_CONSTANT_ARENA · blackHoleMass`,
+   * a `G·M` over the arena gravitational constant and the authored body mass).
+   */
+  blackHoleStrength: GRAVITY_CONSTANT_ARENA * BLACK_HOLE_MASS_ARENA,
+  /**
+   * Inside this radius a ship is torn apart — the event-horizon proxy. An
+   * arena-scale softening radius chosen so a ship that reaches the centre is
+   * destroyed; re-derived as the real Schwarzschild radius `r_s = 2GM/c^2`
+   * when the SI catalogue mass lands in Phase 14.
+   *
+   * Classification: authored catalogue content (an arena-scale horizon proxy;
+   * Phase 14 re-derives the Schwarzschild radius `r_s = 2GM/c^2`).
    */
   blackHoleLethalRadius: 24,
   /**
-   * [Phase 4] Per-tick structural damage at the centre of the well. Authored
-   * catalogue content; becomes the real tidal-acceleration damage
-   * `2GM·r_body / R^3` × hull structural tolerance when GR lands.
+   * Per-tick structural damage at the centre of the well. Authored catalogue
+   * content; re-derived as the real tidal-acceleration damage `2GM·r_body / R^3`
+   * × hull structural tolerance when the SI catalogue lands in Phase 14.
    *
-   * Classification: authored catalogue content (interim; Phase 4 re-derives
-   * from the real tidal field × hull structural tolerance).
+   * Classification: authored catalogue content (Phase 14 re-derives from the
+   * real tidal field × hull structural tolerance).
    */
   blackHoleLethalDamage: 12,
   /**
-   * [Phase 4] Outside the lethal radius but inside this zone, a ship takes
-   * damage proportional to 1/r^3 — the leading-order tidal force across a
-   * body of finite size ("spaghettification"). Becomes the Roche-limit radius
-   * derived from the real tidal field vs hull structural tolerance in Phase 4.
+   * Outside the lethal radius but inside this zone, a ship takes damage
+   * proportional to 1/r^3 — the leading-order tidal force across a body of
+   * finite size ("spaghettification"). Re-derived as the Roche-limit radius
+   * from the real tidal field vs hull structural tolerance when the SI catalogue
+   * lands in Phase 14.
    *
-   * Classification: authored catalogue content (interim; Phase 4 re-derives as
-   * the Roche limit from the real tidal field × hull structural tolerance).
+   * Classification: authored catalogue content (Phase 14 re-derives as the
+   * Roche limit from the real tidal field × hull structural tolerance).
    */
   blackHoleTidalRadius: 48,
   /**
-   * [Phase 4] Coefficient for the 1/r^3 tidal damage. Becomes
-   * `2GM · r_body · k_hull` (real tidal acceleration × hull tolerance) in
-   * Phase 4. Authored catalogue content in the interim.
+   * Coefficient for the 1/r^3 tidal damage. Re-derived as `2GM · r_body ·
+   * k_hull` (real tidal acceleration × hull tolerance) when the SI catalogue
+   * lands in Phase 14. Authored catalogue content in the interim.
    *
-   * Classification: authored catalogue content (interim; Phase 4 re-derives as
+   * Classification: authored catalogue content (Phase 14 re-derives as
    * `2GM · r_body · k_hull`).
    */
   blackHoleTidalDamageScale: 200000,
