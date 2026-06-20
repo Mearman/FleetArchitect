@@ -104,19 +104,24 @@ export function resolveShipCollisions(hash: SpatialHash<ShipCell>): ShipContact[
 
   for (const entry of hash.entries()) {
     const { ship: a, wx, wy } = entry.payload;
-    // Swept anti-tunnelling: widen the candidate query radius by the ship's
-    // per-tick displacement so a fast-approaching pair registers a contact
-    // before they interpenetrate. The hash is built once at the start of
-    // collision resolution using each cell's position at that instant;
-    // without the sweep two ships passing at a relative speed above
-    // CELL_SIZE per tick can have cell centres in non-adjacent buckets and
-    // tunnel through each other. Querying with each ship's own speed is
-    // sufficient: the unordered pair is resolved once (by instanceId tie-
-    // break), so it is found when iterating whichever of the two ships is
-    // moving faster. The static narrow-phase test below (unchanged) keeps
-    // the contact depth consistent.
-    const aSpeed = Math.hypot(a.velX, a.velY);
-    for (const other of hash.candidates(wx, wy, CELL_CONTACT_DISTANCE + aSpeed)) {
+    // Swept anti-tunnelling: query the buckets along the path this cell traced
+    // THIS tick — the segment from its pre-move position `(wx - velX, wy -
+    // velY)` to its current `(wx, wy)` — widened by the contact radius. Without
+    // the sweep two ships passing at a relative speed above CELL_SIZE per tick
+    // can have cell centres in non-adjacent buckets and tunnel through each
+    // other. A segment query (rather than a disc widened by the whole
+    // displacement) keeps the cost linear in the displacement instead of
+    // quadratic: at relativistic speed the per-tick displacement spans tens of
+    // thousands of buckets, and a disc query would probe that span SQUARED of
+    // mostly-empty buckets, hanging the tick. A cell can only tunnel along the
+    // line it travelled, so walking that line is both sufficient and cheap.
+    // Querying with each ship's own displacement is enough: the unordered pair
+    // is resolved once (by instanceId tie-break), so it is found when iterating
+    // whichever of the two cells swept past the other. The static narrow-phase
+    // test below (unchanged) keeps the contact depth consistent.
+    const x0 = wx - a.velX;
+    const y0 = wy - a.velY;
+    for (const other of hash.candidatesAlongSegment(x0, y0, wx, wy, CELL_CONTACT_DISTANCE)) {
       const b = other.payload.ship;
       if (a === b) continue;
       // Resolve each unordered pair once: only consider a < b by instanceId.

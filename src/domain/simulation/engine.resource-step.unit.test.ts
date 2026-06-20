@@ -81,6 +81,8 @@ function shipWith(over: Partial<SimShip> = {}): SimShip {
     facing: 0,
     velX: 0,
     velY: 0,
+    px: 0,
+    py: 0,
     angVel: 0,
     dilationFactor: 1,
     structure: 100,

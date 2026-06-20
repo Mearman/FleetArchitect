@@ -16,6 +16,8 @@ function ship(over: Partial<SimShip> & { instanceId: string; side: "attacker" | 
     facing: 0,
     velX: 0,
     velY: 0,
+    px: 0,
+    py: 0,
     angVel: 0,
     dilationFactor: 1,
     structure: over.structure ?? 100,

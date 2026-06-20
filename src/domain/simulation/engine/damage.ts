@@ -6,8 +6,7 @@
 
 import type { SimCrew } from "../types";
 
-import { computeOutline } from "@/domain/outline";
-import type { Shell } from "@/domain/outline";
+import { computeChunkOutline } from "./chunk-outline";
 import { defaultAiDecisions } from "./ai-step";
 import { SIM } from "./config";
 import { resetCrewForFragment } from "./crew";
@@ -677,6 +676,12 @@ export function makeChunkShip(
     // chunk's own centre of mass.
     velX: parent.velX,
     velY: parent.velY,
+    // Momentum is derived bookkeeping: the chunk moves through the same
+    // integrator as any ship, which re-derives `px`/`py` from the live velocity
+    // on its first movement tick before any snapshot reads them, so seeding 0
+    // here is sufficient.
+    px: 0,
+    py: 0,
     // Angular velocity is conserved verbatim — a rigid fragment leaves the
     // parent spinning at the same rate it was spinning as part of the whole.
     angVel: parent.angVel,
@@ -768,33 +773,4 @@ export function makeChunkShip(
   const chunkOutline = computeChunkOutline(parent.modules ?? [], modules);
   if (chunkOutline.length > 0) chunk.outline = chunkOutline;
   return chunk;
-}
-
-/**
- * Build a chamfered hull outline for a break-apart chunk. The Shell is
- * constructed using the original design-grid dimensions (derived from the
- * parent's full module set) so vertices are centred consistently with the
- * chunk's module.x/y ship-local positions. `outlineMode` defaults to
- * `"hexadecilinear"` (the TileGrid default) — the original mode is not
- * stored on SimShip.
- */
-function computeChunkOutline(
-  parentModules: readonly SimModule[],
-  chunkModules: readonly SimModule[],
-): { x: number; y: number }[][] {
-  let maxCol = 0;
-  let maxRow = 0;
-  for (const m of parentModules) {
-    if (m.col > maxCol) maxCol = m.col;
-    if (m.row > maxRow) maxRow = m.row;
-  }
-  const cols = maxCol + 1;
-  const rows = maxRow + 1;
-  const cells = new Set<number>();
-  for (const m of chunkModules) {
-    if (m.surface === "armor") cells.add(m.row * cols + m.col);
-  }
-  if (cells.size === 0) return [];
-  const shell: Shell = { cols, rows, cells };
-  return computeOutline(shell, { outlineMode: "hexadecilinear" });
 }

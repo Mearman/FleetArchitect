@@ -30,6 +30,11 @@ export function makeDrone(
     facing: owner.facing,
     velX: 0,
     velY: 0,
+    // A drone starts at rest, so its momentum starts at zero. Phantoms move in
+    // a bespoke homing step rather than the force integrator, so this is never
+    // re-derived; it stays the resting-momentum record.
+    px: 0,
+    py: 0,
     angVel: 0,
     dilationFactor: 1,
     structure: effect.droneHp,
@@ -93,6 +98,9 @@ export function makeDecoy(
     facing: owner.facing,
     velX: 0,
     velY: 0,
+    // A decoy is static (it never moves), so its momentum is identically zero.
+    px: 0,
+    py: 0,
     angVel: 0,
     dilationFactor: 1,
     structure: effect.decoyHp,

@@ -160,6 +160,13 @@ export function toSimShip(ship: CombatShip, rng: () => number): SimShip {
     facing: ship.facing,
     velX: ship.velocity?.x ?? 0,
     velY: ship.velocity?.y ?? 0,
+    // Momentum is set to its Newtonian initial value (`m·v`, gamma ≈ 1 at the
+    // sub-relativistic deployment speed) once the grid mass is known — for a
+    // modular ship that is after `recomputeAggregates` below; the literal here
+    // (mass still 0) seeds it at 0 and the first movement tick re-derives it
+    // from the live velocity regardless.
+    px: 0,
+    py: 0,
     dilationFactor: 1,
     angVel: 0,
     structure: ship.stats.structure,
@@ -236,6 +243,12 @@ export function toSimShip(ship: CombatShip, rng: () => number): SimShip {
     base.shield = base.maxShield;
     base.structure = ship.stats.structure;
     base.maxStructure = ship.stats.structure;
+    // Newtonian initial momentum now that the grid mass is settled: p = m·v with
+    // gamma ≈ 1 at the sub-relativistic deployment speed. The integrator
+    // re-derives momentum from the live velocity each tick, so this only fixes
+    // the value carried into the opening snapshot's bookkeeping.
+    base.px = base.velX * base.mass;
+    base.py = base.velY * base.mass;
     // Per-ship resource state (Phase 12 wiring, use-deferred). Built after
     // recomputeAggregates so the initial fuel load derives from settled dry mass.
     base.resource = makeResourceState(base);

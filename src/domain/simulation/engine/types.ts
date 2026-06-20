@@ -92,6 +92,18 @@ export interface SimShip {
   /** Linear velocity (world units per tick). Persists across ticks — momentum. */
   velX: number;
   velY: number;
+  /**
+   * Relativistic linear momentum (`p = gamma·m·v`, world units · mass per tick).
+   * The post-update record from the relativistic integrator
+   * (`relativisticMomentumStep`): velocity remains the single source of truth
+   * for motion (gravity, collisions, and recoil all write `velX`/`velY`
+   * directly), so these are RE-DERIVED from the live velocity each tick rather
+   * than carried as authoritative state. At sub-relativistic speed `gamma → 1`
+   * and these reduce to the Newtonian `m·v`. Not snapshotted — derived
+   * bookkeeping only.
+   */
+  px: number;
+  py: number;
   /** Angular velocity (radians per tick). Persists — angular momentum. */
   angVel: number;
   structure: number;

@@ -75,6 +75,68 @@ export class SpatialHash<S> {
   }
 
   /**
+   * Candidate entries whose bucket lies within `radius` of the swept SEGMENT
+   * from `(x0, y0)` to `(x1, y1)` — the path a moving point traces in one tick.
+   * The result is a superset of the entries actually within `radius` of the
+   * segment; the caller does the exact test.
+   *
+   * Why this exists: the disc query {@link candidates} scans the full square
+   * block of buckets spanning its radius, so widening that radius by a ship's
+   * per-tick displacement to catch tunnelling (the swept anti-tunnelling test in
+   * collision resolution) costs `O((displacement / CELL_SIZE)^2)` — fine at
+   * combat speeds, catastrophic once the relativistic integrator drives a ship
+   * to a fraction of c (a displacement of ~1e6 m/tick spans ~80_000 buckets per
+   * axis → billions of empty-bucket probes per ship per tick). A ship can only
+   * tunnel along the LINE it travelled, not across the whole disc, so walking
+   * the buckets along that segment is both sufficient and `O(displacement /
+   * CELL_SIZE)` — linear, not quadratic.
+   *
+   * The walk steps in `CELL_SIZE`-sized increments along the segment and gathers
+   * the `(2·pad+1)^2` block of buckets around each step, where `pad =
+   * ceil(radius / CELL_SIZE)` covers the perpendicular contact radius. Buckets
+   * are visited in a fixed order (segment progression, then the padding block in
+   * row-major order) and each entry is emitted at most once (deduped by a seen
+   * set of bucket keys), so the result is a deterministic, order-stable superset
+   * — the determinism contract the collision step depends on. Pure: no RNG, no
+   * clock, no Map iteration-order dependence.
+   */
+  candidatesAlongSegment(
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number,
+    radius: number,
+  ): WorldCellEntry<S>[] {
+    const pad = Math.max(0, Math.ceil(radius / CELL_SIZE));
+    const out: WorldCellEntry<S>[] = [];
+    const seenBuckets = new Set<string>();
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const length = Math.hypot(dx, dy);
+    // Number of CELL_SIZE-spaced samples along the segment (at least the two
+    // endpoints). Deterministic function of the segment length.
+    const steps = Math.max(1, Math.ceil(length / CELL_SIZE));
+    for (let i = 0; i <= steps; i += 1) {
+      const t = i / steps;
+      const sx = x0 + dx * t;
+      const sy = y0 + dy * t;
+      const cx = bucketCoord(sx);
+      const cy = bucketCoord(sy);
+      for (let bx = cx - pad; bx <= cx + pad; bx += 1) {
+        for (let by = cy - pad; by <= cy + pad; by += 1) {
+          const key = bucketKey(bx, by);
+          if (seenBuckets.has(key)) continue;
+          seenBuckets.add(key);
+          const bucket = this.buckets.get(key);
+          if (bucket === undefined) continue;
+          for (const entry of bucket) out.push(entry);
+        }
+      }
+    }
+    return out;
+  }
+
+  /**
    * The entry nearest to (wx, wy) within `radius` for which `accept` returns
    * true, or undefined if none qualifies. Distance is measured cell-centre to
    * the query point. Used by projectile-vs-cell hit selection to find the
