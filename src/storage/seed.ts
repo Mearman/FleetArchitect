@@ -45,14 +45,35 @@ import { getMeta, setMeta, storage } from "@/storage/db";
  * retrograde + lateral RCS translation) so they can close, brake at weapon
  * range, and station-keep without flipping. Old stores hold the prior
  * arbitrary-unit values; this bump reseeds.
+ *
+ * Version 9: 1 m scale — all preset designs are re-authored at physical scale
+ * (1 m per cell). Each coarse ASCII grid is subdivided by the W3 generator so
+ * the ship's occupied-cell span matches its class target: fighters ~20 m,
+ * frigates ~60 m, cruisers ~150 m, dreadnoughts ≤ 300 m. Old stores hold
+ * the pre-scale coarse grids, which no longer match the class thresholds; this
+ * bump replaces any preset-source record so the rescaled designs load. Only
+ * records with source "preset" are touched; player-authored (source "user")
+ * records are left untouched.
  */
-const PRESETS_VERSION = 8;
+const PRESETS_VERSION = 9;
 const VERSION_KEY = "presetsVersion";
 
 /**
  * Seed the bundled starter ships and fleets on first run (and whenever the
- * preset set is upgraded). Idempotent: existing records are left untouched, so
- * a player's own edits and deletions are preserved.
+ * preset set is upgraded).
+ *
+ * Behaviour:
+ * - Records with source "preset" whose id appears in the bundled set are
+ *   **always replaced** with the current bundled version. This ensures
+ *   re-authored presets (grid rescale, layout changes, etc.) take effect over
+ *   any previously-seeded copy — the old ID-gated skip logic would leave stale
+ *   coarse-grid ships in the store after a preset rescale.
+ * - Records with source "user" are never touched, so player edits and copies
+ *   are fully preserved.
+ * - Preset IDs that exist in the store under a non-preset source (unlikely but
+ *   possible if a player copied a preset before its id changed) are left alone:
+ *   only source "preset" records are force-replaced.
+ * - Fleet records with source "preset" are force-replaced by the same logic.
  */
 export async function seedPresets(): Promise<void> {
   const stored = await getMeta(VERSION_KEY);
@@ -63,18 +84,38 @@ export async function seedPresets(): Promise<void> {
     storage().ships.list(),
     storage().fleets.list(),
   ]);
-  const shipIds = new Set(existingShips.map((s) => s.id));
-  const fleetIds = new Set(existingFleets.map((f) => f.id));
+
+  // Build sets of ids that already exist as preset-source records. These will
+  // be force-replaced. Non-preset records at the same id are left untouched.
+  const presetShipIds = new Set(
+    existingShips.filter((s) => s.source === "preset").map((s) => s.id),
+  );
+  const presetFleetIds = new Set(
+    existingFleets.filter((f) => f.source === "preset").map((f) => f.id),
+  );
+  // Ids that exist as non-preset records: skip them (user-authored copies).
+  const nonPresetShipIds = new Set(
+    existingShips.filter((s) => s.source !== "preset").map((s) => s.id),
+  );
+  const nonPresetFleetIds = new Set(
+    existingFleets.filter((f) => f.source !== "preset").map((f) => f.id),
+  );
 
   for (const design of presetDesigns) {
-    if (!shipIds.has(design.id)) {
-      await storage().ships.save(design);
+    // Skip if this id is occupied by a non-preset record (user copy).
+    if (nonPresetShipIds.has(design.id)) continue;
+    // Force-replace existing preset records; insert new ones.
+    if (presetShipIds.has(design.id)) {
+      await storage().ships.remove(design.id);
     }
+    await storage().ships.save(design);
   }
   for (const fleet of presetFleets) {
-    if (!fleetIds.has(fleet.id)) {
-      await storage().fleets.save(fleet);
+    if (nonPresetFleetIds.has(fleet.id)) continue;
+    if (presetFleetIds.has(fleet.id)) {
+      await storage().fleets.remove(fleet.id);
     }
+    await storage().fleets.save(fleet);
   }
 
   await setMeta(VERSION_KEY, PRESETS_VERSION);
