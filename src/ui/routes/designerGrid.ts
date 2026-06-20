@@ -66,6 +66,7 @@ export function blankDesign(): WorkingDesign {
     source: "user",
     shipStance: "balanced",
     crewPriority: "combat",
+    rules: [],
   };
 }
 

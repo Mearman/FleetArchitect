@@ -102,7 +102,7 @@ export function ShipDesignerRoute() {
       revision: 1,
       shipStance: working.shipStance,
       crewPriority: working.crewPriority,
-      rules: [],
+      rules: working.rules,
     };
     return analyseShipDesign(design, catalog());
   }, [working]);
@@ -276,7 +276,7 @@ export function ShipDesignerRoute() {
       revision: 1,
       shipStance: working.shipStance,
       crewPriority: working.crewPriority,
-      rules: [],
+      rules: working.rules,
     };
     await storage().ships.save(design);
     setWorking((prev) => ({ ...prev, id: design.id, createdAt: design.createdAt }));
@@ -305,6 +305,7 @@ export function ShipDesignerRoute() {
       source: design.source,
       shipStance: design.shipStance,
       crewPriority: design.crewPriority,
+      rules: design.rules,
     });
     setSelected(null);
   }
@@ -571,12 +572,16 @@ export function ShipDesignerRoute() {
                   <BehaviourPanel
                     shipStance={working.shipStance}
                     crewPriority={working.crewPriority}
+                    rules={working.rules}
                     readOnly={readOnly}
                     onStanceChange={(s) =>
                       setWorking((prev) => ({ ...prev, shipStance: s }))
                     }
                     onPriorityChange={(p) =>
                       setWorking((prev) => ({ ...prev, crewPriority: p }))
+                    }
+                    onRulesChange={(r) =>
+                      setWorking((prev) => ({ ...prev, rules: r }))
                     }
                   />
                 </Stack>
@@ -605,7 +610,7 @@ export function ShipDesignerRoute() {
                       revision: 1,
                       shipStance: working.shipStance,
                       crewPriority: working.crewPriority,
-                      rules: [],
+                      rules: working.rules,
                     },
                   }}
                 />
