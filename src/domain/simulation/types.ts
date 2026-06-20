@@ -3,7 +3,7 @@ import type { Orders } from "@/schema/fleet";
 import type { CellEdges, HardwireResource, SurfaceKind } from "@/schema/grid";
 import type { ShipClassification } from "@/schema/armor";
 import type { ModuleEffect } from "@/schema/module";
-import type { BattleAnomaly, BattleSide } from "@/schema/battle";
+import type { BattleAnomaly, BattleSide, ShipDescriptor } from "@/schema/battle";
 import type { Vec2 } from "@/schema/primitives";
 import type { CrewPriority, Rule, ShipStance } from "@/schema/ai";
 
@@ -352,4 +352,11 @@ export const STREAM_BATCH_INTERVAL_MS = 100;
 export interface BattleSummary {
   winner: BattleSide;
   ticks: number;
+  /**
+   * Static per-ship descriptors (cell layout + outline) for every ship instance
+   * that appeared during the battle, including break-away chunks, in stable
+   * lexicographic instanceId order. Emitted once for the whole battle so the
+   * per-tick frames carry only dynamic cell state.
+   */
+  descriptors: ShipDescriptor[];
 }

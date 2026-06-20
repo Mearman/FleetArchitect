@@ -1,13 +1,25 @@
 import { Box, Group, Paper, Progress, Stack, Text, Tooltip } from "@mantine/core";
 import type { BattleFrame } from "@/schema/battle";
+import type { DescriptorMap } from "@/ui/cellLayout";
+import { renderCells } from "@/ui/cellLayout";
 import { MODULE_LABEL } from "./battleConstants";
 
 /**
- * Per-module status readout for the current frame: each ship's modules as a
- * row of HP bars, so you can watch systems fail as the battle wears on.
+ * Per-module status readout for the current frame: each ship's cells as a
+ * row of HP bars, so you can watch systems fail as the battle wears on. Cell
+ * kinds and max HP come from the static descriptor; live HP/alive come from the
+ * frame.
  */
-export function ModuleStatusPanel({ frame }: { frame: BattleFrame }) {
-  const withModules = frame.ships.filter((s) => s.modules !== undefined && s.modules.length > 0);
+export function ModuleStatusPanel({
+  frame,
+  descriptors,
+}: {
+  frame: BattleFrame;
+  descriptors: DescriptorMap;
+}) {
+  const withModules = frame.ships
+    .map((s) => ({ ship: s, cells: renderCells(s, descriptors.get(s.instanceId)) }))
+    .filter((entry) => entry.cells !== undefined && entry.cells.length > 0);
   if (withModules.length === 0) {
     return (
       <Paper p="sm" withBorder>
@@ -21,7 +33,7 @@ export function ModuleStatusPanel({ frame }: { frame: BattleFrame }) {
         <Text size="xs" c="dimmed" fw={600}>
           Modules
         </Text>
-        {withModules.map((s) => {
+        {withModules.map(({ ship: s, cells }) => {
           const sideColour =
             s.side === "attacker"
               ? "var(--mantine-color-red-5)"
@@ -39,7 +51,7 @@ export function ModuleStatusPanel({ frame }: { frame: BattleFrame }) {
                 }}
               />
               <Group gap={4} wrap="wrap" style={{ flex: 1 }}>
-                {s.modules?.map((m) => {
+                {cells?.map((m) => {
                   const frac = m.maxHp > 0 ? Math.max(0, m.hp / m.maxHp) : 0;
                   return (
                     <Tooltip

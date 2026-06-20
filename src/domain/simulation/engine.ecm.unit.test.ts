@@ -228,9 +228,9 @@ function damageTaken(result: ReturnType<typeof runBattle>): number {
   const start = first.ships.find((s) => s.instanceId === "prey");
   const end = last.ships.find((s) => s.instanceId === "prey");
   if (start === undefined || end === undefined) throw new Error("prey missing");
-  const startHp = (start.modules ?? []).reduce((sum, m) => sum + m.hp, 0) + start.structure;
+  const startHp = (start.cells ?? []).reduce((sum, m) => sum + m.hp, 0) + start.structure;
   if (!end.alive) return startHp;
-  const endHp = (end.modules ?? []).reduce((sum, m) => sum + m.hp, 0) + end.structure;
+  const endHp = (end.cells ?? []).reduce((sum, m) => sum + m.hp, 0) + end.structure;
   return startHp - endHp;
 }
 

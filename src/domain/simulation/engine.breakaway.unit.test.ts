@@ -226,9 +226,13 @@ describe("engine.breakaway", () => {
     // The chunk is alive and carries exactly one alive weapon — it kept
     // the weapon module from one end of the severed column.
     expect(chunk.alive).toBe(true);
-    const aliveChunkModules = chunk.modules?.filter((m) => m.alive) ?? [];
+    const aliveChunkModules = chunk.cells?.filter((m) => m.alive) ?? [];
     expect(aliveChunkModules.length).toBe(1);
-    expect(aliveChunkModules[0]?.kind).toBe("weapon");
+    // Cell kind is static, read from the chunk's descriptor by slot id.
+    const chunkLayout = result.descriptors?.find((d) => d.instanceId === chunk.instanceId)?.cells;
+    const aliveSlot = aliveChunkModules[0]?.slotId;
+    const aliveKind = chunkLayout?.find((c) => c.slotId === aliveSlot)?.kind;
+    expect(aliveKind).toBe("weapon");
 
     // The split is permanent: subsequent frames keep the chunk alive.
     const lastWithChunk = result.frames.find(

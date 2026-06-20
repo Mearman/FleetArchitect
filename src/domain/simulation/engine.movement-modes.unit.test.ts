@@ -247,12 +247,12 @@ describe("engine.movement-modes", () => {
     // undamaged, so that IS the max).
     const f0 = result.frames[0];
     const a0 = f0?.ships.find((s) => s.instanceId === "a1");
-    const initialHp = (a0?.structure ?? 0) + (a0?.modules ?? []).reduce((sum, m) => sum + (m.hp ?? 0), 0);
+    const initialHp = (a0?.structure ?? 0) + (a0?.cells ?? []).reduce((sum, m) => sum + (m.hp ?? 0), 0);
     let retreatTick: number | undefined;
     for (const frame of result.frames) {
       const ship = frame.ships.find((s) => s.instanceId === "a1");
       if (ship?.alive !== true) continue;
-      const hp = (ship.structure ?? 0) + (ship.modules ?? []).reduce((sum, m) => sum + (m.hp ?? 0), 0);
+      const hp = (ship.structure ?? 0) + (ship.cells ?? []).reduce((sum, m) => sum + (m.hp ?? 0), 0);
       if (initialHp > 0 && hp / initialHp < retreatThreshold) {
         retreatTick = frame.tick;
         break;

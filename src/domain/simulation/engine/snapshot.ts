@@ -8,7 +8,7 @@
  */
 
 import { CELL_SIZE } from "@/domain/grid";
-import type { AwarenessSnapshot, BattleFrame } from "@/schema/battle";
+import type { AwarenessSnapshot, BattleFrame, ShipDescriptor } from "@/schema/battle";
 import type { SimCrew } from "../types";
 
 import { crewCellKey } from "./crew-pathfinding";
@@ -45,7 +45,6 @@ export function snapshot(
         vx: s.velX,
         vy: s.velY,
         facing: s.facing,
-        outline: s.outline,
         structure: s.structure,
         shield: s.shield,
         alive: s.alive,
@@ -65,18 +64,15 @@ export function snapshot(
       };
       if (s.brokeOff === true) s.brokeOff = false;
       if (s.modules === undefined) return base;
+      // Per-cell DYNAMIC state only. The static layout (kind, ship-local offset,
+      // surface kind, max HP, turret presence) lives once per battle in the
+      // ship descriptor (see `shipDescriptor` below), keyed by the same slotId.
       const withModules = {
         ...base,
-        modules: s.modules.map((m) => ({
+        cells: s.modules.map((m) => ({
           slotId: m.slotId,
-          kind: m.kind,
-          x: m.x,
-          y: m.y,
-          surface: m.surface,
           surfaceHp: m.surfaceHp,
-          maxSurfaceHp: m.maxSurfaceHp,
           hp: m.hp,
-          maxHp: m.maxHp,
           alive: m.alive,
           // Emit the live barrel angle for turrets so the renderer can draw
           // the barrel tracking the target. Omitted on fixed mounts and
@@ -247,6 +243,36 @@ export function snapshot(
           })),
         }
       : {}),
+  };
+}
+
+/**
+ * Build the STATIC descriptor for one ship instance: the cell layout (kind,
+ * ship-local offset, surface, max HP, turret presence) and the chamfered hull
+ * outline. Emitted ONCE per instance for the whole battle rather than per tick,
+ * so per-tick frames carry only dynamic cell state and the renderer
+ * reconstructs each cell's world position from the ship pose plus the static
+ * offset here. A legacy aggregated ship with no modules gets a descriptor with
+ * no `cells` (and no `outline` unless one was resolved).
+ */
+export function shipDescriptor(s: SimShip): ShipDescriptor {
+  const base: ShipDescriptor = { instanceId: s.instanceId, side: s.side };
+  if (s.outline !== undefined) base.outline = s.outline;
+  if (s.modules === undefined) return base;
+  return {
+    ...base,
+    cells: s.modules.map((m) => ({
+      slotId: m.slotId,
+      kind: m.kind,
+      ox: m.x,
+      oy: m.y,
+      surface: m.surface,
+      maxSurfaceHp: m.maxSurfaceHp,
+      maxHp: m.maxHp,
+      // Turret presence mirrors the per-frame `turretAngle` emission: the
+      // renderer draws a tracking barrel only on cells flagged here.
+      ...(m.turretTurnRate > 0 ? { hasTurret: true } : {}),
+    })),
   };
 }
 

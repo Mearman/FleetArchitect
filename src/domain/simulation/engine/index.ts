@@ -8,7 +8,7 @@
 import { createId, nowIso } from "@/domain/id";
 import { mulberry32 } from "@/domain/simulation/rng";
 import { computeOccluders } from "@/domain/occluders";
-import type { BattleFrame, BattleResult, BattleSide } from "@/schema/battle";
+import type { BattleFrame, BattleResult, BattleSide, ShipDescriptor } from "@/schema/battle";
 import type { BattleInputs, BattleSummary } from "../types";
 
 import { computeAwareness } from "./awareness";
@@ -34,7 +34,7 @@ import { hasAliveCommand, recomputeAggregates } from "./physics";
 import { toSimShip } from "./setup";
 import { electFocusTarget, pickTarget } from "./targeting";
 import { applyBlink, applyCommandAuras, stepOvercharge } from "./tech";
-import { snapshot } from "./snapshot";
+import { shipDescriptor, snapshot } from "./snapshot";
 import type { SimMine, SimPod, SimProjectile, SimShip } from "./types";
 import { fireWeapons, updateProjectiles } from "./weapons";
 
@@ -48,13 +48,31 @@ export { crewState, snapshot } from "./snapshot";
  * logic; it performs no id generation, timestamping, or config assembly, so
  * the same inputs yield byte-identical frames on every run. `runBattle` wraps
  * this generator to build a replayable BattleResult.
+ *
+ * `descriptorSink`, when provided, is populated with each ship instance's static
+ * descriptor (cell layout + outline) the first frame that instance appears,
+ * keyed by instanceId. It is a side channel so a streaming consumer (the worker)
+ * can forward freshly captured descriptors alongside each batch before the final
+ * summary — which also carries the complete, sorted descriptor list — lands.
  */
 export function* simulateBattle(
   inputs: BattleInputs,
+  descriptorSink?: Map<string, ShipDescriptor>,
 ): Generator<BattleFrame, BattleSummary> {
   const rng = mulberry32(inputs.seed >>> 0);
   resetProjectileCounter();
   const ships = inputs.ships.map((s) => toSimShip(s, rng));
+  // Static descriptors, captured the first frame each instance appears. Either
+  // the caller's sink (streaming) or a private map (direct runs). Sorted into
+  // the summary at the end so two same-seed runs return the same order.
+  const descriptors = descriptorSink ?? new Map<string, ShipDescriptor>();
+  const captureDescriptors = (live: readonly SimShip[]): void => {
+    for (const s of live) {
+      if (!descriptors.has(s.instanceId)) {
+        descriptors.set(s.instanceId, shipDescriptor(s));
+      }
+    }
+  };
   // Per-side ship lists and the id index are rebuilt each tick (top of the loop)
   // so they pick up phantoms (drones/decoys) and break-away chunks added during
   // a tick. Phantoms are full SimShips so enemies can target them; the victory
@@ -152,6 +170,7 @@ export function* simulateBattle(
   // Number of post-initial frames yielded, matching the previous
   // `frames.length - 1`: the tick-0 frame is excluded from the count.
   let ticks = 0;
+  captureDescriptors(ships);
   yield snapshot(0, ships, projectiles, frame0Awareness, mines, pods, pulses, emissions, debris);
 
   let winner: BattleSide = "draw";
@@ -565,6 +584,9 @@ export function* simulateBattle(
       }
     }
 
+    // Capture descriptors for any instance that first appeared this tick
+    // (break-away chunks, launched phantoms) before recording the frame.
+    captureDescriptors(ships);
     yield snapshot(tick, ships, projectiles, awareness, mines, pods, pulses, emissions, debris);
     ticks += 1;
 
@@ -594,7 +616,18 @@ export function* simulateBattle(
     winner = leadingSide(attackers, defenders);
   }
 
-  return { winner, ticks };
+  return { winner, ticks, descriptors: sortedDescriptors(descriptors) };
+}
+
+/**
+ * Stable lexicographic-by-instanceId ordering of the captured descriptors, so
+ * two same-seed runs return byte-identical descriptor lists regardless of the
+ * Map's insertion order.
+ */
+function sortedDescriptors(map: ReadonlyMap<string, ShipDescriptor>): ShipDescriptor[] {
+  return [...map.values()].sort((a, b) =>
+    a.instanceId < b.instanceId ? -1 : a.instanceId > b.instanceId ? 1 : 0,
+  );
 }
 
 export function runBattle(inputs: BattleInputs): BattleResult {
@@ -626,6 +659,9 @@ export function runBattle(inputs: BattleInputs): BattleResult {
       faction: s.faction,
       side: s.side,
     })),
+    // Static per-ship cell layout + outline, emitted once so frames carry only
+    // dynamic cell state. The renderer derives cell world positions from these.
+    descriptors: summary.descriptors,
   };
 }
 

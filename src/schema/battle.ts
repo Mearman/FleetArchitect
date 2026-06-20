@@ -40,6 +40,81 @@ export const BattleConfig = z.object({
 });
 export type BattleConfig = z.infer<typeof BattleConfig>;
 
+/** The module kinds a cell can hold. Shared by the static cell descriptor and
+ *  any consumer that switches on cell kind. */
+export const CellKind = z.enum([
+  "weapon",
+  "shield",
+  "armour",
+  "engine",
+  "power",
+  "crew",
+  "pointDefense",
+  "repair",
+  "hull",
+  "magazine",
+  "sensor",
+  "comms",
+  "rcs",
+  "reactionWheel",
+  "blink",
+  "afterburner",
+  "overcharge",
+  "cloak",
+  "signature",
+  "ecm",
+  "eccm",
+  "decoy",
+  "commandAura",
+  "hangar",
+  "mineLayer",
+  "boarding",
+]);
+export type CellKind = z.infer<typeof CellKind>;
+
+/**
+ * One cell's DYNAMIC state at a single tick. Carries only what changes
+ * tick-to-tick; the cell's static layout (kind, ship-local offset, max HP,
+ * surface kind) lives once-per-battle in {@link ShipCellLayout}, keyed by the
+ * same `slotId`. The renderer reconstructs each cell's world position from the
+ * ship pose and the static offset, so it is no longer serialised every frame.
+ */
+export const CellState = z.object({
+  /** Stable per-cell id, the key into the static {@link ShipCellLayout}. */
+  slotId: EntityId,
+  /** Current HP of the surface layer (armour or deck). Zero for bare cells.
+   *  Optional for backward compatibility. */
+  surfaceHp: z.number().optional(),
+  hp: z.number(),
+  alive: z.boolean(),
+  /** Live door states for a module that has at least one door edge, keyed by
+   *  direction. Absent on modules with no doors so older replays stay
+   *  byte-identical. Optional for backward compatibility. */
+  doorStates: z
+    .object({
+      n: DoorState.optional(),
+      e: DoorState.optional(),
+      s: DoorState.optional(),
+      w: DoorState.optional(),
+    })
+    .optional(),
+  /**
+   * For weapon modules with a turret: the live barrel angle in radians,
+   * ship-local — the direction the turret has slewed to this tick. The renderer
+   * draws the barrel along `ship.facing + turretAngle` so a turret visibly
+   * tracks its target. Absent on fixed mounts and non-weapon modules.
+   * Optional for backward compatibility with older replays.
+   */
+  turretAngle: z.number().optional(),
+  /** Whether this module is manned by crew. Optional for backward compatibility. */
+  manned: z.boolean().optional(),
+  /** Ammo remaining in a weapon module. Optional, complements WeaponEffect.ammo. */
+  ammo: z.number().int().min(0).optional(),
+  /** Charge level or progress for applicable modules. Optional for backward compatibility. */
+  charge: z.number().optional(),
+});
+export type CellState = z.infer<typeof CellState>;
+
 /** One ship's state at a single tick of a recorded battle. */
 export const ShipSnapshot = z.object({
   instanceId: EntityId,
@@ -56,84 +131,16 @@ export const ShipSnapshot = z.object({
   structure: z.number(),
   shield: z.number(),
   alive: z.boolean(),
-  /** Per-module state, present when the ship runs the per-module damage
-   *  model. Optional for backward compatibility with older replays. */
-  modules: z
-    .array(
-      z.object({
-        slotId: EntityId,
-        kind: z.enum([
-          "weapon",
-          "shield",
-          "armour",
-          "engine",
-          "power",
-          "crew",
-          "pointDefense",
-          "repair",
-          "hull",
-          "magazine",
-          "sensor",
-          "comms",
-          "rcs",
-          "reactionWheel",
-          "blink",
-          "afterburner",
-          "overcharge",
-          "cloak",
-          "signature",
-          "ecm",
-          "eccm",
-          "decoy",
-          "commandAura",
-          "hangar",
-          "mineLayer",
-          "boarding",
-        ]),
-        /** Position in ship-local (design) coordinates, for rendering. */
-        x: z.number(),
-        y: z.number(),
-        /** Surface kind of this cell (bare/deck/armor). Optional for backward
-         *  compatibility with replays recorded before the grid model. */
-        surface: SurfaceKind.optional(),
-        /** Current HP of the surface layer (armour or deck). Zero for bare cells.
-         *  Optional for backward compatibility. */
-        surfaceHp: z.number().optional(),
-        /** Maximum HP of the surface layer. Optional for backward compatibility. */
-        maxSurfaceHp: z.number().optional(),
-        hp: z.number(),
-        maxHp: z.number(),
-        alive: z.boolean(),
-        /** Live door states for a module that has at least one door edge, keyed by
-         *  direction. Absent on modules with no doors so older replays stay
-         *  byte-identical. Optional for backward compatibility. */
-        doorStates: z
-          .object({
-            n: DoorState.optional(),
-            e: DoorState.optional(),
-            s: DoorState.optional(),
-            w: DoorState.optional(),
-          })
-          .optional(),
-        /**
-         * For weapon modules with a turret: the live barrel angle in
-         * radians, ship-local — the direction the turret has slewed to this
-         * tick. The renderer draws the barrel along `ship.facing + turretAngle`
-         * so a turret visibly tracks its target. Absent on fixed mounts and
-         * non-weapon modules (their barrel always points along the module's
-         * mount facing). Optional for backward compatibility with older
-         * replays.
-         */
-        turretAngle: z.number().optional(),
-        /** Whether this module is manned by crew. Optional for backward compatibility. */
-        manned: z.boolean().optional(),
-        /** Ammo remaining in a weapon module. Optional, complements WeaponEffect.ammo. */
-        ammo: z.number().int().min(0).optional(),
-        /** Charge level or progress for applicable modules. Optional for backward compatibility. */
-        charge: z.number().optional(),
-      }),
-    )
-    .optional(),
+  /**
+   * Per-cell DYNAMIC state, present when the ship runs the per-module damage
+   * model. Each entry is keyed by `slotId` into the once-per-battle
+   * {@link ShipCellLayout} (carried on {@link ShipDescriptor}) which holds the
+   * static layout — kind, ship-local offset, max HP, surface — so the renderer
+   * derives each cell's world position from the ship pose plus its static
+   * offset rather than re-serialising it every frame. Optional for backward
+   * compatibility with older replays.
+   */
+  cells: z.array(CellState).optional(),
   /** Crew members aboard this ship. Optional for backward compatibility with
    *  older replays that predate crew. */
   crew: z.array(CrewSnapshot).optional(),
@@ -161,9 +168,6 @@ export const ShipSnapshot = z.object({
    * indicators. Optional for backward compatibility with older replays.
    */
   targetId: EntityId.optional(),
-  /** Chamfered hull outline polygon loops (Vec2 vertices in ship-local metres).
-   *  Render-only; present on modular ships with armor cells. */
-  outline: z.array(z.array(z.object({ x: z.number(), y: z.number() }))).optional(),
   /**
    * Per-ship resource state (Phase 12 wiring). Emitted when the ship runs the
    * resource step (modular ships only). Arrays are module-sparse: index `i`
@@ -188,6 +192,58 @@ export const ShipSnapshot = z.object({
     .optional(),
 });
 export type ShipSnapshot = z.infer<typeof ShipSnapshot>;
+
+/** A chamfered hull outline: an array of polygon loops, each a list of Vec2
+ *  vertices in ship-local metres. Render-only; present on modular ships with
+ *  armour cells. Carried once per ship on {@link ShipDescriptor}. */
+export const ShipOutline = z.array(z.array(z.object({ x: z.number(), y: z.number() })));
+export type ShipOutline = z.infer<typeof ShipOutline>;
+
+/**
+ * The STATIC layout of one cell: everything that is fixed for the life of a
+ * ship instance and so does not belong in every per-tick snapshot. Keyed by
+ * `slotId` to the dynamic {@link CellState} the frames carry. `ox`/`oy` are the
+ * cell's ship-local centre offset; the renderer rotates them by the ship's
+ * facing and adds the ship position to recover the cell's world position.
+ */
+export const ShipCellLayout = z.object({
+  slotId: EntityId,
+  kind: CellKind,
+  /** Ship-local centre offset (design coordinates). */
+  ox: z.number(),
+  oy: z.number(),
+  /** Surface kind of this cell (bare/deck/armor). Optional for backward
+   *  compatibility with replays recorded before the grid model. */
+  surface: SurfaceKind.optional(),
+  /** Maximum HP of the surface layer. Optional for backward compatibility. */
+  maxSurfaceHp: z.number().optional(),
+  /** Maximum scaffold/structure HP of the cell. */
+  maxHp: z.number(),
+  /** True when this cell mounts a turreted weapon, so the renderer expects a
+   *  live `turretAngle` in the cell's dynamic state. Omitted on fixed mounts and
+   *  non-weapon cells. */
+  hasTurret: z.boolean().optional(),
+});
+export type ShipCellLayout = z.infer<typeof ShipCellLayout>;
+
+/**
+ * Per-ship STATIC descriptor, emitted ONCE per ship instance for the whole
+ * battle rather than serialised into every frame. Holds the cell layout (the
+ * static grid) and the chamfered outline; the renderer reconstructs each cell's
+ * world position from the ship pose carried in the per-tick {@link ShipSnapshot}
+ * plus the static `ox`/`oy` offset here. Break-away chunks are fresh instances
+ * with their own descriptor, captured the first frame they appear.
+ */
+export const ShipDescriptor = z.object({
+  instanceId: EntityId,
+  side: z.enum(["attacker", "defender"]),
+  /** The static per-cell layout, present for modular ships. Absent on legacy
+   *  aggregated ships with no cell data. */
+  cells: z.array(ShipCellLayout).optional(),
+  /** The chamfered hull outline, present for modular ships with armour cells. */
+  outline: ShipOutline.optional(),
+});
+export type ShipDescriptor = z.infer<typeof ShipDescriptor>;
 
 /** A visible projectile at a tick, for rendering weapon fire during replay. */
 export const ProjectileSnapshot = z.object({
@@ -454,6 +510,15 @@ export const BattleResult = z.object({
    * back to side-only colour when absent.
    */
   roster: z.array(ShipRosterEntry).optional(),
+  /**
+   * Static per-ship descriptors (cell layout + outline), emitted ONCE for the
+   * whole battle so the per-tick frames carry only dynamic cell state. The
+   * renderer reconstructs each cell's world position from the ship pose plus the
+   * static offset here. One entry per ship instance that ever appears, including
+   * break-away chunks. Optional so replays recorded before the slim-snapshot
+   * change still parse (those carry the layout inline in each frame).
+   */
+  descriptors: z.array(ShipDescriptor).optional(),
 });
 export type BattleResult = z.infer<typeof BattleResult>;
 
@@ -467,6 +532,13 @@ export const BattleStreamMessage = z.discriminatedUnion("kind", [
     kind: z.literal("frames"),
     frames: z.array(BattleFrame),
     computedTicks: z.number().int().min(0),
+    /**
+     * Static descriptors for ship instances that FIRST appeared in this batch
+     * (including break-away chunks), so the renderer can reconstruct cell world
+     * positions for the freshly streamed frames before the final result lands.
+     * Empty when the batch introduced no new instances.
+     */
+    descriptors: z.array(ShipDescriptor),
   }),
   z.object({
     kind: z.literal("result"),

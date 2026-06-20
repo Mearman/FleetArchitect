@@ -445,7 +445,7 @@ describe("engine.crew — snapshot", () => {
     ];
     const result = runBattle(inputs([shooterShip("a1", 0, modules), toughTarget("d1", 40)]));
     const ship = result.frames[0]!.ships.find((s) => s.instanceId === "a1");
-    const weapon = ship?.modules?.find((m) => m.slotId === "w1");
+    const weapon = ship?.cells?.find((m) => m.slotId === "w1");
     expect(weapon?.manned, "a crewed weapon emits its manned flag").toBe(false);
     expect(weapon?.ammo, "a finite-magazine weapon emits its ammo").toBe(0);
     expect(weapon?.charge, "a power-drawing weapon emits its charge").toBeGreaterThan(0);

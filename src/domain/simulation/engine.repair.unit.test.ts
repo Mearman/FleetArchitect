@@ -205,7 +205,7 @@ function v1HpAt(
   const frame = result.frames[tick];
   if (frame === undefined) return undefined;
   const ship = frame.ships.find((s) => s.instanceId === instanceId);
-  return ship?.modules?.find((m) => m.slotId === "v1")?.hp;
+  return ship?.cells?.find((m) => m.slotId === "v1")?.hp;
 }
 
 describe("engine.per-module repair", () => {
@@ -237,12 +237,17 @@ describe("engine.per-module repair", () => {
     // rate 100 heals it to maxHp in one tick and then caps.
     const rate = 100;
     const result = runBattle(inputs([hammerShip("a1", 0), modularDefender("d1", 80, rate)]));
-    // Walk the frames and assert v1 never exceeds 20.
+    // v1's max HP is static, read once from the descriptor.
+    const v1MaxHp = result.descriptors
+      ?.find((d) => d.instanceId === "d1")
+      ?.cells?.find((c) => c.slotId === "v1")?.maxHp;
+    expect(v1MaxHp).toBeDefined();
+    // Walk the frames and assert v1 never exceeds its max HP.
     for (const frame of result.frames) {
-      const v1 = frame.ships.find((s) => s.instanceId === "d1")?.modules?.find((m) => m.slotId === "v1");
+      const v1 = frame.ships.find((s) => s.instanceId === "d1")?.cells?.find((m) => m.slotId === "v1");
       expect(v1).toBeDefined();
-      if (v1 === undefined) continue;
-      expect(v1.hp, "v1 hp must never exceed maxHp").toBeLessThanOrEqual(v1.maxHp);
+      if (v1 === undefined || v1MaxHp === undefined) continue;
+      expect(v1.hp, "v1 hp must never exceed maxHp").toBeLessThanOrEqual(v1MaxHp);
     }
   });
 
@@ -251,10 +256,10 @@ describe("engine.per-module repair", () => {
     // exercises the inert-repair-module branch.
     const baseline = runBattle(inputs([hammerShip("a1", 0), modularDefender("d1", 80, 0)]));
     // v1's hp should never increase past its previous frame (no healer).
-    let prev = baseline.frames[0]?.ships.find((s) => s.instanceId === "d1")?.modules?.find((m) => m.slotId === "v1")?.hp;
+    let prev = baseline.frames[0]?.ships.find((s) => s.instanceId === "d1")?.cells?.find((m) => m.slotId === "v1")?.hp;
     expect(prev).toBeDefined();
     for (const frame of baseline.frames) {
-      const v1 = frame.ships.find((s) => s.instanceId === "d1")?.modules?.find((m) => m.slotId === "v1");
+      const v1 = frame.ships.find((s) => s.instanceId === "d1")?.cells?.find((m) => m.slotId === "v1");
       if (v1 === undefined || prev === undefined) continue;
       // Either the same (no hit) or lower (a hit landed), never higher.
       expect(v1.hp, `v1 should never heal without a repair bay`).toBeLessThanOrEqual(prev);

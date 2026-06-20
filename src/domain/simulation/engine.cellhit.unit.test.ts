@@ -187,13 +187,13 @@ interface FModule {
 }
 interface FShip {
   instanceId: string;
-  modules?: FModule[];
+  cells?: FModule[];
 }
 
 /** The recorded HP of a cell on the defender at a given frame, or undefined. */
 function cellHp(frame: { ships: FShip[] }, slotId: string): number | undefined {
   const d = frame.ships.find((s) => s.instanceId === "d1");
-  return d?.modules?.find((m) => m.slotId === slotId)?.hp;
+  return d?.cells?.find((m) => m.slotId === slotId)?.hp;
 }
 
 /** The first frame in which the named cell's HP has dropped below its max. */

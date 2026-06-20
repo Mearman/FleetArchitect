@@ -1,6 +1,8 @@
 import { useCallback } from "react";
 import { CELL_SIZE } from "@/domain/grid";
 import type { BattleFrame, BattleResult } from "@/schema/battle";
+import type { DescriptorMap } from "@/ui/cellLayout";
+import { hullRadiusWorld, renderCells } from "@/ui/cellLayout";
 import { interpolateFrame } from "@/ui/interpolateFrame";
 import { orderShipsForRender } from "@/ui/renderOrder";
 import { drawAnomaly } from "./battleAnomaly";
@@ -38,6 +40,10 @@ export interface UseBattleCanvasProps {
   showFog: boolean;
   factionByInstance: Map<string, string>;
   overlays: OverlayState;
+  /** Static per-ship layout (cells + outline), keyed by instance id. The draw
+   *  callback reads it to reconstruct each cell's world position from the ship
+   *  pose, since the per-tick frames carry only dynamic cell state. */
+  descriptors: DescriptorMap;
 }
 
 /**
@@ -61,6 +67,7 @@ export function useBattleCanvas({
   showFog,
   factionByInstance,
   overlays,
+  descriptors,
 }: UseBattleCanvasProps) {
   return useCallback(
     (frame: BattleFrame, tick: number, frames: readonly BattleFrame[]) => {
@@ -134,6 +141,7 @@ export function useBattleCanvas({
             followId,
             tick,
             frames,
+            descriptors,
             inScope: (ship) => scope === "all" || ship.instanceId === followId,
           });
         }
@@ -154,6 +162,10 @@ export function useBattleCanvas({
       for (const s of orderShipsForRender(frame.ships)) {
         const px = sx(s.x);
         const py = sy(s.y);
+        // Static layout for this ship (cell offsets + outline), emitted once per
+        // battle; the cells are reconstructed in world space from the ship pose.
+        const descriptor = descriptors.get(s.instanceId);
+        const cells = renderCells(s, descriptor);
         // Faction accent tints the hull; the side colour is shown separately as
         // an outline ring so allegiance stays legible in a mirror match. Falls
         // back to the side colour for replays recorded before the factions update.
@@ -177,13 +189,9 @@ export function useBattleCanvas({
         // the farthest cell from the ship centre (display pixels), falling back
         // to a small fixed ring for legacy ships with no cell data.
         let hullRadiusPx = 11;
-        if (s.modules !== undefined && s.modules.length > 0) {
-          let maxDistSq = 0;
-          for (const m of s.modules) {
-            const d = m.x * m.x + m.y * m.y;
-            if (d > maxDistSq) maxDistSq = d;
-          }
-          hullRadiusPx = (Math.sqrt(maxDistSq) + CELL_SIZE) * scale + 3;
+        const hullRadius = hullRadiusWorld(descriptor);
+        if (hullRadius !== undefined) {
+          hullRadiusPx = hullRadius * scale + 3;
         }
 
         // Side outline ring (factions update): with hulls tinted by faction, a
@@ -217,7 +225,7 @@ export function useBattleCanvas({
         // genuinely dwarfs a fighter on the canvas. Cells are tinted toward the
         // side colour so faction allegiance stays legible at a glance. Destroyed
         // cells go dark with a cross; turreted weapons draw a tracking barrel.
-        if (s.modules !== undefined && s.facing !== undefined) {
+        if (cells !== undefined && s.facing !== undefined) {
           // Cell edge length in display pixels (world CELL_SIZE through the
           // current world-to-display scale). Floored so distant fleets still
           // show a visible hull rather than collapsing to sub-pixel specks.
@@ -226,11 +234,11 @@ export function useBattleCanvas({
           ctx.save();
           ctx.translate(px, py);
           ctx.rotate(s.facing);
-          for (const m of s.modules) {
-            // Cell centre in ship-local display space (local world offset times
-            // the scale); the surrounding translate/rotate places it in world.
-            const lx = m.x * scale;
-            const ly = m.y * scale;
+          for (const m of cells) {
+            // Cell centre in ship-local display space (static offset times the
+            // scale); the surrounding translate/rotate places it in world.
+            const lx = m.ox * scale;
+            const ly = m.oy * scale;
             const colour = MODULE_COLOUR[m.kind];
             if (colour === undefined) continue;
 
@@ -322,11 +330,12 @@ export function useBattleCanvas({
           // are in ship-local world units; the surrounding translate/rotate
           // already places them in world space, so only the display scale
           // is applied.
-          if (s.outline !== undefined) {
+          const outline = descriptor?.outline;
+          if (outline !== undefined) {
             ctx.strokeStyle = s.side === "attacker" ? "#ff6b5a" : "#5ab0ff";
             ctx.lineWidth = 1;
             ctx.globalAlpha = 0.5;
-            for (const loop of s.outline) {
+            for (const loop of outline) {
               if (loop.length < 2) continue;
               const first = loop[0];
               if (first === undefined) continue;
@@ -387,7 +396,7 @@ export function useBattleCanvas({
       // Over-ship layer: target lock, damage pulse.
       drawOverlays(OVER_SHIP_IDS);
     },
-    [bounds, maxHp, activeAnomaly, activeSeed, showFog, factionByInstance, overlays, canvasRef, cameraRef],
+    [bounds, maxHp, activeAnomaly, activeSeed, showFog, factionByInstance, overlays, descriptors, canvasRef, cameraRef],
   );
 }
 

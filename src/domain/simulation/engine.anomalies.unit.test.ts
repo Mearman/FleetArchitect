@@ -227,9 +227,9 @@ function inputs(ships: CombatShip[], anomaly: BattleAnomaly, seed = 1, maxTicks 
  *  zero events in either battle. */
 function cellsDestroyed(result: ReturnType<typeof runBattle>, targetId: string): number {
   const first = result.frames[0]?.ships.find((s) => s.instanceId === targetId);
-  const initialAlive = first?.modules?.filter((m) => m.alive).length ?? 0;
+  const initialAlive = first?.cells?.filter((m) => m.alive).length ?? 0;
   const last = result.frames.at(-1)?.ships.find((s) => s.instanceId === targetId);
-  const finalAlive = last?.modules?.filter((m) => m.alive).length ?? 0;
+  const finalAlive = last?.cells?.filter((m) => m.alive).length ?? 0;
   return initialAlive - finalAlive;
 }
 

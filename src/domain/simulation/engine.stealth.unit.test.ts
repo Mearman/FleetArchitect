@@ -209,8 +209,8 @@ function tookDamage(result: ReturnType<typeof runBattle>, id: string): boolean {
   const end = last.ships.find((sh) => sh.instanceId === id);
   if (start === undefined || end === undefined) throw new Error(`ship ${id} missing`);
   if (!end.alive) return true;
-  const startHp = (start.modules ?? []).reduce((sum, m) => sum + m.hp, 0);
-  const endHp = (end.modules ?? []).reduce((sum, m) => sum + m.hp, 0);
+  const startHp = (start.cells ?? []).reduce((sum, m) => sum + m.hp, 0);
+  const endHp = (end.cells ?? []).reduce((sum, m) => sum + m.hp, 0);
   return endHp < startHp || end.structure < start.structure;
 }
 
@@ -224,10 +224,10 @@ function totalDamage(result: ReturnType<typeof runBattle>, id: string): number {
   const end = last.ships.find((sh) => sh.instanceId === id);
   if (start === undefined || end === undefined) throw new Error(`ship ${id} missing`);
   const startHp =
-    (start.modules ?? []).reduce((sum, m) => sum + m.hp, 0) + start.structure;
+    (start.cells ?? []).reduce((sum, m) => sum + m.hp, 0) + start.structure;
   if (!end.alive) return startHp;
   const endHp =
-    (end.modules ?? []).reduce((sum, m) => sum + m.hp, 0) + end.structure;
+    (end.cells ?? []).reduce((sum, m) => sum + m.hp, 0) + end.structure;
   return startHp - endHp;
 }
 

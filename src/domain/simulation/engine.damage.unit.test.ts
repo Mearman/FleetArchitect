@@ -311,7 +311,7 @@ describe("engine.damage — kinetic collision damage", () => {
 
     const totalModuleHp = (frame: (typeof result.frames)[number], id: string): number => {
       const ship = frame.ships.find((s) => s.instanceId === id);
-      return (ship?.modules ?? []).reduce((sum, m) => sum + m.hp, 0);
+      return (ship?.cells ?? []).reduce((sum, m) => sum + m.hp, 0);
     };
     const first = result.frames[0];
     const last = result.frames.at(-1);
@@ -452,11 +452,13 @@ describe("engine.damage — determinism", () => {
     expect(b.winner).toBe(a.winner);
     // Sanity: a volatile cell really did breach and chain at some point — a
     // frame exists where the target lost a volatile module.
+    const volatileSlots = new Set<string>();
+    for (const c of a.descriptors?.find((d) => d.instanceId === "tgt")?.cells ?? []) {
+      if (c.kind === "power" || c.kind === "magazine") volatileSlots.add(c.slotId);
+    }
     const breached = a.frames.some((f) => {
       const t = f.ships.find((s) => s.instanceId === "tgt");
-      return (t?.modules ?? []).some(
-        (m) => (m.kind === "power" || m.kind === "magazine") && !m.alive,
-      );
+      return (t?.cells ?? []).some((m) => volatileSlots.has(m.slotId) && !m.alive);
     });
     expect(breached, "a reactor or magazine should breach during the battle").toBe(true);
   });

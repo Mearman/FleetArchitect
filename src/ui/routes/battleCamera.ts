@@ -1,5 +1,7 @@
 import { CELL_SIZE } from "@/domain/grid";
 import type { BattleFrame } from "@/schema/battle";
+import type { DescriptorMap } from "@/ui/cellLayout";
+import { hullRadiusWorld } from "@/ui/cellLayout";
 
 /** Inner-edge padding (display px) kept around the battle at fit zoom (zoom = 1). */
 export const CAMERA_PAD = 40;
@@ -89,24 +91,27 @@ export function clampZoom(zoom: number): number {
   return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom));
 }
 
-/** A ship's world-space pick radius (its hull extent plus the cell size). */
-function shipPickRadius(ship: BattleFrame["ships"][number]): number {
-  if (ship.modules === undefined || ship.modules.length === 0) return CELL_SIZE * 2;
-  let maxDistSq = 0;
-  for (const m of ship.modules) {
-    const d = m.x * m.x + m.y * m.y;
-    if (d > maxDistSq) maxDistSq = d;
-  }
-  return Math.sqrt(maxDistSq) + CELL_SIZE;
+/**
+ * A ship's world-space pick radius (its hull extent plus the cell size). Derived
+ * from the static cell layout in the ship's descriptor; falls back to a small
+ * fixed radius when the ship has no cell data (a legacy aggregated ship or a
+ * phantom).
+ */
+function shipPickRadius(descriptors: DescriptorMap, instanceId: string): number {
+  const r = hullRadiusWorld(descriptors.get(instanceId));
+  return r ?? CELL_SIZE * 2;
 }
 
 /**
  * Hit-test a click (in world coordinates) against the frame's living ships,
  * returning the nearest ship whose pick radius contains the point, or undefined.
+ * The descriptor map supplies each ship's static cell layout to size its pick
+ * radius (the frames no longer carry cell positions).
  */
 export function pickShipAt(
   frame: BattleFrame,
   world: { x: number; y: number },
+  descriptors: DescriptorMap,
 ): BattleFrame["ships"][number] | undefined {
   let best: BattleFrame["ships"][number] | undefined;
   let bestDistSq = Infinity;
@@ -115,7 +120,7 @@ export function pickShipAt(
     const dx = s.x - world.x;
     const dy = s.y - world.y;
     const distSq = dx * dx + dy * dy;
-    const r = shipPickRadius(s);
+    const r = shipPickRadius(descriptors, s.instanceId);
     if (distSq <= r * r && distSq < bestDistSq) {
       best = s;
       bestDistSq = distSq;

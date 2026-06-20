@@ -4,6 +4,7 @@ import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleInputs, CombatShip } from "@/domain/simulation/types";
 import { defaultOrders } from "@/schema/fleet";
 import type { WeaponEffect } from "@/schema/module";
+import type { ShipDescriptor } from "@/schema/battle";
 import type { ShipStats } from "@/domain/stats";
 
 /**
@@ -103,6 +104,28 @@ describe("simulateBattle generator", () => {
     // JSON round-trip as a belt-and-braces check that no non-serialisable
     // values (undefined, NaN, cyclic refs) have slipped through.
     expect(JSON.stringify(generatorFrames)).toBe(JSON.stringify(reference.frames));
+  });
+
+  it("populates the descriptor sink and returns descriptors matching runBattle", () => {
+    const inputs = fixedInputs();
+    const reference = runBattle(inputs);
+
+    // The streaming side channel: the worker forwards descriptors as ships first
+    // appear, so a sink passed to the generator must end up holding the same set
+    // the final summary (and runBattle's result) carries.
+    const sink = new Map<string, ShipDescriptor>();
+    const gen = simulateBattle(inputs, sink);
+    let step = gen.next();
+    while (!step.done) {
+      step = gen.next();
+    }
+    const summary = step.value;
+
+    const sortById = (ds: readonly ShipDescriptor[]): ShipDescriptor[] =>
+      [...ds].sort((a, b) => (a.instanceId < b.instanceId ? -1 : a.instanceId > b.instanceId ? 1 : 0));
+
+    expect(sortById([...sink.values()])).toEqual(summary.descriptors);
+    expect(summary.descriptors).toEqual(reference.descriptors);
   });
 
   it("returned BattleSummary winner and ticks match runBattle", () => {

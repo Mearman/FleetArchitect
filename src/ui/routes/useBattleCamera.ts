@@ -11,6 +11,7 @@ import {
 } from "./battleCamera";
 import type { Bounds, Camera } from "./battleCamera";
 import type { BattleFrame } from "@/schema/battle";
+import type { DescriptorMap } from "@/ui/cellLayout";
 import { DEFAULT_BOUNDS } from "./battleConstants";
 
 /**
@@ -27,6 +28,10 @@ export interface UseBattleCameraProps {
   cameraRef: React.RefObject<Camera>;
   playbackTimeRef: React.RefObject<number>;
   framesRef: React.RefObject<BattleFrame[]>;
+  /** Static per-ship layout, read by the click hit-test to size each ship's
+   *  pick radius from its cell extent. A ref so the handler reads the live map
+   *  as it grows across streamed batches. */
+  descriptorsRef: React.RefObject<DescriptorMap>;
   rawBounds: Bounds | null;
   hasFrames: boolean;
 }
@@ -46,6 +51,7 @@ export function useBattleCamera({
   cameraRef,
   playbackTimeRef,
   framesRef,
+  descriptorsRef,
   rawBounds,
   hasFrames,
 }: UseBattleCameraProps) {
@@ -246,10 +252,10 @@ export function useBattleCamera({
       if (resolved === undefined) return;
       const { px, py } = pointerPos(e);
       const world = screenToWorld(resolved.t, px, py);
-      const hit = pickShipAt(resolved.frame, world);
+      const hit = pickShipAt(resolved.frame, world, descriptorsRef.current);
       setCamera((cam) => ({ ...cam, followId: hit?.instanceId ?? null }));
     },
-    [currentTransform],
+    [currentTransform, descriptorsRef],
   );
 
   const resetCamera = useCallback(() => setCamera(DEFAULT_CAMERA), []);

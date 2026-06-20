@@ -188,13 +188,13 @@ describe("engine.per-module-damage", () => {
     const degrading = result.frames.find(
       (f) =>
         f.ships.find((s) => s.instanceId === "d1")?.alive === true &&
-        (f.ships.find((s) => s.instanceId === "d1")?.modules ?? []).some((m) => !m.alive),
+        (f.ships.find((s) => s.instanceId === "d1")?.cells ?? []).some((m) => !m.alive),
     );
     expect(degrading, "a module should be destroyed before the ship dies").toBeDefined();
     if (degrading === undefined) return;
     const defender = degrading.ships.find((s) => s.instanceId === "d1");
     expect(defender?.alive).toBe(true);
-    expect(defender?.modules?.some((m) => !m.alive)).toBe(true);
+    expect(defender?.cells?.some((m) => !m.alive)).toBe(true);
   });
 
   it("the snapshot carries per-module hp and alive state", () => {
@@ -202,11 +202,11 @@ describe("engine.per-module-damage", () => {
     const first = result.frames[0];
     if (first === undefined) throw new Error("no frames");
     const defender = first.ships.find((s) => s.instanceId === "d1");
-    expect(defender?.modules).toBeDefined();
-    expect(defender?.modules?.length).toBe(4);
+    expect(defender?.cells).toBeDefined();
+    expect(defender?.cells?.length).toBe(4);
     // At deployment every module is intact.
-    expect(defender?.modules?.every((m) => m.alive && m.hp === m.hp)).toBe(true);
-    expect(defender?.modules?.every((m) => m.hp > 0)).toBe(true);
+    expect(defender?.cells?.every((m) => m.alive && m.hp === m.hp)).toBe(true);
+    expect(defender?.cells?.every((m) => m.hp > 0)).toBe(true);
   });
 
   it("is deterministic for modular ships", () => {
@@ -215,6 +215,55 @@ describe("engine.per-module-damage", () => {
     const b = mk();
     expect(b.frames).toEqual(a.frames);
     expect(b.winner).toBe(a.winner);
+  });
+
+  it("slim snapshot: per-tick cells carry only dynamic state, static layout lives once in descriptors", () => {
+    const result = runBattle(inputs([hammerShip("a1", 0), modularDefender("d1", 80)]));
+    const first = result.frames[0];
+    if (first === undefined) throw new Error("no frames");
+    const defenderCells = first.ships.find((s) => s.instanceId === "d1")?.cells;
+    expect(defenderCells).toBeDefined();
+    if (defenderCells === undefined) return;
+
+    // The per-tick cell state carries dynamic fields only — never the static
+    // layout (kind, offset, max HP, surface) that the descriptor now owns.
+    for (const cell of defenderCells) {
+      expect(cell).not.toHaveProperty("kind");
+      expect(cell).not.toHaveProperty("x");
+      expect(cell).not.toHaveProperty("y");
+      expect(cell).not.toHaveProperty("maxHp");
+      expect(cell).not.toHaveProperty("surface");
+      expect(cell).not.toHaveProperty("maxSurfaceHp");
+    }
+    // The per-frame ship snapshot no longer carries the outline either.
+    expect(first.ships.find((s) => s.instanceId === "d1")).not.toHaveProperty("outline");
+
+    // The static layout for every cell is present once in the descriptor, keyed
+    // by the same slot ids the per-tick cells use.
+    const descriptor = result.descriptors?.find((d) => d.instanceId === "d1");
+    expect(descriptor).toBeDefined();
+    expect(descriptor?.cells?.length).toBe(defenderCells.length);
+    const layoutSlots = new Set((descriptor?.cells ?? []).map((c) => c.slotId));
+    for (const cell of defenderCells) {
+      expect(layoutSlots.has(cell.slotId)).toBe(true);
+    }
+    for (const layout of descriptor?.cells ?? []) {
+      expect(typeof layout.kind).toBe("string");
+      expect(typeof layout.ox).toBe("number");
+      expect(typeof layout.oy).toBe("number");
+      expect(layout.maxHp).toBeGreaterThan(0);
+    }
+  });
+
+  it("descriptors are byte-identical across two same-seed runs", () => {
+    const mk = () => runBattle(inputs([hammerShip("a1", 0), modularDefender("d1", 80)]));
+    const a = mk();
+    const b = mk();
+    expect(b.descriptors).toEqual(a.descriptors);
+    // And the order is stable (lexicographic by instance id).
+    const ids = (a.descriptors ?? []).map((d) => d.instanceId);
+    const sorted = [...ids].sort((x, y) => (x < y ? -1 : x > y ? 1 : 0));
+    expect(ids).toEqual(sorted);
   });
 
   it("eventually destroys the ship once modules and hull are depleted", () => {

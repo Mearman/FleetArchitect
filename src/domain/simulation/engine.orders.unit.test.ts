@@ -279,11 +279,11 @@ function totalDamageDealt(
   return initHp - minHp;
 }
 
-/** Structure + shield + sum of alive module HP. */
-function totalHp(s: { structure: number; shield: number; modules?: { hp: number }[] }): number {
+/** Structure + shield + sum of alive cell HP. */
+function totalHp(s: { structure: number; shield: number; cells?: { hp: number }[] }): number {
   let moduleHp = 0;
-  if (s.modules !== undefined) {
-    for (const m of s.modules) moduleHp += m.hp;
+  if (s.cells !== undefined) {
+    for (const m of s.cells) moduleHp += m.hp;
   }
   return s.structure + s.shield + moduleHp;
 }

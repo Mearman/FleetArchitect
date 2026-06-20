@@ -1,4 +1,5 @@
 import type { BattleFrame, ShipSnapshot } from "@/schema/battle";
+import type { DescriptorMap } from "@/ui/cellLayout";
 import type { Transform } from "../battleCamera";
 
 /**
@@ -23,6 +24,8 @@ export type OverlayScope = "active" | "all";
  * - `tick`       The integer sim-tick position of the nearest discrete frame.
  * - `frames`     The full discrete frame history (for trail-style overlays that
  *                need to reach back across ticks without re-deriving playback).
+ * - `descriptors` Static per-ship layout (cells + outline), keyed by instance id,
+ *                for overlays that size themselves to a ship's cell extent.
  * - `inScope`    Predicate that returns true when a ship should be drawn by this
  *                overlay given its current scope and the follow target. Built
  *                per overlay per draw by the caller from `scope` and `followId`.
@@ -34,6 +37,7 @@ export interface OverlayCtx {
   followId: string | null;
   tick: number;
   frames: readonly BattleFrame[];
+  descriptors: DescriptorMap;
   inScope: (ship: ShipSnapshot) => boolean;
 }
 

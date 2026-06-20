@@ -289,14 +289,21 @@ function inputs(ships: CombatShip[]): BattleInputs {
   };
 }
 
-/** Locate a module on a ship in the final frame. */
+/** Locate a module on a ship in the final frame, joining its dynamic hp from the
+ *  frame with its static maxHp from the battle's descriptors. */
 function moduleAt(
-  ships: readonly { instanceId: string; modules?: { slotId: string; hp: number; maxHp: number }[] }[],
+  result: ReturnType<typeof runBattle>,
   shipId: string,
   slotId: string,
 ): { hp: number; maxHp: number } | undefined {
-  const ship = ships.find((s) => s.instanceId === shipId);
-  return ship?.modules?.find((m) => m.slotId === slotId);
+  const last = result.frames.at(-1);
+  const cell = last?.ships.find((s) => s.instanceId === shipId)?.cells?.find((m) => m.slotId === slotId);
+  if (cell === undefined) return undefined;
+  const layout = result.descriptors
+    ?.find((d) => d.instanceId === shipId)
+    ?.cells?.find((c) => c.slotId === slotId);
+  if (layout === undefined) return undefined;
+  return { hp: cell.hp, maxHp: layout.maxHp };
 }
 
 describe("engine.directional-shield", () => {
@@ -305,8 +312,8 @@ describe("engine.directional-shield", () => {
     const last = result.frames.at(-1);
     if (last === undefined) throw new Error("no frames");
 
-    const front = moduleAt(last.ships, "d1", "frontShield");
-    const back = moduleAt(last.ships, "d1", "backShield");
+    const front = moduleAt(result, "d1", "frontShield");
+    const back = moduleAt(result, "d1", "backShield");
     expect(front, "front shield should exist").toBeDefined();
     expect(back, "rear shield should exist").toBeDefined();
     if (front === undefined || back === undefined) return;
@@ -322,8 +329,8 @@ describe("engine.directional-shield", () => {
     const last = result.frames.at(-1);
     if (last === undefined) throw new Error("no frames");
 
-    const front = moduleAt(last.ships, "d1", "frontShield");
-    const back = moduleAt(last.ships, "d1", "backShield");
+    const front = moduleAt(result, "d1", "frontShield");
+    const back = moduleAt(result, "d1", "backShield");
     if (front === undefined || back === undefined) throw new Error("shields missing");
 
     // Rear fire should have chipped the rear shield.
@@ -342,8 +349,8 @@ describe("engine.directional-shield", () => {
     const last = result.frames.at(-1);
     if (last === undefined) throw new Error("no frames");
 
-    const front = moduleAt(last.ships, "d1", "frontShield");
-    const back = moduleAt(last.ships, "d1", "backShield");
+    const front = moduleAt(result, "d1", "frontShield");
+    const back = moduleAt(result, "d1", "backShield");
     if (front === undefined || back === undefined) throw new Error("shields missing");
 
     // Both shields should have absorbed some fire.

@@ -1,7 +1,29 @@
 import { runBattle } from "@/domain/simulation/engine";
 import type { BattleInputs } from "@/domain/simulation/types";
 import { BattleResult, BattleStreamMessage } from "@/schema/battle";
-import type { BattleFrame, BattleResult as BattleResultType } from "@/schema/battle";
+import type {
+  BattleFrame,
+  BattleResult as BattleResultType,
+  ShipDescriptor,
+} from "@/schema/battle";
+
+/**
+ * Streamed-batch callback. Receives a batch of frames, the highest tick computed
+ * so far, and the static descriptors for any ship instances that FIRST appeared
+ * in this batch (so the consumer can reconstruct cell world positions for the
+ * streamed frames before the final result lands).
+ */
+export type OnFramesCallback = (
+  frames: readonly BattleFrame[],
+  computedTicks: number,
+  descriptors: readonly ShipDescriptor[],
+) => void;
+
+/** Options common to every {@link BattleRunner.run} call. */
+export interface BattleRunOptions {
+  signal?: AbortSignal;
+  onFrames?: OnFramesCallback;
+}
 
 /**
  * The portable-runtime boundary for the battle simulation. A `BattleRunner`
@@ -22,7 +44,7 @@ import type { BattleFrame, BattleResult as BattleResultType } from "@/schema/bat
 export interface BattleRunner {
   run(
     inputs: BattleInputs,
-    options?: { signal?: AbortSignal; onFrames?: (frames: readonly BattleFrame[], computedTicks: number) => void },
+    options?: BattleRunOptions,
   ): Promise<BattleResultType>;
 }
 
@@ -45,7 +67,7 @@ export class BattleAbortError extends Error {
 export class DirectBattleRunner implements BattleRunner {
   run(
     inputs: BattleInputs,
-    options?: { signal?: AbortSignal; onFrames?: (frames: readonly BattleFrame[], computedTicks: number) => void },
+    options?: BattleRunOptions,
   ): Promise<BattleResultType> {
     const signal = options?.signal;
     const onFrames = options?.onFrames;
@@ -53,7 +75,14 @@ export class DirectBattleRunner implements BattleRunner {
       return Promise.reject(new BattleAbortError());
     }
     const result = runBattle(inputs);
-    onFrames?.(result.frames, result.ticks);
+    // runBattle always populates descriptors (the field is optional in the
+    // schema only so legacy replays from storage still parse); narrow rather
+    // than substitute a sentinel.
+    const descriptors = result.descriptors;
+    if (descriptors === undefined) {
+      throw new Error("runBattle returned a result without descriptors");
+    }
+    onFrames?.(result.frames, result.ticks, descriptors);
     return Promise.resolve(result);
   }
 }
@@ -84,7 +113,7 @@ export class WorkerBattleRunner implements BattleRunner {
 
   run(
     inputs: BattleInputs,
-    options?: { signal?: AbortSignal; onFrames?: (frames: readonly BattleFrame[], computedTicks: number) => void },
+    options?: BattleRunOptions,
   ): Promise<BattleResultType> {
     const signal = options?.signal;
     const onFrames = options?.onFrames;
@@ -120,7 +149,7 @@ export class WorkerBattleRunner implements BattleRunner {
         if (parsed.data.kind === "frames") {
           // Deliver the batch to the caller and keep the worker alive — more
           // batches (or the final result) are still on the way.
-          onFrames?.(parsed.data.frames, parsed.data.computedTicks);
+          onFrames?.(parsed.data.frames, parsed.data.computedTicks, parsed.data.descriptors);
           return;
         }
 

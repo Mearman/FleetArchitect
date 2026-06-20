@@ -9,7 +9,9 @@ import type {
   BattleAnomaly as BattleAnomalyType,
   BattleFrame,
   BattleResult,
+  ShipDescriptor,
 } from "@/schema/battle";
+import type { DescriptorMap } from "@/ui/cellLayout";
 import type { Fleet } from "@/schema/fleet";
 import type { ShipDesign } from "@/schema/ship";
 import type { Bounds } from "./battleCamera";
@@ -40,6 +42,9 @@ export interface UseBattleSimulationProps {
   framesRef: React.RefObject<BattleFrame[]>;
   simTickRateRef: React.RefObject<number>;
   playbackTimeRef: React.RefObject<number>;
+  /** Route-owned mirror of the live descriptor map, kept current as batches
+   *  stream so the camera pointer handler reads it without a render. */
+  descriptorsRef: React.RefObject<DescriptorMap>;
   resetForNewRun: () => void;
   onFirstBatch: () => void;
 }
@@ -60,6 +65,7 @@ export function useBattleSimulation({
   framesRef,
   simTickRateRef,
   playbackTimeRef,
+  descriptorsRef,
   resetForNewRun,
   onFirstBatch,
 }: UseBattleSimulationProps) {
@@ -70,6 +76,15 @@ export function useBattleSimulation({
    * as soon as the first batch lands.
    */
   const [result, setResult] = useState<BattleResult | null>(null);
+
+  /**
+   * Static per-ship descriptors (cell layout + outline), keyed by instance id,
+   * accumulated as batches stream so the renderer can reconstruct cell world
+   * positions for the leading edge before the final result lands. Held in state
+   * so render reads a reactive value; mirrored into `descriptorsRef` for the
+   * camera pointer handler.
+   */
+  const [descriptors, setDescriptors] = useState<DescriptorMap>(() => new Map());
 
   /**
    * Number of frames streamed so far, mirrored from `framesRef` on each batch.
@@ -182,13 +197,31 @@ export function useBattleSimulation({
     simTickRateRef.current = 0;
     lastBatchRef.current = null;
     setResult(null);
+    const freshDescriptors: Map<string, ShipDescriptor> = new Map();
+    descriptorsRef.current = freshDescriptors;
+    setDescriptors(freshDescriptors);
     setRunningAnomaly(chosenAnomaly);
     setComputing(true);
 
     let firstBatch = true;
-    const onFrames = (frames: readonly BattleFrame[], streamedTicks: number) => {
+    const onFrames = (
+      frames: readonly BattleFrame[],
+      streamedTicks: number,
+      batchDescriptors: readonly ShipDescriptor[],
+    ) => {
       // Ignore late batches from a run that has since been superseded.
       if (controller.signal.aborted) return;
+
+      // Fold any newly-introduced ship descriptors into the live map so the
+      // renderer can reconstruct cell positions for this batch's frames. A fresh
+      // Map identity makes the descriptors state update reactively; the ref keeps
+      // the camera pointer handler current without a render.
+      if (batchDescriptors.length > 0) {
+        const merged: Map<string, ShipDescriptor> = new Map(descriptorsRef.current);
+        for (const d of batchDescriptors) merged.set(d.instanceId, d);
+        descriptorsRef.current = merged;
+        setDescriptors(merged);
+      }
 
       // Update the measured simulation rate (ticks computed per real second) as
       // an EMA over batch arrivals. The rAF loop uses it to decide how much lead
@@ -288,6 +321,15 @@ export function useBattleSimulation({
       if (controller.signal.aborted) return;
       void storage().battles.save(battle);
       setResult(battle);
+      // Reconcile the descriptor map against the authoritative complete list on
+      // the result, so any instance the stream did not surface (or a replay that
+      // never streamed) is present for rendering.
+      if (battle.descriptors !== undefined) {
+        const complete: Map<string, ShipDescriptor> = new Map(descriptorsRef.current);
+        for (const d of battle.descriptors) complete.set(d.instanceId, d);
+        descriptorsRef.current = complete;
+        setDescriptors(complete);
+      }
     } catch (error) {
       notifications.show({
         title: "Battle failed to compute",
@@ -307,6 +349,7 @@ export function useBattleSimulation({
     rawBounds,
     activeAnomaly,
     computing,
+    descriptors,
     startBattle,
   };
 }

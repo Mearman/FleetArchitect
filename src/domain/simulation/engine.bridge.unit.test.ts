@@ -208,7 +208,7 @@ describe("engine.bridge-command", () => {
     expect(final.structure).toBe(9_999_999);
     // And the attacker's command module is destroyed at deployment (0 hp).
     const attacker = result.frames[0]?.ships.find((s) => s.instanceId === "a1");
-    const bridge = attacker?.modules?.find((m) => m.slotId === "c1");
+    const bridge = attacker?.cells?.find((m) => m.slotId === "c1");
     expect(bridge?.hp).toBe(0);
   });
 });

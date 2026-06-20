@@ -1,4 +1,4 @@
-import { CELL_SIZE } from "@/domain/grid";
+import { hullRadiusWorld } from "@/ui/cellLayout";
 import type { OverlayCtx, OverlayDef } from "./types";
 
 /** Stroke width of the focus ring on the followed ship, in display pixels. */
@@ -36,7 +36,7 @@ const FALLBACK_RADIUS_PX = 11;
  * falling back to a small fixed radius when module data is absent.
  */
 function drawFocusRing(c: OverlayCtx): void {
-  const { ctx, frame, t, inScope, followId } = c;
+  const { ctx, frame, t, inScope, followId, descriptors } = c;
 
   ctx.save();
   ctx.setLineDash([]);
@@ -48,16 +48,13 @@ function drawFocusRing(c: OverlayCtx): void {
     const px = t.sx(ship.x);
     const py = t.sy(ship.y);
 
-    // Derive ring radius from farthest module distance (same logic as
-    // BattleRoute's hullRadiusPx), falling back to a small fixed radius.
+    // Derive ring radius from the farthest cell distance (same logic as
+    // BattleRoute's hullRadiusPx), falling back to a small fixed radius. The
+    // cell extent comes from the ship's static descriptor.
     let radiusPx = FALLBACK_RADIUS_PX;
-    if (ship.modules !== undefined && ship.modules.length > 0) {
-      let maxDistSq = 0;
-      for (const m of ship.modules) {
-        const d = m.x * m.x + m.y * m.y;
-        if (d > maxDistSq) maxDistSq = d;
-      }
-      radiusPx = (Math.sqrt(maxDistSq) + CELL_SIZE) * t.scale + 3;
+    const hullRadius = hullRadiusWorld(descriptors.get(ship.instanceId));
+    if (hullRadius !== undefined) {
+      radiusPx = hullRadius * t.scale + 3;
     }
 
     const isFollowed = ship.instanceId === followId;

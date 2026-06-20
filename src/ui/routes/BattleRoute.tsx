@@ -33,6 +33,7 @@ import { TICKS_PER_SECOND } from "@/domain/simulation/types";
 import { useFleets, useShipDesigns } from "@/ui/hooks/storage";
 import { BattleAnomaly } from "@/schema/battle";
 import type { BattleAnomaly as BattleAnomalyType, BattleFrame } from "@/schema/battle";
+import type { DescriptorMap } from "@/ui/cellLayout";
 import { interpolateFrame } from "@/ui/interpolateFrame";
 import { clampZoom, DEFAULT_CAMERA } from "./battleCamera";
 import type { Camera } from "./battleCamera";
@@ -87,6 +88,10 @@ export function BattleRoute() {
   const simTickRateRef = useRef(0);
   const playbackTimeRef = useRef(0);
   const bufferingRef = useRef(false);
+  // Live mirror of the static per-ship descriptor map, written by the simulation
+  // hook as batches stream and read by the camera pointer handler without a
+  // render. Initialised empty; replaced on every fresh run.
+  const descriptorsRef = useRef<DescriptorMap>(new Map());
 
   /**
    * Latest-callback ref for the simulation hook's cross-hook resets. The
@@ -108,6 +113,7 @@ export function BattleRoute() {
     framesRef,
     simTickRateRef,
     playbackTimeRef,
+    descriptorsRef,
     resetForNewRun: () => engineCallbacksRef.current.resetForNewRun(),
     onFirstBatch: () => engineCallbacksRef.current.onFirstBatch(),
   });
@@ -127,6 +133,7 @@ export function BattleRoute() {
     cameraRef,
     playbackTimeRef,
     framesRef,
+    descriptorsRef,
     rawBounds: simulation.rawBounds,
     hasFrames,
   });
@@ -177,6 +184,7 @@ export function BattleRoute() {
     showFog,
     factionByInstance,
     overlays,
+    descriptors: simulation.descriptors,
   });
 
   // --- Playback hook (clock + rAF/resize loops) ---------------------------
@@ -556,7 +564,10 @@ export function BattleRoute() {
 
               {statusOpen && playback.statusFrame !== null && (
                 <Box className={styles.statusOverlay}>
-                  <ModuleStatusPanel frame={playback.statusFrame} />
+                  <ModuleStatusPanel
+                    frame={playback.statusFrame}
+                    descriptors={simulation.descriptors}
+                  />
                 </Box>
               )}
 
