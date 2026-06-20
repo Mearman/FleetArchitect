@@ -84,6 +84,8 @@ export const SIM = {
    * weapons may fire. ~1.2 rad ≈ 69°, a generous forward arc. An explicit
    * mount-spec epsilon (the weapon-class traverse window) — not a physics
    * quantity.
+   *
+   * Classification: unit-spec-rate-epsilon (a weapon-mount traverse spec).
    */
   firingArc: 1.2,
   /**
@@ -94,6 +96,9 @@ export const SIM = {
    * cell (`CELL_SIZE / 2 = 6 m`) is the muzzle clearance for a weapon on the
    * forward centreline — authored catalogue content representing the physical
    * muzzle-to-centre distance.
+   *
+   * Classification: derived-by-formula (`CELL_SIZE / 2`); the anchor is
+   * authored catalogue content (muzzle-to-centre geometry).
    */
   muzzleOffset: 6,
   /**
@@ -102,15 +107,30 @@ export const SIM = {
    * from its target. Phase 9 replaces this with a derivation from the ambient
    * EM field × receiver threshold; until then it is authored catalogue content
    * representing the effective reach of a baseline sensor-free contact.
+   *
+   * Classification: authored catalogue content (interim; Phase 9 derives from
+   * ambient-EM × threshold).
    */
   defaultRange: 220,
-  /** Fraction of its max weapon range a ship tries to keep from its target. */
+  /**
+   * Fraction of its max weapon range a ship tries to keep from its target, per
+   * range band. The fractions are a tactical doctrine (short / medium / long
+   * stand-off), not a physics quantity.
+   *
+   * Classification: authored catalogue content (tactical doctrine per stance).
+   */
   rangeFraction: {
     short: 0.3,
     medium: 0.55,
     long: 0.85,
   },
-  /** Multiplier applied to the desired range based on engagement stance. */
+  /**
+   * Multiplier applied to the desired range based on engagement stance. A
+   * stance's tactical preference for closeness or distance — not a physics
+   * quantity.
+   *
+   * Classification: authored catalogue content (stance doctrine).
+   */
   stanceRangeFactor: {
     aggressive: 0.8,
     balanced: 1.0,
@@ -133,25 +153,46 @@ export const SIM = {
    * (~360 m) feels a gentle pull while one inside the lethal zone is destroyed;
    * it is tagged `[Phase 4]` and re-derived then. Cited as authored catalogue
    * content in the interim.
+   *
+   * Classification: authored catalogue content (interim; Phase 4 re-derives as
+   * `GM = G · M_body` for an authored body mass).
    */
   blackHoleStrength: 5000,
-  /** [Phase 4] Inside this radius a ship is torn apart. Becomes `r_s = 2GM/c^2`
-   *  when the body mass is authored. Authored catalogue content in the interim. */
+  /**
+   * [Phase 4] Inside this radius a ship is torn apart. Becomes `r_s = 2GM/c^2`
+   * when the body mass is authored. Authored catalogue content in the interim.
+   *
+   * Classification: authored catalogue content (interim; Phase 4 re-derives as
+   * the Schwarzschild radius `r_s = 2GM/c^2`).
+   */
   blackHoleLethalRadius: 24,
-  /** [Phase 4] Per-tick structural damage at the centre of the well. Authored
-   *  catalogue content; becomes the real tidal-acceleration damage
-   *  `2GM·r_body / R^3` × hull structural tolerance when GR lands. */
+  /**
+   * [Phase 4] Per-tick structural damage at the centre of the well. Authored
+   * catalogue content; becomes the real tidal-acceleration damage
+   * `2GM·r_body / R^3` × hull structural tolerance when GR lands.
+   *
+   * Classification: authored catalogue content (interim; Phase 4 re-derives
+   * from the real tidal field × hull structural tolerance).
+   */
   blackHoleLethalDamage: 12,
   /**
    * [Phase 4] Outside the lethal radius but inside this zone, a ship takes
    * damage proportional to 1/r^3 — the leading-order tidal force across a
    * body of finite size ("spaghettification"). Becomes the Roche-limit radius
    * derived from the real tidal field vs hull structural tolerance in Phase 4.
+   *
+   * Classification: authored catalogue content (interim; Phase 4 re-derives as
+   * the Roche limit from the real tidal field × hull structural tolerance).
    */
   blackHoleTidalRadius: 48,
-  /** [Phase 4] Coefficient for the 1/r^3 tidal damage. Becomes
-   *  `2GM · r_body · k_hull` (real tidal acceleration × hull tolerance) in
-   *  Phase 4. Authored catalogue content in the interim. */
+  /**
+   * [Phase 4] Coefficient for the 1/r^3 tidal damage. Becomes
+   * `2GM · r_body · k_hull` (real tidal acceleration × hull tolerance) in
+   * Phase 4. Authored catalogue content in the interim.
+   *
+   * Classification: authored catalogue content (interim; Phase 4 re-derives as
+   * `2GM · r_body · k_hull`).
+   */
   blackHoleTidalDamageScale: 200000,
   /**
    * Nebula shield-regeneration attenuation. A nebula is a gas cloud whose
@@ -163,6 +204,9 @@ export const SIM = {
    * factor a typical nebula imposes — authored catalogue content representing
    * a moderate-density ionised cloud (roughly the visual extinction of a
    * bright nebula at visible wavelengths).
+   *
+   * Classification: authored catalogue content (interim; Phase 9 derives from
+   * the Beer-Lambert absorption coefficient).
    */
   nebulaRegenFactor: 0.5,
   /**
@@ -172,6 +216,9 @@ export const SIM = {
    * (per-metre absorption); Phase 9 derives both from one absorption
    * coefficient. Authored catalogue content in the interim, equal to the
    * regen factor because both are the same path-attenuation effect.
+   *
+   * Classification: authored catalogue content (interim; Phase 9 derives from
+   * the same Beer-Lambert absorption coefficient as `nebulaRegenFactor`).
    */
   nebulaTrackingFactor: 0.5,
   /**
@@ -180,6 +227,9 @@ export const SIM = {
    * base rate times `1 + rampRate * ticksUntouched`. This caps that multiplier so
    * a shield left alone indefinitely tops out at this multiple of its base rate
    * rather than ramping without bound. 3 means "at most triple the base recharge".
+   *
+   * Classification: unit-spec-rate-epsilon (a spec ceiling on an authored
+   * shield-module ramp rate).
    */
   adaptiveShieldMaxMultiple: 3,
   /**
@@ -193,6 +243,10 @@ export const SIM = {
    * moving one tick at catalogue projectile speed — authored catalogue content
    * (the belt's number density is an authored scenario property). Phase 9/12
    * wires the live Poisson form from per-field density data.
+   *
+   * Classification: derived-by-formula (`1 - exp(-n·σ·v·dt)` ≈ `n·σ·v·dt` for
+   * small rate); the anchors (`n`, `σ`, `v`) are authored catalogue content
+   * until Phase 9/12 supplies live per-field density.
    */
   asteroidDeflectChance: 0.01,
   /**
@@ -204,6 +258,9 @@ export const SIM = {
    * the weight saturates at 1 and the ship steers purely to escape. Between
    * the two it interpolates linearly, so a ship grazing the danger zone arcs
    * around it rather than ploughing through.
+   *
+   * Classification: authored catalogue content (a steering-blend spec; the
+   * sub-keys `safetyMargin` and `edgeWeight` carry their own classification).
    */
   blackHoleAvoid: {
     /**
@@ -213,6 +270,9 @@ export const SIM = {
      * hole entirely, preserving open-space combat behaviour. 1.5 gives a
      * comfortable buffer outside the damaging tidal zone so a ship begins
      * arcing away before it starts taking tidal damage.
+     *
+     * Classification: derived-by-formula (a multiple of `blackHoleTidalRadius`,
+     * itself authored catalogue content pending Phase 4).
      */
     safetyMargin: 1.5,
     /**
@@ -221,6 +281,8 @@ export const SIM = {
      * rather than fading in from zero (a zero-at-the-edge ramp lets a fast
      * ship punch through before the bias grows). The weight then ramps from
      * this floor up to 1 as the ship nears the lethal radius.
+     *
+     * Classification: unit-spec-rate-epsilon (a steering-blend floor spec).
      */
     edgeWeight: 0.35,
   },
@@ -232,6 +294,9 @@ export const SIM = {
    *  - An asteroid field destroys a fraction of in-flight rounds each tick, so
    *    a shorter flight time means fewer shots lost — a more modest pull-in.
    * Each anomaly is exclusive, so these never compound.
+   *
+   * Classification: authored catalogue content (tactical doctrine per anomaly;
+   * Phase 9 derives these from the per-metre absorption / Poisson-loss models).
    */
   anomalyRangeFactor: {
     nebula: 0.6,
@@ -245,6 +310,9 @@ export const SIM = {
    * arrival tolerance for the translation controller: a ship with closing
    * speed at or below `ARRIVAL_CLOSING_SPEED_MPS` and heading error within this
    * band snaps to rest.
+   *
+   * Classification: unit-spec-rate-epsilon (a settle epsilon for the attitude
+   * and translation controllers).
    */
   angularDeadband: 0.01,
   /**
@@ -260,6 +328,10 @@ export const SIM = {
    * A small fixed projectile mass keeps recoil visible (a stationary ship
    * firing a fast round kicks backward) without destabilising the movement
    * model for slow, heavy projectiles like torpedoes.
+   *
+   * Classification: derived-by-formula (`mass = density × volume`); the anchor
+   * (dense-metal density, slug geometry) is authored catalogue content pending
+   * the Phase 14 SI catalogue.
    */
   projectileMass: 0.5,
   /**
@@ -267,27 +339,42 @@ export const SIM = {
    * or torpedo. Multiple PD modules stack their chances (1 - (1-p)^n) but
    * the cumulative chance is capped here so a screen of PD modules can never
    * be a 100% certainty.
+   *
+   * Classification: authored catalogue content (a PD-module accuracy figure).
    */
   pdHitChancePerModule: 0.4,
-  /** Upper bound on the stacked PD intercept probability per projectile. */
+  /**
+   * Upper bound on the stacked PD intercept probability per projectile.
+   *
+   * Classification: unit-spec-rate-epsilon (a spec ceiling on the PD stacking
+   * model, so no screen is ever a certainty).
+   */
   pdMaxStackedChance: 0.95,
   /**
    * Rounds a crew member carries per ammo-run from a magazine to a dry weapon.
    * One trip tops a weapon up by at most this much (and never beyond the
    * weapon's `ammoCapacity`), and drains the magazine's store by the amount
    * actually carried.
+   *
+   * Classification: authored catalogue content (a crew carrying-capacity
+   * figure).
    */
   ammoRunAmount: 60,
   /**
    * Charge packets a crew member carries per power-run from a reactor to a
    * starved module. Each packet refills the sink module's local charge buffer
    * by this much (capped at the buffer ceiling).
+   *
+   * Classification: authored catalogue content (a crew carrying-capacity
+   * figure).
    */
   powerRunAmount: 60,
   /**
    * Ceiling on a powered module's local charge buffer. Crew top it up from a
    * reactor; the module spends `powerDraw` from it each tick it operates. A
    * module whose buffer hits zero goes idle until a crew power-run refills it.
+   *
+   * Classification: unit-spec-rate-epsilon (a module-buffer spec ceiling).
    */
   chargeBufferMax: 120,
   /**
@@ -301,6 +388,9 @@ export const SIM = {
    * typical capital's prow weapons sit within reach of a central reactor without
    * a permanent charge-haul — distant wings still sometimes need a run, but the
    * battery is not permanently starved.
+   *
+   * Classification: authored catalogue content (a passive-wiring reach spec in
+   * walkable-cell path distance).
    */
   powerWiringRadius: 7,
   /**
@@ -312,6 +402,9 @@ export const SIM = {
    * quiescent ship's passive receiver against a reflecting target. Kept below
    * typical weapon ranges so a fleet without dedicated sensors is genuinely
    * myopic and must close to engage.
+   *
+   * Classification: authored catalogue content (interim; Phase 9 derives from
+   * ambient-EM × receiver threshold).
    */
   visualLosRadius: 140,
   /**
@@ -321,6 +414,9 @@ export const SIM = {
    * Phase 9 derives all three from one Beer-Lambert coefficient.
    * `nebulaImmune` sensor bonuses bypass this entirely. Authored catalogue
    * content in the interim.
+   *
+   * Classification: authored catalogue content (interim; Phase 9 derives from
+   * the same Beer-Lambert absorption coefficient as `nebulaRegenFactor`).
    */
   nebulaSensorFactor: 0.5,
   /**
@@ -331,6 +427,9 @@ export const SIM = {
    * a relay's bounded bandwidth should forward first. Distances run to a few
    * hundred world units and costs to a few hundred points, so a weight of ~0.01
    * makes one cost point worth ~0.01 world units of nearness.
+   *
+   * Classification: unit-spec-rate-epsilon (a scoring weight that normalises
+   * two authored scales — world distance and catalogue cost points).
    */
   threatCostWeight: 0.01,
   /**
@@ -339,6 +438,8 @@ export const SIM = {
    * to zero, modelling tracking memory / dead reckoning. 60 ticks is ~2 s at
    * 30 ticks/s — long enough to keep firing through a brief occlusion, short
    * enough that a ship that has truly slipped away stops drawing fire.
+   *
+   * Classification: unit-spec-rate-epsilon (a tracking-memory TTL in ticks).
    */
   ghostFadeTicks: 60,
   /**
@@ -348,6 +449,9 @@ export const SIM = {
    * sorted order and any beyond the budget are dropped (with a single
    * `console.warn` per run per side), so the result stays deterministic even
    * when the cap fires. Sized far above any realistic fleet's comms-unit count.
+   *
+   * Classification: unit-spec-rate-epsilon (a deterministic-work performance
+   * budget; not a physics quantity).
    */
   maxCommsPairs: 20000,
   /**
@@ -364,6 +468,9 @@ export const SIM = {
    * threshold; until then it is authored catalogue content, sized comfortably
    * beyond the deployment span plus battle drift so a signature-equipped ship
    * at the far edge is still acquirable until its multiplier pulls the range in.
+   *
+   * Classification: authored catalogue content (interim; Phase 9 derives from
+   * ambient-EM × receiver threshold).
    */
   baseAcquireRange: 2000,
   /**
@@ -375,6 +482,9 @@ export const SIM = {
    * sympathetic-detonate its neighbour. Authored catalogue content
    * representing the mine payload's lethal radius. No rng: each mine's offset
    * is a pure function of its index within the batch.
+   *
+   * Classification: derived-by-formula (`CELL_SIZE`); the anchor (mine lethal
+   * radius ≈ one cell) is authored catalogue content.
    */
   mineRingSpacing: 12,
   /**
@@ -384,6 +494,9 @@ export const SIM = {
    * the pod's physical drive output. A pod homes on its target each tick,
    * stepping this far along the bearing to the target's current position
    * (clamped so it never overshoots). Pure function of positions — no rng.
+   *
+   * Classification: authored catalogue content (a breaching-pod drive-output
+   * figure; Phase 14 supplies `thrust` / `Isp` in SI).
    */
   boardingPodSpeed: 6,
   /**
@@ -392,6 +505,9 @@ export const SIM = {
    * and minimal propulsion, fitting within roughly one cell's footprint
    * (`CELL_SIZE = 12 m`), so `CELL_SIZE * 0.75 = 9 m` is its collision disc.
    * Authored catalogue content representing the drone's physical size.
+   *
+   * Classification: derived-by-formula (`CELL_SIZE * 0.75`); the anchor
+   * (drone ≈ one cell footprint) is authored catalogue content.
    */
   droneRadius: 9,
   /**
@@ -399,6 +515,9 @@ export const SIM = {
    * decoy mimics a real ship's radar cross-section, so its effective radius is
    * that of a small frigate: `CELL_SIZE * 4/3 = 16 m`. Authored catalogue
    * content representing the decoy's imitated signature size.
+   *
+   * Classification: derived-by-formula (`CELL_SIZE * 4/3`); the anchor
+   * (decoy ≈ small-frigate signature) is authored catalogue content.
    */
   decoyRadius: 16,
   /**
@@ -407,6 +526,9 @@ export const SIM = {
    * the catalogue endurance for a long-loiter combat drone, long enough that
    * it persists for the whole battle unless shot down. Authored catalogue
    * content (a rate / endurance spec).
+   *
+   * Classification: unit-spec-rate-epsilon (a drone endurance spec in ticks;
+   * Phase 14 supplies propellant / `Isp` for a real Δv budget).
    */
   droneDefaultLifetime: 4000,
 };
