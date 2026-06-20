@@ -1,0 +1,168 @@
+import { Badge, Button, Group, Paper, Select, Stack, Text } from "@mantine/core";
+import { type Brush, ADDABLE_SURFACES } from "./designerConstants";
+import { brushLabel } from "./designerGrid";
+
+/** Module definition summary for the equipment picker. */
+interface ModuleOption {
+  id: string;
+  name: string;
+  cost: number;
+}
+
+/**
+ * The brush palette for the ship designer. Renders the full layered-brush
+ * vocabulary: erase, scaffold+surface (paint a fresh cell), resurface an
+ * existing scaffold cell (add/remove surface), edge toggles (wall/door), and
+ * equipment mounting. All controls are disabled when the working design is
+ * read-only (a preset).
+ *
+ * The palette is a controlled component: it calls `onChange` with the new
+ * brush; the route owns the brush state so paint handlers can read it.
+ */
+export function DesignerPalette({
+  brush,
+  onChange,
+  modules,
+  readOnly,
+}: {
+  brush: Brush;
+  onChange: (next: Brush) => void;
+  modules: ReadonlyArray<ModuleOption>;
+  readOnly: boolean;
+}) {
+  return (
+    <Paper p="md" withBorder>
+      <Stack gap="xs">
+        <Group gap={4}>
+          <Button
+            size="xs"
+            variant={brush.kind === "empty" ? "filled" : "light"}
+            color="gray"
+            onClick={() => onChange({ kind: "empty" })}
+            disabled={readOnly}
+            title="Remove the cell entirely (scaffold + all layers)"
+          >
+            Erase
+          </Button>
+        </Group>
+        <Stack gap={4}>
+          <Text size="xs" c="dimmed">
+            Scaffold + surface (paint a fresh cell)
+          </Text>
+          <Group gap={4}>
+            <Button
+              size="xs"
+              variant={brush.kind === "scaffold-armor" ? "filled" : "light"}
+              onClick={() => onChange({ kind: "scaffold-armor" })}
+              disabled={readOnly}
+              title="Solid, impassable armor plate — high HP/mass, no equipment, sealed perimeter"
+            >
+              armor
+            </Button>
+            <Button
+              size="xs"
+              variant={brush.kind === "scaffold-deck" ? "filled" : "light"}
+              color="yellow"
+              onClick={() => onChange({ kind: "scaffold-deck" })}
+              disabled={readOnly}
+              title="Walkable crew floor — corridors and equipment-mounting surface"
+            >
+              deck
+            </Button>
+            <Button
+              size="xs"
+              variant={brush.kind === "scaffold-bare" ? "filled" : "light"}
+              color="gray"
+              onClick={() => onChange({ kind: "scaffold-bare" })}
+              disabled={readOnly}
+              title="Low-mass framing — scaffold-connected, not walkable"
+            >
+              bare
+            </Button>
+          </Group>
+        </Stack>
+        <Stack gap={4}>
+          <Text size="xs" c="dimmed">
+            Resurface an existing scaffold cell
+          </Text>
+          <Group gap={4}>
+            {ADDABLE_SURFACES.map((surface) => (
+              <Button
+                key={surface}
+                size="xs"
+                variant={
+                  brush.kind === "add-surface" && brush.surface === surface
+                    ? "filled"
+                    : "light"
+                }
+                color={surface === "armor" ? "gray" : "yellow"}
+                onClick={() => onChange({ kind: "add-surface", surface })}
+                disabled={readOnly}
+                title={
+                  surface === "armor"
+                    ? "Plate armor over an existing scaffold cell (strips equipment, seals edges)"
+                    : "Lay a deck over an existing scaffold cell (walkable, equipment-mountable)"
+                }
+              >
+                + {surface}
+              </Button>
+            ))}
+            <Button
+              size="xs"
+              variant={brush.kind === "remove-surface" ? "filled" : "light"}
+              color="gray"
+              onClick={() => onChange({ kind: "remove-surface" })}
+              disabled={readOnly}
+              title="Strip the surface off a scaffold cell, leaving bare framing"
+            >
+              − surface
+            </Button>
+          </Group>
+        </Stack>
+        <Stack gap={4}>
+          <Text size="xs" c="dimmed">
+            Edges (click an edge bar to toggle)
+          </Text>
+          <Group gap={4}>
+            <Button
+              size="xs"
+              variant={brush.kind === "edge-wall" ? "filled" : "light"}
+              onClick={() => onChange({ kind: "edge-wall" })}
+              disabled={readOnly}
+              title="Click an edge: toggles wall on/off"
+            >
+              wall
+            </Button>
+            <Button
+              size="xs"
+              variant={brush.kind === "edge-door" ? "filled" : "light"}
+              color="orange"
+              onClick={() => onChange({ kind: "edge-door" })}
+              disabled={readOnly}
+              title="Click an edge: toggles door; click an existing door to cycle open/closed"
+            >
+              door
+            </Button>
+          </Group>
+        </Stack>
+        <Select
+          label="Equipment"
+          placeholder="Pick a module to mount on deck"
+          data={modules.map((m) => ({
+            value: m.id,
+            label: `${m.name} — ${m.cost} pts`,
+          }))}
+          value={brush.kind === "equipment" ? brush.moduleId : null}
+          onChange={(moduleId) =>
+            moduleId !== null && onChange({ kind: "equipment", moduleId })
+          }
+          disabled={readOnly}
+          searchable
+        />
+        <Badge variant="light" color="indigo">
+          Brush: {brushLabel(brush)}
+        </Badge>
+      </Stack>
+    </Paper>
+  );
+}

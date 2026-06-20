@@ -1,3 +1,5 @@
+import type { SurfaceKind } from "@/schema/grid";
+import type { CrewPriority, ShipStance } from "@/schema/ai";
 import type { TileGrid } from "@/schema/grid";
 
 /** Default grid dimensions for a fresh design. */
@@ -15,27 +17,60 @@ export const FACINGS: { value: string; label: string }[] = [
   { value: `${-Math.PI / 2}`, label: "Up" },
 ];
 
+/** The four cell-edge directions, in display order. */
+export const EDGE_DIRS: ("n" | "e" | "s" | "w")[] = ["n", "e", "s", "w"];
+
 /** A design being edited, before it has been persisted. `id`/`createdAt` are
- *  null until the first save. */
+ *  null until the first save. `source` carries the provenance: a `preset`
+ *  design loads read-only; copying it flips this to `user` and clears the id
+ *  so the copy saves as a new record. */
 export interface WorkingDesign {
   id: string | null;
   createdAt: string | null;
   name: string;
   faction: string;
   grid: TileGrid;
+  source: "preset" | "user";
+  shipStance: ShipStance;
+  crewPriority: CrewPriority;
 }
 
-/** The thing the user is painting with. `empty` clears a cell; `scaffold-bare`,
- *  `scaffold-deck`, and `scaffold-armor` paint a built cell with that surface
- *  (and all-open edges); `equipment` paints an equipment module on a deck cell.
+/**
+ * The thing the user is painting with. The brush vocabulary mirrors the
+ * layered cell model from {@link import("@/schema/grid").SolidCell}:
  *
- *  This is the minimal Phase 2 brush set: enough to reproduce every preset
- *  shape and let a player build a layered ship. The full Phase 8 designer UX
- *  adds wall/door edge toggles, airtightness feedback, and surface
- *  add/remove on existing scaffold cells. */
+ *  - `empty`               — clear a cell back to empty (remove scaffold + all layers).
+ *  - `scaffold-<surface>`  — paint a fresh scaffold cell carrying that surface.
+ *  - `add-surface`         — add/replace a surface on an existing scaffold cell
+ *                            (does not disturb scaffold, edges, or equipment
+ *                            unless the new surface forbids it; armor strips
+ *                            equipment per the schema refine).
+ *  - `remove-surface`      — strip the surface off a scaffold cell, leaving a
+ *                            bare scaffold frame (the cell stays scaffolded;
+ *                            use `empty` to remove the whole cell).
+ *  - `edge-wall`           — clicking an edge toggles it to/from `wall`.
+ *  - `edge-door`           — clicking an edge toggles it to/from `door`; a
+ *                            subsequent click on a door edge cycles its state
+ *                            between closed and open.
+ *  - `equipment`           — mount a module on a deck/bare cell (at most one
+ *                            per cell; armor forbids equipment, per the schema).
+ *
+ * Edge brushes operate on the cell that owns the edge in the direction of the
+ * click, so a single click on a shared boundary paints one side. The opposite
+ * cell's edge is independent (the schema models edges per-cell).
+ */
 export type Brush =
   | { kind: "empty" }
   | { kind: "scaffold-bare" }
   | { kind: "scaffold-deck" }
   | { kind: "scaffold-armor" }
+  | { kind: "add-surface"; surface: Exclude<SurfaceKind, "bare"> }
+  | { kind: "remove-surface" }
+  | { kind: "edge-wall" }
+  | { kind: "edge-door" }
   | { kind: "equipment"; moduleId: string };
+
+/** The list of surfaces that can be added to an existing scaffold cell via the
+ *  `add-surface` brush. `bare` is the absence of a surface, not a surface you
+ *  add — use `remove-surface` to get there. */
+export const ADDABLE_SURFACES: Exclude<SurfaceKind, "bare">[] = ["deck", "armor"];

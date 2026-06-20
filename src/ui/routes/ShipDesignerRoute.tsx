@@ -2,6 +2,7 @@ import {
   ActionIcon,
   Badge,
   Button,
+  Checkbox,
   Grid,
   Group,
   NumberInput,
@@ -9,6 +10,7 @@ import {
   ScrollArea,
   SegmentedControl,
   Select,
+  Slider,
   Stack,
   Text,
   TextInput,
@@ -16,8 +18,15 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconDeviceFloppy, IconPlus, IconTrash } from "@tabler/icons-react";
+import {
+  IconCopy,
+  IconDeviceFloppy,
+  IconLock,
+  IconPlus,
+  IconTrash,
+} from "@tabler/icons-react";
 import { useMemo, useState } from "react";
+import { computeCompartments } from "@/domain/interior";
 import { analyseShipDesign } from "@/domain/stats";
 import { createId, nowIso } from "@/domain/id";
 import { catalog } from "@/data/catalog";
@@ -36,25 +45,50 @@ import {
   MAX_DIM,
 } from "./designerConstants";
 import {
+  applyCellBrush,
+  applyEdgeBrush,
   blankDesign,
-  brushLabel,
-  brushToCell,
   clampDim,
+  isEdgeBrush,
 } from "./designerGrid";
-import { GridBoard } from "./GridBoard";
+import { BehaviourPanel } from "./BehaviourPanel";
+import { DesignerPalette } from "./DesignerPalette";
+import { type BreachSet, GridBoard } from "./GridBoard";
 import { CommsConfig, SensorConfig } from "./ModuleConfig";
+import { zoomInner, zoomViewport } from "./ShipDesignerRoute.css";
+
+/** Zoom range for the pan/zoom viewport, as a fraction of natural size.
+ *  `1.0` is the natural fit; higher values zoom in for fine edge placement
+ *  on large ships. The lower bound lets the whole ship fit a wide viewport. */
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 2.5;
+const ZOOM_STEP = 0.1;
+const ZOOM_DEFAULT = 1;
+
+/** Nominal cell pitch (cell + 2px gap) used to size the zoomable inner wrapper
+ *  so the viewport scrolls correctly when zoomed. The grid itself uses `1fr`
+ *  columns and `aspect-ratio: 1`, so this is the design-time pitch the layout
+ *  resolves to at zoom 1. */
+const CELL_PITCH_PX = 44;
 
 export function ShipDesignerRoute() {
   const designs = useShipDesigns();
   const factions = catalog().factions();
   const [working, setWorking] = useState<WorkingDesign>(() => blankDesign());
-  const [brush, setBrush] = useState<Brush>({ kind: "scaffold-armor" });
+  const [brush, setBrush] = useState<Brush>({ kind: "scaffold-deck" });
   const [selected, setSelected] = useState<{ col: number; row: number } | null>(
     null,
   );
+  const [zoom, setZoom] = useState(ZOOM_DEFAULT);
+  const [showAirtightness, setShowAirtightness] = useState(true);
 
   /** Modules available for the current design's faction. */
   const moduleDefs = catalog().modulesForFaction(working.faction);
+
+  /** Whether the working design is read-only (a preset). The Copy action is
+   *  the only way to make changes to a preset's grid — it clones to a new
+   *  `source:"user"` record and drops the id so the next save creates it. */
+  const readOnly = working.source === "preset";
 
   const analysis = useMemo(() => {
     const design: ShipDesign = {
@@ -62,33 +96,76 @@ export function ShipDesignerRoute() {
       name: working.name || "Draft",
       faction: working.faction || "Unaligned",
       grid: working.grid,
-      createdAt: nowIso(),
+      createdAt: working.createdAt ?? nowIso(),
       updatedAt: nowIso(),
-      source: "user",
+      source: working.source,
       revision: 1,
-      shipStance: "balanced",
-      crewPriority: "combat",
+      shipStance: working.shipStance,
+      crewPriority: working.crewPriority,
       rules: [],
     };
     return analyseShipDesign(design, catalog());
   }, [working]);
 
+  /** Breached-compartment cells, derived from the layered-cell flood-fill. A
+   *  cell is breached if it belongs to a compartment whose perimeter has an
+   *  open edge or open door. Only deck cells can be in a compartment. */
+  const breached = useMemo<BreachSet>(() => {
+    if (!showAirtightness) return new Set();
+    const out = new Set<string>();
+    for (const compartment of computeCompartments(working.grid)) {
+      if (compartment.airtight) continue;
+      for (const key of compartment.cells) out.add(key);
+    }
+    return out;
+  }, [working.grid, showAirtightness]);
+
   if (designs === undefined) {
     return <Text c="dimmed">Loading…</Text>;
   }
 
+  /** Paint a whole cell with the active cell-brush. Edge brushes are
+   *  no-ops here (they go through `paintEdge`). */
   function paint(col: number, row: number) {
+    if (readOnly) return;
+    if (isEdgeBrush(brush)) return;
     setWorking((prev) => {
       const idx = row * prev.grid.cols + col;
       const cells = prev.grid.cells.slice();
-      cells[idx] = brushToCell(brush);
+      const prevCell = cells[idx];
+      if (prevCell === undefined) return prev;
+      const next = applyCellBrush(brush, prevCell);
+      if (next === null) return prev;
+      cells[idx] = next;
+      return { ...prev, grid: { ...prev.grid, cells } };
+    });
+    setSelected({ col, row });
+  }
+
+  /** Paint an edge of the cell at (col, row) on side `dir`. Only edge brushes
+   *  act here; cell brushes are no-ops. */
+  function paintEdge(
+    col: number,
+    row: number,
+    dir: "n" | "e" | "s" | "w",
+  ) {
+    if (readOnly) return;
+    if (!isEdgeBrush(brush)) return;
+    setWorking((prev) => {
+      const idx = row * prev.grid.cols + col;
+      const cells = prev.grid.cells.slice();
+      const prevCell = cells[idx];
+      if (prevCell === undefined) return prev;
+      const next = applyEdgeBrush(brush, prevCell, dir);
+      if (next === null) return prev;
+      cells[idx] = next;
       return { ...prev, grid: { ...prev.grid, cells } };
     });
     setSelected({ col, row });
   }
 
   function setSelectedFacing(facing: number) {
-    if (selected === null) return;
+    if (selected === null || readOnly) return;
     setWorking((prev) => {
       const idx = selected.row * prev.grid.cols + selected.col;
       const cell = prev.grid.cells[idx];
@@ -99,9 +176,8 @@ export function ShipDesignerRoute() {
     });
   }
 
-  /** Write the per-instance channel override for the selected comms cell. */
   function setSelectedCommsChannel(channel: number) {
-    if (selected === null) return;
+    if (selected === null || readOnly) return;
     setWorking((prev) => {
       const idx = selected.row * prev.grid.cols + selected.col;
       const cell = prev.grid.cells[idx];
@@ -112,9 +188,8 @@ export function ShipDesignerRoute() {
     });
   }
 
-  /** Write the per-instance bearing override for directional/laser comms cells. */
   function setSelectedCommsBearing(commsBearing: number) {
-    if (selected === null) return;
+    if (selected === null || readOnly) return;
     setWorking((prev) => {
       const idx = selected.row * prev.grid.cols + selected.col;
       const cell = prev.grid.cells[idx];
@@ -125,9 +200,8 @@ export function ShipDesignerRoute() {
     });
   }
 
-  /** Write the per-instance range setting for variable-type comms cells. */
   function setSelectedCommsRange(commsRange: number) {
-    if (selected === null) return;
+    if (selected === null || readOnly) return;
     setWorking((prev) => {
       const idx = selected.row * prev.grid.cols + selected.col;
       const cell = prev.grid.cells[idx];
@@ -138,9 +212,8 @@ export function ShipDesignerRoute() {
     });
   }
 
-  /** Write the per-instance bearing override for directional/dish sensor cells. */
   function setSelectedSensorBearing(sensorBearing: number) {
-    if (selected === null) return;
+    if (selected === null || readOnly) return;
     setWorking((prev) => {
       const idx = selected.row * prev.grid.cols + selected.col;
       const cell = prev.grid.cells[idx];
@@ -151,9 +224,8 @@ export function ShipDesignerRoute() {
     });
   }
 
-  /** Write the per-instance range setting for variable-type sensor cells. */
   function setSelectedSensorRangeSetting(sensorRangeSetting: number) {
-    if (selected === null) return;
+    if (selected === null || readOnly) return;
     setWorking((prev) => {
       const idx = selected.row * prev.grid.cols + selected.col;
       const cell = prev.grid.cells[idx];
@@ -165,6 +237,7 @@ export function ShipDesignerRoute() {
   }
 
   function resize(cols: number, rows: number) {
+    if (readOnly) return;
     setWorking((prev) => {
       const cells: GridCell[] = [];
       for (let r = 0; r < rows; r += 1) {
@@ -190,6 +263,7 @@ export function ShipDesignerRoute() {
   }
 
   async function save() {
+    if (readOnly) return;
     const now = nowIso();
     const design: ShipDesign = {
       id: working.id ?? createId("design"),
@@ -200,8 +274,8 @@ export function ShipDesignerRoute() {
       updatedAt: now,
       source: "user",
       revision: 1,
-      shipStance: "balanced",
-      crewPriority: "combat",
+      shipStance: working.shipStance,
+      crewPriority: working.crewPriority,
       rules: [],
     };
     await storage().ships.save(design);
@@ -219,6 +293,8 @@ export function ShipDesignerRoute() {
     notifications.show({ message: "Design deleted", color: "gray" });
   }
 
+  /** Load a design into the working state, preserving its provenance. A preset
+   *  loads read-only; a user design loads editable. */
   function load(design: ShipDesign) {
     setWorking({
       id: design.id,
@@ -226,28 +302,59 @@ export function ShipDesignerRoute() {
       name: design.name,
       faction: design.faction,
       grid: design.grid,
+      source: design.source,
+      shipStance: design.shipStance,
+      crewPriority: design.crewPriority,
     });
     setSelected(null);
+  }
+
+  /** Copy the working design to a new editable user record. Drops the id so
+   *  the next save creates it, flips source to "user", and resets revision to
+   *  1 — the canonical "fresh design" starting state per the schema comment on
+   *  ShipDesign.revision. The original preset is untouched. */
+  function copyToUser() {
+    setWorking((prev) => ({
+      ...prev,
+      id: null,
+      createdAt: null,
+      source: "user",
+      name: prev.name.trim() ? `${prev.name} (copy)` : "",
+    }));
+    notifications.show({
+      title: "Copied to a new design",
+      message: "Edit freely and save to keep your copy.",
+      color: "teal",
+    });
   }
 
   const grid = working.grid;
   const selectedCell =
     selected === null ? undefined : cellAt(selected.col, selected.row, grid);
-  // Resolved definition for the selected equipment cell (undefined if no
-  // equipment selected).
   const selectedModuleDef =
     selectedCell?.kind === "solid" && selectedCell.equipment !== undefined
       ? catalog().module(selectedCell.equipment.moduleId)
       : undefined;
-  // Facing of the selected equipment cell (if any), for the SegmentedControl.
   const selectedFacing =
     selectedCell?.kind === "solid" && selectedCell.equipment !== undefined
       ? selectedCell.equipment.facing
       : undefined;
 
+  // Pixel width of the zoomable inner wrapper, so the viewport scrolls
+  // correctly when zoomed. Derived from the nominal cell pitch and the zoom
+  // factor; the height comes from the grid's natural aspect ratio.
+  const innerWidthPx = grid.cols * CELL_PITCH_PX * zoom;
+
   return (
     <Stack gap="lg">
-      <Title order={2}>Ship Designer</Title>
+      <Group justify="space-between" align="flex-end">
+        <Title order={2}>Ship Designer</Title>
+        {readOnly ? (
+          <Badge size="lg" color="grape" leftSection={<IconLock size={14} />}>
+            Preset — read only
+          </Badge>
+        ) : null}
+      </Group>
 
       <Grid>
         <Grid.Col span={{ base: 12, md: 4 }}>
@@ -278,18 +385,25 @@ export function ShipDesignerRoute() {
                         fullWidth
                         justify="space-between"
                         onClick={() => load(design)}
+                        leftSection={
+                          design.source === "preset" ? (
+                            <IconLock size={12} />
+                          ) : null
+                        }
                       >
                         <span>{design.name}</span>
                       </Button>
-                      <Tooltip label="Delete">
-                        <ActionIcon
-                          color="red"
-                          variant="subtle"
-                          onClick={() => remove(design.id)}
-                        >
-                          <IconTrash size={14} />
-                        </ActionIcon>
-                      </Tooltip>
+                      {design.source === "preset" ? null : (
+                        <Tooltip label="Delete">
+                          <ActionIcon
+                            color="red"
+                            variant="subtle"
+                            onClick={() => remove(design.id)}
+                          >
+                            <IconTrash size={14} />
+                          </ActionIcon>
+                        </Tooltip>
+                      )}
                     </Group>
                   ))
                 )}
@@ -308,11 +422,13 @@ export function ShipDesignerRoute() {
                   setWorking((prev) => ({ ...prev, name: e.target.value }))
                 }
                 placeholder="e.g. Sabre Mk II"
+                disabled={readOnly}
               />
               <Select
                 label="Faction"
                 data={factions.map((f) => ({ value: f, label: f }))}
                 value={working.faction}
+                disabled={readOnly}
                 onChange={(f) => {
                   if (f !== null) {
                     // Switching faction clears the brush if it's equipment from
@@ -321,7 +437,7 @@ export function ShipDesignerRoute() {
                       if (prev.kind !== "equipment") return prev;
                       const mod = catalog().module(prev.moduleId);
                       if (mod === undefined || mod.faction !== f) {
-                        return { kind: "scaffold-armor" };
+                        return { kind: "scaffold-deck" };
                       }
                       return prev;
                     });
@@ -331,12 +447,13 @@ export function ShipDesignerRoute() {
               />
             </Group>
 
-            <Group grow>
+            <Group grow align="flex-end">
               <NumberInput
                 label="Columns"
                 min={1}
                 max={MAX_DIM}
                 value={grid.cols}
+                disabled={readOnly}
                 onChange={(v) => resize(clampDim(v, grid.cols), grid.rows)}
               />
               <NumberInput
@@ -344,17 +461,63 @@ export function ShipDesignerRoute() {
                 min={1}
                 max={MAX_DIM}
                 value={grid.rows}
+                disabled={readOnly}
                 onChange={(v) => resize(grid.cols, clampDim(v, grid.rows))}
               />
+              <Stack gap={4}>
+                <Text size="xs" c="dimmed">
+                  Zoom ({zoom.toFixed(1)}x)
+                </Text>
+                <Slider
+                  value={zoom}
+                  onChange={setZoom}
+                  min={ZOOM_MIN}
+                  max={ZOOM_MAX}
+                  step={ZOOM_STEP}
+                  w={120}
+                />
+              </Stack>
             </Group>
 
             <Grid>
               <Grid.Col span={{ base: 12, lg: 6 }}>
                 <Paper p="md" withBorder>
-                  <Text size="sm" fw={600} mb="xs">
-                    Grid
-                  </Text>
-                  <GridBoard grid={grid} selected={selected} onPaint={paint} />
+                  <Group justify="space-between" mb="xs">
+                    <Text size="sm" fw={600}>
+                      Grid
+                    </Text>
+                    <Checkbox
+                      size="xs"
+                      label="Show airtightness"
+                      checked={showAirtightness}
+                      onChange={(e) =>
+                        setShowAirtightness(e.currentTarget.checked)
+                      }
+                    />
+                  </Group>
+                  <div className={zoomViewport}>
+                    <div
+                      className={zoomInner}
+                      style={{
+                        transform: `scale(${zoom})`,
+                        width: innerWidthPx,
+                      }}
+                    >
+                      <GridBoard
+                        grid={grid}
+                        selected={selected}
+                        breached={breached}
+                        showAirtightness={showAirtightness}
+                        onPaint={paint}
+                        onEdge={paintEdge}
+                      />
+                    </div>
+                  </div>
+                  {readOnly ? (
+                    <Text size="xs" c="grape" mt="sm">
+                      This is a bundled preset. Use Copy to edit a duplicate.
+                    </Text>
+                  ) : null}
                   {selectedCell !== undefined &&
                   selectedCell.kind === "solid" &&
                   selectedCell.equipment !== undefined &&
@@ -398,65 +561,25 @@ export function ShipDesignerRoute() {
               </Grid.Col>
 
               <Grid.Col span={{ base: 12, lg: 6 }}>
-                <Paper p="md" withBorder>
-                  <Text size="sm" fw={600} mb="xs">
-                    Palette
-                  </Text>
-                  <Stack gap="xs">
-                    <Button
-                      size="xs"
-                      variant={brush.kind === "empty" ? "filled" : "light"}
-                      color="gray"
-                      onClick={() => setBrush({ kind: "empty" })}
-                    >
-                      Erase (empty)
-                    </Button>
-                    <Group gap={4}>
-                      <Button
-                        size="xs"
-                        variant={brush.kind === "scaffold-armor" ? "filled" : "light"}
-                        onClick={() => setBrush({ kind: "scaffold-armor" })}
-                        title="Solid, impassable armor plate — high HP/mass, no equipment, no walkable surface"
-                      >
-                        armor
-                      </Button>
-                      <Button
-                        size="xs"
-                        variant={brush.kind === "scaffold-deck" ? "filled" : "light"}
-                        color="yellow"
-                        onClick={() => setBrush({ kind: "scaffold-deck" })}
-                        title="Walkable crew floor — corridors and equipment-mounting surface"
-                      >
-                        deck
-                      </Button>
-                      <Button
-                        size="xs"
-                        variant={brush.kind === "scaffold-bare" ? "filled" : "light"}
-                        color="gray"
-                        onClick={() => setBrush({ kind: "scaffold-bare" })}
-                        title="Low-mass framing — scaffold-connected, not walkable"
-                      >
-                        bare
-                      </Button>
-                    </Group>
-                    <Select
-                      label="Equipment"
-                      placeholder="Pick a module to mount on deck"
-                      data={moduleDefs.map((m) => ({
-                        value: m.id,
-                        label: `${m.name} — ${m.cost} pts`,
-                      }))}
-                      value={brush.kind === "equipment" ? brush.moduleId : null}
-                      onChange={(moduleId) =>
-                        moduleId !== null && setBrush({ kind: "equipment", moduleId })
-                      }
-                      searchable
-                    />
-                    <Badge variant="light" color="indigo">
-                      Brush: {brushLabel(brush)}
-                    </Badge>
-                  </Stack>
-                </Paper>
+                <Stack gap="md">
+                  <DesignerPalette
+                    brush={brush}
+                    onChange={setBrush}
+                    modules={moduleDefs}
+                    readOnly={readOnly}
+                  />
+                  <BehaviourPanel
+                    shipStance={working.shipStance}
+                    crewPriority={working.crewPriority}
+                    readOnly={readOnly}
+                    onStanceChange={(s) =>
+                      setWorking((prev) => ({ ...prev, shipStance: s }))
+                    }
+                    onPriorityChange={(p) =>
+                      setWorking((prev) => ({ ...prev, crewPriority: p }))
+                    }
+                  />
+                </Stack>
               </Grid.Col>
             </Grid>
 
@@ -467,26 +590,44 @@ export function ShipDesignerRoute() {
             <FaultList faults={analysis.faults} />
 
             <Group justify="space-between">
-              <ShareButton
-                shareable={{
-                  kind: "shipDesign",
-                  value: {
-                    id: working.id ?? "draft",
-                    name: working.name || "Untitled",
-                    faction: working.faction || "Unaligned",
-                    grid: working.grid,
-                    createdAt: working.createdAt ?? nowIso(),
-                    updatedAt: nowIso(),
-                    source: "user",
-                    revision: 1,
-                    shipStance: "balanced",
-                    crewPriority: "combat",
-                    rules: [],
-                  },
-                }}
-              />
-              <Button onClick={save} leftSection={<IconDeviceFloppy size={16} />}>
-                Save design
+              <Group gap="sm">
+                <ShareButton
+                  shareable={{
+                    kind: "shipDesign",
+                    value: {
+                      id: working.id ?? "draft",
+                      name: working.name || "Untitled",
+                      faction: working.faction || "Unaligned",
+                      grid: working.grid,
+                      createdAt: working.createdAt ?? nowIso(),
+                      updatedAt: nowIso(),
+                      source: working.source,
+                      revision: 1,
+                      shipStance: working.shipStance,
+                      crewPriority: working.crewPriority,
+                      rules: [],
+                    },
+                  }}
+                />
+                {readOnly ? (
+                  <Button
+                    variant="light"
+                    color="grape"
+                    leftSection={<IconCopy size={16} />}
+                    onClick={copyToUser}
+                  >
+                    Copy to edit
+                  </Button>
+                ) : null}
+              </Group>
+              <Button
+                onClick={save}
+                disabled={readOnly}
+                leftSection={
+                  readOnly ? <IconLock size={16} /> : <IconDeviceFloppy size={16} />
+                }
+              >
+                {readOnly ? "Read only" : "Save design"}
               </Button>
             </Group>
           </Stack>
