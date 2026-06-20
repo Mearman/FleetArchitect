@@ -9,6 +9,7 @@ import { SIM } from "./config";
 import { crewTaskOrder, type CrewTaskKind } from "./crew-priority";
 import { ammoShortfall, chargeShortfall, chooseAmmoRun, choosePowerRun, hasLiveManningHardwire, reactorWiringReach, refillHardwiredPower, resolveAmmoArrival, resolvePowerArrival } from "./crew-haul";
 import { aliveCellMap, compareByCell, crewCellKey, findCrewPath, refreshPathCache } from "./crew-pathfinding";
+import { edgeDirection } from "@/domain/grid";
 import type { SimModule, SimShip } from "./types";
 
 /**
@@ -142,6 +143,33 @@ export function updateCrew(ship: SimShip): void {
   // 4. Walk one cell along each crew member's path (id order for determinism).
   for (const c of ordered) {
     advanceCrew(c, cells);
+  }
+
+  // 4b. Door close rule: after all crew have moved, close every door whose two
+  //     adjacent cells are both crew-free. A door stays open only as long as at
+  //     least one crew member occupies one of its two bordering cells.
+  //     Cells are scanned in (col, row) order; the east/south edges only (to
+  //     avoid double-processing each door) drive the closing decision.
+  const crewOccupied = new Set<string>();
+  for (const c of ship.crew) crewOccupied.add(crewCellKey(c.col, c.row));
+  for (const m of ship.modules) {
+    if (!m.alive) continue;
+    const here = crewCellKey(m.col, m.row);
+    for (const dir of (["e", "s"] satisfies Array<"e" | "s">)) {
+      if (m.edges[dir] !== "door") continue;
+      if (m.edges.doorStates[dir] !== "open") continue;
+      const neighborCol = dir === "e" ? m.col + 1 : m.col;
+      const neighborRow = dir === "s" ? m.row + 1 : m.row;
+      const there = crewCellKey(neighborCol, neighborRow);
+      if (!crewOccupied.has(here) && !crewOccupied.has(there)) {
+        m.edges.doorStates[dir] = "closed";
+        const neighbor = cells.get(there);
+        const reverseDir = dir === "e" ? "w" : "n";
+        if (neighbor !== undefined && neighbor.edges[reverseDir] === "door") {
+          neighbor.edges.doorStates[reverseDir] = "closed";
+        }
+      }
+    }
   }
 
   // 5. Recompute manning from final positions, then refresh local charge:
@@ -388,6 +416,27 @@ export function advanceCrew(crew: SimCrew, cells: ReadonlyMap<string, SimModule>
   if (!cells.has(crewCellKey(next.col, next.row))) {
     abandonHaul(crew);
     return;
+  }
+  // If the path crosses a door edge, check its current state.
+  // Open doors are crossed freely; a door that closed since the path was cached
+  // blocks the step — abandon so the crew re-plans through (or around) it next tick.
+  const fromMod = cells.get(crewCellKey(crew.col, crew.row));
+  const dir = fromMod !== undefined ? edgeDirection(crew, next) : undefined;
+  if (dir !== undefined && fromMod !== undefined && fromMod.edges[dir] === "door") {
+    if (fromMod.edges.doorStates[dir] !== "open") {
+      // Door closed under a stale cached path — abandon and re-plan.
+      abandonHaul(crew);
+      return;
+    }
+  }
+  // Open the door if this step crosses one — both sides of the shared edge.
+  if (dir !== undefined && fromMod !== undefined && fromMod.edges[dir] === "door") {
+    fromMod.edges.doorStates[dir] = "open";
+    const toMod = cells.get(crewCellKey(next.col, next.row));
+    const reverseDir = dir === "n" ? "s" : dir === "s" ? "n" : dir === "e" ? "w" : "e";
+    if (toMod !== undefined && toMod.edges[reverseDir] === "door") {
+      toMod.edges.doorStates[reverseDir] = "open";
+    }
   }
   crew.col = next.col;
   crew.row = next.row;

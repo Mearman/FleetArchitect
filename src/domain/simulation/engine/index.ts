@@ -599,6 +599,11 @@ export function snapshot(
           // Local charge buffer — only for power-drawing modules; draw-free
           // cells omit it so simple designs stay byte-compatible.
           ...(m.powerDraw > 0 ? { charge: m.charge } : {}),
+          // Door states — only emitted when the module has at least one door
+          // edge, so ships without doors stay byte-identical to pre-door replays.
+          ...(Object.keys(m.edges.doorStates).length > 0
+            ? { doorStates: m.edges.doorStates }
+            : {}),
         })),
       };
       // Crew positions and state, in ship-local coordinates. Each crew member

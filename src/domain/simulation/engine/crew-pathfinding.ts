@@ -330,7 +330,9 @@ export function computeCrewPathAStar(
       if (dir === undefined) continue;
       const edge = currentMod.edges[dir];
       if (edge === "wall") continue;
-      if (edge === "door" && currentMod.edges.doorStates[dir] !== "open") continue;
+      // Doors are treated as passable for pathfinding: crew open them when they
+      // step through, then close them once no crew remain on either side. A closed
+      // door is therefore a slightly more expensive passage, not a hard block.
       const tentativeG = currentG + 1;
       if (tentativeG < (gScore.get(nKey) ?? Infinity)) {
         cameFrom.set(nKey, { col: current.col, row: current.row });
