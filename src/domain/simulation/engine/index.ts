@@ -15,13 +15,13 @@ import type { BattleInputs, BattleSummary, SimCrew } from "../types";
 import { computeAwareness } from "./awareness";
 import { stepAi } from "./ai-step";
 import { launchPods, updatePods } from "./boarding";
-import { buildShipCellHash, resolveShipCollisions } from "./collision";
+import { applyCollisionDamage, buildShipCellHash, resolveShipCollisions } from "./collision";
 import { SIM, resetProjectileCounter } from "./config";
 import { updateCrew } from "./crew";
 import { refillHardwiredAmmo } from "./crew-haul";
 import { crewCellKey } from "./crew-pathfinding";
 import { resourceStep } from "./resource-step";
-import { splitBreakApart } from "./damage";
+import { resolveChainReactions, splitBreakApart } from "./damage";
 import { layMines, stepTechCooldowns, updateMines } from "./mines";
 import type { DeploymentReference } from "./movement";
 import { fleetCentroid, moveShips } from "./movement";
@@ -182,8 +182,17 @@ export function* simulateBattle(
     // 2b. Ship-vs-ship collision at cell granularity. After movement, any two
     //     ships whose cells now overlap are pushed apart with an elastic
     //     impulse plus positional separation, so ships can't drive through each
-    //     other. All sides are solid — friendlies collide too.
-    resolveShipCollisions(buildShipCellHash(ships));
+    //     other. All sides are solid — friendlies collide too. The resolved
+    //     contacts feed the kinetic-damage step below.
+    const shipContacts = resolveShipCollisions(buildShipCellHash(ships));
+
+    // 2b-kinetic. Kinetic collision damage (realism overhaul, Phase 4). Convert a
+    //     fraction of each contact's collision kinetic energy (measured from the
+    //     pre-impulse approach velocity the resolve step captured) into structural
+    //     damage on both ships (Newton's third law), routed through applyDamage so
+    //     shields/armour/modules apply. A no-op tick with no contacts, so byte
+    //     output is unchanged for battles where ships never touch.
+    applyCollisionDamage(shipContacts);
 
     // 2c. Command auras (factions update). With positions settled for the tick,
     //     recompute each ship's best friendly aura bonus so the firing step below
@@ -262,6 +271,18 @@ export function* simulateBattle(
     //     Runs in the damage phase so the aggregate recompute below reflects
     //     anything a drone destroyed this tick. A no-op when no phantoms exist.
     stepPhantoms(ships);
+
+    // 4a-chain. Explosive chain reactions (realism overhaul, Phase 4). Any
+    //     volatile module (reactor / magazine) reduced to zero HP this tick — by
+    //     a weapon, a mine, a kinetic ram, or an earlier blast — detonates,
+    //     dealing radial damage to its ship's other modules and chaining into any
+    //     further volatile cells it destroys. Drained to completion within this
+    //     tick before the aggregate recompute below, so a reactor breach is
+    //     reflected in the same frame. A no-op for a ship that lost no volatile
+    //     module, so byte output is unchanged for those.
+    for (const ship of ships) {
+      if (ship.modules !== undefined) resolveChainReactions(ship);
+    }
 
     // 4b. Recompute aggregate stats from the alive module set, so a module
     //     destroyed this tick (hitscan or projectile) is reflected in the

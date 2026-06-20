@@ -570,6 +570,16 @@ export interface SimModule {
    * launch path is inert.
    */
   boardingCooldown: number;
+  /**
+   * Explosive chain reactions (realism overhaul, Phase 4). Set true the moment a
+   * volatile module (a reactor `power` plant or a `magazine`) has its blast
+   * processed, so each volatile module detonates at most once across the whole
+   * battle even though the chain-reaction step runs every tick. A non-volatile
+   * module is never queued for explosion, so it keeps this at `false` for its
+   * whole life. Not snapshotted — it is pure internal bookkeeping for the
+   * deterministic single-detonation guard.
+   */
+  exploded: boolean;
 }
 
 /** Mutable in-flight projectile. */

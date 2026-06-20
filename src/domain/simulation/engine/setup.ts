@@ -321,6 +321,9 @@ facing: m.facing,
     // Boarding launcher starts ready (0 = can launch). Only a boarding module
     // ever sets it, so every other module keeps it at 0 and never launches.
     boardingCooldown: 0,
+    // No volatile module has detonated yet. Set true once a reactor/magazine's
+    // blast is processed so it can never chain a second time.
+    exploded: false,
   };
 }
 

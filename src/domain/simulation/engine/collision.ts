@@ -6,6 +6,8 @@
 import { CELL_SIZE } from "@/domain/grid";
 import { SpatialHash, cellWorldPosition } from "@/domain/simulation/spatial-hash";
 
+import { SIM } from "./config";
+import { applyDamage } from "./damage";
 import { localPointToWorld, worldToLocal } from "./setup";
 import type { SimModule, SimShip } from "./types";
 import { applyImpulse } from "./weapons";
@@ -71,20 +73,34 @@ export const CELL_CONTACT_DISTANCE = CELL_SIZE;
  * ships (no cells) don't appear in the hash and so never collide at the cell
  * level — they keep passing through, matching the pre-grid behaviour.
  */
-export function resolveShipCollisions(hash: SpatialHash<ShipCell>): void {
+/**
+ * The deepest contact resolved for one unordered ship pair this tick: the two
+ * ships, the contact point and normal (from `a` toward `b`) in world space, and
+ * the penetration depth. Returned by `resolveShipCollisions` so the kinetic
+ * collision-damage step can apply structural damage to the same pairs the
+ * impulse step pushed apart, without re-running the broad phase.
+ */
+export interface ShipContact {
+  a: SimShip;
+  b: SimShip;
+  // Contact point in world space (midpoint of the two cell centres).
+  px: number;
+  py: number;
+  // Unit normal from a toward b.
+  nx: number;
+  ny: number;
+  depth: number;
+  // Relative linear velocity of b w.r.t. a, captured BEFORE the restitution
+  // impulse reflects it, so the kinetic-damage step measures the true approach
+  // energy rather than the post-bounce velocity. Set when the contact is
+  // resolved, just before `resolveContact` mutates the ships' velocities.
+  relVx: number;
+  relVy: number;
+}
+
+export function resolveShipCollisions(hash: SpatialHash<ShipCell>): ShipContact[] {
   // Deepest contact per unordered ship pair.
-  interface Contact {
-    a: SimShip;
-    b: SimShip;
-    // Contact point in world space (midpoint of the two cell centres).
-    px: number;
-    py: number;
-    // Unit normal from a toward b.
-    nx: number;
-    ny: number;
-    depth: number;
-  }
-  const contacts = new Map<string, Contact>();
+  const contacts = new Map<string, ShipContact>();
 
   for (const entry of hash.entries()) {
     const { ship: a, wx, wy } = entry.payload;
@@ -142,13 +158,78 @@ export function resolveShipCollisions(hash: SpatialHash<ShipCell>): void {
           nx,
           ny,
           depth,
+          // Filled in just before the impulse step, from the pre-impulse
+          // velocities (see the resolve loop below).
+          relVx: 0,
+          relVy: 0,
         });
       }
     }
   }
 
-  for (const contact of contacts.values()) {
+  // Resolve in a stable order (by the unordered pair's instanceId key) so the
+  // sequence of impulses is deterministic regardless of hash iteration order,
+  // and return the same ordered list for the kinetic-damage step.
+  const resolved = [...contacts.values()].sort((x, y) =>
+    pairKey(x.a, x.b) < pairKey(y.a, y.b) ? -1 : pairKey(x.a, x.b) > pairKey(y.a, y.b) ? 1 : 0,
+  );
+  for (const contact of resolved) {
+    // Snapshot the approach velocity before the impulse reflects it, so the
+    // kinetic-damage step sees the energy of the collision, not the rebound.
+    contact.relVx = contact.b.velX - contact.a.velX;
+    contact.relVy = contact.b.velY - contact.a.velY;
     resolveContact(contact.a, contact.b, contact.px, contact.py, contact.nx, contact.ny, contact.depth);
+  }
+  return resolved;
+}
+
+/** Stable key for an unordered ship pair: the two instanceIds joined low-first,
+ *  so the same pair always produces the same key regardless of argument order. */
+function pairKey(a: SimShip, b: SimShip): string {
+  return a.instanceId < b.instanceId
+    ? `${a.instanceId}|${b.instanceId}`
+    : `${b.instanceId}|${a.instanceId}`;
+}
+
+/**
+ * Kinetic ship-ship collision damage (realism overhaul, Phase 4). For each
+ * resolved contact this tick, convert a fraction of the pair's collision kinetic
+ * energy into structural damage on both ships — Newton's third law: the rammer
+ * and the rammed both suffer.
+ *
+ * The collision KE is `0.5 * reducedMass * |v_rel|^2`, where the reduced mass is
+ * `m_r = (m1 * m2) / (m1 + m2)` and `v_rel` is the two ships' relative linear
+ * velocity. `SIM.collisionDamageFraction` of that energy is dealt as damage,
+ * split between the two ships in inverse proportion to mass (the lighter ship is
+ * the one that decelerates harder, so it absorbs the larger share of the
+ * energy). The damage strikes the contact-side modules — the cells nearest the
+ * world-space contact point on each ship — by routing through `applyDamage`
+ * aimed at that point, so shields and armour apply exactly as for a weapon hit.
+ *
+ * Runs over the contact list `resolveShipCollisions` returned (already in a
+ * stable pair order), so the damage application is deterministic. A tick with no
+ * contacts does nothing.
+ */
+export function applyCollisionDamage(contacts: readonly ShipContact[]): void {
+  for (const c of contacts) {
+    const ma = Math.max(c.a.mass, 1);
+    const mb = Math.max(c.b.mass, 1);
+    const reducedMass = (ma * mb) / (ma + mb);
+    const relSpeedSq = c.relVx * c.relVx + c.relVy * c.relVy;
+    if (relSpeedSq <= 0) continue;
+    const collisionKE = 0.5 * reducedMass * relSpeedSq;
+    const totalDamage = collisionKE * SIM.collisionDamageFraction;
+    if (totalDamage <= 0) continue;
+    // Split inversely to mass: the lighter ship takes the larger share. Shares
+    // sum to 1, so the pair dissipates exactly `totalDamage` between them.
+    const totalInvMass = 1 / ma + 1 / mb;
+    const aShare = (1 / ma) / totalInvMass;
+    const bShare = (1 / mb) / totalInvMass;
+    // Strike the contact-side cells: aim each ship's hit at the shared world
+    // contact point, so applyDamage's nearest-cell selection lands on the cells
+    // closest to the point of contact on each hull.
+    applyDamage(c.a, totalDamage * aShare, 0, 0, c.px, c.py);
+    applyDamage(c.b, totalDamage * bShare, 0, 0, c.px, c.py);
   }
 }
 

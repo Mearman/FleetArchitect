@@ -531,6 +531,44 @@ export const SIM = {
    * Phase 14 supplies propellant / `Isp` for a real Δv budget).
    */
   droneDefaultLifetime: 4000,
+  /**
+   * Explosive chain reactions (realism overhaul, Phase 4). When a volatile
+   * module is destroyed it detonates, dealing radial damage to the other alive
+   * modules on the SAME ship with linear falloff to a blast radius. HP is in the
+   * same energy-equivalent units as weapon damage, so the yields below are in
+   * those units too — sized to be meaningful but survivable, not annihilating.
+   */
+  chainReaction: {
+    /**
+     * Reactor (`power`) blast yield as a fraction of the plant's `output`. A
+     * tiny fraction of the reactor's rated output is released as a structural
+     * shockwave — enough to wreck adjacent cells, far short of vaporising the
+     * ship. Multiplied by `effect.output`.
+     */
+    reactorYieldFraction: 0.001,
+    /**
+     * Magazine blast yield per stored round (energy-equivalent units). A full
+     * magazine going up is a serious secondary explosion; an empty one barely
+     * pops. Multiplied by the module's `ammoStored` at the moment it dies.
+     */
+    magazineYieldPerRound: 500,
+    /**
+     * Blast radius (world units) within which an exploding module damages its
+     * neighbours. Damage falls off linearly from the full yield at the blast
+     * centre to zero at this radius.
+     */
+    radius: 24,
+  },
+  /**
+   * Kinetic ship-ship collision damage (realism overhaul, Phase 4). The
+   * fraction of a collision's kinetic energy converted into structural damage,
+   * split across the contact-side modules of each ship. The rest is taken up by
+   * the elastic restitution impulse (handled separately by the collision step).
+   * KE is `0.5 * reducedMass * relativeSpeed^2`, in the same energy-equivalent
+   * units as module HP, so a fast heavy ram is devastating and a gentle nudge is
+   * negligible.
+   */
+  collisionDamageFraction: 0.3,
 };
 
 /** Closing speed (world-units per tick) below which the translation controller
