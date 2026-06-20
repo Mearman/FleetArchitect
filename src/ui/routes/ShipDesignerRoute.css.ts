@@ -27,6 +27,12 @@ export const gridCell = style({
   lineHeight: 1,
   userSelect: "none",
   touchAction: "none",
+  selectors: {
+    "&:focus-visible": {
+      outline: "2px solid #818cf8",
+      outlineOffset: 1,
+    },
+  },
 });
 
 /** Wrapper to position the facing tick relative to the cell content. */

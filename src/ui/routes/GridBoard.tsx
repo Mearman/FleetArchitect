@@ -118,8 +118,9 @@ export function GridBoard({
                     ? `${edgeDoorOpen} ${edgePositionClass("door", dir)}`
                     : `${edgeDoorClosed} ${edgePositionClass("door", dir)}`;
               return (
-                <span
+                <button
                   key={dir}
+                  type="button"
                   className={cls}
                   onClick={(e) => {
                     e.stopPropagation();
