@@ -12,16 +12,37 @@
  * ships iterate in array order, the destroyed-kind set is built in module array
  * order, and `effectiveAi` is a pure first-match-wins rule evaluation.
  *
- * Use-deferred: the stance's potential range/engagement overrides are not wired
- * here (the movement controller reads `Orders`, not `ShipStance`); only
- * `holdFire` gates a concrete behaviour today. Stance-driven range and the
- * remaining AiState flags (focusFire, retreat, rally, prioritiseRepair) are
- * future passes on top of this honest evaluation.
+ * All five AiState outputs are written onto the ship's transient `ai*` fields:
+ * `aiHoldFire`, `aiFocusFire`, `aiRetreat`, `aiPrioritiseRepair`, `aiRally`, and
+ * `aiStance` (set only when a `setStance` rule overrode the base stance, left
+ * `null` otherwise so a rule-less ship falls back to its static orders). The
+ * targeting, movement and crew steps read these and prefer the live value when
+ * the AI has raised it, falling back to the static {@link Orders} otherwise —
+ * so a ship with no rules and the default stance behaves byte-identically.
  */
 
 import { effectiveAi, type TriggerContext } from "@/domain/simulation/engine/ai";
 import type { ModuleKind } from "@/schema/ai";
 import type { SimShip } from "@/domain/simulation/engine/types";
+
+/** The transient AI-decision fields every SimShip is born with, before its first
+ *  AI step runs: no stance override and every flag down. Shared by all four
+ *  SimShip constructors (`toSimShip`, `makeDrone`, `makeDecoy`, `makeChunkShip`)
+ *  so the "AI has said nothing yet" defaults live in one place and cannot drift.
+ *  `stepAi` overwrites every one of these each tick for non-phantom ships. */
+export function defaultAiDecisions(): Pick<
+  SimShip,
+  "aiHoldFire" | "aiStance" | "aiFocusFire" | "aiRetreat" | "aiPrioritiseRepair" | "aiRally"
+> {
+  return {
+    aiHoldFire: false,
+    aiStance: null,
+    aiFocusFire: false,
+    aiRetreat: false,
+    aiPrioritiseRepair: false,
+    aiRally: false,
+  };
+}
 
 /**
  * Compute the per-side total effective hit points (structure + shield) over the
@@ -93,11 +114,11 @@ function buildContext(
 }
 
 /**
- * Run the AI interpreter for every ship and write the resulting hold-fire
- * decision onto each ship's transient `aiHoldFire` field. Called once per tick
- * before targeting so the firing step reads the fresh decision. Ships with no
- * rules and the default stance evaluate to holdFire=false, preserving the
- * historical behaviour byte-for-byte.
+ * Run the AI interpreter for every ship and write the resulting decision onto
+ * each ship's transient `ai*` fields. Called once per tick before targeting so
+ * the firing, targeting, movement and crew steps read the fresh decision. Ships
+ * with no rules and the default stance evaluate to every flag false and no
+ * stance override, preserving the historical behaviour byte-for-byte.
  */
 export function stepAi(
   ships: readonly SimShip[],
@@ -106,10 +127,19 @@ export function stepAi(
   const attackerStrength = sideStrength(ships, "attacker");
   const defenderStrength = sideStrength(ships, "defender");
   for (const ship of ships) {
-    // Phantoms carry no AI of their own; leave their (default false) flag.
+    // Phantoms carry no AI of their own; leave their (default) fields.
     if (ship.phantom !== undefined) continue;
     const ctx = buildContext(ship, byId, attackerStrength, defenderStrength);
     const state = effectiveAi(ship.shipStance, ship.rules, ctx);
     ship.aiHoldFire = state.holdFire;
+    ship.aiFocusFire = state.focusFire;
+    ship.aiRetreat = state.retreat;
+    ship.aiPrioritiseRepair = state.prioritiseRepair;
+    ship.aiRally = state.rally;
+    // `aiStance` records a stance OVERRIDE only: the effective stance differs
+    // from the ship's base stance exactly when a `setStance` rule fired this
+    // tick. Leaving it `null` otherwise keeps a rule-less ship on its static
+    // `orders.stance`, so the movement/targeting stance reads are unchanged.
+    ship.aiStance = state.stance !== ship.shipStance ? state.stance : null;
   }
 }

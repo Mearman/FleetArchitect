@@ -9,6 +9,7 @@ import type { WeaponEffect } from "@/schema/module";
 import type { Orders } from "@/schema/fleet";
 import type { BattleInputs, CombatShip, ResolvedHardwire, ResolvedModule, SimCrew } from "../types";
 
+import { defaultAiDecisions } from "./ai-step";
 import { CREW_HP, SIM } from "./config";
 import { compareByCell } from "./crew-pathfinding";
 import { recomputeAggregates, sumWeaponThrust } from "./physics";
@@ -197,7 +198,9 @@ export function toSimShip(ship: CombatShip, rng: () => number): SimShip {
     crewPriority: ship.crewPriority,
     shipStance: ship.shipStance,
     rules: ship.rules,
-    aiHoldFire: false,
+    // Live AI decisions start "unset": no stance override, no flags raised. The
+    // AI interpreter step rewrites them each tick from the effective AiState.
+    ...defaultAiDecisions(),
     target: undefined,
     alive: true,
     // No awareness yet — computeAwareness fills these from tick 0 onward.

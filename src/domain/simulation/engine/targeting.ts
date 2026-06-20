@@ -7,6 +7,16 @@ import { isDetectable } from "./stealth";
 import type { SimShip } from "./types";
 
 /**
+ * Whether a ship is concentrating fire with its fleet this tick: the live AI
+ * decision (`aiFocusFire`, raised by a `focusFire` rule this tick) OR the static
+ * `orders.focusFire` doctrine. A rule-less ship leaves `aiFocusFire` false and
+ * so reads exactly its static order, keeping focus-election byte-identical.
+ */
+export function wantsFocusFire(ship: SimShip): boolean {
+  return ship.aiFocusFire || ship.orders.focusFire;
+}
+
+/**
  * The view of an enemy a ship's targeting AI is allowed to act on this tick.
  * Either a live contact (the real enemy's current pose and health) or a ghost
  * stand-in (the enemy's last-known position, with its current — still alive —
@@ -181,7 +191,7 @@ export function pickTarget(
 
   // Focus-fire: defer to the fleet-agreed target, but only if this ship can
   // personally see it; a target it can't see falls through to its own scoring.
-  if (ship.orders.focusFire && focusTargetId !== undefined) {
+  if (wantsFocusFire(ship) && focusTargetId !== undefined) {
     const focus = visible.find((e) => e.instanceId === focusTargetId);
     if (focus !== undefined) return focus;
     // Fleet target not in this ship's awareness — fall through to scoring.
@@ -221,7 +231,7 @@ export function electFocusTarget(
   const living = enemies.filter((e) => e.alive && e.phantom === undefined);
   if (living.length === 0) return undefined;
   const voters = ships.filter(
-    (s) => s.alive && s.side === side && s.orders.focusFire && s.phantom === undefined,
+    (s) => s.alive && s.side === side && wantsFocusFire(s) && s.phantom === undefined,
   );
   if (voters.length === 0) return undefined;
 

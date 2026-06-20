@@ -190,6 +190,34 @@ export interface SimShip {
    * with no rules and the default stance always fires as before.
    */
   aiHoldFire: boolean;
+  /**
+   * Transient per-tick AI decisions (Phase 7 wiring), the live counterparts to
+   * the ship's static {@link Orders}. Set by the AI interpreter step from the
+   * effective {@link AiState} each tick (alongside `aiHoldFire`), then read by
+   * the targeting, movement and crew steps, which prefer the live value when the
+   * AI has set it and fall back to the static orders otherwise. All default to
+   * their "AI has said nothing" value — `null` for the stance (no override) and
+   * `false` for the flags — so a ship with no rules and the default stance
+   * behaves byte-identically to before.
+   *
+   * - `aiStance`           — the effective stance a `setStance` rule selected, or
+   *                          `null` when the AI left the base stance in place.
+   *                          Consumers fall back to `orders.stance`.
+   * - `aiFocusFire`        — true when a `focusFire` rule fired this tick, asking
+   *                          the ship to concentrate fire with its allies.
+   * - `aiRetreat`          — true when a `retreat` rule fired this tick, forcing
+   *                          the ship to disengage regardless of its static
+   *                          `orders.retreatThreshold`.
+   * - `aiPrioritiseRepair` — true when a `prioritiseRepair` rule fired this tick,
+   *                          asking the crew scheduler to favour repair tasks.
+   * - `aiRally`            — true when a `rally` rule fired this tick, steering the
+   *                          ship toward its fleet's centroid.
+   */
+  aiStance: ShipStance | null;
+  aiFocusFire: boolean;
+  aiRetreat: boolean;
+  aiPrioritiseRepair: boolean;
+  aiRally: boolean;
   target: string | undefined;
   alive: boolean;
   /**

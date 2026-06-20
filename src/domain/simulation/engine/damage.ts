@@ -8,6 +8,7 @@ import type { SimCrew } from "../types";
 
 import { computeOutline } from "@/domain/outline";
 import type { Shell } from "@/domain/outline";
+import { defaultAiDecisions } from "./ai-step";
 import { SIM } from "./config";
 import { resetCrewForFragment } from "./crew";
 import { comTangentialVelocity, localCentreOfMass, recomputeAggregates } from "./physics";
@@ -714,7 +715,7 @@ export function makeChunkShip(
     crewPriority: parent.crewPriority,
     shipStance: parent.shipStance,
     rules: parent.rules,
-    aiHoldFire: false,
+    ...defaultAiDecisions(), // live AI decisions; the AI step rewrites them next tick
     target: undefined,
     alive: true,
     // A fragment inherits a deep copy of the parent's ghost memory — it

@@ -6,6 +6,7 @@
 import type { DecoyEffect, HangarEffect } from "@/schema/module";
 import { defaultOrders } from "@/schema/fleet";
 
+import { defaultAiDecisions } from "./ai-step";
 import { SIM } from "./config";
 import { isOperational } from "./crew";
 import { applyDamage } from "./damage";
@@ -57,7 +58,8 @@ export function makeDrone(
     crewPriority: "combat",
     shipStance: "balanced",
     rules: [],
-    aiHoldFire: false,
+    // Phantoms carry no AI of their own; leave the live decisions unset.
+    ...defaultAiDecisions(),
     target: undefined,
     alive: true,
     ghosts: [],
@@ -119,7 +121,8 @@ export function makeDecoy(
     crewPriority: "combat",
     shipStance: "balanced",
     rules: [],
-    aiHoldFire: false,
+    // Phantoms carry no AI of their own; leave the live decisions unset.
+    ...defaultAiDecisions(),
     target: undefined,
     alive: true,
     ghosts: [],

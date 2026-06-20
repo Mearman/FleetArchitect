@@ -127,7 +127,14 @@ export function updateCrew(ship: SimShip): void {
   //    through to the next kind. The order is computed once per ship (a pure
   //    function of priority + structure ratio); crew iteration stays in id
   //    order, so determinism is preserved.
-  const taskOrder = crewTaskOrder(ship.crewPriority, {
+  // Live AI override (Phase 7 wiring): a `prioritiseRepair` rule that fired this
+  // tick asks the crew to favour repair, so the scheduler runs under the
+  // `damageControl` doctrine (which orders repair ahead of the hauls — and ahead
+  // of everything once structure is critical) regardless of the ship's static
+  // `crewPriority`. Without the rule (`aiPrioritiseRepair` false, the default for
+  // every rule-less ship) the static priority stands and the order is unchanged.
+  const priority = ship.aiPrioritiseRepair ? "damageControl" : ship.crewPriority;
+  const taskOrder = crewTaskOrder(priority, {
     structure: ship.structure,
     maxStructure: ship.maxStructure,
   });

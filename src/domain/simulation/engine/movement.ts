@@ -6,6 +6,8 @@
  * hold the desired range, and there is no damping or speed cap.
  */
 
+import type { ShipStance } from "@/schema/ai";
+
 import type { BattleInputs } from "../types";
 
 import { SIM, THRUST_ALIGNMENT_RAD } from "./config";
@@ -22,7 +24,23 @@ import { computeTranslationCommand } from "./translation";
 import { afterburnerMultipliers } from "./tech";
 import type { SimShip } from "./types";
 
+/**
+ * The stance the ship is acting under this tick: the live AI override
+ * (`aiStance`, set by a `setStance` rule) when present, otherwise the static
+ * `orders.stance`. The {@link EngagementStance} of `orders` is a subset of the
+ * richer {@link ShipStance} the AI emits, so widening the fallback to
+ * `ShipStance` is a safe assignment — every `orders.stance` value is also a
+ * `ShipStance` value. A ship with no `setStance` rule keeps `aiStance` null and
+ * reads exactly its static orders, so stance-driven behaviour is unchanged.
+ */
+export function effectiveStance(ship: SimShip): ShipStance {
+  return ship.aiStance ?? ship.orders.stance;
+}
+
 export function isRetreating(ship: SimShip): boolean {
+  // A `retreat` rule that fired this tick forces disengagement regardless of the
+  // static threshold — the AI's explicit order overrides the HP-based default.
+  if (ship.aiRetreat) return true;
   const threshold = ship.orders.retreatThreshold;
   if (threshold <= 0) return false;
   // Effective HP fraction: hull structure + module HP combined. The modular
@@ -54,7 +72,16 @@ export function isRetreating(ship: SimShip): boolean {
  */
 export function isClosingStance(ship: SimShip): boolean {
   if (isRetreating(ship)) return false;
-  return ship.orders.stance === "aggressive" || ship.orders.stance === "balanced";
+  const stance = effectiveStance(ship);
+  // The aggressive-family stances press the target; interceptor and escort also
+  // close (a chaser and a screen both advance). The standoff stances (defensive,
+  // evasive, sniper) and the static ones (hold, retreat) do not.
+  return (
+    stance === "aggressive" ||
+    stance === "balanced" ||
+    stance === "interceptor" ||
+    stance === "escort"
+  );
 }
 
 /**
@@ -203,6 +230,23 @@ export function moveShips(
       // Blend using the angular difference to avoid wrapping artefacts.
       const angDiff = angleDifference(desiredFacing, formationFacing);
       desiredFacing = desiredFacing + angDiff * fk;
+    }
+
+    // Rally (Phase 7 wiring): a `rally` rule that fired this tick returns the
+    // ship toward its fleet's formation reference — its own side's centroid.
+    // Unlike formation-keeping (a partial blend toward the centroid that still
+    // tracks the target), a rally fully overrides the heading toward the
+    // centroid and commands thrust, so a rallying ship breaks off and regroups.
+    // Opt-in: only a rule-driven `aiRally` reaches here, so non-rallying ships
+    // (every ship in a rule-less fleet) are untouched. Skipped when the ship is
+    // already on the centroid (no direction to steer) or has no living fleet.
+    if (ship.aiRally && centroid !== undefined) {
+      const dx = centroid.x - ship.x;
+      const dy = centroid.y - ship.y;
+      if (dx !== 0 || dy !== 0) {
+        desiredFacing = Math.atan2(dy, dx);
+        shouldThrust = true;
+      }
     }
 
     // Black-hole avoidance: ships fly into the well blind otherwise. Blend a
