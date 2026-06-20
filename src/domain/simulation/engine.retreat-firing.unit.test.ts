@@ -122,18 +122,20 @@ describe("engine.retreat-firing", () => {
       ]),
     );
 
-    const initial = result.frames[0]?.ships.find((s) => s.instanceId === "a1");
-    if (initial === undefined) throw new Error("missing initial attacker");
-    const maxStructure = initial.structure + (result.frames[1]?.ships.find((s) => s.instanceId === "d1")?.structure ?? 0) === 0
-      ? 100
-      : 100; // the attacker's stats.structure is 100; max tracks that
-    const retreatStart = maxStructure * 0.5;
-
-    // Find the first tick at which the attacker is alive and below threshold.
+    // Find the first tick at which the attacker is alive and its effective HP
+    // fraction (structure + module HP) drops below the 0.5 retreat threshold.
+    // Find when the attacker's effective HP (structure + module HP) drops below
+    // the retreat threshold. The baseline is the initial total HP (at tick 0
+    // everything is undamaged, so that IS the max).
+    const f0 = result.frames[0];
+    const a0 = f0?.ships.find((s) => s.instanceId === "a1");
+    const initialHp = (a0?.structure ?? 0) + (a0?.modules ?? []).reduce((sum, m) => sum + (m.hp ?? 0), 0);
     let retreatTick: number | undefined;
     for (const frame of result.frames) {
       const ship = frame.ships.find((s) => s.instanceId === "a1");
-      if (ship?.alive === true && ship.structure < retreatStart) {
+      if (ship?.alive !== true) continue;
+      const hp = (ship.structure ?? 0) + (ship.modules ?? []).reduce((sum, m) => sum + (m.hp ?? 0), 0);
+      if (initialHp > 0 && hp / initialHp < 0.5) {
         retreatTick = frame.tick;
         break;
       }

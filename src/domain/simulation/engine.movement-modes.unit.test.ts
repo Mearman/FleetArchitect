@@ -218,19 +218,28 @@ describe("engine.movement-modes", () => {
           // the attacker stays alive and visibly retreating. (A second hit at
           // ~40 ticks would kill it mid-turn before the now-realistic, slower
           // rotation has swung it around and carried it clear.)
-          weapons: [weapon({ damage: 60, range: 400, cooldown: 400 })],
+          weapons: [weapon({ damage: 500, range: 400, cooldown: 400 })],
           orders: { engageRange: "hold" },
         }),
       ]),
     );
-    // Once structure/100 < 0.5 the attacker should be retreating; find that
-    // point and assert the facing is away from the defender.
-    const frames = result.frames;
+    // Once the effective HP fraction (structure + module HP) drops below the
+    // 0.5 retreat threshold the attacker should be retreating. The modular
+    // model routes damage through module HP first (spilling to structure only
+    // on module destruction), so the scan checks the combined fraction.
+    // Find when the attacker's effective HP (structure + module HP) drops below
+    // the retreat threshold. The baseline is the initial total HP (at tick 0
+    // everything is undamaged, so that IS the max).
+    const f0 = result.frames[0];
+    const a0 = f0?.ships.find((s) => s.instanceId === "a1");
+    const initialHp = (a0?.structure ?? 0) + (a0?.modules ?? []).reduce((sum, m) => sum + (m.hp ?? 0), 0);
     let retreatTick: number | undefined;
-    for (const f of frames) {
-      const a = f.ships.find((s) => s.instanceId === "a1");
-      if (a?.alive === true && a.structure < 50) {
-        retreatTick = f.tick;
+    for (const frame of result.frames) {
+      const ship = frame.ships.find((s) => s.instanceId === "a1");
+      if (ship?.alive !== true) continue;
+      const hp = (ship.structure ?? 0) + (ship.modules ?? []).reduce((sum, m) => sum + (m.hp ?? 0), 0);
+      if (initialHp > 0 && hp / initialHp < 0.5) {
+        retreatTick = frame.tick;
         break;
       }
     }

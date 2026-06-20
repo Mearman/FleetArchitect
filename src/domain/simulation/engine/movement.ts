@@ -22,10 +22,25 @@ import { afterburnerMultipliers } from "./tech";
 import type { SimShip } from "./types";
 
 export function isRetreating(ship: SimShip): boolean {
-  return (
-    ship.maxStructure > 0 &&
-    ship.structure / ship.maxStructure < ship.orders.retreatThreshold
-  );
+  const threshold = ship.orders.retreatThreshold;
+  if (threshold <= 0) return false;
+  // Effective HP fraction: hull structure + module HP combined. The modular
+  // damage model routes damage through module HP first (spilling to structure
+  // only on module destruction), so structure alone stays near max until the
+  // ship is nearly dead. Combining module HP into the fraction makes the
+  // retreat threshold fire at a meaningful combat-effectiveness level — a ship
+  // that has lost half its total HP (across modules and hull) retreats, not
+  // only one on the brink of destruction. For aggregated ships (no modules)
+  // this reduces to the original structure/maxStructure ratio.
+  let current = ship.structure;
+  let maximum = ship.maxStructure;
+  if (ship.modules !== undefined) {
+    for (const m of ship.modules) {
+      current += m.hp;
+      maximum += m.maxHp;
+    }
+  }
+  return maximum > 0 && current / maximum < threshold;
 }
 
 /**
