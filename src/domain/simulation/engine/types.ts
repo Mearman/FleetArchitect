@@ -380,6 +380,21 @@ export interface SimShip {
    * module death or chunk split invalidates it.
    */
   resourceGraph?: CachedTransportGraph;
+  /**
+   * Alive-cell fingerprint at which break-apart connectivity was last evaluated
+   * and found to be a single connected component (no split). Break-apart's
+   * union-find is O(C) per pass but runs every tick; the vast majority of ticks
+   * see no cell death, so the topology — and therefore the connectivity verdict
+   * — is unchanged. When this matches the current `aliveCellFingerprint`, the
+   * ship was connected last time and no cell has died since, so it is still
+   * connected: the rebuild is skipped. Set only after a pass that produced no
+   * split; cleared (left stale) whenever a cell dies, since the fingerprint then
+   * moves and the guard forces a fresh evaluation. A split itself changes the
+   * alive set (migrated cells flip to dead), so the post-split fingerprint never
+   * spuriously matches a pre-split one. Pure internal bookkeeping; never
+   * snapshotted, so it changes no frame output.
+   */
+  breakApartFingerprint?: number;
 }
 
 /**

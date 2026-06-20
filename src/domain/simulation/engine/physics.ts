@@ -9,6 +9,7 @@ import type { CombatShip } from "../types";
 
 import { SIM } from "./config";
 import { isCharged, isOperational } from "./crew";
+import { PERF_GUARDS } from "./perf-guards";
 import { angleDifference, gridRadius } from "./setup";
 import type { SimModule, SimShip } from "./types";
 /**
@@ -141,27 +142,58 @@ export function recomputeAggregates(ship: SimShip): void {
   let demand = 0;
   for (const m of ship.modules) demand += demandOf(m);
 
-  while (demand > supply) {
-    // Candidates to cut: powered weapons or PD modules, else powered shields.
-    let victim: SimModule | undefined;
-    let bestDraw = -1;
-    for (const m of ship.modules) {
-      if (!m.powered) continue;
-      if (
-        m.effect.kind !== "weapon" &&
-        m.effect.kind !== "pointDefense" &&
-        m.effect.kind !== "shield"
-      ) {
-        continue;
+  if (demand > supply) {
+    if (PERF_GUARDS.brownoutBounded) {
+      // Bounded cut: cutting a module only ever lowers demand and never changes
+      // any other module's draw or powered state, so the sequence the naive loop
+      // produces — repeatedly removing the hungriest powered weapon/PD/shield —
+      // is exactly that candidate set taken in descending `powerDraw` order. We
+      // pre-sort the candidates once (a single O(C) pass plus one O(c log c)
+      // sort over only the cuttable modules) and walk them, instead of
+      // re-scanning every cell per cut. Array.prototype.sort is stable, so equal
+      // draws keep their array order — matching the naive loop's strict-`>`
+      // "first occurrence wins" tie-break exactly. Same victims, same order.
+      const candidates: SimModule[] = [];
+      for (const m of ship.modules) {
+        if (!m.powered) continue;
+        if (
+          m.effect.kind === "weapon" ||
+          m.effect.kind === "pointDefense" ||
+          m.effect.kind === "shield"
+        ) {
+          candidates.push(m);
+        }
       }
-      if (m.powerDraw > bestDraw) {
-        bestDraw = m.powerDraw;
-        victim = m;
+      candidates.sort((a, b) => b.powerDraw - a.powerDraw);
+      for (const victim of candidates) {
+        if (demand <= supply) break;
+        victim.powered = false;
+        demand -= victim.powerDraw;
+      }
+    } else {
+      while (demand > supply) {
+        // Candidates to cut: powered weapons or PD modules, else powered shields.
+        let victim: SimModule | undefined;
+        let bestDraw = -1;
+        for (const m of ship.modules) {
+          if (!m.powered) continue;
+          if (
+            m.effect.kind !== "weapon" &&
+            m.effect.kind !== "pointDefense" &&
+            m.effect.kind !== "shield"
+          ) {
+            continue;
+          }
+          if (m.powerDraw > bestDraw) {
+            bestDraw = m.powerDraw;
+            victim = m;
+          }
+        }
+        if (victim === undefined) break; // nothing power-hungry left to cut
+        victim.powered = false;
+        demand -= victim.powerDraw;
       }
     }
-    if (victim === undefined) break; // nothing power-hungry left to cut
-    victim.powered = false;
-    demand -= victim.powerDraw;
   }
 
   // 4. Build aggregates from alive + powered modules.

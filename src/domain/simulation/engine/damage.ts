@@ -7,11 +7,12 @@
 import type { SimCrew } from "../types";
 
 import { computeChunkOutline } from "./chunk-outline";
+import { aliveCellFingerprint } from "./crew-pathfinding";
 import { defaultAiDecisions } from "./ai-step";
-import { SIM } from "./config";
+import { PERF_GUARDS } from "./perf-guards";
 import { resetCrewForFragment } from "./crew";
 import { comTangentialVelocity, localCentreOfMass, recomputeAggregates } from "./physics";
-import { angleDifference, localPointToWorld, normaliseAngle, worldToLocal } from "./setup";
+import { angleDifference, normaliseAngle, worldToLocal } from "./setup";
 import type { SimModule, SimShip } from "./types";
 
 /**
@@ -161,119 +162,6 @@ export function applyModuleDamage(
 }
 
 /**
- * True for a module whose destruction sets off a secondary explosion: a reactor
- * (`power` plant) or an ammunition `magazine`. Every other module kind is inert
- * when it dies. The single place the "volatile" set is defined, so the queue
- * builder and the yield calculation agree.
- */
-function isVolatile(m: SimModule): boolean {
-  return m.effect.kind === "power" || m.effect.kind === "magazine";
-}
-
-/**
- * The blast yield (energy-equivalent damage units, the same units as module HP)
- * released when a volatile module is destroyed:
- *  - a reactor releases `SIM.chainReaction.reactorYieldFraction` of its rated
- *    `output` — a tiny fraction, so the shockwave wrecks neighbours without
- *    annihilating the ship;
- *  - a magazine releases `SIM.chainReaction.magazineYieldPerRound` per round it
- *    still held (`ammoStored`) at the moment it died, so a full magazine is a
- *    serious secondary and an empty one barely pops.
- * Returns 0 for any non-volatile module (never called for one, but keeps the
- * function total).
- */
-function blastYield(m: SimModule): number {
-  if (m.effect.kind === "power") {
-    return m.effect.output * SIM.chainReaction.reactorYieldFraction;
-  }
-  if (m.effect.kind === "magazine") {
-    return m.ammoStored * SIM.chainReaction.magazineYieldPerRound;
-  }
-  return 0;
-}
-
-/**
- * Explosive chain reactions (realism overhaul, Phase 4). Detonate every volatile
- * module (reactor / magazine) that has died on this ship but not yet exploded,
- * draining the resulting chain within this single tick.
- *
- * A volatile module explodes the moment its HP reaches zero. Its blast does
- * radial damage to every other alive module on the SAME ship within
- * `SIM.chainReaction.radius`, with linear falloff from the exploding cell's
- * ship-local `(x, y)` to zero at the blast radius. The blast originates inside
- * the hull, so it bypasses shields and armour (shieldPiercing = armourPiercing =
- * 1) and is routed through the existing `applyDamage` pipeline per target cell —
- * no duplicated damage logic. If a blast reduces another reactor/magazine to
- * zero HP, that module is detonated in turn, so a row of volatile cells goes up
- * together.
- *
- * Determinism: the work queue is tick-local (built fresh here, never persisted)
- * and always drained in ascending `slotId` order, and each volatile module
- * carries an `exploded` flag so it detonates exactly once across the whole
- * battle however many ticks the chain spans. With no volatile deaths the queue
- * is empty and the function is a no-op, so a battle that never loses a reactor or
- * magazine is byte-identical to before.
- */
-export function resolveChainReactions(ship: SimShip): void {
-  if (ship.modules === undefined) return;
-  const modules = ship.modules;
-
-  // Seed the queue with every volatile module that has died but not yet
-  // detonated. The chain may add more as blasts kill further volatile cells.
-  const collectPending = (): SimModule[] =>
-    modules
-      .filter((m) => !m.alive && isVolatile(m) && !m.exploded)
-      .sort((a, b) => (a.slotId < b.slotId ? -1 : a.slotId > b.slotId ? 1 : 0));
-
-  let pending = collectPending();
-  while (pending.length > 0) {
-    for (const source of pending) {
-      // Mark spent before applying the blast so a cell can never re-enter the
-      // queue, even if its own blast somehow reached back to it.
-      source.exploded = true;
-      detonate(ship, source);
-    }
-    // The blasts above may have killed further volatile cells; rebuild the
-    // queue and keep going until the chain settles.
-    pending = collectPending();
-  }
-}
-
-/**
- * Apply a single volatile module's blast to the rest of its ship. Each alive
- * module within `SIM.chainReaction.radius` of the source cell takes damage that
- * falls off linearly with distance — full yield at the centre, zero at the
- * radius — routed through `applyDamage` aimed at that target cell's world
- * position (so the pipeline's nearest-cell selection lands the hit on it). The
- * blast pierces shields and armour because it goes off inside the hull.
- *
- * Targets are processed in ascending `slotId` order so the chain is deterministic
- * regardless of array layout.
- */
-function detonate(ship: SimShip, source: SimModule): void {
-  if (ship.modules === undefined) return;
-  const yieldAmount = blastYield(source);
-  if (yieldAmount <= 0) return;
-  const { radius } = SIM.chainReaction;
-
-  const targets = ship.modules
-    .filter((m) => m.alive && m !== source)
-    .sort((a, b) => (a.slotId < b.slotId ? -1 : a.slotId > b.slotId ? 1 : 0));
-
-  for (const target of targets) {
-    const dist = Math.hypot(target.x - source.x, target.y - source.y);
-    if (dist >= radius) continue;
-    const falloff = 1 - dist / radius;
-    const damage = yieldAmount * falloff;
-    if (damage <= 0) continue;
-    // The target cell's world position so applyDamage's nearest-cell selection
-    // lands the hit on it. Internal blast: pierce shields and armour fully.
-    const world = localPointToWorld(ship, target.x, target.y);
-    applyDamage(ship, damage, 1, 1, world.x, world.y);
-  }
-}
-
-/**
  * Apply damage to a single cell, depleting outer layer first: surface HP
  * (armor or deck) before scaffold HP (`hp`). Returns the leftover damage that
  * spills onward once the cell is destroyed (scaffold HP exhausted). While the
@@ -407,6 +295,19 @@ export function splitBreakApart(
   nextChunkId: (parentId: string, tick: number) => string,
 ): SimShip[] {
   if (ship.modules === undefined) return [];
+
+  // Topology guard: the connectivity verdict is a pure function of the alive-cell
+  // set. When that set has not changed since the last pass that found the ship
+  // whole (one connected component), it is still whole — the union-find rebuild
+  // would re-derive the same "no split" answer. Skipping it makes break-apart
+  // free on the vast majority of ticks (no cell death), where the fingerprint is
+  // unchanged. The fingerprint is the same hash `refreshPathCache` uses, so a
+  // single cell death (which already moves it) forces a fresh evaluation here.
+  const fingerprint = aliveCellFingerprint(ship);
+  if (PERF_GUARDS.breakApartTopology && ship.breakApartFingerprint === fingerprint) {
+    return [];
+  }
+
   const alive = ship.modules.filter((m) => m.alive);
   if (alive.length === 0) return [];
   // Every solid cell is scaffold-anchored by definition (scaffold is the
@@ -436,7 +337,12 @@ export function splitBreakApart(
       break;
     }
   }
-  if (!hasGridAdjacency) return [];
+  if (!hasGridAdjacency) {
+    // Not a grid: it never splits at this topology. Record the fingerprint so
+    // subsequent ticks skip straight past until a cell dies.
+    ship.breakApartFingerprint = fingerprint;
+    return [];
+  }
 
   // Union-Find over alive modules, grouped by exact 4-connected (edge-sharing)
   // grid adjacency. Only alive modules are nodes: a destroyed hull cell no
@@ -492,7 +398,12 @@ export function splitBreakApart(
     if (list === undefined) components.set(r, [m]);
     else list.push(m);
   }
-  if (components.size <= 1) return []; // connected — no split
+  if (components.size <= 1) {
+    // Connected: a single component, no split. Record the fingerprint so the
+    // guard above short-circuits until a cell dies and moves it.
+    ship.breakApartFingerprint = fingerprint;
+    return [];
+  }
 
 
   // Pick the largest component as the survivor. Ties broken by string
@@ -511,7 +422,12 @@ export function splitBreakApart(
       survivorModules = list;
     }
   }
-  if (survivorRoot === undefined) return [];
+  if (survivorRoot === undefined) {
+    // No survivor resolved (no split performed): the ship stays whole at this
+    // topology, so record the fingerprint to skip future no-op passes.
+    ship.breakApartFingerprint = fingerprint;
+    return [];
+  }
 
   // Snapshot the parent's pre-split centre of mass before any module
   // migration shifts it. Every fragment's tangential kick is measured

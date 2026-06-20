@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { CELL_SIZE } from "@/domain/grid";
 import type { BattleFrame, BattleResult } from "@/schema/battle";
 import type { DescriptorMap } from "@/ui/cellLayout";
@@ -19,6 +19,8 @@ import {
 } from "./battleConstants";
 import { OVERLAYS, OVER_SHIP_IDS, UNDER_SHIP_IDS } from "./overlays";
 import type { OverlayScope } from "./overlays";
+import { SPRITE_PX_PER_WORLD, rasteriseShipSprite, spriteKey } from "./shipSprite";
+import type { ShipSprite } from "./shipSprite";
 
 /** Per-overlay on/scope state held by the route. */
 export type OverlayState = Record<string, { on: boolean; scope: OverlayScope }>;
@@ -69,6 +71,12 @@ export function useBattleCanvas({
   overlays,
   descriptors,
 }: UseBattleCanvasProps) {
+  // Per-ship cache of the rasterised static cell layer. Survives across frames
+  // (a ref, not state, so it never triggers a re-render) and is re-rasterised
+  // for a ship only when its alive-cell set or base colour changes. Keyed by
+  // instance id; a stale entry whose ship has left the battle is simply never
+  // read again (the map is small — one entry per live ship).
+  const spriteCache = useRef<Map<string, ShipSprite>>(new Map());
   return useCallback(
     (frame: BattleFrame, tick: number, frames: readonly BattleFrame[]) => {
       const canvas = canvasRef.current;
@@ -231,9 +239,48 @@ export function useBattleCanvas({
           // show a visible hull rather than collapsing to sub-pixel specks.
           const cellPx = Math.max(2, CELL_SIZE * scale);
           const half = cellPx / 2;
+          // Whether the cell size is being floored (distant zoom): in that
+          // regime cells overlap to keep a tiny hull legible, which the baked
+          // sprite (drawn at the natural scale) cannot reproduce, so we fall
+          // back to the live per-cell fill. At normal/close zoom the sprite blit
+          // is pixel-equivalent to the live fill, so it is used.
+          const floored = CELL_SIZE * scale < 2;
           ctx.save();
           ctx.translate(px, py);
           ctx.rotate(s.facing);
+
+          // Static cell layer: blit the cached sprite when at natural scale,
+          // re-rasterising only on a topology/colour change. The dynamic per-cell
+          // bits (starvation dimming, dead crosses, turret barrels) are always
+          // drawn live on top, so the visible result matches the live path.
+          const useSprite = !floored;
+          let sprite: ShipSprite | undefined;
+          if (useSprite) {
+            const key = spriteKey(cells, base);
+            const cached = spriteCache.current.get(s.instanceId);
+            if (cached !== undefined && cached.key === key) {
+              sprite = cached;
+            } else {
+              sprite = rasteriseShipSprite(cells, base, key);
+              if (sprite !== undefined) spriteCache.current.set(s.instanceId, sprite);
+            }
+          }
+
+          if (sprite !== undefined) {
+            // Map sprite pixels to display pixels: the sprite drew CELL_SIZE
+            // world units as SPRITE_PX_PER_WORLD pixels, so dividing the live
+            // display scale by that factor recovers the per-cell display size.
+            const blitScale = scale / SPRITE_PX_PER_WORLD;
+            ctx.globalAlpha = 1;
+            ctx.drawImage(
+              sprite.canvas,
+              -sprite.originX * blitScale,
+              -sprite.originY * blitScale,
+              sprite.canvas.width * blitScale,
+              sprite.canvas.height * blitScale,
+            );
+          }
+
           for (const m of cells) {
             // Cell centre in ship-local display space (static offset times the
             // scale); the surrounding translate/rotate places it in world.
@@ -258,15 +305,33 @@ export function useBattleCanvas({
             const unmanned = hasCrewReq && m.manned === false;
             const isStarved = starvedAmmo || starvedCharge || unmanned;
 
-            ctx.globalAlpha = m.alive ? (isStarved ? 0.45 : 1) : 0.18;
-            ctx.fillStyle = colour;
-            ctx.fillRect(lx - half, ly - half, cellPx, cellPx);
+            // An alive, non-starved cell at natural zoom is already painted by
+            // the sprite blit above — skip re-filling it. Every other cell (dead,
+            // starved, or any cell when the sprite is not in use) is filled live,
+            // identically to the original path.
+            const paintedBySprite = sprite !== undefined && m.alive && !isStarved;
+            if (!paintedBySprite) {
+              // A starved/dead cell baked into the sprite must be knocked out
+              // before its dimmed version is drawn, or the bright baked fill
+              // would show through the lower-opacity overlay.
+              if (sprite !== undefined && sprite.aliveSlots.has(m.slotId)) {
+                ctx.globalCompositeOperation = "destination-out";
+                ctx.globalAlpha = 1;
+                ctx.fillStyle = "#000";
+                ctx.fillRect(lx - half, ly - half, cellPx, cellPx);
+                ctx.globalCompositeOperation = "source-over";
+              }
 
-            // A faint side-coloured inset keeps adjacent cells distinct and
-            // tints the whole hull toward its allegiance colour.
-            ctx.globalAlpha = m.alive ? (isStarved ? 0.1 : 0.22) : 0.1;
-            ctx.fillStyle = base;
-            ctx.fillRect(lx - half, ly - half, cellPx, cellPx);
+              ctx.globalAlpha = m.alive ? (isStarved ? 0.45 : 1) : 0.18;
+              ctx.fillStyle = colour;
+              ctx.fillRect(lx - half, ly - half, cellPx, cellPx);
+
+              // A faint side-coloured inset keeps adjacent cells distinct and
+              // tints the whole hull toward its allegiance colour.
+              ctx.globalAlpha = m.alive ? (isStarved ? 0.1 : 0.22) : 0.1;
+              ctx.fillStyle = base;
+              ctx.fillRect(lx - half, ly - half, cellPx, cellPx);
+            }
 
             if (!m.alive) {
               ctx.globalAlpha = 0.35;
