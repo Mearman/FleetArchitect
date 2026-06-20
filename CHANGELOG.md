@@ -1,3 +1,56 @@
+# [1.3.0](https://github.com/Mearman/FleetArchitect/compare/v1.2.0...v1.3.0) (2026-06-20)
+
+
+### Bug Fixes
+
+* **engine:** advance to engagement range, not the deployment centroid ([7a871e8](https://github.com/Mearman/FleetArchitect/commit/7a871e8e74c75000fd8e3a4d7b8a88b977bf0780))
+* **sim,storage:** resolve type and lint issues in Phase 4/9 implementations ([3c72a22](https://github.com/Mearman/FleetArchitect/commit/3c72a225997022a7f46986406b518cb80159c757))
+* **sim:** isRetreating uses effective HP (structure + module HP) ([f1248de](https://github.com/Mearman/FleetArchitect/commit/f1248de288dda26809239c2fe4969a28927adaed))
+* **test:** set testTimeout to 30s for long-running battle simulations ([e2451cc](https://github.com/Mearman/FleetArchitect/commit/e2451ccad74e7c02bd80a560d5837de76f97ee21))
+* **test:** simplify engagement test design and verify battle simulation works ([640bab0](https://github.com/Mearman/FleetArchitect/commit/640bab0d8cf941515726e94a6a67aab00a831749))
+
+
+### Features
+
+* **designer:** layered brushes + airtightness feedback + preset copy-not-edit (Phase 13) ([c18fc12](https://github.com/Mearman/FleetArchitect/commit/c18fc12535a0474db6479316abe5f90a84f72058))
+* **designer:** trigger/action rule editor (phase 8a) ([389470a](https://github.com/Mearman/FleetArchitect/commit/389470ae6b56d53acb318d229419c7543e97c088))
+* **designer:** version history browser and copy-to-edit (Phase 8b) ([e76310e](https://github.com/Mearman/FleetArchitect/commit/e76310ed7cf101978a95d6163fee7466152197af))
+* **engine:** frictionless Newtonian movement controller ([eda790d](https://github.com/Mearman/FleetArchitect/commit/eda790d1199ddf9c9e1f8c1c981b18076e32ebb7))
+* **engine:** ground world-scale constants in real physics (Phase 1) ([6cff3c4](https://github.com/Mearman/FleetArchitect/commit/6cff3c4010cdf8d47db313d571e825ee73cacf74))
+* **grid:** layered cell model with surface, edges, and equipment ([71cc0e9](https://github.com/Mearman/FleetArchitect/commit/71cc0e9aa7b7664542569916c62240841138ec8b))
+* **outline:** layered-cell shell extractor (Phase 11) ([70ae4fe](https://github.com/Mearman/FleetArchitect/commit/70ae4fe54a729b354302f043a934dba20220bb87))
+* **presets:** SI catalogue + preset re-authoring + lethality unblock (Phase 14) ([d9d4966](https://github.com/Mearman/FleetArchitect/commit/d9d4966ac75398ed675dd2ac2d14a76285e3881e))
+* **schema:** add AI rules, version history, outline mode, source flag ([a48238c](https://github.com/Mearman/FleetArchitect/commit/a48238c12a3dc8ebce9ad0e9b88ca1b34cd0d168))
+* **sim:** chain reactions and kinetic collision damage (Phase 4) ([5f39e18](https://github.com/Mearman/FleetArchitect/commit/5f39e183cfbbea9cbbfcf32bdc23b25d023824da))
+* **sim:** compute outline at resolve (Phase 11 wiring) ([d03ce26](https://github.com/Mearman/FleetArchitect/commit/d03ce26b9de42f9664e2d50aa257b6e3866574a8))
+* **sim:** crew priority modes (Phase 6, use-deferred) ([a5f80b7](https://github.com/Mearman/FleetArchitect/commit/a5f80b72bba7f87769098dcf48d92f69856e0179))
+* **sim:** debris field module (v1, use-deferred) ([8d52268](https://github.com/Mearman/FleetArchitect/commit/8d52268c0f8218c3bbc99b61e29d5c6b6b53ddaa))
+* **sim:** outline algorithm + resource-sim subsystems (v1, use-deferred) ([291b1c3](https://github.com/Mearman/FleetArchitect/commit/291b1c3c0449377669bc2234e8ce7b892a07001d))
+* **sim:** outline field on SimShip + snapshot emission (Phase 11 wiring) ([f6bf29c](https://github.com/Mearman/FleetArchitect/commit/f6bf29c84a1bf8fb43739121b8141234a2a109b7))
+* **sim:** proper-time dilation physics (Phase 4, v1) ([53940bc](https://github.com/Mearman/FleetArchitect/commit/53940bcdf3901d4a69f7f78fd1885752110cea6a))
+* **sim:** radar pulse physics (Phase 8, v1) ([62d36e2](https://github.com/Mearman/FleetArchitect/commit/62d36e2f02c81b8d7c213364e281aa5d9fe0930a))
+* **sim:** relativistic ray optics (Phase 10, v1) ([279fda5](https://github.com/Mearman/FleetArchitect/commit/279fda5a6771a1d05e220d88bfd20730f8359fdd))
+* **sim:** ship AI rule interpreter (Phase 7, v1) ([2b69c66](https://github.com/Mearman/FleetArchitect/commit/2b69c66a1cb3de7c2b026fd11a56415c3fc8421e))
+* **sim:** support initial ship velocity ([47d2449](https://github.com/Mearman/FleetArchitect/commit/47d24492813d874c383988c242f732cc3477e0be))
+* **sim:** unified EM awareness reception model (Phase 9, v1) ([db2afc7](https://github.com/Mearman/FleetArchitect/commit/db2afc7e81546af8f431fcdfbdff2de40a9cab85))
+* **sim:** wire AI interpreter holdFire into the tick loop (Phase 7) ([ac9520e](https://github.com/Mearman/FleetArchitect/commit/ac9520e36fe60eeb9b710eecbf21c64ae61c6e2d))
+* **sim:** wire crew priority modes into the crew tick (Phase 6) ([985469b](https://github.com/Mearman/FleetArchitect/commit/985469b8a1b1bf3f073d6fbb11b82e242374eabe))
+* **sim:** wire proper-time dilation to weapon cooldowns (Phase 4 complete) ([751c057](https://github.com/Mearman/FleetArchitect/commit/751c057724274360a5b4cc11783d7eeb72ae0f97))
+* **sim:** wire resource step into the tick loop (Phase 12) ([5c012e8](https://github.com/Mearman/FleetArchitect/commit/5c012e8ff9b91dc1aeadbbed26451c5f52f36f68))
+* **sim:** wire resource step into tick loop with sparse module graph (Phase 12) ([10da0f6](https://github.com/Mearman/FleetArchitect/commit/10da0f64332faabb0c17937ccf398825877bd3c6))
+* **storage:** version history and copy API (Phase 9) ([11e54c9](https://github.com/Mearman/FleetArchitect/commit/11e54c9204572621f089635ad934f1fab8965d81))
+* **ui:** render chamfered hull outline on the battle canvas (Phase 11 complete) ([33208aa](https://github.com/Mearman/FleetArchitect/commit/33208aa120e75dd2ce64e966053e2497b11bb8a3))
+
+
+### Performance Improvements
+
+* **sim:** inline flux with faces-by-cell lookup, remove dead functions ([ff1bed8](https://github.com/Mearman/FleetArchitect/commit/ff1bed8a2fdc9adca28dc7aca4b6553bf02014c2))
+
+
+### Reverts
+
+* remove resource-step tick-loop wiring (37 test failures) ([5af0ce2](https://github.com/Mearman/FleetArchitect/commit/5af0ce2bd9c8aec4f01884f66485f1ca2b885a81))
+
 # [1.2.0](https://github.com/Mearman/FleetArchitect/compare/v1.1.0...v1.2.0) (2026-06-19)
 
 
