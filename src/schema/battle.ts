@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { EntityId, IsoTimestamp } from "./primitives";
 import { WeaponType } from "./module";
+import { DoorState, SurfaceKind } from "./grid";
 
 /** A side in a battle. `draw` is only a battle outcome, never a ship's side. */
 export const BattleSide = z.enum(["attacker", "defender", "draw"]);
@@ -92,9 +93,28 @@ export const ShipSnapshot = z.object({
         /** Position in ship-local (design) coordinates, for rendering. */
         x: z.number(),
         y: z.number(),
+        /** Surface kind of this cell (bare/deck/armor). Optional for backward
+         *  compatibility with replays recorded before the grid model. */
+        surface: SurfaceKind.optional(),
+        /** Current HP of the surface layer (armour or deck). Zero for bare cells.
+         *  Optional for backward compatibility. */
+        surfaceHp: z.number().optional(),
+        /** Maximum HP of the surface layer. Optional for backward compatibility. */
+        maxSurfaceHp: z.number().optional(),
         hp: z.number(),
         maxHp: z.number(),
         alive: z.boolean(),
+        /** Live door states for a module that has at least one door edge, keyed by
+         *  direction. Absent on modules with no doors so older replays stay
+         *  byte-identical. Optional for backward compatibility. */
+        doorStates: z
+          .object({
+            n: DoorState.optional(),
+            e: DoorState.optional(),
+            s: DoorState.optional(),
+            w: DoorState.optional(),
+          })
+          .optional(),
         /**
          * For weapon modules with a turret: the live barrel angle in
          * radians, ship-local — the direction the turret has slewed to this
@@ -144,6 +164,28 @@ export const ShipSnapshot = z.object({
   /** Chamfered hull outline polygon loops (Vec2 vertices in ship-local metres).
    *  Render-only; present on modular ships with armor cells. */
   outline: z.array(z.array(z.object({ x: z.number(), y: z.number() }))).optional(),
+  /**
+   * Per-ship resource state (Phase 12 wiring). Emitted when the ship runs the
+   * resource step (modular ships only). Arrays are module-sparse: index `i`
+   * corresponds to the module at dense position `i` (modules sorted by
+   * (row, col)). Absent on legacy aggregated ships and phantoms; absent when the
+   * resource step has not been wired in. Optional for backward compatibility.
+   */
+  resource: z
+    .object({
+      /** Thermal field: temperature (K) for each module cell. */
+      thermal: z.array(z.number()),
+      /** Propellant field: fuel mass (kg) for each module cell. */
+      propellant: z.array(z.number()),
+      /** Atmosphere field: gas mass (kg) for each module cell. */
+      atmosphere: z.array(z.number()),
+      /** Ship-wide power capacitor state. */
+      powerBuffer: z.object({
+        energy: z.number().min(0),
+        capacityJoules: z.number().min(0),
+      }),
+    })
+    .optional(),
 });
 export type ShipSnapshot = z.infer<typeof ShipSnapshot>;
 

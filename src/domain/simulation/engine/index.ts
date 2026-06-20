@@ -614,11 +614,29 @@ export function snapshot(
       // sits on the cell of the module at its (col, row); that module's x/y is
       // the cell's ship-local centre, plus the fractional render offset. Omitted
       // when the ship carries no crew so crewless replays stay byte-compatible.
-      if (s.crew === undefined || s.crew.length === 0) return withModules;
+      // Resource state — emitted when the ship has run the resource step, so
+      // the renderer and analytics can read thermal, propellant, atmosphere and
+      // power-buffer values each tick. Absent on phantoms and legacy ships.
+      const withResource =
+        s.resource !== undefined
+          ? {
+              ...withModules,
+              resource: {
+                thermal: s.resource.thermal,
+                propellant: s.resource.propellant,
+                atmosphere: s.resource.atmosphere,
+                powerBuffer: {
+                  energy: s.resource.powerBuffer.energy,
+                  capacityJoules: s.resource.powerBuffer.capacityJoules,
+                },
+              },
+            }
+          : withModules;
+      if (s.crew === undefined || s.crew.length === 0) return withResource;
       const moduleByCell = new Map<string, SimModule>();
       for (const m of s.modules) moduleByCell.set(crewCellKey(m.col, m.row), m);
       return {
-        ...withModules,
+        ...withResource,
         crew: s.crew.map((c) => {
           const cell = moduleByCell.get(crewCellKey(c.col, c.row));
           const cx = cell !== undefined ? cell.x : 0;
