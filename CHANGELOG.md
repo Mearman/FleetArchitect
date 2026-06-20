@@ -1,3 +1,10 @@
+## [1.3.1](https://github.com/Mearman/FleetArchitect/compare/v1.3.0...v1.3.1) (2026-06-20)
+
+
+### Bug Fixes
+
+* **build:** move edgePositionClass out of .css.ts (vanilla-extract v8 forbids function exports) ([7a2aa1a](https://github.com/Mearman/FleetArchitect/commit/7a2aa1a3b7bb91087efe49990f54ef5bd7dd27e6))
+
 # [1.3.0](https://github.com/Mearman/FleetArchitect/compare/v1.2.0...v1.3.0) (2026-06-20)
 
 
