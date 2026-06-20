@@ -32,6 +32,38 @@ export const OPTICS: {
 };
 
 /**
+ * Wavelength (metres) of a ship-mounted directed-energy weapon: a frequency-
+ * doubled Nd:YAG line (532 nm, visible green) — the canonical high-power solid-
+ * state laser line, the same anchor the optics unit tests carry. The beam
+ * physics scales with λ, so naming the real line keeps the divergence grounded
+ * rather than hand-picked.
+ */
+export const BEAM_WAVELENGTH_M = 532e-9;
+
+/**
+ * The reference range (metres) at which a combat beam's spot has diverged to
+ * its Rayleigh point — where the beam area has doubled and intensity has halved.
+ * Anchored to a representative ship-scale beam reach so that divergence is a
+ * real, felt effect across an engagement (a beam noticeably weaker at the far
+ * edge of its range than point-blank) rather than a negligible far-field
+ * correction. Authored catalogue content: a directed-energy weapon's effective
+ * collimation distance.
+ */
+export const BEAM_RAYLEIGH_REFERENCE_M = 400;
+
+/**
+ * Emitter aperture radius (metres) of a ship-mounted beam weapon, DERIVED from
+ * the wavelength and the reference Rayleigh range rather than hand-picked. The
+ * Rayleigh range is z_R = π · w₀² / λ, so the aperture that places z_R at
+ * BEAM_RAYLEIGH_REFERENCE_M is w₀ = sqrt(λ · z_R / π). For the 532 nm line and
+ * a ~400 m reference this is a sub-centimetre emitter waist — a compact lasing
+ * cavity, physically consistent with a ship-scale directed-energy mount.
+ */
+export const BEAM_APERTURE_RADIUS_M = Math.sqrt(
+  (BEAM_WAVELENGTH_M * BEAM_RAYLEIGH_REFERENCE_M) / OPTICS.RAYLEIGH_FACTOR,
+);
+
+/**
  * Compute the 1/e² beam spot radius at a given range using the full Gaussian
  * beam formula (not the far-field approximation), so the result is physically
  * correct at all ranges from zero to the far field.
@@ -118,6 +150,46 @@ export function intensityFalloff(
 // potential (m^2/s^2), GM the body's standard gravitational parameter (m^3/s^2).
 // These transform the EM that the Phase 8 pulses / Phase 9 emissions carry.
 // ---------------------------------------------------------------------------
+
+/**
+ * The fractional beam intensity surviving Gaussian divergence at `range` for the
+ * ship-scale beam anchors above: the closed-form `intensityFalloff` evaluated at
+ * the weapon's wavelength and aperture. 1.0 at the muzzle, falling toward 0 with
+ * range as the spot diverges — the multiplier a hitscan beam scales its damage
+ * by so a long-range shot lands softer than a point-blank one.
+ */
+export function beamDamageFactor(range: number): number {
+  return intensityFalloff(BEAM_WAVELENGTH_M, BEAM_APERTURE_RADIUS_M, range);
+}
+
+/**
+ * The radial component of the relative velocity between an emitter and a
+ * receiver, expressed as a dimensionless fraction of light (beta), POSITIVE when
+ * the two are separating (receding → redshift) and negative when closing
+ * (approaching → blueshift). The relative velocity is (emitter − receiver)
+ * velocity; its projection onto the line-of-sight unit vector from receiver to
+ * emitter is the radial rate. Pure closed-form: no solver, no clock. Returns 0
+ * when the two are coincident (no defined line of sight).
+ *
+ * @param relVx - emitter.vx − receiver.vx (world units per tick).
+ * @param relVy - emitter.vy − receiver.vy (world units per tick).
+ * @param losX - emitter.x − receiver.x (world units; the line-of-sight vector).
+ * @param losY - emitter.y − receiver.y (world units).
+ * @param cPerTick - the speed of light in the same units per tick as the
+ *   velocities, so the ratio is dimensionless.
+ */
+export function relativeRadialBeta(
+  relVx: number,
+  relVy: number,
+  losX: number,
+  losY: number,
+  cPerTick: number,
+): number {
+  const losLen = Math.hypot(losX, losY);
+  if (losLen <= 0 || cPerTick <= 0) return 0;
+  const radial = (relVx * losX + relVy * losY) / losLen;
+  return radial / cPerTick;
+}
 
 /** The relativistic Doppler factor D = sqrt((1 - beta)/(1 + beta)) for a
  *  source receding at radial fraction-of-c `beta` (positive = receding, so

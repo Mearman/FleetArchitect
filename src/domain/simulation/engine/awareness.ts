@@ -7,9 +7,10 @@ import { segmentBlocked } from "@/domain/occluders";
 import type { Disc } from "@/domain/occluders";
 import type { AwarenessSnapshot, BattleAnomaly } from "@/schema/battle";
 
-import { SIM } from "./config";
+import { SIM, SPEED_OF_LIGHT_M_PER_TICK } from "./config";
 import { coverageShapes } from "./coverage";
 import { emReceives } from "./em-reception";
+import { aberratedContactPosition } from "./optics-aberration";
 import type { CommsLink, CommsUnit } from "./sensors";
 import { aimDishes, commsUnitOperable, commsUnitsOf, contactThreat, linkForms } from "./sensors";
 import type { Contact, GhostContact, SimShip } from "./types";
@@ -62,10 +63,24 @@ export function computeAwareness(
     for (const enemy of enemies) {
       if (segmentBlocked(observer.x, observer.y, enemy.x, enemy.y, occluders)) continue;
       if (!emReceives(observer, enemy, anomaly)) continue;
+      // Relativistic aberration (Phase 10): a moving observer measures the
+      // contact's bearing swept toward its own direction of travel, so the
+      // REPORTED position is the aberrated apparent one, not the true position.
+      // A stationary observer sees no shift (the helper is the identity), so an
+      // at-rest fleet's contacts are unchanged.
+      const apparent = aberratedContactPosition(
+        observer.x,
+        observer.y,
+        observer.velX,
+        observer.velY,
+        enemy.x,
+        enemy.y,
+        SPEED_OF_LIGHT_M_PER_TICK,
+      );
       list.push({
         enemyId: enemy.instanceId,
-        x: enemy.x,
-        y: enemy.y,
+        x: apparent.x,
+        y: apparent.y,
         facing: enemy.facing,
         threat: contactThreat(observer, enemy),
         origin: observer.instanceId,

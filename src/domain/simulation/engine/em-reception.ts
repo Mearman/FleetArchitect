@@ -28,9 +28,14 @@
 
 import type { BattleAnomaly } from "@/schema/battle";
 
-import { SIM } from "./config";
+import { SIM, SPEED_OF_LIGHT_M_PER_TICK } from "./config";
 import { EM_HULL_AMBIENT_EMISSION, EM_RECEIVER_NOISE_FLOOR } from "./config";
 import { continuousContact, type Emission } from "./emissions";
+import {
+  dopplerFactor,
+  gravitationalRedshift,
+  relativeRadialBeta,
+} from "./optics";
 import {
   attenuatedSensorRange,
   effectiveSensorArc,
@@ -89,6 +94,58 @@ function sensorGain(range: number): number {
 }
 
 /**
+ * The relativistic + gravitational correction to the received EM power of
+ * `enemy`'s emission as seen by `observer` this tick (Phase 10). Two closed-form
+ * factors multiply the inverse-square strength:
+ *
+ *  - **Relativistic Doppler.** The radial relative velocity along the sight line
+ *    gives a Doppler factor D; an approaching source is blueshifted and beamed
+ *    brighter, a receding one redshifted and dimmer. Received power scales as D²
+ *    (one factor of D for the photon energy, one for the arrival rate).
+ *  - **Gravitational redshift.** Under a black hole at the arena origin a photon
+ *    climbing from the emitter's potential well to the receiver's shifts by
+ *    g(Φ_emitter)/g(Φ_receiver), where g(Φ) = sqrt(1 + 2Φ/c²) and Φ = -GM/r is
+ *    the Newtonian potential. A source deeper in the well than the observer is
+ *    redshifted (factor < 1, dimmer); shallower, blueshifted.
+ *
+ * When the two ships share a velocity and no black hole is present, both factors
+ * are exactly 1 — so a stationary, anomaly-free engagement reproduces the
+ * Phase-9 reception unchanged and the detection fixtures hold byte-for-byte.
+ */
+export function receptionShift(
+  observer: SimShip,
+  enemy: SimShip,
+  anomaly: BattleAnomaly,
+): number {
+  // Doppler boosting/dimming from the radial relative velocity along the sight
+  // line. relativeRadialBeta is positive when separating (redshift, D < 1).
+  const beta = relativeRadialBeta(
+    enemy.velX - observer.velX,
+    enemy.velY - observer.velY,
+    enemy.x - observer.x,
+    enemy.y - observer.y,
+    SPEED_OF_LIGHT_M_PER_TICK,
+  );
+  const d = dopplerFactor(beta);
+  let shift = d * d;
+
+  // Gravitational redshift between the emitter's and receiver's potential wells
+  // under a black hole at the origin. Newtonian potential Φ = -GM/r; the ratio
+  // of the climb-out factors is the net frequency (and hence power) shift.
+  if (anomaly === "blackHole") {
+    const gm = SIM.blackHoleStrength;
+    const rEnemy = Math.hypot(enemy.x, enemy.y);
+    const rObserver = Math.hypot(observer.x, observer.y);
+    if (rEnemy > 0 && rObserver > 0) {
+      const gEnemy = gravitationalRedshift(-gm / rEnemy);
+      const gObserver = gravitationalRedshift(-gm / rObserver);
+      if (gObserver > 0) shift *= gEnemy / gObserver;
+    }
+  }
+  return shift;
+}
+
+/**
  * Whether `observer` receives `enemy` this tick: the enemy's continuous emission
  * clears the observer's effective noise floor at their separation, through the
  * baseline omnidirectional receiver OR any sensor cone covering the bearing. The
@@ -106,7 +163,7 @@ export function emReceives(
   const dy = enemy.y - observer.y;
   const distSq = dx * dx + dy * dy;
   const dist = Math.sqrt(distSq);
-  const emission = continuousEmissionStrength(enemy);
+  const emission = continuousEmissionStrength(enemy) * receptionShift(observer, enemy, anomaly);
 
   // Baseline sensor-free receiver: an omni eye at gain 1, reaching
   // `visualLosRadius` against a baseline emitter. A nebula dims the naked eye

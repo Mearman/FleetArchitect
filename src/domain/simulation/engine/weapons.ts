@@ -6,12 +6,13 @@
 import { CELL_SIZE } from "@/domain/grid";
 import { ranged } from "@/domain/simulation/rng";
 import { cellWorldPosition } from "@/domain/simulation/spatial-hash";
-import type { BattleSide } from "@/schema/battle";
+import type { BattleAnomaly, BattleSide } from "@/schema/battle";
 import type { PointDefenseEffect, WeaponEffect } from "@/schema/module";
 import type { BattleInputs } from "../types";
 
 import { CELL_CONTACT_DISTANCE, buildShipCellHash } from "./collision";
 import { SIM, claimProjectileId } from "./config";
+import { beamDamageFactor, lensingDeflection } from "./optics";
 import { isCharged } from "./crew";
 import { applyDamage } from "./damage";
 import { isRetreating } from "./movement";
@@ -133,6 +134,7 @@ export function fireWeapons(
   byId: Map<string, SimShip>,
   rng: () => number,
   tick: number,
+  anomaly: BattleAnomaly,
 ): SimProjectile[] {
   const fired: SimProjectile[] = [];
   for (const ship of ships) {
@@ -206,7 +208,7 @@ export function fireWeapons(
         // Firing drops a cloak for `decloakTicks`: record the tick so the
         // stealth gate exposes a cloaked ship while the window is open.
         ship.lastFiredTick = tick;
-        fireOne(ship, weapon, m.turretAngle, m.x, m.y, target, rng, fired, ship.auraAccuracyBonus);
+        fireOne(ship, weapon, m.turretAngle, m.x, m.y, target, rng, fired, ship.auraAccuracyBonus, anomaly);
       }
       continue;
     }
@@ -230,7 +232,7 @@ export function fireWeapons(
       // Legacy aggregated path reads facing off the weapon effect (default 0).
       // No per-module muzzle position, so the recoil lever arm is the ship's
       // origin (0, 0) — the legacy CoM.
-      fireOne(ship, weapon, weapon.facing ?? 0, 0, 0, target, rng, fired, ship.auraAccuracyBonus);
+      fireOne(ship, weapon, weapon.facing ?? 0, 0, 0, target, rng, fired, ship.auraAccuracyBonus, anomaly);
     }
   }
   return fired;
@@ -254,6 +256,7 @@ export function fireOne(
   rng: () => number,
   fired: SimProjectile[],
   accuracyBonus: number,
+  anomaly: BattleAnomaly,
 ): void {
   if (weapon.projectileSpeed <= 0) {
     // Hitscan: the beam strikes the target's edge nearest the shooter.
@@ -262,9 +265,36 @@ export function fireOne(
     // A hitscan beam already strikes whatever it is fired at, so the accuracy
     // buff adds nothing here — its benefit is the wider firing arc upstream.
     const angle = Math.atan2(target.y - ship.y, target.x - ship.x);
-    const ix = target.x + Math.cos(angle) * target.radius;
-    const iy = target.y + Math.sin(angle) * target.radius;
-    applyDamage(target, weapon.damage, weapon.shieldPiercing, weapon.armourPiercing, ix, iy, angle);
+    const range = Math.hypot(target.x - ship.x, target.y - ship.y);
+    // Beam divergence (Phase 10): a Gaussian beam's spot grows with range, so a
+    // directed-energy shot lands softer the further it travels. Scale the damage
+    // by the closed-form intensity falloff at the firing range. At point-blank
+    // this factor is 1, so a short-range beam is unchanged.
+    const damage = weapon.damage * beamDamageFactor(range);
+    // Gravitational lensing (Phase 10): near a black hole at the arena origin the
+    // beam path bends by the Einstein deflection 4·GM/(c²·b), where b is the
+    // impact parameter — the perpendicular distance from the hole to the shot
+    // line. The deflection rotates the apparent strike point about the firing
+    // ship by that angle (sign set so the beam bends TOWARD the hole), so a shot
+    // grazing the well lands off the target's near edge rather than dead-centre.
+    // With no black hole the deflection is zero and the strike is unchanged.
+    let strikeAngle = angle;
+    if (anomaly === "blackHole" && range > 0) {
+      // Impact parameter: perpendicular distance from the origin (the hole) to
+      // the line from the firing ship through the target. |r_ship × dir|, with
+      // dir the unit firing direction.
+      const dirX = Math.cos(angle);
+      const dirY = Math.sin(angle);
+      const impactParameter = Math.abs(ship.x * dirY - ship.y * dirX);
+      const deflection = lensingDeflection(impactParameter, SIM.blackHoleStrength);
+      // Bend toward the hole: the sign of the cross product of the firing
+      // direction with the ship→hole vector picks which way the ray curves.
+      const toHoleCross = dirX * -ship.y - dirY * -ship.x;
+      strikeAngle = angle + (toHoleCross >= 0 ? deflection : -deflection);
+    }
+    const ix = target.x + Math.cos(strikeAngle) * target.radius;
+    const iy = target.y + Math.sin(strikeAngle) * target.radius;
+    applyDamage(target, damage, weapon.shieldPiercing, weapon.armourPiercing, ix, iy, strikeAngle);
   } else {
     fired.push(
       spawnProjectile(ship, weapon, weaponFacing, muzzleLocalX, muzzleLocalY, target, rng, accuracyBonus),

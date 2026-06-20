@@ -271,7 +271,7 @@ export function* simulateBattle(
     }
 
     // 3. Weapon firing (creates projectiles; hitscan applies damage at once).
-    projectiles = projectiles.concat(fireWeapons(ships, byId, rng, tick));
+    projectiles = projectiles.concat(fireWeapons(ships, byId, rng, tick, inputs.anomaly));
 
     // 3b. PD cooldowns tick down so a battery that just fired can fire again
     //     the next tick. Tick here (before projectile resolution) so a PD
