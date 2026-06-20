@@ -11,7 +11,6 @@ import type { BattleInputs, CombatShip, ResolvedHardwire, ResolvedModule, SimCre
 
 import { CREW_HP, SIM } from "./config";
 import { compareByCell } from "./crew-pathfinding";
-import { makeResourceState } from "./resource-step";
 import { recomputeAggregates, sumWeaponThrust } from "./physics";
 import type { SimModule, SimShip } from "./types";
 
@@ -233,11 +232,6 @@ export function toSimShip(ship: CombatShip, rng: () => number): SimShip {
     base.shield = base.maxShield;
     base.structure = ship.stats.structure;
     base.maxStructure = ship.stats.structure;
-    // Per-ship resource state (Phase 12 wiring, use-deferred). Built after
-    // recomputeAggregates so the initial fuel load is derived from the
-    // settled dry mass. Advanced each tick by `resourceStep`; values are
-    // computed but no consequence is enforced.
-    base.resource = makeResourceState(base);
   }
   return base;
 }
