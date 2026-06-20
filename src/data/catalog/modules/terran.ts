@@ -304,6 +304,9 @@ export const terranModules: ModuleDefinition[] = [
       detectionRange: 320,
       bearing: 0,
       nebulaImmune: false,
+      mode: "passive",
+      passiveBands: ["thermal", "radar"],
+      gain: 1.0,
     },
   },
   {
@@ -325,6 +328,10 @@ export const terranModules: ModuleDefinition[] = [
       detectionRange: 600,
       bearing: 0,
       nebulaImmune: false,
+      mode: "active",
+      sweepRate: 0.08,
+      emitStrength: 500,
+      gain: 2.0,
     },
   },
   {
@@ -346,6 +353,10 @@ export const terranModules: ModuleDefinition[] = [
       detectionRange: 900,
       bearing: 0,
       nebulaImmune: false,
+      mode: "active",
+      sweepRate: 0.03,
+      emitStrength: 1200,
+      gain: 5.0,
     },
   },
   {
@@ -372,6 +383,10 @@ export const terranModules: ModuleDefinition[] = [
       maxRange: 720,
       minArc: 0.15,
       maxArc: 0.6,
+      mode: "active",
+      sweepRate: 0.12,
+      emitStrength: 800,
+      gain: 3.0,
     },
   },
   {
@@ -394,6 +409,10 @@ export const terranModules: ModuleDefinition[] = [
       detectionRange: 700,
       bearing: 0,
       nebulaImmune: true,
+      mode: "active",
+      sweepRate: 0.06,
+      emitStrength: 900,
+      gain: 2.5,
     },
   },
 

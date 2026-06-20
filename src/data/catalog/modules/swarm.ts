@@ -249,6 +249,9 @@ export const swarmModules: ModuleDefinition[] = [
       detectionRange: 320,
       bearing: 0,
       nebulaImmune: false,
+      mode: "passive",
+      passiveBands: ["thermal", "radar"],
+      gain: 1.0,
     },
   },
   {
@@ -269,6 +272,9 @@ export const swarmModules: ModuleDefinition[] = [
       detectionRange: 600,
       bearing: 0,
       nebulaImmune: false,
+      mode: "passive",
+      passiveBands: ["thermal", "chemical"],
+      gain: 1.5,
     },
   },
   {
@@ -290,6 +296,9 @@ export const swarmModules: ModuleDefinition[] = [
       detectionRange: 860,
       bearing: 0,
       nebulaImmune: false,
+      mode: "passive",
+      passiveBands: ["thermal", "chemical"],
+      gain: 4.0,
     },
   },
   {
@@ -311,6 +320,9 @@ export const swarmModules: ModuleDefinition[] = [
       detectionRange: 700,
       bearing: 0,
       nebulaImmune: true,
+      mode: "passive",
+      passiveBands: ["gravitational"],
+      gain: 2.0,
     },
   },
 

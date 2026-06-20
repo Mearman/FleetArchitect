@@ -228,6 +228,10 @@ export const syntheticModules: ModuleDefinition[] = [
       bearing: 0,
       nebulaImmune: true,
       pierceCloak: true,
+      mode: "active",
+      sweepRate: 0.15,
+      emitStrength: 1000,
+      gain: 2.0,
     },
   },
   {
