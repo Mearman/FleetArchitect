@@ -409,18 +409,20 @@ export function* simulateBattle(
       }
       if (ship.shield >= ship.maxShield) continue;
       if (ship.shieldRegenCountdown > 0) {
-        ship.shieldRegenCountdown -= 1;
+        ship.shieldRegenCountdown -= ship.dilationFactor;
       } else {
         // Effective rate ramps with the untouched streak for an adaptive shield,
         // capped at `adaptiveShieldMaxMultiple` times the base rate; a
         // conventional shield (ramp 0) keeps its flat base rate exactly.
+        // The recharge amount is scaled by `dilationFactor` so a ship in a
+        // relativistic frame regenerates at the same slowed rate as it fires.
         const rampMultiple = Math.min(
           SIM.adaptiveShieldMaxMultiple,
           1 + ship.shieldAdaptiveRamp * ship.shieldUntouchedTicks,
         );
         ship.shield = Math.min(
           ship.maxShield,
-          ship.shield + ship.shieldRechargeRate * rampMultiple * regenFactor,
+          ship.shield + ship.shieldRechargeRate * rampMultiple * regenFactor * ship.dilationFactor,
         );
       }
     }
@@ -439,7 +441,9 @@ export function* simulateBattle(
         if (!healer.alive || healer.repairRate <= 0) continue;
         const target = ship.modules.find((m) => m.alive && m.hp < m.maxHp);
         if (target === undefined) continue;
-        target.hp = Math.min(target.maxHp, target.hp + healer.repairRate);
+        // Scale the heal by the ship's dilation factor: a relativistically
+        // slowed ship repairs at the same reduced rate as it fires and recharges.
+        target.hp = Math.min(target.maxHp, target.hp + healer.repairRate * ship.dilationFactor);
       }
     }
 

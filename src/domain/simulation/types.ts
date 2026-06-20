@@ -275,6 +275,14 @@ export interface SimCrew {
    *  run neither creates nor loses rounds/charge. Set with `carrying`, cleared
    *  on deposit. */
   carryAmount?: number;
+  /**
+   * Fractional cell-advance accumulator for time dilation. Each tick this
+   * crew member's ship's `dilationFactor` (≤ 1) is added here; when the
+   * accumulator reaches 1.0 a cell step is taken and 1.0 is subtracted. At
+   * real time (factor 1) the accumulator reaches 1 every tick and behaviour
+   * is byte-identical to the pre-dilation path. Initialised to 0.
+   */
+  moveAccumulator: number;
 }
 
 /** Everything the simulator needs to run a deterministic battle. */

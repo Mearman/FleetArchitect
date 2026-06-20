@@ -141,8 +141,10 @@ export function updateCrew(ship: SimShip): void {
   }
 
   // 4. Walk one cell along each crew member's path (id order for determinism).
+  //    Pass the ship's proper-time dilation factor so a fast-moving ship's crew
+  //    advance at the same dilated rate as its weapon cooldowns.
   for (const c of ordered) {
-    advanceCrew(c, cells);
+    advanceCrew(c, cells, ship.dilationFactor);
   }
 
   // 4b. Door close rule: after all crew have moved, close every door whose two
@@ -402,8 +404,22 @@ export function chooseStation(
  * Steps are consumed by advancing `pathIndex`, not by slicing the array, so the
  * cached path is never mutated and can be shared by reference across crew on the
  * same route.
+ *
+ * `dilationFactor` (0–1) is the ship's proper-time dilation this tick. It is
+ * accumulated in `crew.moveAccumulator`; a cell step fires only once the
+ * accumulator reaches 1. At real time (factor 1) the accumulator hits 1 every
+ * tick and behaviour is byte-identical to the pre-dilation path.
  */
-export function advanceCrew(crew: SimCrew, cells: ReadonlyMap<string, SimModule>): void {
+export function advanceCrew(crew: SimCrew, cells: ReadonlyMap<string, SimModule>, dilationFactor: number): void {
+  crew.moveAccumulator += dilationFactor;
+  if (crew.moveAccumulator < 1) {
+    // Not enough proper time has elapsed for a cell step this tick.
+    crew.ox = 0;
+    crew.oy = 0;
+    return;
+  }
+  crew.moveAccumulator -= 1;
+
   const next = crew.path[crew.pathIndex];
   if (next === undefined) {
     crew.ox = 0;

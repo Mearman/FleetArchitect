@@ -397,6 +397,7 @@ export function spawnCrew(
       job: "idle",
       path: [],
       pathIndex: 0,
+      moveAccumulator: 0,
     });
   }
   return crew;
