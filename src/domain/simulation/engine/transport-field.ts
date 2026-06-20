@@ -280,26 +280,6 @@ export interface TransportStepResult {
  *
  * On the unit grid (A = d = 1 m) this is just `D·Σ(φ_to − φ_from)`.
  */
-function diffusiveFlux(
-  field: TransportField,
-  cell: number,
-  phi: readonly number[],
-): number {
-  const D = field.substance.coefficient;
-  if (D === 0) return 0;
-  const phiHere = phi[cell] ?? 0;
-  let flux = 0;
-  for (const face of field.faces) {
-    if (face.from !== cell) continue;
-    if (!face.open) continue;
-    if (face.to === undefined) continue;
-    const phiThere = phi[face.to] ?? 0;
-    // Conductance D·A/d; on the unit grid this is just D.
-    const conductance = (D * face.area) / CELL_PITCH_M;
-    flux += conductance * (phiThere - phiHere);
-  }
-  return flux;
-}
 
 /**
  * Advective flux into `cell` from its open faces, φ-units per second, using
@@ -313,37 +293,6 @@ function diffusiveFlux(
  * is unconditionally unstable for the explicit scheme. On the unit grid
  * `A = 1 m²` so the per-face contribution is just `u · (upwind φ)`.
  */
-function advectiveFlux(
-  field: TransportField,
-  cell: number,
-  phi: readonly number[],
-): number {
-  const velocity = field.substance.velocity;
-  if (velocity === undefined) return 0;
-  const phiHere = phi[cell] ?? 0;
-  let flux = 0;
-  for (const face of field.faces) {
-    if (face.from !== cell) continue;
-    if (!face.open) continue;
-    const u = velocity(face, phi);
-    if (u === 0) continue;
-    if (face.to === undefined) {
-      // Outflow across a boundary face is handled by the boundary flux, not
-      // the advection term — keeps the two paths disjoint and avoids double
-      // counting.
-      continue;
-    }
-    if (u > 0) {
-      // Leaving the cell: subtract the cell's own φ.
-      flux -= u * face.area * phiHere;
-    } else {
-      // Entering the cell: add the neighbour's φ.
-      const phiThere = phi[face.to] ?? 0;
-      flux += -u * face.area * phiThere;
-    }
-  }
-  return flux;
-}
 
 /**
  * Advance a transport field by one tick. Pure: returns a new φ array and the
@@ -375,15 +324,40 @@ export function stepTransportField(
     deltaAccum.push({ advection: 0, diffusion: 0, source: 0, boundary: 0 });
   }
 
-  // Convert boundary cells to a Set once — the inner loop checks every cell
-  // against this on every sub-step, and Array.includes is O(n), making the
-  // per-tick cost O(cells^2). A Set makes it O(cells).
+  // Precompute: cell -> its faces. The flux functions previously iterated
+  // ALL faces per cell (O(cells x total_faces)); this lookup makes each cell's
+  // flux O(faces_per_cell ~= 4). Built once here, used every sub-step.
+  type Face = (typeof field.faces)[number];
+  const facesByCell: Face[][] = Array.from({ length: n }, () => []);
+  for (const face of field.faces) {
+    const list = facesByCell[face.from];
+    if (list !== undefined) list.push(face);
+  }
   const boundarySet = new Set(field.boundaryCells);
+  const D = field.substance.coefficient;
+  const velocity = field.substance.velocity;
   for (let step = 0; step < subSteps; step += 1) {
     const next = current.slice();
     for (let cell = 0; cell < n; cell += 1) {
-      const adv = advectiveFlux(field, cell, current);
-      const dif = diffusiveFlux(field, cell, current);
+      const phiHere = current[cell] ?? 0;
+      const cellFaces = facesByCell[cell] ?? [];
+      // Inline the diffusive + advective flux (iterate only this cell's faces).
+      let adv = 0;
+      let dif = 0;
+      for (const face of cellFaces) {
+        if (!face.open) continue;
+        if (face.to === undefined) continue;
+        const phiThere = current[face.to] ?? 0;
+        if (D !== 0) {
+          dif += (D * face.area) / CELL_PITCH_M * (phiThere - phiHere);
+        }
+        if (velocity !== undefined) {
+          const u = velocity(face, current);
+          if (u !== 0) {
+            adv -= u > 0 ? u * face.area * phiHere : u * face.area * phiThere;
+          }
+        }
+      }
       const src =
         field.substance.source?.(cell, current) ?? 0;
       // Boundary flux acts only on designated boundary cells. The flux is a
