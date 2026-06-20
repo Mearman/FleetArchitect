@@ -29,6 +29,9 @@ function sampleDesign(): ShipDesign {
     updatedAt: nowIso(),
     source: "user",
     revision: 1,
+    shipStance: "balanced",
+    crewPriority: "combat",
+    rules: [],
   };
 }
 

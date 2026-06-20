@@ -51,6 +51,9 @@ function design(g: TileGrid): ShipDesign {
     updatedAt: nowIso(),
     source: "user",
     revision: 1,
+    shipStance: "balanced",
+    crewPriority: "combat",
+    rules: [],
   };
 }
 

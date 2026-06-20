@@ -58,6 +58,7 @@ function moduleAt(col: number, row: number, effect: ModuleEffect, surface: "deck
     reactiveCharge: 0,
     mineCooldown: 0,
     boardingCooldown: 0,
+    exploded: false,
   };
 }
 

@@ -56,15 +56,29 @@ function sampleDesign(overrides?: Partial<ShipDesign>): ShipDesign {
       cols: 2,
       rows: 1,
       cells: [
-        { kind: "module", moduleId: "mod-pulse-laser", facing: 0 },
-        { kind: "module", moduleId: "mod-reactor-fusion", facing: 0 },
+        {
+          kind: "solid",
+          scaffold: true,
+          surface: "bare",
+          edges: { n: "wall", e: "open", s: "wall", w: "wall", doorStates: {} },
+        },
+        {
+          kind: "solid",
+          scaffold: true,
+          surface: "bare",
+          edges: { n: "wall", e: "wall", s: "wall", w: "open", doorStates: {} },
+        },
       ],
       connections: [],
+      shape: { outlineMode: "hexadecilinear" },
     },
     createdAt: nowIso(),
     updatedAt: nowIso(),
     source: "user",
     revision: 1,
+    shipStance: "balanced",
+    crewPriority: "combat",
+    rules: [],
     ...overrides,
   };
 }

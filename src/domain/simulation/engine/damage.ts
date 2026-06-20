@@ -7,7 +7,7 @@
 import type { SimCrew } from "../types";
 
 import { SIM } from "./config";
-import { isOperational, resetCrewForFragment } from "./crew";
+import { resetCrewForFragment } from "./crew";
 import { comTangentialVelocity, localCentreOfMass, recomputeAggregates } from "./physics";
 import { angleDifference, localPointToWorld, normaliseAngle, worldToLocal } from "./setup";
 import type { SimModule, SimShip } from "./types";
@@ -300,44 +300,18 @@ function damageCell(cell: SimModule, amount: number): number {
 }
 
 /**
- * Reduce a structural hit by the best charged reactive armour layer on the ship
- * (factions update), then spend that layer so it must recharge over its window
- * before it can absorb again. Returns the amount that gets through after the
- * reactive cut; the caller distributes that to modules/structure exactly as it
- * did before.
+ * Reduce a structural hit by the best charged reactive armour layer on the ship.
  *
- * Opt-in and deterministic. A module qualifies only when it is an alive, operational
- * armour module carrying a `reactiveReduction` whose layer is charged
- * (`reactiveCharge === 0`). Modules are scanned in array order and the strongest
- * eligible `reactiveReduction` is chosen (the best plate takes the hit), so the
- * outcome is order-independent. When nothing qualifies — the universal case for a
- * ship without reactive armour, where no module sets `reactiveCharge` and none
- * carries `reactiveReduction` — the amount passes through untouched, so the
- * damage path is byte-identical to before.
- *
- * The single recharge window means one reactive plate blunts one hit per window,
- * regardless of the fraction, which bounds the mechanic: a steady stream of fire
- * overwhelms it once the layer is spent.
+ * Phase 4 note: reactive armour was previously an equipment-module effect
+ * (`ArmourEffect.reactiveReduction`). Armour is now a cell surface and the
+ * reactive fields live on the per-faction armor layer material
+ * (`LayerMaterial.reactiveReduction` / `reactiveWindow`). The damage pipeline
+ * that consumes them lands in Phase 4 alongside the joules refactor; for
+ * Phase 4 the call site in `applyDamage` passes the full shield-bypass +
+ * spill amount onward unchanged. This helper is removed — a later phase will
+ * reintroduce it inspecting the ship's armor layer material and the
+ * per-module `reactiveCharge` timer.
  */
-export function applyReactiveArmour(ship: SimShip, amount: number): number {
-  if (amount <= 0 || ship.modules === undefined) return amount;
-  let best: SimModule | undefined;
-  let bestReduction = 0;
-  for (const m of ship.modules) {
-    if (m.effect.kind !== "armour") continue;
-    if (m.effect.reactiveReduction === undefined) continue;
-    if (m.reactiveCharge > 0 || !isOperational(m)) continue;
-    if (m.effect.reactiveReduction > bestReduction) {
-      bestReduction = m.effect.reactiveReduction;
-      best = m;
-    }
-  }
-  if (best === undefined || best.effect.kind !== "armour") return amount;
-  // Spend the layer: it recharges over `reactiveWindow` ticks (0 = ready again
-  // next tick, the schema default when only `reactiveReduction` is given).
-  best.reactiveCharge = best.effect.reactiveWindow ?? 0;
-  return amount * (1 - bestReduction);
-}
 
 /** Apply leftover structural damage to the hull, armour-reduced, and kill the
  *  ship if its integrity runs out. */

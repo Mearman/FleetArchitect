@@ -10,9 +10,6 @@ import { ShipStance, CrewPriority, Rule } from "./ai";
  * `user` so existing designs — which have no `source` field — parse as
  * player-owned.
  */
-export const DesignSource = z.enum(["preset", "user"]);
-export type DesignSource = z.infer<typeof DesignSource>;
-
 /**
  * Whether a design was authored by the player or shipped as a built-in preset.
  * Presets are read-only; the storage layer rejects any attempt to overwrite one.

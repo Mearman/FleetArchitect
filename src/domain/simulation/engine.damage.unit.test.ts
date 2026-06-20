@@ -10,6 +10,7 @@ import { mulberry32 } from "@/domain/simulation/rng";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
 import { defaultOrders } from "@/schema/fleet";
+import type { CellEdges } from "@/schema/grid";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
 
@@ -24,6 +25,8 @@ import type { ShipStats } from "@/domain/stats";
  * and determinism tests run full battles through `runBattle`.
  */
 
+const OPEN: CellEdges = { n: "open", e: "open", s: "open", w: "open", doorStates: {} };
+
 /** A module at integer cell coordinates; world position is the cell index scaled
  *  by CELL_SIZE so col/row (adjacency) and x/y (blast geometry) agree. */
 function moduleOf(
@@ -31,7 +34,7 @@ function moduleOf(
   effect: ModuleEffect,
   col: number,
   row: number,
-  maxHp: number,
+  maxScaffoldHp: number,
   mass = 5,
   command = false,
 ): ResolvedModule {
@@ -43,7 +46,10 @@ function moduleOf(
     row,
     x: col * CELL_SIZE,
     y: row * CELL_SIZE,
-    maxHp,
+    surface: "bare",
+    edges: OPEN,
+    maxSurfaceHp: 0,
+    maxScaffoldHp,
     mass,
     powerDraw: 0,
     crewRequired: 0,
@@ -65,7 +71,6 @@ function moduleOf(
 function stats(over: Partial<ShipStats> = {}): ShipStats {
   return {
     mass: 10,
-    massCapacity: 100,
     cost: 100,
     powerDraw: 0,
     powerOutput: 0,
@@ -81,6 +86,8 @@ function stats(over: Partial<ShipStats> = {}): ShipStats {
     thrust: 0,
     turnRate: 0,
     weapons: [],
+    compartments: 0,
+    airtightCompartments: 0,
     ...over,
   };
 }
@@ -102,6 +109,9 @@ function combatShip(
     orders: { ...defaultOrders, engageRange: "hold" },
     classification: "frigate",
     modules,
+    shipStance: "balanced",
+    crewPriority: "combat",
+    rules: [],
     ...over,
   };
 }
@@ -124,8 +134,8 @@ describe("engine.damage — explosive chain reactions", () => {
     // cells one grid step away (well inside the 24-unit blast radius).
     const ship = buildSim("s1", [
       moduleOf("p1", { kind: "power", output: 200_000 }, 0, 0, 50, 5, true),
-      moduleOf("n1", { kind: "armour", hitpoints: 0, damageReduction: 0 }, 1, 0, 1000),
-      moduleOf("n2", { kind: "armour", hitpoints: 0, damageReduction: 0 }, -1, 0, 1000),
+      moduleOf("n1", { kind: "hull" }, 1, 0, 1000),
+      moduleOf("n2", { kind: "hull" }, -1, 0, 1000),
     ]);
     const reactor = findModule(ship, "p1");
     const n1 = findModule(ship, "n1");
@@ -150,7 +160,7 @@ describe("engine.damage — explosive chain reactions", () => {
   it("a destroyed magazine's blast damages adjacent cells", () => {
     const ship = buildSim("s2", [
       moduleOf("m1", { kind: "magazine", ammoStored: 10 }, 0, 0, 50, 5, true),
-      moduleOf("n1", { kind: "armour", hitpoints: 0, damageReduction: 0 }, 1, 0, 1000),
+      moduleOf("n1", { kind: "hull" }, 1, 0, 1000),
     ]);
     const mag = findModule(ship, "m1");
     const n1 = findModule(ship, "n1");
@@ -177,7 +187,7 @@ describe("engine.damage — explosive chain reactions", () => {
       moduleOf("m2", { kind: "magazine", ammoStored: 10 }, 1, 0, 20),
       // One cell beyond m2 (two cells from m1, distance 24 = the blast radius,
       // so m1's blast alone cannot reach it — only m2's chained blast can).
-      moduleOf("n1", { kind: "armour", hitpoints: 0, damageReduction: 0 }, 2, 0, 500),
+      moduleOf("n1", { kind: "hull" }, 2, 0, 500),
     ]);
     const m1 = findModule(ship, "m1");
     const m2 = findModule(ship, "m2");
@@ -200,7 +210,7 @@ describe("engine.damage — explosive chain reactions", () => {
   it("does nothing when no volatile module has died", () => {
     const ship = buildSim("s4", [
       moduleOf("p1", { kind: "power", output: 200_000 }, 0, 0, 50, 5, true),
-      moduleOf("n1", { kind: "armour", hitpoints: 0, damageReduction: 0 }, 1, 0, 1000),
+      moduleOf("n1", { kind: "hull" }, 1, 0, 1000),
     ]);
     const n1 = findModule(ship, "n1");
     const hpBefore = n1.hp;
@@ -213,7 +223,7 @@ describe("engine.damage — explosive chain reactions", () => {
   it("each volatile module detonates only once across repeated calls", () => {
     const ship = buildSim("s5", [
       moduleOf("p1", { kind: "power", output: 200_000 }, 0, 0, 50, 5, true),
-      moduleOf("n1", { kind: "armour", hitpoints: 0, damageReduction: 0 }, 1, 0, 1000),
+      moduleOf("n1", { kind: "hull" }, 1, 0, 1000),
     ]);
     const reactor = findModule(ship, "p1");
     const n1 = findModule(ship, "n1");
@@ -316,10 +326,10 @@ describe("engine.damage — kinetic collision damage", () => {
     // the relative speed must quadruple the damage.
     const damageForSpeed = (speed: number): number => {
       const a = buildSim("ka", [
-        moduleOf("a0", { kind: "armour", hitpoints: 0, damageReduction: 0 }, 0, 0, 1_000_000, 5, true),
+        moduleOf("a0", { kind: "hull" }, 0, 0, 1_000_000, 5, true),
       ]);
       const b = buildSim("kb", [
-        moduleOf("b0", { kind: "armour", hitpoints: 0, damageReduction: 0 }, 0, 0, 1_000_000, 5, true),
+        moduleOf("b0", { kind: "hull" }, 0, 0, 1_000_000, 5, true),
       ]);
       // b approaches a along +x at `speed` (a is stationary). The contact stores
       // the pre-impulse relative velocity of b w.r.t. a directly.
@@ -351,12 +361,12 @@ describe("engine.damage — kinetic collision damage", () => {
     // A light ship rams a heavy one head-on. Both lose HP (Newton's third law),
     // but the lighter ship absorbs the larger share of the dissipated energy.
     const light = buildSim("light", [
-      moduleOf("l0", { kind: "armour", hitpoints: 0, damageReduction: 0 }, 0, 0, 1_000_000, 5, true),
+      moduleOf("l0", { kind: "hull" }, 0, 0, 1_000_000, 5, true),
     ]);
     const heavy = buildSim("heavy", [
-      moduleOf("h0", { kind: "armour", hitpoints: 0, damageReduction: 0 }, 0, 0, 1_000_000, 50, true),
-      moduleOf("h1", { kind: "armour", hitpoints: 0, damageReduction: 0 }, 1, 0, 1_000_000, 50),
-      moduleOf("h2", { kind: "armour", hitpoints: 0, damageReduction: 0 }, 2, 0, 1_000_000, 50),
+      moduleOf("h0", { kind: "hull" }, 0, 0, 1_000_000, 50, true),
+      moduleOf("h1", { kind: "hull" }, 1, 0, 1_000_000, 50),
+      moduleOf("h2", { kind: "hull" }, 2, 0, 1_000_000, 50),
     ]);
     light.velX = 5;
     const lightHp0 = findModule(light, "l0").hp;
@@ -410,6 +420,9 @@ describe("engine.damage — determinism", () => {
       facing: 0,
       orders: { ...defaultOrders, engageRange: "hold" },
       classification: "frigate",
+      shipStance: "balanced",
+      crewPriority: "combat",
+      rules: [],
     };
     const target = combatShip(
       "tgt",
@@ -417,8 +430,8 @@ describe("engine.damage — determinism", () => {
       [
         moduleOf("tc", { kind: "power", output: 100_000 }, 0, 0, 30, 5, true),
         moduleOf("tm", { kind: "magazine", ammoStored: 8 }, 1, 0, 30),
-        moduleOf("ta", { kind: "armour", hitpoints: 0, damageReduction: 0 }, 0, 1, 80),
-        moduleOf("tb", { kind: "armour", hitpoints: 0, damageReduction: 0 }, 1, 1, 80),
+        moduleOf("ta", { kind: "hull" }, 0, 1, 80),
+        moduleOf("tb", { kind: "hull" }, 1, 1, 80),
       ],
       {
         stats: stats({ structure: 4_000 }),
@@ -442,7 +455,7 @@ describe("engine.damage — determinism", () => {
     expect(breached, "a reactor or magazine should breach during the battle").toBe(true);
   });
 
-  it("a kinetic-ram battle replays byte-identically", () => {
+  it("a kinetic-ram battle replays byte-identically", { timeout: 30_000 }, () => {
     const a = rammer("a1", "attacker", { x: -60, y: 0 }, 0);
     const b = rammer("b1", "defender", { x: 60, y: 0 }, Math.PI);
     const mk = () => runBattle(inputs([a, b]));

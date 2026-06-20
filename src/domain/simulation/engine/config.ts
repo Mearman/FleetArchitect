@@ -537,6 +537,8 @@ export const SIM = {
    * modules on the SAME ship with linear falloff to a blast radius. HP is in the
    * same energy-equivalent units as weapon damage, so the yields below are in
    * those units too — sized to be meaningful but survivable, not annihilating.
+   *
+   * Classification: authored catalogue content
    */
   chainReaction: {
     /**
@@ -567,6 +569,8 @@ export const SIM = {
    * KE is `0.5 * reducedMass * relativeSpeed^2`, in the same energy-equivalent
    * units as module HP, so a fast heavy ram is devastating and a gentle nudge is
    * negligible.
+   *
+   * Classification: authored catalogue content
    */
   collisionDamageFraction: 0.3,
 };

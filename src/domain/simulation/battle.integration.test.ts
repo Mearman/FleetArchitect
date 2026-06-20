@@ -47,6 +47,9 @@ function armedFighter(id: string): ShipDesign {
     updatedAt: nowIso(),
     source: "user",
     revision: 1,
+    shipStance: "balanced",
+    crewPriority: "combat",
+    rules: [],
   };
 }
 
