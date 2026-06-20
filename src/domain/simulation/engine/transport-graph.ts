@@ -13,6 +13,7 @@
 import type { TransportFace } from "@/domain/simulation/engine/transport-field";
 import { TRANSPORT_GEOMETRY } from "@/domain/simulation/engine/transport-field";
 import { pipeKey } from "@/domain/simulation/engine/propellant";
+import type { VentMask } from "@/domain/simulation/engine/lifesupport";
 
 /** Result of building a rectangular transport graph: the flat face list,
  *  a pre-built per-cell face index, the boundary cell indices, and the
@@ -32,6 +33,14 @@ export interface RectangularTransportGraph {
    *  used by the propellant substance to identify pipe segments. Built once
    *  so the per-tick resource step avoids rebuilding it from faces. */
   openInteriorPipes: ReadonlySet<number>;
+  /** Per-cell vent mask: deck cells exposed to vacuum by a hull breach (an
+   *  open edge or open door now leading to a dead or absent neighbour cell),
+   *  mapped to the net outward vent normal. Empty for an intact, sealed hull;
+   *  rebuilt with the graph on every topology change (a cell death opens new
+   *  breaches). The atmosphere substance reads it to vent gas — and recoil the
+   *  hull — through the breach, and the resource step reads it to expose crew
+   *  in a breached cell to vacuum. */
+  ventMask: VentMask;
 }
 
 /**
@@ -185,5 +194,11 @@ export function buildRectangularGraph(
   // Pre-build boundary cell set for O(1) radiator lookups.
   const boundaryCellSet = new Set(boundaryCells);
 
-  return { faces, facesFrom, boundaryCells, boundaryCellSet, openInteriorPipes };
+  // The generic rectangular builder has no per-cell module/edge state, so it
+  // cannot derive hull breaches; it returns an empty vent mask. The live
+  // sparse builder in `resource-step.ts` computes the real vent mask from the
+  // ship's alive-cell topology and edge states.
+  const ventMask: VentMask = new Map();
+
+  return { faces, facesFrom, boundaryCells, boundaryCellSet, openInteriorPipes, ventMask };
 }

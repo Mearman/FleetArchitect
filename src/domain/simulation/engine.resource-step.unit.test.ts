@@ -197,6 +197,135 @@ describe("engine.resource-step", () => {
     expect(state.powerBuffer.energy).toBeGreaterThanOrEqual(0);
   });
 
+  /** A deck cell with the given open-edge directions; all other edges wall. */
+  function deckCell(col: number, row: number, open: ("n" | "e" | "s" | "w")[]): SimModule {
+    const base = moduleAt(col, row, { kind: "hull" });
+    return {
+      ...base,
+      powerDraw: 0,
+      edges: {
+        n: open.includes("n") ? "open" : "wall",
+        e: open.includes("e") ? "open" : "wall",
+        s: open.includes("s") ? "open" : "wall",
+        w: open.includes("w") ? "open" : "wall",
+        doorStates: {},
+      },
+    };
+  }
+
+  it("vents a breached deck cell: a dead neighbour across an open edge drains the cell and recoils the hull", () => {
+    // Two adjacent deck cells. Cell A (0,0) has an open east edge to cell B
+    // (1,0); B has an open west edge to A. Both seal outward (walls). While
+    // both are alive the hull is airtight and nothing vents. Kill B: A's open
+    // east edge now faces vacuum (a dead neighbour), so A breaches and vents.
+    const aDeck = deckCell(0, 0, ["e"]);
+    const bDeck = deckCell(1, 0, ["w"]);
+    const ship = shipWith({ modules: [aDeck, bDeck], mass: 100 });
+    const state = makeResourceState(ship);
+    if (state === undefined) throw new Error("no state");
+    ship.resource = state;
+
+    // Intact hull: one step, the vent mask is empty and no recoil is applied.
+    resourceStep(ship);
+    expect(ship.velX).toBe(0);
+    expect(ship.velY).toBe(0);
+    const aIdx = state.moduleIndex.get("0,0");
+    if (aIdx === undefined) throw new Error("no cell A");
+    const intactMass = state.atmosphere[aIdx] ?? 0;
+    expect(intactMass).toBeCloseTo(STANDARD_CELL_GAS_MASS_KG, 6);
+
+    // Kill cell B and bump the topology fingerprint so the cached graph (and
+    // its vent mask) is rebuilt, exactly as the engine does after a cell dies.
+    bDeck.alive = false;
+    ship.resourceGraph = undefined;
+
+    const before = state.atmosphere[aIdx] ?? 0;
+    for (let i = 0; i < 30; i++) resourceStep(ship);
+    const after = state.atmosphere[aIdx] ?? 0;
+    // The breached cell loses gas to vacuum.
+    expect(after).toBeLessThan(before);
+    // Venting recoils the hull: a non-zero velocity appears. The breach faces
+    // east (+x local), so the recoil pushes the hull west (−x).
+    expect(ship.velX).toBeLessThan(0);
+    expect(state.atmosphere.every((m) => m >= -1e-9)).toBe(true);
+  });
+
+  it("exposes crew in a breached, vented cell to vacuum and removes them when killed", () => {
+    const aDeck = deckCell(0, 0, ["e"]);
+    const bDeck = deckCell(1, 0, ["w"]);
+    const ship = shipWith({
+      modules: [aDeck, bDeck],
+      mass: 100,
+      crew: [
+        {
+          id: "s1-crew-0",
+          col: 0,
+          row: 0,
+          ox: 0,
+          oy: 0,
+          hp: 10,
+          job: "idle",
+          path: [],
+          pathIndex: 0,
+          moveAccumulator: 0,
+        },
+      ],
+    });
+    const state = makeResourceState(ship);
+    if (state === undefined) throw new Error("no state");
+    ship.resource = state;
+
+    // Breach cell A by killing its neighbour, then run until the cell vents to
+    // hard vacuum and the exposed crew member dies.
+    bDeck.alive = false;
+    ship.resourceGraph = undefined;
+    const startHp = ship.crew?.[0]?.hp ?? 0;
+    expect(startHp).toBe(10);
+
+    // One short burst: the crew member is exposed and starts losing HP.
+    for (let i = 0; i < 5; i++) resourceStep(ship);
+    const midHp = ship.crew?.[0]?.hp ?? 0;
+    expect(midHp).toBeLessThan(startHp);
+    expect(midHp).toBeGreaterThan(0);
+
+    // Keep venting: the cell reaches hard vacuum and the crew member dies and
+    // is removed from the roster.
+    for (let i = 0; i < 600; i++) resourceStep(ship);
+    expect(ship.crew?.length ?? 0).toBe(0);
+  });
+
+  it("a sealed intact ship with crew never exposes them to vacuum", () => {
+    // A properly sealed hull: every perimeter edge is a wall, so the
+    // airtightness check finds no breach and the vent mask stays empty.
+    const aDeck = deckCell(0, 0, ["e"]);
+    const bDeck = deckCell(1, 0, ["w"]);
+    const ship = shipWith({
+      modules: [aDeck, bDeck],
+      crew: [
+        {
+          id: "s1-crew-0",
+          col: 0,
+          row: 0,
+          ox: 0,
+          oy: 0,
+          hp: 10,
+          job: "idle",
+          path: [],
+          pathIndex: 0,
+          moveAccumulator: 0,
+        },
+      ],
+    });
+    const state = makeResourceState(ship);
+    if (state === undefined) throw new Error("no state");
+    ship.resource = state;
+    for (let i = 0; i < 100; i++) resourceStep(ship);
+    // No breach: the crew member keeps full HP and the hull never recoils.
+    expect(ship.crew?.[0]?.hp).toBe(10);
+    expect(ship.velX).toBe(0);
+    expect(ship.velY).toBe(0);
+  });
+
   it("resourceStep is deterministic: two identical runs produce identical state", () => {
     const run = (): ResourceStateSnapshot => {
       const ship = shipWith();
@@ -215,6 +344,50 @@ describe("engine.resource-step", () => {
     const b = run();
     expect(b).toEqual(a);
   });
+
+  it("the breach -> vent -> recoil -> crew-exposure pipeline is deterministic across two runs", () => {
+    const run = (): BreachSnapshot => {
+      const aDeck = deckCell(0, 0, ["e"]);
+      const bDeck = deckCell(1, 0, ["w"]);
+      const ship = shipWith({
+        modules: [aDeck, bDeck],
+        mass: 100,
+        crew: [
+          {
+            id: "s1-crew-0",
+            col: 0,
+            row: 0,
+            ox: 0,
+            oy: 0,
+            hp: 10,
+            job: "idle",
+            path: [],
+            pathIndex: 0,
+            moveAccumulator: 0,
+          },
+        ],
+      });
+      const state = makeResourceState(ship);
+      if (state === undefined) throw new Error("no state");
+      ship.resource = state;
+      // Open the breach mid-run, then keep stepping through venting, recoil and
+      // crew exposure so every new code path contributes to the snapshot.
+      for (let i = 0; i < 5; i++) resourceStep(ship);
+      bDeck.alive = false;
+      ship.resourceGraph = undefined;
+      for (let i = 0; i < 50; i++) resourceStep(ship);
+      return {
+        atmosphere: [...state.atmosphere],
+        velX: ship.velX,
+        velY: ship.velY,
+        angVel: ship.angVel,
+        crewHp: ship.crew?.map((c) => c.hp) ?? [],
+      };
+    };
+    const a = run();
+    const b = run();
+    expect(b).toEqual(a);
+  });
 });
 
 interface ResourceStateSnapshot {
@@ -222,5 +395,13 @@ interface ResourceStateSnapshot {
   propellant: number[];
   atmosphere: number[];
   energy: number;
+}
+
+interface BreachSnapshot {
+  atmosphere: number[];
+  velX: number;
+  velY: number;
+  angVel: number;
+  crewHp: number[];
 }
 

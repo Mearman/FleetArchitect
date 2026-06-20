@@ -4,13 +4,21 @@
  * and the power energy buffer for each ship, so the honest underlying
  * simulation runs every tick underneath the gameplay layer.
  *
- * VALUES are computed and exposed on the ship's `resource` field; CONSEQUENCES
- * are NOT enforced (no overheat shutdown, no brownout, no asphyxiation, no
- * dry-tank derelict). The step is pure and deterministic: the transport graph
- * is rebuilt only on a topology change (cached on the ship alongside the path
- * cache and cleared by `refreshPathCache`), the substance configs are rebuilt
- * each tick from the live module state in module array order, and the field
- * integrator is the existing pure `stepTransportField`.
+ * VALUES are computed and exposed on the ship's `resource` field; most
+ * CONSEQUENCES are still NOT enforced (no overheat shutdown, no brownout, no
+ * dry-tank derelict). The one enforced consequence is live airtightness: when
+ * battle damage destroys a module that was sealing a deck cell, that cell
+ * breaches across its now-open edge and vents its gas to vacuum — recoiling
+ * the hull and exposing any crew standing in the decompressing cell, who take
+ * vacuum damage and die if the cell reaches hard vacuum. An intact, sealed
+ * hull never vents (its vent mask is empty), so undamaged ships are unchanged.
+ *
+ * The step is pure and deterministic: the transport graph (and the vent mask
+ * derived from the alive-cell topology) is rebuilt only on a topology change
+ * (cached on the ship alongside the path cache and cleared by
+ * `refreshPathCache`), the substance configs are rebuilt each tick from the
+ * live module state in module array order, crew are processed in stable id
+ * order, and the field integrator is the existing pure `stepTransportField`.
  *
  * Cell indexing. The transport field uses a module-sparse dense index: modules
  * are sorted by (row, col), numbered 0..n−1, and `ResourceState.moduleIndex`
@@ -21,9 +29,15 @@
 
 import {
   CABIN_TEMPERATURE_K,
+  CREW_VACUUM_LETHAL_TIME_S,
   makeAtmosphereSubstance,
   STANDARD_CELL_GAS_MASS_KG,
+  vacuumExposureSeverity,
+  type VentMask,
 } from "@/domain/simulation/engine/lifesupport";
+import { CREW_HP } from "@/domain/simulation/engine/config";
+import { TICKS_PER_SECOND } from "@/domain/simulation/types";
+import { applyImpulse } from "@/domain/simulation/engine/weapons";
 import {
   EXHAUST_VELOCITY_M_PER_S,
   makePropellantSubstance,
@@ -34,6 +48,7 @@ import type {
 } from "@/domain/simulation/engine/transport-graph";
 import {
   stepTransportField,
+  TRANSPORT_DT_S,
   type TransportFace,
   type TransportField,
 } from "@/domain/simulation/engine/transport-field";
@@ -156,6 +171,22 @@ function transportGraph(ship: SimShip, state: ResourceState): RectangularTranspo
   const boundaryIndices = new Set<number>();
   const FACE_AREA = 1; // 1 m² for a unit-grid face
 
+  // Vent breach accumulation. A deck cell vents to vacuum across a face whose
+  // edge is open (or an open door) and whose neighbour is no longer an alive
+  // sealing cell — exactly the airtightness-breach condition in interior.ts,
+  // evaluated live against the alive set. A cell with several breached faces
+  // sums their outward normals (opposite breaches cancel recoil; a single
+  // breach gives full directional recoil). Empty for an intact, sealed hull.
+  const ventAccum = new Map<number, { nx: number; ny: number }>();
+
+  // Whether a cell's edge in `edgeKey` is open to flow (open edge / open door).
+  const edgeOpen = (m: SimModule, edgeKey: "e" | "w" | "n" | "s"): boolean => {
+    const edge = m.edges[edgeKey];
+    if (edge === "open") return true;
+    if (edge === "door" && m.edges.doorStates[edgeKey] === "open") return true;
+    return false;
+  };
+
   for (const [key, fromIdx] of state.moduleIndex) {
     const fromM = aliveByKey.get(key);
     if (fromM === undefined) {
@@ -172,18 +203,40 @@ function transportGraph(ship: SimShip, state: ResourceState): RectangularTranspo
     for (const { dc, dr, nx, ny, edgeKey } of dirs) {
       const toKey = cellKey(fromM.col + dc, fromM.row + dr);
       const toIdx = state.moduleIndex.get(toKey);
+      const neighbourAlive = aliveByKey.has(toKey);
       if (toIdx !== undefined) {
-        const toM = aliveByKey.get(toKey);
         const edgeState = fromM.edges[edgeKey];
-        const open = toM !== undefined && (edgeState === "open" || edgeState === "door");
+        const open = neighbourAlive && (edgeState === "open" || edgeState === "door");
         faces.push({ from: fromIdx, to: toIdx, nx, ny, area: FACE_AREA, open, boundary: false });
       } else {
         // No module in this direction: hull-facing boundary face.
         faces.push({ from: fromIdx, to: undefined, nx, ny, area: FACE_AREA, open: false, boundary: true });
         boundaryIndices.add(fromIdx);
       }
+      // Breach detection: a deck cell vents only where a neighbour module that
+      // existed at battle start (present in the module index, `toIdx`) has since
+      // died, leaving an open edge (or open door) facing the gap. An open edge
+      // toward a position that never held a module (`toIdx === undefined`) is
+      // the ship's original hull geometry, not a new breach — venting it would
+      // decompress an intact design from the first tick. A live neighbour still
+      // seals the edge; a wall/closed-door edge holds even against vacuum
+      // (matching the airtightness rule in interior.ts). So a breach opens
+      // exactly when battle damage destroys the cell that was sealing this edge.
+      const neighbourDied = toIdx !== undefined && !neighbourAlive;
+      if (isDeck(fromM) && neighbourDied && edgeOpen(fromM, edgeKey)) {
+        const prev = ventAccum.get(fromIdx);
+        if (prev === undefined) ventAccum.set(fromIdx, { nx, ny });
+        else ventAccum.set(fromIdx, { nx: prev.nx + nx, ny: prev.ny + ny });
+        // A breached cell exposed to vacuum through a dead module neighbour is
+        // a boundary cell even though a module index entry still sits beyond it:
+        // the atmosphere boundary flux (and the thermal radiator surface) act
+        // only on boundary cells, so it must be registered as one.
+        boundaryIndices.add(fromIdx);
+      }
     }
   }
+
+  const ventMask: VentMask = ventAccum;
 
   const boundaryCells = [...boundaryIndices].sort((a, b) => a - b);
   const facesFrom: TransportFace[][] = Array.from({ length: n }, () => []);
@@ -194,7 +247,7 @@ function transportGraph(ship: SimShip, state: ResourceState): RectangularTranspo
     if (face.to !== undefined && face.open) openInteriorPipes.add(pipeKey(face.from, face.to));
   }
 
-  const graph: RectangularTransportGraph = { faces, facesFrom, boundaryCells, boundaryCellSet, openInteriorPipes };
+  const graph: RectangularTransportGraph = { faces, facesFrom, boundaryCells, boundaryCellSet, openInteriorPipes, ventMask };
   ship.resourceGraph = { graph, fingerprint: ship.topologyFingerprint ?? 0 };
   return graph;
 }
@@ -205,10 +258,13 @@ function transportGraph(ship: SimShip, state: ResourceState): RectangularTranspo
  * each field, and stores the new φ arrays back onto the resource state. The
  * power buffer is stepped from the live reactor/draw terminals.
  *
- * Use-deferred: no consequence is enforced. The step is pure and deterministic
- * (module array order for the substance maps; the integrator is the existing
- * pure `stepTransportField`). Ships without modules have no resource state and
- * the step is a no-op.
+ * The one enforced consequence is venting: a deck cell breached by a destroyed
+ * neighbour vents its gas, recoils the hull, and exposes any crew in the cell
+ * to vacuum (see the file header). Every other consequence is still deferred.
+ * The step is pure and deterministic (module array order for the substance
+ * maps; crew processed in stable id order; the integrator is the existing pure
+ * `stepTransportField`). Ships without modules have no resource state and the
+ * step is a no-op.
  */
 export function resourceStep(ship: SimShip): void {
   if (ship.modules === undefined) return;
@@ -217,6 +273,16 @@ export function resourceStep(ship: SimShip): void {
 
   const graph = transportGraph(ship, state);
   const idx = (m: SimModule): number | undefined => state.moduleIndex.get(cellKey(m.col, m.row));
+
+  // Reverse index (cell φ-index → alive module), used by the vent recoil to
+  // recover a breached cell's ship-local position for the lever arm. Built once
+  // per tick from the live module set in fixed module order.
+  const aliveByIndex = new Map<number, SimModule>();
+  for (const m of ship.modules) {
+    if (!m.alive) continue;
+    const i = idx(m);
+    if (i !== undefined) aliveByIndex.set(i, m);
+  }
 
   // --- Thermal substance ---
   // Heat sources: alive reactors inject their output as waste heat.
@@ -273,16 +339,85 @@ export function resourceStep(ship: SimShip): void {
       if (i !== undefined) crewMap.set(i, (crewMap.get(i) ?? 0) + 1);
     }
   }
-  // Vents: v1 has no breached compartments (the damage model does not yet
-  // expose breaches), so nothing vents and the vent mask is empty.
+  // Vents: the live vent mask derived from the alive-cell topology. A deck cell
+  // breached by a dead/absent neighbour across an open edge vents its gas to
+  // vacuum at exhaust velocity, recoiling the hull. Empty for an intact, sealed
+  // hull, so an undamaged ship behaves exactly as before.
   const atmosphereField: TransportField = {
-    substance: makeAtmosphereSubstance(crewMap, new Map()),
+    substance: makeAtmosphereSubstance(crewMap, graph.ventMask),
     faces: graph.faces,
     facesFrom: graph.facesFrom,
     boundaryCells: graph.boundaryCells,
     boundaryCellSet: graph.boundaryCellSet,
   };
-  state.atmosphere = stepTransportField(atmosphereField, state.atmosphere).phi;
+  const atmosphereResult = stepTransportField(atmosphereField, state.atmosphere);
+  state.atmosphere = atmosphereResult.phi;
+
+  // Vent recoil: the net reaction force from gas escaping every breach, in
+  // ship-local axes, applied at the mass-weighted centroid of the venting cells
+  // so an off-centre breach both pushes and spins the hull. The transport field
+  // returns the impulse in SI (kg·m·s⁻¹) accumulated over the tick; the engine's
+  // momentum convention is per-tick (velocity is world-units — metres — per
+  // tick), so scale by the tick interval `TRANSPORT_DT_S` to convert SI
+  // impulse to the per-tick momentum `applyImpulse` expects. The impulse is
+  // rotated from ship-local into world axes (the frame `applyImpulse` takes its
+  // vector in) while the application point stays in the ship-local design frame.
+  if (
+    graph.ventMask.size > 0 &&
+    (atmosphereResult.momentumX !== 0 || atmosphereResult.momentumY !== 0)
+  ) {
+    // Centroid of the breached cells in ship-local coordinates. The vent mask
+    // is iterated in insertion order, which is deterministic (the module index
+    // is sorted, and breaches are accumulated in that fixed iteration order).
+    let cx = 0;
+    let cy = 0;
+    let count = 0;
+    for (const cellIdx of graph.ventMask.keys()) {
+      const m = aliveByIndex.get(cellIdx);
+      if (m === undefined) continue;
+      cx += m.x;
+      cy += m.y;
+      count += 1;
+    }
+    if (count > 0) {
+      cx /= count;
+      cy /= count;
+      const localImpulseX = atmosphereResult.momentumX * TRANSPORT_DT_S;
+      const localImpulseY = atmosphereResult.momentumY * TRANSPORT_DT_S;
+      // Rotate the ship-local impulse into world axes for `applyImpulse`.
+      const cos = Math.cos(ship.facing);
+      const sin = Math.sin(ship.facing);
+      const worldImpulseX = localImpulseX * cos - localImpulseY * sin;
+      const worldImpulseY = localImpulseX * sin + localImpulseY * cos;
+      applyImpulse(ship, worldImpulseX, worldImpulseY, cx, cy);
+    }
+  }
+
+  // Crew vacuum exposure: a crew member standing in a cell whose gas has
+  // fallen below the survivable fraction takes vacuum damage this tick, scaled
+  // by how far the cell has decompressed. Crew are processed in stable id order
+  // so the (floating-point) damage and any deaths are order-independent across
+  // identical runs. A crew member at zero HP is removed from the roster.
+  if (ship.crew !== undefined && ship.crew.length > 0) {
+    const lethalRatePerTick = CREW_HP / (CREW_VACUUM_LETHAL_TIME_S * TICKS_PER_SECOND);
+    const ordered = [...ship.crew].sort((a, b) =>
+      a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
+    );
+    let anyDied = false;
+    for (const c of ordered) {
+      const cellIdx = state.moduleIndex.get(cellKey(c.col, c.row));
+      if (cellIdx === undefined) continue;
+      const gasMass = state.atmosphere[cellIdx] ?? 0;
+      const severity = vacuumExposureSeverity(gasMass);
+      if (severity <= 0) continue;
+      c.hp -= lethalRatePerTick * severity;
+      if (c.hp <= 0) {
+        c.hp = 0;
+        anyDied = true;
+      }
+    }
+    if (anyDied) ship.crew = ship.crew.filter((c) => c.hp > 0);
+  }
 
   // --- Power budget ---
   // Terminals: alive reactors (sources, watts = output) and alive

@@ -59,6 +59,44 @@ export const CABIN_PRESSURE_PA = 101_325;
 export const CREW_O2_CONSUMPTION_KG_PER_S = 0.84 / 86_400;
 
 /**
+ * Time, in seconds, an unprotected crew member survives full exposure to
+ * vacuum before incapacitation/death. Acute decompression renders a human
+ * unconscious within ~15 s as the blood deoxygenates; death follows within
+ * a minute or two. We take 15 s as the lethal exposure window — the point of
+ * useful consciousness — so a crew member in a breached, vented compartment
+ * dies over roughly this span. The per-tick fraction of crew HP lost is
+ * `1 / (CREW_VACUUM_LETHAL_TIME_S · ticksPerSecond)`; the resource step scales
+ * it by the cell's vented-ness (how far below cabin pressure the cell has
+ * fallen), so a crew member only takes the full rate once the cell is hard
+ * vacuum and takes none while the compartment still holds pressure.
+ */
+export const CREW_VACUUM_LETHAL_TIME_S = 15;
+
+/**
+ * Survivable fraction of standard cabin gas mass. Above this fraction the
+ * partial pressure is high enough to keep a crew member conscious and
+ * unharmed; below it the crew member is exposed and takes vacuum damage in
+ * proportion to the deficit, reaching the full lethal rate at hard vacuum.
+ * 0.5 (≈ the pressure at the Armstrong limit, where exposed body fluids begin
+ * to boil and useful consciousness is lost) is the threshold for harm.
+ */
+export const CREW_VACUUM_SURVIVABLE_FRACTION = 0.5;
+
+/**
+ * Crew vacuum-exposure severity for a cell holding `gasMassKg`, in [0, 1].
+ * Zero while the cell stays at or above the survivable gas mass; ramps
+ * linearly to 1 (full exposure) at zero gas (hard vacuum). The resource step
+ * multiplies the per-tick lethal rate by this to damage exposed crew.
+ */
+export function vacuumExposureSeverity(gasMassKg: number): number {
+  const survivable = STANDARD_CELL_GAS_MASS_KG * CREW_VACUUM_SURVIVABLE_FRACTION;
+  if (survivable <= 0) return 0;
+  if (gasMassKg >= survivable) return 0;
+  const severity = (survivable - gasMassKg) / survivable;
+  return severity < 0 ? 0 : severity > 1 ? 1 : severity;
+}
+
+/**
  * Vent exhaust velocity, m·s⁻¹. Gas escaping a breached compartment into
  * vacuum expands at the local speed of sound; for air at 20 °C this is
  * ≈ 343 m·s⁻¹. The recoil impulse from venting mass `dm` is `dm · v_e`.
