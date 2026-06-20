@@ -6,6 +6,8 @@
 
 import type { SimCrew } from "../types";
 
+import { computeOutline } from "@/domain/outline";
+import type { Shell } from "@/domain/outline";
 import { SIM } from "./config";
 import { resetCrewForFragment } from "./crew";
 import { comTangentialVelocity, localCentreOfMass, recomputeAggregates } from "./physics";
@@ -759,5 +761,39 @@ export function makeChunkShip(
   // parent's pooled shield doesn't carry over.
   chunk.shield = 0;
   chunk.maxShield = 0;
+  // Compute the chamfered hull outline from the chunk's armour cells.
+  // Grid dimensions come from the parent's full module set so the resulting
+  // vertices share the same ship-local coordinate frame as module.x/y.
+  const chunkOutline = computeChunkOutline(parent.modules ?? [], modules);
+  if (chunkOutline.length > 0) chunk.outline = chunkOutline;
   return chunk;
+}
+
+/**
+ * Build a chamfered hull outline for a break-apart chunk. The Shell is
+ * constructed using the original design-grid dimensions (derived from the
+ * parent's full module set) so vertices are centred consistently with the
+ * chunk's module.x/y ship-local positions. `outlineMode` defaults to
+ * `"hexadecilinear"` (the TileGrid default) — the original mode is not
+ * stored on SimShip.
+ */
+function computeChunkOutline(
+  parentModules: readonly SimModule[],
+  chunkModules: readonly SimModule[],
+): { x: number; y: number }[][] {
+  let maxCol = 0;
+  let maxRow = 0;
+  for (const m of parentModules) {
+    if (m.col > maxCol) maxCol = m.col;
+    if (m.row > maxRow) maxRow = m.row;
+  }
+  const cols = maxCol + 1;
+  const rows = maxRow + 1;
+  const cells = new Set<number>();
+  for (const m of chunkModules) {
+    if (m.surface === "armor") cells.add(m.row * cols + m.col);
+  }
+  if (cells.size === 0) return [];
+  const shell: Shell = { cols, rows, cells };
+  return computeOutline(shell, { outlineMode: "hexadecilinear" });
 }
