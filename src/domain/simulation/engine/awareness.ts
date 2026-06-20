@@ -9,8 +9,9 @@ import type { AwarenessSnapshot, BattleAnomaly } from "@/schema/battle";
 
 import { SIM } from "./config";
 import { coverageShapes } from "./coverage";
+import { emReceives } from "./em-reception";
 import type { CommsLink, CommsUnit } from "./sensors";
-import { aimDishes, commsUnitOperable, commsUnitsOf, contactThreat, linkForms, sensorDetects } from "./sensors";
+import { aimDishes, commsUnitOperable, commsUnitsOf, contactThreat, linkForms } from "./sensors";
 import type { Contact, GhostContact, SimShip } from "./types";
 
 /**
@@ -46,11 +47,13 @@ export function computeAwareness(
   };
 
   for (const observer of alive) {
-    // Every ship is fog-gated. A ship with no sensor still detects out to its
-    // innate omni visual circle (SIM.visualLosRadius); sensor cones extend that
-    // in the directions they cover. There is no omniscient escape hatch — a
-    // sensorless ship is genuinely myopic, modular or not. An occluder on the
-    // sight line blocks detection regardless of range or arc.
+    // Every ship is fog-gated through EM reception (Phase 9). A ship with no
+    // sensor still receives an enemy's continuous emission out to its baseline
+    // receiver's reach (the EM-grounded `SIM.visualLosRadius`); sensor cones add
+    // gain that extends that reach to their `detectionRange` in the directions
+    // they cover. There is no omniscient escape hatch — a sensorless ship is
+    // genuinely myopic, modular or not. An occluder on the sight line blocks
+    // reception regardless of strength or arc.
     const list: Contact[] = [];
     // enemiesBySide is keyed by the observer's own side and already sorted by
     // instanceId (it is a filter of the sorted `alive` set).
@@ -58,7 +61,7 @@ export function computeAwareness(
       observer.side === "attacker" ? enemiesBySide.attacker : enemiesBySide.defender;
     for (const enemy of enemies) {
       if (segmentBlocked(observer.x, observer.y, enemy.x, enemy.y, occluders)) continue;
-      if (!sensorDetects(observer, enemy, anomaly)) continue;
+      if (!emReceives(observer, enemy, anomaly)) continue;
       list.push({
         enemyId: enemy.instanceId,
         x: enemy.x,

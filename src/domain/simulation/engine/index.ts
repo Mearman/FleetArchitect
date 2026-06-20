@@ -14,6 +14,8 @@ import type { BattleInputs, BattleSummary, SimCrew } from "../types";
 
 import { computeAwareness } from "./awareness";
 import { stepAi } from "./ai-step";
+import type { Emission } from "./emissions";
+import { rebuildEmissions } from "./em-reception";
 import { launchPods, updatePods } from "./boarding";
 import { applyCollisionDamage, buildShipCellHash, resolveShipCollisions } from "./collision";
 import { SIM, resetProjectileCounter } from "./config";
@@ -110,6 +112,14 @@ export function* simulateBattle(
   // at battle start so two same-seed runs produce byte-identical pulse ids. No
   // rng, no clock — a pure function of spawn order, mirroring mineSeq.
   let pulseSeq = 0;
+  // Continuous EM emission log (Phase 9). Rebuilt each tick from every ship's
+  // baseline self-emission (plus active-sensor emissions), in (ship id, module
+  // array) order behind a monotonic per-battle counter reset at battle start so
+  // two same-seed runs produce byte-identical emission ids. The reception pass
+  // (the awareness phase) consumes this; the snapshot records it (omitted when
+  // empty). No rng, no clock — a pure function of ship state, mirroring pulseSeq.
+  const emissions: Emission[] = [];
+  let emissionSeq = 0;
 
   // Occluders are a pure function of (anomaly, seed): compute them once here
   // (drawing from a salted, separate rng inside computeOccluders, never the
@@ -121,11 +131,14 @@ export function* simulateBattle(
   // same fog-of-war data every later frame does, and so each ship's `awareness`
   // is populated before the first targeting pass below.
   const frame0Awareness = computeAwareness(ships, byId, occluders, inputs.anomaly);
+  // Record the frame-0 EM emission log alongside the awareness it produced. The
+  // monotonic counter threads from its initial value through every later tick.
+  emissionSeq = rebuildEmissions(ships, emissions, 0, emissionSeq);
 
   // Number of post-initial frames yielded, matching the previous
   // `frames.length - 1`: the tick-0 frame is excluded from the count.
   let ticks = 0;
-  yield snapshot(0, ships, projectiles, frame0Awareness, mines, pods, pulses);
+  yield snapshot(0, ships, projectiles, frame0Awareness, mines, pods, pulses, emissions);
 
   let winner: BattleSide = "draw";
   let resolved = false;
@@ -137,6 +150,14 @@ export function* simulateBattle(
     //    draws ZERO times from the battle rng. The returned snapshot is recorded
     //    on this tick's frame at the end of the loop body.
     const awareness = computeAwareness(ships, byId, occluders, inputs.anomaly);
+    // 0a. Record the continuous EM emission log for this tick (Phase 9), behind
+    //     the monotonic emission counter. The reception that built `awareness`
+    //     above evaluated each enemy's emission strength per-pair; this log is
+    //     the deterministic record of every EM event for the snapshot. Rebuilt
+    //     from scratch each tick (a continuous emission reflects the current
+    //     positions), so the array is freshly populated, never appended across
+    //     ticks.
+    emissionSeq = rebuildEmissions(ships, emissions, tick, emissionSeq);
     // 0. Refresh the per-side ship lists and id index from the live `ships`
     //    array so they include phantoms (drones/decoys) and break-away chunks
     //    added on a previous tick. Phantoms are full SimShips, so the targeting,
@@ -466,7 +487,7 @@ export function* simulateBattle(
       }
     }
 
-    yield snapshot(tick, ships, projectiles, awareness, mines, pods, pulses);
+    yield snapshot(tick, ships, projectiles, awareness, mines, pods, pulses, emissions);
     ticks += 1;
 
     // 6. Termination. Only real ships decide the battle — a side whose hulls
@@ -556,6 +577,7 @@ export function snapshot(
   mines: readonly SimMine[],
   pods: readonly SimPod[],
   pulses: readonly SimPulse[],
+  emissions: readonly Emission[],
 ): BattleFrame {
   // Partition real ships from phantoms (drones/decoys) so phantoms never appear
   // in the `ships` array — they render from their own dedicated arrays instead.
@@ -742,6 +764,21 @@ export function snapshot(
             radius: p.radius,
             bearing: p.bearing,
             arc: p.arc,
+          })),
+        }
+      : {}),
+    // Continuous EM emissions this tick (Phase 9). Omitted when empty so frames
+    // for battles with no live ships (or recorded before EM reception) stay
+    // byte-identical to baseline. The renderer can draw these as expanding EM
+    // rings the same way it draws active-radar pulses.
+    ...(emissions.length > 0
+      ? {
+          emissions: emissions.map((e) => ({
+            sourceId: e.sourceId,
+            x: e.x,
+            y: e.y,
+            strength: e.strength,
+            t0: e.t0,
           })),
         }
       : {}),

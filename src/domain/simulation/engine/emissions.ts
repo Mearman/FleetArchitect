@@ -76,9 +76,13 @@ export function receivedStrength(emission: Emission, dist: number): number {
 
 /** Whether an emission forms a contact at the receiver: the light sphere is
  *  crossing it this tick AND the received strength exceeds the receiver's
- *  sensitivity (scaled by its gain). This is the one detection predicate —
- *  sensor-free sight and sensor-enhanced sight both route through it (a sensor
- *  is a higher gain / lower effective threshold). */
+ *  sensitivity (scaled by its gain). This is the one detection predicate for a
+ *  SINGLE, discrete emission event (an active radar ping, a weapon discharge) —
+ *  it is light-lagged, so the receiver registers it only on the tick the sphere
+ *  sweeps across. Sensor-free sight and sensor-enhanced sight both route through
+ *  it (a sensor is a higher gain / lower effective threshold). For a source that
+ *  emits EVERY tick (a hull's continuous self-illumination), use
+ *  `continuousContact` instead — see its note on why the light-lag washes out. */
 export function formsContact(
   emission: Emission,
   receiver: Receiver,
@@ -87,4 +91,52 @@ export function formsContact(
   if (!isReaching(emission, receiver, t)) return false;
   const dist = Math.hypot(receiver.x - emission.x, receiver.y - emission.y);
   return receivedStrength(emission, dist) > receiver.sensitivity / receiver.gain;
+}
+
+/** Whether a CONTINUOUSLY-emitting source forms a contact at the receiver this
+ *  tick. A hull is always there — every tick it reflects ambient light and
+ *  radiates its own heat/EM — so the receiver is bathed in a steady stream of
+ *  spheres, one born each past tick. Whichever sphere has radius equal to the
+ *  source-receiver distance is the one crossing the receiver this tick, and it
+ *  was born `ceil(dist/c)` ticks ago; because the source emitted then too, there
+ *  is always exactly one such sphere arriving. The light-lag therefore collapses
+ *  to a steady-state: the contact decision is purely the inverse-square received
+ *  strength against the threshold, with no `isReaching` gate. This is the
+ *  predicate that grounds a ship's instant geometric sight in real EM physics —
+ *  the range falls out of `receivedStrength > sensitivity/gain`, not an authored
+ *  radius. `strength` is the source's continuous emission power; `dist` their
+ *  separation (metres). */
+export function continuousContact(
+  strength: number,
+  dist: number,
+  sensitivity: number,
+  gain: number,
+): boolean {
+  const received =
+    dist <= 0 ? strength : strength / (4 * Math.PI * dist * dist);
+  return received > sensitivity / gain;
+}
+
+/** The continuous-emission range (metres) at which a source of power `strength`
+ *  is received exactly at a receiver's effective threshold `sensitivity / gain`.
+ *  The closed-form inverse of `continuousContact`: solving
+ *  `strength / (4·PI·d^2) = sensitivity / gain` for `d` gives
+ *  `sqrt(strength · gain / (4·PI · sensitivity))`. The grounded replacement for
+ *  an authored detection radius — a range now DERIVES from emission power and a
+ *  noise floor rather than being hand-picked. */
+export function continuousRange(
+  strength: number,
+  sensitivity: number,
+  gain: number,
+): number {
+  return Math.sqrt((strength * gain) / (4 * Math.PI * sensitivity));
+}
+
+/** The continuous-emission power (watts) a source must radiate to be received at
+ *  exactly the baseline threshold at range `range` (metres). The closed-form
+ *  inverse of `continuousRange` at unit gain: `4·PI·range^2 · sensitivity`. Used
+ *  to ground an authored detection RANGE (a sensor's `detectionRange`, the hull
+ *  visual radius) as the emission power physics implies for that reach. */
+export function emissionForRange(range: number, sensitivity: number): number {
+  return 4 * Math.PI * range * range * sensitivity;
 }

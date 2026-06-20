@@ -372,6 +372,22 @@ export const PulseSnapshot = z.object({
 });
 export type PulseSnapshot = z.infer<typeof PulseSnapshot>;
 
+/** A continuous EM emission event at a tick (Phase 9). Every ship is always
+ *  emitting — it reflects ambient light and radiates its own heat — so each
+ *  alive ship contributes a baseline emission at its position (`sourceId`), plus
+ *  one per operational active-mode sensor. `strength` is the emitted power at the
+ *  source (it attenuates with the inverse square of distance at the receiver);
+ *  `t0` is the tick it was emitted. The renderer can draw these as expanding EM
+ *  rings, distinct from active-radar pulses. */
+export const EmissionSnapshot = z.object({
+  sourceId: EntityId,
+  x: z.number(),
+  y: z.number(),
+  strength: z.number().min(0),
+  t0: z.number().int().min(0),
+});
+export type EmissionSnapshot = z.infer<typeof EmissionSnapshot>;
+
 /** A single frame of recorded battle state, for replay rendering. */
 export const BattleFrame = z.object({
   tick: z.number().int().min(0),
@@ -389,6 +405,9 @@ export const BattleFrame = z.object({
   decoys: z.array(DecoySnapshot).optional(),
   pods: z.array(BoardingPodSnapshot).optional(),
   pulses: z.array(PulseSnapshot).optional(),
+  /** Continuous EM emissions this tick (Phase 9 reception model). Omitted when
+   *  empty so frames recorded before EM reception stay byte-identical. */
+  emissions: z.array(EmissionSnapshot).optional(),
 });
 export type BattleFrame = z.infer<typeof BattleFrame>;
 

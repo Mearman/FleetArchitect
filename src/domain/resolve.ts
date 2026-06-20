@@ -90,11 +90,13 @@ export function resolveFleetToCombatShips(
     .filter((entry): entry is NonNullable<typeof entry> => entry !== undefined);
 
   // Edge inset derived from ship sizes + weapon range (see computeEdgeInsetM).
-  // SIM.defaultRange is the fallback for a fleet with no weapons.
-  // Importing SIM here would couple domain/resolve to the engine leaf; the
-  // fallback value is the same authored figure SIM.defaultRange carries
-  // (documented there as the sensor-free engagement range).
-  const edgeInset = computeEdgeInsetM(resolved, 220);
+  // The fallback for a weaponless fleet is SIM.defaultRange, now grounded
+  // (Phase 9) as the EM-derived visual radius (~140 m) plus the muzzle clearance
+  // (6 m). Importing SIM here would couple domain/resolve to the engine leaf, so
+  // the same derivation is mirrored: visualLosRadius is the inverse-square
+  // continuous-emission range sqrt(ambient / (4·PI · floor)) = 140 m (ambient is
+  // anchored to 4·PI·140^2·floor), giving 140 + 6 = 146.
+  const edgeInset = computeEdgeInsetM(resolved, 146);
 
   // Total column height: every ship's diameter plus a margin between each pair.
   const totalHeight =

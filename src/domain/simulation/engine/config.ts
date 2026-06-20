@@ -55,6 +55,71 @@ export const SPEED_OF_LIGHT_M_PER_S = 299_792_458;
 export const SPEED_OF_LIGHT_M_PER_TICK =
   SPEED_OF_LIGHT_M_PER_S / TICKS_PER_SECOND;
 
+/**
+ * The receiver noise floor (the minimum received EM power a baseline,
+ * sensor-free receiver registers as a contact). The reference threshold the
+ * whole Phase-9 reception model is measured against: a continuous emission is
+ * "seen" when its inverse-square received strength at the receiver exceeds this.
+ * Fixed at unit power so emission strengths read directly as multiples of the
+ * noise floor and the derived ranges below stay legible; the catalogue's
+ * authored emission powers and sensor gains carry the real scale.
+ */
+export const EM_RECEIVER_NOISE_FLOOR = 1;
+
+/**
+ * The continuous EM power (watts, in the same unit scale as the noise floor) a
+ * quiescent hull radiates and reflects every tick — its baseline self-emission.
+ * A ship is never truly dark: it reflects ambient starlight and radiates its
+ * own waste heat, so a passive receiver close enough picks it up with no sensor
+ * at all. This is the authored anchor the innate visual radius derives from:
+ * `visualLosRadius = continuousRange(EM_HULL_AMBIENT_EMISSION, noiseFloor, 1)`.
+ * Sized so that range lands at the historical ~140 m innate sight (kept below
+ * typical weapon ranges so a sensorless fleet is genuinely myopic), via
+ * `4·PI·140^2 · noiseFloor`.
+ */
+export const EM_HULL_AMBIENT_EMISSION =
+  4 * Math.PI * 140 * 140 * EM_RECEIVER_NOISE_FLOOR;
+
+/**
+ * The innate visual line-of-sight radius (metres) DERIVED from the EM reception
+ * model: the continuous-emission range at which a quiescent hull's baseline
+ * self-emission is received at exactly the noise floor by a sensor-free
+ * receiver (gain 1). The closed-form inverse-square range
+ * `sqrt(strength · gain / (4·PI · sensitivity))` — the same formula
+ * `continuousRange` in `emissions.ts` evaluates, inlined here because `config`
+ * is the leaf both it and the engine import from (importing `emissions` back
+ * would cycle). With the ambient emission anchored to `4·PI·140^2 · floor` this
+ * recovers 140 m exactly, but the radius now FALLS OUT of the physics rather
+ * than being an authored literal.
+ */
+const VISUAL_LOS_RADIUS_M = Math.sqrt(
+  (EM_HULL_AMBIENT_EMISSION * 1) / (4 * Math.PI * EM_RECEIVER_NOISE_FLOOR),
+);
+
+/**
+ * The reference emission power (same unit scale as the noise floor) of a ship
+ * carrying an active emitter or a strong signature — the anchor the base
+ * passive acquisition radius derives from. Chosen so the acquisition range
+ * lands at the historical ~2000 m reference (comfortably beyond the deployment
+ * span plus battle drift), via `4·PI·2000^2 · floor`. Authored catalogue
+ * content: it stands in for the EM cross-section a stealth-relevant target
+ * presents, the multiplicand a signature module's `acquisitionMultiplier`
+ * shrinks.
+ */
+const EM_ACQUIRE_REFERENCE_EMISSION =
+  4 * Math.PI * 2000 * 2000 * EM_RECEIVER_NOISE_FLOOR;
+
+/**
+ * The base passive acquisition radius (metres) DERIVED from the EM reception
+ * model: the continuous-emission range at which `EM_ACQUIRE_REFERENCE_EMISSION`
+ * is received at the noise floor (gain 1). Same closed-form inverse-square range
+ * as the visual radius, off a stronger reference emission; recovers 2000 m
+ * exactly while making the figure fall out of the physics.
+ */
+const BASE_ACQUIRE_RANGE_M = Math.sqrt(
+  (EM_ACQUIRE_REFERENCE_EMISSION * 1) / (4 * Math.PI * EM_RECEIVER_NOISE_FLOOR),
+);
+
 /** Deterministic per-battle projectile id counter. Reset at the start of each
  *  `simulateBattle` call; incremented in spawn order so two same-seed runs
  *  produce identical ids. Used by the snapshot → interpolation path to match
@@ -102,16 +167,20 @@ export const SIM = {
    */
   muzzleOffset: 6,
   /**
-   * [Phase 9 — EM-awareness grounding pending] Fallback engagement range
-   * (metres) for ships with no weapons: the distance an unarmed ship holds
-   * from its target. Phase 9 replaces this with a derivation from the ambient
-   * EM field × receiver threshold; until then it is authored catalogue content
-   * representing the effective reach of a baseline sensor-free contact.
+   * Fallback engagement range (metres) for ships with no weapons: the distance
+   * an unarmed ship holds from its target. Grounded (Phase 9) in the EM
+   * reception model: an unarmed ship has no weapon reach to stand off by, so it
+   * holds at the range its own baseline receiver can keep a continuous fix — the
+   * innate visual radius `visualLosRadius` — extended by the half-cell muzzle
+   * clearance so it parks just outside contact. `visualLosRadius + muzzleOffset`
+   * recovers the historical ~146 m without an authored literal; the reach now
+   * derives from the same ambient-EM × noise-floor inverse-square the visual
+   * radius does.
    *
-   * Classification: authored catalogue content (interim; Phase 9 derives from
-   * ambient-EM × threshold).
+   * Classification: derived-by-formula (`visualLosRadius + muzzleOffset`); the
+   * anchors are the EM-grounded visual radius and the authored muzzle clearance.
    */
-  defaultRange: 220,
+  defaultRange: VISUAL_LOS_RADIUS_M + 6,
   /**
    * Fraction of its max weapon range a ship tries to keep from its target, per
    * range band. The fractions are a tactical doctrine (short / medium / long
@@ -394,19 +463,21 @@ export const SIM = {
    */
   powerWiringRadius: 7,
   /**
-   * [Phase 9 — EM-awareness grounding pending] Innate visual line-of-sight
-   * radius (metres) every ship has before any sensor module extends it — the
-   * baseline omnidirectional receiver (sensor-free sight). Phase 9 derives
-   * this from the ambient EM field × receiver threshold; until then it is
-   * authored catalogue content representing the effective range of a
-   * quiescent ship's passive receiver against a reflecting target. Kept below
-   * typical weapon ranges so a fleet without dedicated sensors is genuinely
+   * Innate visual line-of-sight radius (metres) every ship has before any sensor
+   * module extends it — the baseline omnidirectional receiver (sensor-free
+   * sight). Grounded (Phase 9) in the EM reception model: it is the
+   * continuous-emission range at which a quiescent hull's ambient self-emission
+   * (`EM_HULL_AMBIENT_EMISSION`) is received at exactly the noise floor by a
+   * sensor-free receiver — `continuousRange(ambient, floor, 1)`, evaluated as
+   * `VISUAL_LOS_RADIUS_M` above. The radius now FALLS OUT of the inverse-square
+   * physics rather than being hand-picked; the ambient emission is anchored to
+   * keep it below typical weapon ranges so a sensorless fleet is genuinely
    * myopic and must close to engage.
    *
-   * Classification: authored catalogue content (interim; Phase 9 derives from
-   * ambient-EM × receiver threshold).
+   * Classification: derived-by-formula (inverse-square `continuousRange` over
+   * the authored ambient emission and the receiver noise floor).
    */
-  visualLosRadius: 140,
+  visualLosRadius: VISUAL_LOS_RADIUS_M,
   /**
    * [Phase 9 — EM-awareness grounding pending] Multiplier applied to the
    * non-immune part of a ship's effective sensor radius inside a nebula. Same
@@ -455,24 +526,25 @@ export const SIM = {
    */
   maxCommsPairs: 20000,
   /**
-   * [Phase 9 — EM-awareness grounding pending] Base passive acquisition radius
-   * (metres): the reference range at which a ship with no sensor uplift acquires
-   * an enemy carrying a stealth signature. It is the multiplicand the target's
-   * `SignatureEffect.acquisitionMultiplier` shrinks, and the range a sensor's
-   * `pierceCloak` flag is measured against — not a hard map bound. A NON-STEALTH
-   * enemy (no cloak and no signature module) is acquired regardless of distance,
-   * so this value never gates ordinary targeting: existing fleets see exactly
-   * the same candidate sets as before. It only takes effect once a target
-   * carries a signature module (its range shrinks to `baseAcquireRange *
-   * acquisitionMultiplier`) or a cloak. Phase 9 derives this from ambient-EM ×
-   * threshold; until then it is authored catalogue content, sized comfortably
-   * beyond the deployment span plus battle drift so a signature-equipped ship
-   * at the far edge is still acquirable until its multiplier pulls the range in.
+   * Base passive acquisition radius (metres): the reference range at which a
+   * ship with no sensor uplift acquires an enemy carrying a stealth signature.
+   * It is the multiplicand the target's `SignatureEffect.acquisitionMultiplier`
+   * shrinks, and the range a sensor's `pierceCloak` flag is measured against —
+   * not a hard map bound. A NON-STEALTH enemy (no cloak and no signature module)
+   * is acquired regardless of distance, so this value never gates ordinary
+   * targeting: existing fleets see exactly the same candidate sets as before. It
+   * only takes effect once a target carries a signature module (its range
+   * shrinks to `baseAcquireRange * acquisitionMultiplier`) or a cloak. Grounded
+   * (Phase 9) in the EM reception model: the continuous-emission range at which a
+   * stealth-relevant target's reference emission (`EM_ACQUIRE_REFERENCE_EMISSION`)
+   * is received at the noise floor — `continuousRange(reference, floor, 1)`,
+   * evaluated as `BASE_ACQUIRE_RANGE_M` above. The reference emission is anchored
+   * so the range lands comfortably beyond the deployment span plus battle drift.
    *
-   * Classification: authored catalogue content (interim; Phase 9 derives from
-   * ambient-EM × receiver threshold).
+   * Classification: derived-by-formula (inverse-square `continuousRange` over
+   * the authored acquisition-reference emission and the receiver noise floor).
    */
-  baseAcquireRange: 2000,
+  baseAcquireRange: BASE_ACQUIRE_RANGE_M,
   /**
    * Spacing (metres) between mines in a single mine-layer batch. Derived from
    * the mine's lethal radius: a mine's blast is effective out to roughly one
@@ -566,9 +638,10 @@ export const SIM = {
    * fraction of a collision's kinetic energy converted into structural damage,
    * split across the contact-side modules of each ship. The rest is taken up by
    * the elastic restitution impulse (handled separately by the collision step).
-   * KE is `0.5 * reducedMass * relativeSpeed^2`, in the same energy-equivalent
-   * units as module HP, so a fast heavy ram is devastating and a gentle nudge is
-   * negligible.
+   * KE is the relativistic `(γ − 1) * reducedMass * c²`, which reduces to the
+   * Newtonian `0.5 * reducedMass * v²` at sub-light speeds and stays finite at
+   * the speed limit. In the same energy-equivalent units as module HP, so a fast
+   * heavy ram is devastating and a gentle nudge is negligible.
    *
    * Classification: authored catalogue content
    */

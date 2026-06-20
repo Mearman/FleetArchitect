@@ -95,45 +95,6 @@ export function attenuatedSensorRange(unit: SensorUnit, anomaly: BattleAnomaly):
   return unit.effect.nebulaImmune ? range : range * SIM.nebulaSensorFactor;
 }
 
-/** The ship's innate omni visual radius after anomaly attenuation. The naked-eye
- *  / short-range passive circle every ship has; a nebula halves it (it is never
- *  immune). */
-export function attenuatedVisualRadius(anomaly: BattleAnomaly): number {
-  const r = SIM.visualLosRadius;
-  return anomaly === "nebula" ? r * SIM.nebulaSensorFactor : r;
-}
-
-/** Whether `observer` detects `enemy` this tick (line-of-sight permitting):
- *  the enemy lies inside the innate omni visual circle OR inside any of the
- *  observer's alive (manned-if-crewed) sensor cones. A cone hit needs
- *  `dist <= effRange` AND the bearing within the cone's half-arc; an omni
- *  sensor (arc === Math.PI) is a full circle and skips the angle test. */
-export function sensorDetects(
-  observer: SimShip,
-  enemy: SimShip,
-  anomaly: BattleAnomaly,
-): boolean {
-  const dx = enemy.x - observer.x;
-  const dy = enemy.y - observer.y;
-  const distSq = dx * dx + dy * dy;
-  // Innate omni visual circle — always present, no angle test.
-  const visual = attenuatedVisualRadius(anomaly);
-  if (distSq <= visual * visual) return true;
-  // Any sensor cone covering the enemy.
-  const toEnemy = Math.atan2(dy, dx);
-  for (const unit of sensorUnitsOf(observer)) {
-    const range = attenuatedSensorRange(unit, anomaly);
-    if (distSq > range * range) continue;
-    const arc = effectiveSensorArc(unit);
-    // An omni sensor's arc is Math.PI: |angleDifference| <= PI always holds, so
-    // the cone is a full circle. Directional/dish/variable test the bearing.
-    if (arc >= Math.PI) return true;
-    const bearing = effectiveSensorBearing(unit);
-    if (Math.abs(angleDifference(bearing, toEnemy)) <= arc) return true;
-  }
-  return false;
-}
-
 /** Alive comms modules on a ship, in module-array order. */
 export function commsUnitsOf(ship: SimShip): CommsUnit[] {
   const out: CommsUnit[] = [];
