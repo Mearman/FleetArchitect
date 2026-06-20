@@ -1,8 +1,10 @@
 import {
   ActionIcon,
+  Anchor,
   Badge,
   Button,
   Checkbox,
+  Collapse,
   Container,
   Group,
   NumberInput,
@@ -19,8 +21,9 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconBucketDroplet, IconPlus, IconTrash } from "@tabler/icons-react";
+import { IconBucketDroplet, IconPlus, IconSwords, IconTrash } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { createId, nowIso } from "@/domain/id";
 import { analyseShipDesign } from "@/domain/stats";
 import { DEFAULT_FLEET_BUDGET } from "@/domain/points";
@@ -77,12 +80,39 @@ const STANCE_LABEL: Record<EngagementStance, string> = {
   evasive: "Evasive",
 };
 
+const PRIORITY_LABEL: Record<TargetPriority, string> = {
+  nearest: "Nearest",
+  weakest: "Weakest",
+  strongest: "Strongest",
+  highestCost: "Highest cost",
+};
+
+const RANGE_LABEL: Record<EngageRange, string> = {
+  short: "Short",
+  medium: "Medium",
+  long: "Long",
+  hold: "Hold",
+};
+
 export function FleetBuilderRoute() {
   const fleets = useFleets();
   const designs = useShipDesigns();
   const [working, setWorking] = useState<WorkingFleet>(blankFleet);
   const [addDesignId, setAddDesignId] = useState<string | null>(null);
+  const [advancedOpen, setAdvancedOpen] = useState<ReadonlySet<string>>(new Set());
   const factions = catalog().factions();
+
+  function toggleAdvanced(rowId: string) {
+    setAdvancedOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(rowId)) {
+        next.delete(rowId);
+      } else {
+        next.add(rowId);
+      }
+      return next;
+    });
+  }
 
   const designMap = useMemo(
     () => new Map((designs ?? []).map((d) => [d.id, d])),
@@ -228,7 +258,7 @@ export function FleetBuilderRoute() {
         />
       </Group>
 
-      <Group gap="lg" align="flex-start">
+      <Group gap="lg" align="flex-start" wrap="wrap">
         <Paper p="md" withBorder style={{ flex: "1 1 280px" }}>
           <Stack gap="xs">
             <Group justify="space-between">
@@ -299,12 +329,16 @@ export function FleetBuilderRoute() {
                   }}
                   disabled={!canBuild}
                   searchable
-                  w={240}
+                  maw={240}
+                  style={{ flex: 1, minWidth: 0 }}
                 />
               </Group>
               {!canBuild ? (
                 <Text size="sm" c="dimmed">
-                  Design a ship first in the Ship Designer.
+                  <Anchor component={Link} to="/ships" size="sm">
+                    Design a ship
+                  </Anchor>{" "}
+                  first before building a fleet.
                 </Text>
               ) : working.rows.length === 0 ? (
                 <Text size="sm" c="dimmed">
@@ -327,6 +361,7 @@ export function FleetBuilderRoute() {
                           <Group justify="space-between" wrap="nowrap">
                             <Select
                               size="xs"
+                              label="Ship design"
                               data={designOptions}
                               value={row.designId}
                               onChange={(id) => {
@@ -345,50 +380,11 @@ export function FleetBuilderRoute() {
                             <ActionIcon
                               color="red"
                               variant="subtle"
+                              aria-label="Remove ship"
                               onClick={() => removeRow(row.rowId)}
                             >
                               <IconTrash size={14} />
                             </ActionIcon>
-                          </Group>
-
-                          <Group grow>
-                            <NumberInput
-                              size="xs"
-                              label="X"
-                              value={row.position.x}
-                              onChange={(val) =>
-                                updateRow(row.rowId, {
-                                  position: {
-                                    ...row.position,
-                                    x: toNumber(val),
-                                  },
-                                })
-                              }
-                            />
-                            <NumberInput
-                              size="xs"
-                              label="Y"
-                              value={row.position.y}
-                              onChange={(val) =>
-                                updateRow(row.rowId, {
-                                  position: {
-                                    ...row.position,
-                                    y: toNumber(val),
-                                  },
-                                })
-                              }
-                            />
-                            <NumberInput
-                              size="xs"
-                              label="Facing"
-                              value={row.facing}
-                              step={0.1}
-                              onChange={(val) =>
-                                updateRow(row.rowId, {
-                                  facing: toNumber(val),
-                                })
-                              }
-                            />
                           </Group>
 
                           <Stack gap={4}>
@@ -415,7 +411,10 @@ export function FleetBuilderRoute() {
                             <Select
                               size="xs"
                               label="Target"
-                              data={PRIORITIES}
+                              data={PRIORITIES.map((p) => ({
+                                value: p,
+                                label: PRIORITY_LABEL[p],
+                              }))}
                               value={row.orders.targetPriority}
                               onChange={(val) => {
                                 if (val !== null)
@@ -427,7 +426,10 @@ export function FleetBuilderRoute() {
                             <Select
                               size="xs"
                               label="Engage"
-                              data={RANGES}
+                              data={RANGES.map((r) => ({
+                                value: r,
+                                label: RANGE_LABEL[r],
+                              }))}
                               value={row.orders.engageRange}
                               onChange={(val) => {
                                 if (val !== null)
@@ -438,118 +440,172 @@ export function FleetBuilderRoute() {
                             />
                           </Group>
 
-                          <Stack gap={4}>
-                            <Group justify="space-between">
-                              <Text size="xs" c="dimmed">
-                                Retreat below
-                              </Text>
-                              <Text size="xs" c="dimmed">
-                                {Math.round(row.orders.retreatThreshold * 100)}%
-                              </Text>
-                            </Group>
-                            <Slider
-                              size="xs"
-                              min={0}
-                              max={1}
-                              step={0.05}
-                              value={row.orders.retreatThreshold}
-                              onChange={(val) =>
-                                updateOrders(row.rowId, {
-                                  retreatThreshold: val,
-                                })
-                              }
-                            />
-                          </Stack>
-
-                          <Checkbox
+                          <Button
                             size="xs"
-                            label="Focus fire (concentrate fleet on one target)"
-                            checked={row.orders.focusFire}
-                            onChange={(e) =>
-                              updateOrders(row.rowId, {
-                                focusFire: e.currentTarget.checked,
-                              })
-                            }
-                          />
+                            variant="subtle"
+                            onClick={() => toggleAdvanced(row.rowId)}
+                          >
+                            {advancedOpen.has(row.rowId)
+                              ? "Hide advanced"
+                              : "Show advanced"}
+                          </Button>
 
-                          <Stack gap={4}>
-                            <Group justify="space-between">
-                              <Text size="xs" c="dimmed">
-                                Vulnerable target weight
-                              </Text>
-                              <Text size="xs" c="dimmed">
-                                {Math.round(
-                                  row.orders.vulnerableTargetWeight * 100,
-                                )}
-                                %
-                              </Text>
-                            </Group>
-                            <Slider
-                              size="xs"
-                              min={0}
-                              max={1}
-                              step={0.05}
-                              value={row.orders.vulnerableTargetWeight}
-                              onChange={(val) =>
-                                updateOrders(row.rowId, {
-                                  vulnerableTargetWeight: val,
-                                })
-                              }
-                            />
-                          </Stack>
+                          <Collapse expanded={advancedOpen.has(row.rowId)}>
+                            <Stack gap="xs">
+                              <Group grow>
+                                <NumberInput
+                                  size="xs"
+                                  label="X"
+                                  value={row.position.x}
+                                  onChange={(val) =>
+                                    updateRow(row.rowId, {
+                                      position: {
+                                        ...row.position,
+                                        x: toNumber(val),
+                                      },
+                                    })
+                                  }
+                                />
+                                <NumberInput
+                                  size="xs"
+                                  label="Y"
+                                  value={row.position.y}
+                                  onChange={(val) =>
+                                    updateRow(row.rowId, {
+                                      position: {
+                                        ...row.position,
+                                        y: toNumber(val),
+                                      },
+                                    })
+                                  }
+                                />
+                                <NumberInput
+                                  size="xs"
+                                  label="Facing"
+                                  value={row.facing}
+                                  step={0.1}
+                                  onChange={(val) =>
+                                    updateRow(row.rowId, {
+                                      facing: toNumber(val),
+                                    })
+                                  }
+                                />
+                              </Group>
 
-                          <Stack gap={4}>
-                            <Group justify="space-between">
-                              <Text size="xs" c="dimmed">
-                                Formation keeping
-                              </Text>
-                              <Text size="xs" c="dimmed">
-                                {Math.round(
-                                  row.orders.formationKeeping * 100,
-                                )}
-                                %
-                              </Text>
-                            </Group>
-                            <Slider
-                              size="xs"
-                              min={0}
-                              max={1}
-                              step={0.05}
-                              value={row.orders.formationKeeping}
-                              onChange={(val) =>
-                                updateOrders(row.rowId, {
-                                  formationKeeping: val,
-                                })
-                              }
-                            />
-                          </Stack>
+                              <Stack gap={4}>
+                                <Group justify="space-between">
+                                  <Text size="xs" c="dimmed">
+                                    Retreat below
+                                  </Text>
+                                  <Text size="xs" c="dimmed">
+                                    {Math.round(row.orders.retreatThreshold * 100)}%
+                                  </Text>
+                                </Group>
+                                <Slider
+                                  size="xs"
+                                  min={0}
+                                  max={1}
+                                  step={0.05}
+                                  value={row.orders.retreatThreshold}
+                                  onChange={(val) =>
+                                    updateOrders(row.rowId, {
+                                      retreatThreshold: val,
+                                    })
+                                  }
+                                />
+                              </Stack>
 
-                          <Stack gap={4}>
-                            <Group justify="space-between">
-                              <Text size="xs" c="dimmed">
-                                Range-keeping band
-                              </Text>
-                              <Text size="xs" c="dimmed">
-                                ±
-                                {Math.round(
-                                  row.orders.rangeKeepingBand * 50,
-                                )}
-                                %
-                              </Text>
-                            </Group>
-                            <Slider
-                              size="xs"
-                              min={0.1}
-                              max={0.9}
-                              step={0.05}
-                              value={row.orders.rangeKeepingBand}
-                              onChange={(val) =>
-                                updateOrders(row.rowId, {
-                                  rangeKeepingBand: val,
-                                })
-                              }
-                            />
-                          </Stack>
+                              <Checkbox
+                                size="xs"
+                                label="Focus fire (concentrate fleet on one target)"
+                                checked={row.orders.focusFire}
+                                onChange={(e) =>
+                                  updateOrders(row.rowId, {
+                                    focusFire: e.currentTarget.checked,
+                                  })
+                                }
+                              />
+
+                              <Stack gap={4}>
+                                <Group justify="space-between">
+                                  <Text size="xs" c="dimmed">
+                                    Vulnerable target weight
+                                  </Text>
+                                  <Text size="xs" c="dimmed">
+                                    {Math.round(
+                                      row.orders.vulnerableTargetWeight * 100,
+                                    )}
+                                    %
+                                  </Text>
+                                </Group>
+                                <Slider
+                                  size="xs"
+                                  min={0}
+                                  max={1}
+                                  step={0.05}
+                                  value={row.orders.vulnerableTargetWeight}
+                                  onChange={(val) =>
+                                    updateOrders(row.rowId, {
+                                      vulnerableTargetWeight: val,
+                                    })
+                                  }
+                                />
+                              </Stack>
+
+                              <Stack gap={4}>
+                                <Group justify="space-between">
+                                  <Text size="xs" c="dimmed">
+                                    Formation keeping
+                                  </Text>
+                                  <Text size="xs" c="dimmed">
+                                    {Math.round(
+                                      row.orders.formationKeeping * 100,
+                                    )}
+                                    %
+                                  </Text>
+                                </Group>
+                                <Slider
+                                  size="xs"
+                                  min={0}
+                                  max={1}
+                                  step={0.05}
+                                  value={row.orders.formationKeeping}
+                                  onChange={(val) =>
+                                    updateOrders(row.rowId, {
+                                      formationKeeping: val,
+                                    })
+                                  }
+                                />
+                              </Stack>
+
+                              <Stack gap={4}>
+                                <Group justify="space-between">
+                                  <Text size="xs" c="dimmed">
+                                    Range-keeping band
+                                  </Text>
+                                  <Text size="xs" c="dimmed">
+                                    ±
+                                    {Math.round(
+                                      row.orders.rangeKeepingBand * 50,
+                                    )}
+                                    %
+                                  </Text>
+                                </Group>
+                                <Slider
+                                  size="xs"
+                                  min={0.1}
+                                  max={0.9}
+                                  step={0.05}
+                                  value={row.orders.rangeKeepingBand}
+                                  onChange={(val) =>
+                                    updateOrders(row.rowId, {
+                                      rangeKeepingBand: val,
+                                    })
+                                  }
+                                />
+                              </Stack>
+                            </Stack>
+                          </Collapse>
                         </Stack>
                       </Paper>
                     );
@@ -601,13 +657,24 @@ export function FleetBuilderRoute() {
                 },
               }}
             />
-            <Button
-              onClick={save}
-              disabled={working.rows.length === 0}
-              leftSection={<IconBucketDroplet size={16} />}
-            >
-              Save fleet
-            </Button>
+            <Group gap="xs">
+              <Button
+                onClick={save}
+                disabled={working.rows.length === 0}
+                leftSection={<IconBucketDroplet size={16} />}
+              >
+                Save fleet
+              </Button>
+              <Button
+                component={Link}
+                to="/battle"
+                variant="light"
+                leftSection={<IconSwords size={16} />}
+                disabled={working.id === null}
+              >
+                Go to battle
+              </Button>
+            </Group>
           </Group>
         </Stack>
       </Group>

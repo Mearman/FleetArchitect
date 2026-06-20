@@ -25,15 +25,39 @@ import {
 } from "@/schema/ai";
 import { ShipClassification } from "@/schema/armor";
 
+/** Human-readable labels for each ship stance. Keys are sourced from the schema
+ *  enum so the compiler catches any drift after a schema change. */
+const SHIP_STANCE_LABEL: Record<ShipStanceType, string> = {
+  aggressive: "Aggressive",
+  balanced: "Balanced",
+  defensive: "Defensive",
+  evasive: "Evasive",
+  interceptor: "Interceptor",
+  escort: "Escort",
+  sniper: "Sniper",
+  hold: "Hold",
+  retreat: "Retreat",
+};
+
+/** Human-readable labels for each crew priority mode. */
+const CREW_PRIORITY_LABEL: Record<CrewPriorityType, string> = {
+  combat: "Combat",
+  damageControl: "Damage control",
+  resupply: "Resupply",
+};
+
 /** Stance and crew-priority option lists, sourced from the schema enums so the
  *  designer cannot drift from the canonical vocabulary. The literals come from
  *  `ShipStance.options` / `CrewPriority.options` (Zod exposes the enum's
  *  literal union as `.options`), so adding a stance in the schema automatically
  *  surfaces it here. */
-const STANCE_OPTIONS = ShipStance.options.map((s) => ({ value: s, label: s }));
+const STANCE_OPTIONS = ShipStance.options.map((s) => ({
+  value: s,
+  label: SHIP_STANCE_LABEL[s],
+}));
 const CREW_PRIORITY_OPTIONS = CrewPriority.options.map((p) => ({
   value: p,
-  label: p,
+  label: CREW_PRIORITY_LABEL[p],
 }));
 
 /** Trigger kind options in a stable display order. Each entry pairs the
