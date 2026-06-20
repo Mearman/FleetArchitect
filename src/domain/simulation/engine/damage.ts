@@ -598,6 +598,7 @@ export function makeChunkShip(
     crewPriority: parent.crewPriority,
     shipStance: parent.shipStance,
     rules: parent.rules,
+    aiHoldFire: false,
     target: undefined,
     alive: true,
     // A fragment inherits a deep copy of the parent's ghost memory — it

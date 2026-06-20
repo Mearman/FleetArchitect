@@ -150,6 +150,15 @@ export interface SimShip {
    * default — the stance alone governs behaviour.
    */
   rules: Rule[];
+  /**
+   * Transient per-tick AI decision (Phase 7 wiring): whether the ship holds
+   * fire this tick. Set by the AI interpreter step from the effective
+   * AiState's `holdFire` flag (a rule or stance ceasing weapon fire); read by
+   * the weapon-fire step to skip firing. Recomputed each tick before firing;
+   * never snapshotted. False by default (the historical behaviour) so a ship
+   * with no rules and the default stance always fires as before.
+   */
+  aiHoldFire: boolean;
   target: string | undefined;
   alive: boolean;
   /**

@@ -196,6 +196,7 @@ export function toSimShip(ship: CombatShip, rng: () => number): SimShip {
     crewPriority: ship.crewPriority,
     shipStance: ship.shipStance,
     rules: ship.rules,
+    aiHoldFire: false,
     target: undefined,
     alive: true,
     // No awareness yet — computeAwareness fills these from tick 0 onward.

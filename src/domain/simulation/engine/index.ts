@@ -13,6 +13,7 @@ import type { AwarenessSnapshot, BattleFrame, BattleResult, BattleSide } from "@
 import type { BattleInputs, BattleSummary, SimCrew } from "../types";
 
 import { computeAwareness } from "./awareness";
+import { stepAi } from "./ai-step";
 import { launchPods, updatePods } from "./boarding";
 import { buildShipCellHash, resolveShipCollisions } from "./collision";
 import { SIM, resetProjectileCounter } from "./config";
@@ -132,6 +133,16 @@ export function* simulateBattle(
     attackers = ships.filter((s) => s.side === "attacker");
     defenders = ships.filter((s) => s.side === "defender");
     byId = new Map(ships.map((s) => [s.instanceId, s]));
+
+    // 0c. AI interpreter (Phase 7 wiring). Evaluate each ship's stance + rules
+    //     against the frame state and write the resulting hold-fire decision
+    //     onto `aiHoldFire`, which the weapon-fire step reads below. Runs after
+    //     awareness (so rules can read who has a target) and before targeting
+    //     (so the decision reflects the ship's current situation, not the prior
+    //     tick's). Pure: deterministic ship order, pure predicates, first-match
+    //     rule wins. A ship with no rules evaluates to holdFire=false, so
+    //     byte-output is unchanged for rule-less fleets.
+    stepAi(ships, byId);
 
     // 1. Targeting.
     // Elect focus-fire targets once per tick per side. A ship with

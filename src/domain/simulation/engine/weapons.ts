@@ -139,6 +139,10 @@ export function fireWeapons(
     if (!ship.alive || isRetreating(ship)) continue;
     // Phantoms never fire via this loop — a drone strikes in its bespoke step.
     if (ship.phantom !== undefined) continue;
+    // AI hold-fire (Phase 7 wiring): a ship whose effective AI state this tick
+    // is holdFire ceases weapon fire — a holdFire rule or stance action overrides
+    // the firing loop. False by default, so a ship with no rules fires as before.
+    if (ship.aiHoldFire) continue;
     const target = ship.target !== undefined ? byId.get(ship.target) : undefined;
     if (target === undefined || !target.alive) continue;
 
