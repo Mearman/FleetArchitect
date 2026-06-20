@@ -119,6 +119,9 @@ function shooter(weapon: WeaponEffect): CombatShip {
     position: { x: 0, y: 0 },
     facing: 0,
     orders: { ...defaultOrders, engageRange: "hold" },
+    crewPriority: "combat",
+    shipStance: "balanced",
+    rules: [],
     classification: "frigate",
     modules: [
       moduleOf("c1", { kind: "power", output: 40 }, 0, 0, 100, 5, true),
@@ -147,6 +150,9 @@ function defenderColumn(distance: number, cellHp: number[]): CombatShip {
     position: { x: distance, y: 0 },
     facing: 0,
     orders: { ...defaultOrders, engageRange: "hold" },
+    crewPriority: "combat",
+    shipStance: "balanced",
+    rules: [],
     classification: "frigate",
     modules,
   };

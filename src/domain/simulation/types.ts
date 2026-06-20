@@ -5,6 +5,7 @@ import type { ShipClassification } from "@/schema/armor";
 import type { ModuleEffect } from "@/schema/module";
 import type { BattleAnomaly, BattleSide } from "@/schema/battle";
 import type { Vec2 } from "@/schema/primitives";
+import type { CrewPriority, Rule, ShipStance } from "@/schema/ai";
 
 /**
  * A ship fully resolved for combat: identity + aggregate stats + deployment +
@@ -30,6 +31,27 @@ export interface CombatShip {
   facing: number;
   orders: Orders;
   classification: ShipClassification;
+  /**
+   * Crew task-scheduler priority mode, copied from `ShipDesign.crewPriority` by
+   * the resolver. Read by the crew tick to reorder the four task kinds
+   * (manning, ammo haul, power haul, repair) under the ship's doctrine. The
+   * default `"combat"` preserves the historical fixed order for designs
+   * authored before this field existed.
+   */
+  crewPriority: CrewPriority;
+  /**
+   * Base ship stance, copied from `ShipDesign.shipStance` by the resolver. The
+   * AI interpreter reads it each tick as the base posture that the ship's
+   * `rules` layer onto. Defaults to `"balanced"`.
+   */
+  shipStance: ShipStance;
+  /**
+   * Player-authored trigger/action rules, copied from `ShipDesign.rules` by the
+   * resolver. Evaluated in list order each tick by the AI interpreter; the
+   * first matching rule's action layers onto the base stance. Empty by
+   * default.
+   */
+  rules: Rule[];
   /** Chamfered hull outline (computed at resolve from the grid's armor shell).
    *  Render-only; the engine snapshots it. */
   outline?: { x: number; y: number }[][];

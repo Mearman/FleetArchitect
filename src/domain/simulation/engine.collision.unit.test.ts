@@ -109,6 +109,9 @@ function rammer(
     position,
     facing,
     orders: { ...defaultOrders, engageRange: "short", stance: "aggressive" },
+    crewPriority: "combat",
+    shipStance: "balanced",
+    rules: [],
     classification: "frigate",
     modules: [
       moduleOf("c1", { kind: "power", output: 40 }, 0, 0, 5, true),
@@ -160,6 +163,9 @@ function coaster(
     velocity,
     facing: side === "attacker" ? 0 : Math.PI,
     orders: defaultOrders,
+    crewPriority: "combat",
+    shipStance: "balanced",
+    rules: [],
     classification: "frigate",
     modules: [
       moduleOf("c1", { kind: "power", output: 40 }, 0, 0, 5, true),

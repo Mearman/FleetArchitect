@@ -127,6 +127,9 @@ function mountedAttacker(id: string, weaponFacing: number): CombatShip {
     position: { x: 0, y: 0 },
     facing: 0,
     orders: { ...defaultOrders, engageRange: "hold" },
+    crewPriority: "combat",
+    shipStance: "balanced",
+    rules: [],
     classification: "frigate",
     modules,
   };
@@ -166,6 +169,9 @@ function stationaryTarget(id: string): CombatShip {
     position: { x: 80, y: 0 },
     facing: Math.PI,
     orders: { ...defaultOrders, engageRange: "hold" },
+    crewPriority: "combat",
+    shipStance: "balanced",
+    rules: [],
     classification: "frigate",
   };
 }

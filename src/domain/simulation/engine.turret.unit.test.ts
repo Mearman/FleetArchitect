@@ -129,6 +129,9 @@ function weaponShip(id: string, weapon: WeaponEffect): CombatShip {
     position: { x: 0, y: 0 },
     facing: 0,
     orders: { ...defaultOrders, engageRange: "hold" },
+    crewPriority: "combat",
+    shipStance: "balanced",
+    rules: [],
     classification: "frigate",
     modules,
   };
@@ -145,6 +148,9 @@ function targetAt(id: string, x: number, y: number): CombatShip {
     position: { x, y },
     facing: Math.PI,
     orders: { ...defaultOrders, engageRange: "hold" },
+    crewPriority: "combat",
+    shipStance: "balanced",
+    rules: [],
     classification: "frigate",
   };
 }

@@ -84,6 +84,9 @@ describe("engine.factions-tech – overcharge", () => {
       position: { x: 0, y: 0 },
       facing: 0,
       orders: { ...defaultOrders, stance: "aggressive" },
+      crewPriority: "combat",
+      shipStance: "balanced",
+      rules: [],
       classification: "frigate",
       modules,
     };
@@ -106,6 +109,9 @@ describe("engine.factions-tech – overcharge", () => {
       position: { x: 150, y: 0 },
       facing: Math.PI,
       orders: { ...defaultOrders, engageRange: "hold" },
+      crewPriority: "combat",
+      shipStance: "balanced",
+      rules: [],
       classification: "frigate",
     };
     const withOC = runBattle(inputs([powerStressedShip(true), weakDefender], 300));
@@ -131,6 +137,9 @@ describe("engine.factions-tech – overcharge", () => {
       position: { x: 150, y: 0 },
       facing: Math.PI,
       orders: { ...defaultOrders, engageRange: "hold" },
+      crewPriority: "combat",
+      shipStance: "balanced",
+      rules: [],
       classification: "frigate",
     };
     const withOC = runBattle(inputs([powerStressedShip(true), weakDefender], 80));
@@ -173,6 +182,9 @@ describe("engine.factions-tech – command aura", () => {
       position: { x: 50, y: 0 },
       facing: 0,
       orders: { ...defaultOrders, engageRange: "hold" },
+      crewPriority: "combat",
+      shipStance: "balanced",
+      rules: [],
       classification: "frigate",
       modules: [
         moduleOf("p1", { kind: "power", output: 100 }, 0, 0, 50, 5, 0),
@@ -214,6 +226,9 @@ describe("engine.factions-tech – command aura", () => {
       position: { x: 0, y: 0 },
       facing: 0,
       orders: { ...defaultOrders, engageRange: "hold" },
+      crewPriority: "combat",
+      shipStance: "balanced",
+      rules: [],
       classification: "frigate",
       modules: [
         moduleOf("p1", { kind: "power", output: 100 }, 0, 0, 50, 5, 0),
@@ -245,6 +260,9 @@ describe("engine.factions-tech – command aura", () => {
       position: { x: 250, y: 0 },
       facing: Math.PI,
       orders: { ...defaultOrders, engageRange: "hold" },
+      crewPriority: "combat",
+      shipStance: "balanced",
+      rules: [],
       classification: "frigate",
     };
   }
@@ -347,6 +365,9 @@ describe("engine.factions-tech – determinism (non-tech designs)", () => {
       position: { x, y: 0 },
       facing: side === "attacker" ? 0 : Math.PI,
       orders: defaultOrders,
+      crewPriority: "combat",
+      shipStance: "balanced",
+      rules: [],
       classification: "frigate",
       modules,
     };

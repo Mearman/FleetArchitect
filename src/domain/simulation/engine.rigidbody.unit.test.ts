@@ -144,6 +144,9 @@ function modularShip(
     position,
     facing,
     orders: { ...defaultOrders, engageRange: "hold" },
+    crewPriority: "combat",
+    shipStance: "balanced",
+    rules: [],
     classification: "frigate",
     modules: all,
   };
@@ -496,6 +499,9 @@ describe("engine.rigidbody — break-apart chunks", () => {
       position: { x: 0, y: 0 },
       facing: 0,
       orders: { ...defaultOrders, engageRange: "hold" },
+      crewPriority: "combat",
+      shipStance: "balanced",
+      rules: [],
       classification: "frigate",
     };
     // Defender faces π so its local -x edge faces the attacker. Modules
@@ -514,6 +520,9 @@ describe("engine.rigidbody — break-apart chunks", () => {
       position: { x: 80, y: 0 },
       facing: Math.PI,
       orders: { ...defaultOrders, engageRange: "hold" },
+      crewPriority: "combat",
+      shipStance: "balanced",
+      rules: [],
       classification: "frigate",
       modules: [
         moduleOf("h1", { kind: "hull" }, -14, 0, 1, 5, true),

@@ -159,6 +159,9 @@ function modularDefender(id: string): CombatShip {
     position: { x: 0, y: 0 },
     facing: 0,
     orders: { ...defaultOrders, engageRange: "hold" },
+    crewPriority: "combat",
+    shipStance: "balanced",
+    rules: [],
     classification: "frigate",
     modules,
   };
@@ -210,6 +213,9 @@ function frontAttacker(id: string): CombatShip {
     position: { x: -80, y: 0 },
     facing: 0,
     orders: { ...defaultOrders, engageRange: "hold" },
+    crewPriority: "combat",
+    shipStance: "balanced",
+    rules: [],
     classification: "frigate",
     modules,
   };
@@ -261,6 +267,9 @@ function rearAttacker(id: string): CombatShip {
     position: { x: 80, y: 0 },
     facing: Math.PI,
     orders: { ...defaultOrders, engageRange: "hold" },
+    crewPriority: "combat",
+    shipStance: "balanced",
+    rules: [],
     classification: "frigate",
     modules,
   };

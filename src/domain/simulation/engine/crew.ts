@@ -6,6 +6,7 @@
 import type { SimCrew } from "../types";
 
 import { SIM } from "./config";
+import { crewTaskOrder, type CrewTaskKind } from "./crew-priority";
 import { ammoShortfall, chargeShortfall, chooseAmmoRun, choosePowerRun, hasLiveManningHardwire, reactorWiringReach, refillHardwiredPower, resolveAmmoArrival, resolvePowerArrival } from "./crew-haul";
 import { aliveCellMap, compareByCell, crewCellKey, findCrewPath, refreshPathCache } from "./crew-pathfinding";
 import type { SimModule, SimShip } from "./types";
@@ -23,9 +24,13 @@ import type { SimModule, SimShip } from "./types";
  *  2. Crew that have arrived at their target resolve the arrival action: a
  *     manning member that reached its station holds; a hauler picks up at a
  *     source or deposits at a sink and frees up for the next job.
- *  3. Idle crew are assigned the highest-priority unmet need — first man an
- *     under-manned station, then run ammo to a dry weapon — reserving the
- *     target so two crew never chase the same one.
+ *  3. Idle crew are assigned the highest-priority unmet need, in the order
+ *     `crewTaskOrder` returns for the ship's `crewPriority` mode (combat:
+ *     manning, ammo, power; damageControl: repair-elevated when critical;
+ *     resupply: ammo and power first). `repair` is a doctrine signal only —
+ *     repair bays heal modules directly in the tick loop's repair step, so
+ *     it produces no idle-crew assignment and crew fall through to the next
+ *     kind. The target is reserved so two crew never chase the same one.
  *  4. Crew with a path walk one cell along it.
  *  5. Manning is recomputed from the final positions.
  */
@@ -111,54 +116,26 @@ export function updateCrew(ship: SimShip): void {
     .slice()
     .sort(compareByCell);
 
-  // 3. Assign idle crew (id order) to the highest-priority unmet need.
+  // 3. Assign idle crew (id order) to the highest-priority unmet need, in the
+  //    order the ship's `crewPriority` mode dictates (combat: manning, ammo,
+  //    power; damageControl: repair-elevated when structure is critical;
+  //    resupply: ammo and power first). The candidate lists are already built
+  //    above; this loop only chooses the order to try them in. `repair` is a
+  //    doctrine signal — repair bays heal modules directly in the tick loop's
+  //    repair step, so it produces no idle-crew assignment here and crew fall
+  //    through to the next kind. The order is computed once per ship (a pure
+  //    function of priority + structure ratio); crew iteration stays in id
+  //    order, so determinism is preserved.
+  const taskOrder = crewTaskOrder(ship.crewPriority, {
+    structure: ship.structure,
+    maxStructure: ship.maxStructure,
+  });
   for (const c of ordered) {
     if (c.job !== "idle") continue;
-
-    // Priority 1: man an under-manned station.
-    const station = chooseStation(ship, c, stations, cells, claimedStations);
-    if (station !== undefined) {
-      c.job = "manning";
-      c.targetSlotId = station.station.slotId;
-      // Adopt the cached path by reference and step through it from index 1
-      // (index 0 is the crew's current cell). The array is never mutated, so
-      // sharing it across crew on the same route is safe.
-      c.path = station.path;
-      c.pathIndex = 1;
-      claimedStations.set(
-        station.station.slotId,
-        (claimedStations.get(station.station.slotId) ?? 0) + 1,
-      );
-      continue;
-    }
-
-    // Priority 2: run ammo from a magazine to a dry weapon.
-    const run = chooseAmmoRun(ship, c, dryWeapons, magazines, cells, claimedWeapons);
-    if (run !== undefined) {
-      c.job = "haulAmmo";
-      c.carrying = undefined;
-      // First leg: walk to the magazine. The final delivery sink is recorded on
-      // the crew member so the second leg knows where to take the rounds.
-      c.targetSlotId = run.source.slotId;
-      c.haulSinkSlotId = run.sink.slotId;
-      c.path = run.path;
-      c.pathIndex = 1;
-      claimedWeapons.add(run.sink.slotId);
-      continue;
-    }
-
-    // Priority 3: run charge from a reactor to a starved power-drawing module.
-    const power = choosePowerRun(ship, c, starvedSinks, reactors, cells, claimedSinks);
-    if (power !== undefined) {
-      c.job = "haulPower";
-      c.carrying = undefined;
-      c.carryAmount = undefined;
-      c.targetSlotId = power.source.slotId;
-      c.haulSinkSlotId = power.sink.slotId;
-      c.path = power.path;
-      c.pathIndex = 1;
-      claimedSinks.add(power.sink.slotId);
-      continue;
+    for (const kind of taskOrder) {
+      if (assignIdleCrewToTask(kind, ship, c, cells, stations, dryWeapons, magazines, starvedSinks, reactors, claimedStations, claimedWeapons, claimedSinks)) {
+        break;
+      }
     }
   }
 
@@ -453,5 +430,89 @@ export function recomputeManning(ship: SimShip): void {
       continue;
     }
     m.manned = hasLiveManningHardwire(m, bySlot);
+  }
+}
+
+/**
+ * Try to assign one idle crew member to a task of the given `kind`. Returns
+ * true when the crew member was assigned (so the caller stops trying further
+ * kinds for this crew); false when the kind has no unmet need the crew member
+ * can reach (so the caller tries the next kind in the priority order).
+ *
+ * `repair` is a doctrine signal only: repair bays heal modules directly in
+ * the tick loop's repair step (a station-to-module effect, not a crew walk),
+ * so there is no idle-crew assignment for it and this returns false. The
+ * `repair` kind still occupies a slot in the priority order so a
+ * damage-control ship's crew fall through to manning/ammo/power after the
+ * (empty) repair pass, rather than all rushing to manning.
+ *
+ * Each kind's assignment is the same logic the old fixed if-chain held: claim
+ * the target on the matching claim set so later crew on the same tick don't
+ * over-subscribe it. The candidate lists are passed in already sorted
+ * (`(col, row)` order) and filtered to unmet need, so the only per-crew work
+ * is the path lookup and the claim check.
+ */
+function assignIdleCrewToTask(
+  kind: CrewTaskKind,
+  ship: SimShip,
+  crew: SimCrew,
+  cells: ReadonlyMap<string, SimModule>,
+  stations: readonly SimModule[],
+  dryWeapons: readonly SimModule[],
+  magazines: readonly SimModule[],
+  starvedSinks: readonly SimModule[],
+  reactors: readonly SimModule[],
+  claimedStations: Map<string, number>,
+  claimedWeapons: Set<string>,
+  claimedSinks: Set<string>,
+): boolean {
+  switch (kind) {
+    case "manning": {
+      const station = chooseStation(ship, crew, stations, cells, claimedStations);
+      if (station === undefined) return false;
+      crew.job = "manning";
+      crew.targetSlotId = station.station.slotId;
+      // Adopt the cached path by reference and step through it from index 1
+      // (index 0 is the crew's current cell). The array is never mutated, so
+      // sharing it across crew on the same route is safe.
+      crew.path = station.path;
+      crew.pathIndex = 1;
+      claimedStations.set(
+        station.station.slotId,
+        (claimedStations.get(station.station.slotId) ?? 0) + 1,
+      );
+      return true;
+    }
+    case "haulAmmo": {
+      const run = chooseAmmoRun(ship, crew, dryWeapons, magazines, cells, claimedWeapons);
+      if (run === undefined) return false;
+      crew.job = "haulAmmo";
+      crew.carrying = undefined;
+      // First leg: walk to the magazine. The final delivery sink is recorded on
+      // the crew member so the second leg knows where to take the rounds.
+      crew.targetSlotId = run.source.slotId;
+      crew.haulSinkSlotId = run.sink.slotId;
+      crew.path = run.path;
+      crew.pathIndex = 1;
+      claimedWeapons.add(run.sink.slotId);
+      return true;
+    }
+    case "haulPower": {
+      const power = choosePowerRun(ship, crew, starvedSinks, reactors, cells, claimedSinks);
+      if (power === undefined) return false;
+      crew.job = "haulPower";
+      crew.carrying = undefined;
+      crew.carryAmount = undefined;
+      crew.targetSlotId = power.source.slotId;
+      crew.haulSinkSlotId = power.sink.slotId;
+      crew.path = power.path;
+      crew.pathIndex = 1;
+      claimedSinks.add(power.sink.slotId);
+      return true;
+    }
+    case "repair":
+      // Doctrine signal only — repair bays heal modules directly in the tick
+      // loop's repair step; no idle-crew assignment.
+      return false;
   }
 }

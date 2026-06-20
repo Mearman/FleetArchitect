@@ -179,6 +179,9 @@ export function ship(
     position: { x, y },
     facing: opts.facing ?? (side === "attacker" ? 0 : Math.PI),
     orders: { ...defaultOrders, engageRange: "hold", ...opts.orders },
+    crewPriority: "combat",
+    shipStance: "balanced",
+    rules: [],
     classification: "frigate",
     modules,
   };

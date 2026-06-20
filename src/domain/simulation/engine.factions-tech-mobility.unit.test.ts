@@ -70,6 +70,9 @@ describe("engine.factions-tech – blink (tactical)", () => {
       position: { x: 0, y: 0 },
       facing: 0,
       orders: { ...defaultOrders, stance: "aggressive" },
+      crewPriority: "combat",
+      shipStance: "balanced",
+      rules: [],
       classification: "frigate",
       modules,
     };
@@ -85,6 +88,9 @@ describe("engine.factions-tech – blink (tactical)", () => {
       position: { x: 500, y: 0 },
       facing: Math.PI,
       orders: { ...defaultOrders, engageRange: "hold" },
+      crewPriority: "combat",
+      shipStance: "balanced",
+      rules: [],
       classification: "frigate",
     };
   }
@@ -136,6 +142,9 @@ describe("engine.factions-tech – blink (escape)", () => {
       position: { x: 100, y: 0 },
       facing: Math.PI,
       orders: { ...defaultOrders, engageRange: "hold" },
+      crewPriority: "combat",
+      shipStance: "balanced",
+      rules: [],
       classification: "frigate",
     };
   }
@@ -174,6 +183,9 @@ describe("engine.factions-tech – blink (escape)", () => {
       position: { x: 0, y: 0 },
       facing: 0,
       orders: { ...defaultOrders, engageRange: "hold" },
+      crewPriority: "combat",
+      shipStance: "balanced",
+      rules: [],
       classification: "frigate",
       modules,
     };
@@ -217,6 +229,9 @@ describe("engine.factions-tech – blink (escape)", () => {
       position: { x: 0, y: 0 },
       facing: 0,
       orders: { ...defaultOrders, engageRange: "hold" },
+      crewPriority: "combat",
+      shipStance: "balanced",
+      rules: [],
       classification: "frigate",
       modules,
     };
@@ -278,6 +293,9 @@ describe("engine.factions-tech – afterburner", () => {
       position: { x: 0, y: 0 },
       facing: 0,
       orders: { ...defaultOrders, stance: "aggressive" },
+      crewPriority: "combat",
+      shipStance: "balanced",
+      rules: [],
       classification: "frigate",
       modules,
     };
@@ -293,6 +311,9 @@ describe("engine.factions-tech – afterburner", () => {
       position: { x: 600, y: 0 },
       facing: Math.PI,
       orders: { ...defaultOrders, engageRange: "hold" },
+      crewPriority: "combat",
+      shipStance: "balanced",
+      rules: [],
       classification: "frigate",
     };
   }

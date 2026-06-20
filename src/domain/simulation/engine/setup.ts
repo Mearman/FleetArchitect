@@ -193,6 +193,9 @@ export function toSimShip(ship: CombatShip, rng: () => number): SimShip {
     // Stagger initial cooldowns so weapons don't all fire on tick 0.
     weaponCooldowns: weapons.map((w) => Math.floor(rng() * (w.cooldown + 1))),
     orders: ship.orders,
+    crewPriority: ship.crewPriority,
+    shipStance: ship.shipStance,
+    rules: ship.rules,
     target: undefined,
     alive: true,
     // No awareness yet — computeAwareness fills these from tick 0 onward.

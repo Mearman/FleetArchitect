@@ -194,6 +194,9 @@ function ship(opts: {
     velocity: opts.velocity,
     facing: opts.facing,
     orders: { ...defaultOrders, ...(opts.orders ?? {}) },
+    crewPriority: "combat",
+    shipStance: "balanced",
+    rules: [],
     classification: "frigate",
     modules,
   };

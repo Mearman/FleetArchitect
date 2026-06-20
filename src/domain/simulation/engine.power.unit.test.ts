@@ -147,6 +147,9 @@ function modularAttacker(
     position: { x: 0, y: 0 },
     facing: 0,
     orders: { ...defaultOrders, engageRange: "hold" },
+    crewPriority: "combat",
+    shipStance: "balanced",
+    rules: [],
     classification: "frigate",
     modules,
   };
@@ -184,6 +187,9 @@ function toughTarget(id: string, x: number): CombatShip {
     position: { x, y: 0 },
     facing: Math.PI,
     orders: { ...defaultOrders, engageRange: "hold" },
+    crewPriority: "combat",
+    shipStance: "balanced",
+    rules: [],
     classification: "frigate",
   };
 }
@@ -291,6 +297,9 @@ describe("engine.per-module power grid", () => {
         position: { x: 0, y: 0 },
         facing: 0,
         orders: { ...defaultOrders, engageRange: "hold" },
+        crewPriority: "combat",
+        shipStance: "balanced",
+        rules: [],
         classification: "frigate",
       };
     };

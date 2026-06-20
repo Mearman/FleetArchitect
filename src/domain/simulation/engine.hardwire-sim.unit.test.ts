@@ -134,6 +134,9 @@ function shooterShip(
     position: { x, y: 0 },
     facing: 0,
     orders: { ...defaultOrders, engageRange: "hold" },
+    crewPriority: "combat",
+    shipStance: "balanced",
+    rules: [],
     classification: "frigate",
     modules,
     ...(hardwires !== undefined && hardwires.length > 0 ? { hardwires } : {}),
@@ -151,6 +154,9 @@ function toughTarget(id: string, x: number): CombatShip {
     position: { x, y: 0 },
     facing: Math.PI,
     orders: { ...defaultOrders, engageRange: "hold" },
+    crewPriority: "combat",
+    shipStance: "balanced",
+    rules: [],
     classification: "frigate",
   };
 }
@@ -520,6 +526,9 @@ describe("engine.hardwire — severed link reverts sink", () => {
       position: { x: 60, y: 0 },
       facing: Math.PI,
       orders: { ...defaultOrders, engageRange: "hold" },
+      crewPriority: "combat",
+      shipStance: "balanced",
+      rules: [],
       classification: "frigate",
     };
 
@@ -626,6 +635,9 @@ describe("engine.hardwire — severed link reverts sink", () => {
       position: { x: 80, y: 0 },
       facing: Math.PI,
       orders: { ...defaultOrders, engageRange: "hold" },
+      crewPriority: "combat",
+      shipStance: "balanced",
+      rules: [],
       classification: "frigate",
     };
 

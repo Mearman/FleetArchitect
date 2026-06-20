@@ -139,6 +139,9 @@ function modularAttacker(id: string): CombatShip {
     position: { x: 0, y: 0 },
     facing: 0,
     orders: { ...defaultOrders, engageRange: "hold" },
+    crewPriority: "combat",
+    shipStance: "balanced",
+    rules: [],
     classification: "frigate",
     modules,
   };
@@ -194,6 +197,9 @@ function modularDefender(id: string, withPd: boolean): CombatShip {
     position: { x: 80, y: 0 },
     facing: Math.PI,
     orders: { ...defaultOrders, engageRange: "hold" },
+    crewPriority: "combat",
+    shipStance: "balanced",
+    rules: [],
     classification: "frigate",
     modules,
   };

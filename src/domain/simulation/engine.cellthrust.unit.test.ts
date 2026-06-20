@@ -140,6 +140,9 @@ function modularShip(
     position,
     facing,
     orders,
+    crewPriority: "combat",
+    shipStance: "balanced",
+    rules: [],
     classification: "frigate",
     modules,
   };
@@ -178,6 +181,9 @@ function dummy(id: string, x: number, y = 0): CombatShip {
     position: { x, y },
     facing: 0,
     orders: { ...defaultOrders, engageRange: "hold" },
+    crewPriority: "combat",
+    shipStance: "balanced",
+    rules: [],
     classification: "frigate",
   };
 }

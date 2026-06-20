@@ -57,6 +57,9 @@ function makeShip(id: string, side: "attacker" | "defender", x: number): CombatS
     position: { x, y: 0 },
     facing: 0,
     orders: { ...defaultOrders },
+    crewPriority: "combat",
+    shipStance: "balanced",
+    rules: [],
     classification: "frigate",
   };
 }

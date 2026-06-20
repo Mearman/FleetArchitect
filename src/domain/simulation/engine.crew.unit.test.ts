@@ -127,6 +127,9 @@ function shooterShip(
     position: { x, y: 0 },
     facing: 0,
     orders: { ...defaultOrders, engageRange: "hold" },
+    crewPriority: "combat",
+    shipStance: "balanced",
+    rules: [],
     classification: "frigate",
     modules,
   };
@@ -144,6 +147,9 @@ function toughTarget(id: string, x: number): CombatShip {
     position: { x, y: 0 },
     facing: Math.PI,
     orders: { ...defaultOrders, engageRange: "hold" },
+    crewPriority: "combat",
+    shipStance: "balanced",
+    rules: [],
     classification: "frigate",
   };
 }
@@ -457,6 +463,9 @@ describe("engine.crew — break-apart partition", () => {
       position: { x, y: 0 },
       facing: 0,
       orders: { ...defaultOrders, engageRange: "hold" },
+      crewPriority: "combat",
+      shipStance: "balanced",
+      rules: [],
       classification: "frigate",
     };
   }
@@ -485,6 +494,9 @@ describe("engine.crew — break-apart partition", () => {
       position: { x, y: 0 },
       facing: Math.PI,
       orders: { ...defaultOrders, engageRange: "hold" },
+      crewPriority: "combat",
+      shipStance: "balanced",
+      rules: [],
       classification: "frigate",
       modules,
     };

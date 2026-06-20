@@ -64,6 +64,9 @@ function makeShip(opts: {
     position: { x: opts.x, y: 0 },
     facing: 0,
     orders: { ...defaultOrders },
+    crewPriority: "combat",
+    shipStance: "balanced",
+    rules: [],
     classification: "frigate",
   };
 }

@@ -593,6 +593,11 @@ export function makeChunkShip(
     weapons: [],
     weaponCooldowns: [],
     orders: parent.orders,
+    // A fragment inherits the parent's crew doctrine, stance, and rules — it
+    // is a piece of the same ship, so it fights under the same posture.
+    crewPriority: parent.crewPriority,
+    shipStance: parent.shipStance,
+    rules: parent.rules,
     target: undefined,
     alive: true,
     // A fragment inherits a deep copy of the parent's ghost memory — it

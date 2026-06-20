@@ -379,6 +379,9 @@ export function modularShip(opts: {
     position: { x: opts.x, y: opts.y },
     facing: opts.facing ?? 0,
     orders: { ...defaultOrders, ...opts.orders },
+    crewPriority: "combat",
+    shipStance: "balanced",
+    rules: [],
     classification: opts.classification ?? "frigate",
     modules,
   };
@@ -509,6 +512,9 @@ export function targetDummy(opts: {
     position: { x: opts.x, y: opts.y },
     facing: opts.facing ?? Math.PI,
     orders: { ...defaultOrders, ...opts.orders },
+    crewPriority: "combat",
+    shipStance: "balanced",
+    rules: [],
     classification: opts.classification ?? "frigate",
     modules,
   };

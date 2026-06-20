@@ -274,6 +274,9 @@ describe("engine.awareness — faithful fog (no omniscience)", () => {
       // mobile ships use the default engage range so they genuinely close on the
       // enemy and acquire them within visual range.
       orders: { ...defaultOrders },
+      crewPriority: "combat",
+      shipStance: "balanced",
+      rules: [],
       classification: "frigate",
     };
   }

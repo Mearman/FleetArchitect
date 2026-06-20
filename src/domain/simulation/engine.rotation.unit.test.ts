@@ -122,6 +122,9 @@ function rcsShip(
     position: pos,
     facing,
     orders: { ...defaultOrders, engageRange: "hold" },
+    crewPriority: "combat",
+    shipStance: "balanced",
+    rules: [],
     classification: "frigate",
     modules: [
       moduleOf("c", { kind: "power", output: 40 }, 0, 0, true),
@@ -159,6 +162,9 @@ function noTorqueShip(
     position: pos,
     facing,
     orders: { ...defaultOrders, engageRange: "hold" },
+    crewPriority: "combat",
+    shipStance: "balanced",
+    rules: [],
     classification: "frigate",
     modules: [
       moduleOf("c", { kind: "power", output: 40 }, 0, 0, true),
@@ -319,6 +325,9 @@ describe("bang-bang attitude control", () => {
         position: { x: 0, y: 0 },
         facing: 0,
         orders: { ...defaultOrders, engageRange: "hold" },
+        crewPriority: "combat",
+        shipStance: "balanced",
+        rules: [],
         classification: "frigate",
         modules: [
           moduleOf("c", { kind: "power", output: 40 }, 0, 0, true),
@@ -344,6 +353,9 @@ describe("bang-bang attitude control", () => {
         position: { x: 100, y: 0 },
         facing: 0,
         orders: { ...defaultOrders, engageRange: "hold" },
+        crewPriority: "combat",
+        shipStance: "balanced",
+        rules: [],
         classification: "frigate",
         modules: [
           moduleOf("c", { kind: "power", output: 40 }, 0, 0, true),
