@@ -30,6 +30,9 @@ export interface CombatShip {
   facing: number;
   orders: Orders;
   classification: ShipClassification;
+  /** Chamfered hull outline (computed at resolve from the grid's armor shell).
+   *  Render-only; the engine snapshots it. */
+  outline?: { x: number; y: number }[][];
   /**
    * Per-module instances with their initial hit points and the module effect,
    * built from the ShipDesign by the resolver. When present, the engine

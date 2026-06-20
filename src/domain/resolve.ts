@@ -1,6 +1,7 @@
 import { createId } from "@/domain/id";
 import { analyseShipDesign } from "@/domain/stats";
 import { cellToLocal, deriveClassification, deriveRadius, footprint } from "@/domain/grid";
+import { computeOutline, extractShell } from "@/domain/outline";
 import type { Catalog } from "@/domain/catalog";
 import type {
   CombatShip,
@@ -112,6 +113,7 @@ export function resolveFleetToCombatShips(
     const { deployed, design, stats, radius } = entry;
     const modules = resolveModules(design, catalog);
     const hardwires = resolveHardwires(design, modules);
+    const outline = computeOutline(extractShell(design.grid), design.grid.shape);
     const x = dir * (edgeInset - radius);
     const y = cursorY + radius;
     cursorY += radius * 2 + DEPLOY_SHIP_MARGIN_M;
@@ -127,6 +129,7 @@ export function resolveFleetToCombatShips(
       classification: deriveClassification(design.grid),
       ...(modules.length > 0 ? { modules } : {}),
       ...(hardwires.length > 0 ? { hardwires } : {}),
+      ...(outline.length > 0 ? { outline } : {}),
     });
   }
   return ships;
