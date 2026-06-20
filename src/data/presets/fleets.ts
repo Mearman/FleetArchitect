@@ -37,6 +37,8 @@ export const fleetData: FleetInput[] = [
     ],
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
   },
   {
     id: "preset-fleet-strike",
@@ -55,6 +57,8 @@ export const fleetData: FleetInput[] = [
     ],
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
   },
   {
     id: "preset-fleet-spearhead",
@@ -71,6 +75,8 @@ export const fleetData: FleetInput[] = [
     ],
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
   },
   {
     id: "preset-fleet-picket",
@@ -90,6 +96,8 @@ export const fleetData: FleetInput[] = [
     ],
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
   },
   // --- Swarm fleets ---
   {
@@ -113,6 +121,8 @@ export const fleetData: FleetInput[] = [
     ],
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
   },
   {
     id: "preset-fleet-hive-assault",
@@ -133,6 +143,8 @@ export const fleetData: FleetInput[] = [
     ],
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
   },
   {
     id: "preset-fleet-brood-flight",
@@ -151,6 +163,8 @@ export const fleetData: FleetInput[] = [
     ],
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
   },
 
   // --- Crystalline Concord fleets ---
@@ -168,6 +182,8 @@ export const fleetData: FleetInput[] = [
     ],
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
   },
 
   // --- Foundry Combine fleets ---
@@ -185,6 +201,8 @@ export const fleetData: FleetInput[] = [
     ],
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
   },
 
   // --- Corsair Reaver fleets ---
@@ -202,6 +220,8 @@ export const fleetData: FleetInput[] = [
     ],
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
   },
 
   // --- Synthetic Collective fleets ---
@@ -219,5 +239,7 @@ export const fleetData: FleetInput[] = [
     ],
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
   },
 ];

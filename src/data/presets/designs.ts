@@ -62,6 +62,8 @@ export const designData: ShipDesignInput[] = [
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
   },
   {
     id: "preset-ship-wasp",
@@ -80,6 +82,8 @@ export const designData: ShipDesignInput[] = [
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
   },
   {
     id: "preset-ship-gunship",
@@ -97,6 +101,8 @@ export const designData: ShipDesignInput[] = [
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
   },
   {
     id: "preset-ship-bulwark",
@@ -114,6 +120,8 @@ export const designData: ShipDesignInput[] = [
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
   },
   {
     id: "preset-ship-aegis",
@@ -131,6 +139,8 @@ export const designData: ShipDesignInput[] = [
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
   },
   {
     id: "preset-ship-torpedo",
@@ -150,6 +160,8 @@ export const designData: ShipDesignInput[] = [
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
   },
   {
     id: "preset-ship-leviathan",
@@ -180,6 +192,8 @@ export const designData: ShipDesignInput[] = [
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
   },
   {
     id: "preset-ship-titan",
@@ -205,6 +219,8 @@ export const designData: ShipDesignInput[] = [
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
   },
 
   // ===========================================================================
@@ -235,6 +251,8 @@ export const designData: ShipDesignInput[] = [
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
   },
   {
     id: "preset-ship-carrion",
@@ -251,6 +269,8 @@ export const designData: ShipDesignInput[] = [
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
   },
   {
     id: "preset-ship-ravager",
@@ -268,6 +288,8 @@ export const designData: ShipDesignInput[] = [
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
   },
   {
     id: "preset-ship-spitter",
@@ -285,6 +307,8 @@ export const designData: ShipDesignInput[] = [
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
   },
   {
     id: "preset-ship-hive-lord",
@@ -314,6 +338,8 @@ export const designData: ShipDesignInput[] = [
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
   },
 
   // ---------------------------------------------------------------------------
@@ -333,6 +359,8 @@ export const designData: ShipDesignInput[] = [
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
   },
 
   // ---------------------------------------------------------------------------
@@ -352,6 +380,8 @@ export const designData: ShipDesignInput[] = [
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
   },
 
   // ---------------------------------------------------------------------------
@@ -371,6 +401,8 @@ export const designData: ShipDesignInput[] = [
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
   },
 
   // ---------------------------------------------------------------------------
@@ -390,5 +422,7 @@ export const designData: ShipDesignInput[] = [
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
   },
 ];

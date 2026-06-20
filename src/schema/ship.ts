@@ -14,6 +14,13 @@ export const DesignSource = z.enum(["preset", "user"]);
 export type DesignSource = z.infer<typeof DesignSource>;
 
 /**
+ * Whether a design was authored by the player or shipped as a built-in preset.
+ * Presets are read-only; the storage layer rejects any attempt to overwrite one.
+ */
+export const DesignSource = z.enum(["preset", "user"]);
+export type DesignSource = z.infer<typeof DesignSource>;
+
+/**
  * A player-designed ship: an authoritative 2D tile grid of hull and module
  * cells. The grid is the single source of truth for the ship's shape, mass,
  * connectivity, and the position of every module — there is no separate hull

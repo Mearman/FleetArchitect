@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { EntityId, Vec2, IsoTimestamp } from "./primitives";
-import { DesignSource } from "./ship";
 
 /** Doctrine controlling how a ship behaves once battle begins (no twitch). */
 export const EngagementStance = z.enum([
@@ -103,6 +102,13 @@ export const FleetShip = z.object({
 export type FleetShip = z.infer<typeof FleetShip>;
 
 /**
+ * Whether a fleet was authored by the player or shipped as a built-in preset.
+ * Presets are read-only; the storage layer rejects any attempt to overwrite one.
+ */
+export const FleetSource = z.enum(["preset", "user"]);
+export type FleetSource = z.infer<typeof FleetSource>;
+
+/**
  * A fleet: a named set of deployed ships. The unit of persistence and sharing
  * for force composition, and the input to a battle.
  *
@@ -119,7 +125,7 @@ export const Fleet = z.object({
   createdAt: IsoTimestamp,
   updatedAt: IsoTimestamp,
   /** Whether this record is a bundled preset or a player-authored fleet. */
-  source: DesignSource.default("user"),
+  source: FleetSource.default("user"),
   /**
    * Monotonically increasing revision number, bumped on each save that creates
    * a version-history snapshot. Starts at 1 for fresh fleets; presets stay on
