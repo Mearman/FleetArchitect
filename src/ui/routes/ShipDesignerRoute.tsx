@@ -3,8 +3,11 @@ import {
   Badge,
   Button,
   Checkbox,
+  Collapse,
+  Divider,
   Grid,
   Group,
+  Loader,
   NumberInput,
   Paper,
   ScrollArea,
@@ -19,13 +22,15 @@ import {
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import {
+  IconArrowBackUp,
   IconCopy,
   IconDeviceFloppy,
+  IconHistory,
   IconLock,
   IconPlus,
   IconTrash,
 } from "@tabler/icons-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { computeCompartments } from "@/domain/interior";
 import { analyseShipDesign } from "@/domain/stats";
 import { createId, nowIso } from "@/domain/id";
@@ -35,7 +40,12 @@ import { FaultList } from "@/ui/components/FaultList";
 import { ShareButton } from "@/ui/components/ShareButton";
 import { StatReadout } from "@/ui/components/StatReadout";
 import { useShipDesigns } from "@/ui/hooks/storage";
-import { storage } from "@/storage/db";
+import {
+  copyDesign,
+  listDesignRevisions,
+  restoreDesignRevision,
+  storage,
+} from "@/storage/db";
 import type { GridCell } from "@/schema/grid";
 import type { ShipDesign } from "@/schema/ship";
 import {
@@ -81,6 +91,9 @@ export function ShipDesignerRoute() {
   );
   const [zoom, setZoom] = useState(ZOOM_DEFAULT);
   const [showAirtightness, setShowAirtightness] = useState(true);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [revisions, setRevisions] = useState<ShipDesign[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   /** Modules available for the current design's faction. */
   const moduleDefs = catalog().modulesForFaction(working.faction);
@@ -119,6 +132,28 @@ export function ShipDesignerRoute() {
     }
     return out;
   }, [working.grid, showAirtightness]);
+
+  // Load revisions whenever the history panel opens or the active design changes.
+  // Must run unconditionally (before any early returns) to satisfy the rules of hooks.
+  useEffect(() => {
+    const id = working.id;
+    let cancelled = false;
+    void (async () => {
+      if (!historyOpen || id === null) {
+        if (!cancelled) setRevisions([]);
+        return;
+      }
+      if (!cancelled) setHistoryLoading(true);
+      const list = await listDesignRevisions(id);
+      if (!cancelled) {
+        setRevisions(list);
+        setHistoryLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [historyOpen, working.id]);
 
   if (designs === undefined) {
     return <Text c="dimmed">Loading…</Text>;
@@ -310,21 +345,63 @@ export function ShipDesignerRoute() {
     setSelected(null);
   }
 
-  /** Copy the working design to a new editable user record. Drops the id so
-   *  the next save creates it, flips source to "user", and resets revision to
-   *  1 — the canonical "fresh design" starting state per the schema comment on
-   *  ShipDesign.revision. The original preset is untouched. */
-  function copyToUser() {
-    setWorking((prev) => ({
-      ...prev,
-      id: null,
-      createdAt: null,
-      source: "user",
-      name: prev.name.trim() ? `${prev.name} (copy)` : "",
-    }));
+  /** Copy the working design to a new editable user record using the DB copy
+   *  function. The copy is saved immediately and loaded into the working state.
+   *  For presets this is the primary way to create an editable version. */
+  async function copyAndLoad() {
+    const sourceId = working.id;
+    if (sourceId === null) {
+      // Unsaved draft — fall back to in-memory copy.
+      setWorking((prev) => ({
+        ...prev,
+        id: null,
+        createdAt: null,
+        source: "user",
+        name: prev.name.trim() ? `${prev.name} (copy)` : "",
+      }));
+      notifications.show({
+        title: "Copied to a new design",
+        message: "Edit freely and save to keep your copy.",
+        color: "teal",
+      });
+      return;
+    }
+    const copy = await copyDesign(sourceId);
+    load(copy);
+    setHistoryOpen(false);
     notifications.show({
       title: "Copied to a new design",
-      message: "Edit freely and save to keep your copy.",
+      message: `"${copy.name}" is ready to edit.`,
+      color: "teal",
+    });
+  }
+
+  /** Fetch revisions for the current design and open the history panel. */
+  async function openHistory() {
+    const id = working.id;
+    if (id === null) {
+      setRevisions([]);
+      setHistoryOpen((prev) => !prev);
+      return;
+    }
+    setHistoryOpen((prev) => {
+      if (prev) return false; // toggling closed — no need to fetch
+      return true;
+    });
+  }
+
+  /** Restore the working design to a prior revision. Archives the current HEAD
+   *  and loads the restored snapshot. */
+  async function restoreRevision(revision: number) {
+    if (working.id === null) return;
+    const restored = await restoreDesignRevision(working.id, revision);
+    load(restored);
+    // Reload the history list so the just-archived HEAD appears.
+    const list = await listDesignRevisions(restored.id);
+    setRevisions(list);
+    notifications.show({
+      title: "Revision restored",
+      message: `Design rolled back to revision ${revision}.`,
       color: "teal",
     });
   }
@@ -594,6 +671,54 @@ export function ShipDesignerRoute() {
 
             <FaultList faults={analysis.faults} />
 
+            {/* Version history panel */}
+            <Collapse expanded={historyOpen}>
+              <Paper p="md" withBorder>
+                <Stack gap="xs">
+                  <Group justify="space-between">
+                    <Text fw={600} size="sm">
+                      Version history
+                    </Text>
+                    {historyLoading ? <Loader size="xs" /> : null}
+                  </Group>
+                  {!historyLoading && revisions.length === 0 ? (
+                    <Text size="sm" c="dimmed">
+                      No history yet — prior versions appear here after each save.
+                    </Text>
+                  ) : null}
+                  {revisions.map((rev) => (
+                    <Group key={rev.revision} justify="space-between" wrap="nowrap">
+                      <Stack gap={0}>
+                        <Text size="sm">Revision {rev.revision}</Text>
+                        <Text size="xs" c="dimmed">
+                          {new Date(rev.updatedAt).toLocaleString()}
+                        </Text>
+                      </Stack>
+                      <Tooltip label="Restore this revision">
+                        <Button
+                          size="xs"
+                          variant="light"
+                          color="orange"
+                          leftSection={<IconArrowBackUp size={14} />}
+                          onClick={() => void restoreRevision(rev.revision)}
+                        >
+                          Restore
+                        </Button>
+                      </Tooltip>
+                    </Group>
+                  ))}
+                  {revisions.length > 0 ? (
+                    <>
+                      <Divider />
+                      <Text size="xs" c="dimmed">
+                        Restoring archives the current version and rolls back the design.
+                      </Text>
+                    </>
+                  ) : null}
+                </Stack>
+              </Paper>
+            </Collapse>
+
             <Group justify="space-between">
               <Group gap="sm">
                 <ShareButton
@@ -614,26 +739,47 @@ export function ShipDesignerRoute() {
                     },
                   }}
                 />
+                <Button
+                  variant="light"
+                  leftSection={<IconCopy size={16} />}
+                  onClick={() => void copyAndLoad()}
+                >
+                  Copy design
+                </Button>
                 {readOnly ? (
                   <Button
-                    variant="light"
+                    variant="filled"
                     color="grape"
                     leftSection={<IconCopy size={16} />}
-                    onClick={copyToUser}
+                    onClick={() => void copyAndLoad()}
                   >
                     Copy to edit
                   </Button>
                 ) : null}
               </Group>
-              <Button
-                onClick={save}
-                disabled={readOnly}
-                leftSection={
-                  readOnly ? <IconLock size={16} /> : <IconDeviceFloppy size={16} />
-                }
-              >
-                {readOnly ? "Read only" : "Save design"}
-              </Button>
+              <Group gap="sm">
+                {!readOnly && working.id !== null ? (
+                  <Tooltip label="View version history">
+                    <Button
+                      variant={historyOpen ? "light" : "subtle"}
+                      color={historyOpen ? "orange" : undefined}
+                      leftSection={<IconHistory size={16} />}
+                      onClick={() => void openHistory()}
+                    >
+                      History
+                    </Button>
+                  </Tooltip>
+                ) : null}
+                <Button
+                  onClick={() => void save()}
+                  disabled={readOnly}
+                  leftSection={
+                    readOnly ? <IconLock size={16} /> : <IconDeviceFloppy size={16} />
+                  }
+                >
+                  {readOnly ? "Read only" : "Save design"}
+                </Button>
+              </Group>
             </Group>
           </Stack>
         </Grid.Col>
