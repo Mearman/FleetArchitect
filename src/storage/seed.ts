@@ -54,8 +54,17 @@ import { getMeta, setMeta, storage } from "@/storage/db";
  * bump replaces any preset-source record so the rescaled designs load. Only
  * records with source "preset" are touched; player-authored (source "user")
  * records are left untouched.
+ *
+ * Version 12: reseed protection is now keyed on source "user", not "not
+ * preset". Stores seeded before the `source` field existed kept sourceless
+ * legacy preset records (empty/hull/module/floor cells, no `grid.connections`)
+ * that the old skip logic mistook for user copies and never replaced — they
+ * crashed the resolver (`resolveHardwires` read `connections.length` off
+ * undefined). This bump force-replaces every bundled id that is not an explicit
+ * `source: "user"` record, so the legacy ships are finally overwritten with the
+ * current layered-cell designs.
  */
-const PRESETS_VERSION = 11;
+const PRESETS_VERSION = 12;
 const VERSION_KEY = "presetsVersion";
 
 /**
@@ -63,17 +72,20 @@ const VERSION_KEY = "presetsVersion";
  * preset set is upgraded).
  *
  * Behaviour:
- * - Records with source "preset" whose id appears in the bundled set are
- *   **always replaced** with the current bundled version. This ensures
- *   re-authored presets (grid rescale, layout changes, etc.) take effect over
- *   any previously-seeded copy — the old ID-gated skip logic would leave stale
- *   coarse-grid ships in the store after a preset rescale.
+ * - A bundled preset id is **force-replaced** with the current bundled version
+ *   unless the store holds a genuine player-authored record (source "user") at
+ *   that id. This ensures re-authored presets (grid rescale, layout changes,
+ *   etc.) take effect over any previously-seeded copy.
  * - Records with source "user" are never touched, so player edits and copies
  *   are fully preserved.
- * - Preset IDs that exist in the store under a non-preset source (unlikely but
- *   possible if a player copied a preset before its id changed) are left alone:
- *   only source "preset" records are force-replaced.
- * - Fleet records with source "preset" are force-replaced by the same logic.
+ * - The protected set is keyed on source **"user"**, not "not preset". Records
+ *   written before the `source` field existed carry no source at all; those are
+ *   stale presets (legacy cell shapes, missing `grid.connections`, etc.), not
+ *   user copies, and must be replaced — keying on `source !== "preset"` wrongly
+ *   protected them, leaving old-shape ships in the store that crashed the
+ *   resolver. Only an explicit `source === "user"` marks a record as the
+ *   player's to keep.
+ * - Fleet records are force-replaced by the same logic.
  */
 export async function seedPresets(): Promise<void> {
   const stored = await getMeta(VERSION_KEY);
@@ -85,36 +97,27 @@ export async function seedPresets(): Promise<void> {
     storage().fleets.list(),
   ]);
 
-  // Build sets of ids that already exist as preset-source records. These will
-  // be force-replaced. Non-preset records at the same id are left untouched.
-  const presetShipIds = new Set(
-    existingShips.filter((s) => s.source === "preset").map((s) => s.id),
+  // Ids the player owns (explicit source "user"): these are never overwritten.
+  // Everything else at a bundled id — current presets, and legacy records with
+  // no source predating the field — is force-replaced with the bundled version.
+  const userShipIds = new Set(
+    existingShips.filter((s) => s.source === "user").map((s) => s.id),
   );
-  const presetFleetIds = new Set(
-    existingFleets.filter((f) => f.source === "preset").map((f) => f.id),
-  );
-  // Ids that exist as non-preset records: skip them (user-authored copies).
-  const nonPresetShipIds = new Set(
-    existingShips.filter((s) => s.source !== "preset").map((s) => s.id),
-  );
-  const nonPresetFleetIds = new Set(
-    existingFleets.filter((f) => f.source !== "preset").map((f) => f.id),
+  const userFleetIds = new Set(
+    existingFleets.filter((f) => f.source === "user").map((f) => f.id),
   );
 
   for (const design of presetDesigns) {
-    // Skip if this id is occupied by a non-preset record (user copy).
-    if (nonPresetShipIds.has(design.id)) continue;
-    // Force-replace existing preset records; insert new ones.
-    if (presetShipIds.has(design.id)) {
-      await storage().ships.remove(design.id);
-    }
+    // Preserve a player-authored design that occupies this id.
+    if (userShipIds.has(design.id)) continue;
+    // Force-replace any existing record (preset or sourceless legacy); insert
+    // new ones. `remove` is a no-op when the id is absent.
+    await storage().ships.remove(design.id);
     await storage().ships.save(design);
   }
   for (const fleet of presetFleets) {
-    if (nonPresetFleetIds.has(fleet.id)) continue;
-    if (presetFleetIds.has(fleet.id)) {
-      await storage().fleets.remove(fleet.id);
-    }
+    if (userFleetIds.has(fleet.id)) continue;
+    await storage().fleets.remove(fleet.id);
     await storage().fleets.save(fleet);
   }
 

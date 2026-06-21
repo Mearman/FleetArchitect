@@ -75,10 +75,14 @@ function database(): FleetArchitectDatabase {
 
 /**
  * Replace the singleton database instance. Used in tests to inject a
- * fake-indexeddb-backed instance so tests do not share state.
+ * fake-indexeddb-backed instance so tests do not share state. Also clears the
+ * `storage()` singleton so code that reads through the repository contract
+ * (e.g. `seedPresets`) rebinds to the injected database rather than a stale
+ * wrapper around a previous one.
  */
 export function _setDatabaseForTesting(instance: FleetArchitectDatabase): void {
   db = instance;
+  singleton = undefined;
 }
 
 /**
