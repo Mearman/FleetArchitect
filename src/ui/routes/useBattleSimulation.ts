@@ -9,7 +9,6 @@ import type {
   BattleAnomaly as BattleAnomalyType,
   BattleFrame,
   BattleResult,
-  BattleScale,
   ShipDescriptor,
 } from "@/schema/battle";
 import type { DescriptorMap } from "@/ui/cellLayout";
@@ -163,7 +162,6 @@ export function useBattleSimulation({
     chosenAnomaly: BattleAnomalyType,
     chosenSeed: number,
     allDesigns: ShipDesign[],
-    chosenScale: BattleScale,
   ): Promise<void> {
     const designMap = new Map(allDesigns.map((d) => [d.id, d]));
     const attackers = resolveFleetToCombatShips(attacker, designMap, catalog(), "attacker");
@@ -316,7 +314,6 @@ export function useBattleSimulation({
           anomaly: chosenAnomaly,
           seed: chosenSeed,
           maxTicks: DEFAULT_MAX_TICKS,
-          scale: chosenScale,
         },
         { signal: controller.signal, onFrames },
       );

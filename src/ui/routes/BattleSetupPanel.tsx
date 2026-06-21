@@ -1,8 +1,8 @@
 import { Button, Group, NativeSelect, NumberInput, SegmentedControl, Stack, Text, Tooltip } from "@mantine/core";
 import { IconArrowsShuffle, IconRefresh, IconSwords } from "@tabler/icons-react";
 import { Link } from "react-router-dom";
-import { BattleAnomaly, BattleScale } from "@/schema/battle";
-import type { BattleAnomaly as BattleAnomalyType, BattleScale as BattleScaleType } from "@/schema/battle";
+import { BattleAnomaly } from "@/schema/battle";
+import type { BattleAnomaly as BattleAnomalyType } from "@/schema/battle";
 import { ANOMALY_LABEL } from "./battleConstants";
 
 /**
@@ -16,7 +16,6 @@ export interface BattleSetupPanelProps {
   attackerId: string | null;
   defenderId: string | null;
   anomaly: BattleAnomalyType;
-  scale: BattleScaleType;
   seed: number;
   fleetOptions: { value: string; label: string }[];
   computing: boolean;
@@ -24,18 +23,11 @@ export interface BattleSetupPanelProps {
   onAttackerIdChange: (value: string | null) => void;
   onDefenderIdChange: (value: string | null) => void;
   onAnomalyChange: (value: BattleAnomalyType) => void;
-  onScaleChange: (value: BattleScaleType) => void;
   onSeedChange: (value: number) => void;
   onRandomSeed: () => void;
   onEngage: () => void;
   onRandomBattle: () => void;
 }
-
-/** Human-readable labels for the battle scale toggle. */
-const SCALE_LABEL: Record<BattleScaleType, string> = {
-  default: "Sub-km (default)",
-  astronomical: "Astronomical",
-};
 
 /**
  * The fleet/anomaly/seed setup form. Purely presentational: every value and
@@ -46,7 +38,6 @@ export function BattleSetupPanel({
   attackerId,
   defenderId,
   anomaly,
-  scale,
   seed,
   fleetOptions,
   computing,
@@ -54,7 +45,6 @@ export function BattleSetupPanel({
   onAttackerIdChange,
   onDefenderIdChange,
   onAnomalyChange,
-  onScaleChange,
   onSeedChange,
   onRandomSeed,
   onEngage,
@@ -115,25 +105,6 @@ export function BattleSetupPanel({
           value={anomaly}
           onChange={(val) => onAnomalyChange(BattleAnomaly.parse(val))}
         />
-      </Stack>
-
-      <Stack gap={4}>
-        <Text size="sm" fw={500}>
-          Battle scale
-        </Text>
-        <Tooltip
-          multiline
-          w={260}
-          label="Astronomical sets the two fleets ~300,000 km apart and stretches every weapon and sensor range to match, so light-lag and aberration become visible — a sensor pulse takes many ticks to cross the arena. Sub-km is the standard close-quarters arena."
-        >
-          <SegmentedControl
-            fullWidth
-            size="xs"
-            data={BattleScale.options.map((s) => ({ value: s, label: SCALE_LABEL[s] }))}
-            value={scale}
-            onChange={(val) => onScaleChange(BattleScale.parse(val))}
-          />
-        </Tooltip>
       </Stack>
 
       <Group align="flex-end">

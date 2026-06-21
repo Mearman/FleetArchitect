@@ -5,91 +5,17 @@
 
 import { CELL_SIZE } from "@/domain/grid";
 import { DEFAULT_WEAPON_AMMO } from "@/schema/module";
-import type { ModuleEffect, WeaponEffect } from "@/schema/module";
+import type { WeaponEffect } from "@/schema/module";
 import type { Orders } from "@/schema/fleet";
 import type { ShipStance } from "@/schema/ai";
 import type { BattleInputs, CombatShip, ResolvedHardwire, ResolvedModule, SimCrew } from "../types";
 
 import { defaultAiDecisions } from "./ai-step";
-import type { BattleSpaceConfig } from "./space-config";
 import { CREW_HP, SIM } from "./config";
 import { compareByCell } from "./crew-pathfinding";
 import { recomputeAggregates, sumWeaponThrust } from "./physics";
 import { makeResourceState } from "./resource-step";
 import type { SimModule, SimShip } from "./types";
-
-/**
- * Scale every spatial quantity carried on a module effect by `spaceScale`, in
- * place. The effect is a per-ship-instance clone (the resolver `structuredClone`s
- * each module's effect, so two battles — and the shared catalogue — never alias
- * it), so mutating it here is local to this battle run. At default scale
- * `spaceScale` is 1, so this is a no-op and the engine is byte-identical.
- *
- * Only spatial fields are touched: weapon/PD/comms/sensor/boarding REACHES, and a
- * weapon projectile's SPEED — a projectile's trajectory is geometry, so its speed
- * scales with distance to cross the stretched range in the same number of ticks
- * (keeping kinetic weapons effective rather than crawling across the larger
- * arena). Powers (`emitStrength`), rates, arcs, damage, cooldowns and tracking are
- * not spatial and are left untouched, so weapon behaviour is identical, only
- * spread out.
- */
-function scaleEffectRanges(effect: ModuleEffect, spaceScale: number): void {
-  if (spaceScale === 1) return;
-  switch (effect.kind) {
-    case "weapon":
-      effect.range *= spaceScale;
-      effect.projectileSpeed *= spaceScale;
-      break;
-    case "pointDefense":
-    case "boarding":
-      effect.range *= spaceScale;
-      break;
-    case "sensor":
-      effect.detectionRange *= spaceScale;
-      if (effect.minRange !== undefined) effect.minRange *= spaceScale;
-      if (effect.maxRange !== undefined) effect.maxRange *= spaceScale;
-      break;
-    case "comms":
-      effect.range *= spaceScale;
-      if (effect.minRange !== undefined) effect.minRange *= spaceScale;
-      if (effect.maxRange !== undefined) effect.maxRange *= spaceScale;
-      break;
-    case "blink":
-      // Teleport reach is a spatial jump distance.
-      effect.jumpRange *= spaceScale;
-      break;
-    case "commandAura":
-      // Coverage radius is a spatial reach over the formation.
-      effect.radius *= spaceScale;
-      break;
-    case "hangar":
-      // A drone is a miniature combatant: its engagement reach and drive speed
-      // scale together (range and speed, like a weapon's projectile) so it stays
-      // effective across the larger arena. Its HP, damage and lifetime are not
-      // spatial and are untouched.
-      effect.droneRange *= spaceScale;
-      effect.droneSpeed *= spaceScale;
-      break;
-    case "shield":
-    case "engine":
-    case "power":
-    case "crew":
-    case "repair":
-    case "hull":
-    case "magazine":
-    case "rcs":
-    case "reactionWheel":
-    case "afterburner":
-    case "overcharge":
-    case "cloak":
-    case "signature":
-    case "ecm":
-    case "eccm":
-    case "decoy":
-    case "mineLayer":
-      break;
-  }
-}
 
 /**
  * Broad-phase bounding radius of a modular ship's cells about the ship origin:
@@ -112,10 +38,8 @@ export function gridRadius(modules: readonly SimModule[]): number {
 
 /**
  * The longest weapon reach in `weapons`, or `fallback` for a weaponless ship —
- * the engine passes the per-battle scaled `defaultRange` there so an unarmed ship
- * stands off at the right distance for the active scale. The per-weapon ranges
- * are already scaled at the engine input boundary (`toSimShip`), so the max here
- * is in the battle's spatial units; only the weaponless fallback needs the config.
+ * the engine passes `SIM.defaultRange` there so an unarmed ship stands off at the
+ * right distance. Only the weaponless fallback needs the supplied default.
  */
 export function maxWeaponRange(
   weapons: readonly WeaponEffect[],
@@ -142,9 +66,8 @@ export function maxWeaponRange(
  * has overridden the stance the caller passes the ship's base stance, which for
  * a rule-less default-stance ship is `orders.stance`, so the range is unchanged.
  *
- * `defaultRange` is the per-battle scaled stand-off for a weaponless ship,
- * threaded through to `maxWeaponRange` so an unarmed ship holds at the right
- * distance for the active spatial scale.
+ * `defaultRange` is the stand-off for a weaponless ship, threaded through to
+ * `maxWeaponRange` so an unarmed ship holds at the right distance.
  */
 export function desiredRange(
   orders: Orders,
@@ -260,29 +183,21 @@ export function slewTurret(
   return { angle, canFire: onTarget && reachable };
 }
 
-export function toSimShip(ship: CombatShip, rng: () => number, space: BattleSpaceConfig): SimShip {
-  const s = space.spaceScale;
-  // Aggregated (legacy non-modular) weapon effects: clone before scaling so the
-  // catalogue-shared effect objects on `ship.stats` are never mutated. A modular
-  // ship rebuilds `ship.weapons` from its own per-instance module clones in
-  // `recomputeAggregates` below, so for it the scaling on the module effects (see
-  // the `base.modules` branch) is what counts.
-  const weapons = ship.stats.weapons.map((w) => {
-    if (s === 1) return w.effect;
-    const cloned = structuredClone(w.effect);
-    scaleEffectRanges(cloned, s);
-    return cloned;
-  });
+export function toSimShip(ship: CombatShip, rng: () => number): SimShip {
+  // Aggregated (legacy non-modular) weapon effects are taken straight from the
+  // catalogue-shared effect objects on `ship.stats`. A modular ship rebuilds
+  // `ship.weapons` from its own per-instance module clones in
+  // `recomputeAggregates` below.
+  const weapons = ship.stats.weapons.map((w) => w.effect);
   const base: SimShip = {
     instanceId: ship.instanceId,
     faction: ship.faction,
     side: ship.side,
     classification: ship.classification,
-    // Deployment positions stretch with the spatial scale so the two fleets begin
-    // the scaled distance apart; their initial velocity (a physics quantity) is
-    // left untouched.
-    x: ship.position.x * s,
-    y: ship.position.y * s,
+    // Deployment positions are used as authored; their initial velocity (a
+    // physics quantity) is left untouched.
+    x: ship.position.x,
+    y: ship.position.y,
     facing: ship.facing,
     velX: ship.velocity?.x ?? 0,
     velY: ship.velocity?.y ?? 0,
@@ -354,14 +269,6 @@ export function toSimShip(ship: CombatShip, rng: () => number, space: BattleSpac
   // recomputeAggregates derive the live combat stats from the alive set.
   if (ship.modules !== undefined && ship.modules.length > 0) {
     base.modules = ship.modules.map((m) => toSimModule(m, rng));
-    // Stretch every module effect's spatial reaches by the battle's spatial scale,
-    // in place on these per-instance module clones (the resolver `structuredClone`s
-    // each effect, so the catalogue is never aliased). At default scale this is a
-    // no-op. Done before `recomputeAggregates` rebuilds `base.weapons` from the
-    // modules, so the aggregated weapon list picks up the scaled ranges too.
-    if (s !== 1) {
-      for (const m of base.modules) scaleEffectRanges(m.effect, s);
-    }
     // Carry the resolved hardwires onto the ship and index them onto the sink
     // and source SimModules so the per-tick loop can read a module's feeding
     // links directly. Omitted entirely on unhardwired designs so behaviour is

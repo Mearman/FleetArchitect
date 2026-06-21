@@ -18,7 +18,6 @@ import { rebuildEmissions } from "./em-reception";
 import { launchPods, updatePods } from "./boarding";
 import { applyCollisionDamage, buildShipCellHash, resolveShipCollisions } from "./collision";
 import { SIM, resetProjectileCounter } from "./config";
-import { spaceConfigFor } from "./space-config";
 import { updateCrew } from "./crew";
 import { refillHardwiredAmmo } from "./crew-haul";
 import { resourceStep } from "./resource-step";
@@ -64,13 +63,7 @@ export function* simulateBattle(
 ): Generator<BattleFrame, BattleSummary> {
   const rng = mulberry32(inputs.seed >>> 0);
   resetProjectileCounter();
-  // Resolve the per-battle spatial configuration once from the scale setting and
-  // thread it through every spatial step as a parameter — never as global mutable
-  // state — so two concurrent battles can run at different scales without
-  // interfering. At default scale every field equals the global constant, so the
-  // run is byte-identical to the pre-scale engine.
-  const space = spaceConfigFor(inputs.scale ?? "default");
-  const ships = inputs.ships.map((s) => toSimShip(s, rng, space));
+  const ships = inputs.ships.map((s) => toSimShip(s, rng));
   // Static descriptors, captured the first frame each instance appears. Either
   // the caller's sink (streaming) or a private map (direct runs). Sorted into
   // the summary at the end so two same-seed runs return the same order.
@@ -171,7 +164,7 @@ export function* simulateBattle(
   // Frame 0: run the awareness phase once so the opening snapshot carries the
   // same fog-of-war data every later frame does, and so each ship's `awareness`
   // is populated before the first targeting pass below.
-  const frame0Awareness = computeAwareness(ships, byId, occluders, inputs.anomaly, space);
+  const frame0Awareness = computeAwareness(ships, byId, occluders, inputs.anomaly);
   // Record the frame-0 EM emission log alongside the awareness it produced. The
   // monotonic counter threads from its initial value through every later tick.
   emissionSeq = rebuildEmissions(ships, emissions, 0, emissionSeq);
@@ -208,7 +201,7 @@ export function* simulateBattle(
             r: d.radius,
           })),
         ];
-    const awareness = computeAwareness(ships, byId, dynamicOccluders, inputs.anomaly, space);
+    const awareness = computeAwareness(ships, byId, dynamicOccluders, inputs.anomaly);
     // 0a. Record the continuous EM emission log for this tick (Phase 9), behind
     //     the monotonic emission counter. The reception that built `awareness`
     //     above evaluated each enemy's emission strength per-pair; this log is
@@ -259,8 +252,8 @@ export function* simulateBattle(
     // independently. Computing the election outside the per-ship loop keeps
     // determinism: every ship on a side sees the same fleet target for this
     // tick, not a target that shifts as earlier ships set their own.
-    const attackerFocusTarget = electFocusTarget("attacker", ships, defenders, tick, space);
-    const defenderFocusTarget = electFocusTarget("defender", ships, attackers, tick, space);
+    const attackerFocusTarget = electFocusTarget("attacker", ships, defenders, tick);
+    const defenderFocusTarget = electFocusTarget("defender", ships, attackers, tick);
     for (const ship of ships) {
       if (!ship.alive) continue;
       // A claimed hull is inert salvage: it holds no target and engages nothing.
@@ -271,7 +264,7 @@ export function* simulateBattle(
       const enemies = ship.side === "attacker" ? defenders : attackers;
       const focusTarget =
         ship.side === "attacker" ? attackerFocusTarget : defenderFocusTarget;
-      ship.target = pickTarget(ship, enemies, focusTarget, tick, space)?.instanceId;
+      ship.target = pickTarget(ship, enemies, focusTarget, tick)?.instanceId;
     }
 
     // 1b. Tech timers (factions update). Advance every movement/power tech
@@ -290,7 +283,7 @@ export function* simulateBattle(
     }
 
     // 2. Movement + facing.
-    moveShips(ships, byId, inputs.anomaly, deployment, space.defaultRange);
+    moveShips(ships, byId, inputs.anomaly, deployment, SIM.defaultRange);
 
     // 2b. Ship-vs-ship collision at cell granularity. After movement, any two
     //     ships whose cells now overlap are pushed apart with an elastic
@@ -360,7 +353,7 @@ export function* simulateBattle(
     //     module, so byte output is unchanged for them.
     for (const ship of ships) {
       if (!ship.alive || ship.modules === undefined) continue;
-      layMines(ship, mines, tick, nextMineId, space.mineRingSpacing);
+      layMines(ship, mines, tick, nextMineId, SIM.mineRingSpacing);
     }
 
     // 2e. Boarding pod launches (factions update). With positions settled, every
@@ -369,7 +362,7 @@ export function* simulateBattle(
     //     module, so byte output is unchanged for them.
     for (const ship of ships) {
       if (!ship.alive || ship.modules === undefined) continue;
-      launchPods(ship, pods, ships, tick, nextPodId, space);
+      launchPods(ship, pods, ships, tick, nextPodId);
     }
 
     // 2f. Phantom launches (factions update). Hangars top up their drone wings
@@ -384,7 +377,7 @@ export function* simulateBattle(
     }
 
     // 3. Weapon firing (creates projectiles; hitscan applies damage at once).
-    projectiles = projectiles.concat(fireWeapons(ships, byId, rng, tick, inputs.anomaly, space));
+    projectiles = projectiles.concat(fireWeapons(ships, byId, rng, tick, inputs.anomaly));
 
     // 3b. PD cooldowns tick down so a battery that just fired can fire again
     //     the next tick. Tick here (before projectile resolution) so a PD

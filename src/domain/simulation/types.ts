@@ -3,7 +3,7 @@ import type { Orders } from "@/schema/fleet";
 import type { CellEdges, HardwireResource, SurfaceKind } from "@/schema/grid";
 import type { ShipClassification } from "@/schema/armor";
 import type { ModuleEffect } from "@/schema/module";
-import type { BattleAnomaly, BattleScale, BattleSide, ShipDescriptor } from "@/schema/battle";
+import type { BattleAnomaly, BattleSide, ShipDescriptor } from "@/schema/battle";
 import type { Vec2 } from "@/schema/primitives";
 import type { CrewPriority, Rule, ShipStance } from "@/schema/ai";
 
@@ -311,16 +311,6 @@ export interface BattleInputs {
   anomaly: BattleAnomaly;
   seed: number;
   maxTicks: number;
-  /**
-   * Spatial scale the battle is fought at. Absent (or `"default"`) runs the
-   * historical sub-km arena with every balance figure unchanged; `"astronomical"`
-   * stretches every spatial quantity (deployment separation, weapon/sensor/comms
-   * reach, mine spacing) by a single factor so the engine's light-lag, Doppler and
-   * aberration become visible across a fraction-of-a-light-second arena, with the
-   * physics (mass, thrust, tick rate, speed of light per tick) untouched. Optional
-   * so callers and replays predating this mode behave exactly as before.
-   */
-  scale?: BattleScale;
 }
 
 /**

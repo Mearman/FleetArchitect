@@ -7,7 +7,6 @@ import { resolveChainReactions } from "@/domain/simulation/engine/chain-reaction
 import { applyDamage } from "@/domain/simulation/engine/damage";
 import { stepTechCooldowns } from "@/domain/simulation/engine/mines";
 import { toSimShip } from "@/domain/simulation/engine/setup";
-import { defaultSpaceConfig } from "@/domain/simulation/engine/space-config";
 import type { SimShip } from "@/domain/simulation/engine/types";
 import { mulberry32 } from "@/domain/simulation/rng";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
@@ -125,7 +124,7 @@ function combatShip(
 /** Build a SimShip from modules, with no rng staggering (a fixed rng so the
  *  cooldown stagger is deterministic but irrelevant to these tests). */
 function buildSim(id: string, modules: ResolvedModule[]): SimShip {
-  return toSimShip(combatShip(id, "defender", modules), mulberry32(1), defaultSpaceConfig());
+  return toSimShip(combatShip(id, "defender", modules), mulberry32(1));
 }
 
 function findModule(ship: SimShip, slotId: string) {

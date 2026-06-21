@@ -7,21 +7,6 @@ import { DoorState, SurfaceKind } from "./grid";
 export const BattleSide = z.enum(["attacker", "defender", "draw"]);
 export type BattleSide = z.infer<typeof BattleSide>;
 
-/**
- * The spatial scale a battle is fought at. `default` is the historical sub-km
- * arena — every existing balance figure, deployment span and detection range is
- * unchanged, so all recorded replays and tests stay byte-identical. `astronomical`
- * is an opt-in mode that expands every spatial quantity (deployment separation,
- * weapon ranges, sensor/comms reach, mine spacing) by a single factor while
- * leaving the engine's physics — mass, thrust, the tick rate, the speed of light
- * per tick — untouched. The arena then spans a fraction of a light-second, so the
- * light-lag, Doppler and aberration machinery the engine already computes becomes
- * visible in combat: a sensor contact crossing the arena takes many ticks to
- * arrive. Optional and defaulting to `default` so battles authored before this
- * mode existed parse and run exactly as before.
- */
-export const BattleScale = z.enum(["default", "astronomical"]);
-export type BattleScale = z.infer<typeof BattleScale>;
 
 /** Crew member state at a single tick of a recorded battle. */
 export const CrewSnapshot = z.object({

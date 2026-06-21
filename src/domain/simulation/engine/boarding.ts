@@ -3,7 +3,6 @@
  * disables functional modules on contact.
  */
 
-import type { BattleSpaceConfig } from "./space-config";
 import { SIM } from "./config";
 import { isOperational } from "./crew";
 import { recomputeAggregates } from "./physics";
@@ -32,7 +31,6 @@ export function launchPods(
   ships: readonly SimShip[],
   tick: number,
   nextPodId: (ownerId: string, tick: number) => string,
-  space: BattleSpaceConfig,
 ): void {
   if (ship.modules === undefined) return;
   for (const m of ship.modules) {
@@ -49,7 +47,7 @@ export function launchPods(
       const dy = enemy.y - ship.y;
       const dSq = dx * dx + dy * dy;
       if (dSq > rangeSq) continue;
-      if (!isDetectable(ship, enemy, dSq, tick, space)) continue;
+      if (!isDetectable(ship, enemy, dSq, tick)) continue;
       // Strict-less keeps the first ship in array order on an exact tie.
       if (dSq < nearestSq) {
         target = enemy;

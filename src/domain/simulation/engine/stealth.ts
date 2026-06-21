@@ -6,7 +6,7 @@
 
 import type { CloakEffect, EcmEffect } from "@/schema/module";
 
-import type { BattleSpaceConfig } from "./space-config";
+import { SIM } from "./config";
 import { isOperational } from "./crew";
 import type { SimShip } from "./types";
 
@@ -71,8 +71,8 @@ export function signatureMultiplier(ship: SimShip): number {
  * target is always detectable; see `isDetectable`), so this range only ever
  * gates stealthed prey.
  */
-export function viewerAcquireRange(viewer: SimShip, space: BattleSpaceConfig): number {
-  let range = space.baseAcquireRange;
+export function viewerAcquireRange(viewer: SimShip): number {
+  let range = SIM.baseAcquireRange;
   if (viewer.modules === undefined) return range;
   for (const m of viewer.modules) {
     if (m.effect.kind !== "sensor") continue;
@@ -85,7 +85,7 @@ export function viewerAcquireRange(viewer: SimShip, space: BattleSpaceConfig): n
 /**
  * Whether the viewer has an alive/operational pierce-cloak sensor whose
  * effective range covers `distance` — an active scan that defeats a passive
- * cloak. Each pierce-cloak sensor reaches `space.baseAcquireRange + detectionRange`
+ * cloak. Each pierce-cloak sensor reaches `SIM.baseAcquireRange + detectionRange`
  * (the same additive model as `viewerAcquireRange`, but counting only the
  * pierce-cloak arrays, since a plain sensor extends ordinary acquisition without
  * seeing through cloak). Scanned in fixed (col, row) order; short-circuits on
@@ -94,14 +94,13 @@ export function viewerAcquireRange(viewer: SimShip, space: BattleSpaceConfig): n
 export function viewerPiercesCloakAt(
   viewer: SimShip,
   distance: number,
-  space: BattleSpaceConfig,
 ): boolean {
   if (viewer.modules === undefined) return false;
   for (const m of viewer.modules) {
     if (m.effect.kind !== "sensor") continue;
     if (m.effect.pierceCloak !== true) continue;
     if (!isOperational(m)) continue;
-    if (distance <= space.baseAcquireRange + m.effect.detectionRange) return true;
+    if (distance <= SIM.baseAcquireRange + m.effect.detectionRange) return true;
   }
   return false;
 }
@@ -135,18 +134,17 @@ export function isDetectable(
   target: SimShip,
   distanceSq: number,
   tick: number,
-  space: BattleSpaceConfig,
 ): boolean {
   const cloak = activeCloak(target, tick);
   if (cloak !== undefined) {
     // Cloaked: only an in-range pierce-cloak sensor can see it.
-    return viewerPiercesCloakAt(viewer, Math.sqrt(distanceSq), space);
+    return viewerPiercesCloakAt(viewer, Math.sqrt(distanceSq));
   }
   const multiplier = signatureMultiplier(target);
   // Fast path and opt-in guarantee: a target with no signature reduction is
   // detectable at any distance, so non-stealth targeting is unchanged.
   if (multiplier >= 1) return true;
-  const effectiveRange = viewerAcquireRange(viewer, space) * multiplier;
+  const effectiveRange = viewerAcquireRange(viewer) * multiplier;
   return distanceSq <= effectiveRange * effectiveRange;
 }
 

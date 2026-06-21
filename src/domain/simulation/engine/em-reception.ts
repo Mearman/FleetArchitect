@@ -28,9 +28,7 @@
 
 import type { BattleAnomaly } from "@/schema/battle";
 
-import type { BattleSpaceConfig } from "./space-config";
-import { SIM, SPEED_OF_LIGHT_M_PER_TICK } from "./config";
-import { EM_HULL_AMBIENT_EMISSION } from "./config";
+import { EM_HULL_AMBIENT_EMISSION, EM_RECEIVER_NOISE_FLOOR, SIM, SPEED_OF_LIGHT_M_PER_TICK } from "./config";
 import { continuousContact, type Emission } from "./emissions";
 import {
   dopplerFactor,
@@ -88,9 +86,9 @@ export function continuousEmissionStrength(ship: SimShip): number {
  * attenuated first (via `attenuatedSensorRange`), so the gain — and thus the
  * reach — falls with it, exactly as halving the range would.
  */
-function sensorGain(range: number, space: BattleSpaceConfig): number {
-  if (space.visualLosRadius <= 0) return 1;
-  const ratio = range / space.visualLosRadius;
+function sensorGain(range: number): number {
+  if (SIM.visualLosRadius <= 0) return 1;
+  const ratio = range / SIM.visualLosRadius;
   return ratio * ratio;
 }
 
@@ -159,7 +157,6 @@ export function emReceives(
   observer: SimShip,
   enemy: SimShip,
   anomaly: BattleAnomaly,
-  space: BattleSpaceConfig,
 ): boolean {
   const dx = enemy.x - observer.x;
   const dy = enemy.y - observer.y;
@@ -170,12 +167,10 @@ export function emReceives(
   // Baseline sensor-free receiver: an omni eye at gain 1, reaching
   // `visualLosRadius` against a baseline emitter. A nebula dims the naked eye
   // too (it is never immune), so attenuate the baseline gain by the same factor
-  // the visual radius would shrink — squared, since gain scales as range^2. The
-  // floor comes from the per-battle space config: at astronomical scale it is
-  // divided by `spaceScale^2`, so the inverse-square reach grows by `spaceScale`.
+  // the visual radius would shrink — squared, since gain scales as range^2.
   const visualFactor = anomaly === "nebula" ? SIM.nebulaSensorFactor : 1;
   const baselineGain = visualFactor * visualFactor;
-  if (continuousContact(emission, dist, space.noiseFloor, baselineGain)) {
+  if (continuousContact(emission, dist, EM_RECEIVER_NOISE_FLOOR, baselineGain)) {
     return true;
   }
 
@@ -185,8 +180,8 @@ export function emReceives(
   for (const unit of sensorUnitsOf(observer)) {
     const range = attenuatedSensorRange(unit, anomaly);
     if (range <= 0) continue;
-    const gain = sensorGain(range, space);
-    if (!continuousContact(emission, dist, space.noiseFloor, gain)) continue;
+    const gain = sensorGain(range);
+    if (!continuousContact(emission, dist, EM_RECEIVER_NOISE_FLOOR, gain)) continue;
     const arc = effectiveSensorArc(unit);
     if (arc >= Math.PI) return true;
     const bearing = effectiveSensorBearing(unit);

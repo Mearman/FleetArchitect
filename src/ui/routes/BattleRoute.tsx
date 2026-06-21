@@ -23,7 +23,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { TICKS_PER_SECOND } from "@/domain/simulation/types";
 import { useFleets, useShipDesigns } from "@/ui/hooks/storage";
 import { BattleAnomaly } from "@/schema/battle";
-import type { BattleAnomaly as BattleAnomalyType, BattleFrame, BattleScale } from "@/schema/battle";
+import type { BattleAnomaly as BattleAnomalyType, BattleFrame } from "@/schema/battle";
 import type { DescriptorMap } from "@/ui/cellLayout";
 import { interpolateFrame } from "@/ui/interpolateFrame";
 import { DEFAULT_CAMERA } from "./battleCamera";
@@ -52,10 +52,6 @@ export function BattleRoute() {
   const [attackerId, setAttackerId] = useState<string | null>(null);
   const [defenderId, setDefenderId] = useState<string | null>(null);
   const [anomaly, setAnomaly] = useState<BattleAnomalyType>("none");
-  /** The spatial scale for the next battle. Defaults to the historical sub-km
-   *  arena; the astronomical option stretches the arena to a fraction of a
-   *  light-second so light-lag becomes visible. */
-  const [scale, setScale] = useState<BattleScale>("default");
   const [seed, setSeed] = useState(1);
 
   /**
@@ -248,7 +244,7 @@ export function BattleRoute() {
       });
       return;
     }
-    void simulation.startBattle(attacker, defender, anomaly, seed, designs, scale);
+    void simulation.startBattle(attacker, defender, anomaly, seed, designs);
   }
 
   /**
@@ -288,7 +284,7 @@ export function BattleRoute() {
     setDefenderId(defender.id);
     setAnomaly(chosenAnomaly);
     setSeed(chosenSeed);
-    void simulation.startBattle(attacker, defender, chosenAnomaly, chosenSeed, designs, scale);
+    void simulation.startBattle(attacker, defender, chosenAnomaly, chosenSeed, designs);
     notifications.show({
       title: "AI vs AI",
       message: `${attacker.name} vs ${defender.name} on ${ANOMALY_LABEL[chosenAnomaly] ?? chosenAnomaly}.`,
@@ -365,7 +361,6 @@ export function BattleRoute() {
       attackerId={attackerId}
       defenderId={defenderId}
       anomaly={anomaly}
-      scale={scale}
       seed={seed}
       fleetOptions={fleetOptions}
       computing={simulation.computing}
@@ -373,7 +368,6 @@ export function BattleRoute() {
       onAttackerIdChange={setAttackerId}
       onDefenderIdChange={setDefenderId}
       onAnomalyChange={setAnomaly}
-      onScaleChange={setScale}
       onSeedChange={setSeed}
       onRandomSeed={() => setSeed(Math.floor(Math.random() * 1_000_000_000))}
       onEngage={engage}
