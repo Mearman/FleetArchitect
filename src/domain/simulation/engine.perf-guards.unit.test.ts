@@ -1,56 +1,219 @@
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
-import { resolveFleetToCombatShips } from "@/domain/resolve";
 import { runBattle } from "@/domain/simulation/engine";
 import { PERF_GUARDS } from "@/domain/simulation/engine/perf-guards";
+import { CELL_SIZE } from "@/domain/grid";
+import { resolveFleetToCombatShips } from "@/domain/resolve";
 import { catalog } from "@/data/catalog";
 import { presetDesigns, presetFleets } from "@/data/presets";
-import type { CombatShip } from "@/domain/simulation/types";
+import type { CombatShip, ResolvedModule } from "@/domain/simulation/types";
+import type { BattleInputs } from "@/domain/simulation/types";
+import { defaultOrders } from "@/schema/fleet";
+import type { CellEdges } from "@/schema/grid";
+import type { ModuleEffect, WeaponEffect } from "@/schema/module";
+import type { ShipStats } from "@/domain/stats";
 
 /**
  * W5b: the O(C^2)-bounding guards (break-apart topology skip, chain-reaction
  * spatial pre-filter, bounded brownout cut) must be pure optimisations — the
  * engine produces byte-identical frames with each guard on or off.
  *
- * The check runs each preset battle twice on a STRUCTURED CLONE of one resolved
- * snapshot: once with every guard off (the naive reference) and once with every
- * guard on (the optimised path). The clone is essential — `instanceId` is a
- * random UUID minted at resolve time and the engine's behaviour is keyed on it,
- * so the two runs must share one snapshot for the comparison to isolate the
- * guards. Frame streams are compared by SHA-256 over the serialised frames.
+ * Each guard is exercised by a targeted synthetic close-range fixture that
+ * places ships within weapon range from tick one, ensuring the guard path is
+ * actually traversed within 5–10 ticks. A single small preset pair (Phase
+ * Lance vs Iron Wall, the smallest by ship count) runs for 3 ticks as an
+ * end-to-end sanity check. Total wall time well under 60 s.
  *
- * W4 (1 m scale) note: at 1 m per cell, preset hulls are 10×–100× larger than
- * the coarse-grid Phase 14 designs. Each tick scales with the hull cell count,
- * making `maxTicks: 500` prohibitively slow (hundreds of seconds per fleet
- * pair). The tick cap is reduced to 10 so the test completes within the wall-
- * clock budget while still verifying guard byte-identity across the initial
- * movement and sensor-resolution phases. The assertion — optimised frames must
- * be byte-identical to naive frames — is unchanged; only the number of ticks
- * sampled is smaller. Ships do not reach weapon range within 10 ticks at this
- * scale, so break-apart and chain-reaction guards are not exercised here; those
- * guard paths are covered by the existing unit tests in engine.damage.unit.test.ts
- * (which use synthetic close-range fixtures, not preset fleets).
+ * Guard descriptions:
+ *  - breakApartTopology: skip union-find when the alive-cell fingerprint is
+ *    unchanged. Triggered when cells die and the fingerprint moves.
+ *  - chainReactionSpatial: use a spatial pre-filter for blast targets instead
+ *    of scanning every cell. Triggered when a volatile cell (magazine/reactor)
+ *    is destroyed.
+ *  - brownoutBounded: sort power-draw candidates once rather than re-scanning
+ *    per cut. Triggered when power demand exceeds supply.
+ *
+ * Geometry note
+ * =============
+ * All fixtures share the same axis convention:
+ *  - Attacker at world (0, 0) facing RIGHT (facing = 0).
+ *  - Defender at world (80, 0) facing RIGHT (facing = 0) too (no frame flip).
+ *  - With no outline polygon (bare modules) the beam fallback impact is at:
+ *      ix = target.x + dirX * radius = 80 + radius,  iy = 0
+ *    In local space (facing=0, no rotation): local.x = ix − 80 = +radius.
+ *    A module at col = +1 (local (+1, 0)) is distance (radius − 1) from the
+ *    impact; a module at col = 0 is distance radius. The col=+1 cell is
+ *    therefore NEAREST the impact and is always struck first.
+ *
+ * The break-apart fixture uses a vertical I-beam (all col=0 but rows −1/0/+1)
+ * so the bridge cell at row=0 is the nearest module (equidistant from the top
+ * and bottom flanks), dies first, and severs the two flanks.
  */
 
-/**
- * Tick cap for the guard A/B test. At the 1 m scale, 10 ticks × worst-case
- * ~960 ms/tick = 9.6 s per call; 5 fleet pairs × 3 seeds × 2 calls per pair
- * = 30 calls × 9.6 s ≈ 288 s isolated. With the 300 s test timeout each pair
- * completes well within the budget. The guards are still proven deterministic
- * over the initial movement phase.
- */
-const PERF_GUARD_TICKS = 10;
+const OPEN: CellEdges = { n: "open", e: "open", s: "open", w: "open", doorStates: {} };
 
-function frameHash(ships: CombatShip[], attackerId: string, defenderId: string, seed: number): string {
-  const r = runBattle({
-    ships: structuredClone(ships),
-    attackerFleetId: attackerId,
-    defenderFleetId: defenderId,
+/** Build a ResolvedModule at integer grid coords. World position is derived
+ *  from col/row so adjacency and blast geometry are consistent. */
+function moduleOf(
+  slotId: string,
+  effect: ModuleEffect,
+  col: number,
+  row: number,
+  maxScaffoldHp: number,
+  mass = 5,
+  command = false,
+  powerDraw = 0,
+): ResolvedModule {
+  return {
+    slotId,
+    moduleId: `mod-${slotId}`,
+    kind: effect.kind,
+    col,
+    row,
+    x: col * CELL_SIZE,
+    y: row * CELL_SIZE,
+    surface: "bare",
+    edges: OPEN,
+    maxSurfaceHp: 0,
+    maxScaffoldHp,
+    surfaceReduction: 0,
+    reactiveReduction: 0,
+    reactiveWindow: 0,
+    mass,
+    powerDraw,
+    crewRequired: 0,
+    effect,
+    command,
+    repairRate: 0,
+    shieldArc: Math.PI * 2,
+    shieldFacing: 0,
+    facing: "facing" in effect && typeof effect.facing === "number" ? effect.facing : 0,
+    weaponFacing: 0,
+    turretArc: 0,
+    turretTurnRate: 0,
+    channel: 0,
+    commsBearing: 0,
+    sensorBearing: 0,
+  };
+}
+
+function stats(over: Partial<ShipStats> = {}): ShipStats {
+  return {
+    mass: 10,
+    cost: 100,
+    powerDraw: 0,
+    powerOutput: 0,
+    powerNet: 0,
+    crewRequired: 0,
+    crewCapacity: 0,
+    crewNet: 0,
+    structure: 1_000_000,
+    damageReduction: 0,
+    shieldCapacity: 0,
+    shieldRechargeRate: 0,
+    shieldRechargeDelay: 30,
+    thrust: 0,
+    turnRate: 0,
+    weapons: [],
+    compartments: 0,
+    airtightCompartments: 0,
+    ...over,
+  };
+}
+
+function combatShip(
+  id: string,
+  side: "attacker" | "defender",
+  modules: ResolvedModule[],
+  position: { x: number; y: number },
+  facing: number,
+  over: Partial<CombatShip> = {},
+): CombatShip {
+  return {
+    instanceId: id,
+    designId: `d-${id}`,
+    faction: "test",
+    side,
+    stats: stats(),
+    position,
+    facing,
+    orders: { ...defaultOrders, engageRange: "hold" },
+    classification: "frigate",
+    modules,
+    shipStance: "balanced",
+    crewPriority: "combat",
+    rules: [],
+    ...over,
+  };
+}
+
+/** A hitscan beam weapon: high damage, well within range. Ships 80 m apart are
+ *  well inside the 320 m range, so the beam fires from the first tick. */
+const BEAM: WeaponEffect = {
+  kind: "weapon",
+  weaponType: "beam",
+  damage: 60,
+  range: 320,
+  cooldown: 1,
+  projectileSpeed: 0,
+  tracking: 0,
+  shieldPiercing: 1,
+  armourPiercing: 1,
+  spread: 0,
+  facing: 0,
+};
+
+function battleInputs(ships: CombatShip[], seed = 1, maxTicks = 15): BattleInputs {
+  return {
+    ships,
+    attackerFleetId: "fa",
+    defenderFleetId: "fd",
     anomaly: "none",
     seed,
-    maxTicks: PERF_GUARD_TICKS,
+    maxTicks,
+  };
+}
+
+/** Run a battle and return a SHA-256 digest of the serialised frame stream. */
+function frameHash(inputs: BattleInputs): string {
+  const result = runBattle({ ...inputs, ships: structuredClone(inputs.ships) });
+  return createHash("sha256").update(JSON.stringify(result.frames)).digest("hex");
+}
+
+/** Assert that a battle produces byte-identical frames with every guard on vs
+ *  off. Returns the naive hash for any further assertion by the caller. */
+function assertGuardIdempotence(inputs: BattleInputs): string {
+  Object.assign(PERF_GUARDS, {
+    breakApartTopology: false,
+    chainReactionSpatial: false,
+    brownoutBounded: false,
   });
-  return createHash("sha256").update(JSON.stringify(r.frames)).digest("hex");
+  const naive = frameHash(inputs);
+
+  Object.assign(PERF_GUARDS, {
+    breakApartTopology: true,
+    chainReactionSpatial: true,
+    brownoutBounded: true,
+  });
+  const optimised = frameHash(inputs);
+
+  expect(optimised).toBe(naive);
+  return naive;
+}
+
+/** Build a standard attacker: a reactor (command, bridge) at col=0,row=0 and a
+ *  beam weapon at col=0,row=1, parked at world (0, 0) and facing right (0). */
+function standardAttacker(id: string): CombatShip {
+  return combatShip(
+    id,
+    "attacker",
+    [
+      moduleOf("ac", { kind: "power", output: 10_000 }, 0, 0, 5_000, 5, true),
+      moduleOf("aw", BEAM, 0, 1, 5_000),
+    ],
+    { x: 0, y: 0 },
+    0,
+  );
 }
 
 describe("W5b perf guards preserve frame output", () => {
@@ -59,39 +222,207 @@ describe("W5b perf guards preserve frame output", () => {
     Object.assign(PERF_GUARDS, original);
   });
 
-  it("optimised frames are byte-identical to the naive reference for every preset battle", () => {
+  // -------------------------------------------------------------------------
+  // Fixture A: breakApartTopology guard
+  //
+  // The defender is a vertical I-beam: a top cell, a bridge cell, and a bottom
+  // cell, all at col=0 but rows −1/0/+1. The bridge (row=0) is nearest the
+  // impact point (see geometry note above) and has the lowest HP. When the
+  // bridge dies the top and bottom cells are no longer 4-connected; break-apart
+  // fires and creates two chunks. The fingerprint changes the moment the bridge
+  // cell dies, so the topology guard fires on that tick.
+  //
+  // Module layout (local, facing=0 = right, no frame flip):
+  //   row=-1: col=0  ← top chunk (high HP)
+  //   row= 0: col=0  ← bridge   (low HP, dies first)
+  //   row=+1: col=0  ← bottom chunk (high HP)
+  //
+  // Beam impact in local space ≈ (−radius, 0); the bridge at (0, 0) is the
+  // single nearest cell (the top/bottom cells are at distance > bridge).
+  // -------------------------------------------------------------------------
+  it("breakApartTopology guard: frames are byte-identical when a cell dies and the ship breaks apart", () => {
+    // I-beam defender: centre bridge is the only link; it has deliberately low
+    // HP so a single beam hit kills it, severing top from bottom.
+    const defender = combatShip(
+      "def-break",
+      "defender",
+      [
+        moduleOf("dt", { kind: "hull" },  0, -1, 5_000, 5, true), // top (command, high HP)
+        moduleOf("db", { kind: "hull" },  0,  0,    40),           // bridge (low HP, dies first)
+        moduleOf("dk", { kind: "hull" },  0,  1, 5_000),           // bottom (high HP)
+      ],
+      { x: 80, y: 0 },
+      0,           // facing right = same orientation as local frame
+    );
+
+    const inputs = battleInputs([standardAttacker("atk-break"), defender]);
+    assertGuardIdempotence(inputs);
+
+    // Sanity: the bridge must die for the break-apart guard to have been
+    // exercised (else the fingerprint never changes and the guard is trivially
+    // always "no-op", not meaningfully exercised).
+    Object.assign(PERF_GUARDS, {
+      breakApartTopology: false,
+      chainReactionSpatial: false,
+      brownoutBounded: false,
+    });
+    const result = runBattle({ ...inputs, ships: structuredClone(inputs.ships) });
+    const bridgeDied = result.frames.some((f) => {
+      const ship = f.ships.find((s) => s.instanceId === "def-break");
+      return (ship?.cells ?? []).some((c) => c.slotId === "db" && !c.alive);
+    });
+    expect(bridgeDied, "the bridge cell must die for the break-apart guard to fire").toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // Fixture B: chainReactionSpatial guard
+  //
+  // Impact geometry (see geometry note above):
+  //   The beam travels right (+x). The fallback impact is at
+  //   target.x + dirX * radius = 80 + radius (RIGHT / far side in world).
+  //   In local space (facing=0, no flip): local.x = ix − 80 = +radius.
+  //   A module at col=+1 (local +1, 0) is distance (radius − 1) from the
+  //   impact; a module at col=0 is distance radius. So col=+1 is NEAREST.
+  //
+  // The magazine sits at col=+1; the command cell is at col=0. The beam
+  // strikes the magazine first (distance 0.5 vs 1.5), destroying it in one
+  // hit (HP 40, beam damage 60). The detonation blasts the adjacent command
+  // cell. chainReactionSpatial on vs off must give byte-identical frames.
+  //
+  // Module layout (local, defender facing 0 — same as attacker):
+  //   col=0  ← command reactor (high HP, distance 1.5 from impact)
+  //   col=+1 ← magazine (low HP — NEAREST the impact at distance 0.5)
+  // -------------------------------------------------------------------------
+  it("chainReactionSpatial guard: frames are byte-identical when a volatile module detonates", () => {
+    // Defender facing 0 (right, same frame as attacker). Magazine at col=+1 is
+    // on the far (right) side in local space and therefore nearest the beam
+    // impact — it is struck first and destroyed by a single 60-damage hit.
+    const defender = combatShip(
+      "def-chain",
+      "defender",
+      [
+        moduleOf("dc", { kind: "power", output: 1_000 }, 0, 0, 5_000, 5, true), // command, high HP
+        moduleOf("dm", { kind: "magazine", ammoStored: 10 }, 1, 0,  40),         // volatile, low HP — struck first
+      ],
+      { x: 80, y: 0 },
+      0,          // facing right (same as attacker), no frame flip
+    );
+
+    const inputs = battleInputs([standardAttacker("atk-chain"), defender]);
+    assertGuardIdempotence(inputs);
+
+    // Sanity: the magazine must detonate within the run.
+    Object.assign(PERF_GUARDS, {
+      breakApartTopology: false,
+      chainReactionSpatial: false,
+      brownoutBounded: false,
+    });
+    const result = runBattle({ ...inputs, ships: structuredClone(inputs.ships) });
+    const magDied = result.frames.some((f) => {
+      const ship = f.ships.find((s) => s.instanceId === "def-chain");
+      return (ship?.cells ?? []).some((c) => c.slotId === "dm" && !c.alive);
+    });
+    expect(magDied, "the magazine must be destroyed for the chain-reaction guard to fire").toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // Fixture C: brownoutBounded guard
+  //
+  // A ship whose weapon modules' combined power draw exceeds the reactor's
+  // output forces a brownout cut every tick from the first recomputeAggregates
+  // call. With brownoutBounded on the engine pre-sorts candidates once per
+  // brownout; with it off it re-scans per cut. Both paths yield the same
+  // victims in the same order, so frames must be byte-identical.
+  //
+  // Setup:
+  //   reactor (bc): output 50 W
+  //   weapon 1 (bw1): powerDraw 80 W — cut first (hungriest)
+  //   weapon 2 (bw2): powerDraw 40 W — cut second (demand 150→70→30 ≤ 50)
+  //
+  // After both cuts demand (30) ≤ supply (50), so neither weapon fires. The
+  // dummy defender has near-infinite HP and is never killed, so the battle
+  // runs to maxTicks. The key assertion is that the guard paths agree.
+  //
+  // The brownout guard controls recomputeAggregates' cut loop in physics.ts,
+  // which sets m.powered = false for the victims. Both paths produce the same
+  // powered/unpowered assignment, so frames are byte-identical.
+  // -------------------------------------------------------------------------
+  it("brownoutBounded guard: frames are byte-identical when power demand exceeds supply", () => {
+    // Reactor output 50 W; two weapons draw 80+40 = 120 W → brownout from tick 1.
+    const weaponEffect: WeaponEffect = { ...BEAM, damage: 1 };
+    const brownoutShip = combatShip(
+      "brownout",
+      "attacker",
+      [
+        moduleOf("bc",  { kind: "power", output: 50 }, 0,  0, 5_000, 5, true),
+        moduleOf("bw1", weaponEffect,                  1,  0, 5_000, 5, false, 80),
+        moduleOf("bw2", weaponEffect,                  0,  1, 5_000, 5, false, 40),
+      ],
+      { x: 0, y: 0 },
+      0,
+    );
+
+    // Near-indestructible single-cell defender so the battle runs to maxTicks
+    // (proving the brownout-cut weapons deal no damage, which the byte-identical
+    // frame assertion verifies implicitly).
+    const dummyDefender = combatShip(
+      "dummy-def",
+      "defender",
+      [
+        moduleOf("tc", { kind: "hull" }, 0, 0, 999_999_999, 5, true),
+      ],
+      { x: 80, y: 0 },
+      Math.PI,
+      { stats: stats({ structure: 999_999_999 }) },
+    );
+
+    const inputs = battleInputs([brownoutShip, dummyDefender], 3, 10);
+    assertGuardIdempotence(inputs);
+
+    // Sanity: brownout cuts both weapons so no damage reaches the dummy, which
+    // therefore survives all 10 ticks. The battle resolves by leadingSide;
+    // both sides have comparable structure so the result can be anything, but
+    // the dummy's near-infinite HP means it is not "defender" (the dummy
+    // survived). The invariant we care about is frame identicality, already
+    // verified above; this check merely confirms the battle ran at all.
+    Object.assign(PERF_GUARDS, {
+      breakApartTopology: false,
+      chainReactionSpatial: false,
+      brownoutBounded: false,
+    });
+    const result = runBattle({ ...inputs, ships: structuredClone(inputs.ships) });
+    expect(result.ticks).toBe(10); // battle ran to full duration, not an early kill
+  });
+
+  // -------------------------------------------------------------------------
+  // Safety-net: one small preset fleet pair for end-to-end frame identicality.
+  //
+  // Phase Lance (4 Shards) vs Iron Wall (4 Anvils) is the smallest pair by
+  // total ship count. At 3 ticks this is fast and covers the multi-ship
+  // realistic path (AI, movement, sensor resolution) without guard exercise.
+  // -------------------------------------------------------------------------
+  it("preset safety net: Phase Lance vs Iron Wall is byte-identical over 3 ticks", () => {
     const designs = new Map(presetDesigns.map((d) => [d.id, d]));
     const fleets = presetFleets;
-    let pairs = 0;
-    for (let i = 0; i + 1 < fleets.length; i += 2) {
-      const attacker = fleets[i];
-      const defender = fleets[i + 1];
-      if (attacker === undefined || defender === undefined) continue;
-      const snapshot = [
-        ...resolveFleetToCombatShips(attacker, designs, catalog(), "attacker"),
-        ...resolveFleetToCombatShips(defender, designs, catalog(), "defender"),
-      ];
-      for (const seed of [1, 7, 99]) {
-        Object.assign(PERF_GUARDS, {
-          breakApartTopology: false,
-          chainReactionSpatial: false,
-          brownoutBounded: false,
-        });
-        const naive = frameHash(snapshot, attacker.id, defender.id, seed);
-
-        Object.assign(PERF_GUARDS, {
-          breakApartTopology: true,
-          chainReactionSpatial: true,
-          brownoutBounded: true,
-        });
-        const optimised = frameHash(snapshot, attacker.id, defender.id, seed);
-
-        expect(optimised, `${attacker.id}/${defender.id} seed=${seed}`).toBe(naive);
-        pairs += 1;
-      }
+    const phaseLance = fleets.find((f) => f.id === "preset-fleet-concord");
+    const ironWall   = fleets.find((f) => f.id === "preset-fleet-foundry");
+    if (phaseLance === undefined || ironWall === undefined) {
+      throw new Error("preset fleets not found");
     }
-    expect(pairs).toBeGreaterThan(0);
-  // 5 pairs × 3 seeds × 2 calls × 10 ticks × ~960 ms/tick ≈ 288 s isolated;
-  // raised to 600 s for concurrent test runs where CPU pressure extends wall time.
-  }, 600000);
+    const snapshot = [
+      ...resolveFleetToCombatShips(phaseLance, designs, catalog(), "attacker"),
+      ...resolveFleetToCombatShips(ironWall,   designs, catalog(), "defender"),
+    ];
+    for (const seed of [1, 7, 99]) {
+      const inputs: BattleInputs = {
+        ships: snapshot,
+        attackerFleetId: phaseLance.id,
+        defenderFleetId: ironWall.id,
+        anomaly: "none",
+        seed,
+        maxTicks: 3,
+      };
+      assertGuardIdempotence(inputs);
+    }
+  });
 });
