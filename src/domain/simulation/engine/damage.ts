@@ -9,6 +9,7 @@ import type { SimCrew } from "../types";
 import { computeChunkOutline } from "./chunk-outline";
 import { aliveCellFingerprint } from "./crew-pathfinding";
 import { defaultAiDecisions } from "./ai-step";
+import { SIM } from "./config";
 import { PERF_GUARDS } from "./perf-guards";
 import { resetCrewForFragment } from "./crew";
 import { comTangentialVelocity, localCentreOfMass, recomputeAggregates } from "./physics";
@@ -139,9 +140,41 @@ export function applyModuleDamage(
   if (path !== undefined) {
     // Cell-path penetration: spill through the resolved cells in order. Skip
     // the intercepting shield if it appears in the path (already resolved).
-    for (const cell of path) {
+    for (let i = 0; i < path.length; i += 1) {
       if (remaining <= 0) return;
+      const cell = path[i];
+      if (cell === undefined) continue;
       if (!cell.alive || cell === shield) continue;
+      // Wall / door edge stopping: before the projectile enters this cell, check
+      // the edge on the previous cell in the direction of travel. An edge that is
+      // grid-adjacent (|dCol| + |dRow| === 1) and carries a wall or closed door
+      // absorbs stopping energy from the round. A gap (non-adjacent cells in the
+      // path) means open space — no edge to check.
+      if (i > 0) {
+        const prev = path[i - 1];
+        if (prev !== undefined) {
+          const dCol = cell.col - prev.col;
+          const dRow = cell.row - prev.row;
+          if (Math.abs(dCol) + Math.abs(dRow) === 1) {
+            let dir: "n" | "e" | "s" | "w";
+            if (dCol === 1)       dir = "e";
+            else if (dCol === -1) dir = "w";
+            else if (dRow === 1)  dir = "s";
+            else                  dir = "n";
+            const edgeKind = prev.edges[dir];
+            if (edgeKind === "wall") {
+              remaining -= SIM.wallStopping;
+              if (remaining <= 0) return;
+            } else if (edgeKind === "door") {
+              const doorState = prev.edges.doorStates[dir];
+              if (doorState !== "open") {
+                remaining -= SIM.doorStopping;
+                if (remaining <= 0) return;
+              }
+            }
+          }
+        }
+      }
       remaining = damageCell(cell, remaining, armourPiercing);
       if (remaining <= 0) return; // this cell absorbed the rest
     }
@@ -193,6 +226,11 @@ function damageCell(cell: SimModule, amount: number, armourPiercing: number): nu
     if (cell.surfaceHp > 0) return 0;
     remaining = -cell.surfaceHp;
     cell.surfaceHp = 0;
+    // Armour stripped: the cell has lost its armour plate and is now bare scaffold —
+    // mark the transition so the renderer can show the stripped tier. Deck cells keep
+    // their surface label even when their deck HP is exhausted, so the walkability
+    // and hull-outline geometry are preserved correctly.
+    if (cell.surface === "armor") cell.surface = "bare";
   }
   // Scaffold layer next.
   cell.hp -= remaining;

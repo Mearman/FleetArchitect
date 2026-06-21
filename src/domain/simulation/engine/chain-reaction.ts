@@ -164,6 +164,61 @@ function buildCellIndex(modules: readonly SimModule[]): Map<number, SimModule> {
  * Targets on the source ship are processed in ascending `slotId` order so the
  * chain is deterministic regardless of array layout.
  */
+/**
+ * Compute the cumulative wall/door attenuation factor for the blast wave
+ * travelling from `source` to `target` along the dominant-axis (DDA) grid
+ * path. Each edge crossed on that path multiplies the surviving fraction by
+ * `SIM.wallBlastAttenuation` (wall), `SIM.doorBlastAttenuation` (closed
+ * door), or `SIM.doorOpenBlastAttenuation` (open door). A factor below 0.001
+ * is clamped to zero — effectively no blast reaches the target.
+ *
+ * The DDA path steps one cell at a time along the dominant axis, preferring
+ * horizontal motion on a tie, and checks the edge of the current cell in the
+ * direction of the next step before advancing. This matches the grid topology:
+ * the edge "between" two adjacent cells lives on the source-side cell.
+ */
+function blastAttenuationFactor(
+  source: SimModule,
+  target: SimModule,
+  cellIndex: Map<number, SimModule>,
+): number {
+  let factor = 1.0;
+  let col = source.col;
+  let row = source.row;
+
+  while (col !== target.col || row !== target.row) {
+    const dCol = target.col - col;
+    const dRow = target.row - row;
+    // Prefer horizontal movement on a tie so the DDA is deterministic.
+    const useHoriz = Math.abs(dCol) >= Math.abs(dRow);
+    let dir: "n" | "e" | "s" | "w";
+    let nextCol = col;
+    let nextRow = row;
+    if (useHoriz) {
+      if (dCol > 0) { dir = "e"; nextCol = col + 1; }
+      else           { dir = "w"; nextCol = col - 1; }
+    } else {
+      if (dRow > 0) { dir = "s"; nextRow = row + 1; }
+      else           { dir = "n"; nextRow = row - 1; }
+    }
+    // Check the edge on the CURRENT cell in the direction we are about to cross.
+    const cell = cellIndex.get(packCell(col, row));
+    if (cell !== undefined) {
+      const edgeKind = cell.edges[dir];
+      if (edgeKind === "wall") {
+        factor *= SIM.wallBlastAttenuation;
+      } else if (edgeKind === "door") {
+        const doorState = cell.edges.doorStates[dir];
+        factor *= doorState === "open" ? SIM.doorOpenBlastAttenuation : SIM.doorBlastAttenuation;
+      }
+    }
+    if (factor < 0.001) return 0;
+    col = nextCol;
+    row = nextRow;
+  }
+  return factor;
+}
+
 function detonate(
   ship: SimShip,
   source: SimModule,
@@ -181,7 +236,14 @@ function detonate(
     const dist = Math.hypot(target.x - source.x, target.y - source.y);
     if (dist >= radius) continue;
     const falloff = 1 - dist / radius;
-    const damage = yieldAmount * falloff;
+    // Wall / door blast attenuation: multiply the damage by the fraction of the
+    // wave that survives the edges between the source and target cells. When no
+    // cellIndex was built (the naive path) attenuation is skipped (factor = 1),
+    // keeping the naive and spatial paths byte-identical in the no-cellIndex case.
+    const attenuation = cellIndex !== undefined
+      ? blastAttenuationFactor(source, target, cellIndex)
+      : 1.0;
+    const damage = yieldAmount * falloff * attenuation;
     if (damage <= 0) continue;
     // The target cell's world position so applyDamage's nearest-cell selection
     // lands the hit on it. Internal blast: pierce shields and armour fully.

@@ -754,6 +754,16 @@ export const SIM = {
    * Classification: authored catalogue content
    */
   debrisMinRelSpeed: 10,
+  /** Stopping energy (HP) a wall edge absorbs from a penetrating round. Classification: authored catalogue content. */
+  wallStopping: 25,
+  /** Stopping energy (HP) a closed door absorbs; open doors absorb zero. Classification: authored catalogue content. */
+  doorStopping: 8,
+  /** Blast-energy fraction (0–1) transmitting through a wall edge. Classification: authored catalogue content. */
+  wallBlastAttenuation: 0.1,
+  /** Blast-energy fraction transmitting through a closed door edge. Classification: authored catalogue content. */
+  doorBlastAttenuation: 0.5,
+  /** Blast-energy fraction transmitting through an open door edge (near-free passage). Classification: authored catalogue content. */
+  doorOpenBlastAttenuation: 0.92,
 };
 
 /** Closing speed (world-units per tick) below which the translation controller
