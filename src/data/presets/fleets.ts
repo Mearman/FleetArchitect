@@ -242,4 +242,49 @@ export const fleetData: FleetInput[] = [
     source: "preset",
     revision: 1,
   },
+  {
+    id: "preset-fleet-automaton-swarm",
+    name: "Automaton Swarm",
+    faction: "Synthetic",
+    // A dense fighter screen: a cloud of Automatons floods the approach lanes,
+    // precise cannons picking off missiles and escorts while the sensor arrays
+    // track every contact in the engagement zone.
+    ships: [
+      { designId: "preset-ship-automaton", position: { x: -340, y: -200 }, facing: 0, orders: netOrders },
+      { designId: "preset-ship-automaton", position: { x: -340, y: -140 }, facing: 0, orders: netOrders },
+      { designId: "preset-ship-automaton", position: { x: -340, y: -80 }, facing: 0, orders: netOrders },
+      { designId: "preset-ship-automaton", position: { x: -340, y: -20 }, facing: 0, orders: netOrders },
+      { designId: "preset-ship-automaton", position: { x: -340, y: 40 }, facing: 0, orders: netOrders },
+      { designId: "preset-ship-automaton", position: { x: -340, y: 100 }, facing: 0, orders: netOrders },
+      { designId: "preset-ship-automaton", position: { x: -340, y: 160 }, facing: 0, orders: netOrders },
+      { designId: "preset-ship-automaton", position: { x: -340, y: 220 }, facing: 0, orders: netOrders },
+    ],
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
+  },
+  {
+    id: "preset-fleet-nexus-armada",
+    name: "Nexus Armada",
+    faction: "Synthetic",
+    // The Collective's combined arms fleet: the Nexus Prime commands from the
+    // centre, its coordination nodes extending the coilguns of the flanking
+    // Nodes; a cloud of Automatons runs ahead as sensor pickets and intercept
+    // drones. No crew anywhere in the formation.
+    ships: [
+      { designId: "preset-ship-nexus-prime", position: { x: -260, y: 0 }, facing: 0, orders: netOrders },
+      { designId: "preset-ship-network-hub", position: { x: -330, y: -160 }, facing: 0, orders: netOrders },
+      { designId: "preset-ship-network-hub", position: { x: -330, y: 160 }, facing: 0, orders: netOrders },
+      { designId: "preset-ship-node", position: { x: -390, y: -90 }, facing: 0, orders: netOrders },
+      { designId: "preset-ship-node", position: { x: -390, y: 90 }, facing: 0, orders: netOrders },
+      { designId: "preset-ship-automaton", position: { x: -450, y: -200 }, facing: 0, orders: netOrders },
+      { designId: "preset-ship-automaton", position: { x: -450, y: 0 }, facing: 0, orders: netOrders },
+      { designId: "preset-ship-automaton", position: { x: -450, y: 200 }, facing: 0, orders: netOrders },
+    ],
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
+  },
 ];

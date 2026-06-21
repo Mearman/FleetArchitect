@@ -127,11 +127,22 @@ const INTENDED_CLASS: Record<string, ShipClassification> = {
   "preset-ship-spitter":  "frigate",
   // Swarm cruiser
   "preset-ship-hive-lord": "cruiser",
-  // Faction frigates
-  "preset-ship-shard":    "frigate",
-  "preset-ship-anvil":    "frigate",
-  "preset-ship-reaver":   "frigate",
-  "preset-ship-node":     "frigate",
+  // Crystalline Concord
+  "preset-ship-shard":       "frigate",
+  // Foundry Combine
+  "preset-ship-ingot":       "fighter",
+  "preset-ship-anvil":       "frigate",
+  "preset-ship-battleram":   "cruiser",
+  "preset-ship-siege-titan": "dreadnought",
+  // Corsair Reavers
+  "preset-ship-cutlass":     "fighter",
+  "preset-ship-reaver":      "frigate",
+  "preset-ship-warbringer":  "cruiser",
+  // Synthetic Collective
+  "preset-ship-automaton":   "fighter",
+  "preset-ship-node":        "frigate",
+  "preset-ship-network-hub": "cruiser",
+  "preset-ship-nexus-prime": "dreadnought",
 };
 
 describe("1 m scale classification (W4)", () => {

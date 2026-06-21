@@ -427,20 +427,96 @@ export const designData: ShipDesignInput[] = [
   },
 
   // ---------------------------------------------------------------------------
-  // Foundry Combine — slow, heavily-armoured slabs.
+  // Foundry Combine — slow, heavily-armoured fortress slabs. Thick reactive
+  // prows, autocannon broadsides, repair bays that weld damage shut. No
+  // shields — they take every hit on the plate and keep coming.
   // ---------------------------------------------------------------------------
+  {
+    id: "preset-ship-ingot",
+    name: "Ingot",
+    faction: "Foundry",
+    // Fighter: the Foundry's heavy interceptor. A squat five-by-five block of
+    // reactive plating surrounds a compact autocannon battery and a pair of
+    // crew barracks. Heavier than any comparable fighter; slow but almost
+    // unkillable at close range. A single forge reactor and magazine feed the
+    // guns; industrial thrusters push the whole mass forward.
+    grid: scaleToTier(foundryGrid([
+      "###>#",
+      "#CFA#",
+      "EFAGe",
+      "#CFA#",
+      "###<#",
+    ]), FIGHTER_LB_M, FIGHTER_MAX_M),
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
+  },
   {
     id: "preset-ship-anvil",
     name: "Anvil",
     faction: "Foundry",
-    // A frigate that is more plating than ship: forged bulkheads over an
-    // autocannon and a damage-control bay, with a shell magazine feeding the
-    // gun. No shields — it absorbs fire with raw structure and welds it shut.
+    // Frigate: a five-row fortress slab with a deep reactive prow and an
+    // autocannon battery fronted by a damage-control bay. Two forge reactors
+    // feed the guns and welders; a shell magazine carries the ammunition;
+    // a corridor of deck space lets the crew reach every station. No shields —
+    // the Anvil absorbs fire until the enemy breaks.
     grid: scaleToTier(foundryGrid([
-      "#~~~~>#",
-      "ECFWAGe",
-      "#~~~~<#",
+      ".###>##",
+      "ECFW~A#",
+      "XFW~AGe",
+      "ECFW~A#",
+      ".###<##",
     ]), FRIGATE_LB_M, FRIGATE_MAX_M),
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
+  },
+  {
+    id: "preset-ship-battleram",
+    name: "Battleram",
+    faction: "Foundry",
+    // Cruiser: a heavy siege platform. A thick reactive prow six cells deep
+    // presents an enormous surface for incoming fire while autocannon banks
+    // and mine layers work the flanks. Industrial cores and grav-drives push
+    // the mass; two barracks blocks and a crew of welders keep it in the
+    // fight long after lighter ships have folded. Slow and inexorable.
+    grid: scaleToTier(foundryGrid([
+      "..###>####.",
+      ".#XCFW~AG##",
+      "#XCCW~AAG##",
+      "PXCCFW~MAGe",
+      "#XCCW~AAG##",
+      ".#XCFW~AG##",
+      "..###<####.",
+    ]), CRUISER_LB_M, CRUISER_MAX_M),
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
+  },
+  {
+    id: "preset-ship-siege-titan",
+    name: "Siege Titan",
+    faction: "Foundry",
+    // Dreadnought: the Foundry's ultimate weapon. A walking fortress nine
+    // rows wide, its prow a solid wall of reactive plating six cells thick.
+    // Multiple industrial cores and grav-drives drag the mass forward; banks
+    // of autocannons and mine layers cover every approach vector; a deep crew
+    // complement mans the welders and magazines. Enemies either destroy it
+    // before it closes range — or they do not.
+    grid: scaleToTier(foundryGrid([
+      "...##>######.",
+      "..##XCFW~AG##",
+      ".##XCCW~AAG##",
+      "##XCCCFW~MAG#",
+      "PXCCCFW~MAGe.",
+      "##XCCCFW~MAG#",
+      ".##XCCW~AAG##",
+      "..##XCFW~AG##",
+      "...##<######.",
+    ]), DREAD_LB_M, DREAD_MAX_M),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -448,20 +524,68 @@ export const designData: ShipDesignInput[] = [
   },
 
   // ---------------------------------------------------------------------------
-  // Corsair Reavers — fast missile raiders.
+  // Corsair Reavers — asymmetric scavenger hulls. One heavy side, one light
+  // side; ragged silhouettes; missile volleys and scrambled ECM. Strike fast,
+  // blink out, let the Foundry wonder what hit it.
   // ---------------------------------------------------------------------------
+  {
+    id: "preset-ship-cutlass",
+    name: "Cutlass",
+    faction: "Corsair",
+    // Fighter: a fast asymmetric raider interceptor. The upper hull carries
+    // heavier plating and a pair of missile racks; the lower hull is stripped
+    // back for engine clearance. A salvaged reactor and magazine keep the
+    // volley sustained; lateral drives give it the edge in a turning fight.
+    grid: scaleToTier(corsairGrid([
+      ".##>.",
+      "ECFM#",
+      "#FMGe",
+      ".#<..",
+    ]), FIGHTER_LB_M, FIGHTER_MAX_M),
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
+  },
   {
     id: "preset-ship-reaver",
     name: "Reaver",
     faction: "Corsair",
-    // A raider frigate: a missile rack and raid cannon over a hot raid drive,
-    // with a magazine for a sustained volley and a scrambler to blunt return
-    // fire. Light scrap hull — it strikes and runs.
+    // Frigate: the classic asymmetric raider. The top half carries armour and
+    // missile racks; the bottom is engine-heavy with a scrambler and a blink
+    // drive for the getaway. Crew quarters sit off-centre on the lighter side.
+    // It looks like it was assembled in a hurry from three different ships —
+    // which it was — and it works exactly because of that.
     grid: scaleToTier(corsairGrid([
       ".####>.",
-      "ECFMGJe",
-      ".####<.",
+      "ECF##Me",
+      "EFM~GJe",
+      "#CFMGe.",
+      "..##<..",
     ]), FRIGATE_LB_M, FRIGATE_MAX_M),
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
+  },
+  {
+    id: "preset-ship-warbringer",
+    name: "Warbringer",
+    faction: "Corsair",
+    // Cruiser: a massive raider hull with a blink drive and a swarm missile
+    // complement that can strip shields off a Leviathan in a single volley.
+    // Asymmetric by design: the upper section is all armour and missile
+    // launchers, the lower section carries the drives and the blink core.
+    // Raids in, empties the magazines, blinks out before the point defences
+    // find their rhythm.
+    grid: scaleToTier(corsairGrid([
+      ".##>#####",
+      "ECF~CM###",
+      "EFMGCWM##",
+      "#CFBGWM#.",
+      "##FM<G##.",
+      ".##e####.",
+    ]), CRUISER_LB_M, CRUISER_MAX_M),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -472,17 +596,89 @@ export const designData: ShipDesignInput[] = [
   // Synthetic Collective — hardwired, crewless drone hulls.
   // ---------------------------------------------------------------------------
   {
+    id: "preset-ship-automaton",
+    name: "Automaton",
+    faction: "Synthetic",
+    // Fighter: a compact autonomous combat drone. A single targeting cannon and
+    // an active sensor array give it precision at range; a slug reservoir feeds
+    // the cannon. No crew, no quarters — the processor runs the whole hull
+    // alone. Armour rails top and bottom are the classic Synthetic silhouette.
+    grid: scaleToTier(syntheticGrid([
+      ".##>..",
+      "EPGCNe",
+      ".##<..",
+    ]), FIGHTER_LB_M, FIGHTER_MAX_M),
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
+  },
+  {
     id: "preset-ship-node",
     name: "Node",
     faction: "Synthetic",
-    // A crewless frigate: an AI processor runs the whole ship with no quarters,
-    // hardwiring power and ammo directly. A precise cannon and an interceptor
-    // array screen the fleet, fed from an integral slug reservoir.
+    // Frigate: a crewless patrol hull with a five-row modular layout. Twin
+    // quantum cores power a mixed battery — a precise cannon and a coilgun
+    // flanked by an interceptor array and a sensor suite. Paired slug
+    // reservoirs keep both weapons fed. Armour rails wrap the grid; an armour
+    // cap seals the prow behind the gun battery.
     grid: scaleToTier(syntheticGrid([
-      ".####>.",
-      "EPCGINe",
-      ".####<.",
+      ".#####>",
+      "EXGCINe",
+      "EPGCRN#",
+      "EXGCINe",
+      ".#####<",
     ]), FRIGATE_LB_M, FRIGATE_MAX_M),
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
+  },
+  {
+    id: "preset-ship-network-hub",
+    name: "Network Hub",
+    faction: "Synthetic",
+    // Cruiser: the Collective's fleet coordinator. A command processor and twin
+    // quantum cores drive three interior rows — coilguns for direct fire,
+    // drone hangars to saturate the engagement zone, coordination nodes that
+    // extend the range and accuracy of every allied ship in range, a sensor
+    // array, and an interceptor screen. Armour rails lock the hull into its
+    // machine-precise frame; a double armour cap seals the prow on the
+    // centre row.
+    grid: scaleToTier(syntheticGrid([
+      ".#########>",
+      "EX~GRHAINe#",
+      "EPAGRHAIN##",
+      "EX~GRHAINe#",
+      ".#########<",
+    ]), CRUISER_LB_M, CRUISER_MAX_M),
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
+  },
+  {
+    id: "preset-ship-nexus-prime",
+    name: "Nexus Prime",
+    faction: "Synthetic",
+    // Dreadnought: the Collective's apex hull. A master command processor and
+    // five quantum cores deliver enormous output across a seven-row grid:
+    // twin coilguns on the outer rows for sustained high-calibre fire, a
+    // mixed battery of coilguns, coordination nodes, and drone hangars on
+    // the inner rows, and a dense interceptor array behind the sensor suite.
+    // Slug reservoirs on every interior row keep the coilguns fed
+    // indefinitely. Armour rails and a double prow cap give the hull its
+    // unmistakable machine silhouette — no crew, no quarters, just the
+    // network.
+    grid: scaleToTier(syntheticGrid([
+      ".###########>",
+      "EX~GHAINRR##e",
+      "EX~GAHAINR##e",
+      "EPXGAHAIRAN#e",
+      "EX~GAHAINR##e",
+      "EX~GHAINRR##e",
+      ".###########<",
+    ]), DREAD_LB_M, DREAD_MAX_M),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
