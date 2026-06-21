@@ -1,48 +1,61 @@
 import { style } from "@vanilla-extract/css";
 import { vars } from "@/ui/theme/vars.css";
 
-/**
- * Backlit hardware-key box-shadow as a real CSS class, not Mantine `styles`.
- * Mantine applies flat `styles` props inline, and an inline box-shadow cannot be
- * overridden by a :hover/:active rule — so the activation glow (and the press
- * sink) only work when the whole box-shadow lives in a class like this, applied
- * via the component's `classNames`.
- *
- * A control rests as a raised bevelled key. It lights with an amber glow when it
- * becomes active — hover or keyboard focus — and brightest under the finger on
- * press, where it also sinks flush to the panel plane. Disabled keys are flat
- * and dark.
- */
-const raisedKey = (side: string): string =>
+/** Raised-key box-shadow: lit top edge, shaded bottom edge, an extruded side of
+ *  `side`px, and a drop shadow that shrinks as the key sinks towards the panel. */
+const raised = (side: number, dropY: number, dropBlur: number): string =>
   [
     `inset 0 1px 0 ${vars.material.bevelHighlightStrong}`,
     `inset 0 -1px 0 ${vars.material.bevelShadow}`,
-    `0 ${side} 0 ${vars.material.bezelBottom}`,
-    `0 3px 5px -1px ${vars.material.elevation}`,
+    `0 ${side}px 0 ${vars.material.bezelBottom}`,
+    `0 ${dropY}px ${dropBlur}px -1px ${vars.material.elevation}`,
   ].join(", ");
 
+/** Flush, fully-pressed key sunk to the panel plane. */
 const pressed = [
   `inset 0 1px 2px ${vars.material.bevelShadowDeep}`,
   `inset 0 -1px 0 ${vars.material.bevelHighlight}`,
   `0 0 0 1px ${vars.color.border}`,
 ].join(", ");
 
-/** Amber bloom layered onto the bevel when the key becomes active. */
-const GLOW = "0 0 12px -2px rgba(255,176,0,0.55)";
-const GLOW_STRONG = "0 0 16px -1px rgba(255,176,0,0.85)";
+/** Amber bloom — the key lights up only when fully pressed or latched on. */
+const GLOW = "0 0 16px -1px rgba(255,176,0,0.85)";
+const litShadow = `${pressed}, ${GLOW}`;
 
-function hardwareKeyStyle(side: string, travel: string): string {
+interface KeySpec {
+  rest: string;
+  hover: string;
+  hoverTravel: string;
+  fullTravel: string;
+}
+
+/**
+ * Pressable hardware key as a CSS class — Mantine applies flat `styles` props
+ * inline, which would block these :hover/:active rules. The key rests raised and
+ * dark; hovering sinks it slightly without lighting it (it is not yet engaged);
+ * an actual press sinks it flush and lights it with an amber glow. That lit,
+ * fully-pressed look also latches via [data-active="true"] / [aria-pressed="true"],
+ * so one key serves both momentary buttons (lit only while held) and toggle
+ * buttons (lit while on). A latched rule sits after :hover so a hovered toggle-on
+ * key stays fully lit rather than dropping to the half-pressed hover state.
+ */
+function hardwareKeyStyle(spec: KeySpec): string {
+  const lit = {
+    transform: `translateY(${spec.fullTravel})`,
+    boxShadow: litShadow,
+  };
   return style({
-    boxShadow: raisedKey(side),
-    transition: "transform 60ms ease, box-shadow 120ms ease",
+    boxShadow: spec.rest,
+    transition: "transform 80ms ease, box-shadow 120ms ease",
     selectors: {
-      "&:hover": { boxShadow: `${raisedKey(side)}, ${GLOW}` },
-      "&:focus-visible": { boxShadow: `${raisedKey(side)}, ${GLOW}` },
-      "&:active": {
-        transform: `translateY(${travel})`,
-        boxShadow: `${pressed}, ${GLOW_STRONG}`,
+      "&:hover": {
+        transform: `translateY(${spec.hoverTravel})`,
+        boxShadow: spec.hover,
       },
-      "&:disabled": { boxShadow: "none", transform: "none" },
+      "&:active": lit,
+      '&[data-active="true"]': lit,
+      '&[aria-pressed="true"]': lit,
+      "&:disabled": { transform: "none", boxShadow: "none" },
     },
     "@media": {
       "(prefers-reduced-motion: reduce)": { transition: "none" },
@@ -50,7 +63,18 @@ function hardwareKeyStyle(side: string, travel: string): string {
   });
 }
 
-/** Full-size pressable key — for Button. */
-export const hardwareKey = hardwareKeyStyle("2px", "2px");
+/** Full-size key — for Button. */
+export const hardwareKey = hardwareKeyStyle({
+  rest: raised(2, 3, 5),
+  hover: raised(1, 2, 4),
+  hoverTravel: "1px",
+  fullTravel: "2px",
+});
+
 /** Smaller key with shorter travel — for ActionIcon. */
-export const hardwareKeySmall = hardwareKeyStyle("1px", "1px");
+export const hardwareKeySmall = hardwareKeyStyle({
+  rest: raised(1, 2, 4),
+  hover: raised(0.5, 1, 3),
+  hoverTravel: "0.5px",
+  fullTravel: "1px",
+});

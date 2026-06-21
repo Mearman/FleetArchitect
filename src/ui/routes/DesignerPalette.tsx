@@ -38,6 +38,7 @@ export function DesignerPalette({
             <Button
               size="xs"
               variant={brush.kind === "empty" ? "filled" : "light"}
+              data-active={brush.kind === "empty" ? "true" : undefined}
               color="gray"
               onClick={() => onChange({ kind: "empty" })}
               disabled={readOnly}
@@ -55,6 +56,7 @@ export function DesignerPalette({
               <Button
                 size="xs"
                 variant={brush.kind === "scaffold-armor" ? "filled" : "light"}
+                data-active={brush.kind === "scaffold-armor" ? "true" : undefined}
                 onClick={() => onChange({ kind: "scaffold-armor" })}
                 disabled={readOnly}
               >
@@ -65,6 +67,7 @@ export function DesignerPalette({
               <Button
                 size="xs"
                 variant={brush.kind === "scaffold-deck" ? "filled" : "light"}
+                data-active={brush.kind === "scaffold-deck" ? "true" : undefined}
                 color="yellow"
                 onClick={() => onChange({ kind: "scaffold-deck" })}
                 disabled={readOnly}
@@ -76,6 +79,7 @@ export function DesignerPalette({
               <Button
                 size="xs"
                 variant={brush.kind === "scaffold-bare" ? "filled" : "light"}
+                data-active={brush.kind === "scaffold-bare" ? "true" : undefined}
                 color="gray"
                 onClick={() => onChange({ kind: "scaffold-bare" })}
                 disabled={readOnly}
@@ -106,6 +110,11 @@ export function DesignerPalette({
                       ? "filled"
                       : "light"
                   }
+                  data-active={
+                    brush.kind === "add-surface" && brush.surface === surface
+                      ? "true"
+                      : undefined
+                  }
                   color={surface === "armor" ? "gray" : "yellow"}
                   onClick={() => onChange({ kind: "add-surface", surface })}
                   disabled={readOnly}
@@ -118,6 +127,7 @@ export function DesignerPalette({
               <Button
                 size="xs"
                 variant={brush.kind === "remove-surface" ? "filled" : "light"}
+                data-active={brush.kind === "remove-surface" ? "true" : undefined}
                 color="gray"
                 onClick={() => onChange({ kind: "remove-surface" })}
                 disabled={readOnly}
@@ -136,6 +146,7 @@ export function DesignerPalette({
               <Button
                 size="xs"
                 variant={brush.kind === "edge-wall" ? "filled" : "light"}
+                data-active={brush.kind === "edge-wall" ? "true" : undefined}
                 onClick={() => onChange({ kind: "edge-wall" })}
                 disabled={readOnly}
               >
@@ -146,6 +157,7 @@ export function DesignerPalette({
               <Button
                 size="xs"
                 variant={brush.kind === "edge-door" ? "filled" : "light"}
+                data-active={brush.kind === "edge-door" ? "true" : undefined}
                 color="orange"
                 onClick={() => onChange({ kind: "edge-door" })}
                 disabled={readOnly}

@@ -473,6 +473,7 @@ export function ShipDesignerRoute() {
                     <Group key={design.id} justify="space-between" wrap="nowrap">
                       <Button
                         variant={design.id === working.id ? "filled" : "subtle"}
+                        data-active={design.id === working.id ? "true" : undefined}
                         size="xs"
                         fullWidth
                         justify="space-between"
@@ -744,6 +745,7 @@ export function ShipDesignerRoute() {
                     <Tooltip label="View version history">
                       <Button
                         variant={historyOpen ? "light" : "subtle"}
+                        data-active={historyOpen ? "true" : undefined}
                         color={historyOpen ? "orange" : undefined}
                         leftSection={<IconHistory size={16} />}
                         onClick={() => void openHistory()}
