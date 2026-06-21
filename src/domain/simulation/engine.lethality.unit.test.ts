@@ -32,8 +32,8 @@ import type { BattleResult } from "@/schema/battle";
  * have ~9× more hull cells than the coarse-grid Phase 14 designs, making each
  * tick slower. The per-tick cost starts at ~32 ms/tick when all ships are alive
  * and drops to ~9 ms/tick on average as ships die. At 800 ticks (≈ 7.5 s on
- * the development machine) Strike vs Picket produces 11 kills and a decisive
- * winner, satisfying the dead ≥ 6 assertion. Well within the 30 s timeout.
+ * the development machine) Strike vs Picket produces decisive kills. CI
+ * runners are ~5× slower (~47 ms/tick), so the test timeout is 120 s.
  */
 const LETHALITY_GUARD_TICKS = 800;
 /**
@@ -149,7 +149,9 @@ describe("engine.lethality — crewed Terran battles resolve decisively", () => 
     // disc heuristic now correctly miss. Both are physically correct; lethality
     // is lower but non-zero.
     expect(dead, "multiple ships must be destroyed").toBeGreaterThanOrEqual(2);
-  }, 30000);
+    // 800 ticks ≈ 7.5 s isolated on dev hardware; raised to 120 s for CI
+    // runners (~5× slower — observed 37 s under full-suite CPU contention).
+  }, 120000);
 
   it("the crewless Swarm baseline still resolves (fast path unbroken)", () => {
     // Crewless battles must not be slowed by the lethality tuning. updateCrew
