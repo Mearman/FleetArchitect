@@ -106,14 +106,15 @@ describe("engine.crew-perf — preset matchups still resolve", () => {
     // Strike Wing vs Picket Screen: modules die and break-apart fires,
     // exercising cache invalidation (fingerprint changes on module death).
     // At the W4 1 m scale, 400 ticks takes ~6 s isolated (declining cost as
-    // ships die); raised to 30 s for concurrent test runs.
+    // ships die); raised to 120 s for concurrent CI runs (~45 s observed under
+    // full-suite CPU contention on CI hardware).
     // Kills are not guaranteed within 400 ticks; the winner is decided by HP
     // comparison at the tick cap. The test only asserts the engine completes
     // without error and returns a valid result.
     const result = runBattle(buildInputs("preset-fleet-strike", "preset-fleet-picket"));
     expect(result.frames.length).toBeGreaterThan(0);
     expect(result.winner).toBeDefined();
-  }, 30000);
+  }, 120000);
 
   it("a crewless preset battle is unaffected by the crew optimisation", () => {
     // The crewless Swarm matchup should still resolve. updateCrew returns early
@@ -125,14 +126,14 @@ describe("engine.crew-perf — preset matchups still resolve", () => {
     // ~7553 modules; each tick costs ~394 ms. Ships need ~370 ticks to close
     // and produce kills, so the result is a stalemate decided by remaining HP
     // — expected at this scale. The guard only checks the engine completes
-    // without error; 30 ticks ≈ 11.8 s isolated; raised to 30 s for concurrent
-    // test runs where CPU pressure extends wall time.
+    // without error; 30 ticks ≈ 11.8 s isolated; raised to 120 s for CI runs
+    // (~31 s observed under full-suite CPU contention).
     const result = runBattle(
       buildInputs("preset-fleet-hive-assault", "preset-fleet-drone-swarm", 42, PRESET_CREWLESS_TICKS),
     );
     expect(result.frames.length).toBeGreaterThan(0);
     expect(result.winner).toBeDefined();
-  }, 30000);
+  }, 120000);
 });
 
 describe("engine.crew-perf — cache effectiveness", () => {
@@ -164,5 +165,7 @@ describe("engine.crew-perf — cache effectiveness", () => {
     // engine.crew.unit.test.ts prove the cache does not change behaviour; this
     // only proves it remains effective.
     expect(hitRate, "crew path cache hit rate").toBeGreaterThan(0.4);
-  }, 30000);
+    // 400 ticks ≈ 6 s isolated; raised to 120 s for CI runners (~40 s under
+    // full-suite CPU contention).
+  }, 120000);
 });
