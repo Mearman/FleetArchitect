@@ -24,7 +24,7 @@ import { resourceStep } from "./resource-step";
 import type { Debris } from "./debris";
 import { spawnDebris, stepDebris } from "./debris";
 import { resolveChainReactions } from "./chain-reaction";
-import { splitBreakApart } from "./damage";
+import { applyDamage, splitBreakApart } from "./damage";
 import { layMines, stepTechCooldowns, updateMines } from "./mines";
 import type { DeploymentReference } from "./movement";
 import { fleetCentroid, moveShips } from "./movement";
@@ -180,10 +180,27 @@ export function* simulateBattle(
   for (let tick = 1; tick <= inputs.maxTicks; tick++) {
     // 0. Awareness phase (sensors, comms, fog of war). Runs first so the
     //    targeting pass below reads each ship's freshly computed `awareness`.
-    //    Pure function of ship state + the pre-computed occluders + anomaly;
-    //    draws ZERO times from the battle rng. The returned snapshot is recorded
-    //    on this tick's frame at the end of the loop body.
-    const awareness = computeAwareness(ships, byId, occluders, inputs.anomaly);
+    //    Pure function of ship state + occluders + anomaly; draws ZERO times
+    //    from the battle rng. The returned snapshot is recorded on this tick's
+    //    frame at the end of the loop body.
+    //
+    //    Dynamic occluders: the static anomaly occluders are pre-computed once
+    //    (line ~161 above), but debris fragments change every tick as new
+    //    wreckage spawns. Rebuild a per-tick list each awareness pass by
+    //    appending one Disc per drifting fragment — radius maps directly from
+    //    the fragment's `radius` field to `r` (same physical meaning, different
+    //    field name by convention). The static array is never mutated.
+    const dynamicOccluders = debris.length === 0
+      ? occluders
+      : [
+          ...occluders,
+          ...debris.filter((d): d is NonNullable<typeof d> => d !== undefined).map((d) => ({
+            x: d.x,
+            y: d.y,
+            r: d.radius,
+          })),
+        ];
+    const awareness = computeAwareness(ships, byId, dynamicOccluders, inputs.anomaly);
     // 0a. Record the continuous EM emission log for this tick (Phase 9), behind
     //     the monotonic emission counter. The reception that built `awareness`
     //     above evaluated each enemy's emission strength per-pair; this log is
@@ -276,6 +293,46 @@ export function* simulateBattle(
     //     shields/armour/modules apply. A no-op tick with no contacts, so byte
     //     output is unchanged for battles where ships never touch.
     applyCollisionDamage(shipContacts);
+
+    // 2b-debris. Debris kinetic hazard (Phase 12). Drifting wreckage occupies the
+    //     same world space as ships; when a fragment's bounding disc overlaps a
+    //     ship's bounding disc, it transfers kinetic energy to the ship's hull
+    //     (½·m·v_rel²·damageFraction), routed through applyDamage so
+    //     shields/armour/modules apply. No shieldPiercing or armourPiercing —
+    //     wreckage hits the outer surface. The debris fragment is not destroyed or
+    //     modified (it is large drifting mass, not a round). Contacts below
+    //     SIM.debrisMinRelSpeed are ignored (stationary relative nudges). Debris
+    //     is advanced one tick later (step 4e-debris below), so the positions here
+    //     are from the previous tick's advance — consistent: the advance and the
+    //     damage step are in the same relative order every tick. A no-op until the
+    //     first ship dies and leaves wreckage; ships iterated in instanceId order.
+    if (debris.length > 0) {
+      // Build a sorted alive-ship list once for this debris pass, deterministic.
+      const aliveShipsSorted = ships
+        .filter((s) => s.alive && s.phantom === undefined)
+        .sort((a, b) => (a.instanceId < b.instanceId ? -1 : a.instanceId > b.instanceId ? 1 : 0));
+      for (const d of debris) {
+        if (d === undefined) continue;
+        for (const s of aliveShipsSorted) {
+          const dx = d.x - s.x;
+          const dy = d.y - s.y;
+          const distSq = dx * dx + dy * dy;
+          const contactDist = d.radius + s.radius;
+          if (distSq > contactDist * contactDist) continue;
+          const relVx = d.velX - s.velX;
+          const relVy = d.velY - s.velY;
+          const relSpeedSq = relVx * relVx + relVy * relVy;
+          if (relSpeedSq <= SIM.debrisMinRelSpeed * SIM.debrisMinRelSpeed) continue;
+          // Kinetic energy transferred: KE = ½ · m · v_rel²
+          // (sub-light debris, no relativistic correction needed here — a debris
+          // fragment moves at hull momentum / hull mass, well below c).
+          const ke = 0.5 * d.mass * relSpeedSq;
+          const damage = ke * SIM.debrisCollisionDamageFraction;
+          if (damage <= 0) continue;
+          applyDamage(s, damage, 0, 0, d.x, d.y);
+        }
+      }
+    }
 
     // 2c. Command auras (factions update). With positions settled for the tick,
     //     recompute each ship's best friendly aura bonus so the firing step below

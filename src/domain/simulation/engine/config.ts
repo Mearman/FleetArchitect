@@ -727,10 +727,33 @@ export const SIM = {
    * coarse-fragment estimate; the fragment then keeps the parent's momentum
    * exactly (Newton's first law) and drifts frictionlessly.
    *
-   * Classification: authored catalogue content (use-deferred — debris carries no
-   * hazard or occlusion consequence yet, only honest drifting mass)
+   * Classification: authored catalogue content
    */
   debrisMassFraction: 0.5,
+
+  /**
+   * [Phase 12 — debris kinetic hazard] Fraction of the kinetic energy a
+   * debris fragment transfers to a ship on bounding-disc overlap that is
+   * converted into structural damage. The same energy-equivalent units as
+   * `collisionDamageFraction`; set lower than the ship-ship value because a
+   * debris fragment is diffuse wreckage rather than a solid ram, so the energy
+   * couples less efficiently to the hull structure.
+   *
+   * Classification: authored catalogue content
+   */
+  debrisCollisionDamageFraction: 0.1,
+
+  /**
+   * [Phase 12 — debris kinetic hazard] Minimum relative speed (world m/tick)
+   * between a debris fragment and a ship for a kinetic-energy transfer to be
+   * applied. Contacts below this threshold are near-stationary nudges (the
+   * debris is drifting with the ship or is essentially at rest relative to it)
+   * and are ignored to avoid applying vanishingly small damage values that
+   * accumulate over many ticks without physical justification.
+   *
+   * Classification: authored catalogue content
+   */
+  debrisMinRelSpeed: 10,
 };
 
 /** Closing speed (world-units per tick) below which the translation controller

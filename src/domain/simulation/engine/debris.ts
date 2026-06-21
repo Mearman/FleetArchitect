@@ -2,14 +2,21 @@
  * Debris fields: the wreckage a destroyed ship or break-apart chunk leaves
  * behind. A debris entity persists after its parent is gone, drifts
  * frictionlessly (Newtonian — real space has no drag), and is both a kinetic
- * hazard (a hit transfers momentum, routed through the unified damage pipeline
- * in Phase 5) and a line-of-sight occluder (it shadows EM rays in Phase 9).
+ * hazard and a line-of-sight occluder.
  *
- * Spawning on destruction and per-tick drift are now wired into the battle tick
+ * Spawning on destruction and per-tick drift are wired into the battle tick
  * loop (`engine/index.ts`): a destroyed hull leaves one fragment carrying its
- * centre-of-mass momentum, advanced each tick. Use-deferred (Phase 12): the
- * hazard damage and EM occlusion consequences come later — debris is honest
- * drifting mass, snapshotted for the renderer, with no gameplay effect yet.
+ * centre-of-mass momentum, advanced each tick.
+ *
+ * Kinetic hazard (Phase 12): each tick, any debris fragment whose bounding
+ * disc overlaps a ship's bounding disc transfers kinetic energy to that ship's
+ * hull via `applyDamage` (shields and armour apply; no piercing). Implemented
+ * in the 2b-debris step in `engine/index.ts`.
+ *
+ * EM occlusion (Phase 12): each tick, the awareness phase rebuilds a per-tick
+ * dynamic occluder list combining the static anomaly occluders with one Disc
+ * per drifting fragment, so fragments block sensor lines-of-sight. Implemented
+ * in the 0-awareness step in `engine/index.ts`.
  */
 
 import type { Vec2 } from "@/schema/primitives";
