@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { EdgeKind, SolidCell, TileGrid } from "@/schema/grid";
+import { PHOSPHOR_GREEN } from "@/ui/theme/tokens";
 import { cellColour, cellLabel, edgePositionClass } from "./designerGrid";
 import {
   breachOverlay,
@@ -104,7 +105,7 @@ export function GridBoard({
             }}
             style={{
               background: cellColour(cell),
-              outline: isSelected ? "2px solid #ffd86e" : "none",
+              outline: isSelected ? `2px solid ${PHOSPHOR_GREEN}` : "none",
             }}
             aria-label={`cell ${col},${row}`}
           >

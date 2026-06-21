@@ -65,6 +65,7 @@ import { BehaviourPanel } from "./BehaviourPanel";
 import { DesignerPalette } from "./DesignerPalette";
 import { type BreachSet, GridBoard } from "./GridBoard";
 import { CommsConfig, SensorConfig } from "./ModuleConfig";
+import { panelLabel } from "@/ui/components/panel.css";
 import { zoomInner, zoomViewport } from "./ShipDesignerRoute.css";
 
 /** Zoom range for the pan/zoom viewport, as a fraction of natural size.
@@ -449,7 +450,7 @@ export function ShipDesignerRoute() {
         <Grid.Col span={{ base: 12, md: 4 }}>
           <Paper p="md" withBorder>
             <Group justify="space-between" mb="sm">
-              <Text fw={600}>Your designs</Text>
+              <Text className={panelLabel}>Your designs</Text>
               <Button
                 size="xs"
                 variant="light"
@@ -573,9 +574,7 @@ export function ShipDesignerRoute() {
               <Grid.Col span={{ base: 12, md: 6 }}>
                 <Paper p="md" withBorder>
                   <Group justify="space-between" mb="xs">
-                    <Text size="sm" fw={600}>
-                      Grid
-                    </Text>
+                    <Text className={panelLabel}>Grid</Text>
                     <Checkbox
                       size="xs"
                       label="Show airtightness"
