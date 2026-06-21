@@ -1,15 +1,14 @@
 import { useEffect } from "react";
-import { useFx } from "./FxContext";
-import { overlay, vignette, bootRoot } from "./CrtOverlay.css";
+import { bootRoot } from "./CrtOverlay.css";
 
 /**
- * CRT effects overlay — renders scanlines and a curvature vignette on top of
- * the entire app. Pointer-events: none ensures it never captures clicks. The
- * boot animation and RGB shift are gated on html[data-fx="full"] in CSS.
+ * Whole-machine boot sequence — runs the CRT power-on animation (a scaleY snap
+ * with a brightness ramp) on #root once at startup, gated on
+ * html[data-fx="full"] in CSS. The persistent screen effects (scanlines,
+ * vignette, chromatic aberration) live on the individual displays via
+ * CrtScreen, not across the whole app. Renders nothing itself.
  */
 export function CrtOverlay() {
-  const { level } = useFx();
-
   useEffect(() => {
     const root = document.getElementById("root");
     if (root === null) return;
@@ -19,12 +18,5 @@ export function CrtOverlay() {
     };
   }, []);
 
-  if (level === "off") return null;
-
-  return (
-    <>
-      <div className={overlay} aria-hidden="true" />
-      <div className={vignette} aria-hidden="true" />
-    </>
-  );
+  return null;
 }

@@ -27,12 +27,17 @@ const glitchIn = keyframes({
   "100%": { clipPath: "inset(0 0 0 0)",     transform: "translate(0,0)" },
 });
 
-/** Scanline overlay — visible at reduced and full levels. */
+/**
+ * Scanline overlay — visible at reduced and full levels. Positioned absolutely
+ * so it fills a single display surface (the battle canvas or designer viewport),
+ * not the whole app: the CRT scanlines belong on the screens, not smeared across
+ * the metal chrome. Drop it inside a position:relative display container.
+ */
 export const overlay = style({
-  position: "fixed",
+  position: "absolute",
   inset: 0,
   pointerEvents: "none",
-  zIndex: 198,
+  zIndex: 2,
   backgroundImage: [
     "repeating-linear-gradient(",
     "  to bottom,",
@@ -52,14 +57,18 @@ export const overlay = style({
   },
 });
 
-/** Curvature vignette layer. */
+/**
+ * Curvature vignette layer — darkens the screen edges. Sized for a single
+ * display (the radial spread is proportional, the inset shadow modest) so it
+ * reads as screen curvature rather than blacking out a small viewport.
+ */
 export const vignette = style({
-  position: "fixed",
+  position: "absolute",
   inset: 0,
   pointerEvents: "none",
-  zIndex: 199,
-  background: "radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.65) 100%)",
-  boxShadow: "inset 0 0 140px rgba(0,0,0,0.5)",
+  zIndex: 2,
+  background: "radial-gradient(ellipse at center, transparent 58%, rgba(0,0,0,0.5) 100%)",
+  boxShadow: "inset 0 0 50px rgba(0,0,0,0.38)",
 });
 
 /** Boot animation class — apply to #root, gated on [data-fx="full"]. */
@@ -77,10 +86,10 @@ export const bootRoot = style({
 /** RGB chromatic-aberration shift — full level only. */
 globalStyle(`html[data-fx="full"] .${overlay}::before`, {
   content: '""',
-  position: "fixed",
+  position: "absolute",
   inset: 0,
   pointerEvents: "none",
-  zIndex: 199,
+  zIndex: 2,
   backgroundImage: [
     "repeating-linear-gradient(",
     "  to bottom,",
@@ -96,10 +105,10 @@ globalStyle(`html[data-fx="full"] .${overlay}::before`, {
 
 globalStyle(`html[data-fx="full"] .${overlay}::after`, {
   content: '""',
-  position: "fixed",
+  position: "absolute",
   inset: 0,
   pointerEvents: "none",
-  zIndex: 199,
+  zIndex: 2,
   backgroundImage: [
     "repeating-linear-gradient(",
     "  to bottom,",

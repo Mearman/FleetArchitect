@@ -195,3 +195,11 @@ export const zoomViewport = style({
 export const zoomInner = style({
   transformOrigin: "top left",
 });
+
+/** Positioned wrapper around the viewport so the CRT screen overlay can be
+ *  pinned over the display rather than scrolling with the grid inside it: the
+ *  overlay is an absolute child of this wrapper, a sibling of the scroll
+ *  container, so it stays fixed over the screen as the grid pans beneath. */
+export const zoomScreen = style({
+  position: "relative",
+});

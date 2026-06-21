@@ -66,7 +66,8 @@ import { DesignerPalette } from "./DesignerPalette";
 import { type BreachSet, GridBoard } from "./GridBoard";
 import { CommsConfig, SensorConfig } from "./ModuleConfig";
 import { panelLabel } from "@/ui/components/panel.css";
-import { zoomInner, zoomViewport } from "./ShipDesignerRoute.css";
+import { CrtScreen } from "@/ui/fx/CrtScreen";
+import { zoomInner, zoomScreen, zoomViewport } from "./ShipDesignerRoute.css";
 
 /** Zoom range for the pan/zoom viewport, as a fraction of natural size.
  *  `1.0` is the natural fit; higher values zoom in for fine edge placement
@@ -585,23 +586,27 @@ export function ShipDesignerRoute() {
                       }
                     />
                   </Group>
-                  <div className={zoomViewport} style={{ touchAction: "none" }}>
-                    <div
-                      className={zoomInner}
-                      style={{
-                        transform: `scale(${zoom})`,
-                        width: innerWidthPx,
-                      }}
-                    >
-                      <GridBoard
-                        grid={grid}
-                        selected={selected}
-                        breached={breached}
-                        showAirtightness={showAirtightness}
-                        onPaint={paint}
-                        onEdge={paintEdge}
-                      />
+                  <div className={zoomScreen}>
+                    <div className={zoomViewport} style={{ touchAction: "none" }}>
+                      <div
+                        className={zoomInner}
+                        style={{
+                          transform: `scale(${zoom})`,
+                          width: innerWidthPx,
+                        }}
+                      >
+                        <GridBoard
+                          grid={grid}
+                          selected={selected}
+                          breached={breached}
+                          showAirtightness={showAirtightness}
+                          onPaint={paint}
+                          onEdge={paintEdge}
+                        />
+                      </div>
                     </div>
+                    {/* CRT screen effects, pinned over the viewport (outside the scroll container). */}
+                    <CrtScreen />
                   </div>
                   {readOnly ? (
                     <Text size="xs" c="grape" mt="sm">
