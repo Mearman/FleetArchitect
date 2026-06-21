@@ -50,6 +50,8 @@ import {
   defaultOrders,
 } from "@/schema/fleet";
 import type { Fleet, FleetShip, Orders } from "@/schema/fleet";
+import { panelLabel } from "@/ui/components/panel.css";
+import { glitchEnter } from "@/ui/fx/CrtOverlay.css";
 
 /** A fleet row carries a local React key alongside the schema's FleetShip. */
 interface FleetRow extends FleetShip {
@@ -290,7 +292,7 @@ export function FleetBuilderRoute() {
   const canBuild = designs.length > 0;
 
   return (
-    <Container size="xl" py="lg">
+    <Container size="xl" py="lg" className={glitchEnter}>
     <Stack gap="lg">
       <Title order={1}>Fleet Builder</Title>
 
@@ -317,9 +319,9 @@ export function FleetBuilderRoute() {
         <Paper p="md" withBorder style={{ flex: "1 1 280px" }}>
           <Stack gap="xs">
             <Group justify="space-between">
-              <Text size="sm" fw={600}>
+              <div className={panelLabel}>
                 Saved fleets
-              </Text>
+              </div>
               <Button
                 size="xs"
                 variant="light"
@@ -373,9 +375,9 @@ export function FleetBuilderRoute() {
           <Paper p="md" withBorder>
             <Stack gap="xs">
               <Group justify="space-between" align="flex-end">
-                <Text size="sm" fw={600}>
+                <div className={panelLabel}>
                   Ships ({working.rows.length})
-                </Text>
+                </div>
                 <Select
                   placeholder="Add a ship design…"
                   data={designOptions}
@@ -673,9 +675,9 @@ export function FleetBuilderRoute() {
 
           <Paper p="md" withBorder>
             <Group justify="space-between" mb={6}>
-              <Text size="sm" fw={600}>
+              <div className={panelLabel}>
                 Point budget
-              </Text>
+              </div>
               <Text
                 size="sm"
                 fw={600}
