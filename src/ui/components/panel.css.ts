@@ -13,10 +13,22 @@ const BRACKET_WEIGHT = "2px";
  */
 export const cassettePanel = style({
   position: "relative",
-  backgroundColor: vars.color.panel,
+  // Vertical surface gradient so the panel reads as a lit, raised slab rather
+  // than a flat fill — lighter at the top, settling to the panel base, then
+  // darkening into the shaded bottom edge.
+  background: `linear-gradient(180deg, ${vars.material.surfaceTop} 0%, ${vars.color.panel} 55%, ${vars.material.surfaceBottom} 100%)`,
   border: `1px solid ${vars.color.border}`,
   borderRadius: 0,
-  boxShadow: `0 0 0 1px ${vars.color.border}, 0 0 24px -8px rgba(255,176,0,0.2)`,
+  // One ordered box-shadow list (insets first, hairline border, tight drop
+  // shadow, then the existing amber bloom outermost) so the bevel rims and the
+  // neon halo occupy different regions and never collide.
+  boxShadow: [
+    `inset 1px 1px 0 ${vars.material.bevelHighlight}`,
+    `inset -1px -1px 0 ${vars.material.bevelShadow}`,
+    `0 0 0 1px ${vars.color.border}`,
+    `0 2px 6px -2px ${vars.material.elevation}`,
+    "0 0 24px -8px rgba(255,176,0,0.2)",
+  ].join(", "),
   "::before": {
     content: '""',
     position: "absolute",
@@ -40,6 +52,81 @@ export const cassettePanel = style({
     borderRight: `${BRACKET_WEIGHT} solid ${vars.color.amber}`,
     pointerEvents: "none",
     zIndex: 1,
+  },
+});
+
+/** Diameter of a corner screw-head in px. */
+const SCREW_SIZE = "7px";
+/** Inset of each screw-head from the panel edge in px. */
+const SCREW_INSET = "6px";
+
+/**
+ * Opt-in corner fasteners: four screw-heads, one per corner. Owns its OWN
+ * ::before (top-left + bottom-right) and ::after (top-right + bottom-left), so
+ * it composes with cassettePanel — whose pseudos paint the amber brackets —
+ * without colliding. Each screw is a small radial gradient with a top-left
+ * glint, body, and recessed slot. Apply only to larger chrome frames.
+ */
+export const panelScrews = style({
+  "::before": {
+    content: '""',
+    position: "absolute",
+    inset: 0,
+    backgroundImage: [
+      `radial-gradient(circle at 35% 30%, ${vars.material.screwHighlight} 0%, ${vars.material.screwHead} 45%, ${vars.material.screwSlot} 100%)`,
+      `radial-gradient(circle at 35% 30%, ${vars.material.screwHighlight} 0%, ${vars.material.screwHead} 45%, ${vars.material.screwSlot} 100%)`,
+    ].join(", "),
+    backgroundRepeat: "no-repeat",
+    backgroundSize: `${SCREW_SIZE} ${SCREW_SIZE}`,
+    backgroundPosition: [
+      `${SCREW_INSET} ${SCREW_INSET}`,
+      `right ${SCREW_INSET} bottom ${SCREW_INSET}`,
+    ].join(", "),
+    pointerEvents: "none",
+    zIndex: 1,
+  },
+  "::after": {
+    content: '""',
+    position: "absolute",
+    inset: 0,
+    backgroundImage: [
+      `radial-gradient(circle at 35% 30%, ${vars.material.screwHighlight} 0%, ${vars.material.screwHead} 45%, ${vars.material.screwSlot} 100%)`,
+      `radial-gradient(circle at 35% 30%, ${vars.material.screwHighlight} 0%, ${vars.material.screwHead} 45%, ${vars.material.screwSlot} 100%)`,
+    ].join(", "),
+    backgroundRepeat: "no-repeat",
+    backgroundSize: `${SCREW_SIZE} ${SCREW_SIZE}`,
+    backgroundPosition: [
+      `right ${SCREW_INSET} top ${SCREW_INSET}`,
+      `left ${SCREW_INSET} bottom ${SCREW_INSET}`,
+    ].join(", "),
+    pointerEvents: "none",
+    zIndex: 1,
+  },
+});
+
+/**
+ * Opt-in anisotropic brushed-metal grain, gated behind html[data-fx="full"].
+ * Pure CSS gradients (no raster): a fine 90deg repeating-linear-gradient grain
+ * crossed with a vertical light/shade wash, blended over the surface. Uses its
+ * OWN ::after, so on a panel that ALSO needs panelScrews (which owns ::after
+ * too), put brushedMetal on the OUTER element and panelScrews on an inner frame
+ * element to avoid the pseudo-element clash.
+ */
+export const brushedMetal = style({
+  selectors: {
+    'html[data-fx="full"] &::after': {
+      content: '""',
+      position: "absolute",
+      inset: 0,
+      backgroundImage: [
+        "repeating-linear-gradient(90deg, rgba(255,255,255,0.04) 0px, rgba(255,255,255,0.04) 1px, rgba(0,0,0,0.05) 1px, rgba(0,0,0,0.05) 2px)",
+        "linear-gradient(180deg, rgba(255,255,255,0.06) 0%, transparent 40%, transparent 60%, rgba(0,0,0,0.12) 100%)",
+      ].join(", "),
+      opacity: 0.5,
+      mixBlendMode: "overlay",
+      pointerEvents: "none",
+      zIndex: 0,
+    },
   },
 });
 
