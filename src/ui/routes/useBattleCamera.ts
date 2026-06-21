@@ -5,8 +5,9 @@ import { interpolateFrame } from "@/ui/interpolateFrame";
 import {
   clampZoom,
   DEFAULT_CAMERA,
+  manualCameraFrom,
   pickShipAt,
-  resolveTransform,
+  resolveViewTransform,
   screenToWorld,
 } from "./battleCamera";
 import type { Bounds, Camera } from "./battleCamera";
@@ -148,10 +149,9 @@ export function useBattleCamera({
     const cam = cameraRef.current;
     const fractionalTick = playbackTimeRef.current * TICKS_PER_SECOND;
     const frame = interpolateFrame(framesRef.current, fractionalTick);
-    const followPos =
-      cam.followId !== null ? frame.ships.find((s) => s.instanceId === cam.followId) : undefined;
-    return { t: resolveTransform(width, height, bounds, cam, followPos), frame };
-  }, [bounds, canvasRef, cameraRef, framesRef, playbackTimeRef]);
+    const t = resolveViewTransform(width, height, bounds, cam, frame, descriptorsRef.current);
+    return { t, frame };
+  }, [bounds, canvasRef, cameraRef, framesRef, playbackTimeRef, descriptorsRef]);
 
   /** Canvas-relative pointer position from a pointer event. */
   const pointerPos = (e: ReactPointerEvent<HTMLCanvasElement>) => {
@@ -174,29 +174,26 @@ export function useBattleCamera({
       const py = e.clientY - rect.top;
       const before = screenToWorld(resolved.t, px, py);
       setCamera((cam) => {
+        // Zooming breaks out of auto-fit: capture the current view as the manual
+        // baseline first so the zoom is continuous (the auto-fit scale becomes
+        // zoom = 1) rather than snapping to the whole-battle scale.
+        const base = cam.autoFit ? manualCameraFrom(resolved.t) : cam;
         const factor = Math.exp(-e.deltaY * 0.0015);
-        const nextZoom = clampZoom(cam.zoom * factor);
-        if (nextZoom === cam.zoom) return cam;
+        const nextZoom = clampZoom(base.zoom * factor);
+        if (nextZoom === base.zoom && !cam.autoFit) return cam;
         // While following, keep the ship centred (zoom toward it, not the
         // cursor). Otherwise zoom toward the cursor: keep the world point under
-        // it fixed by deriving the pan that maps `before` back to the cursor.
-        if (cam.followId !== null) return { ...cam, zoom: nextZoom };
-        const worldCentreX = (bounds.minX + bounds.maxX) / 2;
-        const worldCentreY = (bounds.minY + bounds.maxY) / 2;
-        const ratio = cam.zoom / nextZoom;
-        const newCentreX = before.x - (before.x - resolved.t.centreX) * ratio;
-        const newCentreY = before.y - (before.y - resolved.t.centreY) * ratio;
-        return {
-          ...cam,
-          zoom: nextZoom,
-          panX: newCentreX - worldCentreX,
-          panY: newCentreY - worldCentreY,
-        };
+        // it fixed by re-deriving the centre at the new scale.
+        if (base.followId !== null) return { ...base, zoom: nextZoom };
+        const nextScale = base.baseScale * nextZoom;
+        const newCentreX = before.x - (px - resolved.t.width / 2) / nextScale;
+        const newCentreY = before.y - (py - resolved.t.height / 2) / nextScale;
+        return { ...base, autoFit: false, zoom: nextZoom, centreX: newCentreX, centreY: newCentreY };
       });
     };
     canvas.addEventListener("wheel", onWheel, { passive: false });
     return () => canvas.removeEventListener("wheel", onWheel);
-  }, [hasFrames, currentTransform, bounds, canvasRef]);
+  }, [hasFrames, currentTransform, canvasRef]);
 
   const handlePointerDown = useCallback((e: ReactPointerEvent<HTMLCanvasElement>) => {
     if (e.button !== 0) return;
@@ -224,18 +221,20 @@ export function useBattleCamera({
       const worldDx = dxPx / resolved.t.scale;
       const worldDy = dyPx / resolved.t.scale;
       setCamera((cam) => {
-        const base = cam.followId !== null
-          ? { panX: resolved.t.centreX - (bounds.minX + bounds.maxX) / 2, panY: resolved.t.centreY - (bounds.minY + bounds.maxY) / 2 }
-          : { panX: cam.panX, panY: cam.panY };
+        // Dragging breaks out of auto-fit and any follow lock. Seed the manual
+        // camera from the current view (scale and centre) so the drag continues
+        // from exactly what is on screen, then shift the centre by the drag.
+        const base = cam.autoFit || cam.followId !== null ? manualCameraFrom(resolved.t) : cam;
         return {
-          ...cam,
+          ...base,
+          autoFit: false,
           followId: null,
-          panX: base.panX - worldDx,
-          panY: base.panY - worldDy,
+          centreX: base.centreX - worldDx,
+          centreY: base.centreY - worldDy,
         };
       });
     },
-    [currentTransform, bounds],
+    [currentTransform],
   );
 
   const handlePointerUp = useCallback(
@@ -253,12 +252,43 @@ export function useBattleCamera({
       const { px, py } = pointerPos(e);
       const world = screenToWorld(resolved.t, px, py);
       const hit = pickShipAt(resolved.frame, world, descriptorsRef.current);
-      setCamera((cam) => ({ ...cam, followId: hit?.instanceId ?? null }));
+      setCamera((cam) => {
+        if (hit !== undefined) {
+          // Following a ship is an explicit camera mode: break out of auto-fit,
+          // keeping the current scale so the view does not jump on selection.
+          const base = cam.autoFit ? manualCameraFrom(resolved.t) : cam;
+          return { ...base, autoFit: false, followId: hit.instanceId };
+        }
+        // Click on empty space: release any follow lock; leave auto-fit alone.
+        return cam.followId !== null ? { ...cam, followId: null } : cam;
+      });
     },
     [currentTransform, descriptorsRef],
   );
 
   const resetCamera = useCallback(() => setCamera(DEFAULT_CAMERA), []);
+
+  /** Restore auto-fit mode (the zoom badge button and the fit control). */
+  const restoreAutoFit = useCallback(() => setCamera(DEFAULT_CAMERA), []);
+
+  /**
+   * Zoom by a fixed factor toward the view centre (the +/- buttons). Breaks out
+   * of auto-fit to the equivalent manual camera first so the step is continuous.
+   */
+  const zoomBy = useCallback(
+    (factor: number) => {
+      const resolved = currentTransform();
+      setCamera((cam) => {
+        const base = cam.autoFit && resolved !== undefined
+          ? manualCameraFrom(resolved.t)
+          : cam;
+        const nextZoom = clampZoom(base.zoom * factor);
+        if (nextZoom === base.zoom && !cam.autoFit) return cam;
+        return { ...base, autoFit: false, zoom: nextZoom };
+      });
+    },
+    [currentTransform],
+  );
 
   return {
     canvasSize,
@@ -270,6 +300,8 @@ export function useBattleCamera({
     handlePointerMove,
     handlePointerUp,
     resetCamera,
+    restoreAutoFit,
+    zoomBy,
     clampZoom,
   };
 }

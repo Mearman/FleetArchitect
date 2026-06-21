@@ -26,7 +26,7 @@ import { BattleAnomaly } from "@/schema/battle";
 import type { BattleAnomaly as BattleAnomalyType, BattleFrame, BattleScale } from "@/schema/battle";
 import type { DescriptorMap } from "@/ui/cellLayout";
 import { interpolateFrame } from "@/ui/interpolateFrame";
-import { clampZoom, DEFAULT_CAMERA } from "./battleCamera";
+import { DEFAULT_CAMERA } from "./battleCamera";
 import type { Camera } from "./battleCamera";
 import { ANOMALY_LABEL } from "./battleConstants";
 import { BattleControlsPanel } from "./BattleControlsPanel";
@@ -476,9 +476,7 @@ export function BattleRoute() {
                       className={touchTarget}
                       variant="default"
                       aria-label="Zoom in"
-                      onClick={() =>
-                        camera.setCamera((c) => ({ ...c, zoom: clampZoom(c.zoom * 1.4) }))
-                      }
+                      onClick={() => camera.zoomBy(1.4)}
                     >
                       <IconPlus size={16} />
                     </ActionIcon>
@@ -489,19 +487,18 @@ export function BattleRoute() {
                       className={touchTarget}
                       variant="default"
                       aria-label="Zoom out"
-                      onClick={() =>
-                        camera.setCamera((c) => ({ ...c, zoom: clampZoom(c.zoom / 1.4) }))
-                      }
+                      onClick={() => camera.zoomBy(1 / 1.4)}
                     >
                       <IconMinus size={16} />
                     </ActionIcon>
                   </Tooltip>
-                  <Tooltip label="Fit whole battle (reset camera)">
+                  <Tooltip label="Auto-fit live ships">
                     <ActionIcon
                       size="md"
                       className={touchTarget}
-                      variant="default"
-                      onClick={camera.resetCamera}
+                      variant={camera.camera.autoFit ? "filled" : "default"}
+                      aria-label="Auto-fit live ships"
+                      onClick={camera.restoreAutoFit}
                     >
                       <IconMaximize size={16} />
                     </ActionIcon>
@@ -527,6 +524,7 @@ export function BattleRoute() {
               onTogglePlay={onTogglePlay}
               onSpeedChange={playback.setSpeed}
               onSeek={onSeek}
+              onRestoreFit={camera.restoreAutoFit}
             />
           </Stack>
         )}

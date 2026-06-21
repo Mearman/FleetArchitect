@@ -18,25 +18,49 @@ export interface Bounds {
 }
 
 /**
- * Camera state. `zoom` multiplies the auto-fit scale (1 = whole battle visible).
- * `panX`/`panY` shift the focus point in world units away from the battle centre.
- * `followId` pins the focus to a ship's live position each frame; while set,
- * `panX`/`panY` are ignored (re-derived to keep the ship centred). A manual pan
- * clears `followId`.
+ * Camera state.
+ *
+ * `autoFit` is the mode the camera starts a battle in: each frame the view is
+ * re-fitted to the bounding box of the *live* ships, so the camera tracks the
+ * action as the fleets close, spread, and thin out. While set, the manual fields
+ * are ignored. Zooming or panning breaks out of it (clears `autoFit`); the zoom
+ * badge restores it.
+ *
+ * The manual fields are absolute, not relative to a whole-battle fit — that
+ * matters because in a spread-out battle (e.g. ships flung wide by a black
+ * hole) the live-ships view is a much tighter scale than the whole-battle fit,
+ * far beyond what a fit-multiplier in `[ZOOM_MIN, ZOOM_MAX]` could express:
+ *  - `baseScale` is the display px-per-world-unit captured at the moment of
+ *    breaking out (the auto-fit scale then), so the manual view picks up exactly
+ *    where the auto-fit left off.
+ *  - `zoom` multiplies `baseScale` (1 at break-out — the readout reads 100%
+ *    there); the wheel and +/- clamp it to `[ZOOM_MIN, ZOOM_MAX]` of the break-
+ *    out baseline.
+ *  - `centreX`/`centreY` are the world point at the canvas centre.
+ *  - `followId` pins the centre to a ship's live position each frame.
  */
 export interface Camera {
+  autoFit: boolean;
   zoom: number;
-  panX: number;
-  panY: number;
+  baseScale: number;
+  centreX: number;
+  centreY: number;
   followId: string | null;
 }
 
-export const DEFAULT_CAMERA: Camera = { zoom: 1, panX: 0, panY: 0, followId: null };
+export const DEFAULT_CAMERA: Camera = {
+  autoFit: true,
+  zoom: 1,
+  baseScale: 1,
+  centreX: 0,
+  centreY: 0,
+  followId: null,
+};
 
 /**
- * The resolved world-to-display mapping for one draw, given the canvas size,
- * the battle bounds, and the camera. `scale` is the fit scale times zoom;
- * `centreX`/`centreY` is the world point mapped to the canvas centre.
+ * The resolved world-to-display mapping for one draw. `scale` is display
+ * px-per-world-unit; `centreX`/`centreY` is the world point mapped to the canvas
+ * centre.
  */
 export interface Transform {
   scale: number;
@@ -55,27 +79,115 @@ export function fitScale(width: number, height: number, bounds: Bounds): number 
   return Math.min((width - CAMERA_PAD * 2) / rangeX, (height - CAMERA_PAD * 2) / rangeY);
 }
 
-/**
- * Resolve the draw transform. When the camera is following a ship the focus is
- * that ship's current position; otherwise it is the battle centre shifted by the
- * pan offset. The focus world point is mapped to the canvas centre and the scale
- * is the fit scale times the camera zoom.
- */
-export function resolveTransform(
+/** Build a Transform from an absolute scale and world centre. */
+export function makeTransform(
   width: number,
   height: number,
-  bounds: Bounds,
-  camera: Camera,
-  followPos: { x: number; y: number } | undefined,
+  scale: number,
+  centreX: number,
+  centreY: number,
 ): Transform {
-  const scale = fitScale(width, height, bounds) * camera.zoom;
-  const worldCentreX = (bounds.minX + bounds.maxX) / 2;
-  const worldCentreY = (bounds.minY + bounds.maxY) / 2;
-  const centreX = followPos !== undefined ? followPos.x : worldCentreX + camera.panX;
-  const centreY = followPos !== undefined ? followPos.y : worldCentreY + camera.panY;
   const sx = (wx: number) => width / 2 + (wx - centreX) * scale;
   const sy = (wy: number) => height / 2 + (wy - centreY) * scale;
   return { scale, centreX, centreY, width, height, sx, sy };
+}
+
+/** Centre of a bounds box. */
+function boundsCentre(b: Bounds): { x: number; y: number } {
+  return { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 };
+}
+
+/** Extra world-space margin around the live-ships box so ships are framed with
+ *  breathing room rather than pinned to the canvas edge. A fraction of the box
+ *  plus a fixed few cells (so a lone ship is not zoomed in absurdly far). */
+const LIVE_FIT_MARGIN_FRACTION = 0.12;
+const LIVE_FIT_MARGIN_CELLS = 6;
+
+/**
+ * The bounding box of the frame's live ships, each expanded by its hull radius,
+ * or `null` when no ship is alive (e.g. the final frame of a wipe). Drives the
+ * auto-fit camera so the view tracks the surviving fleets each tick.
+ */
+export function liveShipsBounds(
+  frame: BattleFrame,
+  descriptors: DescriptorMap,
+): Bounds | null {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  let any = false;
+  for (const s of frame.ships) {
+    if (!s.alive) continue;
+    const r = hullRadiusWorld(descriptors.get(s.instanceId)) ?? CELL_SIZE * 2;
+    minX = Math.min(minX, s.x - r);
+    maxX = Math.max(maxX, s.x + r);
+    minY = Math.min(minY, s.y - r);
+    maxY = Math.max(maxY, s.y + r);
+    any = true;
+  }
+  return any ? { minX, maxX, minY, maxY } : null;
+}
+
+/** Pad a live-ships box with the framing margin. */
+function padLiveBounds(b: Bounds): Bounds {
+  const padX = (b.maxX - b.minX) * LIVE_FIT_MARGIN_FRACTION + CELL_SIZE * LIVE_FIT_MARGIN_CELLS;
+  const padY = (b.maxY - b.minY) * LIVE_FIT_MARGIN_FRACTION + CELL_SIZE * LIVE_FIT_MARGIN_CELLS;
+  return {
+    minX: b.minX - padX,
+    maxX: b.maxX + padX,
+    minY: b.minY - padY,
+    maxY: b.maxY + padY,
+  };
+}
+
+/**
+ * Resolve the draw transform for a frame, honouring the camera's `autoFit` mode.
+ * When auto-fitting, the transform frames this frame's live ships (falling back
+ * to the whole-battle bounds only if no ship is alive). Otherwise it is the
+ * manual absolute-scale transform: `baseScale * zoom`, centred on the followed
+ * ship's live position or the stored centre. Used by both the draw loop and the
+ * pointer-math so clicks/zoom resolve against exactly what is on screen.
+ */
+export function resolveViewTransform(
+  width: number,
+  height: number,
+  staticBounds: Bounds,
+  camera: Camera,
+  frame: BattleFrame,
+  descriptors: DescriptorMap,
+): Transform {
+  if (camera.autoFit) {
+    const live = liveShipsBounds(frame, descriptors);
+    const box = live !== null ? padLiveBounds(live) : staticBounds;
+    const c = boundsCentre(box);
+    return makeTransform(width, height, fitScale(width, height, box), c.x, c.y);
+  }
+  const followPos =
+    camera.followId !== null
+      ? frame.ships.find((s) => s.instanceId === camera.followId)
+      : undefined;
+  const scale = camera.baseScale * camera.zoom;
+  const centreX = followPos !== undefined ? followPos.x : camera.centreX;
+  const centreY = followPos !== undefined ? followPos.y : camera.centreY;
+  return makeTransform(width, height, scale, centreX, centreY);
+}
+
+/**
+ * The manual camera that reproduces the given resolved transform: the current
+ * scale becomes the `baseScale` (so `zoom` starts at 1 = 100%) and the current
+ * centre is captured. Used to break out of auto-fit continuously — the manual
+ * view picks up exactly where the auto-fit left off.
+ */
+export function manualCameraFrom(t: Transform): Camera {
+  return {
+    autoFit: false,
+    zoom: 1,
+    baseScale: t.scale,
+    centreX: t.centreX,
+    centreY: t.centreY,
+    followId: null,
+  };
 }
 
 /** Screen pixel -> world coordinate, the inverse of a Transform's sx/sy. */

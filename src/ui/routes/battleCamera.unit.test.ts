@@ -1,0 +1,125 @@
+import { describe, expect, it } from "vitest";
+import {
+  DEFAULT_CAMERA,
+  liveShipsBounds,
+  makeTransform,
+  manualCameraFrom,
+  resolveViewTransform,
+} from "./battleCamera";
+import type { Bounds, Camera } from "./battleCamera";
+import type { BattleFrame } from "@/schema/battle";
+import type { DescriptorMap } from "@/ui/cellLayout";
+
+/** A frame with the given ships (only the fields the camera reads). */
+function frameWith(
+  ships: { id: string; x: number; y: number; alive: boolean }[],
+): BattleFrame {
+  return {
+    tick: 0,
+    projectiles: [],
+    ships: ships.map((s) => ({
+      instanceId: s.id,
+      side: "attacker",
+      x: s.x,
+      y: s.y,
+      facing: 0,
+      vx: 0,
+      vy: 0,
+      structure: 100,
+      shield: 0,
+      alive: s.alive,
+      comX: 0,
+      comY: 0,
+    })),
+  };
+}
+
+const NO_DESCRIPTORS: DescriptorMap = new Map();
+const WIDE_BOUNDS: Bounds = { minX: -10000, maxX: 10000, minY: -10000, maxY: 10000 };
+
+describe("battleCamera", () => {
+  describe("liveShipsBounds", () => {
+    it("boxes the live ships and ignores the dead", () => {
+      const frame = frameWith([
+        { id: "a", x: -100, y: 0, alive: true },
+        { id: "b", x: 100, y: 0, alive: true },
+        { id: "c", x: 9000, y: 9000, alive: false }, // dead — must not widen the box
+      ]);
+      const b = liveShipsBounds(frame, NO_DESCRIPTORS);
+      expect(b).not.toBeNull();
+      // Centre is the live midpoint, not dragged toward the dead ship.
+      expect((b!.minX + b!.maxX) / 2).toBeCloseTo(0, 6);
+      expect(b!.maxX).toBeLessThan(9000);
+    });
+
+    it("returns null when no ship is alive", () => {
+      const frame = frameWith([{ id: "a", x: 0, y: 0, alive: false }]);
+      expect(liveShipsBounds(frame, NO_DESCRIPTORS)).toBeNull();
+    });
+  });
+
+  describe("resolveViewTransform", () => {
+    it("auto-fit frames the live ships, centred on them", () => {
+      const frame = frameWith([
+        { id: "a", x: -100, y: -50, alive: true },
+        { id: "b", x: 100, y: 50, alive: true },
+      ]);
+      const t = resolveViewTransform(800, 600, WIDE_BOUNDS, DEFAULT_CAMERA, frame, NO_DESCRIPTORS);
+      // Centred on the live midpoint, not the (vast) whole-battle centre.
+      expect(t.centreX).toBeCloseTo(0, 6);
+      expect(t.centreY).toBeCloseTo(0, 6);
+      // Both ships fall inside the canvas.
+      for (const s of frame.ships) {
+        expect(t.sx(s.x)).toBeGreaterThanOrEqual(0);
+        expect(t.sx(s.x)).toBeLessThanOrEqual(800);
+        expect(t.sy(s.y)).toBeGreaterThanOrEqual(0);
+        expect(t.sy(s.y)).toBeLessThanOrEqual(600);
+      }
+    });
+
+    it("manual mode uses baseScale*zoom and the stored centre", () => {
+      const cam: Camera = {
+        autoFit: false,
+        zoom: 2,
+        baseScale: 3,
+        centreX: 50,
+        centreY: 60,
+        followId: null,
+      };
+      const frame = frameWith([{ id: "a", x: 0, y: 0, alive: true }]);
+      const t = resolveViewTransform(800, 600, WIDE_BOUNDS, cam, frame, NO_DESCRIPTORS);
+      expect(t.scale).toBe(6);
+      expect(t.centreX).toBe(50);
+      expect(t.centreY).toBe(60);
+    });
+
+    it("manual mode follows a ship's live position", () => {
+      const cam: Camera = {
+        autoFit: false,
+        zoom: 1,
+        baseScale: 4,
+        centreX: 999,
+        centreY: 999,
+        followId: "a",
+      };
+      const frame = frameWith([{ id: "a", x: 10, y: 20, alive: true }]);
+      const t = resolveViewTransform(800, 600, WIDE_BOUNDS, cam, frame, NO_DESCRIPTORS);
+      expect(t.centreX).toBe(10);
+      expect(t.centreY).toBe(20);
+    });
+  });
+
+  describe("manualCameraFrom", () => {
+    it("captures the transform so resolving it reproduces the same view (break-out continuity)", () => {
+      const t0 = makeTransform(800, 600, 5, 100, 200);
+      const cam = manualCameraFrom(t0);
+      expect(cam.autoFit).toBe(false);
+      expect(cam.zoom).toBe(1);
+      const frame = frameWith([{ id: "a", x: 0, y: 0, alive: true }]);
+      const t1 = resolveViewTransform(800, 600, WIDE_BOUNDS, cam, frame, NO_DESCRIPTORS);
+      expect(t1.scale).toBe(t0.scale);
+      expect(t1.centreX).toBe(t0.centreX);
+      expect(t1.centreY).toBe(t0.centreY);
+    });
+  });
+});

@@ -1,4 +1,4 @@
-import { Badge, Button, Group, SegmentedControl, Slider, Stack, Text, Tooltip } from "@mantine/core";
+import { Button, Group, SegmentedControl, Slider, Stack, Text, Tooltip } from "@mantine/core";
 import { IconFocus2, IconPlayerPause, IconPlayerPlay } from "@tabler/icons-react";
 import type { Camera } from "./battleCamera";
 
@@ -20,6 +20,8 @@ export interface PlaybackControlsProps {
   onTogglePlay: () => void;
   onSpeedChange: (value: number) => void;
   onSeek: (tick: number) => void;
+  /** Restore auto-fit mode (the zoom badge acts as this button). */
+  onRestoreFit: () => void;
 }
 
 /**
@@ -36,6 +38,7 @@ export function PlaybackControls({
   onTogglePlay,
   onSpeedChange,
   onSeek,
+  onRestoreFit,
 }: PlaybackControlsProps) {
   return (
     <Stack gap="xs">
@@ -49,19 +52,23 @@ export function PlaybackControls({
         </Button>
         <Tooltip
           label={
-            camera.followId !== null
-              ? "Following a ship — click empty space or Fit to release"
-              : "Click a ship to follow it; scroll to zoom, drag to pan"
+            camera.autoFit
+              ? "Auto-fitting live ships — zoom or pan to take manual control"
+              : camera.followId !== null
+                ? "Following a ship — click to auto-fit live ships"
+                : "Click to auto-fit live ships (zoom/pan is manual)"
           }
         >
-          <Badge
-            size="sm"
-            variant="light"
-            color={camera.followId !== null ? "grape" : "gray"}
+          <Button
+            size="compact-xs"
+            variant={camera.autoFit ? "filled" : "light"}
+            color={camera.autoFit ? "teal" : camera.followId !== null ? "grape" : "gray"}
             leftSection={<IconFocus2 size={12} />}
+            onClick={onRestoreFit}
+            aria-label="Restore auto-fit to live ships"
           >
-            {Math.round(camera.zoom * 100)}%
-          </Badge>
+            {camera.autoFit ? "FIT" : `${Math.round(camera.zoom * 100)}%`}
+          </Button>
         </Tooltip>
         <Text size="sm" c="dimmed" style={{ flex: 1 }}>
           Tick {currentTick} / {maxTick}

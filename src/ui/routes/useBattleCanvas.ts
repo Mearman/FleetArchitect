@@ -10,7 +10,7 @@ import { drawAnomaly, hash01 } from "./battleAnomaly";
 import { drawFogAndAwareness } from "./battleFog";
 import type { ShipScreenPositions } from "./battleFog";
 import type { Bounds, Camera } from "./battleCamera";
-import { resolveTransform } from "./battleCamera";
+import { resolveViewTransform } from "./battleCamera";
 import {
   CARRYING_COLOUR,
   CREW_COLOUR,
@@ -165,15 +165,12 @@ export function useBattleCanvas({
       if (width === 0 || height === 0) return;
       ctx.clearRect(0, 0, width, height);
 
-      // When following a ship, the focus point is that ship's live position in
-      // this frame, so the camera tracks it. The follow ship may have died or
-      // not yet appeared; fall back to centre-pan in that case.
+      // Resolve the view transform. In auto-fit mode the camera frames this
+      // frame's live ships; otherwise it honours the manual zoom/pan and, when
+      // following a ship, tracks that ship's live position (falling back to
+      // centre-pan if it has died or not yet appeared).
       const cam = cameraRef.current;
-      const followPos =
-        cam.followId !== null
-          ? frame.ships.find((s) => s.instanceId === cam.followId)
-          : undefined;
-      const t = resolveTransform(width, height, bounds, cam, followPos);
+      const t = resolveViewTransform(width, height, bounds, cam, frame, descriptors);
       const scale = t.scale;
       const sx = t.sx;
       const sy = t.sy;
