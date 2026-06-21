@@ -203,7 +203,7 @@ export type ShipScreenPositions = ReadonlyMap<string, { x: number; y: number }>;
  * @param ctx         Canvas 2D context (already scaled for DPR by caller).
  * @param awareness   The AwarenessSnapshot for this frame, or undefined — when
  *                    undefined the function is a guaranteed no-op.
- * @param t           World-to-screen transform from resolveTransform.
+ * @param t           World-to-screen transform from resolveViewTransform.
  * @param bounds      World-space battle bounds (used to size the fog rect).
  * @param shipPos     Map of instanceId → screen-pixel position of each ship, for
  *                    link and dish indicators. Pass an empty map when unavailable.
