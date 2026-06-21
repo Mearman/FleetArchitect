@@ -13,7 +13,77 @@ import {
   CHROME_BORDER,
   PHOSPHOR_AMBER,
   TEXT_PRIMARY,
+  BEVEL_HIGHLIGHT,
+  BEVEL_HIGHLIGHT_STRONG,
+  BEVEL_SHADOW,
+  BEVEL_SHADOW_DEEP,
+  ELEVATION_SHADOW,
+  BEZEL_TOP,
+  BEZEL_BOTTOM,
 } from "./tokens";
+
+// Skeuomorphic surface recipes — built as plain strings (no `as` assertions).
+// One ordered box-shadow list per element: insets first, then the 0 0 0 1px
+// hairline border, then a tight outer drop shadow (existing neon blooms, where
+// present, stay outermost on the owning element).
+
+/** Raised-key face gradient layered OVER the variant background colour. */
+const KEY_FACE_GRADIENT = `linear-gradient(180deg, ${BEVEL_HIGHLIGHT_STRONG} 0%, transparent 45%, ${BEVEL_SHADOW} 100%)`;
+
+/** Resting box-shadow for a raised key. `sideHeight` is the extruded side depth. */
+const raisedKeyShadow = (sideHeight: string): string =>
+  [
+    `inset 0 1px 0 ${BEVEL_HIGHLIGHT_STRONG}`,
+    `inset 0 -1px 0 ${BEVEL_SHADOW}`,
+    `0 ${sideHeight} 0 ${BEZEL_BOTTOM}`,
+    `0 3px 5px -1px ${ELEVATION_SHADOW}`,
+  ].join(", ");
+
+/** Pressed box-shadow — the key has sunk flush to the panel plane. */
+const pressedKeyShadow = [
+  `inset 0 1px 2px ${BEVEL_SHADOW_DEEP}`,
+  `inset 0 -1px 0 ${BEVEL_HIGHLIGHT}`,
+  `0 0 0 1px ${CHROME_BORDER}`,
+].join(", ");
+
+/** Recessed field — data cut into the panel (opposite of a raised key). */
+const INSET_FIELD_GRADIENT = `linear-gradient(180deg, ${BEVEL_SHADOW} 0%, transparent 40%)`;
+const insetFieldShadow = [
+  `inset 0 1px 3px ${BEVEL_SHADOW_DEEP}`,
+  `inset 0 -1px 0 ${BEVEL_HIGHLIGHT}`,
+].join(", ");
+const insetFieldFocusShadow = [
+  `inset 0 1px 3px ${BEVEL_SHADOW_DEEP}`,
+  `0 0 6px -1px rgba(255,176,0,0.5)`,
+].join(", ");
+
+/** Recessed track for the segmented control. */
+const recessedTrackShadow = [
+  `inset 0 1px 3px ${BEVEL_SHADOW_DEEP}`,
+  `inset 0 -1px 0 ${BEVEL_HIGHLIGHT}`,
+].join(", ");
+
+/** Raised active indicator riding inside the recessed segmented track. */
+const segmentIndicatorShadow = [
+  `inset 0 1px 0 ${BEVEL_HIGHLIGHT_STRONG}`,
+  `0 1px 2px ${ELEVATION_SHADOW}`,
+].join(", ");
+
+/**
+ * Shared recessed-field styling for text/number/select inputs. The field sits
+ * below the panel plane: a darker void fill, a faint top-edge shade gradient and
+ * inset shadows, lifting to an amber focus bloom.
+ */
+const recessedInput = {
+  backgroundColor: BASE_VOID,
+  backgroundImage: INSET_FIELD_GRADIENT,
+  boxShadow: insetFieldShadow,
+  borderColor: CHROME_BORDER,
+  "&:focus": {
+    borderColor: PHOSPHOR_AMBER,
+    boxShadow: insetFieldFocusShadow,
+  },
+};
 
 /** Cassette-Futurism x Cyberpunk Mantine theme. */
 export const mantineTheme = createTheme({
@@ -50,11 +120,52 @@ export const mantineTheme = createTheme({
     Button: {
       defaultProps: { radius: "xs" },
       styles: {
+        // The gradient layers OVER the variant backgroundColor (no backgroundColor
+        // override) so the amber primary fill survives beneath the bevel.
         root: {
           textTransform: "uppercase",
           letterSpacing: "0.06em",
           fontFamily: FONT_MONO,
           fontWeight: "600",
+          backgroundImage: KEY_FACE_GRADIENT,
+          boxShadow: raisedKeyShadow("2px"),
+          transition: "transform 60ms ease, box-shadow 60ms ease",
+          "&:active": {
+            transform: "translateY(2px)",
+            boxShadow: pressedKeyShadow,
+          },
+          "&:disabled": {
+            boxShadow: "none",
+            backgroundImage: "none",
+            transform: "none",
+          },
+          "@media (prefers-reduced-motion: reduce)": {
+            transition: "none",
+          },
+        },
+      },
+    },
+    ActionIcon: {
+      defaultProps: { radius: "xs" },
+      styles: {
+        // Same pressable recipe as Button, with reduced offsets so the icon
+        // buttons feel like small round keys with shorter travel.
+        root: {
+          backgroundImage: KEY_FACE_GRADIENT,
+          boxShadow: raisedKeyShadow("1px"),
+          transition: "transform 60ms ease, box-shadow 60ms ease",
+          "&:active": {
+            transform: "translateY(1px)",
+            boxShadow: pressedKeyShadow,
+          },
+          "&:disabled": {
+            boxShadow: "none",
+            backgroundImage: "none",
+            transform: "none",
+          },
+          "@media (prefers-reduced-motion: reduce)": {
+            transition: "none",
+          },
         },
       },
     },
@@ -71,6 +182,7 @@ export const mantineTheme = createTheme({
     TextInput: {
       defaultProps: { radius: "xs" },
       styles: {
+        input: recessedInput,
         label: {
           textTransform: "uppercase",
           fontFamily: FONT_MONO,
@@ -80,10 +192,32 @@ export const mantineTheme = createTheme({
         },
       },
     },
-    NumberInput: { defaultProps: { radius: "xs" } },
-    Select: { defaultProps: { radius: "xs" } },
-    NativeSelect: { defaultProps: { radius: "xs" } },
-    SegmentedControl: { defaultProps: { radius: "xs" } },
+    NumberInput: {
+      defaultProps: { radius: "xs" },
+      styles: { input: recessedInput },
+    },
+    Select: {
+      defaultProps: { radius: "xs" },
+      styles: { input: recessedInput },
+    },
+    NativeSelect: {
+      defaultProps: { radius: "xs" },
+      styles: { input: recessedInput },
+    },
+    SegmentedControl: {
+      defaultProps: { radius: "xs" },
+      styles: {
+        // Recess the track, raise the active indicator out of it.
+        root: {
+          backgroundColor: BASE_VOID,
+          boxShadow: recessedTrackShadow,
+        },
+        indicator: {
+          backgroundImage: `linear-gradient(180deg, ${BEZEL_TOP}, ${BEZEL_BOTTOM})`,
+          boxShadow: segmentIndicatorShadow,
+        },
+      },
+    },
     Slider: { defaultProps: { radius: "xs" } },
     Drawer: {
       styles: {
