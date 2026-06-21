@@ -15,6 +15,7 @@ import { SIM, claimProjectileId } from "./config";
 import { beamDamageFactor, lensingDeflection } from "./optics";
 import { isCharged } from "./crew";
 import { applyDamage } from "./damage";
+import { outerWorldLoop, rayPolygonEntry } from "./poly-collision";
 import { isRetreating } from "./movement";
 import { hasAliveCommand } from "./physics";
 import { angleDifference, slewTurret, steer } from "./setup";
@@ -292,8 +293,30 @@ export function fireOne(
       const toHoleCross = dirX * -ship.y - dirY * -ship.x;
       strikeAngle = angle + (toHoleCross >= 0 ? deflection : -deflection);
     }
-    const ix = target.x + Math.cos(strikeAngle) * target.radius;
-    const iy = target.y + Math.sin(strikeAngle) * target.radius;
+    // Outline entry: trace the beam ray from the shooter into the target's
+    // world-space hull outline (the chamfered armour shell) and strike the
+    // point where it first crosses the boundary. The entry point feeds
+    // applyDamage, whose nearest-alive-cell routing then lands the hit on the
+    // cell behind that face — so a beam hits the armour surface it actually
+    // crosses, not a synthesised point on the bounding circle. A beam whose
+    // line of fire grazes past the hull (enters no edge) misses and deals no
+    // damage. A target with no outline (a bare-scaffold hull, or a legacy
+    // aggregated ship) has no polygon to trace, so we fall back to the
+    // bounding-circle edge point exactly as before.
+    const dirX = Math.cos(strikeAngle);
+    const dirY = Math.sin(strikeAngle);
+    const outline = outerWorldLoop(target);
+    let ix: number;
+    let iy: number;
+    if (outline !== undefined) {
+      const entry = rayPolygonEntry(ship.x, ship.y, dirX, dirY, outline);
+      if (entry === null) return; // the beam's line of fire misses the hull
+      ix = entry.x;
+      iy = entry.y;
+    } else {
+      ix = target.x + dirX * target.radius;
+      iy = target.y + dirY * target.radius;
+    }
     applyDamage(target, damage, weapon.shieldPiercing, weapon.armourPiercing, ix, iy, strikeAngle);
   } else {
     fired.push(

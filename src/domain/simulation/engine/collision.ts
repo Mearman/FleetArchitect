@@ -8,6 +8,7 @@ import { SpatialHash, cellWorldPosition } from "@/domain/simulation/spatial-hash
 
 import { SIM, SPEED_OF_LIGHT_M_PER_TICK } from "./config";
 import { applyDamage } from "./damage";
+import { outerWorldLoop, polygonsContact } from "./poly-collision";
 import { localPointToWorld, worldToLocal } from "./setup";
 import type { SimModule, SimShip } from "./types";
 import { applyImpulse } from "./weapons";
@@ -175,17 +176,56 @@ export function resolveShipCollisions(hash: SpatialHash<ShipCell>): ShipContact[
   // Resolve in a stable order (by the unordered pair's instanceId key) so the
   // sequence of impulses is deterministic regardless of hash iteration order,
   // and return the same ordered list for the kinetic-damage step.
-  const resolved = [...contacts.values()].sort((x, y) =>
+  const candidates = [...contacts.values()].sort((x, y) =>
     pairKey(x.a, x.b) < pairKey(y.a, y.b) ? -1 : pairKey(x.a, x.b) > pairKey(y.a, y.b) ? 1 : 0,
   );
-  for (const contact of resolved) {
+  const resolved: ShipContact[] = [];
+  for (const contact of candidates) {
+    // Polygon narrow-phase: the disc-based broad-phase above pairs cells whose
+    // centres lie within a cell of each other, which is a generous proxy for
+    // the true hull boundaries. Refine each candidate against the two ships'
+    // world-space hull outlines: the chamfered shell, not the cell discs, is
+    // the authoritative collision shape. When the polygons genuinely overlap we
+    // use the polygon contact point and outward normal in place of the cell
+    // midpoint; when they don't, the broad-phase was a false positive (the
+    // discs touched but the hulls did not) and the pair is dropped. Either ship
+    // lacking an outline (a bare-scaffold hull or a legacy aggregated ship) has
+    // no polygon to test, so the disc-based contact stands unchanged.
+    const refined = refineContactByOutline(contact);
+    if (refined === undefined) continue; // false positive: hulls do not overlap
     // Snapshot the approach velocity before the impulse reflects it, so the
     // kinetic-damage step sees the energy of the collision, not the rebound.
-    contact.relVx = contact.b.velX - contact.a.velX;
-    contact.relVy = contact.b.velY - contact.a.velY;
-    resolveContact(contact.a, contact.b, contact.px, contact.py, contact.nx, contact.ny, contact.depth);
+    refined.relVx = refined.b.velX - refined.a.velX;
+    refined.relVy = refined.b.velY - refined.a.velY;
+    resolveContact(refined.a, refined.b, refined.px, refined.py, refined.nx, refined.ny, refined.depth);
+    resolved.push(refined);
   }
   return resolved;
+}
+
+/**
+ * Refine a disc-based candidate contact against the two ships' world-space hull
+ * outlines. Returns the contact with its point and normal replaced by the true
+ * polygon contact when the hulls overlap, the original contact unchanged when
+ * either ship has no outline to test, or `undefined` when the polygon test
+ * rejects the pair as a broad-phase false positive. The penetration depth is
+ * carried through from the disc contact: the disc overlap is a sound proxy for
+ * the separation push, and the polygon test sharpens only where the contact
+ * sits and which way it points.
+ */
+function refineContactByOutline(contact: ShipContact): ShipContact | undefined {
+  const loopA = outerWorldLoop(contact.a);
+  const loopB = outerWorldLoop(contact.b);
+  if (loopA === undefined || loopB === undefined) return contact;
+  const hit = polygonsContact(loopA, loopB);
+  if (hit === null) return undefined;
+  return {
+    ...contact,
+    px: hit.x,
+    py: hit.y,
+    nx: hit.nx,
+    ny: hit.ny,
+  };
 }
 
 /** Stable key for an unordered ship pair: the two instanceIds joined low-first,
