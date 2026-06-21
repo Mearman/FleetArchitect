@@ -1,48 +1,43 @@
 import { globalStyle, style } from "@vanilla-extract/css";
+import { vars } from "@/ui/theme/vars.css";
 
-/** Outer wrapper so the space gradient fills the viewport. */
-export const appShell = style({
-  minHeight: "100dvh",
-});
+/** Outer wrapper so the void gradient fills the viewport. */
+export const appShell = style({ minHeight: "100dvh" });
 
-/** Base style for all nav links — plain text, no underline. */
+/** Base style for all nav links — mono uppercase, no underline. */
 export const navLinkBase = style({
-  fontSize: "0.875rem",
+  fontSize: "0.8rem",
   fontWeight: 500,
+  fontFamily: vars.font.mono,
+  letterSpacing: "0.06em",
+  textTransform: "uppercase",
   color: "inherit",
   textDecoration: "none",
   transition: "color 0.15s ease",
-  ":hover": {
-    color: "var(--mantine-color-indigo-3)",
-    textDecoration: "none",
-  },
+  ":hover": { color: vars.color.amber, textDecoration: "none" },
 });
 
 /** Applied on top of navLinkBase when the route is active. */
 export const navLinkActive = style({
   fontWeight: 700,
-  color: "var(--mantine-color-indigo-3)",
+  color: vars.color.amber,
 });
 
-globalStyle(":root", {
-  colorScheme: "dark",
-});
-
-globalStyle("html, body, #root", {
-  height: "100%",
-});
+globalStyle(":root", { colorScheme: "dark" });
+globalStyle("html, body, #root", { height: "100%" });
 
 globalStyle("body", {
   margin: 0,
-  backgroundColor: "#05060a",
-  backgroundImage:
-    "radial-gradient(1200px circle at 50% -10%, #121a3a 0%, #0a0d1c 45%, #05060a 75%)",
+  backgroundColor: vars.color.base,
+  backgroundImage: [
+    "radial-gradient(1200px circle at 50% -10%,",
+    "#0d2018 0%,",
+    vars.color.panel + " 45%,",
+    vars.color.base + " 75%)",
+  ].join(" "),
   backgroundAttachment: "fixed",
-  color: "#d8dcea",
-  fontFamily:
-    "system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
+  color: vars.color.text,
+  fontFamily: vars.font.body,
 });
 
-globalStyle("canvas", {
-  display: "block",
-});
+globalStyle("canvas", { display: "block" });
