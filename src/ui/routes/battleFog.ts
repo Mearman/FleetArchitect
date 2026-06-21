@@ -12,8 +12,8 @@ import type { Bounds, Transform } from "./battleCamera";
  */
 const FOG_ALPHA = 0.45;
 
-/** Fill colour of the fog shroud. Near-black with a deep-blue tint. */
-const FOG_COLOUR = "rgba(10,12,28,1)";
+/** Fill colour of the fog shroud. Warm void tint matching BASE_VOID. */
+const FOG_COLOUR = "rgba(10,12,8,1)";
 
 /**
  * Maximum hue-jitter applied to a cluster's side colour to distinguish clusters
@@ -23,19 +23,19 @@ const FOG_COLOUR = "rgba(10,12,28,1)";
  */
 const HUE_JITTER_DEG = 40;
 
-/** Base hue of the attacker side colour (#ff6b5a ≈ 6° red). */
-const ATTACKER_HUE = 6;
+/** Base hue of the attacker side colour (amber #ffb000 ≈ H41 S100 L50). */
+const ATTACKER_HUE = 41;
 /** Base saturation of the attacker side colour (%)  */
 const ATTACKER_SAT = 100;
 /** Base lightness of the attacker side colour (%) */
-const ATTACKER_LIT = 68;
+const ATTACKER_LIT = 50;
 
-/** Base hue of the defender side colour (#5ab0ff ≈ 211° blue). */
-const DEFENDER_HUE = 211;
+/** Base hue of the defender side colour (cyan #00e5ff ≈ H186 S100 L50). */
+const DEFENDER_HUE = 186;
 /** Base saturation of the defender side colour (%) */
 const DEFENDER_SAT = 100;
 /** Base lightness of the defender side colour (%) */
-const DEFENDER_LIT = 67;
+const DEFENDER_LIT = 50;
 
 /** Stroke width of the cluster perimeter outline, in display pixels. */
 const CLUSTER_PERIMETER_WIDTH = 2;
@@ -58,11 +58,11 @@ const LINK_LASER_WIDTH = 1.5;
 /** Alpha of a laser/directional comms link line. */
 const LINK_LASER_ALPHA = 0.75;
 
-/** Colour of a laser comms link (bright cyan). */
-const LINK_LASER_COLOUR = "#40e0ff";
+/** Colour of a laser comms link (NEON_CYAN). */
+const LINK_LASER_COLOUR = "#00e5ff";
 
-/** Colour of an RF/omni comms link (attenuated white). */
-const LINK_RF_COLOUR = "rgba(200,220,255,1)";
+/** Colour of an RF/omni comms link (dim phosphor-green). */
+const LINK_RF_COLOUR = "rgba(170,200,170,0.8)";
 
 /**
  * Maximum ghost-contact opacity. Ghosts fade from GHOST_MAX_ALPHA down to 0
@@ -80,8 +80,8 @@ const GHOST_FADE_TICKS = 60;
 /** Radius of a ghost contact marker in display pixels (before scale). */
 const GHOST_MARKER_RADIUS_PX = 5;
 
-/** Colour of a ghost marker (dim yellow). */
-const GHOST_MARKER_COLOUR = "rgba(255,230,140,1)";
+/** Colour of a ghost marker (PHOSPHOR_AMBER). */
+const GHOST_MARKER_COLOUR = "#ffb000";
 
 /**
  * Length of the dish/antenna indicator line in world units. A short tick from
@@ -90,8 +90,8 @@ const GHOST_MARKER_COLOUR = "rgba(255,230,140,1)";
  */
 const DISH_LINE_WORLD_UNITS = 12;
 
-/** Colour of the dish aim indicator. */
-const DISH_LINE_COLOUR = "rgba(160,210,255,0.7)";
+/** Colour of the dish aim indicator (dim cyan). */
+const DISH_LINE_COLOUR = "rgba(0,229,255,0.5)";
 
 /** Width of the dish aim indicator line, in display pixels. */
 const DISH_LINE_WIDTH = 1;

@@ -1,4 +1,5 @@
 import { hullRadiusWorld } from "@/ui/cellLayout";
+import { PHOSPHOR_GREEN } from "@/ui/theme/tokens";
 import type { OverlayCtx, OverlayDef } from "./types";
 
 /** Stroke width of the focus ring on the followed ship, in display pixels. */
@@ -59,9 +60,9 @@ function drawFocusRing(c: OverlayCtx): void {
 
     const isFollowed = ship.instanceId === followId;
     if (isFollowed) {
-      // Followed ship: bright solid ring in its side colour, sitting just
-      // outside BattleRoute's side-outline ring.
-      ctx.strokeStyle = ship.side === "attacker" ? "#ff6b5a" : "#5ab0ff";
+      // Followed ship: bright solid phosphor-green ring (the friendly/focus
+      // channel), sitting just outside BattleRoute's side-outline ring.
+      ctx.strokeStyle = PHOSPHOR_GREEN;
       ctx.lineWidth = FOCUS_RING_WIDTH;
       ctx.globalAlpha = FOCUS_ACTIVE_ALPHA;
       ctx.setLineDash([]);

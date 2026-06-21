@@ -5,7 +5,8 @@ import type { DescriptorMap } from "@/ui/cellLayout";
 import { hullRadiusWorld, renderCells } from "@/ui/cellLayout";
 import { interpolateFrame } from "@/ui/interpolateFrame";
 import { orderShipsForRender } from "@/ui/renderOrder";
-import { drawAnomaly } from "./battleAnomaly";
+import { BASE_PANEL, BASE_VOID, NEON_MAGENTA, PHOSPHOR_AMBER, PHOSPHOR_GREEN } from "@/ui/theme/tokens";
+import { drawAnomaly, hash01 } from "./battleAnomaly";
 import { drawFogAndAwareness } from "./battleFog";
 import type { ShipScreenPositions } from "./battleFog";
 import type { Bounds, Camera } from "./battleCamera";
@@ -16,11 +17,84 @@ import {
   FACTION_PALETTE,
   MODULE_COLOUR,
   PROJECTILE_COLOUR,
+  SIDE_COLOUR,
 } from "./battleConstants";
 import { OVERLAYS, OVER_SHIP_IDS, UNDER_SHIP_IDS } from "./overlays";
 import type { OverlayScope } from "./overlays";
 import { SPRITE_PX_PER_WORLD, rasteriseShipSprite, spriteKey } from "./shipSprite";
 import type { ShipSprite } from "./shipSprite";
+
+/** Grid spacing in world units for the parallax background grid. */
+const GRID_WORLD_SPACING = 100;
+/** Number of deterministic stars in the backdrop starfield. */
+const STAR_COUNT = 200;
+
+/**
+ * Draw the canvas backdrop beneath everything else: a vertical base gradient,
+ * a world-space parallax grid that pans and zooms with the camera, and a
+ * deterministic starfield. The starfield uses hash01 (a pure integer→unit
+ * float hash) rather than Math.random/Date.now so replays stay byte-identical.
+ */
+function drawBackdrop(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  t: { sx: (x: number) => number; sy: (y: number) => number; scale: number },
+  bounds: { minX: number; maxX: number; minY: number; maxY: number },
+): void {
+  // 1. Base gradient — prevents the page background from bleeding through.
+  const grad = ctx.createLinearGradient(0, 0, 0, height);
+  grad.addColorStop(0, BASE_PANEL);
+  grad.addColorStop(1, BASE_VOID);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, width, height);
+
+  // 2. World-space parallax grid — pans and zooms with the camera.
+  ctx.save();
+  ctx.strokeStyle = "rgba(28,38,32,0.25)";
+  ctx.lineWidth = 1;
+  const startX = Math.floor(bounds.minX / GRID_WORLD_SPACING) * GRID_WORLD_SPACING;
+  const startY = Math.floor(bounds.minY / GRID_WORLD_SPACING) * GRID_WORLD_SPACING;
+  for (let wx = startX; wx <= bounds.maxX; wx += GRID_WORLD_SPACING) {
+    const px = t.sx(wx);
+    if (px < 0 || px > width) continue;
+    ctx.beginPath();
+    ctx.moveTo(px, 0);
+    ctx.lineTo(px, height);
+    ctx.stroke();
+  }
+  for (let wy = startY; wy <= bounds.maxY; wy += GRID_WORLD_SPACING) {
+    const py = t.sy(wy);
+    if (py < 0 || py > height) continue;
+    ctx.beginPath();
+    ctx.moveTo(0, py);
+    ctx.lineTo(width, py);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // 3. Seeded starfield — deterministic (no Math.random, no Date.now).
+  //    hash01 is a pure integer→unit float hash from battleAnomaly.ts.
+  const rangeX = bounds.maxX - bounds.minX;
+  const rangeY = bounds.maxY - bounds.minY;
+  ctx.save();
+  for (let i = 0; i < STAR_COUNT; i += 1) {
+    const wx = bounds.minX + hash01(i * 2) * rangeX;
+    const wy = bounds.minY + hash01(i * 2 + 1) * rangeY;
+    const px = t.sx(wx);
+    const py = t.sy(wy);
+    if (px < 0 || px > width || py < 0 || py > height) continue;
+    const brightness = 0.3 + hash01(i + 7) * 0.6;
+    const radius = 0.8 + hash01(i + 77) * 0.7;
+    ctx.globalAlpha = brightness;
+    ctx.fillStyle = "rgba(201,212,196,1)";
+    ctx.beginPath();
+    ctx.arc(px, py, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
 
 /** Per-overlay on/scope state held by the route. */
 export type OverlayState = Record<string, { on: boolean; scope: OverlayScope }>;
@@ -104,6 +178,10 @@ export function useBattleCanvas({
       const sx = t.sx;
       const sy = t.sy;
 
+      // Backdrop: base gradient, parallax grid, and seeded starfield, drawn
+      // first so everything else sits on top of the atmosphere.
+      drawBackdrop(ctx, width, height, t, bounds);
+
       // Anomaly is drawn first, in world space, beneath everything else.
       // The seed is threaded through so asteroid rocks match the engine's
       // canonical occluder positions (single source of truth).
@@ -179,7 +257,7 @@ export function useBattleCanvas({
         // back to the side colour for replays recorded before the factions update.
         const faction = factionByInstance.get(s.instanceId);
         const palette = faction !== undefined ? FACTION_PALETTE[faction] : undefined;
-        const base = palette?.accent ?? (s.side === "attacker" ? "#ff6b5a" : "#5ab0ff");
+        const base = palette?.accent ?? SIDE_COLOUR[s.side];
         const max = maxHp.get(s.instanceId);
 
         if (!s.alive) {
@@ -205,7 +283,7 @@ export function useBattleCanvas({
         // Side outline ring (factions update): with hulls tinted by faction, a
         // thin ring in the side colour keeps attacker/defender legible at a
         // glance, including same-faction mirror matches.
-        ctx.strokeStyle = s.side === "attacker" ? "#ff6b5a" : "#5ab0ff";
+        ctx.strokeStyle = SIDE_COLOUR[s.side];
         ctx.lineWidth = 1.5;
         ctx.globalAlpha = 0.8;
         ctx.beginPath();
@@ -217,7 +295,7 @@ export function useBattleCanvas({
         if (maxShield > 0) {
           const frac = Math.max(0, s.shield / maxShield);
           if (frac > 0) {
-            ctx.strokeStyle = "rgba(120,200,255,0.65)";
+            ctx.strokeStyle = "rgba(0,229,255,0.65)";
             ctx.lineWidth = 2;
             ctx.beginPath();
             ctx.arc(px, py, hullRadiusPx, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac);
@@ -397,7 +475,7 @@ export function useBattleCanvas({
           // is applied.
           const outline = descriptor?.outline;
           if (outline !== undefined) {
-            ctx.strokeStyle = s.side === "attacker" ? "#ff6b5a" : "#5ab0ff";
+            ctx.strokeStyle = SIDE_COLOUR[s.side];
             ctx.lineWidth = 1;
             ctx.globalAlpha = 0.5;
             for (const loop of outline) {
@@ -451,10 +529,10 @@ export function useBattleCanvas({
         const maxStructure = max?.structure ?? s.structure;
         const frac = maxStructure > 0 ? Math.max(0, s.structure / maxStructure) : 0;
         const barW = 18;
-        ctx.fillStyle = "rgba(255,255,255,0.15)";
+        ctx.fillStyle = "rgba(28,38,32,0.7)";
         ctx.fillRect(px - barW / 2, py + 10, barW, 3);
         ctx.fillStyle =
-          frac > 0.5 ? "#7bd88f" : frac > 0.25 ? "#ffcc5a" : "#ff5a5a";
+          frac > 0.5 ? PHOSPHOR_GREEN : frac > 0.25 ? PHOSPHOR_AMBER : NEON_MAGENTA;
         ctx.fillRect(px - barW / 2, py + 10, barW * frac, 3);
       }
 
@@ -468,9 +546,8 @@ export function useBattleCanvas({
         for (const pod of frame.pods) {
           const px = sx(pod.x);
           const py = sy(pod.y);
-          const podColour = pod.side === "attacker" ? "#ff6b5a" : "#5ab0ff";
           ctx.globalAlpha = 0.85;
-          ctx.fillStyle = podColour;
+          ctx.fillStyle = SIDE_COLOUR[pod.side];
 
           if (pod.cells !== undefined && pod.cells.length > 0) {
             // Block-grid path: each cell is drawn at its (q, r) offset from the
@@ -494,6 +571,16 @@ export function useBattleCanvas({
           ctx.globalAlpha = 1;
         }
       }
+
+      // Client-space vignette: darkens the frame edges to focus the eye on the
+      // action and seat the battle in the cassette-cyberpunk atmosphere.
+      ctx.save();
+      const vig = ctx.createRadialGradient(width / 2, height / 2, height * 0.3, width / 2, height / 2, height * 0.85);
+      vig.addColorStop(0, "transparent");
+      vig.addColorStop(1, "rgba(0,0,0,0.45)");
+      ctx.fillStyle = vig;
+      ctx.fillRect(0, 0, width, height);
+      ctx.restore();
 
       // Over-ship layer: target lock, damage pulse, sensor pulses, boarding/debris.
       drawOverlays(OVER_SHIP_IDS);
