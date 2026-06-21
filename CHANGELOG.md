@@ -1,3 +1,17 @@
+# [1.10.0](https://github.com/Mearman/FleetArchitect/compare/v1.9.0...v1.10.0) (2026-06-21)
+
+
+### Features
+
+* **ai:** wire aiRetreat/aiRally/aiStance into movement and targeting ([1a8ef6e](https://github.com/Mearman/FleetArchitect/commit/1a8ef6e921359748733dce69a849dd37f77c4fa0))
+* **battle:** opt-in astronomical-scale arena mode — light-lag visible at 300,000 km ([ef5afa2](https://github.com/Mearman/FleetArchitect/commit/ef5afa2865a8cb10596464ab77ab9a1beaa8247b))
+* **history:** wire saveShipDesign/saveFleet through all callers and activate history panels ([9287cd5](https://github.com/Mearman/FleetArchitect/commit/9287cd57284a35aacc2d24337b81ec2a48871a12))
+* **overlay:** atmosphere and hull breach visualisation ([37b4ae4](https://github.com/Mearman/FleetArchitect/commit/37b4ae4db3cde648aa74ff8d2cbd4250368f0cab))
+* **overlay:** sensor pulse visualisation — expanding arcs, reflections, emission flashes ([dc660a8](https://github.com/Mearman/FleetArchitect/commit/dc660a8695c9fc02ad3ba6d7fbc6fa6a3e863687))
+* **renderer:** boarding pods as block grids; debris and salvage overlay ([e0d20b2](https://github.com/Mearman/FleetArchitect/commit/e0d20b265583d4f3b393ce08b9d57bdf784d5939))
+* **salvage:** deterministic debris collection and hull-claiming mechanics ([3b9bef7](https://github.com/Mearman/FleetArchitect/commit/3b9bef74bb7037223674fc76494eab752bc45755))
+* **snapshot:** crew injured state, atmosphere/breach, pulse strength, pod cells, debris ([687cfb1](https://github.com/Mearman/FleetArchitect/commit/687cfb186ee2ef74ce9f0de55434cc79ff96f3b9))
+
 # [1.9.0](https://github.com/Mearman/FleetArchitect/compare/v1.8.0...v1.9.0) (2026-06-21)
 
 
