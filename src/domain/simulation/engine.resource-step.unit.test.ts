@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { makeResourceState, resourceStep } from "./engine/resource-step";
 import type { SimModule, SimShip } from "./engine/types";
 import type { ModuleEffect, PowerPlantEffect, EngineEffect, WeaponEffect } from "@/schema/module";
+import type { CellEdges } from "@/schema/grid";
 import { CABIN_TEMPERATURE_K, STANDARD_CELL_GAS_MASS_KG } from "./engine/lifesupport";
 import { SPACE_TEMPERATURE_K } from "./engine/thermal";
 import { SIM } from "./engine/config";
@@ -496,6 +497,37 @@ describe("engine.resource-step", () => {
     ship.resource = state;
     for (let i = 0; i < 20; i++) resourceStep(ship);
     expect(ship.modules?.every((m) => m.alive)).toBe(true);
+  });
+
+  it("conserves atmosphere across an asymmetric shared edge", () => {
+    // Edges are authored per cell with no symmetry constraint, so two adjacent
+    // cells can disagree on whether their shared edge is passable (the bundled
+    // designs carry thousands of such pairs). Here cell (0,0)'s east edge is a
+    // WALL while cell (1,0)'s west edge is OPEN. A face is passable only when
+    // both cells agree, so this edge must block transport entirely. Building the
+    // directed faces from a single cell's edge would let the open side advect
+    // gas out of the walled neighbour as a one-way inflow the source never
+    // accounts as an outflow — fabricating mass. With a steep pressure gradient
+    // across the edge, the closed shared face must keep the total gas exactly
+    // constant.
+    const sealed: CellEdges = { n: "wall", e: "wall", s: "wall", w: "wall", doorStates: {} };
+    const openWest: CellEdges = { n: "wall", e: "wall", s: "wall", w: "open", doorStates: {} };
+    const m0: SimModule = { ...moduleAt(0, 0, { kind: "hull" }), edges: sealed };
+    const m1: SimModule = { ...moduleAt(1, 0, { kind: "hull" }), edges: openWest };
+    const ship = shipWith({ modules: [m0, m1], crew: [] });
+    const state = makeResourceState(ship);
+    if (state === undefined) throw new Error("no state");
+    ship.resource = state;
+    // Dense index is sorted by (row, col): cell (0,0) -> 0, (1,0) -> 1. Put a
+    // full cabin's worth of gas in cell 0 and hard vacuum in cell 1 — the
+    // gradient a one-way face would pump from.
+    state.atmosphere[0] = STANDARD_CELL_GAS_MASS_KG;
+    state.atmosphere[1] = 0;
+    const initialTotal = state.atmosphere[0] + state.atmosphere[1];
+    for (let i = 0; i < 60; i++) resourceStep(ship);
+    const finalTotal = ship.resource.atmosphere.reduce((a, b) => a + b, 0);
+    expect(finalTotal).toBeCloseTo(initialTotal, 9);
+    for (const v of ship.resource.atmosphere) expect(Number.isFinite(v)).toBe(true);
   });
 });
 

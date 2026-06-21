@@ -241,31 +241,74 @@ export const DIFFUSION_CFL_MARGIN = 0.4;
 export const ADVECTION_CFL_MARGIN = 0.5;
 
 /**
+ * Maximum number of transport faces a single cell can have on the ship-local
+ * grid: the rectangular lattice is 4-connected (N, E, S, W neighbours), so an
+ * interior cell has at most four faces. Both stability bounds below are *per
+ * cell*, not per face — the explicit scheme sums the flux over every face of a
+ * cell in one step, so the relevant Courant / FTCS number is the SUM of the
+ * per-face contributions. The worst case is all four faces carrying flux in the
+ * destabilising sense at once (a decompressing cell venting through every open
+ * edge, or a hot cell conducting to four cold neighbours). Bounding only one
+ * face lets that summed flux reach four times the per-face limit: for advection
+ * a cell can then be commanded to expel more mass than it holds in a single
+ * sub-step, drive negative, and be clamped back to its floor — fabricating mass
+ * out of the floor clamp every sub-step, which compounds into an unbounded
+ * runaway (gas mass to Infinity, then NaN). Folding this coordination number
+ * into the sub-step count makes the per-cell bound hold by construction.
+ */
+export const GRID_FACE_NEIGHBOURS = 4;
+
+/**
  * Number of explicit sub-steps needed to keep `substance.coefficient` within
- * the FTCS bound over one tick, for a unit-area / unit-pitch face on the 1 m
- * grid. Returns at least 1 (a non-diffusive substance needs no sub-stepping).
- * Derived from `D·(dt/n)/dx² ≤ margin`  ⇒  `n ≥ D·dt/(margin·dx²)`.
+ * the FTCS bound over one tick on the 1 m grid. Returns at least 1 (a
+ * non-diffusive substance needs no sub-stepping). The per-cell FTCS bound sums
+ * the diffusive flux across all of a cell's faces, so the worst-case stability
+ * condition is `GRID_FACE_NEIGHBOURS·D·(dt/n)/dx² ≤ margin`, giving
+ * `n ≥ GRID_FACE_NEIGHBOURS·D·dt/(margin·dx²)`.
  */
 export function diffusionSubSteps(coefficient: number): number {
   if (coefficient <= 0) return 1;
   const dx2 = CELL_PITCH_M * CELL_PITCH_M;
-  const n = (coefficient * TRANSPORT_DT_S) / (DIFFUSION_CFL_MARGIN * dx2);
+  const n =
+    (GRID_FACE_NEIGHBOURS * coefficient * TRANSPORT_DT_S) /
+    (DIFFUSION_CFL_MARGIN * dx2);
   return Math.max(1, Math.ceil(n));
 }
 
 /**
- * Number of explicit sub-steps needed to keep the upwind advection step
- * inside its CFL bound: `|u|·(dt/n)/dx ≤ margin` ⇒ `n ≥ |u|·dt/(margin·dx)`.
+ * Number of explicit sub-steps needed to keep the upwind advection step inside
+ * its CFL bound. The bound is per cell, not per face: a cell's net outflow is
+ * the sum over its faces, so the worst case (every face expelling at the
+ * maximum velocity) is `GRID_FACE_NEIGHBOURS·|u|·(dt/n)/dx ≤ margin`, giving
+ * `n ≥ GRID_FACE_NEIGHBOURS·|u|·dt/(margin·dx)`. With `margin = 0.5` this keeps
+ * the summed outflow at or below half a cell's contents per sub-step, so a cell
+ * never goes negative and the non-negativity floor clamp never has to invent
+ * mass to restore it.
  */
 export function advectionSubSteps(maxVelocity: number): number {
   if (maxVelocity <= 0) return 1;
-  const n = (maxVelocity * TRANSPORT_DT_S) / (ADVECTION_CFL_MARGIN * CELL_PITCH_M);
+  const n =
+    (GRID_FACE_NEIGHBOURS * maxVelocity * TRANSPORT_DT_S) /
+    (ADVECTION_CFL_MARGIN * CELL_PITCH_M);
   return Math.max(1, Math.ceil(n));
 }
 
-/** Combined sub-step count: the max of the diffusion and advection
- *  requirements, so a substance that both diffuses and advects stays inside
- *  both stability bounds. */
+/**
+ * Combined sub-step count: the max of the diffusion and advection requirements,
+ * so a substance that both diffuses and advects stays inside both stability
+ * bounds. The advection requirement is sized from the substance's static
+ * `maxVelocity` ceiling, not the instantaneous velocity present in φ. That is
+ * deliberate: the atmosphere closure sets the velocity proportional to the
+ * pressure difference across a face (`u = K·Δφ`), so the advection actually
+ * behaves like a stiff non-linear diffusion whose relaxation rate is governed by
+ * the coefficient `K`, not by the instantaneous Δφ. Sizing the sub-steps from a
+ * momentarily small velocity (a near-equalised field, or the tiny gradients crew
+ * O₂ consumption seeds each tick) would under-resolve that stiffness; explicit
+ * Euler then amplifies the perturbation every tick until a cell is driven
+ * negative and the non-negativity clamp fabricates mass — an unbounded runaway.
+ * The `maxVelocity` ceiling is exactly the worst-case relaxation rate, so a
+ * fixed count derived from it holds for every field state.
+ */
 export function transportSubSteps(substance: TransportSubstance): number {
   return Math.max(
     diffusionSubSteps(substance.coefficient),

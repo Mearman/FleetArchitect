@@ -225,6 +225,27 @@ function transportGraph(ship: SimShip, state: ResourceState): RectangularTranspo
     return false;
   };
 
+  // Whether a cell's edge passes transport (gas/heat/fuel). An open edge or any
+  // door (open or closed — a shut door still leaks) carries flow; a wall does
+  // not. A shared face is passable only if BOTH cells agree their facing edges
+  // pass: edges are authored per cell with no symmetry constraint, so a cell
+  // may carry `open`/`door` against a neighbour's `wall`. Building the directed
+  // face A->B from A's edge alone (and B->A from B's edge alone) would then make
+  // the two half-faces disagree, breaking the finite-volume scheme's
+  // conservation — a cell with a one-way inflow accumulates mass without bound
+  // (to Infinity, then Infinity - Infinity = NaN). Requiring both edges makes
+  // the face symmetric by construction, so transport conserves mass.
+  const facePasses = (m: SimModule, edgeKey: "e" | "w" | "n" | "s"): boolean => {
+    const edge = m.edges[edgeKey];
+    return edge === "open" || edge === "door";
+  };
+  const oppositeEdge: Record<"e" | "w" | "n" | "s", "e" | "w" | "n" | "s"> = {
+    e: "w",
+    w: "e",
+    n: "s",
+    s: "n",
+  };
+
   for (const [key, fromIdx] of state.moduleIndex) {
     const fromM = aliveByKey.get(key);
     if (fromM === undefined) {
@@ -243,8 +264,12 @@ function transportGraph(ship: SimShip, state: ResourceState): RectangularTranspo
       const toIdx = state.moduleIndex.get(toKey);
       const neighbourAlive = aliveByKey.has(toKey);
       if (toIdx !== undefined) {
-        const edgeState = fromM.edges[edgeKey];
-        const open = neighbourAlive && (edgeState === "open" || edgeState === "door");
+        const toM = aliveByKey.get(toKey);
+        const open =
+          neighbourAlive &&
+          toM !== undefined &&
+          facePasses(fromM, edgeKey) &&
+          facePasses(toM, oppositeEdge[edgeKey]);
         faces.push({ from: fromIdx, to: toIdx, nx, ny, area: FACE_AREA, open, boundary: false });
       } else {
         // No module in this direction: hull-facing boundary face.

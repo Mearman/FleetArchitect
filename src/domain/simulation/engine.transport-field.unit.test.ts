@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   DIFFUSION_CFL_MARGIN,
+  GRID_FACE_NEIGHBOURS,
   TICKS_PER_SECOND,
   TRANSPORT_DT_S,
   diffusionSubSteps,
@@ -45,13 +46,17 @@ describe("transport-field primitives", () => {
       expect(TICKS_PER_SECOND).toBe(30);
     });
 
-    it("uses a sub-step count that keeps D*dt/dx^2 inside the CFL margin", () => {
+    it("uses a sub-step count that keeps the per-cell FTCS number inside the CFL margin", () => {
       // For D = 0 the field is non-diffusive and needs no sub-stepping.
       expect(diffusionSubSteps(0)).toBe(1);
-      // For a diffusivity that would breach the margin, sub-steps scale up.
-      // n >= D*dt/(margin*dx^2); pick D so n is exactly 4 at dx=1, margin=0.4,
-      // dt = 1/30: D = 4 * 0.4 * 1 / (1/30) = 48.
-      const D = (4 * DIFFUSION_CFL_MARGIN) / (1 / TICKS_PER_SECOND);
+      // The bound is per cell, not per face: a cell sums diffusive flux over all
+      // GRID_FACE_NEIGHBOURS of its faces in one step, so stability needs
+      // n >= GRID_FACE_NEIGHBOURS*D*dt/(margin*dx^2). Pick D so n is exactly 4 at
+      // dx=1, margin=0.4, dt=1/30, 4 face-neighbours:
+      // D = 4 * margin * dx^2 / (GRID_FACE_NEIGHBOURS * dt).
+      const D =
+        (4 * DIFFUSION_CFL_MARGIN) /
+        (GRID_FACE_NEIGHBOURS * (1 / TICKS_PER_SECOND));
       expect(diffusionSubSteps(D)).toBe(4);
     });
   });
@@ -126,6 +131,60 @@ describe("transport-field primitives", () => {
       expect(result.phi[1]!).toBeCloseTo(0.5 * (1 / TICKS_PER_SECOND), 9);
       // Total conserved.
       expect(totalScalar(result.phi)).toBeCloseTo(totalScalar(phi), 9);
+    });
+
+    it("conserves mass when one cell vents through all four faces at once", () => {
+      // Regression for the atmosphere-NaN crash. A decompressing cell has up to
+      // four open faces, all expelling at the sound-speed ceiling. The CFL bound
+      // is per cell, not per face: bounding only a single face let the SUMMED
+      // outflow across four faces reach twice the cell's contents in one
+      // sub-step, driving it negative. The non-negativity floor then clamped it
+      // back to zero — fabricating mass, because the four neighbours had already
+      // been credited the full pre-clamp outflow. That fabricated mass compounded
+      // every sub-step into an unbounded runaway (φ to Infinity, then NaN).
+      //
+      // Centre cell (0) surrounded by four empty neighbours (1..4), every face
+      // open in both directions, advecting on a steep gradient that saturates the
+      // velocity to its ceiling. With the per-cell bound the field must conserve
+      // mass and stay finite no matter how many ticks run.
+      const ceiling = 343;
+      const faces: TransportFace[] = [];
+      const normals = [
+        { nx: 1, ny: 0 },
+        { nx: -1, ny: 0 },
+        { nx: 0, ny: 1 },
+        { nx: 0, ny: -1 },
+      ];
+      for (let k = 0; k < 4; k += 1) {
+        const nrm = normals[k]!;
+        faces.push({ from: 0, to: k + 1, nx: nrm.nx, ny: nrm.ny, area: 1, open: true, boundary: false });
+        faces.push({ from: k + 1, to: 0, nx: -nrm.nx, ny: -nrm.ny, area: 1, open: true, boundary: false });
+      }
+      const substance: TransportSubstance = {
+        name: "atmosphere",
+        coefficient: 0,
+        maxVelocity: ceiling,
+        // Pressure-gradient flow proportional to the φ difference across the
+        // face, clamped to ±ceiling — the same shape as the real atmosphere
+        // closure, saturating against an empty neighbour.
+        velocity: (face, phi) => {
+          if (face.to === undefined) return 0;
+          const u = ceiling * ((phi[face.from] ?? 0) - (phi[face.to] ?? 0));
+          return u > ceiling ? ceiling : u < -ceiling ? -ceiling : u;
+        },
+        nonNegative: true,
+        floor: 0,
+      };
+      const field: TransportField = { substance, faces, boundaryCells: [] };
+      let phi = [1, 0, 0, 0, 0];
+      const initialTotal = totalScalar(phi);
+      for (let tick = 0; tick < 50; tick += 1) {
+        phi = stepTransportField(field, phi).phi;
+        // No source, no boundary flux: the closed five-cell field conserves mass
+        // exactly every tick (advection only moves it between cells).
+        expect(totalScalar(phi)).toBeCloseTo(initialTotal, 9);
+        for (const v of phi) expect(Number.isFinite(v)).toBe(true);
+      }
     });
   });
 
