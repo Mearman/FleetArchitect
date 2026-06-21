@@ -18,13 +18,12 @@ const boot = keyframes({
   "100%": { filter: "brightness(1)" },
 });
 
-const glitchIn = keyframes({
-  "0%":   { clipPath: "inset(40% 0 50% 0)", transform: "translate(-4px,2px)" },
-  "20%":  { clipPath: "inset(5% 0 90% 0)",  transform: "translate(3px,-1px)" },
-  "40%":  { clipPath: "inset(70% 0 10% 0)", transform: "translate(-2px,3px)" },
-  "60%":  { clipPath: "inset(20% 0 60% 0)", transform: "translate(1px,-2px)" },
-  "80%":  { clipPath: "inset(0 0 100% 0)",  transform: "translate(0,0)" },
-  "100%": { clipPath: "inset(0 0 0 0)",     transform: "translate(0,0)" },
+/** Control illumination on power-on — controls light up from dim to bright with
+ *  a brief amber glow, then settle. Full level only, during the boot window. */
+export const buttonIlluminate = keyframes({
+  "0%":   { filter: "brightness(0.4)" },
+  "55%":  { filter: "brightness(1.35) drop-shadow(0 0 6px rgba(255,176,0,0.55))" },
+  "100%": { filter: "brightness(1)" },
 });
 
 /**
@@ -71,12 +70,36 @@ export const vignette = style({
   boxShadow: "inset 0 0 50px rgba(0,0,0,0.38)",
 });
 
-/** Boot animation class — apply to #root, gated on [data-fx="full"]. */
-export const bootRoot = style({
+/**
+ * Display power-on — the screen snaps from a thin bright line to full height
+ * with a brightness flare, like a CRT switching on. Apply to a display
+ * container (the battle canvas box, the designer viewport wrapper); the CSS
+ * animation runs whenever the display mounts, so it fires on page load for a
+ * display already on screen and when the battle canvas first appears after
+ * engaging. Full level only.
+ */
+export const screenPowerOn = style({
   selectors: {
     'html[data-fx="full"] &': {
       animationName: boot,
-      animationDuration: "0.55s",
+      animationDuration: "0.6s",
+      animationTimingFunction: "ease-out",
+      animationFillMode: "both",
+    },
+  },
+});
+
+/**
+ * Control illumination — attached to every Button and ActionIcon via the theme.
+ * The control lights up from dim with a brief amber glow when it mounts (page
+ * load, and when a panel's controls first appear), full level only. Driven by
+ * filter so it never fights the bevel box-shadows.
+ */
+export const controlIlluminate = style({
+  selectors: {
+    'html[data-fx="full"] &': {
+      animationName: buttonIlluminate,
+      animationDuration: "0.7s",
       animationTimingFunction: "ease-out",
       animationFillMode: "both",
     },
@@ -139,15 +162,4 @@ export const neonBoxAmber = style({
 
 export const neonBoxCyan = style({
   boxShadow: `0 0 0 1px ${vars.color.border}, 0 0 20px -4px rgba(0,229,255,0.4)`,
-});
-
-/** Glitch entrance animation — apply to route wrappers. Full level only. */
-export const glitchEnter = style({
-  selectors: {
-    'html[data-fx="full"] &': {
-      animationName: glitchIn,
-      animationDuration: "0.22s",
-      animationTimingFunction: "steps(5, end)",
-    },
-  },
 });

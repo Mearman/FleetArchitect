@@ -9,7 +9,6 @@ import { Notifications } from "@mantine/notifications";
 import { RouterProvider } from "react-router-dom";
 import { mantineTheme } from "@/ui/theme/mantineTheme";
 import { FxProvider } from "@/ui/fx/FxContext";
-import { CrtOverlay } from "@/ui/fx/CrtOverlay";
 import { router } from "@/ui/router";
 import { seedPresets } from "@/storage/seed";
 
@@ -34,7 +33,6 @@ void seedPresets()
       <StrictMode>
         <FxProvider>
           <MantineProvider theme={mantineTheme} defaultColorScheme="dark">
-            <CrtOverlay />
             <Notifications position="top-right" />
             <RouterProvider router={router} />
           </MantineProvider>

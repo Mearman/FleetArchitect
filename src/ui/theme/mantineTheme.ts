@@ -21,6 +21,7 @@ import {
   BEZEL_TOP,
   BEZEL_BOTTOM,
 } from "./tokens";
+import { controlIlluminate } from "@/ui/fx/CrtOverlay.css";
 
 // Skeuomorphic surface recipes — built as plain strings (no `as` assertions).
 // One ordered box-shadow list per element: insets first, then the 0 0 0 1px
@@ -119,6 +120,7 @@ export const mantineTheme = createTheme({
     },
     Button: {
       defaultProps: { radius: "xs" },
+      classNames: { root: controlIlluminate },
       styles: {
         // The gradient layers OVER the variant backgroundColor (no backgroundColor
         // override) so the amber primary fill survives beneath the bevel.
@@ -147,6 +149,7 @@ export const mantineTheme = createTheme({
     },
     ActionIcon: {
       defaultProps: { radius: "xs" },
+      classNames: { root: controlIlluminate },
       styles: {
         // Same pressable recipe as Button, with reduced offsets so the icon
         // buttons feel like small round keys with shorter travel.

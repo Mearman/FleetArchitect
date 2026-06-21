@@ -67,6 +67,7 @@ import { type BreachSet, GridBoard } from "./GridBoard";
 import { CommsConfig, SensorConfig } from "./ModuleConfig";
 import { panelLabel } from "@/ui/components/panel.css";
 import { CrtScreen } from "@/ui/fx/CrtScreen";
+import { screenPowerOn } from "@/ui/fx/CrtOverlay.css";
 import { zoomInner, zoomScreen, zoomViewport } from "./ShipDesignerRoute.css";
 
 /** Zoom range for the pan/zoom viewport, as a fraction of natural size.
@@ -586,7 +587,7 @@ export function ShipDesignerRoute() {
                       }
                     />
                   </Group>
-                  <div className={zoomScreen}>
+                  <div className={`${zoomScreen} ${screenPowerOn}`}>
                     <div className={zoomViewport} style={{ touchAction: "none" }}>
                       <div
                         className={zoomInner}

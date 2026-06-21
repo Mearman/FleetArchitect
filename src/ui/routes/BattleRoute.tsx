@@ -41,7 +41,7 @@ import { useBattleCanvas } from "./useBattleCanvas";
 import { useBattlePlayback } from "./useBattlePlayback";
 import { useBattleSimulation } from "./useBattleSimulation";
 import { touchTarget } from "@/ui/components/panel.css";
-import { glitchEnter } from "@/ui/fx/CrtOverlay.css";
+import { screenPowerOn } from "@/ui/fx/CrtOverlay.css";
 import { CrtScreen } from "@/ui/fx/CrtScreen";
 import * as styles from "./BattleRoute.css";
 
@@ -401,7 +401,7 @@ export function BattleRoute() {
   );
 
   return (
-    <Stack gap="md" className={glitchEnter}>
+    <Stack gap="md">
       <Group justify="space-between" align="center">
         <Title order={1}>Battle Arena</Title>
         {simulation.result !== null && (
@@ -442,7 +442,7 @@ export function BattleRoute() {
         ) : (
           <Stack gap="sm">
             <Paper p={0} withBorder className={styles.stage}>
-              <Box className={styles.canvasBox}>
+              <Box className={`${styles.canvasBox} ${screenPowerOn}`}>
                 {/* CRT screen effects (scanlines, vignette, aberration), confined to this display. */}
                 <CrtScreen />
                 {/* Glass-glare overlay: diagonal highlight visible only at data-fx="full". */}

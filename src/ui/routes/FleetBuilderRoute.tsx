@@ -51,7 +51,6 @@ import {
 } from "@/schema/fleet";
 import type { Fleet, FleetShip, Orders } from "@/schema/fleet";
 import { panelLabel } from "@/ui/components/panel.css";
-import { glitchEnter } from "@/ui/fx/CrtOverlay.css";
 
 /** A fleet row carries a local React key alongside the schema's FleetShip. */
 interface FleetRow extends FleetShip {
@@ -292,7 +291,7 @@ export function FleetBuilderRoute() {
   const canBuild = designs.length > 0;
 
   return (
-    <Container size="xl" py="lg" className={glitchEnter}>
+    <Container size="xl" py="lg">
     <Stack gap="lg">
       <Title order={1}>Fleet Builder</Title>
 
