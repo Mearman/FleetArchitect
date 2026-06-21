@@ -1,0 +1,144 @@
+import { globalStyle, keyframes, style } from "@vanilla-extract/css";
+import { vars } from "@/ui/theme/vars.css";
+
+const flicker = keyframes({
+  "0%,100%": { opacity: 1 },
+  "4%":      { opacity: 0.94 },
+  "5%":      { opacity: 1 },
+  "56%":     { opacity: 0.96 },
+  "57%":     { opacity: 1 },
+  "91%":     { opacity: 0.92 },
+  "92%":     { opacity: 1 },
+});
+
+const boot = keyframes({
+  "0%":   { transform: "scaleY(0.03)", filter: "brightness(4)" },
+  "15%":  { transform: "scaleY(1)",    filter: "brightness(2.2)" },
+  "50%":  { filter: "brightness(1.4)" },
+  "100%": { filter: "brightness(1)" },
+});
+
+const glitchIn = keyframes({
+  "0%":   { clipPath: "inset(40% 0 50% 0)", transform: "translate(-4px,2px)" },
+  "20%":  { clipPath: "inset(5% 0 90% 0)",  transform: "translate(3px,-1px)" },
+  "40%":  { clipPath: "inset(70% 0 10% 0)", transform: "translate(-2px,3px)" },
+  "60%":  { clipPath: "inset(20% 0 60% 0)", transform: "translate(1px,-2px)" },
+  "80%":  { clipPath: "inset(0 0 100% 0)",  transform: "translate(0,0)" },
+  "100%": { clipPath: "inset(0 0 0 0)",     transform: "translate(0,0)" },
+});
+
+/** Scanline overlay — visible at reduced and full levels. */
+export const overlay = style({
+  position: "fixed",
+  inset: 0,
+  pointerEvents: "none",
+  zIndex: 198,
+  backgroundImage: [
+    "repeating-linear-gradient(",
+    "  to bottom,",
+    "  transparent 0,",
+    "  transparent 2px,",
+    "  rgba(0,0,0,0.18) 2px,",
+    "  rgba(0,0,0,0.18) 3px",
+    ")",
+  ].join(""),
+  selectors: {
+    'html[data-fx="full"] &': {
+      animationName: flicker,
+      animationDuration: "8s",
+      animationIterationCount: "infinite",
+      animationTimingFunction: "linear",
+    },
+  },
+});
+
+/** Curvature vignette layer. */
+export const vignette = style({
+  position: "fixed",
+  inset: 0,
+  pointerEvents: "none",
+  zIndex: 199,
+  background: "radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.65) 100%)",
+  boxShadow: "inset 0 0 140px rgba(0,0,0,0.5)",
+});
+
+/** Boot animation class — apply to #root, gated on [data-fx="full"]. */
+export const bootRoot = style({
+  selectors: {
+    'html[data-fx="full"] &': {
+      animationName: boot,
+      animationDuration: "0.55s",
+      animationTimingFunction: "ease-out",
+      animationFillMode: "both",
+    },
+  },
+});
+
+/** RGB chromatic-aberration shift — full level only. */
+globalStyle(`html[data-fx="full"] .${overlay}::before`, {
+  content: '""',
+  position: "fixed",
+  inset: 0,
+  pointerEvents: "none",
+  zIndex: 199,
+  backgroundImage: [
+    "repeating-linear-gradient(",
+    "  to bottom,",
+    "  transparent 0,",
+    "  transparent 2px,",
+    "  rgba(0,229,255,0.04) 2px,",
+    "  rgba(0,229,255,0.04) 3px",
+    ")",
+  ].join(""),
+  transform: "translateX(-0.6px)",
+  mixBlendMode: "screen",
+});
+
+globalStyle(`html[data-fx="full"] .${overlay}::after`, {
+  content: '""',
+  position: "fixed",
+  inset: 0,
+  pointerEvents: "none",
+  zIndex: 199,
+  backgroundImage: [
+    "repeating-linear-gradient(",
+    "  to bottom,",
+    "  transparent 0,",
+    "  transparent 2px,",
+    "  rgba(255,43,214,0.04) 2px,",
+    "  rgba(255,43,214,0.04) 3px",
+    ")",
+  ].join(""),
+  transform: "translateX(0.6px)",
+  mixBlendMode: "screen",
+});
+
+/** Neon glow text classes — import and apply where needed. */
+export const neonTextAmber = style({
+  color: vars.color.amber,
+  textShadow: `0 0 6px ${vars.color.amber}, 0 0 18px rgba(255,176,0,0.45)`,
+});
+
+export const neonTextCyan = style({
+  color: vars.color.cyan,
+  textShadow: `0 0 6px ${vars.color.cyan}, 0 0 18px rgba(0,229,255,0.45)`,
+});
+
+export const neonBoxAmber = style({
+  boxShadow: `0 0 0 1px ${vars.color.border}, 0 0 20px -4px rgba(255,176,0,0.4)`,
+});
+
+export const neonBoxCyan = style({
+  boxShadow: `0 0 0 1px ${vars.color.border}, 0 0 20px -4px rgba(0,229,255,0.4)`,
+});
+
+/** Glitch entrance animation — apply to route wrappers. Full level only. */
+export const glitchEnter = style({
+  selectors: {
+    'html[data-fx="full"] &': {
+      animationName: glitchIn,
+      animationDuration: "0.22s",
+      animationTimingFunction: "steps(5, end)",
+    },
+  },
+});
