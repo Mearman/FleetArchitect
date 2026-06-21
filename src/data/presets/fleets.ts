@@ -204,6 +204,26 @@ export const fleetData: FleetInput[] = [
     source: "preset",
     revision: 1,
   },
+  {
+    id: "preset-fleet-siege-column",
+    name: "Siege Column",
+    faction: "Foundry",
+    // The Foundry's hammer blow: a Siege Titan grinds forward behind a
+    // screen of Ingot interceptors while Battlerams hold the flanks.
+    // Nothing fancy — just mass, armour, and autocannons until nothing
+    // is left standing.
+    ships: [
+      { designId: "preset-ship-siege-titan",  position: { x: -260, y:    0 }, facing: 0, orders: siegeOrders },
+      { designId: "preset-ship-battleram",     position: { x: -340, y: -180 }, facing: 0, orders: siegeOrders },
+      { designId: "preset-ship-battleram",     position: { x: -340, y:  180 }, facing: 0, orders: siegeOrders },
+      { designId: "preset-ship-ingot",         position: { x: -400, y: -260 }, facing: 0, orders: siegeOrders },
+      { designId: "preset-ship-ingot",         position: { x: -400, y:  260 }, facing: 0, orders: siegeOrders },
+    ],
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
+  },
 
   // --- Corsair Reaver fleets ---
   {
@@ -217,6 +237,47 @@ export const fleetData: FleetInput[] = [
       { designId: "preset-ship-reaver", position: { x: -320, y: -45 }, facing: 0, orders: raidOrders },
       { designId: "preset-ship-reaver", position: { x: -320, y: 45 }, facing: 0, orders: raidOrders },
       { designId: "preset-ship-reaver", position: { x: -320, y: 130 }, facing: 0, orders: raidOrders },
+    ],
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
+  },
+  {
+    id: "preset-fleet-cutlass-run",
+    name: "Cutlass Run",
+    faction: "Corsair",
+    // Six Cutlass fighters hit fast and scatter faster; no formation, no
+    // hesitation. Against heavier targets they swarm from six angles at
+    // once and are gone before the point-defence can track.
+    ships: [
+      { designId: "preset-ship-cutlass", position: { x: -380, y: -250 }, facing: 0, orders: raidOrders },
+      { designId: "preset-ship-cutlass", position: { x: -380, y: -150 }, facing: 0, orders: raidOrders },
+      { designId: "preset-ship-cutlass", position: { x: -380, y:  -50 }, facing: 0, orders: raidOrders },
+      { designId: "preset-ship-cutlass", position: { x: -380, y:   50 }, facing: 0, orders: raidOrders },
+      { designId: "preset-ship-cutlass", position: { x: -380, y:  150 }, facing: 0, orders: raidOrders },
+      { designId: "preset-ship-cutlass", position: { x: -380, y:  250 }, facing: 0, orders: raidOrders },
+    ],
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
+  },
+  {
+    id: "preset-fleet-reavers-host",
+    name: "Reavers' Host",
+    faction: "Corsair",
+    // The Corsairs' full raid strength: a Warbringer cruiser breaks the
+    // enemy line while Reavers work the flanks and Cutlass fighters hunt
+    // anything that tries to run.
+    ships: [
+      { designId: "preset-ship-warbringer", position: { x: -290, y:    0 }, facing: 0, orders: raidOrders },
+      { designId: "preset-ship-reaver",     position: { x: -360, y: -120 }, facing: 0, orders: raidOrders },
+      { designId: "preset-ship-reaver",     position: { x: -360, y:  120 }, facing: 0, orders: raidOrders },
+      { designId: "preset-ship-cutlass",    position: { x: -430, y: -200 }, facing: 0, orders: raidOrders },
+      { designId: "preset-ship-cutlass",    position: { x: -430, y:  -60 }, facing: 0, orders: raidOrders },
+      { designId: "preset-ship-cutlass",    position: { x: -430, y:   60 }, facing: 0, orders: raidOrders },
+      { designId: "preset-ship-cutlass",    position: { x: -430, y:  200 }, facing: 0, orders: raidOrders },
     ],
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,

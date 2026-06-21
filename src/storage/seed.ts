@@ -55,7 +55,7 @@ import { getMeta, setMeta, storage } from "@/storage/db";
  * records with source "preset" are touched; player-authored (source "user")
  * records are left untouched.
  */
-const PRESETS_VERSION = 10;
+const PRESETS_VERSION = 11;
 const VERSION_KEY = "presetsVersion";
 
 /**
