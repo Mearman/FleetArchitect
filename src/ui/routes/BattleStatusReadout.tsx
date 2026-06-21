@@ -1,5 +1,4 @@
-import { Badge, Box, Group, Loader, Progress, Stack } from "@mantine/core";
-import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
+import { Badge, Box, Group, Loader, Progress, Stack, Text } from "@mantine/core";
 
 /**
  * Props for {@link BattleStatusReadout}. Shown only while a run is still
@@ -9,16 +8,17 @@ import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 export interface BattleStatusReadoutProps {
   /** Whether playback has stalled at the streamed leading edge. */
   buffering: boolean;
-  /** Highest tick streamed so far, against the safety cap. */
+  /** Highest tick streamed so far. Battles run with no fixed tick cap, so this
+   *  is an open-ended count rather than a fraction of a known total. */
   computedTicks: number;
 }
 
 /**
  * Streaming progress readout, pinned to the bottom-left of the canvas stage
- * while a run is computing. A thin progress bar tracks the streamed leading edge
- * against the safety cap, with a badge that flips to "buffering" when playback
- * has outrun the streamed frames. Extracted verbatim from the original
- * BattleRoute JSX.
+ * while a run is computing. Battles run with no fixed tick cap, so an animated
+ * bar signals ongoing work and a live tick count tracks the streamed leading
+ * edge, with a badge that flips to "buffering" when playback has outrun the
+ * streamed frames.
  */
 export function BattleStatusReadout({ buffering, computedTicks }: BattleStatusReadoutProps) {
   return (
@@ -38,10 +38,17 @@ export function BattleStatusReadout({ buffering, computedTicks }: BattleStatusRe
           <Badge size="sm" variant="filled" color={buffering ? "yellow" : "indigo"}>
             {buffering ? "Buffering" : "Computing"}
           </Badge>
+          <Text size="xs" c="dimmed" ff="monospace">
+            {computedTicks} ticks
+          </Text>
         </Group>
+        {/* No fixed tick cap means no known total to show a percentage against,
+            so an animated bar signals ongoing work while the count above tracks
+            the streamed leading edge. */}
         <Progress
           size="xs"
-          value={Math.min(100, (computedTicks / DEFAULT_MAX_TICKS) * 100)}
+          value={100}
+          animated
           color={buffering ? "yellow" : "indigo"}
         />
       </Stack>

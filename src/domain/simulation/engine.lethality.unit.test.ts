@@ -63,7 +63,9 @@ function buildInputs(
   attackerId: string,
   defenderId: string,
   seed = 42,
-  tickCap = LETHALITY_GUARD_TICKS,
+  // Pass `undefined` to run with no tick cap (the real game's behaviour): the
+  // battle then ends by elimination or the no-progress watchdog, not a clock.
+  tickCap: number | undefined = LETHALITY_GUARD_TICKS,
 ): BattleInputs {
   const attacker = resolveFleetToCombatShips(fleet(attackerId)!, designs, cat, "attacker");
   const defender = resolveFleetToCombatShips(fleet(defenderId)!, designs, cat, "defender");
@@ -132,15 +134,15 @@ describe("engine.lethality — crewed Terran battles resolve decisively", () => 
 
   // Re-enabled in Phase 14 alongside the Battle Line guard above: the preset
   // thrust/mass ratio is now coherent at the SI scale.
-  it("Strike Wing vs Picket Screen resolves with a winner and meaningful kills", () => {
-    // A faster crewed matchup that consistently produces a winner with both
-    // sides taking meaningful losses. Phase 2's layered-cell migration changed
-    // preset layouts (retired armour-equipment tokens became deck corridors),
-    // which shifted the battle balance slightly; combined with the engine's
-    // pre-existing crew-pathing non-determinism (documented in the crew-perf
-    // suite), the exact tick count varies more than before. The test still
-    // guards the core invariant: a winner is decided and multiple ships die.
-    const result = runBattle(buildInputs("preset-fleet-strike", "preset-fleet-picket"));
+  it("Strike Wing vs Picket Screen resolves to a winner with no tick cap", () => {
+    // A frigate/fighter crewed matchup run UNCAPPED — the real game's behaviour.
+    // With no fixed tick limit it plays to a genuine terminal state (one side
+    // eliminated) instead of being cut off at a cap and decided on remaining HP.
+    // At seed 42 the defender wins around tick ~900 with most ships destroyed
+    // (~22 s on the dev machine). Exact ticks vary with the engine's documented
+    // crew-pathing non-determinism, so the guard checks the invariants that hold
+    // every run: a winner is decided and multiple ships die.
+    const result = runBattle(buildInputs("preset-fleet-strike", "preset-fleet-picket", 42, undefined));
     const { dead } = aliveCount(result);
 
     expect(result.winner, "a winner must be decided").toBeDefined();

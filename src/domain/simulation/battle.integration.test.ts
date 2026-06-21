@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { resolveFleetToCombatShips } from "@/domain/resolve";
 import { runBattle } from "@/domain/simulation/engine";
-import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import { catalog } from "@/data/catalog";
 import { createId, nowIso } from "@/domain/id";
 import { defaultOrders } from "@/schema/fleet";
@@ -99,19 +98,18 @@ describe("battle pipeline (resolve -> runBattle)", () => {
       defenderFleetId: defender.id,
       anomaly: "none",
       seed: 1,
-      maxTicks: DEFAULT_MAX_TICKS,
     });
 
     // One deployment frame plus one per simulated tick.
     expect(result.frames).toHaveLength(result.ticks + 1);
     expect(result.frames[0]?.tick).toBe(0);
     expect(result.frames[0]?.ships.every((s) => s.alive)).toBe(true);
-    // The battle terminates (the loop ended — either a side was wiped out
-    // or the tick cap was reached). With the per-module power grid, a
-    // symmetric mirror match can stalemate to the tick cap: both sides'
-    // reactors die, every weapon goes unpowered, and neither can finish
-    // the other off. That's a legitimate draw, not a pipeline bug.
-    expect(result.ticks).toBeLessThanOrEqual(DEFAULT_MAX_TICKS);
+    // Run with no tick cap: the battle terminates on its own. With the
+    // per-module power grid a symmetric mirror match stalemates — both reactors
+    // die, every weapon goes unpowered, neither can finish the other off — and
+    // the no-progress watchdog ends it as a legitimate draw rather than letting
+    // it run forever. (The test completing at all proves it terminates.)
+    expect(result.ticks).toBeGreaterThan(0);
     expect(["attacker", "defender", "draw"]).toContain(result.winner);
 
     // Every frame conforms to the same set of instance ids.
@@ -165,7 +163,7 @@ describe("battle pipeline (resolve -> runBattle)", () => {
       ...resolveFleetToCombatShips(attacker, designs, catalog(), "attacker"),
       ...resolveFleetToCombatShips(defender, designs, catalog(), "defender"),
     ];
-    const result = runBattle({ ships, attackerFleetId: attacker.id, defenderFleetId: defender.id, anomaly: "none", seed: 42, maxTicks: DEFAULT_MAX_TICKS });
+    const result = runBattle({ ships, attackerFleetId: attacker.id, defenderFleetId: defender.id, anomaly: "none", seed: 42 });
     // The per-module power grid makes a symmetric single-reactor mirror
     // match draw: both reactors die, weapons go unpowered, neither side
     // can land a killing blow. The pipeline still produces a well-formed

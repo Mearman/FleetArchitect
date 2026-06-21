@@ -1,7 +1,6 @@
 import { notifications } from "@mantine/notifications";
 import { useEffect, useRef, useState } from "react";
 import { resolveFleetToCombatShips } from "@/domain/resolve";
-import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import { battleRunner } from "@/ui/battleRunner";
 import { catalog } from "@/data/catalog";
 import { storage } from "@/storage/db";
@@ -313,7 +312,6 @@ export function useBattleSimulation({
           defenderFleetId: defender.id,
           anomaly: chosenAnomaly,
           seed: chosenSeed,
-          maxTicks: DEFAULT_MAX_TICKS,
         },
         { signal: controller.signal, onFrames },
       );

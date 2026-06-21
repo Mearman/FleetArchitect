@@ -310,7 +310,13 @@ export interface BattleInputs {
   defenderFleetId: string;
   anomaly: BattleAnomaly;
   seed: number;
-  maxTicks: number;
+  /**
+   * Optional early-stop tick cap. Omit it for the real game: a battle then runs
+   * with no fixed tick limit until a side is eliminated or the no-progress
+   * watchdog declares a stalemate (see {@link STALEMATE_IDLE_TICKS}). Focused
+   * tests may pass a small cap to stop a battle early without running it out.
+   */
+  maxTicks?: number;
 }
 
 /**
@@ -322,16 +328,26 @@ export interface BattleInputs {
 export const TICKS_PER_SECOND = 30;
 
 /**
- * Safety cap so a stalemated battle terminates. With the world now at real-metre
- * scale and `SPEED_OF_LIGHT_M_PER_TICK ≈ 9.99e6 m/tick`, a battle that spans
- * light-lag distances (Phase 8/9) can take many hundreds of ticks for light
- * alone to cross the engagement, and far longer for ships closing under
- * catalogue thrust to come into weapon range. The cap is raised from the old
- * 3600 to give a full light-second-scale engagement room to resolve while still
- * terminating a truly stalemated battle in bounded time. ~10 min at
- * `TICKS_PER_SECOND`. An explicit rate/limit spec.
+ * Legacy early-stop cap, retained only for focused tests that pass `maxTicks`
+ * explicitly to stop a battle early. It is no longer the product terminator: the
+ * real game runs uncapped and ends via elimination or the no-progress watchdog
+ * below.
  */
 export const DEFAULT_MAX_TICKS = 18_000;
+
+/**
+ * No-progress stalemate window — the sole termination guarantee for an uncapped
+ * battle. The engine tracks all-time lows of three monotone quantities: combined
+ * hull+shield HP across live ships (damage landing, or a kill), the closest
+ * enemy-pair distance (the sides closing), and the closest ship-to-mine distance
+ * (a ship drifting onto a hazard). A tick that sets no new low in any of them is
+ * "idle"; this many consecutive idle ticks means neither side can make further
+ * progress, so the battle is decided on remaining HP. Sized well above the
+ * longest realistic gap between progress events — a heavy weapon's reload plus a
+ * light-lag projectile's flight time — so an actively (even slowly) fighting
+ * battle never trips it, while a genuinely stuck one terminates in bounded time.
+ */
+export const STALEMATE_IDLE_TICKS = 1_000;
 
 /**
  * Wall-clock interval between streamed frame batches, in milliseconds. The

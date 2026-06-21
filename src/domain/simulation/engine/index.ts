@@ -10,6 +10,8 @@ import { mulberry32 } from "@/domain/simulation/rng";
 import { computeOccluders } from "@/domain/occluders";
 import type { BattleFrame, BattleResult, BattleSide, ShipDescriptor } from "@/schema/battle";
 import type { BattleInputs, BattleSummary } from "../types";
+import { STALEMATE_IDLE_TICKS } from "../types";
+import { createStalemateWatch, tickStalemateWatch } from "./stalemate";
 
 import { computeAwareness } from "./awareness";
 import { stepAi } from "./ai-step";
@@ -178,7 +180,14 @@ export function* simulateBattle(
   let winner: BattleSide = "draw";
   let resolved = false;
 
-  for (let tick = 1; tick <= inputs.maxTicks; tick++) {
+  // No-progress stalemate watchdog — the termination guarantee for an uncapped
+  // battle (see ./stalemate). Created only when there is no explicit `maxTicks`:
+  // a focused test that passes a cap is terminated by that cap and runs the
+  // legacy fixed-length loop, byte-for-byte unchanged.
+  const stalemate =
+    inputs.maxTicks === undefined ? createStalemateWatch(ships) : undefined;
+
+  for (let tick = 1; inputs.maxTicks === undefined || tick <= inputs.maxTicks; tick++) {
     // 0. Awareness phase (sensors, comms, fog of war). Runs first so the
     //    targeting pass below reads each ship's freshly computed `awareness`.
     //    Pure function of ship state + occluders + anomaly; draws ZERO times
@@ -691,9 +700,23 @@ export function* simulateBattle(
       resolved = true;
       break;
     }
+
+    // 7. No-progress watchdog (uncapped battles only). Runs after the
+    //    elimination checks so a decisive kill always wins over a stalemate
+    //    call. STALEMATE_IDLE_TICKS ticks with no progress means neither side
+    //    can finish the other — decide it on remaining HP.
+    if (
+      stalemate !== undefined &&
+      tickStalemateWatch(stalemate, ships, attackers, defenders, mines, STALEMATE_IDLE_TICKS)
+    ) {
+      winner = leadingSide(attackers, defenders);
+      resolved = true;
+      break;
+    }
   }
 
-  // Ran out of ticks without a decisive end: decide by remaining hit points.
+  // Hit an explicit `maxTicks` early-stop without a decisive end (focused tests
+  // only): decide by remaining hit points, as the watchdog would.
   if (!resolved) {
     winner = leadingSide(attackers, defenders);
   }
