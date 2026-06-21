@@ -1,3 +1,10 @@
+## [1.7.1](https://github.com/Mearman/FleetArchitect/compare/v1.7.0...v1.7.1) (2026-06-21)
+
+
+### Bug Fixes
+
+* **sim:** stable instanceIds and deep-copy catalog effects for cross-battle determinism ([a5652d6](https://github.com/Mearman/FleetArchitect/commit/a5652d6ae0c8a11d456ca90675a37761518ca461))
+
 # [1.7.0](https://github.com/Mearman/FleetArchitect/compare/v1.6.0...v1.7.0) (2026-06-20)
 
 
