@@ -1,4 +1,3 @@
-import { createId } from "@/domain/id";
 import { analyseShipDesign } from "@/domain/stats";
 import { cellToLocal, deriveClassification, deriveRadius, footprint } from "@/domain/grid";
 import { computeOutline, extractShell } from "@/domain/outline";
@@ -120,7 +119,9 @@ export function resolveFleetToCombatShips(
     const y = cursorY + radius;
     cursorY += radius * 2 + DEPLOY_SHIP_MARGIN_M;
     ships.push({
-      instanceId: createId("ship"),
+      // Stable across independent resolutions of the same fleet: side + index
+      // in the array being built gives a deterministic id without crypto.randomUUID.
+      instanceId: `ship_${side}_${ships.length}`,
       designId: design.id,
       faction: design.faction,
       side,
@@ -269,7 +270,9 @@ function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] 
       mass: moduleDef.mass + surfaceMass + scaffoldMass,
       powerDraw: moduleDef.powerDraw,
       crewRequired: moduleDef.crewRequired,
-      effect: moduleDef.effect,
+      // Deep-clone so engine mutations during a battle tick do not bleed back
+      // into the shared catalog singleton across separate battles.
+      effect: structuredClone(moduleDef.effect),
       command: moduleDef.command === true,
       repairRate: repairRateFor(moduleDef.effect),
       shieldArc: moduleDef.shieldArc ?? Math.PI * 2,

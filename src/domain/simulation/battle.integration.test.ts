@@ -124,11 +124,21 @@ describe("battle pipeline (resolve -> runBattle)", () => {
   });
 
   it("is deterministic across the full pipeline", () => {
+    // The real determinism proof: two *independent* resolutions of the same
+    // fleet inputs must produce byte-identical battle frames. This catches both
+    // non-deterministic instanceIds (Bug 1) and shared catalog effect objects
+    // that mutate across battles (Bug 2). Resolving once and running runBattle
+    // twice with the same ships array masks both bugs.
     const design = armedFighter(createId("design"));
     const attacker = fleet(createId("fleet"), design.id);
     const defender = fleet(createId("fleet"), design.id);
     const designs = new Map([[design.id, design]]);
-    const ships = [
+
+    const shipsA = [
+      ...resolveFleetToCombatShips(attacker, designs, catalog(), "attacker"),
+      ...resolveFleetToCombatShips(defender, designs, catalog(), "defender"),
+    ];
+    const shipsB = [
       ...resolveFleetToCombatShips(attacker, designs, catalog(), "attacker"),
       ...resolveFleetToCombatShips(defender, designs, catalog(), "defender"),
     ];
@@ -139,11 +149,11 @@ describe("battle pipeline (resolve -> runBattle)", () => {
     // full stalemate cap twice. `DEFAULT_MAX_TICKS` is sized for light-lag
     // battles; running it twice here would time out the test for no gain.
     const DETERMINISM_TICKS = 600;
-    const a = runBattle({ ships, attackerFleetId: attacker.id, defenderFleetId: defender.id, anomaly: "none", seed: 7, maxTicks: DETERMINISM_TICKS });
-    const b = runBattle({ ships, attackerFleetId: attacker.id, defenderFleetId: defender.id, anomaly: "none", seed: 7, maxTicks: DETERMINISM_TICKS });
-    expect(b.frames).toEqual(a.frames);
-    expect(b.winner).toBe(a.winner);
-    expect(b.ticks).toBe(a.ticks);
+    const resultA = runBattle({ ships: shipsA, attackerFleetId: attacker.id, defenderFleetId: defender.id, anomaly: "none", seed: 7, maxTicks: DETERMINISM_TICKS });
+    const resultB = runBattle({ ships: shipsB, attackerFleetId: attacker.id, defenderFleetId: defender.id, anomaly: "none", seed: 7, maxTicks: DETERMINISM_TICKS });
+    expect(resultB.frames).toEqual(resultA.frames);
+    expect(resultB.winner).toBe(resultA.winner);
+    expect(resultB.ticks).toBe(resultA.ticks);
   });
 
   it("produces a well-formed result for an armed mirror match", () => {
