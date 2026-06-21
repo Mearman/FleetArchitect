@@ -364,7 +364,7 @@ export function* simulateBattle(
     //     reflected in the same frame. A no-op for a ship that lost no volatile
     //     module, so byte output is unchanged for those.
     for (const ship of ships) {
-      if (ship.modules !== undefined) resolveChainReactions(ship);
+      if (ship.modules !== undefined) resolveChainReactions(ship, ships);
     }
 
     // 4b. Recompute aggregate stats from the alive module set, so a module

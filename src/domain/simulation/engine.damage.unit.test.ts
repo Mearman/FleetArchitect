@@ -151,7 +151,7 @@ describe("engine.damage — explosive chain reactions", () => {
     reactor.hp = 0;
     reactor.alive = false;
 
-    resolveChainReactions(ship);
+    resolveChainReactions(ship, [ship]);
 
     // 200_000 * 0.001 = 200 J yield; at one cell (CELL_SIZE units) inside radius
     // CELL_SIZE*2 the linear falloff is 1 - 1/2 = 0.5, so each neighbour takes
@@ -175,7 +175,7 @@ describe("engine.damage — explosive chain reactions", () => {
     mag.hp = 0;
     mag.alive = false;
 
-    resolveChainReactions(ship);
+    resolveChainReactions(ship, [ship]);
 
     // 10 rounds * 500 = 5000 J yield; falloff 0.5 at one cell → 2500 damage,
     // far past the neighbour's 1000 HP, so it is destroyed.
@@ -203,7 +203,7 @@ describe("engine.damage — explosive chain reactions", () => {
     m1.hp = 0;
     m1.alive = false;
 
-    resolveChainReactions(ship);
+    resolveChainReactions(ship, [ship]);
 
     expect(m1.exploded).toBe(true);
     // The second magazine was destroyed by the first's blast and then detonated.
@@ -222,7 +222,7 @@ describe("engine.damage — explosive chain reactions", () => {
     const n1 = findModule(ship, "n1");
     const hpBefore = n1.hp;
     // No module killed — the reactor is alive.
-    resolveChainReactions(ship);
+    resolveChainReactions(ship, [ship]);
     expect(n1.hp).toBe(hpBefore);
     expect(findModule(ship, "p1").exploded).toBe(false);
   });
@@ -236,12 +236,104 @@ describe("engine.damage — explosive chain reactions", () => {
     const n1 = findModule(ship, "n1");
     reactor.hp = 0;
     reactor.alive = false;
-    resolveChainReactions(ship);
+    resolveChainReactions(ship, [ship]);
     const hpAfterFirst = n1.hp;
     // A second drain on the same already-spent reactor must add no further
     // damage — the `exploded` guard prevents a re-detonation.
-    resolveChainReactions(ship);
+    resolveChainReactions(ship, [ship]);
     expect(n1.hp).toBe(hpAfterFirst);
+  });
+});
+
+describe("engine.damage — cross-ship chain-reaction blast propagation (Phase 5)", () => {
+  /**
+   * Place ship B at world position (bOffset, 0) relative to ship A's world
+   * origin. Ship A has a single reactor at its local origin; ship B has a
+   * single hull cell at its local origin. The blast radius is CELL_SIZE * 2.
+   */
+  function setupPair(bOffset: number): { shipA: SimShip; shipB: SimShip } {
+    // Ship A: a reactor at local (0, 0) with a high yield so the blast definitely
+    // reaches nearby ships, plus a hull command cell so it doesn't die instantly.
+    const shipA = buildSim("a", [
+      moduleOf("p1", { kind: "power", output: 200_000 }, 0, 0, 50, 5, true),
+      moduleOf("h1", { kind: "hull" }, 1, 0, 1_000),
+    ]);
+    shipA.x = 0;
+    shipA.y = 0;
+    shipA.facing = 0;
+
+    // Ship B: a single hull cell at local (0, 0), placed at world x = bOffset.
+    const shipB = buildSim("b", [
+      moduleOf("b1", { kind: "hull" }, 0, 0, 1_000, 5, true),
+    ]);
+    shipB.x = bOffset;
+    shipB.y = 0;
+    shipB.facing = 0;
+
+    return { shipA, shipB };
+  }
+
+  it("a reactor detonation damages a nearby ship within blast radius", () => {
+    // Blast radius = CELL_SIZE * 2. Ship B's centre is at CELL_SIZE away from the
+    // blast origin (half the radius), so it should receive falloff damage.
+    const { shipA, shipB } = setupPair(CELL_SIZE);
+
+    const b1 = findModule(shipB, "b1");
+    const hpBefore = b1.hp;
+
+    // Kill ship A's reactor.
+    const reactor = findModule(shipA, "p1");
+    reactor.hp = 0;
+    reactor.alive = false;
+
+    resolveChainReactions(shipA, [shipA, shipB]);
+
+    // The blast centre is at world (0, 0); ship B's centre is at (CELL_SIZE, 0).
+    // dist = CELL_SIZE; radius = CELL_SIZE * 2; falloff = 1 - 0.5 = 0.5.
+    // yield = 200_000 * 0.001 = 200; effective = 200 * 0.5 = 100.
+    // ship B has no shields/armour, so its hull cell takes the full 100.
+    expect(b1.hp).toBeLessThan(hpBefore);
+    expect(b1.hp).toBeCloseTo(hpBefore - 100, 5);
+  });
+
+  it("a reactor detonation does NOT damage a ship outside blast radius", () => {
+    // Ship B is placed at 3 * CELL_SIZE away — beyond the blast radius of CELL_SIZE*2.
+    const { shipA, shipB } = setupPair(3 * CELL_SIZE);
+
+    const b1 = findModule(shipB, "b1");
+    const hpBefore = b1.hp;
+
+    const reactor = findModule(shipA, "p1");
+    reactor.hp = 0;
+    reactor.alive = false;
+
+    resolveChainReactions(shipA, [shipA, shipB]);
+
+    // dist = 3*CELL_SIZE, radius = CELL_SIZE*2 → dist > radius, no overlap.
+    expect(b1.hp).toBe(hpBefore);
+  });
+
+  it("cross-ship blast does not affect the source ship's own modules via the other-ships path", () => {
+    // Sanity check: the within-ship blast and cross-ship blast are independent
+    // paths; applying them with only the source ship in allShips must produce
+    // the same within-ship result as before (no double-damage).
+    const shipA = buildSim("a2", [
+      moduleOf("p1", { kind: "power", output: 200_000 }, 0, 0, 50, 5, true),
+      moduleOf("h1", { kind: "hull" }, 1, 0, 1_000),
+    ]);
+    const h1 = findModule(shipA, "h1");
+    const hpBefore = h1.hp;
+
+    const reactor = findModule(shipA, "p1");
+    reactor.hp = 0;
+    reactor.alive = false;
+
+    // Only the source ship in allShips — cross-ship step finds no other ships.
+    resolveChainReactions(shipA, [shipA]);
+
+    // Within-ship damage: one cell at CELL_SIZE from the reactor, radius CELL_SIZE*2,
+    // falloff 0.5, yield 200 → 100 damage. Same as the original within-ship test.
+    expect(h1.hp).toBeCloseTo(hpBefore - 100, 5);
   });
 });
 

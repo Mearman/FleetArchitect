@@ -64,14 +64,25 @@ function blastYield(m: SimModule): number {
  * zero HP, that module is detonated in turn, so a row of volatile cells goes up
  * together.
  *
+ * Cross-ship blast (Phase 5): after the within-ship chain is processed, each
+ * detonation also deals radial falloff damage to every other alive ship whose
+ * bounding disc overlaps the blast sphere. Other ships are hit as an omnidirectional
+ * blast at their centre — no shieldPiercing/armourPiercing — using the same linear
+ * falloff formula. Iteration order over other ships is lexicographic by instanceId
+ * for determinism.
+ *
  * Determinism: the work queue is tick-local (built fresh here, never persisted)
  * and always drained in ascending `slotId` order, and each volatile module
  * carries an `exploded` flag so it detonates exactly once across the whole
  * battle however many ticks the chain spans. With no volatile deaths the queue
  * is empty and the function is a no-op, so a battle that never loses a reactor or
  * magazine is byte-identical to before.
+ *
+ * @param ship      The ship whose volatile modules are being processed.
+ * @param allShips  All currently alive ships in the battle (including `ship`
+ *                  itself; this function skips the source ship automatically).
  */
-export function resolveChainReactions(ship: SimShip): void {
+export function resolveChainReactions(ship: SimShip, allShips: readonly SimShip[]): void {
   if (ship.modules === undefined) return;
   const modules = ship.modules;
 
@@ -94,12 +105,18 @@ export function resolveChainReactions(ship: SimShip): void {
   // with no volatile deaths never pays for it.
   const cellIndex = PERF_GUARDS.chainReactionSpatial ? buildCellIndex(modules) : undefined;
 
+  // Sort other ships by instanceId once so every detonation iterates them in
+  // the same deterministic order without re-sorting per blast.
+  const otherShips = allShips
+    .filter((s) => s !== ship && s.alive)
+    .sort((a, b) => (a.instanceId < b.instanceId ? -1 : a.instanceId > b.instanceId ? 1 : 0));
+
   while (pending.length > 0) {
     for (const source of pending) {
       // Mark spent before applying the blast so a cell can never re-enter the
       // queue, even if its own blast somehow reached back to it.
       source.exploded = true;
-      detonate(ship, source, cellIndex);
+      detonate(ship, source, cellIndex, otherShips);
     }
     // The blasts above may have killed further volatile cells; rebuild the
     // queue and keep going until the chain settles.
@@ -126,20 +143,32 @@ function buildCellIndex(modules: readonly SimModule[]): Map<number, SimModule> {
 }
 
 /**
- * Apply a single volatile module's blast to the rest of its ship. Each alive
- * module within `SIM.chainReaction.radius` of the source cell takes damage that
- * falls off linearly with distance — full yield at the centre, zero at the
- * radius — routed through `applyDamage` aimed at that target cell's world
- * position (so the pipeline's nearest-cell selection lands the hit on it). The
- * blast pierces shields and armour because it goes off inside the hull.
+ * Apply a single volatile module's blast to the rest of its ship and to any
+ * other alive ships whose bounding disc overlaps the blast sphere.
  *
- * Targets are processed in ascending `slotId` order so the chain is deterministic
- * regardless of array layout.
+ * Within-ship: each alive module within `SIM.chainReaction.radius` of the
+ * source cell takes damage that falls off linearly with distance — full yield
+ * at the centre, zero at the radius — routed through `applyDamage` aimed at
+ * that target cell's world position (so the pipeline's nearest-cell selection
+ * lands the hit on it). The blast pierces shields and armour because it goes
+ * off inside the hull.
+ *
+ * Cross-ship: for each other ship whose bounding disc overlaps the blast sphere
+ * (`distance(blastCentre, ship.centre) - ship.radius < blastRadius`), the
+ * effective damage is computed at the other ship's centre using the same linear
+ * falloff formula, then applied via `applyDamage` as an omnidirectional hit
+ * (no shieldPiercing/armourPiercing — the blast has to traverse hull plating to
+ * reach the other ship). Ships are iterated in lexicographic instanceId order
+ * (pre-sorted by the caller) for determinism.
+ *
+ * Targets on the source ship are processed in ascending `slotId` order so the
+ * chain is deterministic regardless of array layout.
  */
 function detonate(
   ship: SimShip,
   source: SimModule,
   cellIndex: Map<number, SimModule> | undefined,
+  otherShips: readonly SimShip[],
 ): void {
   if (ship.modules === undefined) return;
   const yieldAmount = blastYield(source);
@@ -158,6 +187,31 @@ function detonate(
     // lands the hit on it. Internal blast: pierce shields and armour fully.
     const world = localPointToWorld(ship, target.x, target.y);
     applyDamage(ship, damage, 1, 1, world.x, world.y);
+  }
+
+  // Cross-ship blast: the explosion's world-space centre (the exploding cell's
+  // local position rotated into world space).
+  const blastWorld = localPointToWorld(ship, source.x, source.y);
+
+  for (const other of otherShips) {
+    // Distance from the blast centre to the other ship's centre.
+    const distToCenter = Math.hypot(other.x - blastWorld.x, other.y - blastWorld.y);
+    // The blast overlaps the other ship's bounding disc if the nearest point of
+    // that disc is closer than the blast radius.
+    if (distToCenter - other.radius >= radius) continue;
+    // Use the distance to the ship's centre for the falloff calculation: a ship
+    // whose centre is within the blast radius takes full-to-zero falloff damage;
+    // a ship that only clips the blast edge with its disc takes the damage
+    // corresponding to its centre distance (possibly zero if the centre is beyond
+    // the radius, but the disc overlap guarantees some cells are within it).
+    if (distToCenter >= radius) continue;
+    const falloff = 1 - distToCenter / radius;
+    const damage = yieldAmount * falloff;
+    if (damage <= 0) continue;
+    // Omnidirectional external blast: no shield or armour piercing. No impact
+    // point specified so applyDamage routes the hit through the nearest-alive
+    // module heuristic, appropriate for an undirected shockwave.
+    applyDamage(other, damage, 0, 0);
   }
 }
 
