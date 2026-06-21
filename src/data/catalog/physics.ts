@@ -169,41 +169,74 @@ export const EXHAUST_VELOCITY_M_PER_S = {
 };
 
 /**
- * Propellant mass flow rate (kg/s) for each drive class. The `ṁ` in
- * `F = ṁ · vₑ`. These are the rated steady-state flows of a ship-cell-sized
- * drive unit at full throttle, sized so that a typical frigate (a few
- * thousand tonnes with a handful of drive cells) accelerates at
- * ~0.1-0.5 m/tick² — the combat-relevant range where ships close and engage
- * within a few thousand ticks. Propellant consumption modelling is Phase 12
- * (use-deferred); the catalogue values are the drive's rated output, not a
- * consumption budget.
+ * Rated thrust (Newtons) of each drive class at full throttle — the primary
+ * authored drive spec. A drive's data sheet quotes its thrust, not its
+ * propellant flow: thrust is what the manufacturer rates and what each engine
+ * module's `effect.thrust` carries, so it is the anchor here and the mass flow
+ * below is DERIVED from it (the inverse of the previous arrangement, where the
+ * flow was the authored literal and the thrust fell out of it).
+ *
+ * Each figure is sized to the drive's class: a fusion-torch plasma drive is the
+ * highest-thrust unit a ship-cell-sized nozzle mounts, an ion drive the lowest,
+ * with the faction drives banded between. These are the `F` in the rocket
+ * equation `F = ṁ · vₑ`; pairing each with its {@link EXHAUST_VELOCITY_M_PER_S}
+ * fixes the propellant flow {@link PROPELLANT_MASS_FLOW_KG_PER_S} as `F / vₑ`.
  */
-export const PROPELLANT_MASS_FLOW_KG_PER_S = {
-  ion: 1.5,
-  plasma: 1.2,
-  bio: 5,
-  crystal: 0.6,
-  thermal: 3,
-  raider: 0.6,
-  precision: 1,
+export const DRIVE_THRUST_NEWTONS = {
+  /** Ion drive: efficient but low-thrust electrostatic drive. */
+  ion: 45_000,
+  /** Plasma drive: fusion-torch class, the highest single-nozzle thrust. */
+  plasma: 120_000,
+  /** Bio-organic drive (Swarm): high mass-flow, modest exhaust velocity. */
+  bio: 60_000,
+  /** Crystal resonant drive (Crystalline): high-Isp, mid thrust. */
+  crystal: 48_000,
+  /** Foundry thermal drive: brute-force, high thrust at low Isp. */
+  thermal: 60_000,
+  /** Corsair raider drive: scavenged fusion, mid-high thrust. */
+  raider: 54_000,
+  /** Synthetic precision drive: balanced electromagnetic drive. */
+  precision: 60_000,
 };
 
 /**
- * Thrust (Newtons) of a drive class: `massFlow × exhaustVelocity`.
- * Used by the catalogue to set each engine module's `effect.thrust` in N.
+ * Propellant mass flow rate (kg/s) for each drive class — the `ṁ` in the
+ * rocket equation `F = ṁ · vₑ`, DERIVED from the rated thrust and exhaust
+ * velocity by inverting that equation: `ṁ = F / vₑ`. A drive that produces
+ * thrust `F` while expelling propellant at effective exhaust velocity `vₑ`
+ * must, by conservation of momentum, throw mass overboard at exactly this rate.
+ * No longer a back-solved literal: it falls out of the two named drive specs,
+ * and the resource step's own per-second burn rate (`thrust / vₑ`) recovers the
+ * same figure independently, so the catalogue and the engine agree by physics.
+ */
+export const PROPELLANT_MASS_FLOW_KG_PER_S: Record<
+  keyof typeof DRIVE_THRUST_NEWTONS,
+  number
+> = {
+  ion: DRIVE_THRUST_NEWTONS.ion / EXHAUST_VELOCITY_M_PER_S.ion,
+  plasma: DRIVE_THRUST_NEWTONS.plasma / EXHAUST_VELOCITY_M_PER_S.plasma,
+  bio: DRIVE_THRUST_NEWTONS.bio / EXHAUST_VELOCITY_M_PER_S.bio,
+  crystal: DRIVE_THRUST_NEWTONS.crystal / EXHAUST_VELOCITY_M_PER_S.crystal,
+  thermal: DRIVE_THRUST_NEWTONS.thermal / EXHAUST_VELOCITY_M_PER_S.thermal,
+  raider: DRIVE_THRUST_NEWTONS.raider / EXHAUST_VELOCITY_M_PER_S.raider,
+  precision:
+    DRIVE_THRUST_NEWTONS.precision / EXHAUST_VELOCITY_M_PER_S.precision,
+};
+
+/**
+ * Thrust (Newtons) of a drive class, used by the catalogue to set each engine
+ * module's `effect.thrust` in N. Returns the rated thrust spec directly; the
+ * rocket equation `F = ṁ · vₑ` still holds because the propellant flow above is
+ * derived as `ṁ = F / vₑ`, so `ṁ · vₑ` reproduces this `F` exactly.
  */
 export function driveThrustNewtons(
-  drive: keyof typeof EXHAUST_VELOCITY_M_PER_S,
+  drive: keyof typeof DRIVE_THRUST_NEWTONS,
 ): number {
-  const ve = EXHAUST_VELOCITY_M_PER_S[drive];
-  const mdot = PROPELLANT_MASS_FLOW_KG_PER_S[drive];
-  if (ve === undefined) {
-    throw new Error(`no exhaust velocity for drive "${String(drive)}"`);
+  const thrust = DRIVE_THRUST_NEWTONS[drive];
+  if (thrust === undefined) {
+    throw new Error(`no rated thrust for drive "${String(drive)}"`);
   }
-  if (mdot === undefined) {
-    throw new Error(`no propellant mass flow for drive "${String(drive)}"`);
-  }
-  return ve * mdot;
+  return thrust;
 }
 
 // ---------------------------------------------------------------------------

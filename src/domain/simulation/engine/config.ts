@@ -26,22 +26,35 @@
  * No hand-tuned magic literal survives: each `SIM.*` carries a derivation
  * comment naming its anchor. The Phase 15 audit greps for any that does not.
  *
- * The **black-hole** gravity strength is now grounded: `blackHoleStrength` is a
- * real `G·M` product (`GRAVITY_CONSTANT_ARENA · blackHoleMass`) rather than a
- * hand-tuned literal, and the black hole takes its place on the gravitational
- * body list alongside the ships (N13). The lethal/tidal radii and the
- * tidal-damage scale remain arena-scale softenings of the singularity; they are
- * re-derived from the authored mass via the real Schwarzschild radius
- * `r_s = 2GM/c^2` and tidal field `2GM·r/R^3` in Phase 14, when the SI catalogue
- * lands and arena masses become kilograms.
+ * The **black-hole** constants are grounded in the Schwarzschild relation
+ * `r_s = 2·G·M / c^2` (see `arena-physics.ts`): the lethal radius IS the
+ * event-horizon radius `r_s`, and `blackHoleStrength` is the `G·M` derived from
+ * it as `G·M = r_s · c_arena^2 / 2` rather than a hand-tuned literal — the well
+ * takes its place on the gravitational body list alongside the ships (N13). The
+ * `c` of the relation is the arena gravitational signal speed (a sub-km
+ * gameplay mechanic), not the relativistic `c`. The tidal radius and tidal-
+ * damage scale remain arena-scale softenings of the singularity, re-derived from
+ * the real tidal field `2GM·r/R^3` in Phase 14, when the SI catalogue lands.
  */
 
 import { CELL_SIZE } from "@/domain/grid";
+import {
+  BLACK_HOLE_GM_ARENA,
+  BLACK_HOLE_MASS_ARENA,
+  BLACK_HOLE_SCHWARZSCHILD_RADIUS_M,
+  GRAVITY_CONSTANT_ARENA,
+  NEBULA_EM_TRANSMITTANCE,
+  NEBULA_SENSOR_TRANSMITTANCE,
+} from "@/domain/simulation/engine/arena-physics";
 import { TICKS_PER_SECOND } from "@/domain/simulation/types";
 import {
   STANCE_RANGE_FACTOR,
   STANCE_TARGET_DISTANCE_BIAS,
 } from "./stance-doctrine";
+
+// Re-export so the engine (movement.ts) keeps importing `GRAVITY_CONSTANT_ARENA`
+// from `./config` unchanged; the value is now derived in `arena-physics.ts`.
+export { GRAVITY_CONSTANT_ARENA };
 
 /**
  * Speed of light in vacuum, metres per second. The CODATA exact value. The
@@ -127,36 +140,6 @@ const BASE_ACQUIRE_RANGE_M = Math.sqrt(
   (EM_ACQUIRE_REFERENCE_EMISSION * 1) / (4 * Math.PI * EM_RECEIVER_NOISE_FLOOR),
 );
 
-/**
- * The arena gravitational constant: the proportionality `G` in Newton's law
- * `a = G·M / r^2`, in arena units (acceleration is m/tick^2, distance m, mass
- * arena-mass). The honest-physics anchor the whole gravity model hangs off:
- * every gravitating body (the black hole, and from N13 each ship) contributes
- * an acceleration `GRAVITY_CONSTANT_ARENA · M_body / r^2` toward it. The real
- * `G` is 6.674e-11 m^3 kg^-1 s^-2, but the catalogue masses are not yet in SI
- * (that lands in Phase 14, when hulls and modules are re-authored in kg); until
- * then masses are arena units and `G` is set so the black hole's `G·M` recovers
- * the previously hand-tuned arena-scale pull at the deployment line. Pairing
- * this with {@link BLACK_HOLE_MASS_ARENA} below replaces the magic
- * `blackHoleStrength = 5000` literal with a real `G·M` product.
- */
-export const GRAVITY_CONSTANT_ARENA = 0.1;
-
-/**
- * The black hole's mass in arena-mass units. Authored body property carried on
- * the gravitational body list: the black hole gravitates by `G·M / r^2` like
- * any other body, just far more massively (a ship's mass is ~10 arena units, so
- * the hole outweighs a frigate by ~5000×, and inter-ship gravity is a tiny
- * perturbation against the well — physically correct). Chosen with
- * {@link GRAVITY_CONSTANT_ARENA} so `G·M = 0.1 · 50000 = 5000`, exactly the
- * value the black-hole pull, lensing, gravitational redshift, and GR dilation
- * were previously tuned to — the grounding re-expresses the same arena feel as
- * an honest `G·M`, changing no behaviour. Re-authored to a real solar-mass
- * figure (and the lethal radius to the real Schwarzschild `r_s = 2GM/c^2`) when
- * the SI catalogue lands in Phase 14.
- */
-const BLACK_HOLE_MASS_ARENA = 50000;
-
 /** Deterministic per-battle projectile id counter. Reset at the start of each
  *  `simulateBattle` call; incremented in spawn order so two same-seed runs
  *  produce identical ids. Used by the snapshot → interpolation path to match
@@ -240,14 +223,14 @@ export const SIM = {
    */
   stanceTargetDistanceBias: STANCE_TARGET_DISTANCE_BIAS,
   /**
-   * The black hole's mass in arena-mass units — the authored body property that
-   * grounds the well. The gravitational body list carries the hole as a body of
-   * this mass, and it gravitates by `G·M / r^2` exactly like a ship does, just
-   * far more massively. Re-authored to a real solar-mass figure when the SI
-   * catalogue lands in Phase 14.
+   * The black hole's mass in arena-mass units — the body property that grounds
+   * the well. The gravitational body list carries the hole as a body of this
+   * mass, and it gravitates by `G·M / r^2` exactly like a ship does, just far
+   * more massively. Derived (not authored): `M = G·M / G`, the Schwarzschild-
+   * derived {@link BLACK_HOLE_GM_ARENA} over the arena gravitational constant.
    *
-   * Classification: authored catalogue content (an authored body mass; the SI
-   * re-authoring lands in Phase 14).
+   * Classification: derived-by-formula (`BLACK_HOLE_GM_ARENA /
+   * GRAVITY_CONSTANT_ARENA`, the mass recovered from the well's `G·M` and `G`).
    */
   blackHoleMass: BLACK_HOLE_MASS_ARENA,
   /**
@@ -256,24 +239,29 @@ export const SIM = {
    * centre. Applied as a force to velocity (not a position teleport) so momentum
    * is preserved and the equivalence principle holds — heavy and light ships
    * accelerate the same. The acceleration is softened to zero at the lethal
-   * radius to avoid a singularity. Derived as `GRAVITY_CONSTANT_ARENA ·
-   * blackHoleMass` — a real `G·M`, not a hand-tuned literal; the same value the
-   * N-body field, lensing, redshift, and GR dilation all read.
+   * radius to avoid a singularity. Derived from the Schwarzschild relation
+   * `G·M = r_s · c_arena^2 / 2` ({@link BLACK_HOLE_GM_ARENA}) — traceable to the
+   * well's event-horizon radius and arena gravitational signal speed, not a
+   * hand-tuned literal; the same value the N-body field, lensing, redshift, and
+   * GR dilation all read.
    *
-   * Classification: derived-by-formula (`GRAVITY_CONSTANT_ARENA · blackHoleMass`,
-   * a `G·M` over the arena gravitational constant and the authored body mass).
+   * Classification: derived-by-formula (`BLACK_HOLE_GM_ARENA`, a Schwarzschild-
+   * derived `G·M = r_s · c_arena^2 / 2`).
    */
-  blackHoleStrength: GRAVITY_CONSTANT_ARENA * BLACK_HOLE_MASS_ARENA,
+  blackHoleStrength: BLACK_HOLE_GM_ARENA,
   /**
-   * Inside this radius a ship is torn apart — the event-horizon proxy. An
-   * arena-scale softening radius chosen so a ship that reaches the centre is
-   * destroyed; re-derived as the real Schwarzschild radius `r_s = 2GM/c^2`
-   * when the SI catalogue mass lands in Phase 14.
+   * Inside this radius a ship is torn apart — the event horizon, taken literally
+   * as the black hole's Schwarzschild radius {@link
+   * BLACK_HOLE_SCHWARZSCHILD_RADIUS_M} (`r_s`). A ship within `r_s` has crossed
+   * the horizon and is destroyed; it is also the softening radius the `1/r^2`
+   * pull is clamped at so the singularity at the centre stays finite. The well's
+   * `G·M` is derived FROM this radius via `G·M = r_s · c_arena^2 / 2`, so the
+   * horizon and the pull share one Schwarzschild relation.
    *
-   * Classification: authored catalogue content (an arena-scale horizon proxy;
-   * Phase 14 re-derives the Schwarzschild radius `r_s = 2GM/c^2`).
+   * Classification: derived-by-formula (the Schwarzschild radius
+   * `BLACK_HOLE_SCHWARZSCHILD_RADIUS_M`; the well's `G·M` derives from it).
    */
-  blackHoleLethalRadius: 24,
+  blackHoleLethalRadius: BLACK_HOLE_SCHWARZSCHILD_RADIUS_M,
   /**
    * Per-tick structural damage at the centre of the well. Authored catalogue
    * content; re-derived as the real tidal-acceleration damage `2GM·r_body / R^3`
@@ -307,29 +295,27 @@ export const SIM = {
    * Nebula shield-regeneration attenuation. A nebula is a gas cloud whose
    * particles scatter and absorb electromagnetic energy; a ship's shield
    * projector couples to the local EM field, so a denser gas weakens recharge.
-   * Phase 9 replaces this with the real per-metre absorption coefficient
-   * (Beer-Lambert: `exp(-α·d)` integrated over the path) and the range factor
-   * falls out of the integral. Until then this is the equilibrium attenuation
-   * factor a typical nebula imposes — authored catalogue content representing
-   * a moderate-density ionised cloud (roughly the visual extinction of a
-   * bright nebula at visible wavelengths).
+   * Derived from the Beer-Lambert law: the fraction of EM coupling surviving a
+   * combat-engagement path through the cloud, `exp(-μ_EM · d)` ≈ 0.70, computed
+   * as {@link NEBULA_EM_TRANSMITTANCE} in `arena-physics.ts`. The attenuation
+   * now falls out of a real per-metre coefficient rather than a hand-picked 0.5.
    *
-   * Classification: authored catalogue content (interim; Phase 9 derives from
-   * the Beer-Lambert absorption coefficient).
+   * Classification: derived-by-formula (Beer-Lambert `exp(-μ_EM · d)` over the
+   * one-way EM coefficient and the engagement path).
    */
-  nebulaRegenFactor: 0.5,
+  nebulaRegenFactor: NEBULA_EM_TRANSMITTANCE,
   /**
    * Nebula projectile-tracking attenuation. Homing weapons steer by EM return;
-   * nebula gas scatters that return, lengthening the effective sensor path and
-   * cutting the lock quality. Same physical origin as `nebulaRegenFactor`
-   * (per-metre absorption); Phase 9 derives both from one absorption
-   * coefficient. Authored catalogue content in the interim, equal to the
-   * regen factor because both are the same path-attenuation effect.
+   * nebula gas scatters that return, cutting the lock quality. Same physical
+   * origin as `nebulaRegenFactor` — one-way EM coupling through the cloud — so it
+   * is the same Beer-Lambert transmittance `exp(-μ_EM · d)` over the EM
+   * coefficient and the engagement path (~0.70), not a separate hand-picked
+   * value.
    *
-   * Classification: authored catalogue content (interim; Phase 9 derives from
-   * the same Beer-Lambert absorption coefficient as `nebulaRegenFactor`).
+   * Classification: derived-by-formula (Beer-Lambert `exp(-μ_EM · d)`, the same
+   * one-way EM transmittance as `nebulaRegenFactor`).
    */
-  nebulaTrackingFactor: 0.5,
+  nebulaTrackingFactor: NEBULA_EM_TRANSMITTANCE,
   /**
    * Adaptive-shield ceiling (factions update). A shield with an `adaptiveRampRate`
    * recharges ever faster the longer it goes untouched — its effective rate is the
@@ -519,17 +505,19 @@ export const SIM = {
    */
   visualLosRadius: VISUAL_LOS_RADIUS_M,
   /**
-   * [Phase 9 — EM-awareness grounding pending] Multiplier applied to the
-   * non-immune part of a ship's effective sensor radius inside a nebula. Same
-   * physical origin as the regen / tracking factors (per-metre absorption);
-   * Phase 9 derives all three from one Beer-Lambert coefficient.
-   * `nebulaImmune` sensor bonuses bypass this entirely. Authored catalogue
-   * content in the interim.
+   * Multiplier applied to the non-immune part of a ship's effective sensor
+   * radius inside a nebula. A sensor return is the most strongly attenuated
+   * channel — it is scattered twice, out to the target and back — so it uses the
+   * higher sensor Beer-Lambert coefficient (double the one-way EM coefficient).
+   * The factor is the transmittance `exp(-μ_sensor · d)` ≈ 0.50 over the
+   * engagement path, computed as {@link NEBULA_SENSOR_TRANSMITTANCE} in
+   * `arena-physics.ts`. `nebulaImmune` sensor bonuses bypass this entirely.
+   * Derived from a real per-metre coefficient rather than a hand-picked 0.5.
    *
-   * Classification: authored catalogue content (interim; Phase 9 derives from
-   * the same Beer-Lambert absorption coefficient as `nebulaRegenFactor`).
+   * Classification: derived-by-formula (Beer-Lambert `exp(-μ_sensor · d)` over
+   * the two-way sensor coefficient and the engagement path).
    */
-  nebulaSensorFactor: 0.5,
+  nebulaSensorFactor: NEBULA_SENSOR_TRANSMITTANCE,
   /**
    * Weight on enemy cost in the awareness threat score
    * `threat = -dist + threatCostWeight * cost`. Small, so distance dominates
