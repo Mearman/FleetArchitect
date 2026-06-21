@@ -1,3 +1,10 @@
+# [1.9.0](https://github.com/Mearman/FleetArchitect/compare/v1.8.0...v1.9.0) (2026-06-21)
+
+
+### Features
+
+* **presets:** add mixed-composition fleets for Foundry and Corsair ([4649ca6](https://github.com/Mearman/FleetArchitect/commit/4649ca6d07f749825ec193824c35a1fd5226259d))
+
 # [1.8.0](https://github.com/Mearman/FleetArchitect/compare/v1.7.1...v1.8.0) (2026-06-21)
 
 
