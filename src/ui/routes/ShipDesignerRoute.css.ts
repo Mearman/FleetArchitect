@@ -1,4 +1,5 @@
 import { style } from "@vanilla-extract/css";
+import { vars } from "@/ui/theme/vars.css";
 
 /** The grid canvas: a CSS grid laying out one button per cell. The column
  *  template is set inline per render (it depends on the grid width). */
@@ -14,7 +15,7 @@ export const gridBoard = style({
 export const gridCell = style({
   position: "relative",
   aspectRatio: "1 / 1",
-  border: "1px solid rgba(140,160,220,0.25)",
+  border: `1px solid rgba(28,38,32,0.4)`,
   borderRadius: 3,
   padding: 0,
   display: "flex",
@@ -23,13 +24,13 @@ export const gridCell = style({
   fontSize: 10,
   fontWeight: 700,
   cursor: "pointer",
-  color: "#05060a",
+  color: vars.color.base,
   lineHeight: 1,
   userSelect: "none",
   touchAction: "none",
   selectors: {
     "&:focus-visible": {
-      outline: "2px solid #818cf8",
+      outline: `2px solid ${vars.color.cyan}`,
       outlineOffset: 1,
     },
   },
@@ -75,11 +76,11 @@ export const edgeBarBase = style({
   cursor: "pointer",
 });
 
-/** Wall edge: a thick steel-grey bar sealing the side. */
+/** Wall edge: a thick desaturated steel bar sealing the side. */
 export const edgeWall = [
   edgeBarBase,
   style({
-    background: "#3a4154",
+    background: "#3a3f3c",
   }),
 ];
 
@@ -87,7 +88,7 @@ export const edgeWall = [
 export const edgeDoorClosed = [
   edgeBarBase,
   style({
-    background: "#d68b3a",
+    background: vars.color.amber,
   }),
 ];
 
@@ -96,7 +97,7 @@ export const edgeDoorOpen = [
   edgeBarBase,
   style({
     background: "transparent",
-    boxShadow: "inset 0 0 0 1px #d68b3a",
+    boxShadow: `inset 0 0 0 1px ${vars.color.amber}`,
   }),
 ];
 
@@ -155,12 +156,12 @@ export const doorWest = style({
   width: DOOR_THICKNESS_PX,
 });
 
-/** Airtightness overlay: a red ring drawn around cells in a breached
+/** Airtightness overlay: a magenta ring drawn around cells in a breached
  *  compartment, signalling that the compartment's perimeter is not sealed and
  *  its crew is exposed. Drawn as a box-shadow inset so it layers on top of the
  *  cell colour without obscuring the surface tint. */
 export const breachOverlay = style({
-  boxShadow: "inset 0 0 0 2px #e8453c",
+  boxShadow: `inset 0 0 0 2px ${vars.color.magenta}`,
 });
 
 /** Pan/zoom viewport. The grid sits inside a scrollable, horizontally and
@@ -172,10 +173,10 @@ export const zoomViewport = style({
   maxHeight: "min(560px, 60vh)",
   minHeight: 200,
   resize: "vertical",
-  border: "1px solid rgba(140,160,220,0.18)",
+  border: `1px solid rgba(28,38,32,0.18)`,
   borderRadius: 4,
   padding: 8,
-  background: "rgba(8,10,18,0.6)",
+  background: `rgba(10,12,8,0.6)`,
 });
 
 /** Inner wrapper that the scale transform applies to. Width is set inline to
