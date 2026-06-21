@@ -37,10 +37,16 @@ gameplay parity layered on top. The simulation runs off the main thread.
 | Crew as physical entities (corridor pathfinding, manned stations, hauled power and ammo) | Shipped |
 | Sensors, communications, and fog of war (per-ship awareness, comms relays, geometric occlusion, last-known ghosts) | Shipped |
 | Directional sensors (omni/directional/dish/variable cones mirroring comms; cone fog coverage) | Shipped |
+| Version history for ship and fleet designs (revision snapshots, restore, history panel) | Shipped |
+| Player-authored AI rules (trigger/action pairs wired into movement and targeting) | Shipped |
+| Life support / atmosphere — hull breaches vent atmos; crew take vacuum damage; overlay shows state | Shipped |
+| Sensor data visualisation — EM pulses travel at c, reflect off contacts, fade by strength | Shipped |
+| Boarding pods rendered as block grids; debris collection; disabled-hull salvage and claiming | Shipped |
+| Physics constants grounded (propellant flow from drive spec, black-hole Schwarzschild, Beer–Lambert nebula) | Shipped |
+| Opt-in astronomical-scale arena — ships 300,000 km apart; light-lag and aberration visible | Shipped |
 | Async online challenges (submit a fleet, others fight it) — needs a sync server | Future |
 | Campaign / career progression (economy, bounties, unlocks) | Future |
 | Manual / direct control (WASD flight, aim and fire) | Maybe |
-| Boarding / capture / salvage — needs crew | Maybe |
 
 ## Develop
 
