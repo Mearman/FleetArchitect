@@ -1,5 +1,6 @@
 import { computeOccluders } from "@/domain/occluders";
 import type { BattleAnomaly } from "@/schema/battle";
+import { PHOSPHOR_AMBER } from "@/ui/theme/tokens";
 import type { Bounds, Transform } from "./battleCamera";
 
 /**
@@ -13,12 +14,25 @@ import type { Bounds, Transform } from "./battleCamera";
 const BLACK_HOLE_LETHAL_RADIUS = 24;
 const BLACK_HOLE_TIDAL_RADIUS = 48;
 
+/** Magenta tidal ring stroke for the black hole's outer danger zone. */
+const BH_TIDAL_STROKE = "rgba(255,43,214,0.45)";
+/** Magenta-violet glow falling off from the lethal edge into the tidal zone. */
+const BH_GLOW_START = "rgba(180,60,200,0.35)";
+/** Deep magenta base tint across the nebula battlefield. */
+const NEBULA_BASE_TINT = "rgba(140,0,160,0.10)";
+/** Magenta blob gradient start for nebula texture. */
+const NEBULA_BLOB_START = "rgba(200,60,220,0.14)";
+/** Minimum asteroid shade alpha. */
+const ASTEROID_ALPHA_BASE = 0.35;
+/** Asteroid shade alpha variation range. */
+const ASTEROID_ALPHA_RANGE = 0.3;
+
 /**
  * A tiny deterministic hash mapping an integer index to a pseudo-random unit
  * float in [0, 1). Used so scattered features (asteroids, nebula blobs) have
  * fixed positions that never jitter between redraws — no Math.random in render.
  */
-function hash01(n: number): number {
+export function hash01(n: number): number {
   const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
   return x - Math.floor(x);
 }
@@ -59,7 +73,7 @@ function drawBlackHole(ctx: CanvasRenderingContext2D, t: Transform): void {
 
   // Dashed tidal-danger ring at the tidal radius.
   ctx.setLineDash([6, 5]);
-  ctx.strokeStyle = "rgba(180,120,255,0.45)";
+  ctx.strokeStyle = BH_TIDAL_STROKE;
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.arc(cx, cy, tidalPx, 0, Math.PI * 2);
@@ -68,21 +82,23 @@ function drawBlackHole(ctx: CanvasRenderingContext2D, t: Transform): void {
 
   // Outer glow falling off from the lethal edge into the tidal zone.
   const glow = ctx.createRadialGradient(cx, cy, lethalPx, cx, cy, tidalPx);
-  glow.addColorStop(0, "rgba(120,60,200,0.35)");
-  glow.addColorStop(1, "rgba(120,60,200,0)");
+  glow.addColorStop(0, BH_GLOW_START);
+  glow.addColorStop(1, "rgba(180,60,200,0)");
   ctx.fillStyle = glow;
   ctx.beginPath();
   ctx.arc(cx, cy, tidalPx, 0, Math.PI * 2);
   ctx.fill();
 
   // Bright accretion ring at the lethal edge.
-  ctx.strokeStyle = "rgba(255,210,140,0.95)";
+  ctx.strokeStyle = PHOSPHOR_AMBER;
+  ctx.globalAlpha = 0.95;
   ctx.lineWidth = Math.max(2, lethalPx * 0.18);
   ctx.beginPath();
   ctx.arc(cx, cy, lethalPx, 0, Math.PI * 2);
   ctx.stroke();
 
   // Event-horizon disc: solid black sized to the lethal radius.
+  ctx.globalAlpha = 1;
   ctx.fillStyle = "#000000";
   ctx.beginPath();
   ctx.arc(cx, cy, Math.max(2, lethalPx), 0, Math.PI * 2);
@@ -100,7 +116,7 @@ function drawNebula(ctx: CanvasRenderingContext2D, t: Transform, bounds: Bounds)
   const y0 = t.sy(bounds.minY);
   const x1 = t.sx(bounds.maxX);
   const y1 = t.sy(bounds.maxY);
-  ctx.fillStyle = "rgba(120,70,180,0.12)";
+  ctx.fillStyle = NEBULA_BASE_TINT;
   ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
 
   // A handful of soft radial blobs at deterministic positions for texture.
@@ -114,8 +130,8 @@ function drawNebula(ctx: CanvasRenderingContext2D, t: Transform, bounds: Bounds)
     const px = t.sx(wx);
     const py = t.sy(wy);
     const blob = ctx.createRadialGradient(px, py, 0, px, py, radiusPx);
-    blob.addColorStop(0, "rgba(170,110,230,0.16)");
-    blob.addColorStop(1, "rgba(170,110,230,0)");
+    blob.addColorStop(0, NEBULA_BLOB_START);
+    blob.addColorStop(1, "rgba(200,60,220,0)");
     ctx.fillStyle = blob;
     ctx.beginPath();
     ctx.arc(px, py, radiusPx, 0, Math.PI * 2);
@@ -147,13 +163,13 @@ function drawAsteroidField(ctx: CanvasRenderingContext2D, t: Transform, seed: nu
     // Deterministic shade: use hash01 over the disc index so appearance is
     // stable between redraws. The index is stable since computeOccluders
     // always returns the same ordered array for a given (anomaly, seed).
-    const shade = 0.35 + hash01(i + 91) * 0.3;
+    const shade = ASTEROID_ALPHA_BASE + hash01(i + 91) * ASTEROID_ALPHA_RANGE;
     ctx.fillStyle = `rgba(150,150,160,${shade})`;
     ctx.beginPath();
     ctx.arc(px, py, rPx, 0, Math.PI * 2);
     ctx.fill();
-    // A darker rim for a touch of relief.
-    ctx.strokeStyle = "rgba(40,40,48,0.5)";
+    // A darker rim for a touch of relief (CHROME_BORDER at alpha 0.5).
+    ctx.strokeStyle = "rgba(28,38,32,0.5)";
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.arc(px, py, rPx, 0, Math.PI * 2);

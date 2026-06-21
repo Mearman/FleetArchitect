@@ -1,3 +1,4 @@
+import { SIDE_COLOUR } from "@/ui/routes/battleConstants";
 import type { OverlayCtx, OverlayDef } from "./types";
 
 /** Number of discrete frames to trace back from the current tick when building
@@ -41,7 +42,7 @@ export function drawMovementTrail(c: OverlayCtx): void {
     live.set(ship.instanceId, {
       x: ship.x,
       y: ship.y,
-      colour: ship.side === "attacker" ? "#ff6b5a" : "#5ab0ff",
+      colour: SIDE_COLOUR[ship.side],
     });
   }
   if (live.size === 0) {

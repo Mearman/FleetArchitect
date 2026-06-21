@@ -2,43 +2,54 @@ import { TICKS_PER_SECOND } from "@/domain/simulation/types";
 import { BattleAnomaly } from "@/schema/battle";
 import type { BattleAnomaly as BattleAnomalyType } from "@/schema/battle";
 import type { WeaponType } from "@/schema/module";
+import { PHOSPHOR_AMBER, NEON_CYAN, NEON_MAGENTA, PHOSPHOR_GREEN } from "@/ui/theme/tokens";
 import type { Bounds } from "./battleCamera";
 
+/**
+ * Side allegiance colours — used for the outline ring, chamfered outline,
+ * and heading line. Warm amber vs cool cyan gives ~145 degrees of hue
+ * separation with equal luminance, maximising legibility across faction tints.
+ */
+export const SIDE_COLOUR: Record<"attacker" | "defender", string> = {
+  attacker: PHOSPHOR_AMBER,
+  defender: NEON_CYAN,
+};
+
 export const PROJECTILE_COLOUR: Record<WeaponType, string> = {
-  beam: "#ffe066",
-  cannon: "#e8e8f5",
-  missile: "#ff9a3c",
-  torpedo: "#ff5a5a",
-  plasma: "#e06bff",
+  beam: PHOSPHOR_AMBER,
+  cannon: "#d0e8ff",
+  missile: "#ff8c1a",
+  torpedo: NEON_MAGENTA,
+  plasma: "#cc44ff",
 };
 
 /** Per-module part colour, by module kind, for the battle canvas. */
 export const MODULE_COLOUR: Record<string, string> = {
-  weapon: "#ff8c5a",
-  shield: "#6ea8ff",
-  armour: "#b0b0c0",
-  engine: "#7bd88f",
-  power: "#ffe066",
-  crew: "#c792ff",
-  hull: "#5a6172",
-  magazine: "#e8a550",
-  pointDefense: "#ff8c5a",
-  repair: "#80d4a0",
-  sensor: "#40d0d0",
-  comms: "#a0c0ff",
+  weapon: NEON_MAGENTA,
+  shield: NEON_CYAN,
+  armour: "#4d544c",
+  engine: PHOSPHOR_GREEN,
+  power: PHOSPHOR_AMBER,
+  crew: "#9a66cc",
+  hull: "#2f342e",
+  magazine: "#ff8c1a",
+  pointDefense: NEON_MAGENTA,
+  repair: PHOSPHOR_GREEN,
+  sensor: NEON_CYAN,
+  comms: "#80c8ff",
   // Tech modules (factions update).
-  blink: "#9ad0ff",
-  afterburner: "#ffb347",
+  blink: "#80d0ff",
+  afterburner: PHOSPHOR_AMBER,
   overcharge: "#ffd24d",
-  cloak: "#b39ddb",
-  signature: "#9575cd",
-  ecm: "#4dd0e1",
+  cloak: "#9060cc",
+  signature: "#7040a0",
+  ecm: NEON_CYAN,
   eccm: "#26c6da",
-  decoy: "#cfd8dc",
-  commandAura: "#f0c060",
-  hangar: "#90caf9",
-  mineLayer: "#ff7043",
-  boarding: "#e57373",
+  decoy: "#aab4a6",
+  commandAura: PHOSPHOR_AMBER,
+  hangar: NEON_CYAN,
+  mineLayer: "#ff5a1a",
+  boarding: NEON_MAGENTA,
 };
 
 /**
@@ -48,12 +59,12 @@ export const MODULE_COLOUR: Record<string, string> = {
  * stays legible. Factions absent from the map fall back to the side colour.
  */
 export const FACTION_PALETTE: Record<string, { hull: string; accent: string }> = {
-  Terran: { hull: "#7e88a0", accent: "#d65a5a" },
-  Swarm: { hull: "#5e8c4a", accent: "#8bd450" },
-  Crystalline: { hull: "#8a6fc9", accent: "#5fd0e0" },
-  Foundry: { hull: "#6b6f78", accent: "#ff8c3a" },
-  Corsair: { hull: "#7a5a3a", accent: "#ffc04a" },
-  Synthetic: { hull: "#9aa6b0", accent: "#4fd0e6" },
+  Terran: { hull: "#2a3038", accent: "#ff4a3a" },
+  Swarm: { hull: "#243018", accent: "#9be000" },
+  Crystalline: { hull: "#221a30", accent: "#b06bff" },
+  Foundry: { hull: "#2c241a", accent: "#ff7a00" },
+  Corsair: { hull: "#2a2410", accent: "#ffd24a" },
+  Synthetic: { hull: "#1c262a", accent: "#26d6c0" },
 };
 
 /**
@@ -62,17 +73,17 @@ export const FACTION_PALETTE: Record<string, { hull: string; accent: string }> =
  * manning shows green (on-station); injured shows red.
  */
 export const CREW_COLOUR: Record<string, string> = {
-  idle: "#b0b0b8",
-  walking: "#a0d4ff",
-  hauling: "#ffe066",
-  manning: "#7bd88f",
-  injured: "#ff5a5a",
+  idle: "#6c746a",
+  walking: NEON_CYAN,
+  hauling: PHOSPHOR_AMBER,
+  manning: PHOSPHOR_GREEN,
+  injured: NEON_MAGENTA,
 };
 
 /** Accent dot colour for what a hauling crew member is carrying. */
 export const CARRYING_COLOUR: Record<string, string> = {
-  power: "#ffe066",
-  ammo: "#ff9a3c",
+  power: PHOSPHOR_AMBER,
+  ammo: "#ff8c1a",
 };
 
 export const DEFAULT_BOUNDS: Bounds = { minX: -700, maxX: 700, minY: -430, maxY: 430 };

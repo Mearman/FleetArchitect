@@ -1,8 +1,9 @@
+import { NEON_MAGENTA } from "@/ui/theme/tokens";
 import type { OverlayCtx, OverlayDef } from "./types";
 
-/** Colour of a damage pulse ring. Hot orange-red so a hit reads instantly even
- *  against a busy battlefield. */
-const DAMAGE_COLOUR = "#ff5a5a";
+/** Colour of a damage pulse ring. Neon magenta — the weapons/damage channel —
+ *  so a hit reads instantly even against a busy battlefield. */
+const DAMAGE_COLOUR = NEON_MAGENTA;
 
 /** Alpha of a damage pulse ring. Moderate so the pulse does not dominate the
  *  ship beneath it. */

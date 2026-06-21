@@ -1,4 +1,5 @@
 import type { OverlayCtx, OverlayDef } from "./types";
+import { SIDE_COLOUR } from "@/ui/routes/battleConstants";
 import {
   isSectorCoverage,
   sectorAngles,
@@ -26,7 +27,7 @@ function drawSensorCoverage(c: OverlayCtx): void {
   ctx.setLineDash([]);
 
   for (const cluster of frame.awareness.clusters) {
-    ctx.strokeStyle = cluster.side === "attacker" ? "#ff6b5a" : "#5ab0ff";
+    ctx.strokeStyle = SIDE_COLOUR[cluster.side];
 
     for (const cov of cluster.coverage) {
       const px = t.sx(cov.x);

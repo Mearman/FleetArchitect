@@ -1,3 +1,4 @@
+import { SIDE_COLOUR } from "@/ui/routes/battleConstants";
 import type { OverlayCtx, OverlayDef } from "./types";
 
 /** Stroke width of a target-lock line, in display pixels. Kept thin so the
@@ -11,7 +12,7 @@ const TARGET_LOCK_ALPHA = 0.35;
  * Target-lock lines: for each in-scope ship with a live targetId, draw a thin
  * side-coloured line from the ship to its target. Only draws to alive targets;
  * a dead target has no lock to show. Side colours mirror BattleRoute's
- * attacker/defender palette (#ff6b5a / #5ab0ff) so allegiance stays legible.
+ * attacker/defender palette (SIDE_COLOUR) so allegiance stays legible.
  */
 export function drawTargetLock(c: OverlayCtx): void {
   const { ctx, frame, t, inScope } = c;
@@ -34,8 +35,7 @@ export function drawTargetLock(c: OverlayCtx): void {
     if (ship.targetId === undefined) continue;
     const target = alive.get(ship.targetId);
     if (target === undefined) continue;
-    const colour = ship.side === "attacker" ? "#ff6b5a" : "#5ab0ff";
-    ctx.strokeStyle = colour;
+    ctx.strokeStyle = SIDE_COLOUR[ship.side];
     ctx.beginPath();
     ctx.moveTo(t.sx(ship.x), t.sy(ship.y));
     ctx.lineTo(t.sx(target.x), t.sy(target.y));
