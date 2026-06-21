@@ -15,7 +15,7 @@ import { availableThrust, maxCommandableTorque } from "./physics";
 import type { ThrustMode } from "./physics";
 import { angleDifference, anomalyAdjustedRange } from "./setup";
 import type { DeploymentReference } from "./movement";
-import { isRetreating } from "./movement";
+import { effectiveStance, isRetreating } from "./movement";
 import type { SimShip } from "./types";
 
 /**
@@ -101,6 +101,12 @@ export function computeTranslationCommand(
   // stop-in-time controller (`stopInTimeToward`), so a ship with no current
   // contact cannot build unbounded speed in frictionless space.
 
+  // The stance the ship is acting under this tick: the live AI override
+  // (`aiStance`, set by a `setStance` rule) when present, otherwise the static
+  // orders stance. Drives the held engagement range through `stanceRangeFactor`,
+  // so a `setStance` rule changes how close the ship fights.
+  const stance = effectiveStance(ship);
+
   if (target === undefined) {
     // No contact. Steer on the enemy deployment centroid (a fixed reference
     // captured at battle start, never live positions).
@@ -124,7 +130,7 @@ export function computeTranslationCommand(
       ship,
       enemyDeployment.x,
       enemyDeployment.y,
-      anomalyAdjustedRange(ship.orders, ship.weapons, anomaly),
+      anomalyAdjustedRange(ship.orders, ship.weapons, anomaly, stance),
     );
   }
 
@@ -134,9 +140,17 @@ export function computeTranslationCommand(
   const bearingToTarget = Math.atan2(dy, dx);
 
   if (isRetreating(ship)) return progradeAlong(Math.atan2(-dy, -dx));
-  if (ship.orders.engageRange === "hold") return holdFacing(bearingToTarget);
+  // Passive postures hold station and do not close: a `hold` stance (or the
+  // legacy `hold` engage-range) keeps the ship facing its target but at its
+  // current distance, firing only if the target is already within range. The
+  // firing step's own range gate then suppresses out-of-range shots, so a passive
+  // ship neither advances nor wastes fire. Every other stance runs the
+  // stop-in-time range controller toward its stance-scaled desired range.
+  if (ship.orders.engageRange === "hold" || stance === "hold") {
+    return holdFacing(bearingToTarget);
+  }
 
-  const want = anomalyAdjustedRange(ship.orders, ship.weapons, anomaly);
+  const want = anomalyAdjustedRange(ship.orders, ship.weapons, anomaly, stance);
   return stopInTimeToward(ship, target.x, target.y, want);
 }
 

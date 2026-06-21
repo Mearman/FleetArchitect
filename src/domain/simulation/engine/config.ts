@@ -38,6 +38,10 @@
 
 import { CELL_SIZE } from "@/domain/grid";
 import { TICKS_PER_SECOND } from "@/domain/simulation/types";
+import {
+  STANCE_RANGE_FACTOR,
+  STANCE_TARGET_DISTANCE_BIAS,
+} from "./stance-doctrine";
 
 /**
  * Speed of light in vacuum, metres per second. The CODATA exact value. The
@@ -226,23 +230,15 @@ export const SIM = {
     long: 0.85,
   },
   /**
-   * Multiplier applied to the desired range based on engagement stance. A
-   * stance's tactical preference for closeness or distance — not a physics
-   * quantity.
-   *
-   * Classification: authored catalogue content (stance doctrine).
+   * Desired-range multiplier per stance (closeness vs distance), authored in
+   * `stance-doctrine.ts`. Classification: authored catalogue content (stance doctrine).
    */
-  stanceRangeFactor: {
-    aggressive: 0.8,
-    balanced: 1.0,
-    defensive: 1.15,
-    evasive: 1.4,
-    interceptor: 0.6,
-    escort: 1.0,
-    sniper: 2.0,
-    hold: 1.0,
-    retreat: 2.5,
-  },
+  stanceRangeFactor: STANCE_RANGE_FACTOR,
+  /**
+   * Signed near/far target preference per stance, blended by `scoreEnemy`; authored
+   * in `stance-doctrine.ts`. Classification: authored catalogue content (targeting doctrine).
+   */
+  stanceTargetDistanceBias: STANCE_TARGET_DISTANCE_BIAS,
   /**
    * The black hole's mass in arena-mass units — the authored body property that
    * grounds the well. The gravitational body list carries the hole as a body of

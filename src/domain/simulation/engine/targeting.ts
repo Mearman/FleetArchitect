@@ -3,6 +3,8 @@
  * per-ship pick, and the fleet-wide focus-fire election.
  */
 
+import { SIM } from "./config";
+import { effectiveStance } from "./movement";
 import { isDetectable } from "./stealth";
 import type { SimShip } from "./types";
 
@@ -98,6 +100,15 @@ export function visibleEnemyViews(
  * Vulnerability is `1 − (structure + shield) / (maxStructure + maxShield)`,
  * so a freshly spawned enemy scores 0 and a nearly dead one scores near 1.
  * When maxStructure + maxShield is zero the score is treated as 0.
+ *
+ * The ship's effective {@link ShipStance} adds a third term: a signed
+ * near-vs-far preference (`stanceTargetDistanceBias`) blended in by the same
+ * normalised machinery. An aggressive/interceptor stance prefers the nearest
+ * enemy (it is closing anyway); a defensive/evasive/sniper stance prefers a more
+ * distant one it can engage from range. A `balanced`/default stance contributes
+ * zero, and with `vulnerableTargetWeight <= 0` the function returns the raw
+ * priority score exactly as before — so a rule-less default-stance ship targets
+ * byte-identically.
  */
 export function scoreEnemy(
   ship: SimShip,
@@ -123,14 +134,23 @@ export function scoreEnemy(
   }
 
   const w = ship.orders.vulnerableTargetWeight;
-  if (w <= 0) return rawScore; // fast path: no blending needed
+  // Stance bias: a signed near(+)/far(−) preference for the ship's effective
+  // stance (its base stance, or an `aiStance` override). Zero for a balanced or
+  // default stance, so the fast path below is unchanged for rule-less fleets.
+  const stanceBias = SIM.stanceTargetDistanceBias[effectiveStance(ship)];
+  if (w <= 0 && stanceBias === 0) return rawScore; // fast path: no blending needed
 
   // Normalise priority score to [0, 1] across the living set so the blend
   // with the vulnerability score (already in [0,1]) is dimensionally consistent.
+  // Distance is normalised in the same pass for the stance bias term.
   let minRaw = rawScore;
   let maxRaw = rawScore;
+  let minDistSq = distSq;
+  let maxDistSq = distSq;
   for (const e of living) {
     const dSq = (e.x - ship.x) ** 2 + (e.y - ship.y) ** 2;
+    if (dSq < minDistSq) minDistSq = dSq;
+    if (dSq > maxDistSq) maxDistSq = dSq;
     let s: number;
     switch (ship.orders.targetPriority) {
       case "nearest":
@@ -157,7 +177,20 @@ export function scoreEnemy(
   const curTotal = enemy.structure + enemy.shield;
   const vulnerability = maxTotal > 0 ? 1 - curTotal / maxTotal : 0;
 
-  return (1 - w) * normPriority + w * vulnerability;
+  // Player-doctrine blend: priority vs vulnerability, exactly as before.
+  const doctrineScore = (1 - w) * normPriority + w * vulnerability;
+
+  if (stanceBias === 0) return doctrineScore;
+
+  // Stance preference: normalise distance to [0, 1] (0 = nearest of the set,
+  // 1 = farthest), turn it into a near-preference (1 − normDist) so a positive
+  // bias favours close targets, then add the signed, weighted term. Both the
+  // doctrine score and the near term live in [0, 1], so the bias magnitude
+  // (|stanceBias|, in [0, 1]) scales them on the same footing.
+  const distRange = maxDistSq - minDistSq;
+  const normDist = distRange > 0 ? (distSq - minDistSq) / distRange : 0;
+  const nearPreference = 1 - normDist;
+  return doctrineScore + stanceBias * nearPreference;
 }
 
 /**

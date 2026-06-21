@@ -7,6 +7,7 @@ import { CELL_SIZE } from "@/domain/grid";
 import { DEFAULT_WEAPON_AMMO } from "@/schema/module";
 import type { WeaponEffect } from "@/schema/module";
 import type { Orders } from "@/schema/fleet";
+import type { ShipStance } from "@/schema/ai";
 import type { BattleInputs, CombatShip, ResolvedHardwire, ResolvedModule, SimCrew } from "../types";
 
 import { defaultAiDecisions } from "./ai-step";
@@ -44,10 +45,27 @@ export function maxWeaponRange(weapons: readonly WeaponEffect[]): number {
   return max;
 }
 
-export function desiredRange(orders: Orders, weapons: readonly WeaponEffect[]): number {
+/**
+ * The desired stand-off range a ship holds from its target, in world metres.
+ *
+ * The engagement-range doctrine (`orders.engageRange`) picks the fraction of
+ * maximum weapon range to fight at; the ship's effective {@link ShipStance}
+ * then scales that by the stance's closeness preference (`SIM.stanceRangeFactor`).
+ * The stance is passed in explicitly rather than read from `orders.stance` so a
+ * live AI stance override (`aiStance`, set by a `setStance` rule) drives the
+ * range through the same table — an aggressive override closes (factor 0.8), a
+ * defensive one stands off (1.15), a sniper one holds long (2.0). When no rule
+ * has overridden the stance the caller passes the ship's base stance, which for
+ * a rule-less default-stance ship is `orders.stance`, so the range is unchanged.
+ */
+export function desiredRange(
+  orders: Orders,
+  weapons: readonly WeaponEffect[],
+  stance: ShipStance,
+): number {
   if (orders.engageRange === "hold") return 0;
   const base = maxWeaponRange(weapons) * SIM.rangeFraction[orders.engageRange];
-  return base * SIM.stanceRangeFactor[orders.stance];
+  return base * SIM.stanceRangeFactor[stance];
 }
 
 /**
@@ -58,13 +76,17 @@ export function desiredRange(orders: Orders, weapons: readonly WeaponEffect[]): 
  * desired range down by the anomaly's factor. Black hole and "none" leave the
  * range untouched (the black hole is handled by avoidance steering, not by
  * range), so this is byte-identical to `desiredRange` for those cases.
+ *
+ * `stance` is the ship's effective stance this tick (its base stance, or an
+ * `aiStance` override), so a `setStance` rule changes the held range deterministically.
  */
 export function anomalyAdjustedRange(
   orders: Orders,
   weapons: readonly WeaponEffect[],
   anomaly: BattleInputs["anomaly"],
+  stance: ShipStance,
 ): number {
-  const base = desiredRange(orders, weapons);
+  const base = desiredRange(orders, weapons, stance);
   if (anomaly === "nebula") return base * SIM.anomalyRangeFactor.nebula;
   if (anomaly === "asteroidField") return base * SIM.anomalyRangeFactor.asteroidField;
   return base;
