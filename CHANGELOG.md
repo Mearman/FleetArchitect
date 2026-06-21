@@ -1,3 +1,10 @@
+## [1.13.1](https://github.com/Mearman/FleetArchitect/compare/v1.13.0...v1.13.1) (2026-06-21)
+
+
+### Bug Fixes
+
+* **storage:** reseed stale sourceless preset records so the battle stops crashing ([e19334c](https://github.com/Mearman/FleetArchitect/commit/e19334c2bfccae17e3f48b7d4a7f2ea7141d19f5))
+
 # [1.13.0](https://github.com/Mearman/FleetArchitect/compare/v1.12.1...v1.13.0) (2026-06-21)
 
 
