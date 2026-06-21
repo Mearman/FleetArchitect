@@ -458,7 +458,44 @@ export function useBattleCanvas({
         ctx.fillRect(px - barW / 2, py + 10, barW * frac, 3);
       }
 
-      // Over-ship layer: target lock, damage pulse.
+      // Boarding pods: rendered as small block grids on top of ships. Each pod
+      // carries its current position and, when the snapshot includes cells, its
+      // grid shape. Fall back to a simple 3×3 block centred on the pod when
+      // cells are absent (older frames or pods with no grid data).
+      if (frame.pods !== undefined) {
+        const POD_CELL_SIZE = Math.max(1.5, CELL_SIZE * 0.5 * scale);
+        const POD_HALF = POD_CELL_SIZE / 2;
+        for (const pod of frame.pods) {
+          const px = sx(pod.x);
+          const py = sy(pod.y);
+          const podColour = pod.side === "attacker" ? "#ff6b5a" : "#5ab0ff";
+          ctx.globalAlpha = 0.85;
+          ctx.fillStyle = podColour;
+
+          if (pod.cells !== undefined && pod.cells.length > 0) {
+            // Block-grid path: each cell is drawn at its (q, r) offset from the
+            // pod centre, scaled by half the normal cell size (pods are small).
+            for (const cell of pod.cells) {
+              const cx = px + cell.q * POD_CELL_SIZE;
+              const cy = py + cell.r * POD_CELL_SIZE;
+              ctx.fillRect(cx - POD_HALF, cy - POD_HALF, POD_CELL_SIZE, POD_CELL_SIZE);
+            }
+          } else {
+            // Fallback: a 3×3 block grid centred on the pod position.
+            for (let dq = -1; dq <= 1; dq += 1) {
+              for (let dr = -1; dr <= 1; dr += 1) {
+                const cx = px + dq * POD_CELL_SIZE;
+                const cy = py + dr * POD_CELL_SIZE;
+                ctx.fillRect(cx - POD_HALF, cy - POD_HALF, POD_CELL_SIZE, POD_CELL_SIZE);
+              }
+            }
+          }
+
+          ctx.globalAlpha = 1;
+        }
+      }
+
+      // Over-ship layer: target lock, damage pulse, sensor pulses, boarding/debris.
       drawOverlays(OVER_SHIP_IDS);
     },
     [bounds, maxHp, activeAnomaly, activeSeed, showFog, factionByInstance, overlays, descriptors, canvasRef, cameraRef],
