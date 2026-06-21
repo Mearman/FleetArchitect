@@ -12,7 +12,7 @@ import { notifications } from "@mantine/notifications";
 import { IconAlertTriangle, IconCircleCheck } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { storage } from "@/storage/db";
+import { saveFleet, saveShipDesign } from "@/storage/db";
 import { ShareDecodeError, decodeShareable } from "@/sharing/data-url";
 import type { Shareable } from "@/sharing/data-url";
 
@@ -56,9 +56,9 @@ export function ImportRoute() {
       }
 
       if (shareable.kind === "shipDesign") {
-        await storage().ships.save(shareable.value);
+        await saveShipDesign(shareable.value);
       } else {
-        await storage().fleets.save(shareable.value);
+        await saveFleet(shareable.value);
       }
       if (!cancelled) {
         setStatus({ state: "saved", kind: shareable.kind, name: shareable.value.name });

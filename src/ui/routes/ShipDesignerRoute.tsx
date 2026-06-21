@@ -5,10 +5,8 @@ import {
   Checkbox,
   Collapse,
   Container,
-  Divider,
   Grid,
   Group,
-  Loader,
   NumberInput,
   Paper,
   ScrollArea,
@@ -23,7 +21,6 @@ import {
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import {
-  IconArrowBackUp,
   IconCopy,
   IconDeviceFloppy,
   IconHistory,
@@ -40,12 +37,14 @@ import { cellAt } from "@/domain/grid";
 import { FaultList } from "@/ui/components/FaultList";
 import { ShareButton } from "@/ui/components/ShareButton";
 import { StatReadout } from "@/ui/components/StatReadout";
+import { VersionHistoryPanel } from "@/ui/components/VersionHistoryPanel";
 import { useShipDesigns } from "@/ui/hooks/storage";
 import {
   copyDesign,
+  deleteShipDesign,
   listDesignRevisions,
   restoreDesignRevision,
-  storage,
+  saveShipDesign,
 } from "@/storage/db";
 import type { GridCell } from "@/schema/grid";
 import type { ShipDesign } from "@/schema/ship";
@@ -318,7 +317,7 @@ export function ShipDesignerRoute() {
       crewPriority: working.crewPriority,
       rules: working.rules,
     };
-    await storage().ships.save(design);
+    await saveShipDesign(design);
     setWorking((prev) => ({ ...prev, id: design.id, createdAt: design.createdAt }));
     notifications.show({
       title: "Design saved",
@@ -328,7 +327,7 @@ export function ShipDesignerRoute() {
   }
 
   async function remove(id: string) {
-    await storage().ships.remove(id);
+    await deleteShipDesign(id);
     if (working.id === id) setWorking(blankDesign());
     notifications.show({ message: "Design deleted", color: "gray" });
   }
@@ -389,10 +388,16 @@ export function ShipDesignerRoute() {
       setHistoryOpen((prev) => !prev);
       return;
     }
-    setHistoryOpen((prev) => {
-      if (prev) return false; // toggling closed — no need to fetch
-      return true;
-    });
+    // If the panel is already open, just close it — no need to re-fetch.
+    if (historyOpen) {
+      setHistoryOpen(false);
+      return;
+    }
+    setHistoryLoading(true);
+    setHistoryOpen(true);
+    const list = await listDesignRevisions(id);
+    setRevisions(list);
+    setHistoryLoading(false);
   }
 
   /** Restore the working design to a prior revision. Archives the current HEAD
@@ -680,50 +685,12 @@ export function ShipDesignerRoute() {
 
             {/* Version history panel */}
             <Collapse expanded={historyOpen}>
-              <Paper p="md" withBorder>
-                <Stack gap="xs">
-                  <Group justify="space-between">
-                    <Text fw={600} size="sm">
-                      Version history
-                    </Text>
-                    {historyLoading ? <Loader size="xs" /> : null}
-                  </Group>
-                  {!historyLoading && revisions.length === 0 ? (
-                    <Text size="sm" c="dimmed">
-                      No history yet — prior versions appear here after each save.
-                    </Text>
-                  ) : null}
-                  {revisions.map((rev) => (
-                    <Group key={rev.revision} justify="space-between" wrap="nowrap">
-                      <Stack gap={0}>
-                        <Text size="sm">Revision {rev.revision}</Text>
-                        <Text size="xs" c="dimmed">
-                          {new Date(rev.updatedAt).toLocaleString()}
-                        </Text>
-                      </Stack>
-                      <Tooltip label="Restore this revision">
-                        <Button
-                          size="xs"
-                          variant="light"
-                          color="orange"
-                          leftSection={<IconArrowBackUp size={14} />}
-                          onClick={() => void restoreRevision(rev.revision)}
-                        >
-                          Restore
-                        </Button>
-                      </Tooltip>
-                    </Group>
-                  ))}
-                  {revisions.length > 0 ? (
-                    <>
-                      <Divider />
-                      <Text size="xs" c="dimmed">
-                        Restoring archives the current version and rolls back the design.
-                      </Text>
-                    </>
-                  ) : null}
-                </Stack>
-              </Paper>
+              <VersionHistoryPanel
+                loading={historyLoading}
+                revisions={revisions}
+                onRestore={(revision) => void restoreRevision(revision)}
+                entityLabel="design"
+              />
             </Collapse>
 
             <Group justify="space-between">

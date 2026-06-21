@@ -21,7 +21,13 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconBucketDroplet, IconPlus, IconSwords, IconTrash } from "@tabler/icons-react";
+import {
+  IconBucketDroplet,
+  IconHistory,
+  IconPlus,
+  IconSwords,
+  IconTrash,
+} from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { createId, nowIso } from "@/domain/id";
@@ -29,8 +35,14 @@ import { analyseShipDesign } from "@/domain/stats";
 import { DEFAULT_FLEET_BUDGET } from "@/domain/points";
 import { catalog } from "@/data/catalog";
 import { ShareButton } from "@/ui/components/ShareButton";
+import { VersionHistoryPanel } from "@/ui/components/VersionHistoryPanel";
 import { useFleets, useShipDesigns } from "@/ui/hooks/storage";
-import { storage } from "@/storage/db";
+import {
+  deleteFleet,
+  listFleetRevisions,
+  restoreFleetRevision,
+  saveFleet,
+} from "@/storage/db";
 import {
   EngageRange,
   EngagementStance,
@@ -100,6 +112,9 @@ export function FleetBuilderRoute() {
   const [working, setWorking] = useState<WorkingFleet>(blankFleet);
   const [addDesignId, setAddDesignId] = useState<string | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState<ReadonlySet<string>>(new Set());
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [revisions, setRevisions] = useState<Fleet[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const factions = catalog().factions();
 
   function toggleAdvanced(rowId: string) {
@@ -207,7 +222,7 @@ export function FleetBuilderRoute() {
       source: "user",
       revision: 1,
     };
-    await storage().fleets.save(fleet);
+    await saveFleet(fleet);
     setWorking((prev) => ({
       ...prev,
       id: fleet.id,
@@ -221,7 +236,7 @@ export function FleetBuilderRoute() {
   }
 
   async function remove(id: string) {
-    await storage().fleets.remove(id);
+    await deleteFleet(id);
     if (working.id === id) setWorking(blankFleet());
     notifications.show({ message: "Fleet deleted", color: "gray" });
   }
@@ -233,6 +248,42 @@ export function FleetBuilderRoute() {
       name: fleet.name,
       faction: fleet.faction,
       rows: fleet.ships.map((ship) => ({ ...ship, rowId: createId("row") })),
+    });
+  }
+
+  /** Fetch revisions for the current fleet and open the history panel. */
+  async function openHistory() {
+    const id = working.id;
+    if (id === null) {
+      setRevisions([]);
+      setHistoryOpen((prev) => !prev);
+      return;
+    }
+    // If the panel is already open, just close it — no need to re-fetch.
+    if (historyOpen) {
+      setHistoryOpen(false);
+      return;
+    }
+    setHistoryLoading(true);
+    setHistoryOpen(true);
+    const list = await listFleetRevisions(id);
+    setRevisions(list);
+    setHistoryLoading(false);
+  }
+
+  /** Restore the working fleet to a prior revision. Archives the current HEAD
+   *  and loads the restored snapshot. */
+  async function restoreRevision(revision: number) {
+    if (working.id === null) return;
+    const restored = await restoreFleetRevision(working.id, revision);
+    load(restored);
+    // Reload the history list so the just-archived HEAD appears.
+    const list = await listFleetRevisions(restored.id);
+    setRevisions(list);
+    notifications.show({
+      title: "Revision restored",
+      message: `Fleet rolled back to revision ${revision}.`,
+      color: "teal",
     });
   }
 
@@ -646,6 +697,16 @@ export function FleetBuilderRoute() {
             )}
           </Paper>
 
+          {/* Version history panel */}
+          <Collapse expanded={historyOpen}>
+            <VersionHistoryPanel
+              loading={historyLoading}
+              revisions={revisions}
+              onRestore={(revision) => void restoreRevision(revision)}
+              entityLabel="fleet"
+            />
+          </Collapse>
+
           <Group justify="space-between">
             <ShareButton
               shareable={{
@@ -663,8 +724,20 @@ export function FleetBuilderRoute() {
               }}
             />
             <Group gap="xs">
+              {working.id !== null ? (
+                <Tooltip label="View version history">
+                  <Button
+                    variant={historyOpen ? "light" : "subtle"}
+                    color={historyOpen ? "orange" : undefined}
+                    leftSection={<IconHistory size={16} />}
+                    onClick={() => void openHistory()}
+                  >
+                    History
+                  </Button>
+                </Tooltip>
+              ) : null}
               <Button
-                onClick={save}
+                onClick={() => void save()}
                 disabled={working.rows.length === 0}
                 leftSection={<IconBucketDroplet size={16} />}
               >
