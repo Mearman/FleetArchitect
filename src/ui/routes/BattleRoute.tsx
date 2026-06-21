@@ -418,21 +418,31 @@ export function BattleRoute() {
         hasFrames={hasFrames}
       >
         {!hasFrames ? (
-          <Paper p="xl" withBorder>
-            <Center h={360}>
-              {simulation.computing ? (
-                <Stack align="center" gap="xs">
-                  <Loader />
-                  <Text c="dimmed">Computing battle…</Text>
-                </Stack>
-              ) : (
-                <Stack align="center" gap="xs">
-                  <IconSwords size={40} color="var(--mantine-color-dimmed)" />
-                  <Text c="dimmed">Pick two fleets and engage to watch the battle.</Text>
-                </Stack>
-              )}
-            </Center>
-          </Paper>
+          <Stack gap="sm">
+            <Paper p={0} withBorder className={styles.stage}>
+              {/* The idle prompt sits on the powered-on display itself, not a
+                  separate panel — an empty screen waiting for a battle. */}
+              <Box className={`${styles.canvasBox} ${screenPowerOn}`}>
+                <CrtScreen />
+                <div className={styles.glassGlare} aria-hidden="true" />
+                <Center h="100%">
+                  {simulation.computing ? (
+                    <Stack align="center" gap="xs">
+                      <Loader />
+                      <Text c="dimmed">Computing battle…</Text>
+                    </Stack>
+                  ) : (
+                    <Stack align="center" gap="xs">
+                      <IconSwords size={40} color="var(--mantine-color-dimmed)" />
+                      <Text c="dimmed">
+                        Pick two fleets and engage to watch the battle.
+                      </Text>
+                    </Stack>
+                  )}
+                </Center>
+              </Box>
+            </Paper>
+          </Stack>
         ) : (
           <Stack gap="sm">
             <Paper p={0} withBorder className={styles.stage}>
