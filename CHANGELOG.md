@@ -1,3 +1,18 @@
+# [1.8.0](https://github.com/Mearman/FleetArchitect/compare/v1.7.1...v1.8.0) (2026-06-21)
+
+
+### Bug Fixes
+
+* **ai:** add missing stance configs; rally overrides formation-keeping ([8494fbf](https://github.com/Mearman/FleetArchitect/commit/8494fbf33ea89e38270a696a465f3c633881a761))
+
+
+### Features
+
+* **sim:** chain-reaction blasts propagate to adjacent ships within blast radius ([6a7dfb4](https://github.com/Mearman/FleetArchitect/commit/6a7dfb41a8f36b8178e52067b51a6fd808ef8d64))
+* **sim:** debris blocks EM sight lines and deals kinetic collision damage ([79e87fc](https://github.com/Mearman/FleetArchitect/commit/79e87fc33df6830b140c034b16b05a21d88fb845))
+* **sim:** enforce brownout, dry-tank flame-out, overheat shutdown; re-enable atmo advection ([76427e1](https://github.com/Mearman/FleetArchitect/commit/76427e1497c54bc67cfdea05b7d8ec7173bb5070))
+* **sim:** hull outline polygon as collision geometry — hitscan entry and ship-ship narrow-phase ([86b198f](https://github.com/Mearman/FleetArchitect/commit/86b198fc2e99798021ecbf35ef977e234c422662))
+
 ## [1.7.1](https://github.com/Mearman/FleetArchitect/compare/v1.7.0...v1.7.1) (2026-06-21)
 
 
