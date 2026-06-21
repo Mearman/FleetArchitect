@@ -1,3 +1,15 @@
+## [1.12.1](https://github.com/Mearman/FleetArchitect/compare/v1.12.0...v1.12.1) (2026-06-21)
+
+
+### Bug Fixes
+
+* **sim:** conserve atmosphere mass so the battle worker stops emitting NaN ([cbf4188](https://github.com/Mearman/FleetArchitect/commit/cbf41888f9eb44bf4affa014d9b57109484af5ab))
+
+
+### Performance Improvements
+
+* **sim:** only run atmosphere advection when a ship is breached ([224faaa](https://github.com/Mearman/FleetArchitect/commit/224faaaaaca806091435cf9660733cddbe1d04e8)), closes [air-rushing-throu#a-breach](https://github.com/air-rushing-throu/issues/a-breach)
+
 # [1.12.0](https://github.com/Mearman/FleetArchitect/compare/v1.11.0...v1.12.0) (2026-06-21)
 
 
