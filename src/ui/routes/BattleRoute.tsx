@@ -48,6 +48,8 @@ import { useBattleCamera } from "./useBattleCamera";
 import { useBattleCanvas } from "./useBattleCanvas";
 import { useBattlePlayback } from "./useBattlePlayback";
 import { useBattleSimulation } from "./useBattleSimulation";
+import { panelLabel } from "@/ui/components/panel.css";
+import { glitchEnter } from "@/ui/fx/CrtOverlay.css";
 import * as styles from "./BattleRoute.css";
 
 export function BattleRoute() {
@@ -379,7 +381,7 @@ export function BattleRoute() {
   };
 
   return (
-    <Stack gap="md">
+    <Stack gap="md" className={glitchEnter}>
       <Group justify="space-between" align="center">
         <Title order={1}>Battle Arena</Title>
         <Group gap="xs">
@@ -403,6 +405,7 @@ export function BattleRoute() {
 
       <Collapse expanded={setupOpen}>
         <Paper p="md" withBorder>
+          <div className={panelLabel}>Battle Setup</div>
           <BattleSetupPanel
             attackerId={attackerId}
             defenderId={defenderId}
@@ -457,15 +460,15 @@ export function BattleRoute() {
               <Badge
                 className={styles.anomalyLegend}
                 size="sm"
-                variant="filled"
-                color={simulation.activeAnomaly === "none" ? "gray" : "grape"}
+                variant="outline"
+                color="amber"
               >
                 {ANOMALY_LABEL[simulation.activeAnomaly]}
                 {camera.camera.followId !== null ? " · following" : ""}
               </Badge>
 
               {showFog && (
-                <Badge className={styles.fogLegend} size="sm" variant="dot" color="cyan">
+                <Badge className={styles.fogLegend} size="sm" variant="outline" color="cyan">
                   Fog of war
                 </Badge>
               )}
