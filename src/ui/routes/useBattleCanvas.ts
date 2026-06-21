@@ -9,7 +9,7 @@ import { BASE_PANEL, BASE_VOID, NEON_MAGENTA, PHOSPHOR_AMBER, PHOSPHOR_GREEN } f
 import { drawAnomaly, hash01 } from "./battleAnomaly";
 import { drawFogAndAwareness } from "./battleFog";
 import type { ShipScreenPositions } from "./battleFog";
-import type { Bounds, Camera } from "./battleCamera";
+import type { Bounds, Camera, Transform } from "./battleCamera";
 import { resolveViewTransform } from "./battleCamera";
 import {
   CARRYING_COLOUR,
@@ -26,21 +26,40 @@ import type { ShipSprite } from "./shipSprite";
 
 /** Grid spacing in world units for the parallax background grid. */
 const GRID_WORLD_SPACING = 100;
-/** Number of deterministic stars in the backdrop starfield. */
-const STAR_COUNT = 200;
+
+/** World spacing of the starfield lattice, metres. One star sits in each cell at
+ *  a deterministic offset, so the field is fixed in world space (it pans and
+ *  zooms with the camera) rather than being distributed across the battle bounds
+ *  — distributing across bounds made every star shift and stretch while the
+ *  bounds grew during buffering. */
+const STAR_CELL_WORLD = 70;
+
+/** Caps so a zoomed-far-out view does not iterate a huge lattice: the grid stops
+ *  drawing past this many lines per axis, and the starfield lattice is coarsened
+ *  (cell size doubled) until it fits this many cells. */
+const GRID_LINE_CAP = 240;
+const STAR_CELL_CAP = 2400;
+
+/** Deterministic unit float for lattice cell (ix, iy), variant k. */
+function cellHash(ix: number, iy: number, k: number): number {
+  return hash01((ix * 73856093) ^ (iy * 19349663) ^ (k * 83492791));
+}
 
 /**
  * Draw the canvas backdrop beneath everything else: a vertical base gradient,
- * a world-space parallax grid that pans and zooms with the camera, and a
- * deterministic starfield. The starfield uses hash01 (a pure integer→unit
- * float hash) rather than Math.random/Date.now so replays stay byte-identical.
+ * a world-space grid, and a deterministic starfield. Both the grid and the
+ * starfield live on fixed world lattices covering the visible region, so they
+ * stay put in world space (parallaxing with the camera) instead of being keyed
+ * to the battle bounds — which grow as frames stream in, and would otherwise
+ * make the whole backdrop drift and stretch while the simulation buffers. The
+ * starfield uses hash01 (a pure integer→unit float hash) rather than
+ * Math.random/Date.now so replays stay byte-identical.
  */
 function drawBackdrop(
   ctx: CanvasRenderingContext2D,
   width: number,
   height: number,
-  t: { sx: (x: number) => number; sy: (y: number) => number; scale: number },
-  bounds: { minX: number; maxX: number; minY: number; maxY: number },
+  t: Transform,
 ): void {
   // 1. Base gradient — prevents the page background from bleeding through.
   const grad = ctx.createLinearGradient(0, 0, 0, height);
@@ -49,48 +68,72 @@ function drawBackdrop(
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, width, height);
 
-  // 2. World-space parallax grid — pans and zooms with the camera.
-  ctx.save();
-  ctx.strokeStyle = "rgba(28,38,32,0.25)";
-  ctx.lineWidth = 1;
-  const startX = Math.floor(bounds.minX / GRID_WORLD_SPACING) * GRID_WORLD_SPACING;
-  const startY = Math.floor(bounds.minY / GRID_WORLD_SPACING) * GRID_WORLD_SPACING;
-  for (let wx = startX; wx <= bounds.maxX; wx += GRID_WORLD_SPACING) {
-    const px = t.sx(wx);
-    if (px < 0 || px > width) continue;
-    ctx.beginPath();
-    ctx.moveTo(px, 0);
-    ctx.lineTo(px, height);
-    ctx.stroke();
-  }
-  for (let wy = startY; wy <= bounds.maxY; wy += GRID_WORLD_SPACING) {
-    const py = t.sy(wy);
-    if (py < 0 || py > height) continue;
-    ctx.beginPath();
-    ctx.moveTo(0, py);
-    ctx.lineTo(width, py);
-    ctx.stroke();
-  }
-  ctx.restore();
+  // Visible world rectangle for the current transform.
+  const halfW = width / 2 / t.scale;
+  const halfH = height / 2 / t.scale;
+  const left = t.centreX - halfW;
+  const right = t.centreX + halfW;
+  const top = t.centreY - halfH;
+  const bottom = t.centreY + halfH;
 
-  // 3. Seeded starfield — deterministic (no Math.random, no Date.now).
-  //    hash01 is a pure integer→unit float hash from battleAnomaly.ts.
-  const rangeX = bounds.maxX - bounds.minX;
-  const rangeY = bounds.maxY - bounds.minY;
+  // 2. World grid on a fixed lattice — lines at fixed world positions, so they
+  //    never move as the bounds grow. Skipped when zoomed so far out the lines
+  //    would crowd into a haze.
+  const gx0 = Math.floor(left / GRID_WORLD_SPACING);
+  const gx1 = Math.ceil(right / GRID_WORLD_SPACING);
+  const gy0 = Math.floor(top / GRID_WORLD_SPACING);
+  const gy1 = Math.ceil(bottom / GRID_WORLD_SPACING);
+  if (gx1 - gx0 <= GRID_LINE_CAP && gy1 - gy0 <= GRID_LINE_CAP) {
+    ctx.save();
+    ctx.strokeStyle = "rgba(28,38,32,0.25)";
+    ctx.lineWidth = 1;
+    for (let i = gx0; i <= gx1; i += 1) {
+      const px = t.sx(i * GRID_WORLD_SPACING);
+      ctx.beginPath();
+      ctx.moveTo(px, 0);
+      ctx.lineTo(px, height);
+      ctx.stroke();
+    }
+    for (let i = gy0; i <= gy1; i += 1) {
+      const py = t.sy(i * GRID_WORLD_SPACING);
+      ctx.beginPath();
+      ctx.moveTo(0, py);
+      ctx.lineTo(width, py);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // 3. Starfield on a fixed world lattice covering the visible rect. One star
+  //    per cell at a hashed offset; coarsened when a zoomed-out view would span
+  //    too many cells. Fixed in world space, so buffering never moves a star.
+  let cell = STAR_CELL_WORLD;
+  let sx0 = Math.floor(left / cell);
+  let sx1 = Math.ceil(right / cell);
+  let sy0 = Math.floor(top / cell);
+  let sy1 = Math.ceil(bottom / cell);
+  while ((sx1 - sx0 + 1) * (sy1 - sy0 + 1) > STAR_CELL_CAP) {
+    cell *= 2;
+    sx0 = Math.floor(left / cell);
+    sx1 = Math.ceil(right / cell);
+    sy0 = Math.floor(top / cell);
+    sy1 = Math.ceil(bottom / cell);
+  }
   ctx.save();
-  for (let i = 0; i < STAR_COUNT; i += 1) {
-    const wx = bounds.minX + hash01(i * 2) * rangeX;
-    const wy = bounds.minY + hash01(i * 2 + 1) * rangeY;
-    const px = t.sx(wx);
-    const py = t.sy(wy);
-    if (px < 0 || px > width || py < 0 || py > height) continue;
-    const brightness = 0.3 + hash01(i + 7) * 0.6;
-    const radius = 0.8 + hash01(i + 77) * 0.7;
-    ctx.globalAlpha = brightness;
-    ctx.fillStyle = "rgba(201,212,196,1)";
-    ctx.beginPath();
-    ctx.arc(px, py, radius, 0, Math.PI * 2);
-    ctx.fill();
+  ctx.fillStyle = "rgba(201,212,196,1)";
+  for (let ix = sx0; ix <= sx1; ix += 1) {
+    for (let iy = sy0; iy <= sy1; iy += 1) {
+      const wx = (ix + cellHash(ix, iy, 0)) * cell;
+      const wy = (iy + cellHash(ix, iy, 1)) * cell;
+      const px = t.sx(wx);
+      const py = t.sy(wy);
+      if (px < 0 || px > width || py < 0 || py > height) continue;
+      ctx.globalAlpha = 0.3 + cellHash(ix, iy, 2) * 0.6;
+      const radius = 0.8 + cellHash(ix, iy, 3) * 0.7;
+      ctx.beginPath();
+      ctx.arc(px, py, radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
   ctx.globalAlpha = 1;
   ctx.restore();
@@ -177,7 +220,7 @@ export function useBattleCanvas({
 
       // Backdrop: base gradient, parallax grid, and seeded starfield, drawn
       // first so everything else sits on top of the atmosphere.
-      drawBackdrop(ctx, width, height, t, bounds);
+      drawBackdrop(ctx, width, height, t);
 
       // Anomaly is drawn first, in world space, beneath everything else.
       // The seed is threaded through so asteroid rocks match the engine's
