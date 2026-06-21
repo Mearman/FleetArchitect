@@ -18,9 +18,15 @@ const pressed = [
   `0 0 0 1px ${vars.color.border}`,
 ].join(", ");
 
-/** Amber bloom — the key lights up only when fully pressed or latched on. */
-const GLOW = "0 0 16px -1px rgba(255,176,0,0.85)";
-const litShadow = `${pressed}, ${GLOW}`;
+/** Amber glow — the keycap lights from within when fully pressed or latched on.
+ *  Two inset layers (tight + soft) so the illumination sits inside the key's own
+ *  face rather than bleeding outwards onto the panel. Listed before the pressed
+ *  bevel so the light reads on top of the sunk surface. */
+const GLOW = [
+  "inset 0 0 6px rgba(255,176,0,0.7)",
+  "inset 0 0 14px rgba(255,176,0,0.4)",
+].join(", ");
+const litShadow = `${GLOW}, ${pressed}`;
 
 interface KeySpec {
   rest: string;
