@@ -18,14 +18,6 @@ const boot = keyframes({
   "100%": { filter: "brightness(1)" },
 });
 
-/** Control illumination on power-on — controls light up from dim to bright with
- *  a brief amber glow, then settle. Full level only, during the boot window. */
-export const buttonIlluminate = keyframes({
-  "0%":   { filter: "brightness(0.4)" },
-  "55%":  { filter: "brightness(1.35) drop-shadow(0 0 6px rgba(255,176,0,0.55))" },
-  "100%": { filter: "brightness(1)" },
-});
-
 /**
  * Scanline overlay — visible at reduced and full levels. Positioned absolutely
  * so it fills a single display surface (the battle canvas or designer viewport),
@@ -83,23 +75,6 @@ export const screenPowerOn = style({
     'html[data-fx="full"] &': {
       animationName: boot,
       animationDuration: "0.6s",
-      animationTimingFunction: "ease-out",
-      animationFillMode: "both",
-    },
-  },
-});
-
-/**
- * Control illumination — attached to every Button and ActionIcon via the theme.
- * The control lights up from dim with a brief amber glow when it mounts (page
- * load, and when a panel's controls first appear), full level only. Driven by
- * filter so it never fights the bevel box-shadows.
- */
-export const controlIlluminate = style({
-  selectors: {
-    'html[data-fx="full"] &': {
-      animationName: buttonIlluminate,
-      animationDuration: "0.7s",
       animationTimingFunction: "ease-out",
       animationFillMode: "both",
     },

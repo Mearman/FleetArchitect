@@ -21,7 +21,7 @@ import {
   BEZEL_TOP,
   BEZEL_BOTTOM,
 } from "./tokens";
-import { controlIlluminate } from "@/ui/fx/CrtOverlay.css";
+import { hardwareKey, hardwareKeySmall } from "@/ui/theme/controls.css";
 
 // Skeuomorphic surface recipes — built as plain strings (no `as` assertions).
 // One ordered box-shadow list per element: insets first, then the 0 0 0 1px
@@ -30,22 +30,6 @@ import { controlIlluminate } from "@/ui/fx/CrtOverlay.css";
 
 /** Raised-key face gradient layered OVER the variant background colour. */
 const KEY_FACE_GRADIENT = `linear-gradient(180deg, ${BEVEL_HIGHLIGHT_STRONG} 0%, transparent 45%, ${BEVEL_SHADOW} 100%)`;
-
-/** Resting box-shadow for a raised key. `sideHeight` is the extruded side depth. */
-const raisedKeyShadow = (sideHeight: string): string =>
-  [
-    `inset 0 1px 0 ${BEVEL_HIGHLIGHT_STRONG}`,
-    `inset 0 -1px 0 ${BEVEL_SHADOW}`,
-    `0 ${sideHeight} 0 ${BEZEL_BOTTOM}`,
-    `0 3px 5px -1px ${ELEVATION_SHADOW}`,
-  ].join(", ");
-
-/** Pressed box-shadow — the key has sunk flush to the panel plane. */
-const pressedKeyShadow = [
-  `inset 0 1px 2px ${BEVEL_SHADOW_DEEP}`,
-  `inset 0 -1px 0 ${BEVEL_HIGHLIGHT}`,
-  `0 0 0 1px ${CHROME_BORDER}`,
-].join(", ");
 
 /** Recessed field — data cut into the panel (opposite of a raised key). */
 const INSET_FIELD_GRADIENT = `linear-gradient(180deg, ${BEVEL_SHADOW} 0%, transparent 40%)`;
@@ -120,7 +104,10 @@ export const mantineTheme = createTheme({
     },
     Button: {
       defaultProps: { radius: "xs" },
-      classNames: { root: controlIlluminate },
+      // The pressable bevel + activation glow live in a class (hardwareKey), not
+      // here: Mantine applies flat `styles` props inline, and an inline box-shadow
+      // can't be overridden by the :hover/:active rules the glow needs.
+      classNames: { root: hardwareKey },
       styles: {
         // The gradient layers OVER the variant backgroundColor (no backgroundColor
         // override) so the amber primary fill survives beneath the bevel.
@@ -130,45 +117,16 @@ export const mantineTheme = createTheme({
           fontFamily: FONT_MONO,
           fontWeight: "600",
           backgroundImage: KEY_FACE_GRADIENT,
-          boxShadow: raisedKeyShadow("2px"),
-          transition: "transform 60ms ease, box-shadow 60ms ease",
-          "&:active": {
-            transform: "translateY(2px)",
-            boxShadow: pressedKeyShadow,
-          },
-          "&:disabled": {
-            boxShadow: "none",
-            backgroundImage: "none",
-            transform: "none",
-          },
-          "@media (prefers-reduced-motion: reduce)": {
-            transition: "none",
-          },
         },
       },
     },
     ActionIcon: {
       defaultProps: { radius: "xs" },
-      classNames: { root: controlIlluminate },
+      // Same pressable key as Button, with shorter travel (hardwareKeySmall).
+      classNames: { root: hardwareKeySmall },
       styles: {
-        // Same pressable recipe as Button, with reduced offsets so the icon
-        // buttons feel like small round keys with shorter travel.
         root: {
           backgroundImage: KEY_FACE_GRADIENT,
-          boxShadow: raisedKeyShadow("1px"),
-          transition: "transform 60ms ease, box-shadow 60ms ease",
-          "&:active": {
-            transform: "translateY(1px)",
-            boxShadow: pressedKeyShadow,
-          },
-          "&:disabled": {
-            boxShadow: "none",
-            backgroundImage: "none",
-            transform: "none",
-          },
-          "@media (prefers-reduced-motion: reduce)": {
-            transition: "none",
-          },
         },
       },
     },
