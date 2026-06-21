@@ -46,12 +46,14 @@ const LETHALITY_CAPITAL_TICKS = 30; // 30 × ~960 ms ≈ 28.8 s, within 30 s
 /**
  * Tick cap for the crewless Swarm lethality guard. At 1 m scale the Drone
  * Swarm vs Hive Assault fleet battle (20 ships, ~7553 modules) runs at
- * ~394 ms/tick. 70 ticks ≈ 27.6 s, within the 30 s timeout. Ships do not
- * reach weapon range within 70 ticks at this scale; no kills are expected, so
- * the dead-count assertion is removed for this matchup. The test only verifies
- * the crewless fast path runs without error and the engine returns a result.
+ * ~394 ms/tick. 20 ticks ≈ 7.9 s isolated on dev hardware; CI runners under
+ * full-suite CPU contention run ~5× slower (~40 s), well within the 120 s cap.
+ * Ships do not reach weapon range within 20 ticks; no kills are expected. The
+ * test only verifies the crewless fast path runs without error and the engine
+ * returns a result — the semantic-release pre-push hook re-runs the full suite
+ * including this test, so it must complete within the cap on CI.
  */
-const LETHALITY_CREWLESS_TICKS = 70; // 70 × ~394 ms ≈ 27.6 s, within 30 s
+const LETHALITY_CREWLESS_TICKS = 20; // 20 × ~394 ms ≈ 7.9 s isolated
 
 const cat = catalog();
 const designs = new Map(presetDesigns.map((d) => [d.id, d]));
@@ -161,7 +163,7 @@ describe("engine.lethality — crewed Terran battles resolve decisively", () => 
     // At the W4 1 m scale the Drone Swarm vs Hive Assault fleet (20 ships,
     // ~7553 modules) runs at ~394 ms/tick. Ships need ~370 ticks to close range
     // and begin weapons fire, so no kills occur within LETHALITY_CREWLESS_TICKS
-    // (70 ticks ≈ 27.6 s). The dead-count assertion is removed for this
+    // (20 ticks ≈ 7.9 s isolated). The dead-count assertion is removed for this
     // matchup; the guard only checks the engine runs the crewless path without
     // error and returns a valid result. The lethality of crewless Swarm battles
     // is exercised in end-to-end tests at coarser grid scales.
@@ -171,7 +173,8 @@ describe("engine.lethality — crewed Terran battles resolve decisively", () => 
 
     expect(result.winner, "crewless battle must return a result").toBeDefined();
     expect(result.frames.length, "crewless battle must produce frames").toBeGreaterThan(0);
-    // 70 ticks ≈ 27.6 s isolated; raised to 120 s for concurrent test runs
-    // where full-suite 12-worker concurrency extends wall time significantly.
+    // 20 ticks ≈ 7.9 s isolated; raised to 120 s for CI (the semantic-release
+    // pre-push hook re-runs the full suite during tag pushes, causing heavy
+    // CPU contention — observed ~129 s for 70 ticks; 20 ticks ≈ 40 s on CI).
   }, 120000);
 });
