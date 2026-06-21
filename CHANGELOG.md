@@ -1,3 +1,19 @@
+# [1.15.0](https://github.com/Mearman/FleetArchitect/compare/v1.14.0...v1.15.0) (2026-06-21)
+
+
+### Bug Fixes
+
+* **canvas:** pin the backdrop grid and starfield to a fixed world lattice ([33ccd61](https://github.com/Mearman/FleetArchitect/commit/33ccd615e16300763caf8db78154311d2e43c1fa))
+
+
+### Features
+
+* add material and bevel design tokens ([76c4ce3](https://github.com/Mearman/FleetArchitect/commit/76c4ce30fabb5428fe4dac99cdbeab4b5d74cc0a))
+* confine CRT scanlines and vignette to the battle and designer displays ([a16b211](https://github.com/Mearman/FleetArchitect/commit/a16b211b5a4ea7bd9e8eedebe2e5f9f07316d860))
+* pressable hardware buttons and recessed inset inputs ([acc438c](https://github.com/Mearman/FleetArchitect/commit/acc438c6a20a2c29cfb0f086da14d7f2a5212394))
+* raise panels into bezels with fx-gated brushed metal ([ad9c828](https://github.com/Mearman/FleetArchitect/commit/ad9c828596fba7194ea8c685b3b348e1ec43aa9e))
+* recess battle and designer viewports into screen wells ([aa2fee7](https://github.com/Mearman/FleetArchitect/commit/aa2fee7e722de08780351726ec1543a4fef5ecac))
+
 # [1.14.0](https://github.com/Mearman/FleetArchitect/compare/v1.13.1...v1.14.0) (2026-06-21)
 
 
