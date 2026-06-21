@@ -1,3 +1,18 @@
+# [1.11.0](https://github.com/Mearman/FleetArchitect/compare/v1.10.0...v1.11.0) (2026-06-21)
+
+
+### Features
+
+* **canvas:** cassette-cyberpunk palette, SIDE_COLOUR, backdrop starfield ([b22a9ce](https://github.com/Mearman/FleetArchitect/commit/b22a9ce154c9c1f8ac76a2a43c322b1e4226f11d))
+* **fx:** crt overlay, FxContext, FxToggle wired into layout ([c8eb34d](https://github.com/Mearman/FleetArchitect/commit/c8eb34d0cb99271659bd7e73cb9f0ff6df6b613b))
+* **responsive:** mobile bottom-sheet battle controls, touch targets, canvas height ([7016cc6](https://github.com/Mearman/FleetArchitect/commit/7016cc680b1f8209cd0c2a23c7658da39be8fd90))
+* **theme:** cassette-futurism token layer, Mantine theme, fontsource typography ([c7578f3](https://github.com/Mearman/FleetArchitect/commit/c7578f362cbac00ad3a5e2c2756b82364b55411e))
+* **ui:** cassette chrome on battle route — neon canvas frame, HUD palette ([af12f47](https://github.com/Mearman/FleetArchitect/commit/af12f4713de7926169b85b9084a304c8e5522a66))
+* **ui:** cassette chrome on fleet builder ([4101989](https://github.com/Mearman/FleetArchitect/commit/41019891fd036a1b68572001b6c6615df5cffe0e))
+* **ui:** cassette chrome on HomeRoute ([33a87e9](https://github.com/Mearman/FleetArchitect/commit/33a87e9ed1a99d7c56413a492bf2d4a592748341))
+* **ui:** cassette chrome on ship designer — cell colours, palette remap ([f5c5527](https://github.com/Mearman/FleetArchitect/commit/f5c55276b095dc5a60b883c097d85998bc32f88e))
+* **ui:** cassette panel shared chrome component ([d3e9414](https://github.com/Mearman/FleetArchitect/commit/d3e94146ba054cb78ecddd5de137c35264d2c357))
+
 # [1.10.0](https://github.com/Mearman/FleetArchitect/compare/v1.9.0...v1.10.0) (2026-06-21)
 
 
