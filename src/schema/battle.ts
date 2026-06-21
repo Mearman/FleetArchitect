@@ -407,6 +407,12 @@ export const BoardingPodSnapshot = z.object({
   x: z.number(),
   y: z.number(),
   targetId: EntityId,
+  /**
+   * The pod's cell grid for block-grid rendering: a minimal list of occupied
+   * cells with their surface kind. Absent on pods recorded before this field
+   * existed (fall back to a simple 3×3 block centred on the pod position).
+   */
+  cells: z.array(z.object({ q: z.number(), r: z.number(), surface: z.string() })).optional(),
 });
 export type BoardingPodSnapshot = z.infer<typeof BoardingPodSnapshot>;
 
@@ -415,7 +421,10 @@ export type BoardingPodSnapshot = z.infer<typeof BoardingPodSnapshot>;
  *  expanding ring. An outbound ping has `reflectedFrom` absent; a reflection
  *  (a return scattered off the enemy ship `reflectedFrom`) carries that id so the
  *  renderer can tint returns differently. `bearing`/`arc` describe the
- *  illuminated cone (arc >= PI is a full sphere). */
+ *  illuminated cone (arc >= PI is a full sphere). `strength` is the EM power at
+ *  the pulse front, used by the renderer to alpha-blend the ring — full strength
+ *  opaque, decayed strength faded. Optional for backward compatibility with
+ *  replays recorded before this field was emitted. */
 export const PulseSnapshot = z.object({
   id: z.number().int(),
   emitterId: EntityId,
@@ -425,6 +434,8 @@ export const PulseSnapshot = z.object({
   radius: z.number().min(0),
   bearing: z.number(),
   arc: z.number(),
+  /** EM strength at the pulse front. Optional for backward compatibility. */
+  strength: z.number().optional(),
 });
 export type PulseSnapshot = z.infer<typeof PulseSnapshot>;
 
@@ -448,7 +459,10 @@ export type EmissionSnapshot = z.infer<typeof EmissionSnapshot>;
  *  destroyed, it keeps the parent's centre-of-mass velocity (Newton's first law)
  *  and drifts frictionlessly thereafter. `mass` is in kg and `radius` is the
  *  derived bounding radius (metres); the renderer can draw it as a tumbling
- *  fragment scaled by its radius. */
+ *  fragment scaled by its radius. `salvageable` marks fragments that carry
+ *  recoverable material (reserved for future salvage mechanics; false by default
+ *  until the engine sets the flag). Optional for backward compatibility with
+ *  replays recorded before this field existed. */
 export const DebrisSnapshot = z.object({
   id: EntityId,
   x: z.number(),
@@ -457,6 +471,9 @@ export const DebrisSnapshot = z.object({
   vy: z.number(),
   mass: z.number().min(0),
   radius: z.number().min(0),
+  /** Whether this fragment carries recoverable material. Optional for backward
+   *  compatibility; absent entries are treated as non-salvageable. */
+  salvageable: z.boolean().optional(),
 });
 export type DebrisSnapshot = z.infer<typeof DebrisSnapshot>;
 
@@ -483,6 +500,24 @@ export const BattleFrame = z.object({
   /** Wreckage drifting this tick (Phase 12). Omitted while no ship has yet been
    *  destroyed so frames recorded before debris existed stay byte-identical. */
   debris: z.array(DebrisSnapshot).optional(),
+  /**
+   * Per-ship atmosphere / breach summary this tick. Emitted for any ship whose
+   * resource state is available and whose atmosphere field is non-trivial (i.e.
+   * the ship runs the resource step). Omitted when empty so frames for battles
+   * without life-support stay byte-identical to baseline. The breach overlay
+   * reads this to draw decompress hazes and venting indicators.
+   *
+   * `breachedCells` counts cells below the survivable gas-mass threshold;
+   * `atmosphereLevel` is the mean gas mass across all module cells, normalised
+   * to [0, 1] where 1 is full cabin pressure. Optional for backward compatibility.
+   */
+  atmosphere: z.array(
+    z.object({
+      shipId: EntityId,
+      breachedCells: z.number().int().min(0),
+      atmosphereLevel: z.number().min(0).max(1),
+    }),
+  ).optional(),
 });
 export type BattleFrame = z.infer<typeof BattleFrame>;
 

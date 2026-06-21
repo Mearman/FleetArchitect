@@ -9,6 +9,8 @@
 
 import { CELL_SIZE } from "@/domain/grid";
 import type { AwarenessSnapshot, BattleFrame, ShipDescriptor } from "@/schema/battle";
+import { CREW_HP } from "./config";
+import { STANDARD_CELL_GAS_MASS_KG, CREW_VACUUM_SURVIVABLE_FRACTION } from "./lifesupport";
 import type { SimCrew } from "../types";
 
 import { crewCellKey } from "./crew-pathfinding";
@@ -209,6 +211,10 @@ export function snapshot(
             radius: p.radius,
             bearing: p.bearing,
             arc: p.arc,
+            // Strength at the pulse front: enables the renderer to alpha-blend
+            // the ring so a strong/fresh pulse is opaque and a weak/distant one
+            // fades. Emitted unconditionally (always defined on SimPulse).
+            strength: p.strength,
           })),
         }
       : {}),
@@ -240,10 +246,53 @@ export function snapshot(
             vy: d.velY,
             mass: d.mass,
             radius: d.radius,
+            // salvageable: false until the engine sets a flag on Debris. When
+            // the salvage mechanic lands, Debris.salvageable replaces this literal.
+            salvageable: false,
           })),
         }
       : {}),
+    // Per-ship atmosphere/breach summary. Computed from the resource state that
+    // the resource step maintains; omitted when no ship has a resource state so
+    // frames for battles without life-support stay byte-identical to baseline.
+    // `breachedCells` counts cells below the survivable gas-mass threshold;
+    // `atmosphereLevel` is the mean normalised gas mass across all module cells.
+    ...atmosphereSnapshot(realShips),
   };
+}
+
+/**
+ * Compute the per-ship atmosphere/breach summary from the resource state of
+ * every real ship that runs the resource step. Returns an object spread that
+ * includes `atmosphere` only when at least one ship has resource state,
+ * so frames for battles without life-support stay byte-identical to baseline.
+ */
+function atmosphereSnapshot(
+  ships: readonly SimShip[],
+): { atmosphere: { shipId: string; breachedCells: number; atmosphereLevel: number }[] } | object {
+  const survivableGasMass = STANDARD_CELL_GAS_MASS_KG * CREW_VACUUM_SURVIVABLE_FRACTION;
+  const entries: { shipId: string; breachedCells: number; atmosphereLevel: number }[] = [];
+  for (const s of ships) {
+    if (!s.alive) continue;
+    if (s.resource === undefined) continue;
+    const atmo = s.resource.atmosphere;
+    const n = atmo.length;
+    if (n === 0) continue;
+    let breached = 0;
+    let totalMass = 0;
+    for (let i = 0; i < n; i += 1) {
+      const mass = atmo[i] ?? 0;
+      totalMass += mass;
+      if (mass < survivableGasMass) breached += 1;
+    }
+    const meanMass = totalMass / n;
+    const level = STANDARD_CELL_GAS_MASS_KG > 0
+      ? Math.max(0, Math.min(1, meanMass / STANDARD_CELL_GAS_MASS_KG))
+      : 1;
+    entries.push({ shipId: s.instanceId, breachedCells: breached, atmosphereLevel: level });
+  }
+  if (entries.length === 0) return {};
+  return { atmosphere: entries };
 }
 
 /**
@@ -278,12 +327,17 @@ export function shipDescriptor(s: SimShip): ShipDescriptor {
 
 /**
  * Map a crew member's internal job to the snapshot's state enum the renderer
- * reads. A walking member (one with steps left on its path) shows as `walking`
- * regardless of job; an arrived hauler shows as `hauling`; an arrived gunner as
- * `manning`; an idle member as `idle`. Injury is reserved for a future damage
- * model — crew hp is emitted but not yet reduced, so `injured` is unused here.
+ * reads. Injured takes priority over movement and job state — a crew member
+ * below full HP has taken vacuum damage and is shown incapacitated regardless
+ * of their current assignment. A walking member (one with steps left on its
+ * path) shows as `walking`; an arrived hauler as `hauling`; an arrived gunner
+ * as `manning`; an idle member as `idle`.
  */
 export function crewState(crew: SimCrew): "idle" | "walking" | "manning" | "hauling" | "injured" {
+  // Vacuum damage reduces hp below CREW_HP; the resource step removes dead crew
+  // (hp <= 0) before the snapshot runs, so any crew with hp > 0 and hp < CREW_HP
+  // is alive but injured.
+  if (crew.hp < CREW_HP) return "injured";
   if (crew.path.length - crew.pathIndex > 0) return "walking";
   if (crew.job === "haulAmmo" || crew.job === "haulPower") return "hauling";
   if (crew.job === "manning") return "manning";
