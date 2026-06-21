@@ -1,3 +1,10 @@
+# [1.12.0](https://github.com/Mearman/FleetArchitect/compare/v1.11.0...v1.12.0) (2026-06-21)
+
+
+### Features
+
+* **battle:** collapsible docks, unified layers panel, rehouse module status ([be75bc6](https://github.com/Mearman/FleetArchitect/commit/be75bc64863d7b77eb45dd4abccda7753b0cbc66))
+
 # [1.11.0](https://github.com/Mearman/FleetArchitect/compare/v1.10.0...v1.11.0) (2026-06-21)
 
 
