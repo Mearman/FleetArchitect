@@ -442,6 +442,8 @@ export function BattleRoute() {
           <Stack gap="sm">
             <Paper p={0} withBorder className={styles.stage}>
               <Box className={styles.canvasBox}>
+                {/* Glass-glare overlay: diagonal highlight visible only at data-fx="full". */}
+                <div className={styles.glassGlare} aria-hidden="true" />
                 <canvas
                   ref={canvasRef}
                   className={`${styles.canvas}${camera.dragging ? ` ${styles.canvasGrabbing}` : ""}`}

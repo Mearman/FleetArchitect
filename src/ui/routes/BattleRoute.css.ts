@@ -40,11 +40,18 @@ export const canvasBox = style({
   },
   borderRadius: 0,
   border: `1px solid ${vars.color.cyan}`,
-  boxShadow: `
-    0 0 0 1px ${vars.color.border},
-    0 0 14px -2px rgba(0,229,255,0.55),
-    inset 0 0 14px -4px rgba(0,229,255,0.12)
-  `,
+  boxShadow: [
+    // top-left interior sink — screen recessed into the bezel
+    `inset 2px 2px 8px ${vars.material.bevelShadowDeep}`,
+    // bottom-right interior counter-shadow
+    `inset -1px -1px 4px rgba(0,0,0,0.5)`,
+    // existing chrome hairline border
+    `0 0 0 1px ${vars.color.border}`,
+    // existing inner cyan tint
+    `inset 0 0 14px -4px rgba(0,229,255,0.12)`,
+    // existing outer cyan bloom — outermost so it escapes beyond the drop shadow
+    `0 0 14px -2px rgba(0,229,255,0.55)`,
+  ].join(", "),
   "::before": {
     content: '""',
     position: "absolute",
@@ -115,3 +122,28 @@ export const fogLegend = style({
 
 // statusOverlay removed — module status now lives in the controls dock
 // (BattleWorkspace right dock / mobile Drawer via BattleControlsPanel).
+
+/**
+ * Glass-glare overlay: a diagonal highlight that makes the canvas read as a
+ * real CRT screen under a glass panel. Off by default; lit up only when
+ * data-fx="full" (the full-effects tier). Uses mix-blend-mode: screen so it
+ * brightens without washing out the battle colours underneath.
+ *
+ * The element must sit inside the canvas box (canvasBox / neonCanvasFrame) as
+ * an aria-hidden child, since both ::before and ::after on canvasBox are
+ * already claimed by the amber corner ticks.
+ */
+export const glassGlare = style({
+  position: "absolute",
+  inset: 0,
+  pointerEvents: "none",
+  zIndex: 3,
+  opacity: 0,
+  selectors: {
+    'html[data-fx="full"] &': {
+      opacity: 1,
+      background: "linear-gradient(125deg, rgba(255,255,255,0.06) 0%, transparent 22%, transparent 78%, rgba(255,255,255,0.03) 100%)",
+      mixBlendMode: "screen",
+    },
+  },
+});

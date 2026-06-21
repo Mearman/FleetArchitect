@@ -167,16 +167,26 @@ export const breachOverlay = style({
 /** Pan/zoom viewport. The grid sits inside a scrollable, horizontally and
  *  vertically overflowable container; `transform: scale()` applies zoom. The
  *  container has a fixed max height so large ships scroll instead of
- *  stretching the page. */
+ *  stretching the page.
+ *
+ *  Styled as a recessed screen well: dark inset bevel shadows sink the grid
+ *  surface below the panel plane, with a chrome hairline border. No glare —
+ *  the working grid surface must remain unobscured. */
 export const zoomViewport = style({
   overflow: "auto",
   maxHeight: "min(560px, 60vh)",
   minHeight: 200,
   resize: "vertical",
-  border: `1px solid rgba(28,38,32,0.18)`,
-  borderRadius: 4,
-  padding: 8,
-  background: `rgba(10,12,8,0.6)`,
+  borderRadius: 0,
+  background: `linear-gradient(180deg, ${vars.material.surfaceBottom} 0%, ${vars.color.base} 100%)`,
+  boxShadow: [
+    // top-left interior sink — viewport recessed into the panel
+    `inset 2px 2px 8px ${vars.material.bevelShadowDeep}`,
+    // bottom-right interior counter-shadow
+    `inset -1px -1px 4px rgba(0,0,0,0.5)`,
+    // chrome hairline border
+    `0 0 0 1px ${vars.color.border}`,
+  ].join(", "),
 });
 
 /** Inner wrapper that the scale transform applies to. Width is set inline to
