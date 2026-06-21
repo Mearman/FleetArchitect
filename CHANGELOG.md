@@ -1,3 +1,10 @@
+# [1.13.0](https://github.com/Mearman/FleetArchitect/compare/v1.12.1...v1.13.0) (2026-06-21)
+
+
+### Features
+
+* **hull:** smooth hexadecilinear hull outline in the designer, traced around armour and walls ([376bd2d](https://github.com/Mearman/FleetArchitect/commit/376bd2d90e67c42d913c0e084f735c56b4f45153))
+
 ## [1.12.1](https://github.com/Mearman/FleetArchitect/compare/v1.12.0...v1.12.1) (2026-06-21)
 
 
