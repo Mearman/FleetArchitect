@@ -23,6 +23,7 @@
 import {
   TRANSPORT_GEOMETRY,
   type BoundaryFlux,
+  type TransportFace,
   type TransportSubstance,
 } from "@/domain/simulation/engine/transport-field";
 
@@ -162,33 +163,39 @@ export function makeAtmosphereSubstance(
   vents: VentMask,
   decks: DeckMask,
 ): TransportSubstance {
+  // Advection is the air-rushing-through-a-breach bulk flow: a steep
+  // pressure gradient drives gas toward a decompressing cell. It is only
+  // present once a breach exists — an intact, sealed hull holds every deck cell
+  // at cabin pressure, so the deck-to-deck gradient (and the advection velocity)
+  // is zero everywhere and the field is pure diffusion. We therefore enable the
+  // advection term only when the ship has at least one vent. This is not just an
+  // optimisation: the velocity closure is sound-speed (`maxVelocity` ≈ 343 m·s⁻¹)
+  // and the integrator must resolve it with ~90 explicit sub-steps to keep the
+  // per-cell CFL number stable; running that every tick for every intact ship
+  // over a long battle is a large, pointless cost (advection contributes nothing
+  // when the field is uniform). Gating on a live breach keeps an undamaged ship
+  // at one cheap diffusion sub-step and resolves a real decompression stably.
+  const breached = vents.size > 0;
+  const velocity = (face: TransportFace, phi: readonly number[]): number => {
+    // Pressure-gradient flow between two deck cells: positive (out of `from`)
+    // when `from` holds the higher pressure. A boundary face (no `to` cell),
+    // or a face touching a non-deck (solid) cell, carries no advection — a
+    // breached cell's outflux to vacuum is the vent boundary flux below.
+    if (face.to === undefined) return 0;
+    if (!decks.has(face.from) || !decks.has(face.to)) return 0;
+    const pFrom = pressureFromMass(phi[face.from] ?? 0);
+    const pTo = pressureFromMass(phi[face.to] ?? 0);
+    const u =
+      (VENT_EXHAUST_VELOCITY_M_PER_S * (pFrom - pTo)) / CABIN_PRESSURE_PA;
+    if (u > VENT_EXHAUST_VELOCITY_M_PER_S) return VENT_EXHAUST_VELOCITY_M_PER_S;
+    if (u < -VENT_EXHAUST_VELOCITY_M_PER_S) return -VENT_EXHAUST_VELOCITY_M_PER_S;
+    return u;
+  };
   return {
     name: "atmosphere",
     coefficient: GAS_DIFFUSION_COEFFICIENT_M2_PER_S,
-    // Advection is the air-rushing-through-a-breach flow now that breach support
-    // is live (hull airtightness vents a deck cell across an edge opened by a
-    // destroyed neighbour). The integrator sub-steps the advection term to keep
-    // the CFL number bounded for the sound-speed `maxVelocity`, so a sudden
-    // decompression is resolved stably. An intact, sealed hull holds every deck
-    // cell at cabin pressure, so the deck-to-deck pressure gradient — and the
-    // advection velocity — is zero everywhere, and the field reduces to pure
-    // diffusion, leaving an undamaged ship's atmosphere unchanged.
-    maxVelocity: VENT_EXHAUST_VELOCITY_M_PER_S,
-    velocity: (face, phi): number => {
-      // Pressure-gradient flow between two deck cells: positive (out of `from`)
-      // when `from` holds the higher pressure. A boundary face (no `to` cell),
-      // or a face touching a non-deck (solid) cell, carries no advection — a
-      // breached cell's outflux to vacuum is the vent boundary flux below.
-      if (face.to === undefined) return 0;
-      if (!decks.has(face.from) || !decks.has(face.to)) return 0;
-      const pFrom = pressureFromMass(phi[face.from] ?? 0);
-      const pTo = pressureFromMass(phi[face.to] ?? 0);
-      const u =
-        (VENT_EXHAUST_VELOCITY_M_PER_S * (pFrom - pTo)) / CABIN_PRESSURE_PA;
-      if (u > VENT_EXHAUST_VELOCITY_M_PER_S) return VENT_EXHAUST_VELOCITY_M_PER_S;
-      if (u < -VENT_EXHAUST_VELOCITY_M_PER_S) return -VENT_EXHAUST_VELOCITY_M_PER_S;
-      return u;
-    },
+    maxVelocity: breached ? VENT_EXHAUST_VELOCITY_M_PER_S : 0,
+    velocity: breached ? velocity : undefined,
     nonNegative: true,
     floor: 0,
     source: (cell) =>
