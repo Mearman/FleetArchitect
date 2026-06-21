@@ -12,6 +12,18 @@ import {
   FONT_MONO,
   FONT_BODY,
   RADIUS_XS,
+  BEVEL_HIGHLIGHT,
+  BEVEL_HIGHLIGHT_STRONG,
+  BEVEL_SHADOW,
+  BEVEL_SHADOW_DEEP,
+  ELEVATION_SHADOW,
+  SURFACE_TOP,
+  SURFACE_BOTTOM,
+  BEZEL_TOP,
+  BEZEL_BOTTOM,
+  SCREW_HEAD,
+  SCREW_HIGHLIGHT,
+  SCREW_SLOT,
 } from "./tokens";
 
 /**
@@ -35,4 +47,18 @@ export const vars = createGlobalTheme(":root", {
     body: FONT_BODY,
   },
   radius: { xs: RADIUS_XS },
+  material: {
+    bevelHighlight:       BEVEL_HIGHLIGHT,
+    bevelHighlightStrong: BEVEL_HIGHLIGHT_STRONG,
+    bevelShadow:          BEVEL_SHADOW,
+    bevelShadowDeep:      BEVEL_SHADOW_DEEP,
+    elevation:            ELEVATION_SHADOW,
+    surfaceTop:           SURFACE_TOP,
+    surfaceBottom:        SURFACE_BOTTOM,
+    bezelTop:             BEZEL_TOP,
+    bezelBottom:          BEZEL_BOTTOM,
+    screwHead:            SCREW_HEAD,
+    screwHighlight:       SCREW_HIGHLIGHT,
+    screwSlot:            SCREW_SLOT,
+  },
 });

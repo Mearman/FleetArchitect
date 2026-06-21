@@ -94,3 +94,17 @@ export const FONT_BODY = "'Inter', system-ui, sans-serif";
 // Radii — cassette aesthetic uses near-zero radii (sharp panels).
 export const RADIUS_XS = "1px";
 export const RADIUS_SM = "2px";
+
+// Material / bevel tokens — gleaming-pebble skeuomorphic surface system.
+export const BEVEL_HIGHLIGHT        = "rgba(201,212,196,0.10)"; // lit top-left bevel edge (TEXT_PRIMARY @10%)
+export const BEVEL_HIGHLIGHT_STRONG = "rgba(201,212,196,0.18)"; // raised-key top edge
+export const BEVEL_SHADOW           = "rgba(0,0,0,0.55)";       // shaded bottom-right bevel edge
+export const BEVEL_SHADOW_DEEP      = "rgba(0,0,0,0.75)";       // recessed-well interior
+export const ELEVATION_SHADOW       = "rgba(0,0,0,0.6)";        // outer drop shadow
+export const SURFACE_TOP            = "#11151a";                 // panel surface gradient, light stop
+export const SURFACE_BOTTOM         = "#090b0e";                 // panel surface gradient, dark stop
+export const BEZEL_TOP              = "#161b21";                 // raised-key face, light stop
+export const BEZEL_BOTTOM           = "#0b0e12";                 // raised-key face, dark stop
+export const SCREW_HEAD             = "#2a3128";                 // screw-head body
+export const SCREW_HIGHLIGHT        = "rgba(201,212,196,0.22)";  // screw-head top glint
+export const SCREW_SLOT             = "rgba(0,0,0,0.7)";         // screw-head slot/recess
