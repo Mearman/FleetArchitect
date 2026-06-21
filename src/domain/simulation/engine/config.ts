@@ -237,6 +237,11 @@ export const SIM = {
     balanced: 1.0,
     defensive: 1.15,
     evasive: 1.4,
+    interceptor: 0.6,
+    escort: 1.0,
+    sniper: 2.0,
+    hold: 1.0,
+    retreat: 2.5,
   },
   /**
    * The black hole's mass in arena-mass units — the authored body property that
