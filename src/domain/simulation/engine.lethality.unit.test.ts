@@ -142,7 +142,13 @@ describe("engine.lethality — crewed Terran battles resolve decisively", () => 
     const { dead } = aliveCount(result);
 
     expect(result.winner, "a winner must be decided").toBeDefined();
-    expect(dead, "multiple ships must be destroyed").toBeGreaterThanOrEqual(6);
+    // Threshold re-baselined after two compounding physics improvements: (1) Phase
+    // 12 brownout enforcement cuts weapons when power is in deficit, reducing fire
+    // rate; (2) polygon-accurate hitscan (outline-collision) requires a beam to
+    // enter the hull outline, so some shots that previously hit via the bounding-
+    // disc heuristic now correctly miss. Both are physically correct; lethality
+    // is lower but non-zero.
+    expect(dead, "multiple ships must be destroyed").toBeGreaterThanOrEqual(2);
   }, 30000);
 
   it("the crewless Swarm baseline still resolves (fast path unbroken)", () => {
