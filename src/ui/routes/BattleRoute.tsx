@@ -2,16 +2,11 @@ import {
   ActionIcon,
   Badge,
   Box,
-  Button,
   Center,
-  Collapse,
   Group,
   Loader,
   Paper,
-  Popover,
   Stack,
-  Switch,
-  SegmentedControl,
   Text,
   Title,
   Tooltip,
@@ -19,14 +14,9 @@ import {
 import { useIsMobile } from "@/ui/responsive/useViewport";
 import { notifications } from "@mantine/notifications";
 import {
-  IconAdjustments,
-  IconEye,
-  IconEyeOff,
-  IconLayoutSidebarRightExpand,
   IconMaximize,
   IconMinus,
   IconPlus,
-  IconSettings,
   IconSwords,
 } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -39,18 +29,18 @@ import { interpolateFrame } from "@/ui/interpolateFrame";
 import { clampZoom, DEFAULT_CAMERA } from "./battleCamera";
 import type { Camera } from "./battleCamera";
 import { ANOMALY_LABEL } from "./battleConstants";
+import { BattleControlsPanel } from "./BattleControlsPanel";
 import { BattleSetupPanel } from "./BattleSetupPanel";
 import { BattleStatusReadout } from "./BattleStatusReadout";
-import { ModulePanelDrawer } from "./ModulePanelDrawer";
-import { ModuleStatusPanel } from "./ModuleStatusPanel";
+import { BattleWorkspace } from "./BattleWorkspace";
 import { PlaybackControls } from "./PlaybackControls";
 import { OVERLAYS } from "./overlays";
-import type { OverlayDef, OverlayScope } from "./overlays";
+import type { OverlayScope } from "./overlays";
 import { useBattleCamera } from "./useBattleCamera";
 import { useBattleCanvas } from "./useBattleCanvas";
 import { useBattlePlayback } from "./useBattlePlayback";
 import { useBattleSimulation } from "./useBattleSimulation";
-import { panelLabel, touchTarget } from "@/ui/components/panel.css";
+import { touchTarget } from "@/ui/components/panel.css";
 import { glitchEnter } from "@/ui/fx/CrtOverlay.css";
 import * as styles from "./BattleRoute.css";
 
@@ -67,9 +57,21 @@ export function BattleRoute() {
   const [scale, setScale] = useState<BattleScale>("default");
   const [seed, setSeed] = useState(1);
 
-  /** Whether the setup panel and module-status overlay are shown. */
+  /**
+   * Whether the setup dock/drawer is expanded. Defaults to true so the user
+   * can immediately pick fleets; collapses to a rail when the first batch
+   * arrives so the battle takes centre stage without vanishing the setup.
+   */
   const [setupOpen, setSetupOpen] = useState(true);
-  const [statusOpen, setStatusOpen] = useState(false);
+  /**
+   * Whether the controls dock/drawer (layers + modules) is expanded.
+   * Starts closed; the user opens it when they want to toggle overlays or
+   * inspect module status.
+   */
+  const [controlsOpen, setControlsOpen] = useState(false);
+  /** Active tab within the controls panel. */
+  const [controlsTab, setControlsTab] = useState<"layers" | "modules">("layers");
+
   /** Whether the fog-of-war / awareness overlay is shown (default: on). */
   const [showFog, setShowFog] = useState(true);
   /**
@@ -85,21 +87,12 @@ export function BattleRoute() {
   );
 
   // --- Cross-cutting refs shared across the engine hooks -------------------
-  // These hold live values read by the rAF draw loop, pointer handlers, and the
-  // streaming accumulator. Route-level (not hook-local) so simulation, camera,
-  // canvas, and playback all read/write the same instances. The canvas element
-  // ref and the camera mirror ref are also route-level so the JSX `ref` prop
-  // and the draw loop can read them without a hook returning a ref object
-  // (which the react-hooks/refs lint rule would flag at the call site).
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const cameraRef = useRef<Camera>(DEFAULT_CAMERA);
   const framesRef = useRef<BattleFrame[]>([]);
   const simTickRateRef = useRef(0);
   const playbackTimeRef = useRef(0);
   const bufferingRef = useRef(false);
-  // Live mirror of the static per-ship descriptor map, written by the simulation
-  // hook as batches stream and read by the camera pointer handler without a
-  // render. Initialised empty; replaced on every fresh run.
   const descriptorsRef = useRef<DescriptorMap>(new Map());
 
   /**
@@ -109,8 +102,7 @@ export function BattleRoute() {
    * playback and camera setters (stable, but not yet bound when the simulation
    * hook runs). The ref holds the latest closures, kept current by the effect
    * below; `onFrames` (a worker callback) fires well after render, so the ref
-   * is always current by the time it reads. This preserves the original's
-   * synchronous in-onFrames side-effect ordering exactly.
+   * is always current by the time it reads.
    */
   const engineCallbacksRef = useRef<{ resetForNewRun: () => void; onFirstBatch: () => void }>({
     resetForNewRun: () => {},
@@ -131,8 +123,7 @@ export function BattleRoute() {
    * Whether any frames have streamed in yet. The canvas stage and all the
    * draw/playback machinery key off this rather than `result`, so playback can
    * begin the moment the first batch arrives — long before the final result
-   * resolves. Derived from `frameCount` state, which the first batch flips from
-   * zero, rather than reading the frames ref during render.
+   * resolves.
    */
   const hasFrames = simulation.frameCount > 0;
 
@@ -162,9 +153,8 @@ export function BattleRoute() {
     return map;
   }, [simulation.deploymentFrame]);
 
-  // Per-ship faction from the battle roster, so the canvas can tint each ship by
-  // its faction palette. Built once per result; absent on replays recorded before
-  // the factions update, in which case ships fall back to the side colour.
+  // Per-ship faction from the battle roster, so the canvas can tint each ship
+  // by its faction palette.
   const factionByInstance = useMemo(() => {
     const map = new Map<string, string>();
     if (simulation.result !== null && simulation.result.roster !== undefined) {
@@ -206,17 +196,13 @@ export function BattleRoute() {
     computedTicks: simulation.computedTicks,
     hasFrames,
     drawFrame,
-    statusOpen,
+    // Gate statusFrame updates on the controls dock being open so we skip the
+    // React state update when the panel is hidden.
+    statusOpen: controlsOpen,
     canvasSize: camera.canvasSize,
   });
 
-  // Keep the engine-callbacks ref current after every render. These closures
-  // capture the stable setters from playback/camera and the route's own state
-  // setters; `onFrames` reads them asynchronously from the worker, so the ref
-  // is always current by the time it fires. This preserves the original's
-  // synchronous in-onFrames side-effect ordering exactly (the
-  // `playbackTimeRef.current = 0` reset happens in the simulation hook's
-  // onFrames before the onFirstBatch callback runs).
+  // Keep the engine-callbacks ref current after every render.
   useEffect(() => {
     engineCallbacksRef.current = {
       resetForNewRun: () => {
@@ -227,6 +213,8 @@ export function BattleRoute() {
       onFirstBatch: () => {
         playback.setPlaybackTime(0);
         camera.setCamera(DEFAULT_CAMERA);
+        // Collapse setup dock to rail — the battle takes centre stage but
+        // the user can still re-expand without a full-width layout shift.
         setSetupOpen(false);
         playback.setPlaying(true);
       },
@@ -237,9 +225,6 @@ export function BattleRoute() {
    *  final tick count once the result has landed. */
   const maxTick = simulation.result !== null ? simulation.result.ticks : simulation.computedTicks;
 
-  // Derive the integer tick for the Slider and tick counter from playbackTime,
-  // clamped to the playable ceiling: the streamed leading edge while computing,
-  // the final tick count once the result has landed.
   const currentTick = hasFrames
     ? Math.min(maxTick, Math.floor(playback.playbackTime * TICKS_PER_SECOND))
     : 0;
@@ -268,8 +253,7 @@ export function BattleRoute() {
   /**
    * Auto-roll a matchup: pick two (different, when possible) fleets, a random
    * anomaly, and a random seed, reflect the picks in the setup UI, and start
-   * the battle. This is the "AI vs AI" mode — both sides are commanded by
-   * their doctrine and the player is a spectator.
+   * the battle.
    */
   function randomBattle() {
     if (fleets === undefined) return;
@@ -312,9 +296,8 @@ export function BattleRoute() {
   }
 
   /**
-   * Toggle play/pause. Restarts from the top when paused at the true end of
-   * a finished battle; mid-stream it resumes rather than rewinds. Defined
-   * before the early-return guard so the space-bar effect can reference it.
+   * Toggle play/pause. Restarts from the top when paused at the true end of a
+   * finished battle; mid-stream it resumes rather than rewinds.
    */
   const onTogglePlay = () => {
     if (simulation.result !== null && currentTick >= simulation.result.ticks) {
@@ -324,19 +307,12 @@ export function BattleRoute() {
     playback.setPlaying((p) => !p);
   };
 
-  /**
-   * A ref kept current by an effect below, so the space-bar keydown listener
-   * always calls the latest `onTogglePlay` without re-registering.
-   */
   const onTogglePlayRef = useRef(onTogglePlay);
   useEffect(() => {
     onTogglePlayRef.current = onTogglePlay;
   });
 
-  // Space-bar toggles play/pause when the canvas is active. The listener
-  // registers once (gated on hasFrames) and reads the latest handler via ref,
-  // so it never goes stale. We guard against focusable input elements so
-  // typing a seed or fleet name is unaffected.
+  // Space-bar toggles play/pause when the canvas is active.
   useEffect(() => {
     if (!hasFrames) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -383,259 +359,178 @@ export function BattleRoute() {
     drawFrame(frame, Math.floor(val), frames);
   };
 
+  const setupContent = (
+    <BattleSetupPanel
+      attackerId={attackerId}
+      defenderId={defenderId}
+      anomaly={anomaly}
+      scale={scale}
+      seed={seed}
+      fleetOptions={fleetOptions}
+      computing={simulation.computing}
+      hasFleets={fleets.length > 0}
+      onAttackerIdChange={setAttackerId}
+      onDefenderIdChange={setDefenderId}
+      onAnomalyChange={setAnomaly}
+      onScaleChange={setScale}
+      onSeedChange={setSeed}
+      onRandomSeed={() => setSeed(Math.floor(Math.random() * 1_000_000_000))}
+      onEngage={engage}
+      onRandomBattle={randomBattle}
+    />
+  );
+
+  const controlsContent = (
+    <BattleControlsPanel
+      showFog={showFog}
+      onFogChange={setShowFog}
+      overlays={overlays}
+      onOverlayChange={(id, patch) =>
+        setOverlays((prev) => {
+          const cur = prev[id];
+          if (cur === undefined) return prev;
+          return { ...prev, [id]: { ...cur, ...patch } };
+        })
+      }
+      frame={playback.statusFrame}
+      descriptors={simulation.descriptors}
+      activeTab={controlsTab}
+      onTabChange={setControlsTab}
+    />
+  );
+
   return (
     <Stack gap="md" className={glitchEnter}>
       <Group justify="space-between" align="center">
         <Title order={1}>Battle Arena</Title>
-        <Group gap="xs">
-          {simulation.result !== null && (
-            <Badge size="lg" color={winnerBadgeColor}>
-              {simulation.result.winner === "draw"
-                ? "Draw"
-                : `${simulation.result.winner.toUpperCase()} WINS`}
-            </Badge>
-          )}
-          <Button
-            variant={setupOpen ? "filled" : "light"}
-            size="sm"
-            leftSection={<IconSettings size={16} />}
-            onClick={() => setSetupOpen((o) => !o)}
-          >
-            Setup
-          </Button>
-        </Group>
+        {simulation.result !== null && (
+          <Badge size="lg" color={winnerBadgeColor}>
+            {simulation.result.winner === "draw"
+              ? "Draw"
+              : `${simulation.result.winner.toUpperCase()} WINS`}
+          </Badge>
+        )}
       </Group>
 
-      <Collapse expanded={setupOpen}>
-        <Paper p="md" withBorder>
-          <div className={panelLabel}>Battle Setup</div>
-          <BattleSetupPanel
-            attackerId={attackerId}
-            defenderId={defenderId}
-            anomaly={anomaly}
-            scale={scale}
-            seed={seed}
-            fleetOptions={fleetOptions}
-            computing={simulation.computing}
-            hasFleets={fleets.length > 0}
-            onAttackerIdChange={setAttackerId}
-            onDefenderIdChange={setDefenderId}
-            onAnomalyChange={setAnomaly}
-            onScaleChange={setScale}
-            onSeedChange={setSeed}
-            onRandomSeed={() => setSeed(Math.floor(Math.random() * 1_000_000_000))}
-            onEngage={engage}
-            onRandomBattle={randomBattle}
-          />
-        </Paper>
-      </Collapse>
-
-      {!hasFrames ? (
-        <Paper p="xl" withBorder>
-          <Center h={360}>
-            {simulation.computing ? (
-              <Stack align="center" gap="xs">
-                <Loader />
-                <Text c="dimmed">Computing battle…</Text>
-              </Stack>
-            ) : (
-              <Stack align="center" gap="xs">
-                <IconSwords size={40} color="var(--mantine-color-dimmed)" />
-                <Text c="dimmed">Pick two fleets and engage to watch the battle.</Text>
-              </Stack>
-            )}
-          </Center>
-        </Paper>
-      ) : (
-        <Stack gap="sm">
-          <Paper p={0} withBorder className={styles.stage}>
-            <Box className={styles.canvasBox}>
-              <canvas
-                ref={canvasRef}
-                className={`${styles.canvas}${camera.dragging ? ` ${styles.canvasGrabbing}` : ""}`}
-                onPointerDown={camera.handlePointerDown}
-                onPointerMove={camera.handlePointerMove}
-                onPointerUp={camera.handlePointerUp}
-                onPointerCancel={camera.handlePointerUp}
-                aria-label="Battle canvas — drag to pan, scroll or use +/− buttons to zoom"
-              />
-
-              <Badge
-                className={styles.anomalyLegend}
-                size="sm"
-                variant="outline"
-                color="amber"
-              >
-                {ANOMALY_LABEL[simulation.activeAnomaly]}
-                {camera.camera.followId !== null ? " · following" : ""}
-              </Badge>
-
-              {showFog && (
-                <Badge className={styles.fogLegend} size="sm" variant="outline" color="cyan">
-                  Fog of war
-                </Badge>
+      <BattleWorkspace
+        setupContent={setupContent}
+        controlsContent={controlsContent}
+        setupOpen={setupOpen}
+        controlsOpen={controlsOpen}
+        onSetupToggle={() => setSetupOpen((o) => !o)}
+        onControlsToggle={() => setControlsOpen((o) => !o)}
+        isMobile={isMobile}
+        hasFrames={hasFrames}
+      >
+        {!hasFrames ? (
+          <Paper p="xl" withBorder>
+            <Center h={360}>
+              {simulation.computing ? (
+                <Stack align="center" gap="xs">
+                  <Loader />
+                  <Text c="dimmed">Computing battle…</Text>
+                </Stack>
+              ) : (
+                <Stack align="center" gap="xs">
+                  <IconSwords size={40} color="var(--mantine-color-dimmed)" />
+                  <Text c="dimmed">Pick two fleets and engage to watch the battle.</Text>
+                </Stack>
               )}
-
-              <Group className={styles.cameraControls} gap={4}>
-                <Tooltip label="Zoom in">
-                  <ActionIcon
-                    size="md"
-                    className={touchTarget}
-                    variant="default"
-                    aria-label="Zoom in"
-                    onClick={() =>
-                      camera.setCamera((c) => ({ ...c, zoom: clampZoom(c.zoom * 1.4) }))
-                    }
-                  >
-                    <IconPlus size={16} />
-                  </ActionIcon>
-                </Tooltip>
-                <Tooltip label="Zoom out">
-                  <ActionIcon
-                    size="md"
-                    className={touchTarget}
-                    variant="default"
-                    aria-label="Zoom out"
-                    onClick={() =>
-                      camera.setCamera((c) => ({ ...c, zoom: clampZoom(c.zoom / 1.4) }))
-                    }
-                  >
-                    <IconMinus size={16} />
-                  </ActionIcon>
-                </Tooltip>
-                <Tooltip label="Fit whole battle (reset camera)">
-                  <ActionIcon
-                    size="md"
-                    className={touchTarget}
-                    variant="default"
-                    onClick={camera.resetCamera}
-                  >
-                    <IconMaximize size={16} />
-                  </ActionIcon>
-                </Tooltip>
-                <Tooltip label={showFog ? "Hide fog of war overlay" : "Show fog of war overlay"}>
-                  <ActionIcon
-                    size="md"
-                    className={touchTarget}
-                    variant={showFog ? "filled" : "default"}
-                    onClick={() => setShowFog((f) => !f)}
-                  >
-                    {showFog ? <IconEye size={16} /> : <IconEyeOff size={16} />}
-                  </ActionIcon>
-                </Tooltip>
-                <Tooltip label={statusOpen ? "Hide module panel" : "Show module panel"}>
-                  <ActionIcon
-                    size="md"
-                    className={touchTarget}
-                    variant={statusOpen ? "filled" : "default"}
-                    onClick={() => setStatusOpen((o) => !o)}
-                  >
-                    <IconLayoutSidebarRightExpand size={16} />
-                  </ActionIcon>
-                </Tooltip>
-                <Popover width={260} position="top-end" withArrow shadow="md">
-                  <Popover.Target>
-                    <Tooltip label="Battle overlays">
-                      <ActionIcon
-                        size="md"
-                        className={touchTarget}
-                        variant="default"
-                        aria-label="Battle overlays"
-                      >
-                        <IconAdjustments size={16} />
-                      </ActionIcon>
-                    </Tooltip>
-                  </Popover.Target>
-                  <Popover.Dropdown>
-                    <Stack gap={6}>
-                      <Text size="xs" fw={600}>
-                        Overlays
-                      </Text>
-                      {OVERLAYS.map((def: OverlayDef) => {
-                        const state = overlays[def.id];
-                        if (state === undefined) return null;
-                        return (
-                          <Group key={def.id} gap={8} align="center" wrap="nowrap">
-                            <Switch
-                              size="xs"
-                              label={def.label}
-                              checked={state.on}
-                              onChange={(e) =>
-                                setOverlays((prev) => ({
-                                  ...prev,
-                                  [def.id]: { ...state, on: e.currentTarget.checked },
-                                }))
-                              }
-                            />
-                            <SegmentedControl
-                              size="xs"
-                              value={state.scope}
-                              onChange={(val) =>
-                                setOverlays((prev) => ({
-                                  ...prev,
-                                  [def.id]: {
-                                    ...state,
-                                    scope: val === "all" ? "all" : "active",
-                                  },
-                                }))
-                              }
-                              data={[
-                                { label: "Active", value: "active" },
-                                { label: "All", value: "all" },
-                              ]}
-                            />
-                          </Group>
-                        );
-                      })}
-                    </Stack>
-                  </Popover.Dropdown>
-                </Popover>
-              </Group>
-
-              {/* On desktop: side overlay. On mobile: bottom drawer (see below). */}
-              {!isMobile && statusOpen && playback.statusFrame !== null && (
-                <Box className={styles.statusOverlay}>
-                  <ModuleStatusPanel
-                    frame={playback.statusFrame}
-                    descriptors={simulation.descriptors}
-                  />
-                </Box>
-              )}
-
-              {/* Streaming progress: shown while the run is still computing (the
-                  final result has not yet landed). Vanishes the moment the final
-                  result arrives. */}
-              {simulation.result === null && simulation.computing && (
-                <BattleStatusReadout
-                  buffering={playback.buffering}
-                  computedTicks={simulation.computedTicks}
-                />
-              )}
-            </Box>
+            </Center>
           </Paper>
+        ) : (
+          <Stack gap="sm">
+            <Paper p={0} withBorder className={styles.stage}>
+              <Box className={styles.canvasBox}>
+                <canvas
+                  ref={canvasRef}
+                  className={`${styles.canvas}${camera.dragging ? ` ${styles.canvasGrabbing}` : ""}`}
+                  onPointerDown={camera.handlePointerDown}
+                  onPointerMove={camera.handlePointerMove}
+                  onPointerUp={camera.handlePointerUp}
+                  onPointerCancel={camera.handlePointerUp}
+                  aria-label="Battle canvas — drag to pan, scroll or use +/− buttons to zoom"
+                />
 
-          {isMobile && (
-            <ModulePanelDrawer
-              opened={statusOpen}
-              frame={playback.statusFrame}
-              descriptors={simulation.descriptors}
-              onClose={() => setStatusOpen(false)}
+                <Badge
+                  className={styles.anomalyLegend}
+                  size="sm"
+                  variant="outline"
+                  color="amber"
+                >
+                  {ANOMALY_LABEL[simulation.activeAnomaly]}
+                  {camera.camera.followId !== null ? " · following" : ""}
+                </Badge>
+
+                {showFog && (
+                  <Badge className={styles.fogLegend} size="sm" variant="outline" color="cyan">
+                    Fog of war
+                  </Badge>
+                )}
+
+                {/* Camera controls — zoom and fit only; layer/status toggles live in the dock */}
+                <Group className={styles.cameraControls} gap={4}>
+                  <Tooltip label="Zoom in">
+                    <ActionIcon
+                      size="md"
+                      className={touchTarget}
+                      variant="default"
+                      aria-label="Zoom in"
+                      onClick={() =>
+                        camera.setCamera((c) => ({ ...c, zoom: clampZoom(c.zoom * 1.4) }))
+                      }
+                    >
+                      <IconPlus size={16} />
+                    </ActionIcon>
+                  </Tooltip>
+                  <Tooltip label="Zoom out">
+                    <ActionIcon
+                      size="md"
+                      className={touchTarget}
+                      variant="default"
+                      aria-label="Zoom out"
+                      onClick={() =>
+                        camera.setCamera((c) => ({ ...c, zoom: clampZoom(c.zoom / 1.4) }))
+                      }
+                    >
+                      <IconMinus size={16} />
+                    </ActionIcon>
+                  </Tooltip>
+                  <Tooltip label="Fit whole battle (reset camera)">
+                    <ActionIcon
+                      size="md"
+                      className={touchTarget}
+                      variant="default"
+                      onClick={camera.resetCamera}
+                    >
+                      <IconMaximize size={16} />
+                    </ActionIcon>
+                  </Tooltip>
+                </Group>
+
+                {simulation.result === null && simulation.computing && (
+                  <BattleStatusReadout
+                    buffering={playback.buffering}
+                    computedTicks={simulation.computedTicks}
+                  />
+                )}
+              </Box>
+            </Paper>
+
+            <PlaybackControls
+              playing={playback.playing}
+              speed={playback.speed}
+              currentTick={currentTick}
+              maxTick={maxTick}
+              finished={simulation.result !== null}
+              camera={camera.camera}
+              onTogglePlay={onTogglePlay}
+              onSpeedChange={playback.setSpeed}
+              onSeek={onSeek}
             />
-          )}
-
-          <PlaybackControls
-            playing={playback.playing}
-            speed={playback.speed}
-            currentTick={currentTick}
-            maxTick={maxTick}
-            finished={simulation.result !== null}
-            camera={camera.camera}
-            onTogglePlay={onTogglePlay}
-            onSpeedChange={playback.setSpeed}
-            onSeek={onSeek}
-          />
-        </Stack>
-      )}
+          </Stack>
+        )}
+      </BattleWorkspace>
     </Stack>
   );
 }

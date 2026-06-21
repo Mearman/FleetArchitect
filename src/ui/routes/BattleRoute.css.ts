@@ -2,14 +2,13 @@ import { style } from "@vanilla-extract/css";
 import { vars } from "@/ui/theme/vars.css";
 
 /**
- * Battle arena layout. The canvas is the dominant element: it fills the
- * available width and a tall slice of the viewport. The setup panel collapses
- * to a compact bar during playback and the module status panel becomes a
- * toggleable overlay rather than always-on chrome, so playback uses the whole
- * width instead of sharing it with controls.
+ * Battle arena canvas and stage styles. The workspace layout (three-zone flex
+ * with collapsible docks) lives in BattleWorkspace.css.ts; these styles are
+ * for the canvas element itself and its on-canvas overlays (legends, camera
+ * controls cluster).
  */
 
-/** Outer wrapper for the playback stage so the overlay can position against it. */
+/** Outer wrapper for the canvas stage. */
 export const stage = style({
   position: "relative",
   width: "100%",
@@ -85,7 +84,7 @@ export const canvasGrabbing = style({
   cursor: "grabbing",
 });
 
-/** A floating cluster of camera controls pinned to the top-right of the canvas. */
+/** Zoom in / zoom out / fit — the three camera action buttons on the canvas. */
 export const cameraControls = style({
   position: "absolute",
   top: 8,
@@ -114,13 +113,5 @@ export const fogLegend = style({
   pointerEvents: "none",
 });
 
-/** Module status overlay pinned to the right edge, toggled on demand. */
-export const statusOverlay = style({
-  position: "absolute",
-  top: 52,
-  right: 8,
-  bottom: 8,
-  width: "min(320px, 42%)",
-  overflowY: "auto",
-  zIndex: 2,
-});
+// statusOverlay removed — module status now lives in the controls dock
+// (BattleWorkspace right dock / mobile Drawer via BattleControlsPanel).
