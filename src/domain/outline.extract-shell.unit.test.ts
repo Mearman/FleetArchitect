@@ -50,4 +50,52 @@ describe("outline.extractShell (layered)", () => {
     const g = gridFrom(["aaa", "ada", "aaa"]);
     expect(extractShell(g)).toEqual(extractShell(g));
   });
+
+  it("includes wall/door-edged hull cells, not just armour", () => {
+    // A 2x1 of deck cells: the left cell carries a wall on its west edge (it is
+    // part of the airtight hull), the right cell is fully open (interior). The
+    // shell is the protective boundary — armour OR any wall/door edge — so the
+    // walled cell joins it while the open one does not. This is the case the
+    // armour-only extractor missed: a hull defined by wall edges rather than
+    // armour plating.
+    const walled: GridCell = {
+      kind: "solid",
+      scaffold: true,
+      surface: "deck",
+      edges: { n: "open", e: "open", s: "open", w: "wall", doorStates: {} },
+    };
+    const open: GridCell = {
+      kind: "solid",
+      scaffold: true,
+      surface: "deck",
+      edges: OPEN,
+    };
+    const grid: TileGrid = {
+      cols: 2,
+      rows: 1,
+      cells: [walled, open],
+      connections: [],
+      shape: { outlineMode: "hexadecilinear" },
+    };
+    const shell = extractShell(grid);
+    expect(shell.cells.has(0)).toBe(true); // walled hull cell is shell
+    expect(shell.cells.has(1)).toBe(false); // fully-open interior cell is not
+  });
+
+  it("treats a door edge as part of the hull", () => {
+    const doored: GridCell = {
+      kind: "solid",
+      scaffold: true,
+      surface: "deck",
+      edges: { n: "door", e: "open", s: "open", w: "open", doorStates: { n: "closed" } },
+    };
+    const grid: TileGrid = {
+      cols: 1,
+      rows: 1,
+      cells: [doored],
+      connections: [],
+      shape: { outlineMode: "hexadecilinear" },
+    };
+    expect(extractShell(grid).cells.has(0)).toBe(true);
+  });
 });

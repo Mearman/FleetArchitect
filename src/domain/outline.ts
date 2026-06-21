@@ -474,17 +474,26 @@ export function extractShellLegacy(grid: {
 // Complements extractShellLegacy (which bridges the pre-layered TileGrid).
 // ---------------------------------------------------------------------------
 
-/** Build the outline Shell from a layered-cell grid: the set of armor-cell
- *  indices (row-major `row * cols + col`), with the grid's dimensions. The
- *  outline is traced around armor cells (the protective shell); deck/scaffold
- *  cells without armor are not part of the shell. */
+/** Build the outline Shell from a layered-cell grid: the ship's protective
+ *  shell, the airtight hull the outline traces around. A solid cell belongs to
+ *  the shell when it is armour plating OR carries a wall/door edge — the two
+ *  ways a cell forms part of the airtight boundary (matching the module header
+ *  and the airtightness model the breach/vent logic keys off). An open-framed
+ *  deck/bare cell with no walls is interior, not hull, and is not part of the
+ *  shell. Armour cells are authored with a sealed (all-wall) perimeter, so this
+ *  is a superset of the old armour-only shell: a ship with no walls beyond its
+ *  armour traces an identical outline, while a hull defined by wall edges (no
+ *  armour plating) now traces one too. */
 export function extractShell(grid: TileGrid): Shell {
   const cells = new Set<number>();
   for (let i = 0; i < grid.cells.length; i += 1) {
     const cell = grid.cells[i];
-    if (cell !== undefined && cell.kind === "solid" && cell.surface === "armor") {
-      cells.add(i);
-    }
+    if (cell === undefined || cell.kind !== "solid") continue;
+    const e = cell.edges;
+    const hasHullEdge =
+      e.n === "wall" || e.e === "wall" || e.s === "wall" || e.w === "wall" ||
+      e.n === "door" || e.e === "door" || e.s === "door" || e.w === "door";
+    if (cell.surface === "armor" || hasHullEdge) cells.add(i);
   }
   return { cols: grid.cols, rows: grid.rows, cells };
 }

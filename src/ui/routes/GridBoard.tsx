@@ -1,6 +1,8 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { EdgeKind, SolidCell, TileGrid } from "@/schema/grid";
 import { PHOSPHOR_GREEN } from "@/ui/theme/tokens";
+import { CELL_SIZE } from "@/domain/grid";
+import { computeOutline, extractShell } from "@/domain/outline";
 import { cellColour, cellLabel, edgePositionClass } from "./designerGrid";
 import {
   breachOverlay,
@@ -67,6 +69,28 @@ export function GridBoard({
    *  drag-to-paint by calling onPaint as the pointer enters each cell. */
   const isPainting = useRef(false);
 
+  // Chamfered hull outline, traced around the protective shell (armour cells +
+  // wall/door edges). Rendered as an SVG overlay so the editor previews the same
+  // smoothed silhouette the battle draws. The outline vertices are in centred
+  // ship-local metres; converting back to lattice cell units (origin top-left)
+  // gives `v / CELL_SIZE + cols/2` in x and `+ rows/2` in y. The overlay SVG
+  // uses a `0 0 cols rows` viewBox stretched over the grid (preserveAspectRatio
+  // none), so cell units map straight onto the rendered board without measuring
+  // pixel sizes. Recomputed only when the grid changes.
+  const outlineLoops = useMemo(() => {
+    const loops = computeOutline(extractShell(grid), grid.shape);
+    return loops
+      .filter((loop) => loop.length >= 2)
+      .map((loop) =>
+        loop
+          .map(
+            (v) =>
+              `${v.x / CELL_SIZE + grid.cols / 2},${v.y / CELL_SIZE + grid.rows / 2}`,
+          )
+          .join(" "),
+      );
+  }, [grid]);
+
   useEffect(() => {
     function handlePointerUp() {
       isPainting.current = false;
@@ -78,10 +102,11 @@ export function GridBoard({
   }, []);
 
   return (
-    <div
-      className={gridBoard}
-      style={{ gridTemplateColumns: `repeat(${grid.cols}, 1fr)` }}
-    >
+    <div style={{ position: "relative", width: "100%" }}>
+      <div
+        className={gridBoard}
+        style={{ gridTemplateColumns: `repeat(${grid.cols}, 1fr)` }}
+      >
       {grid.cells.map((cell, idx) => {
         const col = idx % grid.cols;
         const row = Math.floor(idx / grid.cols);
@@ -145,6 +170,33 @@ export function GridBoard({
           </button>
         );
       })}
+      </div>
+      {outlineLoops.length > 0 ? (
+        <svg
+          viewBox={`0 0 ${grid.cols} ${grid.rows}`}
+          preserveAspectRatio="none"
+          style={{
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            pointerEvents: "none",
+          }}
+          aria-hidden="true"
+        >
+          {outlineLoops.map((points, i) => (
+            <polygon
+              key={i}
+              points={points}
+              fill="none"
+              stroke={PHOSPHOR_GREEN}
+              strokeWidth={0.12}
+              strokeOpacity={0.85}
+              strokeLinejoin="round"
+            />
+          ))}
+        </svg>
+      ) : null}
     </div>
   );
 }
