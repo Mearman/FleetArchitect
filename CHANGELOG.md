@@ -1,3 +1,10 @@
+# [1.14.0](https://github.com/Mearman/FleetArchitect/compare/v1.13.1...v1.14.0) (2026-06-21)
+
+
+### Features
+
+* **battle:** auto-fit the camera to live ships, breakable by zoom/pan ([feb4adc](https://github.com/Mearman/FleetArchitect/commit/feb4adc9f2a0db4ae0d67e26ebf9a283927b19f0))
+
 ## [1.13.1](https://github.com/Mearman/FleetArchitect/compare/v1.13.0...v1.13.1) (2026-06-21)
 
 
