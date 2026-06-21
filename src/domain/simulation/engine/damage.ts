@@ -679,6 +679,10 @@ export function makeChunkShip(
     ...defaultAiDecisions(), // live AI decisions; the AI step rewrites them next tick
     target: undefined,
     alive: true,
+    // A break-away chunk starts with no salvage of its own — recovered mass and
+    // any hull claims belong to the parent that did the salvaging, not the
+    // severed fragment.
+    salvageMass: 0,
     // A fragment inherits a deep copy of the parent's ghost memory — it
     // remembers the enemies the parent had a fix on at the moment of the split
     // (independent objects so decay on one fragment never bleeds into the

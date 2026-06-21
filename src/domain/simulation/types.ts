@@ -359,4 +359,12 @@ export interface BattleSummary {
    * per-tick frames carry only dynamic cell state.
    */
   descriptors: ShipDescriptor[];
+  /**
+   * Per-ship salvage earned over the battle (salvage mechanics): for every ship
+   * that swept up debris mass or claimed a derelict hull, its total recovered
+   * `salvageMass` (kg) and the instanceIds of the hulls it claimed. In stable
+   * instanceId order so two same-seed runs return the same list; empty for a
+   * battle with no salvage. `runBattle` carries it onto the BattleResult.
+   */
+  salvage: { shipId: string; salvageMass: number; claimedHulls: string[] }[];
 }

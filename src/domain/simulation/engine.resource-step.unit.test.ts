@@ -132,6 +132,7 @@ function shipWith(over: Partial<SimShip> = {}): SimShip {
     aiRally: false,
     target: undefined,
     alive: true,
+    salvageMass: 0,
     ghosts: [],
     awareness: new Map(),
     lastFiredTick: Number.NEGATIVE_INFINITY,

@@ -246,9 +246,10 @@ export function snapshot(
             vy: d.velY,
             mass: d.mass,
             radius: d.radius,
-            // salvageable: false until the engine sets a flag on Debris. When
-            // the salvage mechanic lands, Debris.salvageable replaces this literal.
-            salvageable: false,
+            // The engine flags every coherent fragment salvageable on spawn
+            // (salvage mechanics); the salvage step collects it for whichever ship
+            // sweeps over it.
+            salvageable: d.salvageable,
           })),
         }
       : {}),

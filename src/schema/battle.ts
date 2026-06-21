@@ -554,6 +554,24 @@ export const BattleResult = z.object({
    * change still parse (those carry the layout inline in each frame).
    */
   descriptors: z.array(ShipDescriptor).optional(),
+  /**
+   * Per-ship salvage earned over the battle (salvage mechanics): the total
+   * `salvageMass` (kg) of drifting debris a ship swept up, and the instanceIds of
+   * the derelict enemy hulls it claimed. One entry per ship that salvaged
+   * anything, in instanceId order; ships that recovered nothing are omitted.
+   * Optional so replays recorded before salvage mechanics still parse and so a
+   * battle with no salvage carries no entry — the post-battle summary reads this
+   * to show salvage earned.
+   */
+  salvage: z
+    .array(
+      z.object({
+        shipId: EntityId,
+        salvageMass: z.number().min(0),
+        claimedHulls: z.array(EntityId),
+      }),
+    )
+    .optional(),
 });
 export type BattleResult = z.infer<typeof BattleResult>;
 

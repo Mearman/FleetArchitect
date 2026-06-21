@@ -23,6 +23,7 @@ import { refillHardwiredAmmo } from "./crew-haul";
 import { resourceStep } from "./resource-step";
 import type { Debris } from "./debris";
 import { spawnDebris, stepDebris } from "./debris";
+import { claimHulls, collectDebris, isClaimed, summariseSalvage } from "./salvage";
 import { resolveChainReactions } from "./chain-reaction";
 import { applyDamage, splitBreakApart } from "./damage";
 import { layMines, stepTechCooldowns, updateMines } from "./mines";
@@ -255,6 +256,11 @@ export function* simulateBattle(
     const defenderFocusTarget = electFocusTarget("defender", ships, attackers, tick);
     for (const ship of ships) {
       if (!ship.alive) continue;
+      // A claimed hull is inert salvage: it holds no target and engages nothing.
+      if (isClaimed(ship)) {
+        ship.target = undefined;
+        continue;
+      }
       const enemies = ship.side === "attacker" ? defenders : attackers;
       const focusTarget =
         ship.side === "attacker" ? attackerFocusTarget : defenderFocusTarget;
@@ -538,6 +544,22 @@ export function* simulateBattle(
       }
     }
 
+    // 4e-salvage. Salvage mechanics: debris collection and hull claiming. Runs
+    //     BEFORE this tick's wreckage is spawned, so it sweeps only the fragments
+    //     that drifted in from earlier ticks — a fragment is therefore snapshotted
+    //     at least once (the tick it spawned) before any ship can collect it,
+    //     rather than vanishing the instant it appears. Each living, unclaimed,
+    //     non-phantom ship collects any drifting wreckage within `SALVAGE_RANGE_M`
+    //     (adding its mass to the ship's running `salvageMass` and removing it from
+    //     the field), then each living salvager claims the first derelict enemy
+    //     hull in range — every weapon and drive disabled, no crew left, not
+    //     already claimed. Both passes iterate ships in instanceId order and debris
+    //     in id order, so the outcome is a pure deterministic function of state. A
+    //     no-op until wreckage exists (no debris) and a hull is derelict, so byte
+    //     output is unchanged for battles with no salvage.
+    collectDebris(ships, debris);
+    claimHulls(ships);
+
     // 4e-debris. Spawn wreckage for every real ship that died this tick (alive
     //     at the top of the loop, dead now) and was genuinely destroyed rather
     //     than split into chunks. A break-apart already carried the hull mass off
@@ -676,7 +698,14 @@ export function* simulateBattle(
     winner = leadingSide(attackers, defenders);
   }
 
-  return { winner, ticks, descriptors: sortedDescriptors(descriptors) };
+  return {
+    winner,
+    ticks,
+    descriptors: sortedDescriptors(descriptors),
+    // Per-ship salvage earned over the battle, in instanceId order. Empty for a
+    // battle with no destruction and no claimed hulls.
+    salvage: summariseSalvage(ships),
+  };
 }
 
 /**
@@ -722,6 +751,9 @@ export function runBattle(inputs: BattleInputs): BattleResult {
     // Static per-ship cell layout + outline, emitted once so frames carry only
     // dynamic cell state. The renderer derives cell world positions from these.
     descriptors: summary.descriptors,
+    // Per-ship salvage earned, omitted when nothing was salvaged so a battle with
+    // no salvage carries no entry (and replays without it parse unchanged).
+    ...(summary.salvage.length > 0 ? { salvage: summary.salvage } : {}),
   };
 }
 

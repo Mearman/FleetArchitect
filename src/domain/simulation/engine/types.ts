@@ -246,6 +246,25 @@ export interface SimShip {
   target: string | undefined;
   alive: boolean;
   /**
+   * Salvage mass (kg) this ship has swept up from the debris field over the
+   * battle (salvage mechanics). Each tick a living ship collects any drifting
+   * wreckage within `SALVAGE_RANGE_M`, adding the fragment's mass here; the
+   * post-battle summary reports the total. Initialised to 0 in `toSimShip`; a
+   * battle with no destruction never adds to it. Never snapshotted per tick —
+   * it surfaces only in the result's salvage summary — so it changes no frame
+   * output for existing battles.
+   */
+  salvageMass: number;
+  /**
+   * When this hull has been claimed as salvage, the instanceId of the claiming
+   * ship (salvage mechanics). A hull becomes claimable once every weapon and
+   * drive is disabled, it has no living crew, and it is not already claimed; the
+   * first living enemy within `SALVAGE_RANGE_M` claims it. Once set, the tick
+   * loop suppresses the hull's engine steps so it drifts inert as wreckage.
+   * Undefined for every unclaimed hull, so unsalvaged play is unchanged.
+   */
+  claimedBy?: string;
+  /**
    * Per-module instances when the ship was built from a ShipDesign with
    * per-module data. Each module has its own hit points and can be
    * destroyed independently; the aggregate fields above are recomputed

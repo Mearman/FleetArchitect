@@ -235,6 +235,9 @@ export function toSimShip(ship: CombatShip, rng: () => number): SimShip {
     ...defaultAiDecisions(),
     target: undefined,
     alive: true,
+    // No salvage swept up yet; the salvage step adds to this as the ship collects
+    // drifting debris over the battle.
+    salvageMass: 0,
     // No awareness yet — computeAwareness fills these from tick 0 onward.
     ghosts: [],
     awareness: new Map(),

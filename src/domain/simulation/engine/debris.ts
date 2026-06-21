@@ -34,6 +34,11 @@ export interface Debris {
   /** Mass in kg — from the destroyed cells' material mass. */
   mass: number;
   radius: number;
+  /** Whether this fragment carries recoverable material a passing ship may
+   *  collect (salvage mechanics). Every spawned fragment is salvageable — it is a
+   *  coherent piece of hull mass — so the salvage step adds its mass to whichever
+   *  ship sweeps over it. The renderer marks salvageable fragments distinctly. */
+  salvageable: boolean;
 }
 
 /** Assumed mean density of wreckage (kg/m^3) for converting mass to a bounding
@@ -68,6 +73,9 @@ export function spawnDebris(
     velY: parentVelocity.y + kick.y,
     mass,
     radius: debrisRadius(mass),
+    // A coherent hull fragment always carries recoverable mass, so it is
+    // salvageable from the moment it spawns.
+    salvageable: true,
   };
 }
 

@@ -24,6 +24,7 @@ import { angleDifference, blackHoleAvoidWeight, rotateLocal } from "./setup";
 import { computeTranslationCommand } from "./translation";
 import { afterburnerMultipliers } from "./tech";
 import type { SimShip } from "./types";
+import { isClaimed } from "./salvage";
 
 /**
  * Whether the linear integrator routes thrust through the relativistic
@@ -213,7 +214,7 @@ interface MassBody {
  * below every printable character) so the well is always the first term in the
  * fixed-order force summation, independent of the ship ids present.
  */
-const BLACK_HOLE_BODY_ID = " black-hole";
+const BLACK_HOLE_BODY_ID = "black-hole";
 
 /**
  * Build the N-body gravitational field for this tick: the black hole followed
@@ -318,6 +319,14 @@ export function moveShips(
     if (!ship.alive) continue;
     // Phantoms (drones/decoys) move in their own bespoke step, not here.
     if (ship.phantom !== undefined) continue;
+    // A claimed hull is inert salvage: it has been disarmed, decrewed, and
+    // grappled, so it neither thrusts nor steers. It still felt gravity above and
+    // keeps its velocity, so it drifts on like a piece of wreckage; the
+    // controller below (which would fire engines and turn the hull) is skipped.
+    if (isClaimed(ship)) {
+      ship.engineThrottle = 0;
+      continue;
+    }
 
     // N-body gravity: a real 1/r^2 acceleration toward every other body on the
     // field (the black hole, plus every other ship), summed in the field's

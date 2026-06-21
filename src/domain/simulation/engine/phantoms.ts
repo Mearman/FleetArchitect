@@ -69,6 +69,9 @@ export function makeDrone(
     ...defaultAiDecisions(),
     target: undefined,
     alive: true,
+    // Phantoms are transient projections, not hulls: they never salvage and are
+    // never claimable, so this stays 0 and `claimedBy` stays undefined.
+    salvageMass: 0,
     ghosts: [],
     awareness: new Map(),
     lastFiredTick: Number.NEGATIVE_INFINITY,
@@ -137,6 +140,9 @@ export function makeDecoy(
     ...defaultAiDecisions(),
     target: undefined,
     alive: true,
+    // Phantoms are transient projections, not hulls: they never salvage and are
+    // never claimable, so this stays 0 and `claimedBy` stays undefined.
+    salvageMass: 0,
     ghosts: [],
     awareness: new Map(),
     lastFiredTick: Number.NEGATIVE_INFINITY,

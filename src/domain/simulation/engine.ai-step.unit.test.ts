@@ -64,6 +64,7 @@ function ship(over: Partial<SimShip> & { instanceId: string; side: "attacker" | 
     aiRally: false,
     target: over.target,
     alive: true,
+    salvageMass: 0,
     ghosts: [],
     awareness: new Map(),
     lastFiredTick: Number.NEGATIVE_INFINITY,
