@@ -14,6 +14,8 @@ import { useDisclosure } from "@mantine/hooks";
 import { NavLink, Outlet } from "react-router-dom";
 import { appShell, navLinkActive, navLinkBase } from "./theme.css";
 import { buildMeta } from "./buildMeta";
+import { FxToggle } from "@/ui/fx/FxToggle";
+import { neonTextAmber } from "@/ui/fx/CrtOverlay.css";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 
 const navItems = [
@@ -52,10 +54,10 @@ export function AppLayout() {
       <AppShell.Header>
         <Group h={56} px="md" justify="space-between" wrap="nowrap">
           <Group gap="xs" wrap="nowrap">
-            <Text fw={700} size="lg" c="indigo.3">
+            <Text fw={700} size="lg" className={neonTextAmber}>
               Fleet Architect
             </Text>
-            <Badge size="xs" variant="light" color="gray">
+            <Badge size="xs" variant="light" color="cyan">
               alpha
             </Badge>
             {buildMeta && (
@@ -72,6 +74,8 @@ export function AppLayout() {
               </Tooltip>
             )}
           </Group>
+
+          <FxToggle />
 
           {/* Desktop nav — hidden below sm */}
           <Box component="nav" aria-label="Main navigation" visibleFrom="sm">
