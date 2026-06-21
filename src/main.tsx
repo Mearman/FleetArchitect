@@ -1,3 +1,4 @@
+import "@/ui/theme/fonts";
 import "@mantine/core/styles.css";
 import "@mantine/notifications/styles.css";
 import "@/ui/theme.css";
@@ -6,7 +7,9 @@ import { createRoot } from "react-dom/client";
 import { MantineProvider } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
 import { RouterProvider } from "react-router-dom";
-import { mantineTheme } from "@/ui/mantine-theme";
+import { mantineTheme } from "@/ui/theme/mantineTheme";
+import { FxProvider } from "@/ui/fx/FxContext";
+import { CrtOverlay } from "@/ui/fx/CrtOverlay";
 import { router } from "@/ui/router";
 import { seedPresets } from "@/storage/seed";
 
@@ -29,10 +32,13 @@ void seedPresets()
   .finally(() => {
     root.render(
       <StrictMode>
-        <MantineProvider theme={mantineTheme} defaultColorScheme="dark">
-          <Notifications position="top-right" />
-          <RouterProvider router={router} />
-        </MantineProvider>
+        <FxProvider>
+          <MantineProvider theme={mantineTheme} defaultColorScheme="dark">
+            <CrtOverlay />
+            <Notifications position="top-right" />
+            <RouterProvider router={router} />
+          </MantineProvider>
+        </FxProvider>
       </StrictMode>,
     );
   });
