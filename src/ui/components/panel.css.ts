@@ -87,6 +87,19 @@ export const panelLabel = style({
 });
 
 /**
+ * Ensures coarse-pointer (touch) devices get ≥ 44 px touch targets on icon buttons.
+ * Apply alongside ActionIcon className on camera controls.
+ */
+export const touchTarget = style({
+  "@media": {
+    "(pointer: coarse)": {
+      minWidth: "44px",
+      minHeight: "44px",
+    },
+  },
+});
+
+/**
  * Neon canvas frame for the battle viewport — cyan bloom with amber corner ticks.
  * Apply as a className alongside the existing canvasBox class.
  */

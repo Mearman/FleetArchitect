@@ -436,6 +436,7 @@ export function FleetBuilderRoute() {
                               {cost?.cost ?? 0} pts
                             </Badge>
                             <ActionIcon
+                              size="md"
                               color="red"
                               variant="subtle"
                               aria-label="Remove ship"
@@ -560,7 +561,7 @@ export function FleetBuilderRoute() {
                                   </Text>
                                 </Group>
                                 <Slider
-                                  size="xs"
+                                  size="md"
                                   min={0}
                                   max={1}
                                   step={0.05}
@@ -597,7 +598,7 @@ export function FleetBuilderRoute() {
                                   </Text>
                                 </Group>
                                 <Slider
-                                  size="xs"
+                                  size="md"
                                   min={0}
                                   max={1}
                                   step={0.05}
@@ -623,7 +624,7 @@ export function FleetBuilderRoute() {
                                   </Text>
                                 </Group>
                                 <Slider
-                                  size="xs"
+                                  size="md"
                                   min={0}
                                   max={1}
                                   step={0.05}
@@ -650,7 +651,7 @@ export function FleetBuilderRoute() {
                                   </Text>
                                 </Group>
                                 <Slider
-                                  size="xs"
+                                  size="md"
                                   min={0.1}
                                   max={0.9}
                                   step={0.05}

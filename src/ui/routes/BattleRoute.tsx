@@ -16,6 +16,7 @@ import {
   Title,
   Tooltip,
 } from "@mantine/core";
+import { useIsMobile } from "@/ui/responsive/useViewport";
 import { notifications } from "@mantine/notifications";
 import {
   IconAdjustments,
@@ -40,6 +41,7 @@ import type { Camera } from "./battleCamera";
 import { ANOMALY_LABEL } from "./battleConstants";
 import { BattleSetupPanel } from "./BattleSetupPanel";
 import { BattleStatusReadout } from "./BattleStatusReadout";
+import { ModulePanelDrawer } from "./ModulePanelDrawer";
 import { ModuleStatusPanel } from "./ModuleStatusPanel";
 import { PlaybackControls } from "./PlaybackControls";
 import { OVERLAYS } from "./overlays";
@@ -48,13 +50,14 @@ import { useBattleCamera } from "./useBattleCamera";
 import { useBattleCanvas } from "./useBattleCanvas";
 import { useBattlePlayback } from "./useBattlePlayback";
 import { useBattleSimulation } from "./useBattleSimulation";
-import { panelLabel } from "@/ui/components/panel.css";
+import { panelLabel, touchTarget } from "@/ui/components/panel.css";
 import { glitchEnter } from "@/ui/fx/CrtOverlay.css";
 import * as styles from "./BattleRoute.css";
 
 export function BattleRoute() {
   const fleets = useFleets();
   const designs = useShipDesigns();
+  const isMobile = useIsMobile();
   const [attackerId, setAttackerId] = useState<string | null>(null);
   const [defenderId, setDefenderId] = useState<string | null>(null);
   const [anomaly, setAnomaly] = useState<BattleAnomalyType>("none");
@@ -476,6 +479,8 @@ export function BattleRoute() {
               <Group className={styles.cameraControls} gap={4}>
                 <Tooltip label="Zoom in">
                   <ActionIcon
+                    size="md"
+                    className={touchTarget}
                     variant="default"
                     aria-label="Zoom in"
                     onClick={() =>
@@ -487,6 +492,8 @@ export function BattleRoute() {
                 </Tooltip>
                 <Tooltip label="Zoom out">
                   <ActionIcon
+                    size="md"
+                    className={touchTarget}
                     variant="default"
                     aria-label="Zoom out"
                     onClick={() =>
@@ -497,12 +504,19 @@ export function BattleRoute() {
                   </ActionIcon>
                 </Tooltip>
                 <Tooltip label="Fit whole battle (reset camera)">
-                  <ActionIcon variant="default" onClick={camera.resetCamera}>
+                  <ActionIcon
+                    size="md"
+                    className={touchTarget}
+                    variant="default"
+                    onClick={camera.resetCamera}
+                  >
                     <IconMaximize size={16} />
                   </ActionIcon>
                 </Tooltip>
                 <Tooltip label={showFog ? "Hide fog of war overlay" : "Show fog of war overlay"}>
                   <ActionIcon
+                    size="md"
+                    className={touchTarget}
                     variant={showFog ? "filled" : "default"}
                     onClick={() => setShowFog((f) => !f)}
                   >
@@ -511,6 +525,8 @@ export function BattleRoute() {
                 </Tooltip>
                 <Tooltip label={statusOpen ? "Hide module panel" : "Show module panel"}>
                   <ActionIcon
+                    size="md"
+                    className={touchTarget}
                     variant={statusOpen ? "filled" : "default"}
                     onClick={() => setStatusOpen((o) => !o)}
                   >
@@ -520,7 +536,12 @@ export function BattleRoute() {
                 <Popover width={260} position="top-end" withArrow shadow="md">
                   <Popover.Target>
                     <Tooltip label="Battle overlays">
-                      <ActionIcon variant="default" aria-label="Battle overlays">
+                      <ActionIcon
+                        size="md"
+                        className={touchTarget}
+                        variant="default"
+                        aria-label="Battle overlays"
+                      >
                         <IconAdjustments size={16} />
                       </ActionIcon>
                     </Tooltip>
@@ -571,7 +592,8 @@ export function BattleRoute() {
                 </Popover>
               </Group>
 
-              {statusOpen && playback.statusFrame !== null && (
+              {/* On desktop: side overlay. On mobile: bottom drawer (see below). */}
+              {!isMobile && statusOpen && playback.statusFrame !== null && (
                 <Box className={styles.statusOverlay}>
                   <ModuleStatusPanel
                     frame={playback.statusFrame}
@@ -591,6 +613,15 @@ export function BattleRoute() {
               )}
             </Box>
           </Paper>
+
+          {isMobile && (
+            <ModulePanelDrawer
+              opened={statusOpen}
+              frame={playback.statusFrame}
+              descriptors={simulation.descriptors}
+              onClose={() => setStatusOpen(false)}
+            />
+          )}
 
           <PlaybackControls
             playing={playback.playing}

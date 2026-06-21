@@ -33,6 +33,12 @@ export const canvasBox = style({
   height: "min(72vh, 900px)",
   minHeight: 360,
   overflow: "hidden",
+  "@media": {
+    "(max-width: 48em)": {
+      height: "min(60vh, 600px)",
+      minHeight: 280,
+    },
+  },
   borderRadius: 0,
   border: `1px solid ${vars.color.cyan}`,
   boxShadow: `

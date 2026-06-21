@@ -560,6 +560,7 @@ export function ShipDesignerRoute() {
                   Zoom ({zoom.toFixed(1)}x)
                 </Text>
                 <Slider
+                  size="md"
                   value={zoom}
                   onChange={setZoom}
                   min={ZOOM_MIN}
@@ -584,7 +585,7 @@ export function ShipDesignerRoute() {
                       }
                     />
                   </Group>
-                  <div className={zoomViewport}>
+                  <div className={zoomViewport} style={{ touchAction: "none" }}>
                     <div
                       className={zoomInner}
                       style={{
