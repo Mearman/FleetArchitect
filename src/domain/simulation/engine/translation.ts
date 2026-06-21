@@ -92,6 +92,7 @@ export function computeTranslationCommand(
   target: SimShip | undefined,
   anomaly: BattleInputs["anomaly"],
   deployment: DeploymentReference,
+  defaultRange: number,
 ): TranslationCommand {
   // Retreat and hold are directional decisions handled before the stop-in-time
   // core: a retreating ship thrusts away from its reference and does not try to
@@ -130,7 +131,7 @@ export function computeTranslationCommand(
       ship,
       enemyDeployment.x,
       enemyDeployment.y,
-      anomalyAdjustedRange(ship.orders, ship.weapons, anomaly, stance),
+      anomalyAdjustedRange(ship.orders, ship.weapons, anomaly, stance, defaultRange),
     );
   }
 
@@ -150,7 +151,7 @@ export function computeTranslationCommand(
     return holdFacing(bearingToTarget);
   }
 
-  const want = anomalyAdjustedRange(ship.orders, ship.weapons, anomaly, stance);
+  const want = anomalyAdjustedRange(ship.orders, ship.weapons, anomaly, stance, defaultRange);
   return stopInTimeToward(ship, target.x, target.y, want);
 }
 

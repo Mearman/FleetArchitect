@@ -3,7 +3,6 @@
  * mine-layer, boarding, blink/afterburner/overcharge recharge).
  */
 
-import { SIM } from "./config";
 import { isOperational } from "./crew";
 import { applyDamage } from "./damage";
 import type { SimMine, SimShip } from "./types";
@@ -40,12 +39,15 @@ export function stepTechCooldowns(ship: SimShip): void {
  * grows every `MINES_PER_RING` mines, with the angle spread evenly around the
  * circle by index. Pure function of the index — no rng, no ship state — so two
  * runs with the same seed lay every mine at the same place. */
-export function mineBatchOffset(i: number): { dx: number; dy: number } {
+export function mineBatchOffset(
+  i: number,
+  ringSpacing: number,
+): { dx: number; dy: number } {
   if (i <= 0) return { dx: 0, dy: 0 };
   const ring = Math.floor((i - 1) / MINES_PER_RING) + 1;
   const indexInRing = (i - 1) % MINES_PER_RING;
   const angle = (indexInRing / MINES_PER_RING) * (Math.PI * 2);
-  const r = ring * SIM.mineRingSpacing;
+  const r = ring * ringSpacing;
   return { dx: Math.cos(angle) * r, dy: Math.sin(angle) * r };
 }
 
@@ -73,6 +75,7 @@ export function layMines(
   mines: SimMine[],
   tick: number,
   nextMineId: (ownerId: string, tick: number) => string,
+  ringSpacing: number,
 ): void {
   if (ship.modules === undefined) return;
   for (const m of ship.modules) {
@@ -86,7 +89,7 @@ export function layMines(
     if (hasLiveBatch) continue;
     const effect = m.effect;
     for (let i = 0; i < effect.mineCount; i++) {
-      const { dx, dy } = mineBatchOffset(i);
+      const { dx, dy } = mineBatchOffset(i, ringSpacing);
       mines.push({
         id: nextMineId(ship.instanceId, tick),
         side: ship.side,

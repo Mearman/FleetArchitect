@@ -11,6 +11,7 @@ import type { PointDefenseEffect, WeaponEffect } from "@/schema/module";
 import type { BattleInputs } from "../types";
 
 import { CELL_CONTACT_DISTANCE, buildShipCellHash } from "./collision";
+import type { BattleSpaceConfig } from "./space-config";
 import { SIM, claimProjectileId } from "./config";
 import { beamDamageFactor, lensingDeflection } from "./optics";
 import { isCharged } from "./crew";
@@ -136,6 +137,7 @@ export function fireWeapons(
   rng: () => number,
   tick: number,
   anomaly: BattleAnomaly,
+  space: BattleSpaceConfig,
 ): SimProjectile[] {
   const fired: SimProjectile[] = [];
   for (const ship of ships) {
@@ -157,7 +159,7 @@ export function fireWeapons(
     // out of acquisition range or let a target re-cloak, so re-validate against
     // the post-movement positions. A non-stealth target is always detectable, so
     // this never blocks a shot for fleets carrying no stealth tech.
-    if (!isDetectable(ship, target, dist * dist, tick)) continue;
+    if (!isDetectable(ship, target, dist * dist, tick, space)) continue;
     // Command-aura buffs (factions update): a covered ship reaches `rangeBonus`
     // further and bears on a target within a `accuracyBonus`-wider forward arc.
     // Both are 0 for an unbuffed ship, so the gates below are identical to before.

@@ -3,7 +3,7 @@
  * from `awareness.ts` so neither exceeds the file-length guard.
  */
 
-import { SIM } from "./config";
+import type { BattleSpaceConfig } from "./space-config";
 import type { CoverageShape } from "./sensors";
 import { effectiveSensorArc, effectiveSensorBearing, effectiveSensorRange, sensorUnitsOf } from "./sensors";
 import type { SimShip } from "./types";
@@ -13,10 +13,12 @@ import type { SimShip } from "./types";
  *  alive (manned-if-crewed) sensor, either a full circle (omni) or a sector
  *  (directional/dish/variable). A sector carries `bearing` (the cone's world
  *  centre) and `arc` (its half-arc); a circle omits both. */
-export function coverageShapes(ship: SimShip): CoverageShape[] {
+export function coverageShapes(ship: SimShip, space: BattleSpaceConfig): CoverageShape[] {
   const shapes: CoverageShape[] = [
-    // The innate omni visual circle — always present, a full circle.
-    { x: ship.x, y: ship.y, r: SIM.visualLosRadius },
+    // The innate omni visual circle — always present, a full circle. Its radius
+    // is the per-battle scaled visual reach, so the rendered footprint matches
+    // the detection reach `emReceives` grants at this scale.
+    { x: ship.x, y: ship.y, r: space.visualLosRadius },
   ];
   for (const unit of sensorUnitsOf(ship)) {
     const r = effectiveSensorRange(unit);

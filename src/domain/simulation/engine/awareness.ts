@@ -7,6 +7,7 @@ import { segmentBlocked } from "@/domain/occluders";
 import type { Disc } from "@/domain/occluders";
 import type { AwarenessSnapshot, BattleAnomaly } from "@/schema/battle";
 
+import type { BattleSpaceConfig } from "./space-config";
 import { SIM, SPEED_OF_LIGHT_M_PER_TICK } from "./config";
 import { coverageShapes } from "./coverage";
 import { emReceives } from "./em-reception";
@@ -27,6 +28,7 @@ export function computeAwareness(
   byId: Map<string, SimShip>,
   occluders: readonly Disc[],
   anomaly: BattleAnomaly,
+  space: BattleSpaceConfig,
 ): AwarenessSnapshot {
   // Alive ships in instanceId order — the canonical order for every pass.
   const alive = [...ships]
@@ -62,7 +64,7 @@ export function computeAwareness(
       observer.side === "attacker" ? enemiesBySide.attacker : enemiesBySide.defender;
     for (const enemy of enemies) {
       if (segmentBlocked(observer.x, observer.y, enemy.x, enemy.y, occluders)) continue;
-      if (!emReceives(observer, enemy, anomaly)) continue;
+      if (!emReceives(observer, enemy, anomaly, space)) continue;
       // Relativistic aberration (Phase 10): a moving observer measures the
       // contact's bearing swept toward its own direction of travel, so the
       // REPORTED position is the aberrated apparent one, not the true position.
@@ -154,7 +156,7 @@ export function computeAwareness(
   // A ship that died is not in `alive`; its ghosts/awareness are irrelevant
   // (it never targets again) and its stale awareness map is harmless.
 
-  return buildAwarenessSnapshot(alive, liveByShip, occluders, links);
+  return buildAwarenessSnapshot(alive, liveByShip, occluders, links, space);
 }
 
 /**
@@ -372,6 +374,7 @@ export function buildAwarenessSnapshot(
   liveByShip: ReadonlyMap<string, Map<string, Contact>>,
   occluders: readonly Disc[],
   links: readonly CommsLink[],
+  space: BattleSpaceConfig,
 ): AwarenessSnapshot {
   // Occluders: emit verbatim (computeOccluders already returns a fixed order).
   const snapOccluders = occluders.map((d) => ({ x: d.x, y: d.y, r: d.r }));
@@ -394,7 +397,7 @@ export function buildAwarenessSnapshot(
         if (member === undefined) {
           throw new Error(`cluster member ${mid} missing from side ${side}`);
         }
-        return coverageShapes(member);
+        return coverageShapes(member, space);
       });
       clusters.push({ id, side, memberIds: sortedMembers, coverage });
     }

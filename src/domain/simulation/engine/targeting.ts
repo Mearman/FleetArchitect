@@ -5,6 +5,7 @@
 
 import { SIM } from "./config";
 import { effectiveStance } from "./movement";
+import type { BattleSpaceConfig } from "./space-config";
 import { isDetectable } from "./stealth";
 import type { SimShip } from "./types";
 
@@ -50,6 +51,7 @@ export function visibleEnemyViews(
   ship: SimShip,
   enemies: readonly SimShip[],
   tick: number,
+  space: BattleSpaceConfig,
 ): EnemyView[] {
   const enemyById = new Map(enemies.map((e) => [e.instanceId, e]));
   const views: EnemyView[] = [];
@@ -66,7 +68,7 @@ export function visibleEnemyViews(
     // module is always detectable, so a non-stealth battle's visible set — and
     // thus its targeting — is byte-identical to before.
     const distSq = (contact.x - ship.x) ** 2 + (contact.y - ship.y) ** 2;
-    if (!isDetectable(ship, enemy, distSq, tick)) continue;
+    if (!isDetectable(ship, enemy, distSq, tick, space)) continue;
     views.push({
       instanceId: enemy.instanceId,
       // Position comes from the contact (the ghost's last-known x/y, or the
@@ -215,11 +217,12 @@ export function pickTarget(
   enemies: readonly SimShip[],
   focusTargetId: string | undefined,
   tick: number,
+  space: BattleSpaceConfig,
 ): EnemyView | undefined {
   // Visible = enemies in awareness (fog/sensors) AND locked-on (stealth gate),
   // filtered inside `visibleEnemyViews`. A non-stealth battle's candidate set is
   // unchanged, so targeting stays byte-identical for fleets without stealth tech.
-  const visible = visibleEnemyViews(ship, enemies, tick);
+  const visible = visibleEnemyViews(ship, enemies, tick, space);
   if (visible.length === 0) return undefined;
 
   // Focus-fire: defer to the fleet-agreed target, but only if this ship can
@@ -258,6 +261,7 @@ export function electFocusTarget(
   ships: readonly SimShip[],
   enemies: readonly SimShip[],
   tick: number,
+  space: BattleSpaceConfig,
 ): string | undefined {
   // Only real ships are focus-election candidates and voters — a fleet should
   // never agree to focus-fire a drone or decoy, and phantoms carry no doctrine.
@@ -275,7 +279,7 @@ export function electFocusTarget(
   // consistent with what each voter would pick alone.
   const totals = new Map<string, number>();
   for (const voter of voters) {
-    const visible = visibleEnemyViews(voter, living, tick);
+    const visible = visibleEnemyViews(voter, living, tick, space);
     for (const enemy of visible) {
       const s = scoreEnemy(voter, enemy, visible);
       totals.set(enemy.instanceId, (totals.get(enemy.instanceId) ?? 0) + s);

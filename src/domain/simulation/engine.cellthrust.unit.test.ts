@@ -2,6 +2,7 @@ import type { CellEdges } from "@/schema/grid";
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import { toSimShip } from "@/domain/simulation/engine/setup";
+import { defaultSpaceConfig } from "@/domain/simulation/engine/space-config";
 import { availableThrust, shipForceAndTorque } from "@/domain/simulation/engine/physics";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
@@ -209,7 +210,7 @@ function inputs(ships: CombatShip[]): BattleInputs {
  * cooldowns), so a constant 0 is fine and keeps the build deterministic.
  */
 function simShipOf(modules: ResolvedModule[], facing = 0) {
-  return toSimShip(modularShip("s1", "attacker", modules, { x: 0, y: 0 }, facing), () => 0);
+  return toSimShip(modularShip("s1", "attacker", modules, { x: 0, y: 0 }, facing), () => 0, defaultSpaceConfig());
 }
 
 describe("engine.cellthrust", () => {

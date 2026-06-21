@@ -297,6 +297,7 @@ export function moveShips(
   byId: Map<string, SimShip>,
   anomaly: BattleInputs["anomaly"],
   deployment: DeploymentReference,
+  defaultRange: number,
 ): void {
   // Pre-compute fleet centroids once per tick so formation-keeping blends
   // each ship's desired heading toward a stable reference point, not one
@@ -383,7 +384,7 @@ export function moveShips(
     // controller should aim for, and whether to fire engines this tick.
     // Replaces the old desired-range/steering + reverse block; see its
     // docstring for the full decision table.
-    const cmd = computeTranslationCommand(ship, target, anomaly, deployment);
+    const cmd = computeTranslationCommand(ship, target, anomaly, deployment, defaultRange);
     let desiredFacing = cmd.desiredFacing;
     let shouldThrust = cmd.shouldThrust;
     const thrustMode = cmd.thrustMode;

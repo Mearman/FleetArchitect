@@ -3,6 +3,7 @@ import { CELL_SIZE } from "@/domain/grid";
 import { resolveChainReactions } from "@/domain/simulation/engine/chain-reaction";
 import { applyDamage } from "@/domain/simulation/engine/damage";
 import { toSimShip } from "@/domain/simulation/engine/setup";
+import { defaultSpaceConfig } from "@/domain/simulation/engine/space-config";
 import type { SimShip } from "@/domain/simulation/engine/types";
 import { mulberry32 } from "@/domain/simulation/rng";
 import type { CombatShip, ResolvedModule } from "@/domain/simulation/types";
@@ -124,7 +125,7 @@ function combatShip(
 }
 
 function buildSim(id: string, modules: ResolvedModule[]): SimShip {
-  return toSimShip(combatShip(id, "defender", modules), mulberry32(1));
+  return toSimShip(combatShip(id, "defender", modules), mulberry32(1), defaultSpaceConfig());
 }
 
 function findModule(ship: SimShip, slotId: string) {
