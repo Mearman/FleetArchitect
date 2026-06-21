@@ -219,10 +219,11 @@ export function recomputeAggregates(ship: SimShip): void {
     mass += m.mass;
     // Modules that are present (still massing the ship) but non-functional this
     // tick contribute nothing. A station works only when alive, powered (the
-    // whole-ship brownout ceiling), manned, and locally charged. A module
-    // needing no crew is always manned and one drawing no power is always
-    // charged, so this gate is a no-op for simple crewless, draw-free designs.
-    if (!m.powered || !m.manned || !isCharged(m)) continue;
+    // whole-ship brownout ceiling), not grid-shed by the energy-buffer brownout
+    // (`powerCut`), manned, and locally charged. A module needing no crew is
+    // always manned and one drawing no power is always charged, so this gate is a
+    // no-op for simple crewless, draw-free designs with a healthy power buffer.
+    if (!m.powered || m.powerCut || !m.manned || !isCharged(m)) continue;
     const effect = m.effect;
     switch (effect.kind) {
       case "weapon":
@@ -242,7 +243,8 @@ export function recomputeAggregates(ship: SimShip): void {
         }
         break;
       case "engine":
-        thrust += effect.thrust;
+        // A flamed-out engine (dry tank) produces no thrust this tick.
+        if (!m.fuelStarved) thrust += effect.thrust;
         break;
       case "power":
       case "crew":
@@ -382,15 +384,14 @@ export function shipForceAndTorque(
   let maxTorque = 0;
   for (const m of ship.modules) {
     if (!m.alive) continue;
-    // Every torque source runs only when powered, manned, and locally charged,
-    // matching the gate the aggregate thrust total already applies. An
-    // unmanned, browned-out, or uncharged module is dead weight this tick.
-    if (!m.powered || !m.manned || !isCharged(m)) continue;
+    // Every torque source runs only when powered, not grid-shed (`powerCut`),
+    // manned, and locally charged — the same gate the aggregate thrust applies.
+    if (!m.powered || m.powerCut || !m.manned || !isCharged(m)) continue;
     const effect = m.effect;
     if (effect.kind === "engine") {
-      // Engines only fire when the ship is thrusting. An off engine contributes
-      // no linear force and no geometric torque — no thrust, no torque.
-      if (!shouldThrust) continue;
+      // Engines contribute force/torque only when thrusting and fuelled — an off
+      // or flamed-out (dry-tank) engine produces no thrust and no torque.
+      if (!shouldThrust || m.fuelStarved) continue;
       const t = effect.thrust;
       if (t <= 0) continue;
       // The translation controller directs thrust along a chosen axis. Only
@@ -493,9 +494,11 @@ export function availableThrust(
   let lateralMinus = 0;
   for (const m of ship.modules) {
     if (!m.alive) continue;
-    if (!m.powered || !m.manned || !isCharged(m)) continue;
+    if (!m.powered || m.powerCut || !m.manned || !isCharged(m)) continue;
     const effect = m.effect;
     if (effect.kind !== "engine") continue;
+    // A flamed-out engine (dry tank) delivers no thrust this tick.
+    if (m.fuelStarved) continue;
     const t = effect.thrust;
     if (t <= 0) continue;
     // Local force on the ship is opposite the exhaust direction.
@@ -545,9 +548,11 @@ export function lateralForceAndTorque(
   let fy = 0;
   const throttle = Math.min(1, Math.abs(lateral));
   for (const m of ship.modules) {
-    if (!m.alive || !m.powered || !m.manned || !isCharged(m)) continue;
+    if (!m.alive || !m.powered || m.powerCut || !m.manned || !isCharged(m)) continue;
     const effect = m.effect;
     if (effect.kind !== "engine") continue;
+    // A flamed-out engine (dry tank) cannot translate the ship this tick.
+    if (m.fuelStarved) continue;
     const t = effect.thrust;
     if (t <= 0) continue;
     const lxUnit = -Math.cos(m.facing);
@@ -603,11 +608,12 @@ export function maxCommandableTorque(ship: SimShip, shouldThrust = false): numbe
     const comX = ship.comX;
     const comY = ship.comY;
     for (const m of ship.modules) {
-      if (!m.alive || !m.powered || !m.manned || !isCharged(m)) continue;
+      if (!m.alive || !m.powered || m.powerCut || !m.manned || !isCharged(m)) continue;
       const effect = m.effect;
       if (effect.kind === "engine") {
-        // Gimbal authority only exists when the engine is firing.
-        if (!shouldThrust) continue;
+        // Gimbal authority only exists when the engine is firing — and a
+        // flamed-out engine (dry tank) is not firing, so it provides none.
+        if (!shouldThrust || m.fuelStarved) continue;
         const gimbalArc = effect.gimbalArc ?? 0;
         if (gimbalArc <= 0) continue;
         const t = effect.thrust;
@@ -647,8 +653,10 @@ export function geometricTorque(ship: SimShip, shouldThrust: boolean): number {
   const comX = ship.comX;
   const comY = ship.comY;
   for (const m of ship.modules) {
-    if (!m.alive || !m.powered || !m.manned || !isCharged(m)) continue;
+    if (!m.alive || !m.powered || m.powerCut || !m.manned || !isCharged(m)) continue;
     if (m.effect.kind !== "engine") continue;
+    // A flamed-out engine (dry tank) exerts no force, so no geometric torque.
+    if (m.fuelStarved) continue;
     const t = m.effect.thrust;
     if (t <= 0) continue;
     const lx = -Math.cos(m.facing) * t;

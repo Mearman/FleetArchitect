@@ -408,12 +408,14 @@ export function* simulateBattle(
       refillHardwiredAmmo(ship);
     }
 
-    // 4b-resource. Resource & environment step (Phase 12 wiring, use-deferred).
-    //     Advance each ship's thermal, propellant, atmosphere, and power state
-    //     one tick. Runs after crew (atmosphere reads settled positions) and
-    //     before break-apart (chunk inherits resource state next pass). No
-    //     consequence is enforced — no overheat, brownout, asphyxiation, or
-    //     dry-tank derelict. A no-op for ships with no resource state.
+    // 4b-resource. Resource & environment step (Phase 12). Advance each ship's
+    //     thermal, propellant, atmosphere, and power state one tick, then enforce
+    //     the resource consequences: dry-tank engine flame-out, energy-buffer
+    //     brownout load-shedding, and overheat module destruction (asphyxiation /
+    //     venting is enforced inside the step via the airtightness vent mask).
+    //     Runs after crew (atmosphere reads settled positions) and before
+    //     break-apart, so an overheat-killed cell splits the hull this same tick.
+    //     A no-op for ships with no resource state.
     for (const ship of ships) {
       if (!ship.alive) continue;
       resourceStep(ship);

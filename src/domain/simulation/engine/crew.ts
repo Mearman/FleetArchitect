@@ -262,12 +262,15 @@ export function isCharged(m: SimModule): boolean {
  * its path and is standing on the cell of its current `targetSlotId`. A member
  * still walking (`pathIndex < path.length`) or with no target has not arrived.
  * Whether a module is fully functional this tick: alive, within the brownout
- * ceiling (`powered`), manned, and locally charged. The same gate the firing
- * loop and the aggregate thrust total apply, factored out so the tech step can
- * ask the question without repeating the four-way conjunction.
+ * ceiling (`powered`), not shed by the energy-buffer brownout (`powerCut`),
+ * manned, and locally charged. The same gate the firing loop and the aggregate
+ * thrust total apply, factored out so the tech step can ask the question without
+ * repeating the conjunction. `powerCut` is the Phase 12 capacitor-bank brownout
+ * (`resourceStep`); a module the grid shed is non-functional exactly as an
+ * unpowered one is.
  */
 export function isOperational(m: SimModule): boolean {
-  return m.alive && m.powered && m.manned && isCharged(m);
+  return m.alive && m.powered && !m.powerCut && m.manned && isCharged(m);
 }
 
 /**

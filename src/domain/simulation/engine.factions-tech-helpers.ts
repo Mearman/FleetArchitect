@@ -71,7 +71,13 @@ export function moduleOf(
     row,
     x: col * FIXTURE_CELL_PITCH,
     y: row * FIXTURE_CELL_PITCH,
-    surface: "deck",
+    // Only crew quarters are airtight, walkable decks; structural, engine, and
+    // weapon cells are bare framing. Marking every fixture cell a deck (as this
+    // helper once did) made each test ship one fully-pressurised volume that
+    // vented its entire atmosphere — and recoiled — through any battle-damage
+    // breach, which real designs (where `deck` is reserved for crew floors) never
+    // do. Crew-walkability tests build `crew` cells, which stay decks.
+    surface: effect.kind === "crew" ? "deck" : "bare",
     edges: OPEN_EDGES,
     maxSurfaceHp,
     maxScaffoldHp: maxHp,

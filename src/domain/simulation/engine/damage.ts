@@ -619,6 +619,8 @@ export function makeChunkShip(
     armourReduction: 0,
     thrust: 0,
     turnRate: 0,
+    // A fresh chunk has not fired its engines yet; the next move tick sets it.
+    engineThrottle: 0,
     // Placeholders; recomputeAggregates derives the real mass, CoM, MoI, and
     // broad-phase radius from the chunk's own module set immediately after
     // construction.

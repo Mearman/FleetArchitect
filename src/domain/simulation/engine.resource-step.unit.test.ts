@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { makeResourceState, resourceStep } from "./engine/resource-step";
 import type { SimModule, SimShip } from "./engine/types";
-import type { ModuleEffect, PowerPlantEffect, EngineEffect } from "@/schema/module";
+import type { ModuleEffect, PowerPlantEffect, EngineEffect, WeaponEffect } from "@/schema/module";
 import { CABIN_TEMPERATURE_K, STANDARD_CELL_GAS_MASS_KG } from "./engine/lifesupport";
 import { SPACE_TEMPERATURE_K } from "./engine/thermal";
+import { SIM } from "./engine/config";
 
 /** A minimal engine effect for test modules. */
 function engineEffect(thrust: number): EngineEffect {
@@ -41,6 +42,8 @@ function moduleAt(col: number, row: number, effect: ModuleEffect, surface: "deck
     charge: 100,
     alive: true,
     powered: true,
+    powerCut: false,
+    fuelStarved: false,
     manned: true,
     crewRequired: 0,
     command: false,
@@ -99,6 +102,7 @@ function shipWith(over: Partial<SimShip> = {}): SimShip {
     armourReduction: 0,
     thrust: 1000,
     turnRate: 0,
+    engineThrottle: 0,
     mass: 1000,
     comX: 0,
     comY: 0,
@@ -393,7 +397,122 @@ describe("engine.resource-step", () => {
     const b = run();
     expect(b).toEqual(a);
   });
+
+  it("Gate 1: flames out a thrusting engine whose tank has run dry", () => {
+    const ship = shipWith();
+    const state = makeResourceState(ship);
+    if (state === undefined) throw new Error("no state");
+    ship.resource = state;
+    // Commanded to thrust at full throttle, but the tank is empty.
+    ship.engineThrottle = 1;
+    const engineIdx = state.moduleIndex.get("0,0");
+    if (engineIdx === undefined) throw new Error("no engine cell");
+    state.propellant[engineIdx] = 0;
+    const engine = ship.modules?.[0];
+    if (engine === undefined) throw new Error("no engine module");
+    resourceStep(ship);
+    expect(engine.fuelStarved).toBe(true);
+  });
+
+  it("Gate 1: a fuelled engine commanded to thrust does not flame out", () => {
+    const ship = shipWith();
+    const state = makeResourceState(ship);
+    if (state === undefined) throw new Error("no state");
+    ship.resource = state;
+    ship.engineThrottle = 1; // tank seeded with fuel by makeResourceState
+    resourceStep(ship);
+    expect(ship.modules?.[0]?.fuelStarved).toBe(false);
+  });
+
+  it("Gate 1: an idle (coasting) engine with a dry tank is not flamed out", () => {
+    const ship = shipWith();
+    const state = makeResourceState(ship);
+    if (state === undefined) throw new Error("no state");
+    ship.resource = state;
+    ship.engineThrottle = 0; // not commanded to thrust this tick
+    const engineIdx = state.moduleIndex.get("0,0");
+    if (engineIdx === undefined) throw new Error("no engine cell");
+    state.propellant[engineIdx] = 0;
+    resourceStep(ship);
+    expect(ship.modules?.[0]?.fuelStarved).toBe(false);
+  });
+
+  it("Gate 2: sheds a power-drawing weapon when the buffer and reactor cannot meet demand", () => {
+    // A single weapon drawing power, no reactor and an empty buffer: the grid
+    // cannot meet the draw, so the weapon is cut.
+    const weapon = moduleAt(1, 0, weaponEffect());
+    const ship = shipWith({ modules: [weapon] });
+    const state = makeResourceState(ship);
+    if (state === undefined) throw new Error("no state");
+    state.powerBuffer = { energy: 0, capacityJoules: 0 };
+    ship.resource = state;
+    resourceStep(ship);
+    expect(weapon.powerCut).toBe(true);
+  });
+
+  it("Gate 2: never sheds the reactor, and a healthy buffer cuts nothing", () => {
+    const ship = shipWith(); // engine (draw 10) + reactor (1e6 output)
+    const state = makeResourceState(ship);
+    if (state === undefined) throw new Error("no state");
+    ship.resource = state;
+    resourceStep(ship);
+    // Reactor output dwarfs the engine draw, so nothing is shed.
+    expect(ship.modules?.every((m) => !m.powerCut)).toBe(true);
+  });
+
+  it("Gate 3: destroys a module whose cell exceeds the overheat threshold", () => {
+    // A 3x3 grid of cool hull cells (no reactor heat source). The centre cell
+    // (1,1) has all four neighbours present, so it is an interior, non-radiator
+    // cell — a forced temperature spike there is not radiated away before the
+    // overheat check reads it.
+    const modules: SimModule[] = [];
+    for (let col = 0; col < 3; col++) {
+      for (let row = 0; row < 3; row++) {
+        modules.push(moduleAt(col, row, { kind: "hull" }));
+      }
+    }
+    const ship = shipWith({ modules });
+    const state = makeResourceState(ship);
+    if (state === undefined) throw new Error("no state");
+    ship.resource = state;
+    const centreIdx = state.moduleIndex.get("1,1");
+    if (centreIdx === undefined) throw new Error("no centre cell");
+    state.thermal[centreIdx] = SIM.overheatThresholdK + 100;
+    resourceStep(ship);
+    const centre = ship.modules?.find((m) => m.col === 1 && m.row === 1);
+    expect(centre?.alive).toBe(false);
+    expect(centre?.hp).toBe(0);
+    // Cool neighbours survive.
+    expect(ship.modules?.filter((m) => !(m.col === 1 && m.row === 1)).every((m) => m.alive)).toBe(true);
+  });
+
+  it("Gate 3: cool cells (no heat source) are never overheated", () => {
+    const a = moduleAt(0, 0, { kind: "hull" });
+    const b = moduleAt(1, 0, { kind: "hull" });
+    const ship = shipWith({ modules: [a, b] });
+    const state = makeResourceState(ship);
+    if (state === undefined) throw new Error("no state");
+    ship.resource = state;
+    for (let i = 0; i < 20; i++) resourceStep(ship);
+    expect(ship.modules?.every((m) => m.alive)).toBe(true);
+  });
 });
+
+/** A minimal weapon effect for brownout tests (draws power, has range). */
+function weaponEffect(): WeaponEffect {
+  return {
+    kind: "weapon",
+    weaponType: "cannon",
+    damage: 10,
+    range: 100,
+    cooldown: 1,
+    projectileSpeed: 8,
+    tracking: 0,
+    shieldPiercing: 0,
+    armourPiercing: 0,
+    spread: 0,
+  };
+}
 
 interface ResourceStateSnapshot {
   thermal: number[];

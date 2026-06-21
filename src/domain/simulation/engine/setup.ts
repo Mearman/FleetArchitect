@@ -187,6 +187,9 @@ export function toSimShip(ship: CombatShip, rng: () => number): SimShip {
     armourReduction: ship.stats.damageReduction,
     thrust: ship.stats.thrust,
     turnRate: ship.stats.turnRate,
+    // No engine burn yet — `moveShips` sets the actual throttle each tick before
+    // the resource step reads it for propellant consumption.
+    engineThrottle: 0,
     // Neutral placeholders: every modular ship has these overwritten by
     // recomputeAggregates (which derives mass, MoI, radius, and CoM from
     // the alive module grid). The values here are never read for a real
@@ -298,6 +301,11 @@ export function toSimModule(m: ResolvedModule, rng: () => number): SimModule {
     charge: m.powerDraw > 0 ? SIM.chargeBufferMax : 0,
     alive: true,
     powered: true,
+    // Resource consequences (Phase 12) start clear: the energy buffer is full and
+    // tanks are fuelled at spawn, so no module is grid-shed or flamed out. Both are
+    // recomputed fresh each tick by `resourceStep`.
+    powerCut: false,
+    fuelStarved: false,
     // A module that needs no crew is born manned; one that needs crew starts
     // unmanned and is only switched on once enough crew reach its cell. The
     // first updateCrew pass (tick 1) recomputes this from live positions.

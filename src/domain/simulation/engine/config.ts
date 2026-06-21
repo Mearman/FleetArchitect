@@ -697,6 +697,26 @@ export const SIM = {
   collisionDamageFraction: 0.3,
 
   /**
+   * [Phase 12 — overheat] Cell temperature (kelvin) above which a module suffers
+   * thermal/structural failure and is destroyed. The thermal transport field
+   * carries each cell's temperature in kelvin (`resource-step.ts`); when a cell
+   * exceeds this the resource step kills the module through the same death path
+   * battle damage uses (scaffold and surface HP to zero, `alive` cleared), so the
+   * downstream effects — break-apart, airtightness venting, and a next-tick chain
+   * reaction for a volatile cell — all follow. 1500 K is the engineering failure
+   * point for aluminium-alloy structure and silicon electronics: aluminium melts
+   * at ~933 K and loses most strength well below that, and semiconductor
+   * junctions fail by ~400-600 K, so a cell held at 1500 K has lost both its
+   * structure and its systems. A radiator-equipped, quiescent ship never
+   * approaches this (radiators hold cells near cabin temperature), so an
+   * undamaged design is unaffected.
+   *
+   * Classification: authored catalogue content (a material/electronics thermal
+   * failure point in kelvin; Phase 14 may refine per-module from the SI catalogue).
+   */
+  overheatThresholdK: 1500,
+
+  /**
    * [Phase 12 — debris] Fraction of a destroyed ship's structural mass that
    * survives as a single trackable wreckage fragment. A real hull break-up
    * scatters its mass across a spectrum of fragment sizes, most of them dust and

@@ -18,12 +18,12 @@ import type { EnergyBuffer } from "./power";
 import type { RectangularTransportGraph } from "./transport-graph";
 
 /**
- * Per-ship resource state (Phase 12 wiring, use-deferred). The three
- * transport-field φ arrays — thermal (temperature, K), propellant (fuel mass,
- * kg), atmosphere (gas mass, kg) — plus the power energy buffer. Advanced each
- * tick by `resourceStep`; values are computed and exposed but consequences
- * (overheat shutdown, brownout, asphyxiation, dry-tank derelict) are NOT
- * enforced.
+ * Per-ship resource state (Phase 12). The three transport-field φ arrays —
+ * thermal (temperature, K), propellant (fuel mass, kg), atmosphere (gas mass,
+ * kg) — plus the power energy buffer. Advanced each tick by `resourceStep`,
+ * which also enforces the consequences: overheat module destruction, energy-buffer
+ * brownout load-shedding, dry-tank engine flame-out, and (via the airtightness
+ * vent mask) decompression and crew vacuum exposure.
  *
  * Cell indexing is module-sparse: `n = number of modules`, indices are
  * assigned in sorted (col, row) order, and `moduleIndex` maps "col,row" keys
@@ -143,6 +143,19 @@ export interface SimShip {
   armourReduction: number;
   thrust: number;
   turnRate: number;
+  /**
+   * Effective engine throttle actually applied this tick (Phase 12 fuel model):
+   * the fraction of rated thrust the movement step commanded from the main
+   * engines, including any afterburner multiplier, or 0 on a tick the ship did
+   * not fire its engines (coasting, holding station, or still turning onto its
+   * heading). The resource step burns propellant in proportion to this — a
+   * station-keeping ship draws no fuel, while one accelerating at full thrust
+   * burns at its rated rate — so the dry-tank flame-out reflects real usage
+   * rather than charging every engine full burn every tick. Set by `moveShips`
+   * each tick before `resourceStep` reads it; defaults to 0 so a ship that never
+   * moves (or the legacy aggregated path) consumes no fuel.
+   */
+  engineThrottle: number;
   /** Total ship mass (hull base + installed modules). Drives acceleration. */
   mass: number;
   /**
@@ -486,6 +499,29 @@ export interface SimModule {
    * modules (weapons, then shields) go offline until supply recovers.
    */
   powered: boolean;
+  /**
+   * Resource consequence (Phase 12): the energy buffer ran dry this tick and the
+   * grid shed this module to fit reactor output plus stored charge. Distinct from
+   * `powered` (the instantaneous reactor-vs-draw brownout in `recomputeAggregates`):
+   * this is the capacitor-bank brownout enforced by `resourceStep` after the energy
+   * buffer is stepped, shedding modules in a fixed priority order (weapons, then
+   * sensors, shields, engines; never the bridge, quarters, reactor, or repair). A
+   * power-cut module is non-functional this tick exactly as an unpowered one is, so
+   * the functional gate (`isOperational`) and every consumer treat it the same.
+   * Recomputed fresh each tick: `resourceStep` clears it before re-evaluating, so a
+   * ship whose buffer is healthy never carries a cut and behaves exactly as before.
+   */
+  powerCut: boolean;
+  /**
+   * Resource consequence (Phase 12): an engine cell whose propellant tank ran dry
+   * this tick. Set by `resourceStep` after the propellant transport step for any
+   * thrust-producing engine whose cell holds no fuel; a fuel-starved engine
+   * produces no thrust and no geometric torque this tick (the movement and
+   * aggregate paths skip it), modelling a flame-out. Only ever set on engine
+   * modules; recomputed fresh each tick (cleared before re-evaluation), so a fully
+   * fuelled ship never carries it and moves exactly as before.
+   */
+  fuelStarved: boolean;
   /**
    * Whether enough crew currently occupy this module's cell to operate it:
    * the count of crew on the cell is at least the module's `crewRequired`.

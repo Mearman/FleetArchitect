@@ -51,6 +51,8 @@ export function makeDrone(
     armourReduction: 0,
     thrust: 0,
     turnRate: 0,
+    // Phantoms never move via the engine path, so they never burn fuel.
+    engineThrottle: 0,
     mass: 1,
     comX: 0,
     comY: 0,
@@ -117,6 +119,8 @@ export function makeDecoy(
     armourReduction: 0,
     thrust: 0,
     turnRate: 0,
+    // Phantoms never move via the engine path, so they never burn fuel.
+    engineThrottle: 0,
     mass: 1,
     comX: 0,
     comY: 0,

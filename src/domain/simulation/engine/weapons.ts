@@ -192,6 +192,7 @@ export function fireWeapons(
           continue;
         }
         if (!m.powered) continue; // reactor can't sustain it this tick
+        if (m.powerCut) continue; // energy buffer ran dry — grid shed this gun
         if (!m.manned) continue; // nobody crewing the gun — it can't fire
         if (!isCharged(m)) continue; // local charge buffer empty — no juice
         if (dist > weapon.range * rangeScale) continue;
@@ -354,7 +355,7 @@ export function tryPointDefenseIntercept(
     if (ship.modules === undefined) continue; // legacy ships don't run PD
     if (!hasAliveCommand(ship)) continue; // no bridge → no coordination
     for (const m of ship.modules) {
-      if (!m.alive || !m.powered || !m.manned || !isCharged(m)) continue;
+      if (!m.alive || !m.powered || m.powerCut || !m.manned || !isCharged(m)) continue;
       if (m.cooldown > 0) continue;
       if (m.effect.kind !== "pointDefense") continue;
       const effect: PointDefenseEffect = m.effect;
@@ -375,7 +376,7 @@ export function tryPointDefenseIntercept(
     if (ship.modules === undefined) continue;
     if (!hasAliveCommand(ship)) continue;
     for (const m of ship.modules) {
-      if (!m.alive || !m.powered || !m.manned || !isCharged(m)) continue;
+      if (!m.alive || !m.powered || m.powerCut || !m.manned || !isCharged(m)) continue;
       if (m.effect.kind !== "pointDefense") continue;
       if (m.cooldown > 0) continue;
       const dx = ship.x - p.x;

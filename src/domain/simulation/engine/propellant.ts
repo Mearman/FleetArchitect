@@ -11,9 +11,10 @@
  * exhaust impulse equals the impulse the field reports, so the same boundary
  * flux path that vents atmosphere also drives the engine.
  *
- * Use-deferred: fuel mass is honestly simulated and feeds the integrator
- * (mass falls ⇒ acceleration rises ⇒ Tsiolkovsky Δv), but a dry tank does
- * not yet derelict the ship, and the fuel UI is a later pass.
+ * Fuel mass is honestly simulated and feeds the integrator (mass falls ⇒
+ * acceleration rises ⇒ Tsiolkovsky Δv); a dry engine cell now flames out
+ * (`resourceStep` marks it `fuelStarved`, the movement path skips it). The fuel
+ * UI is a later pass.
  */
 
 import {
@@ -86,26 +87,32 @@ export function makePropellantSubstance(
     nonNegative: true,
     floor: 0,
     velocity: (face: TransportFace, phi: readonly number[]): number => {
-      // Flow only along plumbed edges, toward a burning engine. The pipe is
-      // symmetric: fuel moves from whichever end has fuel toward whichever
-      // end is a burning engine. For a face `from → to`, positive velocity
-      // means fuel leaves `from` (toward `to`); we return +v when `to` is
-      // the burning engine and `from` has fuel, −v when `from` is the
-      // burning engine and `to` has fuel, and 0 otherwise.
+      // Flow along a plumbed edge from a feeding cell toward a burning engine
+      // that needs fuel. The closure MUST be antisymmetric — `v(from→to)` and
+      // `v(to→from)` opposite — or the upwind integrator (which only ever
+      // subtracts outflux per cell) double-drains both ends instead of moving
+      // mass conservatively. So flow happens only when exactly one end is a
+      // burning engine: fuel is pulled from the OTHER (feeding) end toward it.
+      // When both ends are burning engines, each burns its own local fuel
+      // through its exhaust boundary flux and no inter-engine transfer occurs
+      // (returning a flow for both directed faces is the non-conservative bug
+      // this guard removes); when neither is burning, the pipe is idle.
       if (face.to === undefined) return 0;
       if (!pipes.has(pipeKey(face.from, face.to))) return 0;
       const burnTo = engineThrust.get(face.to) ?? 0;
       const burnFrom = engineThrust.get(face.from) ?? 0;
+      // Exactly one end burns, or the antisymmetry breaks — skip the both-burn
+      // and neither-burn cases here.
+      if ((burnTo > 0) === (burnFrom > 0)) return 0;
       const phiFrom = phi[face.from] ?? 0;
       const phiTo = phi[face.to] ?? 0;
       if (burnTo > 0 && phiFrom > 0) {
-        // Fuel leaves `from` toward the burning engine at `to`.
+        // `to` is the burning engine, `from` feeds it: fuel leaves `from`.
         return PROPELLANT_FLOW_SPEED_M_PER_S;
       }
       if (burnFrom > 0 && phiTo > 0) {
-        // Fuel leaves `to` toward the burning engine at `from` — i.e. enters
-        // `from` from the pipe, which is a negative velocity along this
-        // face's outward normal.
+        // `from` is the burning engine, `to` feeds it: fuel enters `from` — a
+        // negative velocity along this face's outward normal.
         return -PROPELLANT_FLOW_SPEED_M_PER_S;
       }
       return 0;

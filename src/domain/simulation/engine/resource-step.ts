@@ -4,14 +4,35 @@
  * and the power energy buffer for each ship, so the honest underlying
  * simulation runs every tick underneath the gameplay layer.
  *
- * VALUES are computed and exposed on the ship's `resource` field; most
- * CONSEQUENCES are still NOT enforced (no overheat shutdown, no brownout, no
- * dry-tank derelict). The one enforced consequence is live airtightness: when
- * battle damage destroys a module that was sealing a deck cell, that cell
- * breaches across its now-open edge and vents its gas to vacuum — recoiling
- * the hull and exposing any crew standing in the decompressing cell, who take
- * vacuum damage and die if the cell reaches hard vacuum. An intact, sealed
- * hull never vents (its vent mask is empty), so undamaged ships are unchanged.
+ * VALUES are computed and exposed on the ship's `resource` field, and the
+ * resource CONSEQUENCES are now enforced:
+ *
+ *  - Dry-tank flame-out (Gate 1): after the propellant step, an alive engine
+ *    whose cell holds no fuel is marked `fuelStarved`, and the movement and
+ *    aggregate paths skip it — zero thrust, zero geometric torque — until fuel
+ *    reaches it again.
+ *  - Brownout (Gate 2): after the energy buffer is stepped, if the stored charge
+ *    plus reactor output cannot meet this tick's draw the grid sheds load in a
+ *    fixed priority order (weapons/PD, then sensors, shields, engines; never the
+ *    bridge, quarters, reactor, or repair), marking each shed module `powerCut`
+ *    so its consuming systems treat it as offline.
+ *  - Overheat shutdown (Gate 3): after the thermal step, an alive module whose
+ *    cell temperature exceeds `SIM.overheatThresholdK` is destroyed through the
+ *    same death path battle damage uses, so break-apart, airtightness venting,
+ *    and a next-tick chain reaction for a volatile cell all follow.
+ *  - Live airtightness: when battle damage (or an overheat death) destroys a
+ *    module that was sealing a deck cell, that cell breaches across its now-open
+ *    edge and vents its gas to vacuum — recoiling the hull and exposing any crew
+ *    standing in the decompressing cell, who take vacuum damage and die if the
+ *    cell reaches hard vacuum. An intact, sealed hull never vents (its vent mask
+ *    is empty), so undamaged ships are unchanged.
+ *
+ * `fuelStarved` and `powerCut` are recomputed fresh every tick (cleared before
+ * the substance steps re-derive them), and the step ends by re-deriving the
+ * ship's aggregates so the shield-regen and repair steps later this tick — and
+ * the next tick's movement and firing — read stats that reflect the cuts. A ship
+ * with a full buffer, fuelled tanks, and cool, radiator-equipped cells carries
+ * no consequence and behaves exactly as before.
  *
  * The step is pure and deterministic: the transport graph (and the vent mask
  * derived from the alive-cell topology) is rebuilt only on a topology change
@@ -35,9 +56,10 @@ import {
   vacuumExposureSeverity,
   type VentMask,
 } from "@/domain/simulation/engine/lifesupport";
-import { CREW_HP } from "@/domain/simulation/engine/config";
+import { CREW_HP, SIM } from "@/domain/simulation/engine/config";
 import { TICKS_PER_SECOND } from "@/domain/simulation/types";
 import { applyImpulse } from "@/domain/simulation/engine/weapons";
+import { recomputeAggregates } from "@/domain/simulation/engine/physics";
 import {
   EXHAUST_VELOCITY_M_PER_S,
   makePropellantSubstance,
@@ -56,6 +78,7 @@ import {
   makeThermalSubstance,
 } from "@/domain/simulation/engine/thermal";
 import {
+  TICK_DURATION_SECONDS,
   type EnergyBuffer,
   type PowerTerminal,
   netPower,
@@ -64,15 +87,27 @@ import {
 import type { ResourceState, SimModule, SimShip } from "@/domain/simulation/engine/types";
 
 /**
- * Target Δv budget for a freshly fuelled warship, m·s⁻¹. The Δv a ship's
- * propellant load can deliver, via the inverted Tsiolkovsky rocket equation —
- * the quantity that sets the initial fuel mass from the dry mass. 3 000 m·s⁻¹
- * is an Earth–Moon manoeuvring class reserve (the Apollo CSM had ~2.8 km/s;
- * orbital rendezvous and plane changes sit in this band). The fuel load it
- * implies is the initial φ for the propellant field; consumption during the
- * battle drains it (feeding the deferred mass→integrator path).
+ * Full-thrust propellant endurance of a freshly fuelled warship, seconds: how
+ * long every engine can burn at its rated thrust before its tank runs dry. The
+ * tank is sized directly from this — `fuel = burnRate · endurance` with
+ * `burnRate = thrust / v_e` (kg·s⁻¹) — which makes the endurance independent of
+ * the engine's rated thrust and the ship's mass: a light interceptor and a
+ * heavy cruiser both get the same seconds of continuous full burn.
+ *
+ * Endurance, not a Tsiolkovsky Δv, is the right anchor for the current arena.
+ * Catalogue thrusts and masses are NOT yet in SI (config.ts: the SI re-authoring
+ * lands in Phase 14), so dividing an arena-unit thrust by the real SI exhaust
+ * velocity to get a Δv is unit-incoherent and yields a meaningless reserve; an
+ * endurance in seconds sidesteps the mismatch and produces a fuel load that is
+ * meaningful regardless of the thrust unit. The value is sized to comfortably
+ * exceed a full battle of continuous manoeuvring (a battle runs at most a few
+ * thousand ticks ≈ a couple of minutes at 30 ticks·s⁻¹), so an undamaged ship
+ * fighting normally never flames out, and the dry-tank consequence falls only on
+ * a ship that burns hard and sustained — exactly the case Gate 1 exists to
+ * catch. Re-derived from the real propellant mass fraction when the SI catalogue
+ * lands in Phase 14.
  */
-const TARGET_DELTA_V_M_PER_S = 3_000;
+const FULL_THRUST_ENDURANCE_S = 600;
 
 /**
  * Power-buffer reserve, seconds. The capacitor bank's capacity is derived from
@@ -126,16 +161,19 @@ export function makeResourceState(ship: SimShip): ResourceState | undefined {
     }
   }
 
-  // Propellant: total fuel mass from the rocket equation, at engine cells.
+  // Propellant: each engine cell holds enough fuel for FULL_THRUST_ENDURANCE_S
+  // seconds of continuous burn at its own rated thrust. The per-second burn rate
+  // is `thrust / v_e` (the same Tsiolkovsky relation the exhaust boundary flux
+  // uses), so the tank is `burnRate · endurance`. Sizing per engine from its own
+  // thrust (rather than splitting one ship-wide Δv across the engines) means a
+  // mixed-thrust fit fuels each nozzle to the same endurance.
   const propellant = new Array<number>(n).fill(0);
-  const engineCells = sorted.filter((m) => m.effect.kind === "engine");
-  if (engineCells.length > 0 && ship.mass > 0) {
-    const fuelMass = ship.mass * (Math.exp(TARGET_DELTA_V_M_PER_S / EXHAUST_VELOCITY_M_PER_S) - 1);
-    const perEngine = fuelMass / engineCells.length;
-    for (const m of engineCells) {
-      const i = moduleIndex.get(cellKey(m.col, m.row));
-      if (i !== undefined) propellant[i] = perEngine;
-    }
+  for (const m of sorted) {
+    if (m.effect.kind !== "engine" || m.effect.thrust <= 0) continue;
+    const i = moduleIndex.get(cellKey(m.col, m.row));
+    if (i === undefined) continue;
+    const burnRatePerSecond = m.effect.thrust / EXHAUST_VELOCITY_M_PER_S;
+    propellant[i] = burnRatePerSecond * FULL_THRUST_ENDURANCE_S;
   }
 
   // Power buffer: capacity = total reactor output × reserve duration.
@@ -274,6 +312,15 @@ export function resourceStep(ship: SimShip): void {
   const graph = transportGraph(ship, state);
   const idx = (m: SimModule): number | undefined => state.moduleIndex.get(cellKey(m.col, m.row));
 
+  // Resource consequences are recomputed fresh every tick: clear the previous
+  // tick's flame-out and grid-shed verdicts before the substance steps re-derive
+  // them from the new field state, so a tank that refilled or a buffer that
+  // recovered un-cuts the affected modules. Iterated in fixed module-array order.
+  for (const m of ship.modules) {
+    m.fuelStarved = false;
+    m.powerCut = false;
+  }
+
   // Reverse index (cell φ-index → alive module), used by the vent recoil to
   // recover a breached cell's ship-local position for the lever arm. Built once
   // per tick from the live module set in fixed module order.
@@ -304,17 +351,42 @@ export function resourceStep(ship: SimShip): void {
   };
   state.thermal = stepTransportField(thermalField, state.thermal).phi;
 
+  // Gate 3 — Overheat shutdown. After the thermal field is stepped, any alive
+  // module whose cell temperature exceeds the failure threshold suffers thermal
+  // and structural destruction. The cell is killed through the same death path
+  // battle damage uses — surface and scaffold HP to zero, `alive` cleared — so
+  // every downstream effect follows: `recomputeAggregates` (called at the end of
+  // this step) drops it from the aggregates, break-apart (4c) re-evaluates
+  // connectivity, the airtightness vent mask treats it as a dead neighbour next
+  // graph rebuild, and a volatile cell (reactor/magazine) detonates on the next
+  // tick's chain-reaction pass. Iterated in fixed module-array order; no RNG.
+  for (const m of ship.modules) {
+    if (!m.alive) continue;
+    const i = idx(m);
+    if (i === undefined) continue;
+    const temperature = state.thermal[i] ?? 0;
+    if (temperature > SIM.overheatThresholdK) {
+      m.surfaceHp = 0;
+      m.hp = 0;
+      m.alive = false;
+    }
+  }
+
   // --- Propellant substance ---
-  // Engine thrust command: each alive engine's rated thrust (N). v1 treats
-  // every alive engine as burning at full rating; the deferred throttle model
-  // refines this from the movement controller's actual command.
+  // Engine thrust command: each alive engine's rated thrust scaled by the
+  // throttle the movement step actually applied this tick (`ship.engineThrottle`,
+  // afterburner included). Fuel is burned in proportion to the thrust genuinely
+  // produced — a coasting or station-keeping ship (throttle 0) burns nothing —
+  // so the dry-tank flame-out reflects real usage rather than charging every
+  // engine full burn every tick.
+  const throttle = ship.engineThrottle;
   const engineThrust = new Map<number, number>();
   const exhaust = new Map<number, { nx: number; ny: number }>();
   for (const m of ship.modules) {
     if (!m.alive || m.effect.kind !== "engine") continue;
     const i = idx(m);
     if (i !== undefined) {
-      engineThrust.set(i, m.effect.thrust);
+      if (throttle > 0) engineThrust.set(i, m.effect.thrust * throttle);
       exhaust.set(i, { nx: Math.cos(m.facing), ny: Math.sin(m.facing) });
     }
   }
@@ -330,6 +402,26 @@ export function resourceStep(ship: SimShip): void {
   };
   state.propellant = stepTransportField(propellantField, state.propellant).phi;
 
+  // Gate 1 — Dry-tank flame-out. After the propellant field is stepped, an alive
+  // engine that was commanded to thrust this tick (`ship.engineThrottle > 0`) but
+  // whose cell holds no fuel flames out: it is marked `fuelStarved` so the
+  // movement and aggregate paths skip it this tick (zero thrust, zero geometric
+  // torque). An idle engine on a coasting ship is not starved — it simply was not
+  // asked to burn. The flag is recomputed fresh every tick (cleared at the top of
+  // this step), so an engine fed by a tank that refills resumes thrust the moment
+  // fuel reaches it. Only engine cells are considered; iterated in fixed
+  // module-array order, no RNG.
+  if (throttle > 0) {
+    for (const m of ship.modules) {
+      if (!m.alive || m.effect.kind !== "engine") continue;
+      if (m.effect.thrust <= 0) continue;
+      const i = idx(m);
+      if (i === undefined) continue;
+      const fuel = state.propellant[i] ?? 0;
+      if (fuel <= 0) m.fuelStarved = true;
+    }
+  }
+
   // --- Atmosphere substance ---
   // Crew map: cell index → number of crew present on that cell.
   const crewMap = new Map<number, number>();
@@ -339,12 +431,21 @@ export function resourceStep(ship: SimShip): void {
       if (i !== undefined) crewMap.set(i, (crewMap.get(i) ?? 0) + 1);
     }
   }
+  // Deck mask: the alive deck cells (pressurised, gas-holding compartments).
+  // Advection flows only between two decks; a deck never advects gas into a solid
+  // armour/hull cell. Built once per tick in fixed module-array order.
+  const deckCells = new Set<number>();
+  for (const m of ship.modules) {
+    if (!m.alive || !isDeck(m)) continue;
+    const i = idx(m);
+    if (i !== undefined) deckCells.add(i);
+  }
   // Vents: the live vent mask derived from the alive-cell topology. A deck cell
   // breached by a dead/absent neighbour across an open edge vents its gas to
   // vacuum at exhaust velocity, recoiling the hull. Empty for an intact, sealed
   // hull, so an undamaged ship behaves exactly as before.
   const atmosphereField: TransportField = {
-    substance: makeAtmosphereSubstance(crewMap, graph.ventMask),
+    substance: makeAtmosphereSubstance(crewMap, graph.ventMask, deckCells),
     faces: graph.faces,
     facesFrom: graph.facesFrom,
     boundaryCells: graph.boundaryCells,
@@ -433,5 +534,96 @@ export function resourceStep(ship: SimShip): void {
       terminals.push({ watts: m.powerDraw, direction: "sink" });
     }
   }
-  state.powerBuffer = stepEnergyBuffer(state.powerBuffer, netPower(terminals));
+  const net = netPower(terminals);
+  const bufferBefore = state.powerBuffer.energy;
+  state.powerBuffer = stepEnergyBuffer(state.powerBuffer, net);
+
+  // Gate 2 — Brownout enforcement. The energy buffer is a capacitor bank: it
+  // rides through a transient draw spike, but once the stored charge cannot
+  // cover the reactor-vs-draw shortfall for this tick the grid must shed load.
+  // `stepEnergyBuffer` clamps the buffer to non-negative joules, so the deficit
+  // is read not from the clamped buffer but from the energy balance that
+  // produced it: over one tick of `dt` seconds the grid can deliver
+  // `reactorOutput·dt + storedCharge` joules, and the demand is `draw·dt`. The
+  // shortfall in watts is `-(bufferBefore/dt + net)` — positive only when the
+  // stored charge plus reactor output fall short of the draw. We shed modules in
+  // a fixed priority order until the recovered draw covers that shortfall.
+  const deficitWatts = -(bufferBefore / TICK_DURATION_SECONDS + net);
+  if (deficitWatts > 0) shedBrownoutLoad(ship, deficitWatts);
+
+  // With the tick's resource consequences settled — engines flamed out, modules
+  // grid-shed, cells overheated to destruction — re-derive the aggregate stats
+  // so the shield-regen and repair steps that follow this tick, and the next
+  // tick's movement and firing, read values that reflect them. recomputeAggregates
+  // is pure over the live module flags and its functional gate already honours
+  // `powerCut` and `fuelStarved`, so a ship with no consequences this tick
+  // recomputes to the identical aggregates it already held.
+  recomputeAggregates(ship);
+}
+
+/**
+ * Brownout priority class of a module: lower numbers are shed first. Weapons and
+ * point-defence (active offensive/defensive fire) go first, then sensors, then
+ * shields, then engines. Protected kinds — the reactor itself, crew quarters,
+ * repair bays, and the command bridge — return `undefined` and are never shed:
+ * cutting them would either remove the supply, strand the crew, or disarm the
+ * ship's ability to recover. A module with no positive power draw also returns
+ * `undefined` (shedding it frees no power, so it is not a candidate).
+ */
+function brownoutPriority(m: SimModule): number | undefined {
+  if (m.powerDraw <= 0) return undefined;
+  if (m.command) return undefined; // the bridge is never shed
+  switch (m.effect.kind) {
+    case "weapon":
+    case "pointDefense":
+      return 0;
+    case "sensor":
+      return 1;
+    case "shield":
+      return 2;
+    case "engine":
+      return 3;
+    case "power":
+    case "crew":
+    case "repair":
+      return undefined; // protected: reactor, quarters, repair
+    default:
+      return undefined; // every other kind is left powered
+  }
+}
+
+/**
+ * Shed powered load until the recovered draw covers `deficitWatts`. Candidates
+ * are the alive, power-drawing modules eligible for cutting (see
+ * `brownoutPriority`), shed in ascending priority class and, within a class, in
+ * ascending `slotId` (lexicographic) so the same modules are always cut first
+ * for a given deficit — fully deterministic, no RNG. Each cut sets
+ * `powerCut = true` (its consuming systems treat a cut module as offline) and
+ * credits its `powerDraw` against the deficit; cutting stops the moment the
+ * accumulated freed draw meets or exceeds the shortfall.
+ */
+function shedBrownoutLoad(ship: SimShip, deficitWatts: number): void {
+  if (ship.modules === undefined) return;
+  const candidates: { module: SimModule; priority: number }[] = [];
+  for (const m of ship.modules) {
+    if (!m.alive) continue;
+    const priority = brownoutPriority(m);
+    if (priority === undefined) continue;
+    candidates.push({ module: m, priority });
+  }
+  candidates.sort((a, b) =>
+    a.priority !== b.priority
+      ? a.priority - b.priority
+      : a.module.slotId < b.module.slotId
+        ? -1
+        : a.module.slotId > b.module.slotId
+          ? 1
+          : 0,
+  );
+  let recovered = 0;
+  for (const { module } of candidates) {
+    if (recovered >= deficitWatts) break;
+    module.powerCut = true;
+    recovered += module.powerDraw;
+  }
 }

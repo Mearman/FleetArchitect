@@ -34,6 +34,7 @@ function ship(over: Partial<SimShip> & { instanceId: string; side: "attacker" | 
     armourReduction: 0,
     thrust: 0,
     turnRate: 0,
+    engineThrottle: 0,
     mass: 1,
     comX: 0,
     comY: 0,

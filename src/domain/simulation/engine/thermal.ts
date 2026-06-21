@@ -9,9 +9,9 @@
  * (it is T⁴, not T), so it is modelled as a boundary flux rather than a
  * diffusive face — exactly as the plan specifies.
  *
- * Use-deferred: temperature is honestly simulated but does not yet shut
- * modules down. The IR emission it implies feeds the Phase 9 awareness model
- * later.
+ * Temperature is honestly simulated, and a cell that exceeds
+ * `SIM.overheatThresholdK` is now destroyed by `resourceStep` (overheat
+ * shutdown). The IR emission it implies feeds the Phase 9 awareness model later.
  */
 
 import {
