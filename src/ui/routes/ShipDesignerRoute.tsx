@@ -106,8 +106,8 @@ export function ShipDesignerRoute() {
   );
   const [zoom, setZoom] = useState(ZOOM_DEFAULT);
   // Trackpad pinch-to-zoom; two-finger scroll pans via the viewport's native
-  // overflow. The ref attaches to the scroll viewport below.
-  const viewportRef = usePinchZoom(setZoom, ZOOM_MIN, ZOOM_MAX, zoom);
+  // overflow. Callback ref attaches to the scroll viewport below.
+  const attachViewport = usePinchZoom(setZoom, ZOOM_MIN, ZOOM_MAX, zoom);
   const [showAirtightness, setShowAirtightness] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [revisions, setRevisions] = useState<ShipDesign[]>([]);
@@ -598,7 +598,7 @@ export function ShipDesignerRoute() {
       <Box className={`${screenChassis} ${panelScrews} ${designerGridChassis}`}>
         {/* The scrollable, zoomable grid viewport */}
         <div className={`${zoomScreen} ${screenPowerOn}`}>
-          <div ref={viewportRef} className={zoomViewport} style={{ touchAction: "none" }}>
+          <div ref={attachViewport} className={zoomViewport} style={{ touchAction: "none" }}>
             <div
               className={zoomInner}
               style={{ transform: `scale(${zoom})`, width: innerWidthPx }}

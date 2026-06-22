@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 /**
  * Trackpad pinch-to-zoom over a scrollable (`overflow: auto`) viewport. Two
@@ -8,28 +8,41 @@ import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
  * the caller's zoom about the cursor. To keep the point under the cursor fixed
  * we record the target scroll and re-apply it after the new scale has laid out.
  *
- * @returns a ref to attach to the scroll viewport element.
+ * Returns a *callback ref*: the viewport may mount after the consumer's first
+ * render (e.g. behind a loading state), and a callback ref re-runs attach/detach
+ * exactly when the node appears — a plain ref-object effect would attach once
+ * against a null node and never retry. The node is held in a ref for the
+ * scroll-position writes (the sanctioned mutable handle) and mirrored into state
+ * only to re-trigger the listener effect when it mounts.
+ *
+ * @returns a callback ref to attach to the scroll viewport element.
  */
 export function usePinchZoom(
   setZoom: (update: (z: number) => number) => void,
   min: number,
   max: number,
   zoom: number,
-): RefObject<HTMLDivElement | null> {
-  const viewportRef = useRef<HTMLDivElement>(null);
+): (node: HTMLDivElement | null) => void {
+  const elRef = useRef<HTMLDivElement | null>(null);
+  const [mounted, setMounted] = useState<HTMLDivElement | null>(null);
   const pendingScroll = useRef<{ x: number; y: number } | null>(null);
 
+  const attach = useCallback((node: HTMLDivElement | null) => {
+    elRef.current = node;
+    setMounted(node);
+  }, []);
+
   useEffect(() => {
-    const vp = viewportRef.current;
-    if (vp === null) return;
+    const node = elRef.current;
+    if (node === null) return;
     const onWheel = (e: WheelEvent): void => {
       if (!e.ctrlKey) return; // plain two-finger scroll -> native pan
       e.preventDefault();
-      const rect = vp.getBoundingClientRect();
+      const rect = node.getBoundingClientRect();
       const offsetX = e.clientX - rect.left;
       const offsetY = e.clientY - rect.top;
-      const contentX = vp.scrollLeft + offsetX;
-      const contentY = vp.scrollTop + offsetY;
+      const contentX = node.scrollLeft + offsetX;
+      const contentY = node.scrollTop + offsetY;
       const factor = Math.exp(-e.deltaY * 0.01);
       setZoom((z) => {
         const nz = Math.max(min, Math.min(max, z * factor));
@@ -41,20 +54,21 @@ export function usePinchZoom(
         return nz;
       });
     };
-    vp.addEventListener("wheel", onWheel, { passive: false });
+    node.addEventListener("wheel", onWheel, { passive: false });
     return () => {
-      vp.removeEventListener("wheel", onWheel);
+      node.removeEventListener("wheel", onWheel);
     };
-  }, [setZoom, min, max]);
+  }, [mounted, setZoom, min, max]);
 
   useLayoutEffect(() => {
-    const vp = viewportRef.current;
-    if (vp !== null && pendingScroll.current !== null) {
-      vp.scrollLeft = pendingScroll.current.x;
-      vp.scrollTop = pendingScroll.current.y;
+    const node = elRef.current;
+    const pending = pendingScroll.current;
+    if (node !== null && pending !== null) {
+      node.scrollLeft = pending.x;
+      node.scrollTop = pending.y;
       pendingScroll.current = null;
     }
   }, [zoom]);
 
-  return viewportRef;
+  return attach;
 }
