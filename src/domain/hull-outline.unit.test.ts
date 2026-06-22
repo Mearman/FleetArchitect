@@ -236,3 +236,42 @@ describe("computeHullOutline — contains original armour", () => {
       }
   });
 });
+
+describe("computeHullOutline — excludes bare substrate", () => {
+  it("does not wrap a bare spur but keeps the armour body inside", () => {
+    const armour = {
+      kind: "solid",
+      substrate: true,
+      surface: "armor",
+      edges: { n: "wall", e: "wall", s: "wall", w: "wall", doorStates: {} },
+    };
+    const bare = {
+      kind: "solid",
+      substrate: true,
+      surface: "bare",
+      edges: { n: "open", e: "open", s: "open", w: "open", doorStates: {} },
+    };
+    const empty = { kind: "empty" };
+    // 3x3 armour block (cols 0-2) with a bare spur protruding east of the middle
+    // row, at (col 3, row 1). Armour does not grow, so the hull is the block's
+    // bevelled outline; the bare spur must fall outside it.
+    const cells: unknown[] = [
+      armour, armour, armour, empty,
+      armour, armour, armour, bare,
+      armour, armour, armour, empty,
+    ];
+    const grid = TileGrid.parse({ cols: 4, rows: 3, cells, connections: [] });
+    const loops = computeHullOutline(grid);
+    const centreOf = (c: number, r: number): Pt => ({
+      x: (c - (grid.cols - 1) / 2) * CELL_SIZE,
+      y: (r - (grid.rows - 1) / 2) * CELL_SIZE,
+    });
+    const strictlyInside = (p: Pt): boolean => {
+      let parity = 0;
+      for (const loop of loops) if (pointInPolygon(p, loop)) parity ^= 1;
+      return parity === 1;
+    };
+    expect(strictlyInside(centreOf(3, 1))).toBe(false); // bare spur excluded
+    expect(strictlyInside(centreOf(1, 1))).toBe(true); // armour body wrapped
+  });
+});

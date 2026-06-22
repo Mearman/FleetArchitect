@@ -37,31 +37,41 @@ import {
 // ---------------------------------------------------------------------------
 
 /**
- * Build the grown footprint Shell from a grid: every built (solid) cell, plus
- * each empty cell orthogonally adjacent to a deck cell (the deck's outward wall
- * grown into armour). The grid is expanded by a one-cell border so grown cells
- * on the original edge have room. Because the border is symmetric, `toMetreLoop`
- * on the expanded dimensions centres identically to the original grid.
+ * Build the grown footprint Shell from a grid: every built hull cell, plus each
+ * empty cell orthogonally adjacent to a deck cell (the deck's outward wall grown
+ * into armour). The grid is expanded by a one-cell border so grown cells on the
+ * original edge have room. Because the border is symmetric, `toMetreLoop` on the
+ * expanded dimensions centres identically to the original grid.
+ *
+ * Bare substrate is internal framing, not hull plating, so it is excluded from
+ * the footprint: a bare cell at the edge is not wrapped, and the grow step never
+ * fills one (it fills only genuinely empty cells). A bare cell enclosed by deck
+ * or armour still ends up inside the hull simply because its neighbours are.
  */
 export function growFootprint(grid: TileGrid): Shell {
   const { cols, rows } = grid;
-  const isSolid = (c: number, r: number): boolean => {
-    if (c < 0 || r < 0 || c >= cols || r >= rows) return false;
-    return grid.cells[r * cols + c]?.kind === "solid";
+  const cellAt = (c: number, r: number) =>
+    c < 0 || r < 0 || c >= cols || r >= rows ? undefined : grid.cells[r * cols + c];
+  const isBuilt = (c: number, r: number): boolean => {
+    const cell = cellAt(c, r);
+    return cell?.kind === "solid" && cell.surface !== "bare";
   };
   const isDeck = (c: number, r: number): boolean => {
-    if (c < 0 || r < 0 || c >= cols || r >= rows) return false;
-    const cell = grid.cells[r * cols + c];
+    const cell = cellAt(c, r);
     return cell?.kind === "solid" && cell.surface === "deck";
+  };
+  const isEmpty = (c: number, r: number): boolean => {
+    const cell = cellAt(c, r);
+    return cell === undefined || cell.kind !== "solid";
   };
   const ncols = cols + 2;
   const nrows = rows + 2;
   const cells = new Set<number>();
   for (let r = -1; r <= rows; r += 1) {
     for (let c = -1; c <= cols; c += 1) {
-      const here = isSolid(c, r);
+      const here = isBuilt(c, r);
       const grow =
-        !here &&
+        isEmpty(c, r) &&
         (isDeck(c - 1, r) || isDeck(c + 1, r) || isDeck(c, r - 1) || isDeck(c, r + 1));
       if (here || grow) cells.add((r + 1) * ncols + (c + 1));
     }
