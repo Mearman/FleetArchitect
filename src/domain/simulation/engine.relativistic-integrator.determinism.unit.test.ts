@@ -211,7 +211,11 @@ describe("engine relativistic-integrator determinism (N14)", () => {
     // relativistic frames appear immediately — and keeps the gate fast. Neither
     // ship is armed, so the battle never resolves; it runs the full budget.
     const make = (): CombatShip[] => [
-      ship({ id: "r-rocket", side: "attacker", x: 0, thrust: 2_500_000 }),
+      // movement.ts converts engine force F/m (m/s²) into the m/tick² velocity
+      // clock via ACCEL_PER_TICK_FROM_SI (1/900), so this synthetic thrust is
+      // sized 900× the bare m/tick² figure to drive the rocket genuinely
+      // relativistic (gamma > 1.001) within the short tick budget below.
+      ship({ id: "r-rocket", side: "attacker", x: 0, thrust: 2_250_000_000 }),
       ship({ id: "r-marker", side: "defender", x: 1e7, thrust: 0 }),
     ];
 
@@ -249,7 +253,10 @@ describe("engine relativistic-integrator determinism (N14)", () => {
 
   it("stays deterministic over a sustained relativistic run with a different seed", () => {
     const make = (): CombatShip[] => [
-      ship({ id: "q-rocket", side: "attacker", x: 0, thrust: 3_000_000 }),
+      // 900× the bare m/tick² figure (see ACCEL_PER_TICK_FROM_SI) so the rocket
+      // sustains a genuinely relativistic burn across the run, not just a
+      // sub-relativistic crawl that would still replay byte-identically.
+      ship({ id: "q-rocket", side: "attacker", x: 0, thrust: 2_700_000_000 }),
       ship({ id: "q-marker", side: "defender", x: 2e7, thrust: 0 }),
     ];
     const TICKS = 16;

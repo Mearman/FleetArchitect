@@ -172,9 +172,12 @@ describe("engine.anomaly-ai", () => {
     // before crossing the avoidance zone (72 units of lead-distance), so the
     // closest-approach threshold is set to what the physics actually achieves:
     // the aware ship stays measurably further out than the unaware one, rather
-    // than a specific geometric clearance. The thrust (60) is high enough that
-    // the engine can act against gravity inside the avoidance zone; at lower
-    // thrust the gravitational pull dominates and no deflection is possible.
+    // than a specific geometric clearance. The thrust (54000 = 60 ×
+    // TICKS_PER_SECOND²) is high enough that the engine can act against gravity
+    // inside the avoidance zone: gravity is applied directly as an m/tick²
+    // acceleration (arena-physics), whereas engine force is divided by
+    // ACCEL_PER_TICK_FROM_SI (1/900), so a bare 60 would be 900× too weak to
+    // resist the well and no deflection would be possible.
     const mk = (anomaly: BattleAnomaly) =>
       runBattle(
         inputs(
@@ -186,7 +189,7 @@ describe("engine.anomaly-ai", () => {
               y: 0,
               facing: Math.PI,
               structure: 99999,
-              thrust: 60,
+              thrust: 54000,
               turnRate: 0.1,
               weapons: [weapon()],
               orders: { engageRange: "medium" },
@@ -238,7 +241,7 @@ describe("engine.anomaly-ai", () => {
               y: 0,
               facing: Math.PI,
               structure: 99999,
-              thrust: 60,
+              thrust: 54000,
               turnRate: 0.1,
               weapons: [weapon()],
               orders: { engageRange: "medium" },
@@ -282,7 +285,7 @@ describe("engine.anomaly-ai", () => {
               x: -600,
               y: 0,
               facing: 0,
-              thrust: 40,
+              thrust: 36000,
               turnRate: 0.1,
               weapons: [weapon({ range: 600, tracking: 1 })],
               orders: { engageRange: "long", stance: "balanced" },
@@ -320,7 +323,7 @@ describe("engine.anomaly-ai", () => {
               x: -600,
               y: 0,
               facing: 0,
-              thrust: 40,
+              thrust: 36000,
               turnRate: 0.1,
               weapons: [weapon({ range: 600 })],
               orders: { engageRange: "long", stance: "balanced" },
@@ -357,7 +360,7 @@ describe("engine.anomaly-ai", () => {
             x: 60,
             y: 30,
             facing: 0,
-            thrust: 30,
+            thrust: 27000,
             turnRate: 0.06,
             weapons: [weapon({ range: 400 })],
           }),
@@ -367,7 +370,7 @@ describe("engine.anomaly-ai", () => {
             x: -60,
             y: -30,
             facing: Math.PI,
-            thrust: 30,
+            thrust: 27000,
             turnRate: 0.06,
             weapons: [weapon({ range: 400 })],
           }),
@@ -394,7 +397,7 @@ describe("engine.anomaly-ai", () => {
             x: -700,
             y: 0,
             facing: 0,
-            thrust: 40,
+            thrust: 36000,
             turnRate: 0.1,
             weapons: [weapon({ range: 600, damage: 25, cooldown: 5 })],
             orders: { engageRange: "long" },

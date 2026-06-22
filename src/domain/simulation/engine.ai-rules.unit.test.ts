@@ -63,7 +63,11 @@ function retreatBattle(seed: number, maxTicks: number): BattleInputs {
       x: -300,
       y: 0,
       facing: 0,
-      thrust: 8,
+      // 8 × TICKS_PER_SECOND² (900): movement.ts divides engine force by 900
+      // (ACCEL_PER_TICK_FROM_SI), so this restores the closing acceleration that
+      // lets the attacker reach firing range and chip the shield past the rule
+      // threshold within the tick budget.
+      thrust: 7200,
       turnRate: 0.05,
       weapons: [cannon()],
       orders: { engageRange: "medium" },
@@ -79,7 +83,11 @@ function retreatBattle(seed: number, maxTicks: number): BattleInputs {
       facing: Math.PI,
       shield: 100,
       shieldRechargeRate: 0,
-      thrust: 8,
+      // 8 × TICKS_PER_SECOND² (900): movement.ts divides engine force by 900
+      // (ACCEL_PER_TICK_FROM_SI), so this restores the closing acceleration that
+      // lets the attacker reach firing range and chip the shield past the rule
+      // threshold within the tick budget.
+      thrust: 7200,
       turnRate: 0.05,
       weapons: [cannon()],
       orders: { engageRange: "medium" },

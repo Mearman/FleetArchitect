@@ -50,7 +50,12 @@ function makeShip(opts: {
       y: opts.y,
       facing: opts.facing,
       structure: opts.structure,
-      thrust: 0.5,
+      // Engine force is a catalogue Newton figure: movement.ts converts F/m
+      // (m/s²) into the m/tick² velocity clock by ACCEL_PER_TICK_FROM_SI
+      // (1/TICKS_PER_SECOND² = 1/900). This synthetic thrust is sized so the
+      // resulting per-tick acceleration matches the controller dynamics these
+      // tests were calibrated against (the legacy direct-add 0.5 × 900).
+      thrust: 450,
       // Physical angular acceleration (rad/tick^2) under the frictionless
       // model; rescaled from the legacy /5 scalar.
       turnRate: 0.02,

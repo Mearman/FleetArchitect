@@ -257,8 +257,12 @@ describe("engine.factions-tech – afterburner", () => {
   function closingShip(withAfterburner: boolean): CombatShip {
     const modules: ResolvedModule[] = [
       moduleOf("p1", { kind: "power", output: 100 }, 0, 0, 50, 5, 0),
-      // facing: Math.PI = exhaust aft → thrust forward (+x toward enemy at +x)
-      moduleOf("e1", { kind: "engine", thrust: 1.0, facing: Math.PI }, 1, 0, 50, 5, 0),
+      // facing: Math.PI = exhaust aft → thrust forward (+x toward enemy at +x).
+      // 900 (= 1.0 × TICKS_PER_SECOND²) so the catalogue-Newton force, divided
+      // by ACCEL_PER_TICK_FROM_SI (1/900) in movement.ts, yields the same
+      // per-tick closing acceleration these afterburner assertions were measured
+      // against (AB≈117, noAB≈82 at tick 80).
+      moduleOf("e1", { kind: "engine", thrust: 900, facing: Math.PI }, 1, 0, 50, 5, 0),
       moduleOf("w1", beam({ damage: 5, range: 500 }), -1, 0, 50, 5, 0),
       commandModule(0, -1),
     ];
@@ -288,8 +292,8 @@ describe("engine.factions-tech – afterburner", () => {
       side: "attacker",
       // hull thrust reflects the engine: stats.thrust = hull base + engine.thrust.
       // hullBaseThrust = stats.thrust − sum(engine thrust) in toSimShip.
-      // Setting stats.thrust = 1.0 (the engine alone; hull base = 0) is correct.
-      stats: baseStats({ thrust: 1.0, turnRate: 0.1, weapons: [{ slotId: "w1", effect: beam({ damage: 5, range: 500 }) }] }),
+      // Setting stats.thrust = 900 (the engine alone; hull base = 0) is correct.
+      stats: baseStats({ thrust: 900, turnRate: 0.1, weapons: [{ slotId: "w1", effect: beam({ damage: 5, range: 500 }) }] }),
       position: { x: 0, y: 0 },
       facing: 0,
       orders: { ...defaultOrders, stance: "aggressive" },

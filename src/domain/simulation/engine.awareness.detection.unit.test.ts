@@ -255,7 +255,12 @@ describe("engine.awareness — faithful fog (no omniscience)", () => {
       shieldCapacity: 0,
       shieldRechargeRate: 0,
       shieldRechargeDelay: 30,
-      thrust: 0.6,
+      // Legacy (non-modular) path: movement.ts caps top speed at `thrust` and
+      // sets per-tick accel to (thrust/mass)·ACCEL_PER_TICK_FROM_SI = (thrust/mass)/900.
+      // 540 (= 0.6 × 900) restores the closing acceleration the advance-to-contact
+      // budget was sized for; the raised speed cap is never approached within the
+      // run, so the ship simply reaches visual contact well inside the tick budget.
+      thrust: 540,
       turnRate: 0.2,
       weapons: [],
         compartments: 0,
@@ -303,7 +308,7 @@ describe("engine.awareness — faithful fog (no omniscience)", () => {
       anomaly: "none",
       seed: 7,
       // Enough ticks for the blind ships to close the 800 wu gap to within
-      // visual range (they reach contact by ~tick 600 at thrust 0.6).
+      // visual range under the corrected per-tick acceleration (thrust 540).
       maxTicks: 800,
     });
 

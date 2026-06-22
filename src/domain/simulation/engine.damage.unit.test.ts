@@ -353,7 +353,11 @@ function rammer(
     side,
     [
       moduleOf("c1", { kind: "power", output: 40 }, 0, 0, 5_000, 5, true),
-      moduleOf("e1", { kind: "engine", thrust: 1, facing: Math.PI }, 1, 0, 5_000),
+      // 900 (= 1 × TICKS_PER_SECOND²): movement.ts scales engine force by
+      // ACCEL_PER_TICK_FROM_SI (1/900), so this restores the closing acceleration
+      // — and hence the impact velocity and kinetic energy — that makes the ram
+      // deal measurable collision damage rather than meeting at a negligible v_rel.
+      moduleOf("e1", { kind: "engine", thrust: 900, facing: Math.PI }, 1, 0, 5_000),
       moduleOf(
         "w1",
         {
@@ -375,7 +379,7 @@ function rammer(
       ),
     ],
     {
-      stats: stats({ thrust: 1 }),
+      stats: stats({ thrust: 900 }),
       position,
       facing,
       orders: { ...defaultOrders, engageRange: "short", stance: "aggressive" },

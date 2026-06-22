@@ -120,15 +120,18 @@ function omniSensor(detectionRange: number): ModuleEffect {
  */
 // Engine thrust sized for the frictionless movement model. The stop-in-time
 // controller bounds speed kinematically (vMax = sqrt(2·a·d) over the closing
-// distance d), so the engine's acceleration (a = thrust / mass, mass = 25 for
-// 5 mass-5 modules) sets how quickly a ship closes and settles. A thrust of 2.5
-// gives a = 0.1/tick, so over the ~200-unit closing typical of these fixtures
-// the ship reaches a peak speed near 6 and brakes to rest at its stance range
-// well inside the 150-200 tick sample windows. (The old derivation
-// `TARGET_TOP_SPEED * MODULE_COUNT * (1 - LINEAR_DAMPING)` was calibrated
-// against the removed per-tick velocity damping; with damping gone there is no
-// thrust-only terminal velocity, so the derivation is kinematic now.)
-const PER_MODULE_ENGINE_THRUST = 2.5;
+// distance d), so the engine's per-tick acceleration sets how quickly a ship
+// closes and settles. Engine force is a catalogue Newton figure: movement.ts
+// turns it into the m/tick² velocity clock via ACCEL_PER_TICK_FROM_SI
+// (1/TICKS_PER_SECOND² = 1/900), so the per-tick acceleration is
+//   a = (thrust / mass) / 900     (mass = 25 for 5 mass-5 modules).
+// Targeting the a = 0.1/tick these fixtures were calibrated against gives
+//   thrust = a · mass · 900 = 0.1 · 25 · 900 = 2250,
+// so over the ~200-unit closing typical of these fixtures the ship reaches a
+// peak speed near 6 and brakes to rest at its stance range well inside the
+// 150-200 tick sample windows. (The old 2.5 predated the 1/900 conversion and
+// now under-accelerates 900×, leaving ships frozen at their start separation.)
+const PER_MODULE_ENGINE_THRUST = 2250;
 // RCS torque giving each ship real commandable turn authority under the
 // torque-driven attitude model. Every module sits at the ship's origin so the
 // modular moment of inertia bottoms out at its floor of 1; with MoI = 1 an RCS

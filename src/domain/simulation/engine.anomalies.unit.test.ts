@@ -253,6 +253,13 @@ describe("engine.anomalies", () => {
               x: 0,
               y: 0,
               facing: 0,
+              // Hold position: the attacker is a fixed firing turret 100 m from
+              // the defender (well inside the 600 m weapon reach), so it streams
+              // a steady barrage in both battles. This isolates the one variable
+              // under test — the asteroid field's in-flight projectile
+              // destruction — rather than letting the realistic-thrust closing
+              // controller drift the firing line between the two runs.
+              orders: { engageRange: "hold" },
               // A round that steps one cell size per tick so it samples each
               // absorbing cell on the defender's row rather than tunnelling
               // past them — the cell contact distance is now one (1 m) cell, so
