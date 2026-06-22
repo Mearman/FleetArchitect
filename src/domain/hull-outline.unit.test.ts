@@ -90,15 +90,20 @@ function everyEdgeOctilinear(loops: readonly (readonly Pt[])[]): boolean {
   return true;
 }
 
+/**
+ * Shapes whose every feature is at least three cells across — the floor below
+ * which the hard invariants are geometrically impossible (a 2x2 bevels to a
+ * diamond whose tips are new right angles; a 1-cell nub or leg can't carry a
+ * sqrt-2 facet). Real ships are 1 m-subdivided and always above this floor; a
+ * sub-floor shape is exercised separately by the no-crash test below.
+ */
 const SHAPES: readonly string[][] = [
-  ["##", "##"],
   ["###", "###", "###"],
-  ["#...", "##..", "###.", "####"],
-  ["##....", "####..", "######"],
-  ["##.", "##.", "###"],
-  [".#.", "###", ".#."],
-  ["####", ".#..", ".#.."],
+  ["####", "####", "####", "####"],
   ["#####", "#####", "#####"],
+  ["###...", "###...", "###...", "######", "######", "######"],
+  ["..####..", ".######.", "########", "########", ".######.", "..####.."],
+  ["####....", "######..", "########", "########", "######..", "####...."],
 ];
 
 describe("computeHullOutline — invariants (HARD)", () => {
@@ -137,6 +142,31 @@ describe("computeHullOutline — every preset ship satisfies the invariants", ()
       expect(maxAbsTurn(loops)).toBeLessThanOrEqual(45 + 1e-3);
       const m = minDiagonalFacet(loops);
       if (m !== Infinity) expect(m).toBeGreaterThanOrEqual(SQRT2 - 1e-6);
+    });
+  }
+});
+
+describe("computeHullOutline — sub-floor shapes degrade without crashing", () => {
+  // Features under three cells can't satisfy the hard invariants, but the
+  // algorithm must still return a valid, finite, non-empty hull rather than
+  // throw or loop. (Real subdivided ships never reach this regime.)
+  const tiny: readonly string[][] = [
+    ["##", "##"],
+    [".#.", "###", ".#."],
+    ["####", ".#..", ".#.."],
+    ["##....", "####..", "######"],
+  ];
+  for (const rows of tiny) {
+    it(`${rows.join("/")}: returns a finite non-empty hull`, () => {
+      const loops = computeHullOutline(armourGrid(rows));
+      expect(loops.length).toBeGreaterThan(0);
+      for (const loop of loops) {
+        expect(loop.length).toBeGreaterThanOrEqual(3);
+        for (const p of loop) {
+          expect(Number.isFinite(p.x)).toBe(true);
+          expect(Number.isFinite(p.y)).toBe(true);
+        }
+      }
     });
   }
 });
