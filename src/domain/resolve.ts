@@ -552,5 +552,45 @@ function sensorRangeSettingFor(cell: GridCell): number | undefined {
   return cell.equipment.sensorRangeSetting;
 }
 
+/**
+ * Minimal per-cell descriptor used for thumbnail rendering. Each entry
+ * corresponds to one solid cell in the design grid, with its ship-local
+ * position and the `kind` used to colour it (the same `kind` the battle
+ * renderer uses via `MODULE_COLOUR`).
+ *
+ * `ox` / `oy` are ship-local offsets in metres (from `cellToLocal`, the same
+ * origin the simulation uses) so callers can position each cell relative to
+ * the ship's centre without re-walking the grid.
+ *
+ * `maxHp` is the combined starting HP of the surface and substrate layers,
+ * used by the thumbnail to initialise each cell's HP fraction at 1.0 (all
+ * alive, full health).
+ */
+export interface DesignCell {
+  slotId: string;
+  ox: number;
+  oy: number;
+  kind: ResolvedModule["kind"];
+  maxHp: number;
+}
+
+/**
+ * Return the per-cell layout for a ship design as a flat array of
+ * `DesignCell`s, reusing `resolveModules` as the single source of truth for
+ * cell kind, position, and HP values. The caller does not need to walk the
+ * grid or duplicate the kind-derivation logic.
+ *
+ * Pure: no side effects, no DOM, no storage.
+ */
+export function designCellLayout(design: ShipDesign, catalog: Catalog): DesignCell[] {
+  return resolveModules(design, catalog).map((m) => ({
+    slotId: m.slotId,
+    ox: m.x,
+    oy: m.y,
+    kind: m.kind,
+    maxHp: m.maxSubstrateHp + m.maxSurfaceHp,
+  }));
+}
+
 // Re-exported for engine consumers that need the edge shape.
 export type { CellEdges };
