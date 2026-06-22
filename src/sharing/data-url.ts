@@ -5,30 +5,47 @@ import {
 import { z } from "zod";
 import { Fleet } from "@/schema/fleet";
 import { ShipDesign } from "@/schema/ship";
+import { BattleAnomaly } from "@/schema/battle";
 
 /**
- * Sharing encodes a ship design or fleet into a compact, URL-safe string so it
- * can be passed around in a link (data URL) without a server. The catalog
- * (hulls/modules) is bundled and versioned with the app, so only the entity
- * itself is encoded — the payload stays small.
+ * Sharing encodes a ship design, fleet, or whole battle into a compact, URL-safe
+ * string so it can be passed around in a link without a server. The catalog
+ * (hulls/modules) is bundled and versioned with the app, so only the entities
+ * themselves are encoded — the payload stays small.
  *
  * Version 2: layered-cell migration (Phase 2). The grid cell model changes
  * from empty/hull/module/floor to empty/solid; v1 links fail loudly with a
- * `ShareDecodeError` (no migration). The encode/decode logic is otherwise
- * unchanged — it round-trips the schema, which now carries the new cell shape.
+ * `ShareDecodeError` (no migration). The "battle" type was added later within
+ * v2 (additive — existing v2 design/fleet links keep decoding).
  */
 
 export const SHARE_VERSION = 2;
 
+/**
+ * A complete, self-contained battle: both fleets, every ship design they
+ * reference, the anomaly and the seed. Because the simulation is deterministic,
+ * these inputs replay byte-identically on any machine — so encoding this is
+ * enough to share an exact scenario.
+ */
+export const BattleShare = z.object({
+  attacker: Fleet,
+  defender: Fleet,
+  designs: z.array(ShipDesign),
+  anomaly: BattleAnomaly,
+  seed: z.number().int(),
+});
+export type BattleShare = z.infer<typeof BattleShare>;
+
 const ShareEnvelope = z.object({
   v: z.literal(SHARE_VERSION),
-  type: z.enum(["shipDesign", "fleet"]),
+  type: z.enum(["shipDesign", "fleet", "battle"]),
   data: z.unknown(),
 });
 
 export type Shareable =
   | { kind: "shipDesign"; value: ShipDesign }
-  | { kind: "fleet"; value: Fleet };
+  | { kind: "fleet"; value: Fleet }
+  | { kind: "battle"; value: BattleShare };
 
 export class ShareDecodeError extends Error {
   constructor(message: string, cause?: unknown) {
@@ -81,6 +98,17 @@ export function decodeShareable(encoded: string): Shareable {
       );
     }
     return { kind: "shipDesign", value: result.data };
+  }
+
+  if (envelope.type === "battle") {
+    const result = BattleShare.safeParse(envelope.data);
+    if (!result.success) {
+      throw new ShareDecodeError(
+        `Battle failed validation: ${summarise(result.error)}`,
+        result.error,
+      );
+    }
+    return { kind: "battle", value: result.data };
   }
 
   const result = Fleet.safeParse(envelope.data);

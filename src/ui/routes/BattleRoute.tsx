@@ -40,6 +40,7 @@ import { useBattleCamera } from "./useBattleCamera";
 import { useBattleCanvas } from "./useBattleCanvas";
 import { useBattlePlayback } from "./useBattlePlayback";
 import { useBattleSimulation } from "./useBattleSimulation";
+import { useBattleUrlSync } from "./useBattleUrlSync";
 import { touchTarget } from "@/ui/components/panel.css";
 import { screenPowerOn } from "@/ui/fx/CrtOverlay.css";
 import { CrtScreen } from "@/ui/fx/CrtScreen";
@@ -114,6 +115,23 @@ export function BattleRoute() {
     descriptorsRef,
     resetForNewRun: () => engineCallbacksRef.current.resetForNewRun(),
     onFirstBatch: () => engineCallbacksRef.current.onFirstBatch(),
+  });
+
+  // Mirror the battle config to/from the URL so the address bar is the
+  // shareable scenario: a complete local matchup is encoded into the path, and
+  // an externally-pasted /battle/<payload> link replays that exact battle.
+  useBattleUrlSync({
+    fleets,
+    designs,
+    attackerId,
+    defenderId,
+    anomaly,
+    seed,
+    setAnomaly,
+    setSeed,
+    startBattle: (attacker, defender, chosenAnomaly, chosenSeed, allDesigns) => {
+      void simulation.startBattle(attacker, defender, chosenAnomaly, chosenSeed, allDesigns);
+    },
   });
 
   /**

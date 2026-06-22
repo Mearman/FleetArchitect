@@ -55,6 +55,13 @@ export function ImportRoute() {
         return;
       }
 
+      // A battle isn't stored — it's replayed by the battle route, which owns
+      // the /battle/<payload> URL. Forward the link there.
+      if (shareable.kind === "battle") {
+        if (!cancelled) navigate(`/battle/${payload}`, { replace: true });
+        return;
+      }
+
       if (shareable.kind === "shipDesign") {
         await saveShipDesign(shareable.value);
       } else {
@@ -73,7 +80,7 @@ export function ImportRoute() {
     return () => {
       cancelled = true;
     };
-  }, [payload]);
+  }, [payload, navigate]);
 
   if (status.state === "decoding") {
     return (

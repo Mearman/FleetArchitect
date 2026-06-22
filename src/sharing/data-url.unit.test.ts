@@ -3,6 +3,7 @@ import {
   ShareDecodeError,
   decodeShareable,
   encodeShareable,
+  type BattleShare,
 } from "@/sharing/data-url";
 import { createId, nowIso } from "@/domain/id";
 import { defaultOrders } from "@/schema/fleet";
@@ -71,6 +72,40 @@ describe("sharing round-trip", () => {
       throw new Error("expected a fleet share");
     }
     expect(decoded.value).toEqual(fleet);
+  });
+
+  it("round-trips a whole battle (both fleets, designs, anomaly, seed)", () => {
+    const design = sampleDesign();
+    const makeFleet = (name: string): Fleet => ({
+      id: createId("fleet"),
+      name,
+      faction: "Terran",
+      ships: [
+        {
+          designId: design.id,
+          position: { x: -100, y: 0 },
+          facing: 0,
+          orders: { ...defaultOrders },
+        },
+      ],
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+      source: "user",
+      revision: 1,
+    });
+    const battle: BattleShare = {
+      attacker: makeFleet("Attacker"),
+      defender: makeFleet("Defender"),
+      designs: [design],
+      anomaly: "asteroidField",
+      seed: 42,
+    };
+    const encoded = encodeShareable({ kind: "battle", value: battle });
+    const decoded = decodeShareable(encoded);
+    if (decoded.kind !== "battle") {
+      throw new Error("expected a battle share");
+    }
+    expect(decoded.value).toEqual(battle);
   });
 
   it("throws ShareDecodeError on a corrupt payload", () => {

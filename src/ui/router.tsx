@@ -21,6 +21,10 @@ export const router = createHashRouter([
       { path: "ships", element: <ShipDesignerRoute /> },
       { path: "fleets", element: <FleetBuilderRoute /> },
       { path: "battle", element: <BattleRoute /> },
+      // A battle's full config (both fleets, their designs, anomaly, seed) is
+      // encoded into the path so the URL itself is the shareable scenario: the
+      // route writes it as you set up and replays it when opened.
+      { path: "battle/:payload", element: <BattleRoute /> },
       { path: "import/:payload", element: <ImportRoute /> },
       { path: "*", element: <Navigate to="/" replace /> },
     ],
