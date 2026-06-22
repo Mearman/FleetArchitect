@@ -40,6 +40,23 @@ function armourGrid(rows: readonly string[]): TileGrid {
   return TileGrid.parse({ cols, rows: rows.length, cells, connections: [] });
 }
 
+/** Build a grid of all-deck solid cells from an ASCII map (`#` solid). Deck
+ *  cells grow a one-cell armour ring, so these exercise the grow path. */
+function deckGrid(rows: readonly string[]): TileGrid {
+  const cols = rows[0]?.length ?? 0;
+  const deck = {
+    kind: "solid",
+    substrate: true,
+    surface: "deck",
+    edges: { n: "open", e: "open", s: "open", w: "open", doorStates: {} },
+  };
+  const empty = { kind: "empty" };
+  const cells: unknown[] = rows.flatMap((line) =>
+    Array.from({ length: cols }, (_unused, c) => (line[c] === "#" ? deck : empty)),
+  );
+  return TileGrid.parse({ cols, rows: rows.length, cells, connections: [] });
+}
+
 /** Turn angle (degrees) at vertex i of a loop. */
 function turnDeg(loop: readonly Pt[], i: number): number {
   const n = loop.length;
@@ -132,6 +149,17 @@ describe("computeHullOutline — invariants (HARD)", () => {
       );
     });
   }
+});
+
+describe("computeHullOutline — grown deck footprints obey the 45 invariant", () => {
+  // Two separate deck clusters two rows apart: their grown armour rings meet in
+  // the gap, merging into one pinched footprint. The bevel must not leave a
+  // sharper-than-45 turn at the waist. (Regression: a -135 spike was produced.)
+  it("merged grown rings leave no turn sharper than 45 degrees", () => {
+    const grid = deckGrid(["##..", "#...", "....", "....", "####"]);
+    const loops = computeHullOutline(grid);
+    expect(maxAbsTurn(loops)).toBeLessThanOrEqual(45 + TURN_EPS);
+  });
 });
 
 describe("computeHullOutline — every preset ship satisfies the invariants", () => {

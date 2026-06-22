@@ -195,6 +195,22 @@ function distToLine(v: IPoint, u: IPoint, w: IPoint): number {
  *  clean diagonals; coarser steps stay stepped and are merely corner-bevelled. */
 const MAX_DEVIATION = 1 + 1e-9;
 
+/** Cosine of a 45-degree turn. Consecutive edge directions whose normalised dot
+ *  product is below this differ by more than 45 degrees. */
+const COS_45 = Math.SQRT1_2;
+
+/** Cosine of the turn at `b` between edges a->b and b->c (1 = straight). */
+function turnCos(a: IPoint, b: IPoint, c: IPoint): number {
+  const d1x = b.x - a.x;
+  const d1y = b.y - a.y;
+  const d2x = c.x - b.x;
+  const d2y = c.y - b.y;
+  const l1 = Math.hypot(d1x, d1y);
+  const l2 = Math.hypot(d2x, d2y);
+  if (l1 === 0 || l2 === 0) return 1;
+  return (d1x * d2x + d1y * d2y) / (l1 * l2);
+}
+
 /**
  * Remove every reflex vertex whose chord to its neighbours is octilinear, keeps
  * the polygon simple, and stays within one cell of the vertex it bridges.
@@ -203,6 +219,13 @@ const MAX_DEVIATION = 1 + 1e-9;
  * corner fills with one — what "no 90 degrees" needs. The deviation cap means a
  * fine (1-cell-step) staircase collapses to one diagonal while a coarse
  * staircase keeps its steps, so the hull never gaps far from the plating.
+ *
+ * A *diagonal* chord is also rejected when it would meet a neighbour at a turn
+ * sharper than 45 degrees: that diagonal-to-edge junction is not a right angle,
+ * so `chamferRightAngles` could not soften it and a >45 spike would survive.
+ * Leaving the vertex keeps a right angle there, which the chamfer pass splits
+ * into two 45 facets. (An axis chord is exempt — its right angles are exactly
+ * what the chamfer turns into facets.)
  */
 function smoothReflex(poly: IPoint[]): IPoint[] {
   let pts = poly;
@@ -211,13 +234,18 @@ function smoothReflex(poly: IPoint[]): IPoint[] {
     progressed = false;
     for (let i = 0; i < pts.length; i += 1) {
       const n = pts.length;
+      const before = pts[(i - 2 + n) % n]!;
       const u = pts[(i - 1 + n) % n]!;
       const v = pts[i]!;
       const w = pts[(i + 1) % n]!;
+      const after = pts[(i + 2) % n]!;
       // CW (y-down): reflex turn has negative cross.
       if ((v.x - u.x) * (w.y - v.y) - (v.y - u.y) * (w.x - v.x) >= 0) continue;
       if (!edgeDirectionAllowed(w.x - u.x, w.y - u.y)) continue;
       if (distToLine(v, u, w) > MAX_DEVIATION) continue;
+      const chordDiagonal = w.x - u.x !== 0 && w.y - u.y !== 0;
+      if (chordDiagonal && turnCos(before, u, w) < COS_45 - 1e-9) continue;
+      if (chordDiagonal && turnCos(u, w, after) < COS_45 - 1e-9) continue;
       if (!chordKeepsSimple(pts, i, u, w)) continue;
       pts = collapseCollinear(pts.slice(0, i).concat(pts.slice(i + 1)));
       progressed = true;
@@ -232,32 +260,64 @@ function smoothReflex(poly: IPoint[]): IPoint[] {
 // concave corners) into sqrt-2 facets.
 // ---------------------------------------------------------------------------
 
+/** A square corner: -1 reflex right angle, +1 convex right angle, 0 not a right
+ *  angle. The sign lets adjacent right angles be compared: two that turn the
+ *  same way and share a short edge would chamfer into a colliding spike, whereas
+ *  opposite ones (a 2-cell jog) chamfer into a clean diagonal. */
+function rightAngleSign(poly: IPoint[], i: number): number {
+  const n = poly.length;
+  const p = poly[(i - 1 + n) % n]!;
+  const v = poly[i]!;
+  const w = poly[(i + 1) % n]!;
+  const din = { x: sign(v.x - p.x), y: sign(v.y - p.y) };
+  const dout = { x: sign(w.x - v.x), y: sign(w.y - v.y) };
+  const isRA =
+    (din.x === 0 || din.y === 0) &&
+    (dout.x === 0 || dout.y === 0) &&
+    din.x * dout.x + din.y * dout.y === 0;
+  if (!isRA) return 0;
+  return sign((v.x - p.x) * (w.y - v.y) - (v.y - p.y) * (w.x - v.x));
+}
+
+/** Gap (cells) left between two chamfers sharing a short edge, so their facets
+ *  never meet at a point (which would be a >45 spike). */
+const CHAMFER_GAP = 0.5;
+
 /**
- * Chamfer every axis-to-axis right angle by one cell along each edge, capped at
- * half the edge so two chamfers never collide. With the smaller features already
- * absorbed/smoothed the remaining corners sit on edges >= 2 cells, so each
- * chamfer is an exact integer sqrt-2 facet. Corners that already involve a
- * diagonal edge are 45-degree turns and are left alone.
+ * Chamfer every axis-to-axis right angle into a sqrt-2 facet. The cut along each
+ * edge is one cell where there is room, halved on a short edge. Crucially, when
+ * the corner at the *other* end of an edge is also a right angle being chamfered,
+ * the cut is capped to leave a gap, so the two facets can never meet at a point —
+ * a meeting would be a sub-45 spike (the failure on a one- or two-cell neck/step
+ * that absorb/smooth could not resolve). On the >= 3-cell edges of a normal hull
+ * the cut is the full cell, so facets stay exactly sqrt 2. Corners already
+ * involving a diagonal edge are 45-degree turns and are left alone.
  */
 function chamferRightAngles(poly: IPoint[]): IPoint[] {
   const n = poly.length;
+  const ra = poly.map((_p, i) => rightAngleSign(poly, i));
   const out: IPoint[] = [];
   for (let i = 0; i < n; i += 1) {
     const p = poly[(i - 1 + n) % n]!;
     const v = poly[i]!;
     const w = poly[(i + 1) % n]!;
-    const din = { x: sign(v.x - p.x), y: sign(v.y - p.y) };
-    const dout = { x: sign(w.x - v.x), y: sign(w.y - v.y) };
-    const axisIn = din.x === 0 || din.y === 0;
-    const axisOut = dout.x === 0 || dout.y === 0;
-    const rightAngle = axisIn && axisOut && din.x * dout.x + din.y * dout.y === 0;
-    if (!rightAngle) {
+    if (ra[i] === 0) {
       out.push(v);
       continue;
     }
+    const din = { x: sign(v.x - p.x), y: sign(v.y - p.y) };
+    const dout = { x: sign(w.x - v.x), y: sign(w.y - v.y) };
     const inLen = Math.hypot(v.x - p.x, v.y - p.y);
     const outLen = Math.hypot(w.x - v.x, w.y - v.y);
-    const k = Math.min(1, Math.floor(inLen) / 2, Math.floor(outLen) / 2) || 0.5;
+    // When the corner at the far end of an edge is a right angle turning the
+    // *same* way, the two chamfers would meet on that shared edge and form a
+    // sub-45 spike, so cap this cut to leave a gap. Otherwise (a longer edge, or
+    // an opposite jog that resolves to a clean diagonal) take the full cell.
+    const inShared = ra[(i - 1 + n) % n] === ra[i];
+    const outShared = ra[(i + 1) % n] === ra[i];
+    const inCap = inShared ? (inLen - CHAMFER_GAP) / 2 : inLen / 2;
+    const outCap = outShared ? (outLen - CHAMFER_GAP) / 2 : outLen / 2;
+    const k = Math.min(1, inCap, outCap);
     out.push({ x: v.x - k * din.x, y: v.y - k * din.y });
     out.push({ x: v.x + k * dout.x, y: v.y + k * dout.y });
   }
