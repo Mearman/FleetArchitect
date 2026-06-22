@@ -1,22 +1,17 @@
 import {
   ActionIcon,
   Badge,
+  Box,
   Button,
   Checkbox,
   Collapse,
-  Container,
-  Grid,
   Group,
   NumberInput,
-  Paper,
   ScrollArea,
   SegmentedControl,
-  Select,
-  Slider,
   Stack,
   Text,
   TextInput,
-  Title,
   Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
@@ -25,6 +20,7 @@ import {
   IconDeviceFloppy,
   IconHistory,
   IconLock,
+  IconMinus,
   IconPlus,
   IconTrash,
 } from "@tabler/icons-react";
@@ -34,10 +30,18 @@ import { analyseShipDesign } from "@/domain/stats";
 import { createId, nowIso } from "@/domain/id";
 import { catalog } from "@/data/catalog";
 import { cellAt } from "@/domain/grid";
+import { AnnunciatorButton } from "@/ui/components/Annunciator";
+import { CassettePanel } from "@/ui/components/CassettePanel";
 import { FaultList } from "@/ui/components/FaultList";
+import { panelLabel, panelScrews } from "@/ui/components/panel.css";
+import { bezelGroup, bezelStrip, screenChassis } from "@/ui/components/screen.css";
 import { ShareButton } from "@/ui/components/ShareButton";
+import { ShipBrowser } from "@/ui/components/ShipBrowser";
 import { StatReadout } from "@/ui/components/StatReadout";
 import { VersionHistoryPanel } from "@/ui/components/VersionHistoryPanel";
+import { CrtScreen } from "@/ui/fx/CrtScreen";
+import { screenPowerOn } from "@/ui/fx/CrtOverlay.css";
+import { hardwareKey, hardwareKeySmall } from "@/ui/theme/controls.css";
 import { useShipDesigns } from "@/ui/hooks/storage";
 import {
   copyDesign,
@@ -65,23 +69,27 @@ import { BehaviourPanel } from "./BehaviourPanel";
 import { DesignerPalette } from "./DesignerPalette";
 import { type BreachSet, GridBoard } from "./GridBoard";
 import { CommsConfig, SensorConfig } from "./ModuleConfig";
-import { panelLabel } from "@/ui/components/panel.css";
-import { CrtScreen } from "@/ui/fx/CrtScreen";
-import { screenPowerOn } from "@/ui/fx/CrtOverlay.css";
-import { zoomInner, zoomScreen, zoomViewport } from "./ShipDesignerRoute.css";
+import {
+  actionBar,
+  actionBarLeft,
+  actionBarRight,
+  controlRow,
+  designerCentre,
+  designerConsole,
+  designerWing,
+  designerWingBody,
+  zoomInner,
+  zoomScreen,
+  zoomViewport,
+} from "./ShipDesignerRoute.css";
 
-/** Zoom range for the pan/zoom viewport, as a fraction of natural size.
- *  `1.0` is the natural fit; higher values zoom in for fine edge placement
- *  on large ships. The lower bound lets the whole ship fit a wide viewport. */
+/** Zoom range for the pan/zoom viewport, as a fraction of natural size. */
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 2.5;
 const ZOOM_STEP = 0.1;
 const ZOOM_DEFAULT = 1;
 
-/** Nominal cell pitch (cell + 2px gap) used to size the zoomable inner wrapper
- *  so the viewport scrolls correctly when zoomed. The grid itself uses `1fr`
- *  columns and `aspect-ratio: 1`, so this is the design-time pitch the layout
- *  resolves to at zoom 1. */
+/** Nominal cell pitch (cell + 2px gap) used to size the zoomable inner wrapper. */
 const CELL_PITCH_PX = 44;
 
 export function ShipDesignerRoute() {
@@ -101,9 +109,8 @@ export function ShipDesignerRoute() {
   /** Modules available for the current design's faction. */
   const moduleDefs = catalog().modulesForFaction(working.faction);
 
-  /** Whether the working design is read-only (a preset). The Copy action is
-   *  the only way to make changes to a preset's grid — it clones to a new
-   *  `source:"user"` record and drops the id so the next save creates it. */
+  /** Whether the working design is read-only (a preset). Copy is the only way
+   *  to make changes to a preset. */
   const readOnly = working.source === "preset";
 
   const analysis = useMemo(() => {
@@ -123,9 +130,7 @@ export function ShipDesignerRoute() {
     return analyseShipDesign(design, catalog());
   }, [working]);
 
-  /** Breached-compartment cells, derived from the layered-cell flood-fill. A
-   *  cell is breached if it belongs to a compartment whose perimeter has an
-   *  open edge or open door. Only deck cells can be in a compartment. */
+  /** Breached-compartment cells, derived from the layered-cell flood-fill. */
   const breached = useMemo<BreachSet>(() => {
     if (!showAirtightness) return new Set();
     const out = new Set<string>();
@@ -137,7 +142,6 @@ export function ShipDesignerRoute() {
   }, [working.grid, showAirtightness]);
 
   // Load revisions whenever the history panel opens or the active design changes.
-  // Must run unconditionally (before any early returns) to satisfy the rules of hooks.
   useEffect(() => {
     const id = working.id;
     let cancelled = false;
@@ -166,8 +170,7 @@ export function ShipDesignerRoute() {
     );
   }
 
-  /** Paint a whole cell with the active cell-brush. Edge brushes are
-   *  no-ops here (they go through `paintEdge`). */
+  /** Paint a whole cell with the active cell-brush. */
   function paint(col: number, row: number) {
     if (readOnly) return;
     if (isEdgeBrush(brush)) return;
@@ -184,13 +187,8 @@ export function ShipDesignerRoute() {
     setSelected({ col, row });
   }
 
-  /** Paint an edge of the cell at (col, row) on side `dir`. Only edge brushes
-   *  act here; cell brushes are no-ops. */
-  function paintEdge(
-    col: number,
-    row: number,
-    dir: "n" | "e" | "s" | "w",
-  ) {
+  /** Paint an edge of the cell at (col, row) on side `dir`. */
+  function paintEdge(col: number, row: number, dir: "n" | "e" | "s" | "w") {
     if (readOnly) return;
     if (!isEdgeBrush(brush)) return;
     setWorking((prev) => {
@@ -291,7 +289,6 @@ export function ShipDesignerRoute() {
           cells.push(existing ?? { kind: "empty" });
         }
       }
-      // Drop any hardwire connection whose endpoints fall outside the new bounds.
       const connections = prev.grid.connections.filter(
         (cn) =>
           cn.from.col < cols &&
@@ -335,8 +332,7 @@ export function ShipDesignerRoute() {
     notifications.show({ message: "Design deleted", color: "gray" });
   }
 
-  /** Load a design into the working state, preserving its provenance. A preset
-   *  loads read-only; a user design loads editable. */
+  /** Load a design into the working state, preserving its provenance. */
   function load(design: ShipDesign) {
     setWorking({
       id: design.id,
@@ -352,13 +348,10 @@ export function ShipDesignerRoute() {
     setSelected(null);
   }
 
-  /** Copy the working design to a new editable user record using the DB copy
-   *  function. The copy is saved immediately and loaded into the working state.
-   *  For presets this is the primary way to create an editable version. */
+  /** Copy the working design to a new editable user record. */
   async function copyAndLoad() {
     const sourceId = working.id;
     if (sourceId === null) {
-      // Unsaved draft — fall back to in-memory copy.
       setWorking((prev) => ({
         ...prev,
         id: null,
@@ -383,7 +376,6 @@ export function ShipDesignerRoute() {
     });
   }
 
-  /** Fetch revisions for the current design and open the history panel. */
   async function openHistory() {
     const id = working.id;
     if (id === null) {
@@ -391,7 +383,6 @@ export function ShipDesignerRoute() {
       setHistoryOpen((prev) => !prev);
       return;
     }
-    // If the panel is already open, just close it — no need to re-fetch.
     if (historyOpen) {
       setHistoryOpen(false);
       return;
@@ -403,13 +394,10 @@ export function ShipDesignerRoute() {
     setHistoryLoading(false);
   }
 
-  /** Restore the working design to a prior revision. Archives the current HEAD
-   *  and loads the restored snapshot. */
   async function restoreRevision(revision: number) {
     if (working.id === null) return;
     const restored = await restoreDesignRevision(working.id, revision);
     load(restored);
-    // Reload the history list so the just-archived HEAD appears.
     const list = await listDesignRevisions(restored.id);
     setRevisions(list);
     notifications.show({
@@ -431,342 +419,343 @@ export function ShipDesignerRoute() {
       ? selectedCell.equipment.facing
       : undefined;
 
-  // Pixel width of the zoomable inner wrapper, so the viewport scrolls
-  // correctly when zoomed. Derived from the nominal cell pitch and the zoom
-  // factor; the height comes from the grid's natural aspect ratio.
   const innerWidthPx = grid.cols * CELL_PITCH_PX * zoom;
 
-  return (
-    <Container size="xl" py="lg">
-    <Stack gap="lg">
-      <Group justify="space-between" align="flex-end">
-        <Title order={1}>Ship Designer</Title>
-        {readOnly ? (
-          <Badge size="lg" color="grape" leftSection={<IconLock size={14} />}>
-            Preset — read only
-          </Badge>
-        ) : null}
+  // Delete action rendered per-card in the ShipBrowser (user designs only).
+  function renderDeleteAction(design: ShipDesign) {
+    if (design.source === "preset") return null;
+    return (
+      <Tooltip label="Delete">
+        <ActionIcon
+          className={hardwareKeySmall}
+          color="red"
+          variant="subtle"
+          size="sm"
+          aria-label={`Delete design ${design.name}`}
+          onClick={() => void remove(design.id)}
+        >
+          <IconTrash size={12} />
+        </ActionIcon>
+      </Tooltip>
+    );
+  }
+
+  /** Left wing content: grouped ship browser + New button. */
+  const leftWing = (
+    <Stack gap="sm" h="100%">
+      {readOnly && (
+        <Badge size="sm" color="grape" leftSection={<IconLock size={12} />} mb={4}>
+          Preset — read only
+        </Badge>
+      )}
+      <Button
+        className={hardwareKey}
+        size="xs"
+        variant="default"
+        leftSection={<IconPlus size={14} />}
+        onClick={() => setWorking(blankDesign())}
+        fullWidth
+      >
+        New
+      </Button>
+      <ScrollArea.Autosize mah={600} offsetScrollbars style={{ flex: 1 }}>
+        <ShipBrowser
+          designs={designs}
+          selectedId={working.id}
+          onSelect={load}
+          renderAction={renderDeleteAction}
+          emptyLabel="No saved designs yet. Build one and save it."
+        />
+      </ScrollArea.Autosize>
+    </Stack>
+  );
+
+  /** Right wing content: palette + behaviour. */
+  const rightWing = (
+    <Stack gap="md">
+      <div className={panelLabel}>Palette</div>
+      <DesignerPalette
+        brush={brush}
+        onChange={setBrush}
+        modules={moduleDefs}
+        readOnly={readOnly}
+      />
+      <div className={panelLabel} style={{ marginTop: 8 }}>Behaviour</div>
+      <BehaviourPanel
+        shipStance={working.shipStance}
+        crewPriority={working.crewPriority}
+        rules={working.rules}
+        readOnly={readOnly}
+        onStanceChange={(s) => setWorking((prev) => ({ ...prev, shipStance: s }))}
+        onPriorityChange={(p) => setWorking((prev) => ({ ...prev, crewPriority: p }))}
+        onRulesChange={(r) => setWorking((prev) => ({ ...prev, rules: r }))}
+      />
+    </Stack>
+  );
+
+  /** Centre content: screen chassis + stats/faults + action bar. */
+  const centre = (
+    <Stack gap={8}>
+      {/* Name / faction inputs above the chassis */}
+      <Group grow align="flex-start">
+        <TextInput
+          label="Name"
+          value={working.name}
+          onChange={(e) => setWorking((prev) => ({ ...prev, name: e.target.value }))}
+          placeholder="e.g. Sabre Mk II"
+          disabled={readOnly}
+        />
+        {/* Faction rendered as a segmented picker derived from the faction list */}
+        <Stack gap={4}>
+          <Text size="xs" c="dimmed">Faction</Text>
+          <SegmentedControl
+            size="xs"
+            data={factions.map((f) => ({ value: f, label: f }))}
+            value={working.faction}
+            disabled={readOnly}
+            onChange={(f) => {
+              setBrush((prev) => {
+                if (prev.kind !== "equipment") return prev;
+                const mod = catalog().module(prev.moduleId);
+                if (mod === undefined || mod.faction !== f) {
+                  return { kind: "substrate-deck" };
+                }
+                return prev;
+              });
+              setWorking((prev) => ({ ...prev, faction: f }));
+            }}
+          />
+        </Stack>
       </Group>
 
-      <Grid>
-        <Grid.Col span={{ base: 12, md: 4 }}>
-          <Paper p="md" withBorder>
-            <Group justify="space-between" mb="sm">
-              <Text className={panelLabel}>Your designs</Text>
-              <Button
-                size="xs"
-                variant="light"
-                leftSection={<IconPlus size={14} />}
-                onClick={() => setWorking(blankDesign())}
-              >
-                New
-              </Button>
-            </Group>
-            <ScrollArea.Autosize mah={420} offsetScrollbars>
-              <Stack gap={6}>
-                {designs.length === 0 ? (
-                  <Text size="sm" c="dimmed">
-                    No saved designs yet. Build one and save it.
-                  </Text>
-                ) : (
-                  designs.map((design) => (
-                    <Group key={design.id} justify="space-between" wrap="nowrap">
-                      <Button
-                        variant={design.id === working.id ? "filled" : "subtle"}
-                        data-active={design.id === working.id ? "true" : undefined}
-                        size="xs"
-                        fullWidth
-                        justify="space-between"
-                        onClick={() => load(design)}
-                        leftSection={
-                          design.source === "preset" ? (
-                            <IconLock size={12} />
-                          ) : null
-                        }
-                      >
-                        <span>{design.name}</span>
-                      </Button>
-                      {design.source === "preset" ? null : (
-                        <Tooltip label="Delete">
-                          <ActionIcon
-                            color="red"
-                            variant="subtle"
-                            aria-label={`Delete design ${design.name}`}
-                            onClick={() => remove(design.id)}
-                          >
-                            <IconTrash size={14} />
-                          </ActionIcon>
-                        </Tooltip>
-                      )}
-                    </Group>
-                  ))
-                )}
-              </Stack>
-            </ScrollArea.Autosize>
-          </Paper>
-        </Grid.Col>
-
-        <Grid.Col span={{ base: 12, md: 8 }}>
-          <Stack gap="md">
-            <Group grow align="flex-start">
-              <TextInput
-                label="Name"
-                value={working.name}
-                onChange={(e) =>
-                  setWorking((prev) => ({ ...prev, name: e.target.value }))
-                }
-                placeholder="e.g. Sabre Mk II"
-                disabled={readOnly}
+      {/* Grid chassis */}
+      <Box className={`${screenChassis} ${panelScrews}`}>
+        {/* The scrollable, zoomable grid viewport */}
+        <div className={`${zoomScreen} ${screenPowerOn}`}>
+          <div className={zoomViewport} style={{ touchAction: "none" }}>
+            <div
+              className={zoomInner}
+              style={{ transform: `scale(${zoom})`, width: innerWidthPx }}
+            >
+              <GridBoard
+                grid={grid}
+                selected={selected}
+                breached={breached}
+                showAirtightness={showAirtightness}
+                onPaint={paint}
+                onEdge={paintEdge}
               />
-              <Select
-                label="Faction"
-                data={factions.map((f) => ({ value: f, label: f }))}
-                value={working.faction}
-                disabled={readOnly}
-                onChange={(f) => {
-                  if (f !== null) {
-                    // Switching faction clears the brush if it's equipment from
-                    // the old faction — avoid leaving an invalid brush selected.
-                    setBrush((prev) => {
-                      if (prev.kind !== "equipment") return prev;
-                      const mod = catalog().module(prev.moduleId);
-                      if (mod === undefined || mod.faction !== f) {
-                        return { kind: "substrate-deck" };
-                      }
-                      return prev;
-                    });
-                    setWorking((prev) => ({ ...prev, faction: f }));
-                  }
-                }}
+            </div>
+          </div>
+          {/* CRT screen effects pinned over the viewport. */}
+          <CrtScreen />
+        </div>
+
+        {/* Bezel strip — dimension controls + zoom buttons */}
+        <Box className={bezelStrip}>
+          <div className={`${bezelGroup} ${controlRow}`}>
+            <NumberInput
+              label="Cols"
+              size="xs"
+              min={1}
+              max={MAX_DIM}
+              value={grid.cols}
+              disabled={readOnly}
+              onChange={(v) => resize(clampDim(v, grid.cols), grid.rows)}
+              style={{ width: 70 }}
+            />
+            <NumberInput
+              label="Rows"
+              size="xs"
+              min={1}
+              max={MAX_DIM}
+              value={grid.rows}
+              disabled={readOnly}
+              onChange={(v) => resize(grid.cols, clampDim(v, grid.rows))}
+              style={{ width: 70 }}
+            />
+            <Checkbox
+              size="xs"
+              label="Airtight"
+              checked={showAirtightness}
+              onChange={(e) => setShowAirtightness(e.currentTarget.checked)}
+            />
+          </div>
+
+          <div className={bezelGroup}>
+            <Text size="xs" c="dimmed" style={{ fontVariantNumeric: "tabular-nums" }}>
+              {zoom.toFixed(1)}×
+            </Text>
+            <Tooltip label="Zoom out">
+              <AnnunciatorButton
+                icon={<IconMinus size={12} />}
+                aria-label="Zoom out"
+                tint="cyan"
+                onClick={() => setZoom((z) => Math.max(ZOOM_MIN, z - ZOOM_STEP))}
               />
-            </Group>
-
-            <Group grow align="flex-end">
-              <NumberInput
-                label="Columns"
-                min={1}
-                max={MAX_DIM}
-                value={grid.cols}
-                disabled={readOnly}
-                onChange={(v) => resize(clampDim(v, grid.cols), grid.rows)}
+            </Tooltip>
+            <Tooltip label="Zoom in">
+              <AnnunciatorButton
+                icon={<IconPlus size={12} />}
+                aria-label="Zoom in"
+                tint="cyan"
+                onClick={() => setZoom((z) => Math.min(ZOOM_MAX, z + ZOOM_STEP))}
               />
-              <NumberInput
-                label="Rows"
-                min={1}
-                max={MAX_DIM}
-                value={grid.rows}
-                disabled={readOnly}
-                onChange={(v) => resize(grid.cols, clampDim(v, grid.rows))}
-              />
-              <Stack gap={4}>
-                <Text size="xs" c="dimmed">
-                  Zoom ({zoom.toFixed(1)}x)
-                </Text>
-                <Slider
-                  size="md"
-                  value={zoom}
-                  onChange={setZoom}
-                  min={ZOOM_MIN}
-                  max={ZOOM_MAX}
-                  step={ZOOM_STEP}
-                  style={{ flex: 1 }}
-                />
-              </Stack>
-            </Group>
+            </Tooltip>
+          </div>
+        </Box>
+      </Box>
 
-            <Grid>
-              <Grid.Col span={{ base: 12, md: 6 }}>
-                <Paper p="md" withBorder>
-                  <Group justify="space-between" mb="xs">
-                    <Text className={panelLabel}>Grid</Text>
-                    <Checkbox
-                      size="xs"
-                      label="Show airtightness"
-                      checked={showAirtightness}
-                      onChange={(e) =>
-                        setShowAirtightness(e.currentTarget.checked)
-                      }
-                    />
-                  </Group>
-                  <div className={`${zoomScreen} ${screenPowerOn}`}>
-                    <div className={zoomViewport} style={{ touchAction: "none" }}>
-                      <div
-                        className={zoomInner}
-                        style={{
-                          transform: `scale(${zoom})`,
-                          width: innerWidthPx,
-                        }}
-                      >
-                        <GridBoard
-                          grid={grid}
-                          selected={selected}
-                          breached={breached}
-                          showAirtightness={showAirtightness}
-                          onPaint={paint}
-                          onEdge={paintEdge}
-                        />
-                      </div>
-                    </div>
-                    {/* CRT screen effects, pinned over the viewport (outside the scroll container). */}
-                    <CrtScreen />
-                  </div>
-                  {readOnly ? (
-                    <Text size="xs" c="grape" mt="sm">
-                      This is a bundled preset. Use Copy to edit a duplicate.
-                    </Text>
-                  ) : null}
-                  {selectedCell !== undefined &&
-                  selectedCell.kind === "solid" &&
-                  selectedCell.equipment !== undefined &&
-                  selectedFacing !== undefined ? (
-                    <Stack gap={4} mt="sm">
-                      <Text size="xs" c="dimmed">
-                        Facing of selected equipment cell
-                      </Text>
-                      <SegmentedControl
-                        size="xs"
-                        data={FACINGS}
-                        value={`${selectedFacing}`}
-                        onChange={(v) => setSelectedFacing(Number(v))}
-                      />
-                    </Stack>
-                  ) : null}
-                  {selectedCell !== undefined &&
-                  selectedCell.kind === "solid" &&
-                  selectedCell.equipment !== undefined &&
-                  selectedModuleDef?.effect.kind === "comms" ? (
-                    <CommsConfig
-                      cell={selectedCell.equipment}
-                      effect={selectedModuleDef.effect}
-                      onChannelChange={setSelectedCommsChannel}
-                      onBearingChange={setSelectedCommsBearing}
-                      onRangeChange={setSelectedCommsRange}
-                    />
-                  ) : null}
-                  {selectedCell !== undefined &&
-                  selectedCell.kind === "solid" &&
-                  selectedCell.equipment !== undefined &&
-                  selectedModuleDef?.effect.kind === "sensor" ? (
-                    <SensorConfig
-                      cell={selectedCell.equipment}
-                      effect={selectedModuleDef.effect}
-                      onBearingChange={setSelectedSensorBearing}
-                      onRangeChange={setSelectedSensorRangeSetting}
-                    />
-                  ) : null}
-                </Paper>
-              </Grid.Col>
-
-              <Grid.Col span={{ base: 12, md: 6 }}>
-                <Stack gap="md">
-                  <DesignerPalette
-                    brush={brush}
-                    onChange={setBrush}
-                    modules={moduleDefs}
-                    readOnly={readOnly}
-                  />
-                  <BehaviourPanel
-                    shipStance={working.shipStance}
-                    crewPriority={working.crewPriority}
-                    rules={working.rules}
-                    readOnly={readOnly}
-                    onStanceChange={(s) =>
-                      setWorking((prev) => ({ ...prev, shipStance: s }))
-                    }
-                    onPriorityChange={(p) =>
-                      setWorking((prev) => ({ ...prev, crewPriority: p }))
-                    }
-                    onRulesChange={(r) =>
-                      setWorking((prev) => ({ ...prev, rules: r }))
-                    }
-                  />
-                </Stack>
-              </Grid.Col>
-            </Grid>
-
-            <Paper p="md" withBorder>
-              <StatReadout stats={analysis.stats} />
-            </Paper>
-
-            <FaultList faults={analysis.faults} />
-
-            {/* Version history panel */}
-            <Collapse expanded={historyOpen}>
-              <VersionHistoryPanel
-                loading={historyLoading}
-                revisions={revisions}
-                onRestore={(revision) => void restoreRevision(revision)}
-                entityLabel="design"
-              />
-            </Collapse>
-
-            <Group justify="space-between">
-              <Group gap="sm">
-                <ShareButton
-                  shareable={{
-                    kind: "shipDesign",
-                    value: {
-                      id: working.id ?? "draft",
-                      name: working.name || "Untitled",
-                      faction: working.faction || "Unaligned",
-                      grid: working.grid,
-                      createdAt: working.createdAt ?? nowIso(),
-                      updatedAt: nowIso(),
-                      source: working.source,
-                      revision: 1,
-                      shipStance: working.shipStance,
-                      crewPriority: working.crewPriority,
-                      rules: working.rules,
-                    },
-                  }}
-                />
-                {readOnly ? (
-                  <Button
-                    variant="filled"
-                    color="grape"
-                    leftSection={<IconCopy size={16} />}
-                    onClick={() => void copyAndLoad()}
-                  >
-                    Copy to edit
-                  </Button>
-                ) : (
-                  <Button
-                    variant="light"
-                    leftSection={<IconCopy size={16} />}
-                    onClick={() => void copyAndLoad()}
-                  >
-                    Copy design
-                  </Button>
-                )}
-              </Group>
-              {!readOnly ? (
-                <Group gap="sm">
-                  {working.id !== null ? (
-                    <Tooltip label="View version history">
-                      <Button
-                        variant={historyOpen ? "light" : "subtle"}
-                        data-active={historyOpen ? "true" : undefined}
-                        color={historyOpen ? "orange" : undefined}
-                        leftSection={<IconHistory size={16} />}
-                        onClick={() => void openHistory()}
-                      >
-                        History
-                      </Button>
-                    </Tooltip>
-                  ) : null}
-                  <Button
-                    onClick={() => void save()}
-                    leftSection={<IconDeviceFloppy size={16} />}
-                  >
-                    Save design
-                  </Button>
-                </Group>
-              ) : null}
-            </Group>
+      {/* Selected-cell config panels */}
+      {readOnly && (
+        <Text size="xs" c="grape">
+          This is a bundled preset. Use Copy to edit a duplicate.
+        </Text>
+      )}
+      {selectedCell !== undefined &&
+        selectedCell.kind === "solid" &&
+        selectedCell.equipment !== undefined &&
+        selectedFacing !== undefined && (
+          <Stack gap={4}>
+            <Text size="xs" c="dimmed">Facing of selected equipment cell</Text>
+            <SegmentedControl
+              size="xs"
+              data={FACINGS}
+              value={`${selectedFacing}`}
+              onChange={(v) => setSelectedFacing(Number(v))}
+            />
           </Stack>
-        </Grid.Col>
-      </Grid>
+        )}
+      {selectedCell !== undefined &&
+        selectedCell.kind === "solid" &&
+        selectedCell.equipment !== undefined &&
+        selectedModuleDef?.effect.kind === "comms" && (
+          <CommsConfig
+            cell={selectedCell.equipment}
+            effect={selectedModuleDef.effect}
+            onChannelChange={setSelectedCommsChannel}
+            onBearingChange={setSelectedCommsBearing}
+            onRangeChange={setSelectedCommsRange}
+          />
+        )}
+      {selectedCell !== undefined &&
+        selectedCell.kind === "solid" &&
+        selectedCell.equipment !== undefined &&
+        selectedModuleDef?.effect.kind === "sensor" && (
+          <SensorConfig
+            cell={selectedCell.equipment}
+            effect={selectedModuleDef.effect}
+            onBearingChange={setSelectedSensorBearing}
+            onRangeChange={setSelectedSensorRangeSetting}
+          />
+        )}
+
+      {/* Stats */}
+      <CassettePanel label="Stats">
+        <StatReadout stats={analysis.stats} />
+      </CassettePanel>
+
+      {/* Faults */}
+      <CassettePanel label="Faults">
+        <FaultList faults={analysis.faults} />
+      </CassettePanel>
+
+      {/* Version history */}
+      <Collapse expanded={historyOpen}>
+        <VersionHistoryPanel
+          loading={historyLoading}
+          revisions={revisions}
+          onRestore={(revision) => void restoreRevision(revision)}
+          entityLabel="design"
+        />
+      </Collapse>
+
+      {/* Action bar */}
+      <div className={actionBar}>
+        <div className={actionBarLeft}>
+          <ShareButton
+            shareable={{
+              kind: "shipDesign",
+              value: {
+                id: working.id ?? "draft",
+                name: working.name || "Untitled",
+                faction: working.faction || "Unaligned",
+                grid: working.grid,
+                createdAt: working.createdAt ?? nowIso(),
+                updatedAt: nowIso(),
+                source: working.source,
+                revision: 1,
+                shipStance: working.shipStance,
+                crewPriority: working.crewPriority,
+                rules: working.rules,
+              },
+            }}
+          />
+          {readOnly ? (
+            <Button
+              className={hardwareKey}
+              variant="filled"
+              color="grape"
+              leftSection={<IconCopy size={16} />}
+              onClick={() => void copyAndLoad()}
+            >
+              Copy to edit
+            </Button>
+          ) : (
+            <Button
+              className={hardwareKey}
+              variant="default"
+              leftSection={<IconCopy size={16} />}
+              onClick={() => void copyAndLoad()}
+            >
+              Copy design
+            </Button>
+          )}
+        </div>
+
+        {!readOnly && (
+          <div className={actionBarRight}>
+            {working.id !== null && (
+              <Tooltip label="View version history">
+                <Button
+                  className={hardwareKey}
+                  variant="default"
+                  data-active={historyOpen ? "true" : undefined}
+                  leftSection={<IconHistory size={16} />}
+                  onClick={() => void openHistory()}
+                >
+                  History
+                </Button>
+              </Tooltip>
+            )}
+            <Button
+              className={hardwareKey}
+              variant="default"
+              leftSection={<IconDeviceFloppy size={16} />}
+              onClick={() => void save()}
+            >
+              Save design
+            </Button>
+          </div>
+        )}
+      </div>
     </Stack>
-    </Container>
+  );
+
+  return (
+    <div className={designerConsole}>
+      {/* Left wing: ship browser */}
+      <CassettePanel label="Your Designs" className={designerWing}>
+        <div className={designerWingBody}>{leftWing}</div>
+      </CassettePanel>
+
+      {/* Centre: grid viewport + controls */}
+      <div className={designerCentre}>{centre}</div>
+
+      {/* Right wing: palette + behaviour */}
+      <CassettePanel label="Tools" className={designerWing}>
+        <div className={designerWingBody}>{rightWing}</div>
+      </CassettePanel>
+    </div>
   );
 }

@@ -1,17 +1,85 @@
 import { style } from "@vanilla-extract/css";
 import { vars } from "@/ui/theme/vars.css";
 
-/** The grid canvas: a CSS grid laying out one button per cell. The column
- *  template is set inline per render (it depends on the grid width). */
+/**
+ * Ship designer console layout. Mirrors the BattleWorkspace fixed-wing pattern:
+ * a flex-row of two CassettePanel wings flanking a centre column holding the grid.
+ * Reflows to a column on mobile with the grid up top.
+ */
+
+/** Outer flex-row holding the left wing, centre grid, and right wing. */
+export const designerConsole = style({
+  display: "flex",
+  flexDirection: "row",
+  alignItems: "stretch",
+  width: "100%",
+  gap: 8,
+  "@media": {
+    "(max-width: 48em)": {
+      flexDirection: "column",
+    },
+  },
+});
+
+/**
+ * Side wing — fixed-width cassette panel alongside the grid.
+ * Body scrolls internally on desktop; on mobile becomes full-width.
+ */
+export const designerWing = style({
+  flex: "0 0 280px",
+  minHeight: 0,
+  display: "flex",
+  flexDirection: "column",
+  padding: 12,
+  "@media": {
+    "(max-width: 48em)": {
+      flex: "1 1 auto",
+      minHeight: "auto",
+    },
+  },
+});
+
+/** Scrollable body inside a wing. */
+export const designerWingBody = style({
+  flex: "1 1 auto",
+  minHeight: 0,
+  overflowY: "auto",
+  "@media": {
+    "(max-width: 48em)": {
+      overflowY: "visible",
+    },
+  },
+});
+
+/** Centre column: screen chassis + bezel strip + action bar. */
+export const designerCentre = style({
+  flex: "1 1 auto",
+  minWidth: 0,
+  display: "flex",
+  flexDirection: "column",
+  gap: 8,
+  "@media": {
+    "(max-width: 48em)": {
+      order: -1,
+    },
+  },
+});
+
+/**
+ * The grid canvas: a CSS grid laying out one button per cell. The column
+ * template is set inline per render (it depends on the grid width).
+ */
 export const gridBoard = style({
   display: "grid",
   gap: 2,
   width: "100%",
 });
 
-/** One paintable cell. Square, with a subtle border so empty cells are still
- *  visible targets. Position relative so edge indicators and overlays can
- *  anchor to the cell. */
+/**
+ * One paintable cell. Square, with a subtle border so empty cells are still
+ * visible targets. Position relative so edge indicators and overlays can
+ * anchor to the cell.
+ */
 export const gridCell = style({
   position: "relative",
   aspectRatio: "1 / 1",
@@ -60,12 +128,7 @@ export const facingTick = style({
 /**
  * Edge indicator base. Anchored to one side of the parent cell, sized so a
  * click target spans the full edge length. Walls render as a solid bar; doors
- * render as a thinner bar with a different colour. The four direction
- * modifiers place the indicator on the north/east/south/west edge.
- *
- * Cells are square with `aspectRatio: 1`, and the gap between cells is 2px
- * (the grid's `gap`). The edge bar sits just inside the cell border so it does
- * not overlap the neighbour; each edge belongs to the cell that owns it.
+ * render as a thinner bar with a different colour.
  */
 const EDGE_THICKNESS_PX = 4;
 const DOOR_THICKNESS_PX = 3;
@@ -101,10 +164,6 @@ export const edgeDoorOpen = [
   }),
 ];
 
-/** Position an edge indicator on the north/south/east/west side of its cell.
- *  Exported so `designerGrid.ts` can assemble the lookup function without
- *  re-exporting a function (vanilla-extract .css.ts files may only export
- *  plain serialisable values — strings, numbers, arrays, objects). */
 export const edgeNorth = style({
   top: 0,
   left: 0,
@@ -130,7 +189,6 @@ export const edgeWest = style({
   width: EDGE_THICKNESS_PX,
 });
 
-/** Door position classes: thinner inset bars distinguishing open/closed state. */
 export const doorNorth = style({
   top: 1,
   left: 2,
@@ -156,22 +214,15 @@ export const doorWest = style({
   width: DOOR_THICKNESS_PX,
 });
 
-/** Airtightness overlay: a magenta ring drawn around cells in a breached
- *  compartment, signalling that the compartment's perimeter is not sealed and
- *  its crew is exposed. Drawn as a box-shadow inset so it layers on top of the
- *  cell colour without obscuring the surface tint. */
+/** Airtightness overlay: a magenta ring around cells in a breached compartment. */
 export const breachOverlay = style({
   boxShadow: `inset 0 0 0 2px ${vars.color.magenta}`,
 });
 
-/** Pan/zoom viewport. The grid sits inside a scrollable, horizontally and
- *  vertically overflowable container; `transform: scale()` applies zoom. The
- *  container has a fixed max height so large ships scroll instead of
- *  stretching the page.
- *
- *  Styled as a recessed screen well: dark inset bevel shadows sink the grid
- *  surface below the panel plane, with a chrome hairline border. No glare —
- *  the working grid surface must remain unobscured. */
+/**
+ * Pan/zoom viewport. Scrollable container; transform: scale() applies zoom.
+ * Recessed screen well: dark inset bevel shadows sink the grid surface.
+ */
 export const zoomViewport = style({
   overflow: "auto",
   maxHeight: "min(560px, 60vh)",
@@ -180,26 +231,51 @@ export const zoomViewport = style({
   borderRadius: 0,
   background: `linear-gradient(180deg, ${vars.material.surfaceBottom} 0%, ${vars.color.base} 100%)`,
   boxShadow: [
-    // top-left interior sink — viewport recessed into the panel
     `inset 2px 2px 8px ${vars.material.bevelShadowDeep}`,
-    // bottom-right interior counter-shadow
     `inset -1px -1px 4px rgba(0,0,0,0.5)`,
-    // chrome hairline border
     `0 0 0 1px ${vars.color.border}`,
   ].join(", "),
 });
 
-/** Inner wrapper that the scale transform applies to. Width is set inline to
- *  the grid's natural pixel width so the viewport scrolls correctly when
- *  zoomed in. */
+/** Inner wrapper that the scale transform applies to. Width set inline. */
 export const zoomInner = style({
   transformOrigin: "top left",
 });
 
-/** Positioned wrapper around the viewport so the CRT screen overlay can be
- *  pinned over the display rather than scrolling with the grid inside it: the
- *  overlay is an absolute child of this wrapper, a sibling of the scroll
- *  container, so it stays fixed over the screen as the grid pans beneath. */
+/** Positioned wrapper around the viewport so the CRT screen overlay pins over it. */
 export const zoomScreen = style({
   position: "relative",
+});
+
+/** Row of dimension + action controls in the bezel area. */
+export const controlRow = style({
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  flexWrap: "wrap",
+});
+
+/** Action bar below the grid chassis: share/copy/history/save keys. */
+export const actionBar = style({
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 8,
+  flexWrap: "wrap",
+});
+
+/** Left group in the action bar. */
+export const actionBarLeft = style({
+  display: "flex",
+  alignItems: "center",
+  gap: 6,
+  flexWrap: "wrap",
+});
+
+/** Right group in the action bar. */
+export const actionBarRight = style({
+  display: "flex",
+  alignItems: "center",
+  gap: 6,
+  flexWrap: "wrap",
 });
