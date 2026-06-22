@@ -181,6 +181,7 @@ export function GridBoard({
             inset: 0,
             width: "100%",
             height: "100%",
+            overflow: "visible",
             pointerEvents: "none",
           }}
           aria-hidden="true"
@@ -191,9 +192,10 @@ export function GridBoard({
               points={points}
               fill="none"
               stroke={PHOSPHOR_GREEN}
-              strokeWidth={0.12}
+              strokeWidth={1.5}
               strokeOpacity={0.85}
               strokeLinejoin="round"
+              vectorEffect="non-scaling-stroke"
             />
           ))}
         </svg>
