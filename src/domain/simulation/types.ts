@@ -117,11 +117,11 @@ export interface ResolvedModule {
   edges: CellEdges;
   /** Starting (and maximum) HP of the surface layer (armor or deck). Zero for
    *  `bare` cells (no surface layer). Damage depletes this layer before it
-   *  reaches the scaffold layer. */
+   *  reaches the substrate layer. */
   maxSurfaceHp: number;
-  /** Starting (and maximum) HP of the scaffold layer. When scaffold HP reaches
+  /** Starting (and maximum) HP of the substrate layer. When substrate HP reaches
    *  zero the cell is destroyed and break-apart may sever the graph. */
-  maxScaffoldHp: number;
+  maxSubstrateHp: number;
   /**
    * Fraction (0..1) of an incoming hit the surface (armour) layer absorbs
    * before it depletes surface HP — the armour material's `damageReduction`,

@@ -41,14 +41,14 @@ export interface WorkingDesign {
  * The thing the user is painting with. The brush vocabulary mirrors the
  * layered cell model from {@link import("@/schema/grid").SolidCell}:
  *
- *  - `empty`               — clear a cell back to empty (remove scaffold + all layers).
- *  - `scaffold-<surface>`  — paint a fresh scaffold cell carrying that surface.
- *  - `add-surface`         — add/replace a surface on an existing scaffold cell
- *                            (does not disturb scaffold, edges, or equipment
+ *  - `empty`               — clear a cell back to empty (remove substrate + all layers).
+ *  - `substrate-<surface>`  — paint a fresh substrate cell carrying that surface.
+ *  - `add-surface`         — add/replace a surface on an existing substrate cell
+ *                            (does not disturb substrate, edges, or equipment
  *                            unless the new surface forbids it; armor strips
  *                            equipment per the schema refine).
- *  - `remove-surface`      — strip the surface off a scaffold cell, leaving a
- *                            bare scaffold frame (the cell stays scaffolded;
+ *  - `remove-surface`      — strip the surface off a substrate cell, leaving a
+ *                            bare substrate frame (the cell keeps its substrate;
  *                            use `empty` to remove the whole cell).
  *  - `edge-wall`           — clicking an edge toggles it to/from `wall`.
  *  - `edge-door`           — clicking an edge toggles it to/from `door`; a
@@ -63,16 +63,16 @@ export interface WorkingDesign {
  */
 export type Brush =
   | { kind: "empty" }
-  | { kind: "scaffold-bare" }
-  | { kind: "scaffold-deck" }
-  | { kind: "scaffold-armor" }
+  | { kind: "substrate-bare" }
+  | { kind: "substrate-deck" }
+  | { kind: "substrate-armor" }
   | { kind: "add-surface"; surface: Exclude<SurfaceKind, "bare"> }
   | { kind: "remove-surface" }
   | { kind: "edge-wall" }
   | { kind: "edge-door" }
   | { kind: "equipment"; moduleId: string };
 
-/** The list of surfaces that can be added to an existing scaffold cell via the
+/** The list of surfaces that can be added to an existing substrate cell via the
  *  `add-surface` brush. `bare` is the absence of a surface, not a surface you
  *  add — use `remove-surface` to get there. */
 export const ADDABLE_SURFACES: Exclude<SurfaceKind, "bare">[] = ["deck", "armor"];

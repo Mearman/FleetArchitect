@@ -146,15 +146,15 @@ describe("engine.projectile-damage", () => {
   it("excess damage depletes the armour surface layer before reaching structure", () => {
     // The modular damage model is layered: pooled shield absorbs first; spill
     // then strikes a cell, whose armour surface layer (maxSurfaceHp) depletes
-    // before the scaffold, and only overflow past every cell on the
+    // before the substrate, and only overflow past every cell on the
     // penetration path reaches hull structure. This replaced the legacy scalar
     // `damageReduction` (a flat fraction off the structure hit) with a
     // per-cell ablative layer.
     //
     // Fixture: defender shield 10, one on-axis armoured cell carrying 15
-    // surface HP and 0 scaffold. Attacker fires 30 damage. Shield absorbs 10,
+    // surface HP and 0 substrate. Attacker fires 30 damage. Shield absorbs 10,
     // 20 spills; the armour surface absorbs 15 of that, the cell dies (no
-    // scaffold), and the remaining 5 reaches structure. Structure takes 5 —
+    // substrate), and the remaining 5 reaches structure. Structure takes 5 —
     // exactly the amount beyond the armour layer.
     const result = runBattle(
       inputs([
@@ -176,7 +176,7 @@ describe("engine.projectile-damage", () => {
           orders: { engageRange: "hold" },
           absorbingCells: 1,
           absorbingSurfaceHp: 15,
-          absorbingScaffoldHp: 0,
+          absorbingSubstrateHp: 0,
         }),
       ]),
     );

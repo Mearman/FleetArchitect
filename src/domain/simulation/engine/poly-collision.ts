@@ -43,7 +43,7 @@ export interface OutlinedPose {
  * outer hull loop is the largest-area loop (see `outerLoopIndex`), but every
  * loop is returned so a holed hull keeps its inner boundaries.
  *
- * Returns an empty array when the ship has no outline (a bare-scaffold hull
+ * Returns an empty array when the ship has no outline (a bare-substrate hull
  * with no armour shell, or a legacy aggregated ship) — callers fall back to
  * their pre-outline behaviour in that case.
  */

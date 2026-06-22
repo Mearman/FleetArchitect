@@ -11,8 +11,8 @@ interface ModuleOption {
 
 /**
  * The brush palette for the ship designer. Renders the full layered-brush
- * vocabulary: erase, scaffold+surface (paint a fresh cell), resurface an
- * existing scaffold cell (add/remove surface), edge toggles (wall/door), and
+ * vocabulary: erase, substrate+surface (paint a fresh cell), resurface an
+ * existing substrate cell (add/remove surface), edge toggles (wall/door), and
  * equipment mounting. All controls are disabled when the working design is
  * read-only (a preset).
  *
@@ -34,7 +34,7 @@ export function DesignerPalette({
     <Paper p="md" withBorder>
       <Stack gap="xs">
         <Group gap={4}>
-          <Tooltip label="Remove the cell entirely (scaffold + all layers)">
+          <Tooltip label="Remove the cell entirely (substrate + all layers)">
             <Button
               size="xs"
               variant={brush.kind === "empty" ? "filled" : "light"}
@@ -49,15 +49,15 @@ export function DesignerPalette({
         </Group>
         <Stack gap={4}>
           <Text size="xs" c="dimmed">
-            Scaffold + surface (paint a fresh cell)
+            Substrate + surface (paint a fresh cell)
           </Text>
           <Group gap={4}>
             <Tooltip label="Solid, impassable armor plate — high HP/mass, no equipment, sealed perimeter">
               <Button
                 size="xs"
-                variant={brush.kind === "scaffold-armor" ? "filled" : "light"}
-                data-active={brush.kind === "scaffold-armor" ? "true" : undefined}
-                onClick={() => onChange({ kind: "scaffold-armor" })}
+                variant={brush.kind === "substrate-armor" ? "filled" : "light"}
+                data-active={brush.kind === "substrate-armor" ? "true" : undefined}
+                onClick={() => onChange({ kind: "substrate-armor" })}
                 disabled={readOnly}
               >
                 armor
@@ -66,22 +66,22 @@ export function DesignerPalette({
             <Tooltip label="Walkable crew floor — corridors and equipment-mounting surface">
               <Button
                 size="xs"
-                variant={brush.kind === "scaffold-deck" ? "filled" : "light"}
-                data-active={brush.kind === "scaffold-deck" ? "true" : undefined}
+                variant={brush.kind === "substrate-deck" ? "filled" : "light"}
+                data-active={brush.kind === "substrate-deck" ? "true" : undefined}
                 color="yellow"
-                onClick={() => onChange({ kind: "scaffold-deck" })}
+                onClick={() => onChange({ kind: "substrate-deck" })}
                 disabled={readOnly}
               >
                 deck
               </Button>
             </Tooltip>
-            <Tooltip label="Low-mass framing — scaffold-connected, not walkable">
+            <Tooltip label="Low-mass framing — substrate-connected, not walkable">
               <Button
                 size="xs"
-                variant={brush.kind === "scaffold-bare" ? "filled" : "light"}
-                data-active={brush.kind === "scaffold-bare" ? "true" : undefined}
+                variant={brush.kind === "substrate-bare" ? "filled" : "light"}
+                data-active={brush.kind === "substrate-bare" ? "true" : undefined}
                 color="gray"
-                onClick={() => onChange({ kind: "scaffold-bare" })}
+                onClick={() => onChange({ kind: "substrate-bare" })}
                 disabled={readOnly}
               >
                 bare
@@ -91,7 +91,7 @@ export function DesignerPalette({
         </Stack>
         <Stack gap={4}>
           <Text size="xs" c="dimmed">
-            Resurface an existing scaffold cell
+            Resurface an existing substrate cell
           </Text>
           <Group gap={4}>
             {ADDABLE_SURFACES.map((surface) => (
@@ -99,8 +99,8 @@ export function DesignerPalette({
                 key={surface}
                 label={
                   surface === "armor"
-                    ? "Plate armor over an existing scaffold cell (strips equipment, seals edges)"
-                    : "Lay a deck over an existing scaffold cell (walkable, equipment-mountable)"
+                    ? "Plate armor over an existing substrate cell (strips equipment, seals edges)"
+                    : "Lay a deck over an existing substrate cell (walkable, equipment-mountable)"
                 }
               >
                 <Button
@@ -123,7 +123,7 @@ export function DesignerPalette({
                 </Button>
               </Tooltip>
             ))}
-            <Tooltip label="Strip the surface off a scaffold cell, leaving bare framing">
+            <Tooltip label="Strip the surface off a substrate cell, leaving bare framing">
               <Button
                 size="xs"
                 variant={brush.kind === "remove-surface" ? "filled" : "light"}

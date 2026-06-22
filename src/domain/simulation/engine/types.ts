@@ -446,14 +446,14 @@ export interface SimModule {
   x: number;
   y: number;
   /** The cell's surface kind. Walkability is `surface === "deck" && alive`;
-   *  damage depletes the surface layer (armor/deck) before the scaffold layer;
+   *  damage depletes the surface layer (armor/deck) before the substrate layer;
    *  equipment placement rules consult it. */
   surface: SurfaceKind;
   /** The cell's four edge states, copied off the resolved module. The engine's
    *  A* and airtightness logic read these to decide passability and seal. */
   edges: CellEdges;
   /** Current HP of the surface layer (armor or deck). Damage depletes this
-   *  layer before it reaches the scaffold layer (`hp`). Zero for `bare` cells
+   *  layer before it reaches the substrate layer (`hp`). Zero for `bare` cells
    *  (no surface layer). */
   surfaceHp: number;
   /** Starting (and maximum) HP of the surface layer. */
@@ -476,10 +476,10 @@ export interface SimModule {
    */
   reactiveReduction: number;
   reactiveWindow: number;
-  /** Current HP of the scaffold layer. When this reaches zero the cell is
+  /** Current HP of the substrate layer. When this reaches zero the cell is
    *  destroyed (`alive = false`) and break-apart may sever the graph. */
   hp: number;
-  /** Starting (and maximum) HP of the scaffold layer. */
+  /** Starting (and maximum) HP of the substrate layer. */
   maxHp: number;
   mass: number;
   /** Power drawn from the reactor each tick when running. */

@@ -379,7 +379,7 @@ export function resourceStep(ship: SimShip): void {
   // Gate 3 — Overheat shutdown. After the thermal field is stepped, any alive
   // module whose cell temperature exceeds the failure threshold suffers thermal
   // and structural destruction. The cell is killed through the same death path
-  // battle damage uses — surface and scaffold HP to zero, `alive` cleared — so
+  // battle damage uses — surface and substrate HP to zero, `alive` cleared — so
   // every downstream effect follows: `recomputeAggregates` (called at the end of
   // this step) drops it from the aggregates, break-apart (4c) re-evaluates
   // connectivity, the airtightness vent mask treats it as a dead neighbour next

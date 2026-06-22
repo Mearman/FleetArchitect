@@ -19,13 +19,13 @@ const OPEN: CellEdges = { n: "open", e: "open", s: "open", w: "open", doorStates
  *  reach every station through the walkable surface. */
 const TOKENS: Record<string, GridCell> = {
   ".": { kind: "empty" },
-  "#": { kind: "solid", scaffold: true, surface: "armor", edges: { n: "wall", e: "wall", s: "wall", w: "wall", doorStates: {} } },
-  "~": { kind: "solid", scaffold: true, surface: "deck", edges: OPEN },
-  "L": { kind: "solid", scaffold: true, surface: "deck", edges: OPEN, equipment: { moduleId: "mod-pulse-laser", facing: 0 } },
-  "R": { kind: "solid", scaffold: true, surface: "deck", edges: OPEN, equipment: { moduleId: "mod-railgun", facing: 0 } },
-  "F": { kind: "solid", scaffold: true, surface: "deck", edges: OPEN, equipment: { moduleId: "mod-reactor-fusion", facing: 0 } },
-  "C": { kind: "solid", scaffold: true, surface: "deck", edges: OPEN, equipment: { moduleId: "mod-crew-quarters", facing: 0 } },
-  "G": { kind: "solid", scaffold: true, surface: "deck", edges: OPEN, equipment: { moduleId: "mod-munitions-magazine", facing: 0 } },
+  "#": { kind: "solid", substrate: true, surface: "armor", edges: { n: "wall", e: "wall", s: "wall", w: "wall", doorStates: {} } },
+  "~": { kind: "solid", substrate: true, surface: "deck", edges: OPEN },
+  "L": { kind: "solid", substrate: true, surface: "deck", edges: OPEN, equipment: { moduleId: "mod-pulse-laser", facing: 0 } },
+  "R": { kind: "solid", substrate: true, surface: "deck", edges: OPEN, equipment: { moduleId: "mod-railgun", facing: 0 } },
+  "F": { kind: "solid", substrate: true, surface: "deck", edges: OPEN, equipment: { moduleId: "mod-reactor-fusion", facing: 0 } },
+  "C": { kind: "solid", substrate: true, surface: "deck", edges: OPEN, equipment: { moduleId: "mod-crew-quarters", facing: 0 } },
+  "G": { kind: "solid", substrate: true, surface: "deck", edges: OPEN, equipment: { moduleId: "mod-munitions-magazine", facing: 0 } },
 };
 
 function grid(rows: readonly string[]): TileGrid {
@@ -132,13 +132,13 @@ function extendedCatalog() {
 function sensorCommsGrid(rows: readonly string[]): TileGrid {
   const EXTENDED_TOKENS: Record<string, GridCell> = {
     ".": { kind: "empty" },
-    "#": { kind: "solid", scaffold: true, surface: "armor", edges: { n: "wall", e: "wall", s: "wall", w: "wall", doorStates: {} } },
-    "~": { kind: "solid", scaffold: true, surface: "deck", edges: OPEN },
-    "F": { kind: "solid", scaffold: true, surface: "deck", edges: OPEN, equipment: { moduleId: "mod-reactor-fusion", facing: 0 } },
-    "C": { kind: "solid", scaffold: true, surface: "deck", edges: OPEN, equipment: { moduleId: "mod-crew-quarters", facing: 0 } },
-    "S": { kind: "solid", scaffold: true, surface: "deck", edges: OPEN, equipment: { moduleId: "test-sensor-array", facing: 0 } },
-    "O": { kind: "solid", scaffold: true, surface: "deck", edges: OPEN, equipment: { moduleId: "test-comms-omni", facing: 0 } },
-    "D": { kind: "solid", scaffold: true, surface: "deck", edges: OPEN, equipment: { moduleId: "test-comms-dish", facing: 0 } },
+    "#": { kind: "solid", substrate: true, surface: "armor", edges: { n: "wall", e: "wall", s: "wall", w: "wall", doorStates: {} } },
+    "~": { kind: "solid", substrate: true, surface: "deck", edges: OPEN },
+    "F": { kind: "solid", substrate: true, surface: "deck", edges: OPEN, equipment: { moduleId: "mod-reactor-fusion", facing: 0 } },
+    "C": { kind: "solid", substrate: true, surface: "deck", edges: OPEN, equipment: { moduleId: "mod-crew-quarters", facing: 0 } },
+    "S": { kind: "solid", substrate: true, surface: "deck", edges: OPEN, equipment: { moduleId: "test-sensor-array", facing: 0 } },
+    "O": { kind: "solid", substrate: true, surface: "deck", edges: OPEN, equipment: { moduleId: "test-comms-omni", facing: 0 } },
+    "D": { kind: "solid", substrate: true, surface: "deck", edges: OPEN, equipment: { moduleId: "test-comms-dish", facing: 0 } },
   };
   const cols = rows[0]?.length ?? 0;
   const cells: GridCell[] = [];
@@ -196,14 +196,14 @@ describe("analyseShipDesign", () => {
     expect(faults.some((f) => f.kind === "disconnected")).toBe(true);
   });
 
-  it("sums structure across scaffold + surface layers per solid cell", () => {
-    // A single armor cell: scaffold HP + armor HP.
+  it("sums structure across substrate + surface layers per solid cell", () => {
+    // A single armor cell: substrate HP + armor HP.
     const { stats } = analyseShipDesign(design(grid(["#"])), catalog());
-    const scaffold = catalog().scaffoldMaterial("Terran");
+    const substrate = catalog().substrateMaterial("Terran");
     const armor = catalog().armorMaterial("Terran");
-    expect(scaffold).toBeDefined();
+    expect(substrate).toBeDefined();
     expect(armor).toBeDefined();
-    expect(stats.structure).toBe((scaffold?.hp ?? 0) + (armor?.hp ?? 0));
+    expect(stats.structure).toBe((substrate?.hp ?? 0) + (armor?.hp ?? 0));
   });
 
   // ---------------------------------------------------------------------------
@@ -257,7 +257,7 @@ describe("analyseShipDesign", () => {
   it("flags unreachableStation when an armor cell seals a crewed station off from quarters", () => {
     // Layout: C ~ # L — the armor cell '#' between the deck corridor and the
     // laser blocks the crew path (armor's wall edges are impermeable). The
-    // ship is scaffold-connected (so isConnected4 passes and the
+    // ship is substrate-connected (so isConnected4 passes and the
     // reachability check runs), but the walkable graph is severed.
     // F (command) placed to keep the design otherwise valid.
     const { faults } = analyseShipDesign(
@@ -339,7 +339,7 @@ describe("analyseShipDesign", () => {
 
   it("unmannedAimUnit: a dish comms unit with no reachable crew quarters produces a warning", () => {
     // Layout: F C ~ # D S — armor cell seals the dish off from crew quarters.
-    // The ship is scaffold-connected, but the walkable graph is severed so the
+    // The ship is substrate-connected, but the walkable graph is severed so the
     // dish's cell is unreachable from quarters → unmannedAimUnit fires.
     const { faults } = analyseShipDesign(
       design(sensorCommsGrid(["FC~#DS"])),

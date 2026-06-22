@@ -19,9 +19,9 @@ function sampleDesign(): ShipDesign {
       cols: 3,
       rows: 1,
       cells: [
-        { kind: "solid", scaffold: true, surface: "deck", edges: { n: "open", e: "open", s: "open", w: "open", doorStates: {} }, equipment: { moduleId: "mod-pulse-laser", facing: 0 } },
-        { kind: "solid", scaffold: true, surface: "deck", edges: { n: "open", e: "open", s: "open", w: "open", doorStates: {} }, equipment: { moduleId: "mod-reactor-fusion", facing: 0 } },
-        { kind: "solid", scaffold: true, surface: "armor", edges: { n: "wall", e: "wall", s: "wall", w: "wall", doorStates: {} } },
+        { kind: "solid", substrate: true, surface: "deck", edges: { n: "open", e: "open", s: "open", w: "open", doorStates: {} }, equipment: { moduleId: "mod-pulse-laser", facing: 0 } },
+        { kind: "solid", substrate: true, surface: "deck", edges: { n: "open", e: "open", s: "open", w: "open", doorStates: {} }, equipment: { moduleId: "mod-reactor-fusion", facing: 0 } },
+        { kind: "solid", substrate: true, surface: "armor", edges: { n: "wall", e: "wall", s: "wall", w: "wall", doorStates: {} } },
       ],
       connections: [],
       shape: { outlineMode: "octilinear" },

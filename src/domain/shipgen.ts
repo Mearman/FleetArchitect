@@ -178,7 +178,7 @@ function expandCell(
     case "armor":
       return expandArmorSubCell(onNorth, onEast, onSouth, onWest);
     case "bare":
-      return { kind: "solid", scaffold: true, surface: "bare", edges: OPEN_EDGES };
+      return { kind: "solid", substrate: true, surface: "bare", edges: OPEN_EDGES };
     case "deck":
       return expandDeckSubCell(dc, dr, src.equipment);
   }
@@ -205,7 +205,7 @@ function expandArmorSubCell(
     w: onWest ? "wall" : "open",
     doorStates: {},
   };
-  return { kind: "solid", scaffold: true, surface: "armor", edges };
+  return { kind: "solid", substrate: true, surface: "armor", edges };
 }
 
 /**
@@ -222,13 +222,13 @@ function expandDeckSubCell(
   if (dc === 0 && dr === 0 && equipment !== undefined) {
     return {
       kind: "solid",
-      scaffold: true,
+      substrate: true,
       surface: "deck",
       edges: OPEN_EDGES,
       equipment,
     };
   }
-  return { kind: "solid", scaffold: true, surface: "deck", edges: OPEN_EDGES };
+  return { kind: "solid", substrate: true, surface: "deck", edges: OPEN_EDGES };
 }
 
 // Export the wall-edges constant for tests that want to assert its shape.

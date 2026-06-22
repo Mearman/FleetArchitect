@@ -68,7 +68,7 @@ function moduleOf(
     x: opts.x ?? col,
     y: opts.y ?? row,
     maxSurfaceHp: 0,
-    maxScaffoldHp: maxHp,
+    maxSubstrateHp: maxHp,
     surfaceReduction: 0,
     reactiveReduction: 0,
     reactiveWindow: 0,

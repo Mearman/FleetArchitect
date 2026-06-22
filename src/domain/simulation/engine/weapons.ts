@@ -301,7 +301,7 @@ export function fireOne(
     // cell behind that face — so a beam hits the armour surface it actually
     // crosses, not a synthesised point on the bounding circle. A beam whose
     // line of fire grazes past the hull (enters no edge) misses and deals no
-    // damage. A target with no outline (a bare-scaffold hull, or a legacy
+    // damage. A target with no outline (a bare-substrate hull, or a legacy
     // aggregated ship) has no polygon to trace, so we fall back to the
     // bounding-circle edge point exactly as before.
     const dirX = Math.cos(strikeAngle);

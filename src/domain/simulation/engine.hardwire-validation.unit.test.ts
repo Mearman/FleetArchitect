@@ -22,20 +22,20 @@ const OPEN: CellEdges = { n: "open", e: "open", s: "open", w: "open", doorStates
 const WALL: CellEdges = { n: "wall", e: "wall", s: "wall", w: "wall", doorStates: {} };
 const deck = (moduleId: string): GridCell => ({
   kind: "solid",
-  scaffold: true,
+  substrate: true,
   surface: "deck",
   edges: OPEN,
   equipment: { moduleId, facing: 0 },
 });
 const TOKENS: Record<string, GridCell> = {
   ".": { kind: "empty" },
-  "#": { kind: "solid", scaffold: true, surface: "armor", edges: WALL },
+  "#": { kind: "solid", substrate: true, surface: "armor", edges: WALL },
   F: deck("mod-reactor-fusion"),
   C: deck("mod-crew-quarters"),
   R: deck("mod-railgun"),
   G: deck("mod-munitions-magazine"),
   // `A` formerly the titanium armour module; armour is now a cell surface.
-  A: { kind: "solid", scaffold: true, surface: "armor", edges: WALL },
+  A: { kind: "solid", substrate: true, surface: "armor", edges: WALL },
   L: deck("mod-pulse-laser"),
 };
 

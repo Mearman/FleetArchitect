@@ -25,7 +25,7 @@ function corvette(id: string): ShipDesign {
   const OPEN: CellEdges = { n: "open", e: "open", s: "open", w: "open", doorStates: {} };
   const deck = (moduleId: string, facing = 0): GridCell => ({
     kind: "solid",
-    scaffold: true,
+    substrate: true,
     surface: "deck",
     edges: OPEN,
     equipment: { moduleId, facing },

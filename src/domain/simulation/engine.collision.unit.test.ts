@@ -68,7 +68,7 @@ function moduleOf(
     x: col * CELL_SIZE,
     y: row * CELL_SIZE,
     maxSurfaceHp: 0,
-    maxScaffoldHp: 1000,
+    maxSubstrateHp: 1000,
     surfaceReduction: 0,
     reactiveReduction: 0,
     reactiveWindow: 0,

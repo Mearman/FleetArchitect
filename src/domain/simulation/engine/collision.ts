@@ -189,7 +189,7 @@ export function resolveShipCollisions(hash: SpatialHash<ShipCell>): ShipContact[
     // use the polygon contact point and outward normal in place of the cell
     // midpoint; when they don't, the broad-phase was a false positive (the
     // discs touched but the hulls did not) and the pair is dropped. Either ship
-    // lacking an outline (a bare-scaffold hull or a legacy aggregated ship) has
+    // lacking an outline (a bare-substrate hull or a legacy aggregated ship) has
     // no polygon to test, so the disc-based contact stands unchanged.
     const refined = refineContactByOutline(contact);
     if (refined === undefined) continue; // false positive: hulls do not overlap

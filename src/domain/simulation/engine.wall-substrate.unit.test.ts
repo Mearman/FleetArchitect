@@ -12,11 +12,11 @@ import type { ModuleEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
 
 /**
- * Wall-edge barriers and scaffold damage tier (Phase ?).
+ * Wall-edge barriers and substrate damage tier (Phase ?).
  *
  * Three physics features:
  *  1. Surface tier mutation — `damageCell` marks `surface = "bare"` when a cell's
- *     surface layer is stripped so the renderer can show the exposed scaffold.
+ *     surface layer is stripped so the renderer can show the exposed substrate.
  *  2. Wall-edge projectile stopping — a wall or closed-door edge between two
  *     consecutive path cells absorbs stopping energy before the round reaches the
  *     next cell.
@@ -56,7 +56,7 @@ function moduleOf(
   effect: ModuleEffect,
   col: number,
   row: number,
-  maxScaffoldHp: number,
+  maxSubstrateHp: number,
   opts: {
     mass?: number;
     command?: boolean;
@@ -77,7 +77,7 @@ function moduleOf(
     surface: opts.surface ?? "bare",
     edges: opts.edges ?? OPEN,
     maxSurfaceHp: opts.maxSurfaceHp ?? 0,
-    maxScaffoldHp,
+    maxSubstrateHp,
     surfaceReduction: opts.surfaceReduction ?? 0,
     reactiveReduction: 0,
     reactiveWindow: 0,
@@ -137,11 +137,11 @@ function findModule(ship: SimShip, slotId: string) {
 // Test 1 — Surface tier mutation
 // ---------------------------------------------------------------------------
 
-describe("engine.wall-scaffold — surface tier mutation", () => {
-  it("strips surface to 'bare' when surface HP is exhausted but scaffold survives", () => {
-    // One armour cell: surface HP 70, scaffold HP 25. Hit with 80 damage
+describe("engine.wall-substrate — surface tier mutation", () => {
+  it("strips surface to 'bare' when surface HP is exhausted but substrate survives", () => {
+    // One armour cell: surface HP 70, substrate HP 25. Hit with 80 damage
     // (no armour reduction so 80 lands). The surface absorbs 70 and is
-    // exhausted; 10 spills into the scaffold (scaffold HP becomes 15).
+    // exhausted; 10 spills into the substrate (substrate HP becomes 15).
     // The cell must still be alive with surface = "bare".
     const ship = buildSim("s1", [
       moduleOf(
@@ -149,7 +149,7 @@ describe("engine.wall-scaffold — surface tier mutation", () => {
         { kind: "hull" },
         0,
         0,
-        25,        // scaffold HP
+        25,        // substrate HP
         {
           command: true,
           surface: "armor",
@@ -164,7 +164,7 @@ describe("engine.wall-scaffold — surface tier mutation", () => {
     expect(cell.alive).toBe(true);
     expect(cell.surface).toBe("bare");
     expect(cell.surfaceHp).toBe(0);
-    // Scaffold started at 25 and received 10 overflow → 15 remaining.
+    // Substrate started at 25 and received 10 overflow → 15 remaining.
     expect(cell.hp).toBeCloseTo(15, 6);
   });
 
@@ -204,7 +204,7 @@ describe("engine.wall-scaffold — surface tier mutation", () => {
     ]);
     const cell = findModule(ship, "c1");
 
-    // Hit with 30: deck HP (20) is exhausted, 10 spills to scaffold (100 − 10 = 90).
+    // Hit with 30: deck HP (20) is exhausted, 10 spills to substrate (100 − 10 = 90).
     applyDamage(ship, 30, 0, 0, ship.x, ship.y, 0);
 
     // Deck surface exhausted but cell still alive; surface stays "deck".
@@ -219,11 +219,11 @@ describe("engine.wall-scaffold — surface tier mutation", () => {
 // Test 2 — Wall stops projectile
 // ---------------------------------------------------------------------------
 
-describe("engine.wall-scaffold — wall-edge projectile stopping", () => {
+describe("engine.wall-substrate — wall-edge projectile stopping", () => {
   it("a wall edge between two path cells reduces penetrating energy before the next cell is struck", () => {
     // Cell A (col 0) has a wall on its east edge. Cell B (col 1) is behind it.
     // SIM.wallStopping = 25 HP units.
-    // Fire 30 damage: A has scaffold HP 25, so A dies and 5 spills.
+    // Fire 30 damage: A has substrate HP 25, so A dies and 5 spills.
     // Without wall stopping: B would receive 5 damage.
     // With wall stopping: 5 − 25 ≤ 0, so the round is stopped; B survives.
     const wallEdges: CellEdges = {
@@ -253,9 +253,9 @@ describe("engine.wall-scaffold — wall-edge projectile stopping", () => {
   });
 
   it("a closed door edge reduces penetrating energy but less than a wall", () => {
-    // SIM.doorStopping = 8. Cell A (scaffold HP 25) has a door on east edge
+    // SIM.doorStopping = 8. Cell A (substrate HP 25) has a door on east edge
     // (closed). Fire 40 damage: A dies leaving 15 remainder.
-    // 15 − 8 = 7 reaches B (scaffold HP 25 → 18 remaining).
+    // 15 − 8 = 7 reaches B (substrate HP 25 → 18 remaining).
     const doorEdges: CellEdges = {
       n: "open",
       e: "door",
@@ -310,7 +310,7 @@ describe("engine.wall-scaffold — wall-edge projectile stopping", () => {
 // Test 3 — Blast attenuation through wall
 // ---------------------------------------------------------------------------
 
-describe("engine.wall-scaffold — blast attenuation through wall edges", () => {
+describe("engine.wall-substrate — blast attenuation through wall edges", () => {
   it("a wall edge between source and target attenuates blast damage by wallBlastAttenuation", () => {
     // Three cells in a row: A (col 0), B (col 1), C (col 2).
     // A has a wall on its east edge (between A and B).

@@ -3,7 +3,7 @@ import { EntityId } from "./primitives";
 
 /**
  * A ship is an authoritative 2D tile grid of layered cells: every built cell is
- * scaffold (the structural connectivity base) carrying an optional surface
+ * substrate (the structural connectivity base) carrying an optional surface
  * (bare / deck / armor), per-edge walls or doors, and at most one equipment
  * module. The grid is the single source of truth for a ship's shape, mass,
  * connectivity, and the position of every module.
@@ -22,7 +22,7 @@ export type EdgeKind = z.infer<typeof EdgeKind>;
 export const DoorState = z.enum(["open", "closed"]);
 export type DoorState = z.infer<typeof DoorState>;
 
-/** The surface layered on a cell's scaffold.
+/** The surface layered on a cell's substrate.
  *  - `bare`   — framing only; not walkable; equipment-placeable.
  *  - `deck`   — airtight crew floor; walkable; equipment-placeable.
  *  - `armor`  — solid, impassable plate; not walkable; no equipment. */
@@ -82,9 +82,9 @@ export const EmptyCell = z.object({ kind: z.literal("empty") });
 export type EmptyCell = z.infer<typeof EmptyCell>;
 
 /**
- * A built cell. Every built cell has scaffold (the structural connectivity
- * base; break-apart follows 4-connected scaffold adjacency). `surface` layers
- * on the scaffold: `bare` (framing only, not walkable), `deck` (airtight crew
+ * A built cell. Every built cell has substrate (the structural connectivity
+ * base; break-apart follows 4-connected substrate adjacency). `surface` layers
+ * on the substrate: `bare` (framing only, not walkable), `deck` (airtight crew
  * floor, walkable, equipment-placeable), or `armor` (impassable solid, high
  * HP/mass, no equipment). `edges` govern crew movement and airtightness
  * between deck cells. `equipment` is optional and only legal on `bare`/`deck`
@@ -93,9 +93,9 @@ export type EmptyCell = z.infer<typeof EmptyCell>;
 export const SolidCell = z
   .object({
     kind: z.literal("solid"),
-    /** Every built cell carries scaffold; the literal collapses the type and
-     *  prevents a meaningless `scaffold: false` state. */
-    scaffold: z.literal(true),
+    /** Every built cell carries substrate; the literal collapses the type and
+     *  prevents a meaningless `substrate: false` state. */
+    substrate: z.literal(true),
     surface: SurfaceKind,
     edges: CellEdges,
     equipment: CellEquipment.optional(),
@@ -122,8 +122,23 @@ export const SolidCell = z
   );
 export type SolidCell = z.infer<typeof SolidCell>;
 
+/**
+ * Migrate a legacy cell whose structural-base field was named `scaffold` to the
+ * current `substrate`. Persisted designs and shared URLs created before the
+ * rename carry `scaffold: true`; this maps it on parse so they still load. The
+ * extra `scaffold` key is dropped by the object schema's default key-stripping.
+ */
+function migrateLegacySubstrate(v: unknown): unknown {
+  if (typeof v !== "object" || v === null) return v;
+  if ("substrate" in v || !("scaffold" in v)) return v;
+  return { ...v, substrate: v.scaffold };
+}
+
 /** Discriminated union over the cell kinds. New cell kinds extend this. */
-export const GridCell = z.discriminatedUnion("kind", [EmptyCell, SolidCell]);
+export const GridCell = z.preprocess(
+  migrateLegacySubstrate,
+  z.discriminatedUnion("kind", [EmptyCell, SolidCell]),
+);
 export type GridCell = z.infer<typeof GridCell>;
 
 // ---------------------------------------------------------------------------

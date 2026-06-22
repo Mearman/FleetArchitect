@@ -58,13 +58,13 @@ function sampleDesign(overrides?: Partial<ShipDesign>): ShipDesign {
       cells: [
         {
           kind: "solid",
-          scaffold: true,
+          substrate: true,
           surface: "bare",
           edges: { n: "wall", e: "open", s: "wall", w: "wall", doorStates: {} },
         },
         {
           kind: "solid",
-          scaffold: true,
+          substrate: true,
           surface: "bare",
           edges: { n: "wall", e: "wall", s: "wall", w: "open", doorStates: {} },
         },

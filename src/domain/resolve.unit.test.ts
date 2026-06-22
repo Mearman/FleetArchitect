@@ -18,8 +18,8 @@ function design(): ShipDesign {
     cols: 2,
     rows: 1,
     cells: [
-      { kind: "solid", scaffold: true, surface: "deck", edges: OPEN, equipment: { moduleId: "mod-pulse-laser", facing: Math.PI } },
-      { kind: "solid", scaffold: true, surface: "deck", edges: OPEN, equipment: { moduleId: "mod-reactor-fusion", facing: 0 } },
+      { kind: "solid", substrate: true, surface: "deck", edges: OPEN, equipment: { moduleId: "mod-pulse-laser", facing: Math.PI } },
+      { kind: "solid", substrate: true, surface: "deck", edges: OPEN, equipment: { moduleId: "mod-reactor-fusion", facing: 0 } },
     ],
     connections: [],
     shape: { outlineMode: "octilinear" },
@@ -88,8 +88,8 @@ describe("resolveFleetToCombatShips (grid)", () => {
         cols: 2,
         rows: 1,
         cells: [
-          { kind: "solid", scaffold: true, surface: "armor", edges: WALL },
-          { kind: "solid", scaffold: true, surface: "deck", edges: OPEN, equipment: { moduleId: "mod-reactor-fusion", facing: 0 } },
+          { kind: "solid", substrate: true, surface: "armor", edges: WALL },
+          { kind: "solid", substrate: true, surface: "deck", edges: OPEN, equipment: { moduleId: "mod-reactor-fusion", facing: 0 } },
         ],
         connections: [],
         shape: { outlineMode: "octilinear" },
@@ -106,9 +106,9 @@ describe("resolveFleetToCombatShips (grid)", () => {
     expect(armor).toBeDefined();
     expect(armorMaterial).toBeDefined();
     if (armor === undefined || armorMaterial === undefined) return;
-    // Mass sums the armor + scaffold material masses.
-    const scaffold = catalog().scaffoldMaterial("Terran");
-    expect(armor.mass).toBe(armorMaterial.mass + (scaffold?.mass ?? 0));
+    // Mass sums the armor + substrate material masses.
+    const substrate = catalog().substrateMaterial("Terran");
+    expect(armor.mass).toBe(armorMaterial.mass + (substrate?.mass ?? 0));
     expect(armor.maxSurfaceHp).toBe(armorMaterial.hp);
   });
 

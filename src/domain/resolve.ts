@@ -250,8 +250,8 @@ export function resolveFleetToCombatShips(
 
 /**
  * Build the per-cell module instances for a ship design. Every solid cell
- * becomes a `ResolvedModule` carrying its `surface` and `edges`, scaffold HP
- * (from the scaffold material) and surface HP (from the surface material: 0
+ * becomes a `ResolvedModule` carrying its `surface` and `edges`, substrate HP
+ * (from the substrate material) and surface HP (from the surface material: 0
  * for `bare`, the deck material's HP for `deck`, the armor material's HP for
  * `armor). Cells with equipment also carry the module effect and its
  * per-instance config. Each module's `(x, y)` is the cell's ship-local centre
@@ -267,12 +267,12 @@ function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] 
     const local = cellToLocal(col, row, grid);
     const slotId = `cell-${col}-${row}`;
 
-    const scaffold = catalog.scaffoldMaterial(design.faction);
+    const substrate = catalog.substrateMaterial(design.faction);
     const surface = surfaceMaterialFor(cell.surface, catalog, design.faction);
     const maxSurfaceHp = surface?.hp ?? 0;
-    const maxScaffoldHp = scaffold?.hp ?? 0;
+    const maxSubstrateHp = substrate?.hp ?? 0;
     const surfaceMass = surface?.mass ?? 0;
-    const scaffoldMass = scaffold?.mass ?? 0;
+    const substrateMass = substrate?.mass ?? 0;
     // The cell's surface (armour) damage-reduction and reactive-armour fields,
     // carried so the per-cell damage pipeline can absorb a fraction of each hit
     // and spend a reactive charge. Zero for bare/deck cells and for armour
@@ -298,11 +298,11 @@ function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] 
         surface: cell.surface,
         edges: cell.edges,
         maxSurfaceHp,
-        maxScaffoldHp,
+        maxSubstrateHp,
         surfaceReduction,
         reactiveReduction,
         reactiveWindow,
-        mass: surfaceMass + scaffoldMass,
+        mass: surfaceMass + substrateMass,
         powerDraw: 0,
         crewRequired: 0,
         effect: { kind: "hull" },
@@ -322,7 +322,7 @@ function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] 
     }
 
     if (moduleDef === undefined) {
-      // No equipment: a structural-only cell (scaffold + surface). Carries a
+      // No equipment: a structural-only cell (substrate + surface). Carries a
       // hull-effect placeholder so the engine treats it as a connectivity
       // anchor with the layer masses/HPs.
       out.push({
@@ -336,11 +336,11 @@ function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] 
         surface: cell.surface,
         edges: cell.edges,
         maxSurfaceHp,
-        maxScaffoldHp,
+        maxSubstrateHp,
         surfaceReduction,
         reactiveReduction,
         reactiveWindow,
-        mass: surfaceMass + scaffoldMass,
+        mass: surfaceMass + substrateMass,
         powerDraw: 0,
         crewRequired: 0,
         effect: { kind: "hull" },
@@ -370,11 +370,11 @@ function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] 
       surface: cell.surface,
       edges: cell.edges,
       maxSurfaceHp,
-      maxScaffoldHp,
+      maxSubstrateHp,
       surfaceReduction,
       reactiveReduction,
       reactiveWindow,
-      mass: moduleDef.mass + surfaceMass + scaffoldMass,
+      mass: moduleDef.mass + surfaceMass + substrateMass,
       powerDraw: moduleDef.powerDraw,
       crewRequired: moduleDef.crewRequired,
       // Deep-clone so engine mutations during a battle tick do not bleed back
@@ -403,10 +403,10 @@ function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] 
 }
 
 /** Resolve the surface material for a cell's surface kind in the given faction.
- *  `bare` resolves to undefined (no surface layer; scaffold is the only
+ *  `bare` resolves to undefined (no surface layer; substrate is the only
  *  structural layer). `deck` and `armor` resolve to the faction's deck /
  *  armor material respectively. The reactive fields are carried only by armour
- *  (deck and scaffold never have reactive plating), so the damage pipeline can
+ *  (deck and substrate never have reactive plating), so the damage pipeline can
  *  consume them per cell. */
 function surfaceMaterialFor(
   surface: SurfaceKind,

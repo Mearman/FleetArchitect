@@ -29,18 +29,18 @@ const WALL: CellEdges = { n: "wall", e: "wall", s: "wall", w: "wall", doorStates
 
 /** Build a grid from a token map:
  *   `.` empty, `#` armor (all-wall), `_` deck corridor (all-open), `b` bare
- *   scaffold (all-open), `m` a deck cell carrying equipment. */
+ *   substrate (all-open), `m` a deck cell carrying equipment. */
 function grid(rows: readonly string[]): TileGrid {
   const cols = rows[0]?.length ?? 0;
   const cells: GridCell[] = [];
   const tokens: Record<string, GridCell> = {
     ".": { kind: "empty" },
-    "#": { kind: "solid", scaffold: true, surface: "armor", edges: WALL },
-    "_": { kind: "solid", scaffold: true, surface: "deck", edges: OPEN },
-    "b": { kind: "solid", scaffold: true, surface: "bare", edges: OPEN },
+    "#": { kind: "solid", substrate: true, surface: "armor", edges: WALL },
+    "_": { kind: "solid", substrate: true, surface: "deck", edges: OPEN },
+    "b": { kind: "solid", substrate: true, surface: "bare", edges: OPEN },
     "m": {
       kind: "solid",
-      scaffold: true,
+      substrate: true,
       surface: "deck",
       edges: OPEN,
       equipment: { moduleId: "mod-x", facing: 0 },
@@ -91,7 +91,7 @@ describe("grid schema", () => {
     // The refine on SolidCell forbids equipment on an armor surface.
     const bad: GridCell = {
       kind: "solid",
-      scaffold: true,
+      substrate: true,
       surface: "armor",
       edges: WALL,
       equipment: { moduleId: "mod-x", facing: 0 },
@@ -161,8 +161,8 @@ describe("grid connectivity", () => {
     expect(isConnected4(grid(["..", ".."]))).toBe(false);
   });
 
-  it("treats armor + deck adjacency as scaffold-connected", () => {
-    // Armor and deck are both solid cells (scaffold-anchored), so they
+  it("treats armor + deck adjacency as substrate-connected", () => {
+    // Armor and deck are both solid cells (substrate-anchored), so they
     // contribute to the 4-connected structural graph even though armor
     // is not walkable.
     expect(isConnected4(grid(["#_#"]))).toBe(true);
@@ -229,13 +229,13 @@ describe("derived properties", () => {
 
 describe("walkability", () => {
   it("isWalkable truth table", () => {
-    expect(isWalkable({ kind: "solid", scaffold: true, surface: "armor", edges: WALL })).toBe(false);
-    expect(isWalkable({ kind: "solid", scaffold: true, surface: "bare", edges: OPEN })).toBe(false);
-    expect(isWalkable({ kind: "solid", scaffold: true, surface: "deck", edges: OPEN })).toBe(true);
+    expect(isWalkable({ kind: "solid", substrate: true, surface: "armor", edges: WALL })).toBe(false);
+    expect(isWalkable({ kind: "solid", substrate: true, surface: "bare", edges: OPEN })).toBe(false);
+    expect(isWalkable({ kind: "solid", substrate: true, surface: "deck", edges: OPEN })).toBe(true);
     expect(
       isWalkable({
         kind: "solid",
-        scaffold: true,
+        substrate: true,
         surface: "deck",
         edges: OPEN,
         equipment: { moduleId: "x", facing: 0 },
@@ -264,8 +264,8 @@ describe("walkability", () => {
   it("edgePassable treats a wall edge as impassable", () => {
     // Two adjacent deck cells whose shared edge (w of the right cell) is wall.
     const cells: GridCell[] = [
-      { kind: "solid", scaffold: true, surface: "deck", edges: { ...OPEN, e: "wall" } },
-      { kind: "solid", scaffold: true, surface: "deck", edges: { ...OPEN, w: "wall" } },
+      { kind: "solid", substrate: true, surface: "deck", edges: { ...OPEN, e: "wall" } },
+      { kind: "solid", substrate: true, surface: "deck", edges: { ...OPEN, w: "wall" } },
     ];
     const g = TileGrid.parse({ cols: 2, rows: 1, cells });
     expect(edgePassable({ col: 0, row: 0 }, { col: 1, row: 0 }, g)).toBe(false);
@@ -279,8 +279,8 @@ describe("walkability", () => {
       cols: 2,
       rows: 1,
       cells: [
-        { kind: "solid", scaffold: true, surface: "deck", edges: leftEdges },
-        { kind: "solid", scaffold: true, surface: "deck", edges: rightEdges },
+        { kind: "solid", substrate: true, surface: "deck", edges: leftEdges },
+        { kind: "solid", substrate: true, surface: "deck", edges: rightEdges },
       ],
     });
     expect(edgePassable({ col: 0, row: 0 }, { col: 1, row: 0 }, g)).toBe(true);
@@ -290,8 +290,8 @@ describe("walkability", () => {
       cols: 2,
       rows: 1,
       cells: [
-        { kind: "solid", scaffold: true, surface: "deck", edges: closedLeft },
-        { kind: "solid", scaffold: true, surface: "deck", edges: rightEdges },
+        { kind: "solid", substrate: true, surface: "deck", edges: closedLeft },
+        { kind: "solid", substrate: true, surface: "deck", edges: rightEdges },
       ],
     });
     expect(edgePassable({ col: 0, row: 0 }, { col: 1, row: 0 }, g2)).toBe(false);

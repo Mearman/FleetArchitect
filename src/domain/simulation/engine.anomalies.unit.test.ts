@@ -72,7 +72,7 @@ function moduleOf(
     x: col,
     y: row,
     maxSurfaceHp: 0,
-    maxScaffoldHp: 50,
+    maxSubstrateHp: 50,
     surfaceReduction: 0,
     reactiveReduction: 0,
     reactiveWindow: 0,
@@ -172,7 +172,7 @@ function attacker(opts: {
 /** The defender: a modular target dummy. A high-HP bridge sits off the line
  *  of fire so the ship survives the attacker's barrage, while a row of
  *  on-axis cells either pass damage straight through (bare cells, for the
- *  structure-decrement and shield-regen tests) or carry enough scaffold HP
+ *  structure-decrement and shield-regen tests) or carry enough substrate HP
  *  to absorb several shots before dying (for the asteroid-field test, which
  *  counts cell losses as its landed-hit proxy). */
 function defender(opts: {
@@ -185,11 +185,11 @@ function defender(opts: {
   shieldRechargeDelay?: number;
   classification?: ShipClassification;
   orders?: Partial<typeof defaultOrders>;
-  /** Scaffold HP of each on-axis absorbing cell. Defaults to 0 (bare cells
+  /** Substrate HP of each on-axis absorbing cell. Defaults to 0 (bare cells
    *  that pass damage straight to structure). Set above the per-shot damage
    *  so each cell absorbs several hits before dying, for fixture patterns
    *  that count landed hits via cell losses. */
-  absorbingScaffoldHp?: number;
+  absorbingSubstrateHp?: number;
 }): CombatShip {
   return targetDummy({
     id: opts.id,
@@ -202,7 +202,7 @@ function defender(opts: {
     shieldRechargeDelay: opts.shieldRechargeDelay,
     classification: opts.classification,
     absorbingCells: 60,
-    absorbingScaffoldHp: opts.absorbingScaffoldHp,
+    absorbingSubstrateHp: opts.absorbingSubstrateHp,
     orders: opts.orders,
   });
 }
@@ -219,7 +219,7 @@ function inputs(ships: CombatShip[], anomaly: BattleAnomaly, seed = 1, maxTicks 
 }
 
 /** Count on-axis absorbing cells destroyed over the battle. Each cell's
- *  scaffold HP exceeds the per-shot damage, so a cell only dies after several
+ *  substrate HP exceeds the per-shot damage, so a cell only dies after several
  *  landed hits — making the cell-loss count a stable proxy for "how many
  *  projectiles landed", which the asteroid field's per-tick projectile
  *  destruction reduces. Structure itself never moves (cells absorb every
@@ -271,10 +271,10 @@ describe("engine.anomalies", () => {
               x: 100,
               y: 0,
               structure: 99999,
-              // Scaffold HP above the per-shot damage (10) so each cell absorbs
+              // Substrate HP above the per-shot damage (10) so each cell absorbs
               // several hits before dying — giving a large sample of cell-loss
               // events whose count the asteroid field can reduce.
-              absorbingScaffoldHp: 100,
+              absorbingSubstrateHp: 100,
               orders: { engageRange: "hold" },
             }),
           ],

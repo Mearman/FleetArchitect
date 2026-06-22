@@ -88,7 +88,7 @@ export function ShipDesignerRoute() {
   const designs = useShipDesigns();
   const factions = catalog().factions();
   const [working, setWorking] = useState<WorkingDesign>(() => blankDesign());
-  const [brush, setBrush] = useState<Brush>({ kind: "scaffold-deck" });
+  const [brush, setBrush] = useState<Brush>({ kind: "substrate-deck" });
   const [selected, setSelected] = useState<{ col: number; row: number } | null>(
     null,
   );
@@ -531,7 +531,7 @@ export function ShipDesignerRoute() {
                       if (prev.kind !== "equipment") return prev;
                       const mod = catalog().module(prev.moduleId);
                       if (mod === undefined || mod.faction !== f) {
-                        return { kind: "scaffold-deck" };
+                        return { kind: "substrate-deck" };
                       }
                       return prev;
                     });

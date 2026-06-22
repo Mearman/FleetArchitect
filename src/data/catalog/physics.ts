@@ -12,7 +12,7 @@
  *   `CELL_SIZE` m on a side — the single metre-scale anchor in
  *   `src/domain/grid.ts` — so one cell covers `CELL_AREA_M2 = CELL_SIZE² m²`.
  * - **Mass** is in kilograms. A built cell's mass is the sum of its layer
- *   masses (`scaffold` + optional `deck` or `armor`) plus any equipment; each
+ *   masses (`substrate` + optional `deck` or `armor`) plus any equipment; each
  *   layer mass is `arealDensity × CELL_AREA_M2`, where `arealDensity` is the
  *   layer material's mass per unit area in kg/m² (itself `materialDensity ×
  *   effectiveThickness`, with `effectiveThickness` accounting for truss void
@@ -27,7 +27,7 @@
  * ## Areal densities (kg/m²)
  *
  * Each faction's layer material is documented as a real material at a real
- * effective thickness. Framed layers (scaffold, deck) use a fill factor that
+ * effective thickness. Framed layers (substrate, deck) use a fill factor that
  * accounts for the layer being mostly void (a truss is not a solid plate); a
  * solid layer (armor) is a full-thickness plate. Sources are representative
  * material densities in kg/m³.
@@ -51,19 +51,19 @@ import { CELL_SIZE } from "@/domain/grid";
 export const CELL_AREA_M2 = CELL_SIZE * CELL_SIZE;
 
 /**
- * Areal density (kg/m²) for each faction's scaffold layer — the structural
- * connectivity base of every built cell. A scaffold is a truss frame: mostly
+ * Areal density (kg/m²) for each faction's substrate layer — the structural
+ * connectivity base of every built cell. A substrate is a truss frame: mostly
  * void, so its effective density is `materialDensity × frameThickness ×
  * fillFraction`. The values below are the resulting areal densities after
  * that product, recorded per faction.
  *
  * Anchor: a steel truss (`ρ = 7850 kg/m³`) at `0.30 m` frame depth and `~3%`
  * fill is `7850 × 0.30 × 0.03 ≈ 70.65 kg/m²`; Terran is set to `100 kg/m²`
- * to account for the cross-bracing and hardpoints a combat scaffold carries
+ * to account for the cross-bracing and hardpoints a combat substrate carries
  * beyond a bare truss. Each other faction scales from its material density
  * relative to steel, with small adjustments for structural style.
  */
-export const SCAFFOLD_AREAL_DENSITY: Record<string, number> = {
+export const SUBSTRATE_AREAL_DENSITY: Record<string, number> = {
   Terran: 100,
   Swarm: 50,
   Crystalline: 60,
@@ -105,13 +105,13 @@ export const ARMOR_AREAL_DENSITY: Record<string, number> = {
 };
 
 /**
- * Per-cell mass (kg) of a faction's scaffold layer.
- * `SCAFFOLD_AREAL_DENSITY[faction] × CELL_AREA_M2`.
+ * Per-cell mass (kg) of a faction's substrate layer.
+ * `SUBSTRATE_AREAL_DENSITY[faction] × CELL_AREA_M2`.
  */
-export function scaffoldMass(faction: string): number {
-  const density = SCAFFOLD_AREAL_DENSITY[faction];
+export function substrateMass(faction: string): number {
+  const density = SUBSTRATE_AREAL_DENSITY[faction];
   if (density === undefined) {
-    throw new Error(`no scaffold areal density for faction "${faction}"`);
+    throw new Error(`no substrate areal density for faction "${faction}"`);
   }
   return density * CELL_AREA_M2;
 }
@@ -246,7 +246,7 @@ export function driveThrustNewtons(
 // not a solid block filling it. Its mass is `meanDensity × moduleVolume`,
 // where `moduleVolume` is the physical envelope of the installed equipment
 // (independent of cell area) and `meanDensity` is the mean density of the
-// assembled mechanism. The cell carries the layer masses (scaffold + deck/
+// assembled mechanism. The cell carries the layer masses (substrate + deck/
 // armor) separately; the module mass is just the equipment sitting on it.
 // ---------------------------------------------------------------------------
 

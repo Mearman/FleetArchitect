@@ -6,10 +6,10 @@ const OPEN: CellEdges = { n: "open", e: "open", s: "open", w: "open", doorStates
 const WALL: CellEdges = { n: "wall", e: "wall", s: "wall", w: "wall", doorStates: {} };
 
 function deck(edges: CellEdges = OPEN): GridCell {
-  return { kind: "solid", scaffold: true, surface: "deck", edges };
+  return { kind: "solid", substrate: true, surface: "deck", edges };
 }
 function armor(): GridCell {
-  return { kind: "solid", scaffold: true, surface: "armor", edges: WALL };
+  return { kind: "solid", substrate: true, surface: "armor", edges: WALL };
 }
 
 import type { GridCell } from "@/schema/grid";

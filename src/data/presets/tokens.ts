@@ -6,7 +6,7 @@ import type { CellEdges, GridCell, TileGrid } from "@/schema/grid";
  *
  * Designs and fleets are authored as plain objects and validated against the
  * schema at load time (same pattern as the catalog). Every design is a valid
- * build — solid cells 4-connected (scaffold adjacency), a command module
+ * build — solid cells 4-connected (substrate adjacency), a command module
  * present, power and crew in balance — which `presets.unit.test.ts` asserts,
  * so a catalog change that breaks a preset fails loudly rather than shipping a
  * broken starter ship.
@@ -14,7 +14,7 @@ import type { CellEdges, GridCell, TileGrid } from "@/schema/grid";
  * Phase 2: the layered-cell migration. Hull tiles (`#`/`=`/`o`) collapse to
  * `surface: "armor"` cells (all-wall edges, since armor is itself the
  * barrier). Struts (`/`) become `surface: "bare"` (low-mass framing, not
- * walkable, scaffold-connected). Floor (`~`) becomes `surface: "deck"` (the
+ * walkable, substrate-connected). Floor (`~`) becomes `surface: "deck"` (the
  * walkable crew floor). Every equipment token sits on `surface: "deck"` so
  * crew can reach every station. Armour-equipment modules (`A`, `D`, `c`, `R`)
  * are gone — armour is now a cell surface, so those tokens map to armor cells.
@@ -60,17 +60,17 @@ const WALL_EDGES: CellEdges = {
 
 /** An armor-surface cell: solid, impassable, high HP/mass, no equipment. */
 function armorCell(): GridCell {
-  return { kind: "solid", scaffold: true, surface: "armor", edges: WALL_EDGES };
+  return { kind: "solid", substrate: true, surface: "armor", edges: WALL_EDGES };
 }
 
-/** A bare-surface cell: low-mass framing, not walkable, scaffold-connected. */
+/** A bare-surface cell: low-mass framing, not walkable, substrate-connected. */
 function bareCell(): GridCell {
-  return { kind: "solid", scaffold: true, surface: "bare", edges: OPEN_EDGES };
+  return { kind: "solid", substrate: true, surface: "bare", edges: OPEN_EDGES };
 }
 
 /** A deck-surface cell with no equipment: walkable interior corridor space. */
 function deckCell(): GridCell {
-  return { kind: "solid", scaffold: true, surface: "deck", edges: OPEN_EDGES };
+  return { kind: "solid", substrate: true, surface: "deck", edges: OPEN_EDGES };
 }
 
 /** A deck-surface cell carrying one equipment module. All preset equipment
@@ -79,7 +79,7 @@ function deckCell(): GridCell {
 function deckEquip(moduleId: string, facing = 0): GridCell {
   return {
     kind: "solid",
-    scaffold: true,
+    substrate: true,
     surface: "deck",
     edges: OPEN_EDGES,
     equipment: { moduleId, facing },

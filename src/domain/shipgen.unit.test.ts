@@ -44,7 +44,7 @@ function emptyGrid1x1(): TileGrid {
  *   `.`  empty
  *   `#`  armor (all-wall edges)
  *   `_`  deck, no equipment
- *   `b`  bare scaffold, no equipment
+ *   `b`  bare substrate, no equipment
  *   `m`  deck + equipment (moduleId "mod-test", facing 0)
  */
 function fromTokens(rows: readonly string[]): TileGrid {
@@ -57,18 +57,18 @@ function fromTokens(rows: readonly string[]): TileGrid {
           cells.push({ kind: "empty" });
           break;
         case "#":
-          cells.push({ kind: "solid", scaffold: true, surface: "armor", edges: WALL });
+          cells.push({ kind: "solid", substrate: true, surface: "armor", edges: WALL });
           break;
         case "_":
-          cells.push({ kind: "solid", scaffold: true, surface: "deck", edges: OPEN });
+          cells.push({ kind: "solid", substrate: true, surface: "deck", edges: OPEN });
           break;
         case "b":
-          cells.push({ kind: "solid", scaffold: true, surface: "bare", edges: OPEN });
+          cells.push({ kind: "solid", substrate: true, surface: "bare", edges: OPEN });
           break;
         case "m":
           cells.push({
             kind: "solid",
-            scaffold: true,
+            substrate: true,
             surface: "deck",
             edges: OPEN,
             equipment: { moduleId: "mod-test", facing: 0 },
@@ -336,7 +336,7 @@ describe("subdivideGrid — equipment carry-through", () => {
       cells: [
         {
           kind: "solid",
-          scaffold: true,
+          substrate: true,
           surface: "deck",
           edges: OPEN,
           equipment: { moduleId: "mod-engine-ion", facing: Math.PI },
@@ -358,7 +358,7 @@ describe("subdivideGrid — equipment carry-through", () => {
       cells: [
         {
           kind: "solid",
-          scaffold: true,
+          substrate: true,
           surface: "deck",
           edges: OPEN,
           equipment: {
@@ -464,14 +464,14 @@ describe("subdivideGrid — connections", () => {
       cells: [
         {
           kind: "solid",
-          scaffold: true,
+          substrate: true,
           surface: "deck",
           edges: OPEN,
           equipment: { moduleId: "mod-reactor-fusion", facing: 0 },
         },
         {
           kind: "solid",
-          scaffold: true,
+          substrate: true,
           surface: "deck",
           edges: OPEN,
           equipment: { moduleId: "mod-pulse-laser", facing: 0 },
@@ -523,14 +523,14 @@ describe("subdivideGrid — f=1 identity", () => {
       cells: [
         {
           kind: "solid",
-          scaffold: true,
+          substrate: true,
           surface: "deck",
           edges: OPEN,
           equipment: { moduleId: "mod-a", facing: 0 },
         },
         {
           kind: "solid",
-          scaffold: true,
+          substrate: true,
           surface: "deck",
           edges: OPEN,
           equipment: { moduleId: "mod-b", facing: 0 },

@@ -685,7 +685,7 @@ export const SIM = {
    * thermal/structural failure and is destroyed. The thermal transport field
    * carries each cell's temperature in kelvin (`resource-step.ts`); when a cell
    * exceeds this the resource step kills the module through the same death path
-   * battle damage uses (scaffold and surface HP to zero, `alive` cleared), so the
+   * battle damage uses (substrate and surface HP to zero, `alive` cleared), so the
    * downstream effects — break-apart, airtightness venting, and a next-tick chain
    * reaction for a volatile cell — all follow. 1500 K is the engineering failure
    * point for aluminium-alloy structure and silicon electronics: aluminium melts

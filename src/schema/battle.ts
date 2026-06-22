@@ -218,7 +218,7 @@ export const ShipCellLayout = z.object({
   surface: SurfaceKind.optional(),
   /** Maximum HP of the surface layer. Optional for backward compatibility. */
   maxSurfaceHp: z.number().optional(),
-  /** Maximum scaffold/structure HP of the cell. */
+  /** Maximum substrate/structure HP of the cell. */
   maxHp: z.number(),
   /** True when this cell mounts a turreted weapon, so the renderer expects a
    *  live `turretAngle` in the cell's dynamic state. Omitted on fixed mounts and

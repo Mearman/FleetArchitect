@@ -77,7 +77,7 @@ function moduleOf(
     x,
     y,
     maxSurfaceHp: 0,
-    maxScaffoldHp: maxHp,
+    maxSubstrateHp: maxHp,
     surfaceReduction: 0,
     reactiveReduction: 0,
     reactiveWindow: 0,

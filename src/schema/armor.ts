@@ -17,7 +17,7 @@ export type ShipClassification = z.infer<typeof ShipClassification>;
 
 /**
  * A per-faction material definition for one layer of a built cell
- * (`scaffold`, `deck`, or `armor`). All values are authored catalogue content
+ * (`substrate`, `deck`, or `armor`). All values are authored catalogue content
  * — the game's content, not engine knobs — and each is documented as the
  * physical quantity it represents (`mass = materialDensity * cellArea *
  * plateThickness`, `hp = energy to destroy the material volume`) so future
@@ -32,7 +32,7 @@ export type ShipClassification = z.infer<typeof ShipClassification>;
  */
 export const LayerMaterial = z.object({
   /** Which layer this material describes. */
-  layer: z.enum(["scaffold", "deck", "armor"]),
+  layer: z.enum(["substrate", "deck", "armor"]),
   faction: z.string().min(1),
   /** Energy required to destroy one cell of this layer (damage points in the
    *  current model; joules once Phase 4 unifies damage). Authored as
@@ -40,7 +40,7 @@ export const LayerMaterial = z.object({
    *  and recorded as the resulting value. */
   hp: z.number().min(0),
   /** Fraction of incoming damage absorbed before it reaches the cell (0..1).
-   *  Meaningful only for `armor`; 0 for scaffold and deck. */
+   *  Meaningful only for `armor`; 0 for substrate and deck. */
   damageReduction: z.number().min(0).max(1).default(0),
   /** Per-cell mass. Authored as `materialDensity * cellArea * plateThickness`
    *  and recorded as the resulting value. */

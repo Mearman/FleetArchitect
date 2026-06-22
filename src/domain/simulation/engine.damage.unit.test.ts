@@ -36,7 +36,7 @@ function moduleOf(
   effect: ModuleEffect,
   col: number,
   row: number,
-  maxScaffoldHp: number,
+  maxSubstrateHp: number,
   mass = 5,
   command = false,
 ): ResolvedModule {
@@ -51,7 +51,7 @@ function moduleOf(
     surface: "bare",
     edges: OPEN,
     maxSurfaceHp: 0,
-    maxScaffoldHp,
+    maxSubstrateHp,
     surfaceReduction: 0,
     reactiveReduction: 0,
     reactiveWindow: 0,

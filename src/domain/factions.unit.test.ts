@@ -15,7 +15,7 @@ const WALL: CellEdges = { n: "wall", e: "wall", s: "wall", w: "wall", doorStates
 function deckEquip(moduleId: string, facing = 0): GridCell {
   return {
     kind: "solid",
-    scaffold: true,
+    substrate: true,
     surface: "deck",
     edges: OPEN,
     equipment: { moduleId, facing },
@@ -37,7 +37,7 @@ function makeGrid(rows: readonly string[], tokens: Record<string, GridCell>): Ti
 
 const TERRAN: Record<string, GridCell> = {
   ".": { kind: "empty" },
-  "#": { kind: "solid", scaffold: true, surface: "armor", edges: WALL },
+  "#": { kind: "solid", substrate: true, surface: "armor", edges: WALL },
   "L": deckEquip("mod-pulse-laser"),
   "F": deckEquip("mod-reactor-fusion"),
   "C": deckEquip("mod-crew-quarters"),
@@ -45,7 +45,7 @@ const TERRAN: Record<string, GridCell> = {
 
 const SWARM: Record<string, GridCell> = {
   ".": { kind: "empty" },
-  "#": { kind: "solid", scaffold: true, surface: "armor", edges: WALL },
+  "#": { kind: "solid", substrate: true, surface: "armor", edges: WALL },
   "p": deckEquip("swm-spore-launcher"),
   "g": deckEquip("swm-neural-ganglion"),
   "j": deckEquip("swm-flagellum-drive", Math.PI),
@@ -197,7 +197,7 @@ describe("faction-specific layer-material stats", () => {
   it("a Swarm armor cell uses Swarm layer-material mass, not Terran", () => {
     // A Swarm design with one armor cell + neural ganglion.
     const swarmTokens: Record<string, GridCell> = {
-      "#": { kind: "solid", scaffold: true, surface: "armor", edges: WALL },
+      "#": { kind: "solid", substrate: true, surface: "armor", edges: WALL },
       "g": deckEquip("swm-neural-ganglion"),
     };
     const { stats: swarmStats } = analyseShipDesign(
@@ -206,7 +206,7 @@ describe("faction-specific layer-material stats", () => {
     );
 
     const terranTokens: Record<string, GridCell> = {
-      "#": { kind: "solid", scaffold: true, surface: "armor", edges: WALL },
+      "#": { kind: "solid", substrate: true, surface: "armor", edges: WALL },
       "F": deckEquip("mod-reactor-fusion"),
     };
     const { stats: terranStats } = analyseShipDesign(
@@ -214,8 +214,8 @@ describe("faction-specific layer-material stats", () => {
       catalog(),
     );
 
-    // Swarm armor (mass 12) + scaffold (mass 1) + neural ganglion (mass 6) = 19
-    // Terran armor (mass 30) + scaffold (mass 2) + fusion reactor (mass 10) = 42
+    // Swarm armor (mass 12) + substrate (mass 1) + neural ganglion (mass 6) = 19
+    // Terran armor (mass 30) + substrate (mass 2) + fusion reactor (mass 10) = 42
     expect(swarmStats.mass).toBeLessThan(terranStats.mass);
   });
 });
@@ -245,7 +245,7 @@ describe("catalogue faction completeness", () => {
       expect(mods.some((m) => m.command === true), `${faction} needs a command module`).toBe(true);
       expect(mods.some((m) => m.effect.kind === "engine"), `${faction} needs an engine`).toBe(true);
       expect(mods.some((m) => m.effect.kind === "weapon"), `${faction} needs a weapon`).toBe(true);
-      expect(catalog().scaffoldMaterial(faction), `${faction} missing scaffold material`).toBeDefined();
+      expect(catalog().substrateMaterial(faction), `${faction} missing substrate material`).toBeDefined();
       expect(catalog().deckMaterial(faction), `${faction} missing deck material`).toBeDefined();
       expect(catalog().armorMaterial(faction), `${faction} missing armor material`).toBeDefined();
     });

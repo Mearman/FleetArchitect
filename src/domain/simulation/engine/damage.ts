@@ -196,9 +196,9 @@ export function applyModuleDamage(
 
 /**
  * Apply damage to a single cell, depleting outer layer first: surface HP
- * (armor or deck) before scaffold HP (`hp`). Returns the leftover damage that
- * spills onward once the cell is destroyed (scaffold HP exhausted). While the
- * surface survives the cell stays alive and nothing spills — only scaffold
+ * (armor or deck) before substrate HP (`hp`). Returns the leftover damage that
+ * spills onward once the cell is destroyed (substrate HP exhausted). While the
+ * surface survives the cell stays alive and nothing spills — only substrate
  * destruction kills the cell and severs the graph.
  *
  * The cell's armour absorbs a fraction of the hit before depleting surface HP:
@@ -206,11 +206,11 @@ export function applyModuleDamage(
  * is charged (`reactiveCharge === 0`) — which then spends its charge
  * (`reactiveWindow`, counted down by `stepTechCooldowns`). Both scale by the
  * hit's `armourPiercing`. Damage and the material `hp` share energy units, so
- * the subtraction is an energy balance; past the surface the scaffold is undimmed.
+ * the subtraction is an energy balance; past the surface the substrate is undimmed.
  */
 function damageCell(cell: SimModule, amount: number, armourPiercing: number): number {
   let remaining = amount;
-  // Surface layer first; bare cells (maxSurfaceHp 0) skip straight to scaffold.
+  // Surface layer first; bare cells (maxSurfaceHp 0) skip straight to substrate.
   if (cell.surfaceHp > 0) {
     // Armour absorption: passive plate plus, while charged, the reactive bonus —
     // both pierce-scaled, clamped to [0, 1] so a hit can never become healing.
@@ -226,13 +226,13 @@ function damageCell(cell: SimModule, amount: number, armourPiercing: number): nu
     if (cell.surfaceHp > 0) return 0;
     remaining = -cell.surfaceHp;
     cell.surfaceHp = 0;
-    // Armour stripped: the cell has lost its armour plate and is now bare scaffold —
+    // Armour stripped: the cell has lost its armour plate and is now bare substrate —
     // mark the transition so the renderer can show the stripped tier. Deck cells keep
     // their surface label even when their deck HP is exhausted, so the walkability
     // and hull-outline geometry are preserved correctly.
     if (cell.surface === "armor") cell.surface = "bare";
   }
-  // Scaffold layer next.
+  // Substrate layer next.
   cell.hp -= remaining;
   if (cell.hp > 0) return 0;
   remaining = -cell.hp;
@@ -348,11 +348,11 @@ export function splitBreakApart(
 
   const alive = ship.modules.filter((m) => m.alive);
   if (alive.length === 0) return [];
-  // Every solid cell is scaffold-anchored by definition (scaffold is the
+  // Every solid cell is substrate-anchored by definition (substrate is the
   // structural connectivity base of every built cell), so break-apart runs on
   // every modular ship — the previous hull-anchor gate is gone, since under
   // the layered-cell model there is no separate "hull cell" kind to gate on;
-  // the scaffold itself is the anchor.
+  // the substrate itself is the anchor.
   //
   // The one remaining guard: the ship must actually be a grid (at least one
   // pair of cells shares a grid edge). Synthetic fixtures that place modules

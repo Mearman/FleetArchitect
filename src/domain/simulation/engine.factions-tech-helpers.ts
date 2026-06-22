@@ -80,7 +80,7 @@ export function moduleOf(
     surface: effect.kind === "crew" ? "deck" : "bare",
     edges: OPEN_EDGES,
     maxSurfaceHp,
-    maxScaffoldHp: maxHp,
+    maxSubstrateHp: maxHp,
     surfaceReduction: 0,
     reactiveReduction: 0,
     reactiveWindow: 0,
@@ -232,7 +232,7 @@ export function modularShip(opts: {
   weapons?: WeaponEffect[];
   classification?: ShipClassification;
   orders?: Partial<Orders>;
-  /** Scaffold HP of the hull/engine/sensor cells. Defaults to 50. Set to 0
+  /** Substrate HP of the hull/engine/sensor cells. Defaults to 50. Set to 0
    *  for a target dummy whose modules should be transparent to damage so
    *  every hit flows through to hull structure (mirroring the legacy
    *  aggregated damage sink). A 0-HP cell is alive for collision/radius but
@@ -444,19 +444,19 @@ export function targetDummy(opts: {
   absorbingCells?: number;
   /** Surface (armour) layer HP of each on-axis absorbing cell. Defaults to 0
    *  (bare cells, no surface layer). Set above zero to model a cell whose
-   *  armour depletes before its scaffold or underlying structure takes damage. */
+   *  armour depletes before its substrate or underlying structure takes damage. */
   absorbingSurfaceHp?: number;
-  /** Scaffold HP of each on-axis absorbing cell. Defaults to 0 (cells die on
+  /** Substrate HP of each on-axis absorbing cell. Defaults to 0 (cells die on
    *  first contact and pass all damage onward). Set above zero so cells absorb
    *  multiple shots before dying, for fixture patterns that count landed hits
    *  rather than structure decrements. */
-  absorbingScaffoldHp?: number;
+  absorbingSubstrateHp?: number;
 }): CombatShip {
   const prefix = opts.id;
   const shieldCapacity = opts.shield ?? 0;
   const absorbingCount = opts.absorbingCells ?? 5;
   const absorbingSurfaceHp = opts.absorbingSurfaceHp ?? 0;
-  const absorbingScaffoldHp = opts.absorbingScaffoldHp ?? 0;
+  const absorbingSubstrateHp = opts.absorbingSubstrateHp ?? 0;
   const modules: ResolvedModule[] = [
     // Bridge one row off the primary (x) axis: alive and high-HP so the
     // ship never dies from losing its on-axis cells. At row 1 its world-y
@@ -474,9 +474,9 @@ export function targetDummy(opts: {
   ];
   // On-axis hull cells along the primary (row 0) axis. These are the
   // cells a projectile travelling along the ship's facing finds. Defaults
-  // mirror the original dummy (0 surface, 0 scaffold) so each cell is alive
+  // mirror the original dummy (0 surface, 0 substrate) so each cell is alive
   // for the collision hash but dies in one tick, passing all damage onward;
-  // the surface/scaffold options model an armoured or multi-hit cell.
+  // the surface/substrate options model an armoured or multi-hit cell.
   for (let i = 0; i < absorbingCount; i += 1) {
     modules.push(
       moduleOf(
@@ -484,7 +484,7 @@ export function targetDummy(opts: {
         { kind: "hull" },
         i,
         0,
-        absorbingScaffoldHp,
+        absorbingSubstrateHp,
         5,
         0,
         absorbingSurfaceHp,

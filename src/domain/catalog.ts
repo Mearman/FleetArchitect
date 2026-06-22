@@ -17,8 +17,8 @@ export interface Catalog {
   layerMaterial(faction: string, layer: LayerMaterial["layer"]): LayerMaterial | undefined;
   /** Convenience: the faction's armor material. */
   armorMaterial(faction: string): LayerMaterial | undefined;
-  /** Convenience: the faction's scaffold material. */
-  scaffoldMaterial(faction: string): LayerMaterial | undefined;
+  /** Convenience: the faction's substrate material. */
+  substrateMaterial(faction: string): LayerMaterial | undefined;
   /** Convenience: the faction's deck material. */
   deckMaterial(faction: string): LayerMaterial | undefined;
   /** All layer materials in the catalog. */
@@ -50,7 +50,7 @@ export function createCatalog(
     modulesForFaction: (faction) => modules.filter((m) => m.faction === faction),
     layerMaterial: layerBy,
     armorMaterial: (faction) => layerBy(faction, "armor"),
-    scaffoldMaterial: (faction) => layerBy(faction, "scaffold"),
+    substrateMaterial: (faction) => layerBy(faction, "substrate"),
     deckMaterial: (faction) => layerBy(faction, "deck"),
     allLayerMaterials: () => layerMaterials,
     factions: () => factionList,

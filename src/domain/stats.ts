@@ -36,8 +36,8 @@ export interface ShipStats {
   crewCapacity: number;
   crewNet: number;
   /** Aggregate HP of every solid cell's surface layer (armor + deck) plus
-   *  scaffold HP. Outer-first depletion (Phase 2) reduces surface HP before
-   *  scaffold HP; once scaffold HP reaches zero the cell is destroyed and
+   *  substrate HP. Outer-first depletion (Phase 2) reduces surface HP before
+   *  substrate HP; once substrate HP reaches zero the cell is destroyed and
    *  break-apart may sever the graph. */
   structure: number;
   damageReduction: number;
@@ -229,8 +229,8 @@ function applyModule(
 export function cellMass(cell: GridCell, catalog: Catalog, faction?: string): number {
   if (cell.kind !== "solid") return 0;
   let sum = 0;
-  const scaffold = faction !== undefined ? catalog.scaffoldMaterial(faction) : undefined;
-  if (scaffold !== undefined) sum += scaffold.mass;
+  const substrate = faction !== undefined ? catalog.substrateMaterial(faction) : undefined;
+  if (substrate !== undefined) sum += substrate.mass;
   if (cell.surface === "armor") {
     const armor = faction !== undefined ? catalog.armorMaterial(faction) : undefined;
     if (armor !== undefined) sum += armor.mass;
@@ -264,7 +264,7 @@ function partFactions(grid: ShipDesign["grid"], catalog: Catalog): Set<string> {
  * Resolve a ship design against the catalog, producing aggregated stats and any
  * build-constraint faults. Pure and deterministic. The grid is the source of
  * truth: mass, structure, thrust, and the rest are summed over its solid
- * cells. A valid design has all solid cells 4-connected (scaffold adjacency),
+ * cells. A valid design has all solid cells 4-connected (substrate adjacency),
  * at least one command module, and a non-negative power and crew balance.
  */
 export function analyseShipDesign(
@@ -289,13 +289,13 @@ export function analyseShipDesign(
     if (cell.kind !== "solid") continue;
     const slotId = `cell-${col}-${row}`;
 
-    // Surface + scaffold HP contribution. A cell with an unknown layer
+    // Surface + substrate HP contribution. A cell with an unknown layer
     // material reports a fault rather than silently contributing zero.
-    const scaffold = catalog.scaffoldMaterial(design.faction);
-    if (scaffold === undefined) {
-      faults.push({ kind: "unknownLayerMaterial", severity: "error", col, row, layer: "scaffold" });
+    const substrate = catalog.substrateMaterial(design.faction);
+    if (substrate === undefined) {
+      faults.push({ kind: "unknownLayerMaterial", severity: "error", col, row, layer: "substrate" });
     } else {
-      stats.structure += scaffold.hp;
+      stats.structure += substrate.hp;
     }
     if (cell.surface === "armor") {
       const armor = catalog.armorMaterial(design.faction);

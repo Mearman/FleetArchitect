@@ -17,7 +17,7 @@ function gridFrom(rows: readonly string[]): TileGrid {
         cells.push({ kind: "empty" });
       } else {
         const surface = ch === "a" ? "armor" : ch === "d" ? "deck" : "bare";
-        cells.push({ kind: "solid", scaffold: true, surface, edges: OPEN });
+        cells.push({ kind: "solid", substrate: true, surface, edges: OPEN });
       }
     }
   }
@@ -44,7 +44,7 @@ describe("outline.extractShell (layered)", () => {
     // would have dropped these.
     const open: GridCell = {
       kind: "solid",
-      scaffold: true,
+      substrate: true,
       surface: "deck",
       edges: OPEN,
     };

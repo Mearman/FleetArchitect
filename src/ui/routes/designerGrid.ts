@@ -77,7 +77,7 @@ export function blankGrid(cols: number, rows: number): TileGrid {
   const centre = Math.floor(rows / 2) * cols + Math.floor(cols / 2);
   cells[centre] = {
     kind: "solid",
-    scaffold: true,
+    substrate: true,
     surface: "deck",
     edges: OPEN_EDGES,
     equipment: { moduleId: "mod-reactor-fusion", facing: 0 },
@@ -145,18 +145,18 @@ export function cellLabel(cell: GridCell): string {
   }
 }
 
-/** Build a fresh solid cell for a `scaffold-<surface>` brush. */
+/** Build a fresh solid cell for a `substrate-<surface>` brush. */
 function freshSolidCell(surface: SurfaceKind): SolidCell {
   return {
     kind: "solid",
-    scaffold: true,
+    substrate: true,
     surface,
     edges: surface === "armor" ? WALL_EDGES : OPEN_EDGES,
   };
 }
 
 /**
- * Apply a whole-cell brush (`empty`, `scaffold-*`, `equipment`) to the cell at
+ * Apply a whole-cell brush (`empty`, `substrate-*`, `equipment`) to the cell at
  * (col, row), returning the replacement cell or `null` if the brush does not
  * apply (e.g. equipment on armor). Pure: returns a new cell, does not mutate.
  */
@@ -167,14 +167,14 @@ export function applyCellBrush(
   switch (brush.kind) {
     case "empty":
       return { kind: "empty" };
-    case "scaffold-bare":
+    case "substrate-bare":
       return freshSolidCell("bare");
-    case "scaffold-deck":
+    case "substrate-deck":
       return freshSolidCell("deck");
-    case "scaffold-armor":
+    case "substrate-armor":
       return freshSolidCell("armor");
     case "equipment":
-      // Equipment is only legal on a bare/deck scaffold cell. Armor and empty
+      // Equipment is only legal on a bare/deck substrate cell. Armor and empty
       // reject the placement; the user must first paint a deck/bare surface.
       if (prev.kind !== "solid" || prev.surface === "armor") return null;
       return {
@@ -194,7 +194,7 @@ export function applyCellBrush(
     }
     case "remove-surface": {
       if (prev.kind !== "solid") return null;
-      // Removing the surface leaves a bare scaffold frame. Equipment on a bare
+      // Removing the surface leaves a bare substrate frame. Equipment on a bare
       // cell is legal (the schema allows equipment on bare/deck), so we keep it.
       return { ...prev, surface: "bare" };
     }
@@ -291,12 +291,12 @@ export function brushLabel(brush: Brush): string {
   switch (brush.kind) {
     case "empty":
       return "empty";
-    case "scaffold-bare":
-      return "scaffold (bare)";
-    case "scaffold-deck":
-      return "scaffold (deck)";
-    case "scaffold-armor":
-      return "scaffold (armor)";
+    case "substrate-bare":
+      return "substrate (bare)";
+    case "substrate-deck":
+      return "substrate (deck)";
+    case "substrate-armor":
+      return "substrate (armor)";
     case "add-surface":
       return `add ${brush.surface}`;
     case "remove-surface":

@@ -28,11 +28,11 @@ import { getMeta, setMeta, storage } from "@/storage/db";
  * added alongside the existing Terran and Swarm, each with starter ships.
  *
  * Version 7: layered-cell migration (Phase 2). The grid cell model changes
- * from empty/hull/module/floor to empty/solid: every built cell is scaffold
+ * from empty/hull/module/floor to empty/solid: every built cell is substrate
  * carrying a surface (bare/deck/armor), four edge states, and optional
  * equipment. Armour equipment modules are gone (armour is now a cell surface);
  * their stats moved onto per-faction layer materials. Crew walkability is
- * deck-only and edge-gated. Break-apart anchors on scaffold (every solid
+ * deck-only and edge-gated. Break-apart anchors on substrate (every solid
  * cell), not on a hull-effect gate. Designs saved under the previous cell
  * model are not migrated — this bump reseeds the preset set so the new
  * bundled designs replace any prior-version copies.
@@ -68,8 +68,12 @@ import { getMeta, setMeta, storage } from "@/storage/db";
  * existing persisted values migrate to `"octilinear"` via a Zod preprocess.
  * All preset grids and fresh designs now carry `outlineMode: "octilinear"`.
  * This bump reseeds so preset records carry the updated default explicitly.
+ *
+ * Version 14: the cell's structural-base field `scaffold` is renamed to
+ * `substrate` (a legacy `scaffold` key migrates on parse). This bump reseeds so
+ * preset records store the renamed field rather than relying on the migration.
  */
-const PRESETS_VERSION = 13;
+const PRESETS_VERSION = 14;
 const VERSION_KEY = "presetsVersion";
 
 /**

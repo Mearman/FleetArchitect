@@ -348,7 +348,7 @@ describe("engine.factions-tech – determinism (non-tech designs)", () => {
       moduleOf("w1", weaponEffect, -1, 0, 50, 5, 0),
       // Phase 2: armour is a cell surface, not an equipment effect. The test
       // fixture keeps a structural placeholder module here so the grid geometry
-      // is unchanged; its effect is `hull` (scaffold-only anchor).
+      // is unchanged; its effect is `hull` (substrate-only anchor).
       moduleOf("a1", { kind: "hull" }, 0, 1, 100, 5, 0),
       moduleOf("s1", { kind: "shield", capacity: 100, rechargeRate: 2, rechargeDelay: 10 }, 0, -1, 50, 5, 0),
       // Command module required for per-module firing (weapon cooldown stagger visible)

@@ -22,7 +22,7 @@ function armedFighter(id: string): ShipDesign {
   const OPEN: CellEdges = { n: "open", e: "open", s: "open", w: "open", doorStates: {} };
   const deck = (moduleId: string): GridCell => ({
     kind: "solid",
-    scaffold: true,
+    substrate: true,
     surface: "deck",
     edges: OPEN,
     equipment: { moduleId, facing: 0 },

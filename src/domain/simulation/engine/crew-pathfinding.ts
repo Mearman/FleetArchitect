@@ -353,7 +353,7 @@ export function aliveCellMap(ship: SimShip): Map<string, SimModule> {
   const map = new Map<string, SimModule>();
   if (ship.modules === undefined) return map;
   for (const m of ship.modules) {
-    // Crew can only occupy deck cells: bare scaffold and armor surfaces are
+    // Crew can only occupy deck cells: bare substrate and armor surfaces are
     // not walkable, so they are excluded from the path graph even when alive.
     if (m.alive && m.surface === "deck") map.set(crewCellKey(m.col, m.row), m);
   }

@@ -2,12 +2,12 @@ import type { LayerMaterial } from "@/schema/armor";
 import {
   armorMass,
   deckMass,
-  scaffoldMass,
+  substrateMass,
 } from "./physics";
 
 /**
  * Per-faction layer materials for the layered-cell model. Each faction has
- * three layers — `scaffold` (the structural connectivity base of every built
+ * three layers — `substrate` (the structural connectivity base of every built
  * cell), `deck` (the airtight crew floor, walkable, equipment-placeable), and
  * `armor` (the solid impassable plate, high HP/mass, no equipment).
  *
@@ -30,11 +30,11 @@ import {
 export const layerMaterialData: LayerMaterial[] = [
   // Terran — ferro-steel construction (ρ ≈ 7850 kg/m³).
   {
-    layer: "scaffold",
+    layer: "substrate",
     faction: "Terran",
     hp: 25,
     damageReduction: 0,
-    mass: scaffoldMass("Terran"),
+    mass: substrateMass("Terran"),
   },
   {
     layer: "deck",
@@ -53,11 +53,11 @@ export const layerMaterialData: LayerMaterial[] = [
   // Swarm — bio-chitin plating (ρ ≈ 1100 kg/m³): lighter than Terran steel,
   // more HP per unit mass (resilient organic lattice).
   {
-    layer: "scaffold",
+    layer: "substrate",
     faction: "Swarm",
     hp: 30,
     damageReduction: 0,
-    mass: scaffoldMass("Swarm"),
+    mass: substrateMass("Swarm"),
   },
   {
     layer: "deck",
@@ -76,11 +76,11 @@ export const layerMaterialData: LayerMaterial[] = [
   // Crystalline Concord — grown crystal lattices (ρ ≈ 4500 kg/m³): very
   // light and energy-conductive but brittle.
   {
-    layer: "scaffold",
+    layer: "substrate",
     faction: "Crystalline",
     hp: 16,
     damageReduction: 0,
-    mass: scaffoldMass("Crystalline"),
+    mass: substrateMass("Crystalline"),
   },
   {
     layer: "deck",
@@ -99,11 +99,11 @@ export const layerMaterialData: LayerMaterial[] = [
   // Foundry Combine — furnace-forged composite plate (ρ ≈ 8500 kg/m³):
   // heaviest and toughest.
   {
-    layer: "scaffold",
+    layer: "substrate",
     faction: "Foundry",
     hp: 46,
     damageReduction: 0,
-    mass: scaffoldMass("Foundry"),
+    mass: substrateMass("Foundry"),
   },
   {
     layer: "deck",
@@ -124,11 +124,11 @@ export const layerMaterialData: LayerMaterial[] = [
   // Corsair Reavers — scavenged junk-hulls (ρ ≈ 3500 kg/m³): light and fast
   // but thin.
   {
-    layer: "scaffold",
+    layer: "substrate",
     faction: "Corsair",
     hp: 20,
     damageReduction: 0,
-    mass: scaffoldMass("Corsair"),
+    mass: substrateMass("Corsair"),
   },
   {
     layer: "deck",
@@ -146,11 +146,11 @@ export const layerMaterialData: LayerMaterial[] = [
   },
   // Synthetic Collective — precision-machined modular frames (ρ ≈ 6500 kg/m³).
   {
-    layer: "scaffold",
+    layer: "substrate",
     faction: "Synthetic",
     hp: 26,
     damageReduction: 0,
-    mass: scaffoldMass("Synthetic"),
+    mass: substrateMass("Synthetic"),
   },
   {
     layer: "deck",

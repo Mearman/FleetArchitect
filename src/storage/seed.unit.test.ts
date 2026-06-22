@@ -95,7 +95,7 @@ describe("seedPresets — legacy record migration", () => {
         cells: [
           {
             kind: "solid",
-            scaffold: true,
+            substrate: true,
             surface: "deck",
             edges: { n: "wall", e: "wall", s: "wall", w: "wall", doorStates: {} },
           },

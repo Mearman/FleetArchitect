@@ -228,7 +228,7 @@ export function deriveRadius(grid: TileGrid): number {
 
 /**
  * Whether a cell is walkable by crew — true only for solid cells whose surface
- * is `deck`. Bare scaffold, armor, empty cells, and out-of-bounds are not
+ * is `deck`. Bare substrate, armor, empty cells, and out-of-bounds are not
  * walkable. A weapon mounted on a deck cell is reachable; a weapon mounted on
  * a bare cell is not (and surfaces as an `unreachableStation` fault).
  */
