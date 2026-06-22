@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import type { EdgeKind, SolidCell, TileGrid } from "@/schema/grid";
 import { PHOSPHOR_GREEN } from "@/ui/theme/tokens";
 import { CELL_SIZE } from "@/domain/grid";
-import { computeOutline, extractShell } from "@/domain/outline";
+import { computeHullOutline } from "@/domain/hull-outline";
 import { cellColour, cellLabel, edgePositionClass } from "./designerGrid";
 import {
   breachOverlay,
@@ -69,16 +69,17 @@ export function GridBoard({
    *  drag-to-paint by calling onPaint as the pointer enters each cell. */
   const isPainting = useRef(false);
 
-  // Chamfered hull outline, traced around the protective shell (armour cells +
-  // wall/door edges). Rendered as an SVG overlay so the editor previews the same
-  // smoothed silhouette the battle draws. The outline vertices are in centred
+  // Octilinear hull outline (grown one cell over exposed deck walls, every
+  // corner bevelled to a 45-degree facet — no right angles). Rendered as an SVG
+  // overlay so the editor previews the ship's silhouette. The outline vertices
+  // are in centred
   // ship-local metres; converting back to lattice cell units (origin top-left)
   // gives `v / CELL_SIZE + cols/2` in x and `+ rows/2` in y. The overlay SVG
   // uses a `0 0 cols rows` viewBox stretched over the grid (preserveAspectRatio
   // none), so cell units map straight onto the rendered board without measuring
   // pixel sizes. Recomputed only when the grid changes.
   const outlineLoops = useMemo(() => {
-    const loops = computeOutline(extractShell(grid));
+    const loops = computeHullOutline(grid);
     return loops
       .filter((loop) => loop.length >= 2)
       .map((loop) =>
