@@ -25,19 +25,52 @@ function gridFrom(rows: readonly string[]): TileGrid {
 }
 
 describe("outline.extractShell (layered)", () => {
-  it("picks out exactly the armor cells as the shell", () => {
-    // 3x3: armor ring around a deck core.
+  it("includes the whole contiguous solid region, not just armour", () => {
+    // 3x3: armour ring around an open deck core. The hull is the whole region —
+    // the deck core is interior (walls auto-form around contiguous decks), not a
+    // hole — so every solid cell, including the centre deck, is in the shell.
     const g = gridFrom(["aaa", "ada", "aaa"]);
     const shell = extractShell(g);
     expect(shell.cols).toBe(3);
     expect(shell.rows).toBe(3);
-    expect(shell.cells.size).toBe(8); // 8 armor, 1 deck
-    expect(shell.cells.has(4)).toBe(false); // center (row 1, col 1) is deck
-    expect(shell.cells.has(0)).toBe(true); // corners are armor
+    expect(shell.cells.size).toBe(9); // all 9 solid cells
+    expect(shell.cells.has(4)).toBe(true); // centre deck is interior, included
+    expect(shell.cells.has(0)).toBe(true); // corner armour included
   });
 
-  it("computeOutline produces a closed loop around the armor shell", () => {
-    const g = gridFrom(["aa", "aa"]);
+  it("includes fully-open deck cells (the outer skin is the hull)", () => {
+    // Two open deck cells with no wall edges at all: both are still hull, because
+    // the ship's outer skin is itself a wall. The old armour/wall-only extractor
+    // would have dropped these.
+    const open: GridCell = {
+      kind: "solid",
+      scaffold: true,
+      surface: "deck",
+      edges: OPEN,
+    };
+    const grid: TileGrid = {
+      cols: 2,
+      rows: 1,
+      cells: [open, { ...open }],
+      connections: [],
+      shape: { outlineMode: "octilinear" },
+    };
+    const shell = extractShell(grid);
+    expect(shell.cells.size).toBe(2);
+  });
+
+  it("excludes empty cells, leaving an interior cavity as a hole", () => {
+    // A ring of deck with a genuine empty centre: the empty cell is excluded, so
+    // computeOutline traces it as a separate hole loop.
+    const g = gridFrom(["ddd", "d.d", "ddd"]);
+    const shell = extractShell(g);
+    expect(shell.cells.size).toBe(8); // 8 solid, centre empty
+    expect(shell.cells.has(4)).toBe(false);
+    expect(computeOutline(shell, { outlineMode: "octilinear" }).length).toBe(2);
+  });
+
+  it("computeOutline produces a closed loop around the hull", () => {
+    const g = gridFrom(["dd", "dd"]);
     const shell = extractShell(g);
     const loops = computeOutline(shell, { outlineMode: "octilinear" });
     expect(loops.length).toBeGreaterThanOrEqual(1);
@@ -49,53 +82,5 @@ describe("outline.extractShell (layered)", () => {
   it("is deterministic", () => {
     const g = gridFrom(["aaa", "ada", "aaa"]);
     expect(extractShell(g)).toEqual(extractShell(g));
-  });
-
-  it("includes wall/door-edged hull cells, not just armour", () => {
-    // A 2x1 of deck cells: the left cell carries a wall on its west edge (it is
-    // part of the airtight hull), the right cell is fully open (interior). The
-    // shell is the protective boundary — armour OR any wall/door edge — so the
-    // walled cell joins it while the open one does not. This is the case the
-    // armour-only extractor missed: a hull defined by wall edges rather than
-    // armour plating.
-    const walled: GridCell = {
-      kind: "solid",
-      scaffold: true,
-      surface: "deck",
-      edges: { n: "open", e: "open", s: "open", w: "wall", doorStates: {} },
-    };
-    const open: GridCell = {
-      kind: "solid",
-      scaffold: true,
-      surface: "deck",
-      edges: OPEN,
-    };
-    const grid: TileGrid = {
-      cols: 2,
-      rows: 1,
-      cells: [walled, open],
-      connections: [],
-      shape: { outlineMode: "octilinear" },
-    };
-    const shell = extractShell(grid);
-    expect(shell.cells.has(0)).toBe(true); // walled hull cell is shell
-    expect(shell.cells.has(1)).toBe(false); // fully-open interior cell is not
-  });
-
-  it("treats a door edge as part of the hull", () => {
-    const doored: GridCell = {
-      kind: "solid",
-      scaffold: true,
-      surface: "deck",
-      edges: { n: "door", e: "open", s: "open", w: "open", doorStates: { n: "closed" } },
-    };
-    const grid: TileGrid = {
-      cols: 1,
-      rows: 1,
-      cells: [doored],
-      connections: [],
-      shape: { outlineMode: "octilinear" },
-    };
-    expect(extractShell(grid).cells.has(0)).toBe(true);
   });
 });

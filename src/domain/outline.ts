@@ -13,12 +13,13 @@ import type { Vec2 } from "@/schema/primitives";
  *   - NO BITE: the polygon contains every solid cell whole (every corner of
  *     every solid cell sits inside-or-on the polygon). It never cuts into solid
  *     plating the way the old chamfer did.
- *   - FOLLOWS SHAPE: the polygon encloses no *whole* empty cell. An L stays an
- *     L and a cross keeps its armpits — genuine concavities are preserved. Only
- *     sub-cell slivers beside a smoothed diagonal may be shaved off an empty
- *     cell, never a complete one. The grid cell is the scale that separates a
- *     staircase artefact (bridging clips only slivers) from a real concavity
- *     (bridging would swallow a whole empty cell).
+ *   - FOLLOWS SHAPE: genuine concavities are preserved — an L stays an L and a
+ *     cross keeps its armpits. The boundary is segmented into monotone runs; a
+ *     diagonal staircase is one run of many step corners, while a re-entrant
+ *     concavity reverses direction and so splits into separate runs. Only the
+ *     staircase runs are smoothed (see `smoothableReflexVertices`), so the test
+ *     is structural and scale-invariant — independent of how finely the hull is
+ *     subdivided.
  *   - SHARP CORNERS: a convex corner already at an allowed angle stays sharp;
  *     corners are never rounded outward. A plain axis-aligned ship traces the
  *     exact rectilinear boundary, identical in both modes.
@@ -37,9 +38,9 @@ import type { Vec2 } from "@/schema/primitives";
  *   - Stage B (both modes): greedy reflex-vertex removal. A reflex vertex is
  *     dropped only when it is part of a multi-step diagonal staircase (so an
  *     isolated re-entrant corner stays sharp), the new chord is an allowed
- *     direction for the mode, the removed triangle swallows no whole empty cell,
- *     and the polygon stays simple. Convex vertices are never removed (that
- *     would cut into solid).
+ *     direction for the mode, and the polygon stays simple. Convex vertices are
+ *     never removed (that would cut into solid), which is what keeps the hull
+ *     bite-free.
  *   - Stage C (octilinear only): approximate each remaining non-45 reflex run
  *     with {axis, 45-degree} steps, the tightest superset stepped polyline.
  *   - Stage D: centre on the grid and scale to ship-local metres.
@@ -49,10 +50,10 @@ import type { Vec2 } from "@/schema/primitives";
  *     in the fixed E, S, W, N edge order.
  *   - The closed loop is walked from the row-major-first boundary edge,
  *     clockwise so the shell interior stays on the right.
- *   - Reflex removal scans in polygon order, applies the first acceptable
- *     removal, and restarts from index 0; it repeats full scans until a scan
- *     removes nothing. The predicate uses integer cross-product determinants,
- *     never the float `pointInPolygon`.
+ *   - Run segmentation and reflex removal scan in polygon order, apply the first
+ *     acceptable removal, and restart from index 0, repeating full scans until a
+ *     scan removes nothing. All geometric tests use integer cross-product
+ *     determinants, never the float `pointInPolygon`.
  *
  * No RNG anywhere. Two calls with identical inputs produce byte-identical
  * vertex lists.
@@ -275,7 +276,7 @@ function seedPolygon(loop: readonly DirectedEdge[]): IPoint[] {
 }
 
 // ---------------------------------------------------------------------------
-// Allowed edge directions and the no-whole-empty-cell predicate.
+// Allowed edge directions and integer geometry helpers.
 // ---------------------------------------------------------------------------
 
 /**
@@ -304,74 +305,6 @@ export function edgeDirectionAllowed(
  */
 function orient2(a: IPoint, b: IPoint, c: IPoint): number {
   return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
-}
-
-/**
- * Whether point p lies inside-or-on triangle T=(a, b, c), using integer
- * half-plane sign tests. Orientation-agnostic: p must sit on the interior side
- * of all three directed edges, where the interior side is fixed by the
- * triangle's own winding (its signed area). A degenerate (zero-area) triangle
- * contains no interior, so nothing is inside it.
- */
-function pointInTriangleInclusive(
-  p: IPoint,
-  a: IPoint,
-  b: IPoint,
-  c: IPoint,
-): boolean {
-  const area2 = orient2(a, b, c);
-  if (area2 === 0) return false;
-  const s = area2 > 0 ? 1 : -1;
-  // For each edge, the cross product must share the triangle's sign (or be
-  // zero, i.e. exactly on the edge).
-  if (orient2(a, b, p) * s < 0) return false;
-  if (orient2(b, c, p) * s < 0) return false;
-  if (orient2(c, a, p) * s < 0) return false;
-  return true;
-}
-
-/**
- * Whether removing the reflex vertex v (forming chord u->w) would swallow a
- * whole empty cell — the predicate that protects genuine concavities. For every
- * integer cell whose AABB overlaps the triangle (u, v, w), if that cell is
- * EMPTY and all four of its corners are inside-or-on the triangle, the removal
- * is inadmissible. Slivers (1-3 corners enclosed) are allowed; only full
- * four-corner enclosure of an empty cell is rejected. Exact integer arithmetic
- * throughout.
- */
-export function triangleContainsWholeEmptyCell(
-  u: IPoint,
-  v: IPoint,
-  w: IPoint,
-  shell: Shell,
-): boolean {
-  const minX = Math.min(u.x, v.x, w.x);
-  const maxX = Math.max(u.x, v.x, w.x);
-  const minY = Math.min(u.y, v.y, w.y);
-  const maxY = Math.max(u.y, v.y, w.y);
-  // Cell (col, row) occupies lattice corners [col, col+1] x [row, row+1]. A
-  // cell can only have all four corners inside the triangle's AABB if it lies
-  // within [minX, maxX-1] x [minY, maxY-1].
-  for (let row = minY; row <= maxY - 1; row += 1) {
-    for (let col = minX; col <= maxX - 1; col += 1) {
-      if (shellHas(shell, col, row)) continue; // solid cell: not empty.
-      const corners: readonly IPoint[] = [
-        { x: col, y: row },
-        { x: col + 1, y: row },
-        { x: col + 1, y: row + 1 },
-        { x: col, y: row + 1 },
-      ];
-      let allInside = true;
-      for (const corner of corners) {
-        if (!pointInTriangleInclusive(corner, u, v, w)) {
-          allInside = false;
-          break;
-        }
-      }
-      if (allInside) return true;
-    }
-  }
-  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -559,21 +492,26 @@ function smoothableReflexVertices(seed: readonly IPoint[]): Set<IPoint> {
  *   (b) v is SMOOTHABLE — part of a multi-step staircase (see
  *       `smoothableReflexVertices`), so isolated concavities stay sharp;
  *   (c) the chord u->w is an allowed direction for the mode;
- *   (d) the removed triangle (u, v, w) swallows no whole empty cell;
- *   (e) the chord keeps the polygon simple (no crossing of a non-adjacent
+ *   (d) the chord keeps the polygon simple (no crossing of a non-adjacent
  *       edge).
  * After each accepted removal, newly-collinear neighbours collapse and the
  * scan restarts from index 0. Full scans repeat until one removes nothing.
+ *
+ * No-bite holds without any empty-cell test: only reflex vertices are removed,
+ * and bridging a reflex vertex adds area on the empty side of the notch, never
+ * cutting into solid. Following the shape is enforced entirely by the smoothable
+ * gate — a monotone diagonal run is a hull edge, never a re-entrant concavity (a
+ * concavity reverses direction and so splits into separate runs). That gate is
+ * scale-invariant, so subdivided hulls (whose 45-degree tapers have multi-cell
+ * steps) smooth just like unit-step staircases; an empty-cell area test would
+ * instead block them, because a multi-cell step's diagonal does enclose whole
+ * sub-cells.
  *
  * Smoothability is computed once from the seed: removal and collinear collapse
  * only drop vertices (never create them), and a kept reflex stays a turn, so a
  * smoothable vertex keeps its identity until it is itself removed.
  */
-function removeReflexVertices(
-  poly: IPoint[],
-  mode: OutlineMode,
-  shell: Shell,
-): IPoint[] {
+function removeReflexVertices(poly: IPoint[], mode: OutlineMode): IPoint[] {
   const smoothable = smoothableReflexVertices(poly);
   let pts = poly;
   let progressed = true;
@@ -591,9 +529,7 @@ function removeReflexVertices(
       if (!smoothable.has(v)) continue;
       // (c) chord direction allowed for the mode.
       if (!edgeDirectionAllowed(w.x - u.x, w.y - u.y, mode)) continue;
-      // (d) no whole empty cell swallowed.
-      if (triangleContainsWholeEmptyCell(u, v, w, shell)) continue;
-      // (e) polygon stays simple.
+      // (d) polygon stays simple.
       if (!chordKeepsSimple(pts, i, u, w)) continue;
       // Accept: drop v, collapse newly-collinear neighbours, restart.
       pts = pts.slice(0, i).concat(pts.slice(i + 1));
@@ -650,8 +586,8 @@ function toMetreLoop(loop: readonly IPoint[], cols: number, rows: number): Vec2[
 }
 
 /** Run the full simplification pipeline (Stages B and C) on one seed loop. */
-function simplifyLoop(seed: IPoint[], mode: OutlineMode, shell: Shell): IPoint[] {
-  let pts = removeReflexVertices(seed, mode, shell);
+function simplifyLoop(seed: IPoint[], mode: OutlineMode): IPoint[] {
+  let pts = removeReflexVertices(seed, mode);
   if (mode === "octilinear") pts = approximateOctilinear(pts);
   return pts;
 }
@@ -667,7 +603,7 @@ function simplifyLoop(seed: IPoint[], mode: OutlineMode, shell: Shell): IPoint[]
  * Determinism: identical inputs always yield byte-identical output, because
  * every step — edge enumeration, loop chaining, seed construction, reflex
  * removal, octilinear stepping, centring — follows a fixed iteration order with
- * no RNG, and the geometric predicate is exact integer arithmetic.
+ * no RNG, and every geometric test is exact integer arithmetic.
  */
 export function computeOutline(shell: Shell, shape: ShipShape): Vec2[][] {
   const edges = boundaryEdges(shell);
@@ -677,7 +613,7 @@ export function computeOutline(shell: Shell, shape: ShipShape): Vec2[][] {
     // loop so the output winding is uniform regardless of shell shape.
     const oriented = latticeSignedArea(loop) < 0 ? reverseLoop(loop) : loop;
     const seed = seedPolygon(oriented);
-    const simplified = simplifyLoop(seed, shape.outlineMode, shell);
+    const simplified = simplifyLoop(seed, shape.outlineMode);
     return toMetreLoop(simplified, shell.cols, shell.rows);
   });
 }
@@ -755,31 +691,26 @@ export function extractShellLegacy(grid: {
 }
 
 // ---------------------------------------------------------------------------
-// Layered-cell shell extractor: builds the Shell from a SolidCell grid by
-// taking the armor cells (the protective shell the outline traces around).
-// Complements extractShellLegacy (which bridges the pre-layered TileGrid).
+// Layered-cell shell extractor: the hull is the contiguous solid region.
 // ---------------------------------------------------------------------------
 
-/** Build the outline Shell from a layered-cell grid: the ship's protective
- *  shell, the airtight hull the outline traces around. A solid cell belongs to
- *  the shell when it is armour plating OR carries a wall/door edge — the two
- *  ways a cell forms part of the airtight boundary (matching the module header
- *  and the airtightness model the breach/vent logic keys off). An open-framed
- *  deck/bare cell with no walls is interior, not hull, and is not part of the
- *  shell. Armour cells are authored with a sealed (all-wall) perimeter, so this
- *  is a superset of the old armour-only shell: a ship with no walls beyond its
- *  armour traces an identical outline, while a hull defined by wall edges (no
- *  armour plating) now traces one too. */
+/** Build the outline Shell from a layered-cell grid: the ship's hull, the region
+ *  the outline wraps. The hull is the whole contiguous solid region — every
+ *  deck, bare and armour cell — because a ship's outer skin is itself a wall:
+ *  walls are drawn automatically around contiguous deck tiles, so the cells'
+ *  edges facing empty space form the hull, and everything those walls enclose is
+ *  interior. Tracing the full region (rather than only explicitly walled or
+ *  armour cells) is what gives every ship a silhouette — even an unarmoured one —
+ *  and lets a tapered hull read as octilinear diagonals. Empty cells inside the
+ *  region remain holes, so an internal cavity is still wrapped by its own loop.
+ *  The airtightness/breach model keys off the per-cell edges separately and is
+ *  untouched by this. */
 export function extractShell(grid: TileGrid): Shell {
   const cells = new Set<number>();
   for (let i = 0; i < grid.cells.length; i += 1) {
     const cell = grid.cells[i];
     if (cell === undefined || cell.kind !== "solid") continue;
-    const e = cell.edges;
-    const hasHullEdge =
-      e.n === "wall" || e.e === "wall" || e.s === "wall" || e.w === "wall" ||
-      e.n === "door" || e.e === "door" || e.s === "door" || e.w === "door";
-    if (cell.surface === "armor" || hasHullEdge) cells.add(i);
+    cells.add(i);
   }
   return { cols: grid.cols, rows: grid.rows, cells };
 }
