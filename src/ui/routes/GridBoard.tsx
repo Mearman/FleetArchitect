@@ -106,7 +106,14 @@ export function GridBoard({
     <div style={{ position: "relative", width: "100%" }}>
       <div
         className={gridBoard}
-        style={{ gridTemplateColumns: `repeat(${grid.cols}, 1fr)` }}
+        style={{
+          gridTemplateColumns: `repeat(${grid.cols}, 1fr)`,
+          gridTemplateRows: `repeat(${grid.rows}, 1fr)`,
+          // Pin the board's aspect to the grid so cells stay square and the
+          // overlay SVG (preserveAspectRatio="none", viewBox 0 0 cols rows)
+          // maps one unit to one cell on both axes — keeping the hull in sync.
+          aspectRatio: `${grid.cols} / ${grid.rows}`,
+        }}
       >
       {grid.cells.map((cell, idx) => {
         const col = idx % grid.cols;

@@ -132,7 +132,11 @@ export const gridBoard = style({
  */
 export const gridCell = style({
   position: "relative",
-  aspectRatio: "1 / 1",
+  // Squareness comes from the board's aspect-ratio + equal 1fr rows/cols (see
+  // GridBoard); a per-cell aspect-ratio would fight that and can desync the
+  // hull overlay.
+  minWidth: 0,
+  minHeight: 0,
   border: `1px solid rgba(28,38,32,0.4)`,
   borderRadius: 3,
   padding: 0,
