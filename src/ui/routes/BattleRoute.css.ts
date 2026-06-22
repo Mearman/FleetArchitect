@@ -2,16 +2,62 @@ import { style } from "@vanilla-extract/css";
 import { vars } from "@/ui/theme/vars.css";
 
 /**
- * Battle arena canvas and stage styles. The workspace layout (three-zone flex
- * with collapsible docks) lives in BattleWorkspace.css.ts; these styles are
- * for the canvas element itself and its on-canvas overlays (legends, camera
- * controls cluster).
+ * Battle screen chassis and canvas styles. The workspace layout (fixed console
+ * wings flanking the screen) lives in BattleWorkspace.css.ts; these styles cover
+ * the screen chassis, the recessed canvas well, and the bezel control strip that
+ * carries the camera buttons and indicator lamps.
  */
 
-/** Outer wrapper for the canvas stage. */
-export const stage = style({
+/**
+ * The screen chassis — a raised metal frame the display sits recessed inside,
+ * with the camera buttons and indicator lamps mounted on its bezel strip rather
+ * than floating on the glass. Compose `panelScrews` for corner fasteners.
+ * Mirrors the cassette-panel surface so the screen and its flanking control
+ * wings read as one continuous console.
+ */
+export const screenChassis = style({
   position: "relative",
-  width: "100%",
+  display: "flex",
+  flexDirection: "column",
+  gap: 10,
+  padding: 12,
+  background: `linear-gradient(180deg, ${vars.material.surfaceTop} 0%, ${vars.color.panel} 55%, ${vars.material.surfaceBottom} 100%)`,
+  border: `1px solid ${vars.color.border}`,
+  borderRadius: 0,
+  boxShadow: [
+    `inset 1px 1px 0 ${vars.material.bevelHighlight}`,
+    `inset -1px -1px 0 ${vars.material.bevelShadow}`,
+    `0 0 0 1px ${vars.color.border}`,
+    `0 3px 10px -3px ${vars.material.elevation}`,
+  ].join(", "),
+});
+
+/**
+ * Recessed control tray set into the chassis face below the screen. Indicator
+ * lamps cluster on the left, camera buttons on the right.
+ */
+export const bezelStrip = style({
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 8,
+  flexWrap: "wrap",
+  padding: "6px 8px",
+  background: vars.color.base,
+  borderRadius: 1,
+  boxShadow: [
+    `inset 0 1px 3px ${vars.material.bevelShadowDeep}`,
+    `inset 0 -1px 0 ${vars.material.bevelHighlight}`,
+    `0 0 0 1px ${vars.color.border}`,
+  ].join(", "),
+});
+
+/** A cluster of lamps or buttons within the bezel strip. */
+export const bezelGroup = style({
+  display: "flex",
+  alignItems: "center",
+  gap: 6,
+  flexWrap: "wrap",
 });
 
 /**
@@ -91,37 +137,9 @@ export const canvasGrabbing = style({
   cursor: "grabbing",
 });
 
-/** Zoom in / zoom out / fit — the three camera action buttons on the canvas. */
-export const cameraControls = style({
-  position: "absolute",
-  top: 8,
-  right: 8,
-  display: "flex",
-  gap: 6,
-  alignItems: "center",
-  zIndex: 3,
-});
-
-/** The active-anomaly legend pinned to the top-left of the canvas. */
-export const anomalyLegend = style({
-  position: "absolute",
-  top: 8,
-  left: 8,
-  zIndex: 3,
-  pointerEvents: "none",
-});
-
-/** The fog-of-war legend badge, shown below the anomaly legend when fog is active. */
-export const fogLegend = style({
-  position: "absolute",
-  top: 34,
-  left: 8,
-  zIndex: 3,
-  pointerEvents: "none",
-});
-
-// statusOverlay removed — module status now lives in the controls dock
-// (BattleWorkspace right dock / mobile Drawer via BattleControlsPanel).
+// Camera controls and legends no longer float on the glass — they are mounted
+// on the chassis bezel strip (see screenChassis / bezelStrip above), styled as
+// annunciator buttons and lamps.
 
 /**
  * Glass-glare overlay: a diagonal highlight that makes the canvas read as a

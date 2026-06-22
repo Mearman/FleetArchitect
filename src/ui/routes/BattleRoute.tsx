@@ -1,17 +1,14 @@
 import {
-  ActionIcon,
   Badge,
   Box,
   Center,
   Group,
   Loader,
-  Paper,
   Stack,
   Text,
   Title,
   Tooltip,
 } from "@mantine/core";
-import { useIsMobile } from "@/ui/responsive/useViewport";
 import { notifications } from "@mantine/notifications";
 import {
   IconMaximize,
@@ -41,7 +38,8 @@ import { useBattleCanvas } from "./useBattleCanvas";
 import { useBattlePlayback } from "./useBattlePlayback";
 import { useBattleSimulation } from "./useBattleSimulation";
 import { useBattleUrlSync } from "./useBattleUrlSync";
-import { touchTarget } from "@/ui/components/panel.css";
+import { AnnunciatorButton, AnnunciatorLamp } from "@/ui/components/Annunciator";
+import { panelScrews } from "@/ui/components/panel.css";
 import { screenPowerOn } from "@/ui/fx/CrtOverlay.css";
 import { CrtScreen } from "@/ui/fx/CrtScreen";
 import * as styles from "./BattleRoute.css";
@@ -49,24 +47,11 @@ import * as styles from "./BattleRoute.css";
 export function BattleRoute() {
   const fleets = useFleets();
   const designs = useShipDesigns();
-  const isMobile = useIsMobile();
   const [attackerId, setAttackerId] = useState<string | null>(null);
   const [defenderId, setDefenderId] = useState<string | null>(null);
   const [anomaly, setAnomaly] = useState<BattleAnomalyType>("none");
   const [seed, setSeed] = useState(1);
 
-  /**
-   * Whether the setup dock/drawer is expanded. Defaults to true so the user
-   * can immediately pick fleets; collapses to a rail when the first batch
-   * arrives so the battle takes centre stage without vanishing the setup.
-   */
-  const [setupOpen, setSetupOpen] = useState(true);
-  /**
-   * Whether the controls dock/drawer (layers + modules) is expanded.
-   * Starts closed; the user opens it when they want to toggle overlays or
-   * inspect module status.
-   */
-  const [controlsOpen, setControlsOpen] = useState(false);
   /** Active tab within the controls panel. */
   const [controlsTab, setControlsTab] = useState<"layers" | "modules">("layers");
 
@@ -211,9 +196,9 @@ export function BattleRoute() {
     computedTicks: simulation.computedTicks,
     hasFrames,
     drawFrame,
-    // Gate statusFrame updates on the controls dock being open so we skip the
-    // React state update when the panel is hidden.
-    statusOpen: controlsOpen,
+    // The controls wing is always present once a battle is running, so refresh
+    // the status frame whenever there are frames to read.
+    statusOpen: hasFrames,
     canvasSize: camera.canvasSize,
   });
 
@@ -228,9 +213,6 @@ export function BattleRoute() {
       onFirstBatch: () => {
         playback.setPlaybackTime(0);
         camera.setCamera(DEFAULT_CAMERA);
-        // Collapse setup dock to rail — the battle takes centre stage but
-        // the user can still re-expand without a full-width layout shift.
-        setSetupOpen(false);
         playback.setPlaying(true);
       },
     };
@@ -428,42 +410,35 @@ export function BattleRoute() {
       <BattleWorkspace
         setupContent={setupContent}
         controlsContent={controlsContent}
-        setupOpen={setupOpen}
-        controlsOpen={controlsOpen}
-        onSetupToggle={() => setSetupOpen((o) => !o)}
-        onControlsToggle={() => setControlsOpen((o) => !o)}
-        isMobile={isMobile}
         hasFrames={hasFrames}
       >
         {!hasFrames ? (
-          <Stack gap="sm">
-            <Paper p={0} withBorder className={styles.stage}>
-              {/* The idle prompt sits on the powered-on display itself, not a
-                  separate panel — an empty screen waiting for a battle. */}
-              <Box className={`${styles.canvasBox} ${screenPowerOn}`}>
-                <CrtScreen />
-                <div className={styles.glassGlare} aria-hidden="true" />
-                <Center h="100%">
-                  {simulation.computing ? (
-                    <Stack align="center" gap="xs">
-                      <Loader />
-                      <Text c="dimmed">Computing battle…</Text>
-                    </Stack>
-                  ) : (
-                    <Stack align="center" gap="xs">
-                      <IconSwords size={40} color="var(--mantine-color-dimmed)" />
-                      <Text c="dimmed">
-                        Pick two fleets and engage to watch the battle.
-                      </Text>
-                    </Stack>
-                  )}
-                </Center>
-              </Box>
-            </Paper>
-          </Stack>
+          <Box className={`${styles.screenChassis} ${panelScrews}`}>
+            {/* The idle prompt sits on the powered-on display itself, not a
+                separate panel — an empty screen waiting for a battle. */}
+            <Box className={`${styles.canvasBox} ${screenPowerOn}`}>
+              <CrtScreen />
+              <div className={styles.glassGlare} aria-hidden="true" />
+              <Center h="100%">
+                {simulation.computing ? (
+                  <Stack align="center" gap="xs">
+                    <Loader />
+                    <Text c="dimmed">Computing battle…</Text>
+                  </Stack>
+                ) : (
+                  <Stack align="center" gap="xs">
+                    <IconSwords size={40} color="var(--mantine-color-dimmed)" />
+                    <Text c="dimmed">
+                      Pick two fleets and engage to watch the battle.
+                    </Text>
+                  </Stack>
+                )}
+              </Center>
+            </Box>
+          </Box>
         ) : (
           <Stack gap="sm">
-            <Paper p={0} withBorder className={styles.stage}>
+            <Box className={`${styles.screenChassis} ${panelScrews}`}>
               <Box className={`${styles.canvasBox} ${screenPowerOn}`}>
                 {/* CRT screen effects (scanlines, vignette, aberration), confined to this display. */}
                 <CrtScreen />
@@ -478,68 +453,56 @@ export function BattleRoute() {
                   onPointerCancel={camera.handlePointerUp}
                   aria-label="Battle canvas — drag to pan, scroll or use +/− buttons to zoom"
                 />
+              </Box>
 
-                <Badge
-                  className={styles.anomalyLegend}
-                  size="sm"
-                  variant="outline"
-                  color="amber"
-                >
-                  {ANOMALY_LABEL[simulation.activeAnomaly]}
-                  {camera.camera.followId !== null ? " · following" : ""}
-                </Badge>
-
-                {showFog && (
-                  <Badge className={styles.fogLegend} size="sm" variant="outline" color="cyan">
-                    Fog of war
-                  </Badge>
-                )}
-
-                {/* Camera controls — zoom and fit only; layer/status toggles live in the dock */}
-                <Group className={styles.cameraControls} gap={4}>
-                  <Tooltip label="Zoom in">
-                    <ActionIcon
-                      size="md"
-                      className={touchTarget}
-                      variant="default"
-                      aria-label="Zoom in"
-                      onClick={() => camera.zoomBy(1.4)}
-                    >
-                      <IconPlus size={16} />
-                    </ActionIcon>
-                  </Tooltip>
-                  <Tooltip label="Zoom out">
-                    <ActionIcon
-                      size="md"
-                      className={touchTarget}
-                      variant="default"
-                      aria-label="Zoom out"
-                      onClick={() => camera.zoomBy(1 / 1.4)}
-                    >
-                      <IconMinus size={16} />
-                    </ActionIcon>
-                  </Tooltip>
-                  <Tooltip label="Auto-fit live ships">
-                    <ActionIcon
-                      size="md"
-                      className={touchTarget}
-                      variant={camera.camera.autoFit ? "filled" : "default"}
-                      aria-label="Auto-fit live ships"
-                      onClick={camera.restoreAutoFit}
-                    >
-                      <IconMaximize size={16} />
-                    </ActionIcon>
-                  </Tooltip>
+              {/* Bezel strip — indicator lamps and camera buttons mounted on the
+                  chassis, not floating on the glass. */}
+              <Box className={styles.bezelStrip}>
+                <Group className={styles.bezelGroup} gap={6}>
+                  <AnnunciatorLamp tint="amber" lit={simulation.activeAnomaly !== "none"}>
+                    {ANOMALY_LABEL[simulation.activeAnomaly]}
+                    {camera.camera.followId !== null ? " · following" : ""}
+                  </AnnunciatorLamp>
+                  {showFog && (
+                    <AnnunciatorLamp tint="cyan" lit>
+                      Fog
+                    </AnnunciatorLamp>
+                  )}
+                  {simulation.result === null && simulation.computing && (
+                    <BattleStatusReadout
+                      buffering={playback.buffering}
+                      computedTicks={simulation.computedTicks}
+                    />
+                  )}
                 </Group>
 
-                {simulation.result === null && simulation.computing && (
-                  <BattleStatusReadout
-                    buffering={playback.buffering}
-                    computedTicks={simulation.computedTicks}
-                  />
-                )}
+                <Group className={styles.bezelGroup} gap={6}>
+                  <Tooltip label="Zoom in">
+                    <AnnunciatorButton
+                      icon={<IconPlus size={14} />}
+                      aria-label="Zoom in"
+                      onClick={() => camera.zoomBy(1.4)}
+                    />
+                  </Tooltip>
+                  <Tooltip label="Zoom out">
+                    <AnnunciatorButton
+                      icon={<IconMinus size={14} />}
+                      aria-label="Zoom out"
+                      onClick={() => camera.zoomBy(1 / 1.4)}
+                    />
+                  </Tooltip>
+                  <Tooltip label="Auto-fit live ships">
+                    <AnnunciatorButton
+                      tint="green"
+                      active={camera.camera.autoFit}
+                      icon={<IconMaximize size={14} />}
+                      aria-label="Auto-fit live ships"
+                      onClick={camera.restoreAutoFit}
+                    />
+                  </Tooltip>
+                </Group>
               </Box>
-            </Paper>
+            </Box>
 
             <PlaybackControls
               playing={playback.playing}

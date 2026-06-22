@@ -1,4 +1,5 @@
-import { Badge, Group, SegmentedControl, Stack, Switch, Text } from "@mantine/core";
+import { Badge, Group, SegmentedControl, Stack, Text } from "@mantine/core";
+import { AnnunciatorButton } from "@/ui/components/Annunciator";
 import { OVERLAYS } from "./overlays";
 import type { OverlayScope } from "./overlays";
 
@@ -43,29 +44,32 @@ export function LayersPanel({ showFog, onFogChange, overlays, onOverlayChange }:
         )}
       </Group>
 
-      {/* Fog of war — always-scope, so only a Switch */}
+      {/* Fog of war — always-scope, so only a toggle lamp */}
       <Group gap={8} align="center" wrap="nowrap">
-        <Switch
-          size="xs"
-          label="Fog of war"
-          checked={showFog}
-          onChange={(e) => onFogChange(e.currentTarget.checked)}
-        />
+        <AnnunciatorButton
+          tint="cyan"
+          active={showFog}
+          onClick={() => onFogChange(!showFog)}
+          style={{ flex: 1, minWidth: 0 }}
+        >
+          Fog of war
+        </AnnunciatorButton>
       </Group>
 
-      {/* Visual overlays — Switch + Active/All scope */}
+      {/* Visual overlays — toggle lamp + Active/All scope */}
       {OVERLAYS.map((def) => {
         const state = overlays[def.id];
         if (state === undefined) return null;
         return (
           <Group key={def.id} gap={8} align="center" wrap="nowrap">
-            <Switch
-              size="xs"
-              label={def.label}
-              checked={state.on}
+            <AnnunciatorButton
+              tint="amber"
+              active={state.on}
+              onClick={() => onOverlayChange(def.id, { on: !state.on })}
               style={{ flex: 1, minWidth: 0 }}
-              onChange={(e) => onOverlayChange(def.id, { on: e.currentTarget.checked })}
-            />
+            >
+              {def.label}
+            </AnnunciatorButton>
             <SegmentedControl
               size="xs"
               value={state.scope}

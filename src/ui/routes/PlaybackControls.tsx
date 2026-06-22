@@ -1,5 +1,6 @@
-import { Button, Group, SegmentedControl, Slider, Stack, Text, Tooltip } from "@mantine/core";
+import { Group, SegmentedControl, Slider, Stack, Text, Tooltip } from "@mantine/core";
 import { IconFocus2, IconPlayerPause, IconPlayerPlay } from "@tabler/icons-react";
+import { AnnunciatorButton } from "@/ui/components/Annunciator";
 import type { Camera } from "./battleCamera";
 
 /**
@@ -26,7 +27,8 @@ export interface PlaybackControlsProps {
 
 /**
  * The playback bar: play/pause, follow/zoom badge, tick readout, speed control,
- * and the seeker slider. Extracted verbatim from the original BattleRoute JSX.
+ * and the seeker slider. Play/pause and the fit toggle are annunciator legend
+ * lamps that light while engaged.
  */
 export function PlaybackControls({
   playing,
@@ -43,13 +45,14 @@ export function PlaybackControls({
   return (
     <Stack gap="xs">
       <Group gap="md" align="center" wrap="wrap">
-        <Button
-          variant="light"
-          leftSection={playing ? <IconPlayerPause size={16} /> : <IconPlayerPlay size={16} />}
+        <AnnunciatorButton
+          tint="green"
+          active={playing}
+          icon={playing ? <IconPlayerPause size={14} /> : <IconPlayerPlay size={14} />}
           onClick={onTogglePlay}
         >
           {playing ? "Pause" : "Play"}
-        </Button>
+        </AnnunciatorButton>
         <Tooltip
           label={
             camera.autoFit
@@ -59,16 +62,15 @@ export function PlaybackControls({
                 : "Click to auto-fit live ships (zoom/pan is manual)"
           }
         >
-          <Button
-            size="compact-xs"
-            variant={camera.autoFit ? "filled" : "light"}
-            color={camera.autoFit ? "teal" : camera.followId !== null ? "grape" : "gray"}
-            leftSection={<IconFocus2 size={12} />}
+          <AnnunciatorButton
+            tint={camera.autoFit ? "green" : camera.followId !== null ? "magenta" : "amber"}
+            active={camera.autoFit}
+            icon={<IconFocus2 size={12} />}
             onClick={onRestoreFit}
             aria-label="Restore auto-fit to live ships"
           >
             {camera.autoFit ? "FIT" : `${Math.round(camera.zoom * 100)}%`}
-          </Button>
+          </AnnunciatorButton>
         </Tooltip>
         <Text size="sm" c="dimmed" style={{ flex: 1 }}>
           Tick {currentTick} / {maxTick}

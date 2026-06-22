@@ -1,4 +1,5 @@
-import { Badge, Box, Group, Loader, Progress, Stack, Text } from "@mantine/core";
+import { Group, Text } from "@mantine/core";
+import { AnnunciatorLamp } from "@/ui/components/Annunciator";
 
 /**
  * Props for {@link BattleStatusReadout}. Shown only while a run is still
@@ -14,44 +15,21 @@ export interface BattleStatusReadoutProps {
 }
 
 /**
- * Streaming progress readout, pinned to the bottom-left of the canvas stage
- * while a run is computing. Battles run with no fixed tick cap, so an animated
- * bar signals ongoing work and a live tick count tracks the streamed leading
- * edge, with a badge that flips to "buffering" when playback has outrun the
- * streamed frames.
+ * Streaming-progress readout mounted on the chassis bezel strip while a run is
+ * computing. A lit annunciator lamp signals ongoing work (flipping to amber
+ * "buffering" when playback outruns the streamed frames) and a live tick count
+ * tracks the streamed leading edge. Battles run with no fixed tick cap, so there
+ * is no total to show a percentage against.
  */
 export function BattleStatusReadout({ buffering, computedTicks }: BattleStatusReadoutProps) {
   return (
-    <Box
-      style={{
-        position: "absolute",
-        bottom: 8,
-        left: 8,
-        zIndex: 3,
-        width: "min(260px, 60%)",
-        pointerEvents: "none",
-      }}
-    >
-      <Stack gap={4}>
-        <Group gap={6} align="center">
-          <Loader size={12} />
-          <Badge size="sm" variant="filled" color={buffering ? "yellow" : "indigo"}>
-            {buffering ? "Buffering" : "Computing"}
-          </Badge>
-          <Text size="xs" c="dimmed" ff="monospace">
-            {computedTicks} ticks
-          </Text>
-        </Group>
-        {/* No fixed tick cap means no known total to show a percentage against,
-            so an animated bar signals ongoing work while the count above tracks
-            the streamed leading edge. */}
-        <Progress
-          size="xs"
-          value={100}
-          animated
-          color={buffering ? "yellow" : "indigo"}
-        />
-      </Stack>
-    </Box>
+    <Group gap={6} align="center" wrap="nowrap">
+      <AnnunciatorLamp tint={buffering ? "amber" : "cyan"} lit>
+        {buffering ? "Buffering" : "Computing"}
+      </AnnunciatorLamp>
+      <Text size="xs" c="dimmed" ff="monospace">
+        {computedTicks} ticks
+      </Text>
+    </Group>
   );
 }

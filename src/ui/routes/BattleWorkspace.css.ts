@@ -1,20 +1,21 @@
 import { style } from "@vanilla-extract/css";
-import { vars } from "@/ui/theme/vars.css";
 
 /**
- * Three-zone battle workspace layout.
+ * Three-zone battle console layout.
  *
- * Desktop: [ setup dock | canvas centre | controls dock ]
- * Mobile:  vertical stack; docks rendered as bottom-sheet Drawers via the Route.
+ * Desktop: [ setup wing | screen centre | controls wing ] — fixed cassette
+ * panels flanking the screen, no collapse or drawers.
+ * Mobile:  a vertical stack; CSS `order` keeps the screen on top and the wings
+ * stack beneath it, with the page scrolling.
  */
 
-/** Outer flex-row that holds the two docks and the canvas centre. */
+/** Outer flex-row holding the two wings and the screen centre. */
 export const workspace = style({
   display: "flex",
   flexDirection: "row",
   alignItems: "stretch",
   width: "100%",
-  gap: 0,
+  gap: 8,
   "@media": {
     "(max-width: 48em)": {
       flexDirection: "column",
@@ -22,104 +23,49 @@ export const workspace = style({
   },
 });
 
-/** Expanded side dock — shared by both setup (left) and controls (right). */
-export const dock = style({
-  flex: "0 0 284px",
+/**
+ * Fixed side wing — a cassette panel bolted alongside the screen (composed with
+ * `cassettePanel` via the component className). On desktop it matches the screen
+ * height (the row stretches it) and its body scrolls internally; the outer panel
+ * keeps overflow visible so its amber corner brackets are never clipped. On
+ * mobile it becomes full-width and the page scrolls instead.
+ */
+export const wing = style({
+  flex: "0 0 300px",
+  minHeight: 0,
   display: "flex",
   flexDirection: "column",
-  backgroundColor: vars.color.panel,
-  border: `1px solid ${vars.color.border}`,
-  overflowY: "auto",
-  // Hidden on mobile — drawers take over.
+  padding: 12,
   "@media": {
     "(max-width: 48em)": {
-      display: "none",
+      flex: "1 1 auto",
+      minHeight: "auto",
     },
   },
 });
 
-/** Collapsed dock rail: a slim strip showing a vertical label + expand affordance. */
-export const dockRail = style({
-  flex: "0 0 32px",
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "center",
-  padding: "10px 0 8px",
-  gap: 6,
-  backgroundColor: vars.color.panel,
-  border: `1px solid ${vars.color.border}`,
-  cursor: "pointer",
-  userSelect: "none",
-  "@media": {
-    "(max-width: 48em)": {
-      display: "none",
-    },
-  },
-  ":hover": {
-    borderColor: vars.color.amber,
-  },
-});
-
-/** Vertical text label rendered in the collapsed rail. */
-export const railLabel = style({
-  writingMode: "vertical-rl",
-  transform: "rotate(180deg)",
-  fontFamily: vars.font.mono,
-  fontSize: "0.55rem",
-  fontWeight: 600,
-  letterSpacing: "0.14em",
-  textTransform: "uppercase",
-  color: vars.color.amber,
-});
-
-/** Header strip inside an expanded dock: title + collapse chevron. */
-export const dockHeader = style({
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  padding: "8px 10px",
-  flexShrink: 0,
-  borderBottom: `1px solid ${vars.color.border}`,
-});
-
-/** Mono uppercase dock title. */
-export const dockTitle = style({
-  fontFamily: vars.font.mono,
-  fontSize: "0.63rem",
-  fontWeight: 600,
-  letterSpacing: "0.12em",
-  textTransform: "uppercase",
-  color: vars.color.amber,
-  userSelect: "none",
-});
-
-/** Scrollable content area inside an expanded dock. */
-export const dockBody = style({
+/** Scrollable body inside a wing — scrolls here, not on the bracketed panel. */
+export const wingBody = style({
   flex: "1 1 auto",
+  minHeight: 0,
   overflowY: "auto",
-  padding: "12px 10px",
+  "@media": {
+    "(max-width: 48em)": {
+      overflowY: "visible",
+    },
+  },
 });
 
-/** Centre column: canvas + playback bar, takes all remaining width. */
+/** Centre column: screen + playback bar, taking all remaining width. */
 export const centre = style({
   flex: "1 1 auto",
   minWidth: 0,
   display: "flex",
   flexDirection: "column",
   gap: 8,
-});
-
-/**
- * Mobile-only bar rendered between canvas and playback controls when a battle
- * is running. Shows SETUP and CONTROLS drawer triggers. Hidden on desktop.
- */
-export const mobileDockBar = style({
-  display: "none",
   "@media": {
     "(max-width: 48em)": {
-      display: "flex",
-      gap: 8,
-      paddingTop: 4,
+      order: -1,
     },
   },
 });
