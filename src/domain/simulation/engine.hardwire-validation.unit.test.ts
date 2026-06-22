@@ -52,7 +52,7 @@ function grid(
       cells.push(cell);
     }
   }
-  return { cols, rows: rows.length, cells, connections, shape: { outlineMode: "hexadecilinear" } };
+  return { cols, rows: rows.length, cells, connections, shape: { outlineMode: "octilinear" } };
 }
 
 function design(g: TileGrid): ShipDesign {

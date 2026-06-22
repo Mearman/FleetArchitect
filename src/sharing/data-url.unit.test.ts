@@ -24,7 +24,7 @@ function sampleDesign(): ShipDesign {
         { kind: "solid", scaffold: true, surface: "armor", edges: { n: "wall", e: "wall", s: "wall", w: "wall", doorStates: {} } },
       ],
       connections: [],
-      shape: { outlineMode: "hexadecilinear" },
+      shape: { outlineMode: "octilinear" },
     },
     createdAt: nowIso(),
     updatedAt: nowIso(),

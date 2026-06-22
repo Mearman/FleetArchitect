@@ -45,7 +45,7 @@ function corvette(id: string): ShipDesign {
         deck("mod-crew-quarters"),
       ],
       connections: [],
-      shape: { outlineMode: "hexadecilinear" },
+      shape: { outlineMode: "octilinear" },
     },
     createdAt: nowIso(),
     updatedAt: nowIso(),

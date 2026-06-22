@@ -21,7 +21,7 @@ function gridFrom(rows: readonly string[]): TileGrid {
       }
     }
   }
-  return { cols, rows: rows.length, cells, connections: [], shape: { outlineMode: "hexadecilinear" } };
+  return { cols, rows: rows.length, cells, connections: [], shape: { outlineMode: "octilinear" } };
 }
 
 describe("outline.extractShell (layered)", () => {
@@ -75,7 +75,7 @@ describe("outline.extractShell (layered)", () => {
       rows: 1,
       cells: [walled, open],
       connections: [],
-      shape: { outlineMode: "hexadecilinear" },
+      shape: { outlineMode: "octilinear" },
     };
     const shell = extractShell(grid);
     expect(shell.cells.has(0)).toBe(true); // walled hull cell is shell
@@ -94,7 +94,7 @@ describe("outline.extractShell (layered)", () => {
       rows: 1,
       cells: [doored],
       connections: [],
-      shape: { outlineMode: "hexadecilinear" },
+      shape: { outlineMode: "octilinear" },
     };
     expect(extractShell(grid).cells.has(0)).toBe(true);
   });

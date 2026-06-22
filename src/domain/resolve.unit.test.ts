@@ -22,7 +22,7 @@ function design(): ShipDesign {
       { kind: "solid", scaffold: true, surface: "deck", edges: OPEN, equipment: { moduleId: "mod-reactor-fusion", facing: 0 } },
     ],
     connections: [],
-    shape: { outlineMode: "hexadecilinear" },
+    shape: { outlineMode: "octilinear" },
   };
   return {
     id: "d-1",
@@ -92,7 +92,7 @@ describe("resolveFleetToCombatShips (grid)", () => {
           { kind: "solid", scaffold: true, surface: "deck", edges: OPEN, equipment: { moduleId: "mod-reactor-fusion", facing: 0 } },
         ],
         connections: [],
-        shape: { outlineMode: "hexadecilinear" },
+        shape: { outlineMode: "octilinear" },
       },
     };
     const [ship] = resolveFleetToCombatShips(

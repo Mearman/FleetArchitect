@@ -65,7 +65,7 @@ describe("seedPresets — legacy record migration", () => {
         cols: 1,
         rows: 1,
         cells: [{ kind: "hull" }],
-        shape: { outlineMode: "hexadecilinear" },
+        shape: { outlineMode: "octilinear" },
       },
     });
 
@@ -101,7 +101,7 @@ describe("seedPresets — legacy record migration", () => {
           },
         ],
         connections: [],
-        shape: { outlineMode: "hexadecilinear" },
+        shape: { outlineMode: "octilinear" },
       },
       createdAt: nowIso(),
       updatedAt: nowIso(),

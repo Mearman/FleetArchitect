@@ -38,7 +38,7 @@ function grid(rows: readonly string[]): TileGrid {
       cells.push(cell);
     }
   }
-  return { cols, rows: rows.length, cells, connections: [], shape: { outlineMode: "hexadecilinear" } };
+  return { cols, rows: rows.length, cells, connections: [], shape: { outlineMode: "octilinear" } };
 }
 
 function design(g: TileGrid): ShipDesign {
@@ -149,7 +149,7 @@ function sensorCommsGrid(rows: readonly string[]): TileGrid {
       cells.push(cell);
     }
   }
-  return { cols, rows: rows.length, cells, connections: [], shape: { outlineMode: "hexadecilinear" } };
+  return { cols, rows: rows.length, cells, connections: [], shape: { outlineMode: "octilinear" } };
 }
 
 describe("analyseShipDesign", () => {

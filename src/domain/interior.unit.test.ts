@@ -22,7 +22,7 @@ function grid(rows: GridCell[][]): TileGrid {
     if (row.length !== c) throw new Error("ragged grid");
     for (const cell of row) cells.push(cell);
   }
-  return { cols: c, rows: r, cells, connections: [], shape: { outlineMode: "hexadecilinear" } };
+  return { cols: c, rows: r, cells, connections: [], shape: { outlineMode: "octilinear" } };
 }
 
 describe("computeCompartments", () => {
