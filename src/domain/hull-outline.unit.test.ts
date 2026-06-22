@@ -1,0 +1,181 @@
+import { describe, expect, it } from "vitest";
+import { TileGrid } from "@/schema/grid";
+import { presetDesigns } from "@/data/presets";
+import { computeHullOutline } from "@/domain/hull-outline";
+import { CELL_SIZE } from "@/domain/grid";
+import { pointInPolygon } from "@/domain/outline";
+
+/**
+ * Invariant contract for the grown-and-bevelled hull outline. These are the
+ * guarantees the user locked in during design and that the algorithm must make
+ * impossible to violate:
+ *
+ *   45 — every turn is a multiple of 45 degrees; in particular no 90-degree
+ *        corner survives (HARD mode).
+ *   SQRT2 — no diagonal facet is shorter than one cell diagonal (sqrt 2).
+ *   CONTAIN — every armour/solid cell of the *original* footprint stays inside
+ *        the hull (the grow-then-bevel never excludes real plating).
+ *   DETERMINISTIC — byte-identical output for identical input.
+ *   OCTILINEAR — every edge direction is axis-aligned or a 45-degree diagonal.
+ */
+
+const TURN_EPS = 1e-6;
+const SQRT2 = Math.SQRT2;
+
+type Pt = { x: number; y: number };
+
+/** Build a grid of all-armour solid cells from an ASCII map (`#` solid). */
+function armourGrid(rows: readonly string[]): TileGrid {
+  const cols = rows[0]?.length ?? 0;
+  const armour = {
+    kind: "solid",
+    substrate: true,
+    surface: "armor",
+    edges: { n: "wall", e: "wall", s: "wall", w: "wall", doorStates: {} },
+  };
+  const empty = { kind: "empty" };
+  const cells: unknown[] = rows.flatMap((line) =>
+    Array.from({ length: cols }, (_unused, c) => (line[c] === "#" ? armour : empty)),
+  );
+  return TileGrid.parse({ cols, rows: rows.length, cells, connections: [] });
+}
+
+/** Turn angle (degrees) at vertex i of a loop. */
+function turnDeg(loop: readonly Pt[], i: number): number {
+  const n = loop.length;
+  const p = loop[(i - 1 + n) % n]!;
+  const v = loop[i]!;
+  const w = loop[(i + 1) % n]!;
+  const a1 = Math.atan2(v.y - p.y, v.x - p.x);
+  const a2 = Math.atan2(w.y - v.y, w.x - v.x);
+  let t = ((a2 - a1) * 180) / Math.PI;
+  while (t > 180) t -= 360;
+  while (t < -180) t += 360;
+  return t;
+}
+
+function maxAbsTurn(loops: readonly (readonly Pt[])[]): number {
+  let m = 0;
+  for (const loop of loops)
+    for (let i = 0; i < loop.length; i += 1) m = Math.max(m, Math.abs(turnDeg(loop, i)));
+  return m;
+}
+
+function minDiagonalFacet(loops: readonly (readonly Pt[])[]): number {
+  let m = Infinity;
+  for (const loop of loops)
+    for (let i = 0; i < loop.length; i += 1) {
+      const a = loop[i]!;
+      const b = loop[(i + 1) % loop.length]!;
+      const dx = (b.x - a.x) / CELL_SIZE;
+      const dy = (b.y - a.y) / CELL_SIZE;
+      if (Math.abs(dx) > 1e-9 && Math.abs(dy) > 1e-9) m = Math.min(m, Math.hypot(dx, dy));
+    }
+  return m;
+}
+
+function everyEdgeOctilinear(loops: readonly (readonly Pt[])[]): boolean {
+  for (const loop of loops)
+    for (let i = 0; i < loop.length; i += 1) {
+      const a = loop[i]!;
+      const b = loop[(i + 1) % loop.length]!;
+      const dx = (b.x - a.x) / CELL_SIZE;
+      const dy = (b.y - a.y) / CELL_SIZE;
+      const ax = Math.abs(dx);
+      const ay = Math.abs(dy);
+      const axis = ax < 1e-9 || ay < 1e-9;
+      const diag = Math.abs(ax - ay) < 1e-6;
+      if (!axis && !diag) return false;
+    }
+  return true;
+}
+
+const SHAPES: readonly string[][] = [
+  ["##", "##"],
+  ["###", "###", "###"],
+  ["#...", "##..", "###.", "####"],
+  ["##....", "####..", "######"],
+  ["##.", "##.", "###"],
+  [".#.", "###", ".#."],
+  ["####", ".#..", ".#.."],
+  ["#####", "#####", "#####"],
+];
+
+describe("computeHullOutline — invariants (HARD)", () => {
+  for (const rows of SHAPES) {
+    const name = rows.join("/");
+    const grid = armourGrid(rows);
+
+    it(`${name}: no 90-degree corner (max turn = 45)`, () => {
+      const loops = computeHullOutline(grid);
+      expect(maxAbsTurn(loops)).toBeLessThanOrEqual(45 + TURN_EPS);
+    });
+
+    it(`${name}: every edge octilinear`, () => {
+      expect(everyEdgeOctilinear(computeHullOutline(grid))).toBe(true);
+    });
+
+    it(`${name}: no facet shorter than sqrt(2)`, () => {
+      const loops = computeHullOutline(grid);
+      const m = minDiagonalFacet(loops);
+      if (m !== Infinity) expect(m).toBeGreaterThanOrEqual(SQRT2 - 1e-6);
+    });
+
+    it(`${name}: deterministic`, () => {
+      expect(JSON.stringify(computeHullOutline(grid))).toBe(
+        JSON.stringify(computeHullOutline(grid)),
+      );
+    });
+  }
+});
+
+describe("computeHullOutline — every preset ship satisfies the invariants", () => {
+  for (const d of presetDesigns) {
+    it(`${d.id}: octilinear, no 90, facets >= sqrt(2)`, () => {
+      const loops = computeHullOutline(d.grid);
+      expect(everyEdgeOctilinear(loops)).toBe(true);
+      expect(maxAbsTurn(loops)).toBeLessThanOrEqual(45 + 1e-3);
+      const m = minDiagonalFacet(loops);
+      if (m !== Infinity) expect(m).toBeGreaterThanOrEqual(SQRT2 - 1e-6);
+    });
+  }
+});
+
+describe("computeHullOutline — contains original armour", () => {
+  it("a plain block keeps all its cell centres inside the hull", () => {
+    const grid = armourGrid(["####", "####", "####"]);
+    const loops = computeHullOutline(grid);
+    // A sqrt-2 corner cut bisects the corner cell, so a corner cell's centre can
+    // land *on* the hull boundary (that cell has lost HP). "Contained" therefore
+    // means inside-or-on, not strictly inside.
+    const onBoundary = (p: Pt): boolean => {
+      for (const loop of loops)
+        for (let i = 0; i < loop.length; i += 1) {
+          const a = loop[i]!;
+          const b = loop[(i + 1) % loop.length]!;
+          const abx = b.x - a.x;
+          const aby = b.y - a.y;
+          const t =
+            ((p.x - a.x) * abx + (p.y - a.y) * aby) / (abx * abx + aby * aby || 1);
+          const tc = Math.max(0, Math.min(1, t));
+          const dx = p.x - (a.x + tc * abx);
+          const dy = p.y - (a.y + tc * aby);
+          if (Math.hypot(dx, dy) < CELL_SIZE * 1e-6) return true;
+        }
+      return false;
+    };
+    const inside = (p: Pt): boolean => {
+      let parity = 0;
+      for (const loop of loops) if (pointInPolygon(p, loop)) parity ^= 1;
+      return parity === 1 || onBoundary(p);
+    };
+    for (let r = 0; r < grid.rows; r += 1)
+      for (let c = 0; c < grid.cols; c += 1) {
+        const centre = {
+          x: (c - (grid.cols - 1) / 2) * CELL_SIZE,
+          y: (r - (grid.rows - 1) / 2) * CELL_SIZE,
+        };
+        expect(inside(centre)).toBe(true);
+      }
+  });
+});

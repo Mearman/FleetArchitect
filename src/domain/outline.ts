@@ -96,7 +96,7 @@ interface DirectedEdge {
 }
 
 /** An integer lattice point (a seed-polygon vertex, before centring/scaling). */
-interface IPoint {
+export interface IPoint {
   readonly x: number;
   readonly y: number;
 }
@@ -554,7 +554,7 @@ function approximateOctilinear(poly: IPoint[]): IPoint[] {
  * corner of cell (x, y), so the centre-relative lattice position is
  * `x - (cols-1)/2 - 0.5`. The `- 0.5` is folded into the centre offset.
  */
-function toMetreLoop(loop: readonly IPoint[], cols: number, rows: number): Vec2[] {
+export function toMetreLoop(loop: readonly IPoint[], cols: number, rows: number): Vec2[] {
   const centreCol = (cols - 1) / 2 + 0.5;
   const centreRow = (rows - 1) / 2 + 0.5;
   return loop.map((p) => ({
@@ -581,6 +581,22 @@ function simplifyLoop(seed: IPoint[]): IPoint[] {
  * removal, octilinear stepping, centring — follows a fixed iteration order with
  * no RNG, and every geometric test is exact integer arithmetic.
  */
+/**
+ * The exact rectilinear seed loops for a shell, as integer lattice corner
+ * lists, each oriented clockwise (interior on the right). This is the raw
+ * staircase boundary *before* any smoothing or beveling — every turn is 90
+ * degrees. Shared by `computeOutline` (which then smooths staircases) and the
+ * hull outline (which bevels every corner); see `src/domain/hull-outline.ts`.
+ */
+export function latticeSeedLoops(shell: Shell): IPoint[][] {
+  const edges = boundaryEdges(shell);
+  const loops = chainLoops(edges);
+  return loops.map((loop) => {
+    const oriented = latticeSignedArea(loop) < 0 ? reverseLoop(loop) : loop;
+    return seedPolygon(oriented);
+  });
+}
+
 export function computeOutline(shell: Shell): Vec2[][] {
   const edges = boundaryEdges(shell);
   const loops = chainLoops(edges);
