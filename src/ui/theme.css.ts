@@ -1,8 +1,26 @@
 import { globalStyle, style } from "@vanilla-extract/css";
 import { vars } from "@/ui/theme/vars.css";
+import { MOBILE_MEDIA_QUERY } from "@/ui/layoutConstants";
 
-/** Outer wrapper so the void gradient fills the viewport. */
-export const appShell = style({ minHeight: "100dvh" });
+/**
+ * Outer shell wrapper. On desktop it is locked to the viewport
+ * (`height: 100dvh; overflow: hidden`) so the page never scrolls — the bounded
+ * `AppShell.Main` (see layout.css.ts `mainRegion`) and the route inside it size
+ * to the viewport and scroll their own inner panels instead. Under the mobile
+ * breakpoint it reverts to growing with content so the page scrolls and the
+ * consoles reflow to a column.
+ */
+export const appShell = style({
+  height: "100dvh",
+  overflow: "hidden",
+  "@media": {
+    [MOBILE_MEDIA_QUERY]: {
+      height: "auto",
+      minHeight: "100dvh",
+      overflow: "visible",
+    },
+  },
+});
 
 /** Base style for all nav links — mono uppercase, no underline. */
 export const navLinkBase = style({
@@ -38,6 +56,14 @@ globalStyle("body", {
   backgroundAttachment: "fixed",
   color: vars.color.text,
   fontFamily: vars.font.body,
+  // Desktop: the shell owns the viewport and clips, so the page itself must not
+  // scroll. Mobile reverts to a scrolling page.
+  overflow: "hidden",
+  "@media": {
+    [MOBILE_MEDIA_QUERY]: {
+      overflow: "auto",
+    },
+  },
 });
 
 globalStyle("canvas", { display: "block" });

@@ -13,6 +13,8 @@ import {
 import { useDisclosure } from "@mantine/hooks";
 import { NavLink, Outlet } from "react-router-dom";
 import { appShell, navLinkActive, navLinkBase } from "./theme.css";
+import { mainRegion } from "./layout.css";
+import { HEADER_HEIGHT_PX } from "./layoutConstants";
 import { buildMeta } from "./buildMeta";
 import { FxToggle } from "@/ui/fx/FxToggle";
 import { neonTextAmber } from "@/ui/fx/CrtOverlay.css";
@@ -50,9 +52,9 @@ export function AppLayout() {
   const [drawerOpen, { open: openDrawer, close: closeDrawer }] = useDisclosure(false);
 
   return (
-    <AppShell className={appShell} header={{ height: 56 }} padding={0}>
+    <AppShell className={appShell} header={{ height: HEADER_HEIGHT_PX }} padding={0}>
       <AppShell.Header>
-        <Group h={56} px="md" justify="space-between" wrap="nowrap">
+        <Group h={HEADER_HEIGHT_PX} px="md" justify="space-between" wrap="nowrap">
           <Group gap="xs" wrap="nowrap">
             <Text fw={700} size="lg" className={neonTextAmber}>
               Fleet Architect
@@ -113,7 +115,7 @@ export function AppLayout() {
         </Stack>
       </Drawer>
 
-      <AppShell.Main>
+      <AppShell.Main className={mainRegion}>
         <ErrorBoundary>
           <Outlet />
         </ErrorBoundary>
