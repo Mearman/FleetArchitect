@@ -110,8 +110,9 @@ function median(values: readonly number[]): number {
  * nimble fighter skewing the line).
  *
  * A fleet with no weapons falls back to `fallbackRange` for the weapon-reach
- * term so an unarmed fleet still deploys at a sensible separation. The ship
- * radius term guarantees a ship's hull never clips past its own edge.
+ * term so an unarmed fleet still deploys at a sensible separation. Whichever term
+ * wins, the result is floored at `2·maxRadius` so the largest hull's leading edge
+ * never crosses the midline onto the enemy's side (see the floor below).
  *
  * The closing budget is computed entirely in SI (acceleration in m/s², time in
  * seconds → distance in metres); no tick conversion is needed because the
@@ -150,8 +151,19 @@ function computeEdgeInsetM(
   const halfTimeS = DEPLOY_CLOSE_TIME_S / 2;
   const kinematicBudget = medianAccel * halfTimeS * halfTimeS;
 
-  if (kinematicBudget <= 0) return weaponReach;
-  return Math.min(weaponReach, kinematicBudget);
+  // Non-crossing floor: a ship is placed with its centre at `dir·(edgeInset -
+  // radius)`, so its leading (inner) hull edge sits at `2·radius - edgeInset`
+  // from the midline. Keeping that edge on the fleet's own side therefore needs
+  // `edgeInset >= 2·maxRadius`. The kinematic budget can fall well below this for
+  // a large, sluggish hull (slow ships cover little ground in DEPLOY_CLOSE_TIME_S),
+  // which would otherwise spawn the line straddling — even past — the midline.
+  // Flooring at `2·maxRadius` places such a fleet as close as it can get without
+  // crossing (inner edges just meeting at x=0); it cannot honour the closing
+  // budget because the hull is wider than the ground it can cover, but it stays
+  // on its own side. Fast fleets keep the smaller closing-budget inset unchanged.
+  const minSeparation = 2 * maxRadius;
+  const raw = kinematicBudget <= 0 ? weaponReach : Math.min(weaponReach, kinematicBudget);
+  return Math.max(raw, minSeparation);
 }
 
 export function resolveFleetToCombatShips(
