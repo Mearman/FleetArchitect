@@ -6,7 +6,6 @@ import {
   Loader,
   Stack,
   Text,
-  Title,
   Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
@@ -396,17 +395,18 @@ export function BattleRoute() {
   );
 
   return (
-    <Stack gap="md">
-      <Group justify="space-between" align="center">
-        <Title order={1}>Battle Arena</Title>
+    <div className={styles.routeRoot}>
+      {/* Slim one-line title strip — amber mono label with winner badge inline. */}
+      <div className={styles.titleStrip}>
+        <span>Battle Arena</span>
         {simulation.result !== null && (
-          <Badge size="lg" color={winnerBadgeColor}>
+          <Badge size="sm" color={winnerBadgeColor}>
             {simulation.result.winner === "draw"
               ? "Draw"
               : `${simulation.result.winner.toUpperCase()} WINS`}
           </Badge>
         )}
-      </Group>
+      </div>
 
       <BattleWorkspace
         setupContent={setupContent}
@@ -414,32 +414,34 @@ export function BattleRoute() {
         hasFrames={hasFrames}
       >
         {!hasFrames ? (
-          <Box className={`${screenChassis} ${panelScrews}`}>
-            {/* The idle prompt sits on the powered-on display itself, not a
-                separate panel — an empty screen waiting for a battle. */}
-            <Box className={`${styles.canvasBox} ${screenPowerOn}`}>
-              <CrtScreen />
-              <div className={styles.glassGlare} aria-hidden="true" />
-              <Center h="100%">
-                {simulation.computing ? (
-                  <Stack align="center" gap="xs">
-                    <Loader />
-                    <Text c="dimmed">Computing battle…</Text>
-                  </Stack>
-                ) : (
-                  <Stack align="center" gap="xs">
-                    <IconSwords size={40} color="var(--mantine-color-dimmed)" />
-                    <Text c="dimmed">
-                      Pick two fleets and engage to watch the battle.
-                    </Text>
-                  </Stack>
-                )}
-              </Center>
+          <div className={styles.centreColumn}>
+            <Box className={`${screenChassis} ${panelScrews} ${styles.screenChassisFill}`}>
+              {/* The idle prompt sits on the powered-on display itself, not a
+                  separate panel — an empty screen waiting for a battle. */}
+              <Box className={`${styles.canvasBox} ${screenPowerOn}`}>
+                <CrtScreen />
+                <div className={styles.glassGlare} aria-hidden="true" />
+                <Center h="100%">
+                  {simulation.computing ? (
+                    <Stack align="center" gap="xs">
+                      <Loader />
+                      <Text c="dimmed">Computing battle…</Text>
+                    </Stack>
+                  ) : (
+                    <Stack align="center" gap="xs">
+                      <IconSwords size={40} color="var(--mantine-color-dimmed)" />
+                      <Text c="dimmed">
+                        Pick two fleets and engage to watch the battle.
+                      </Text>
+                    </Stack>
+                  )}
+                </Center>
+              </Box>
             </Box>
-          </Box>
+          </div>
         ) : (
-          <Stack gap="sm">
-            <Box className={`${screenChassis} ${panelScrews}`}>
+          <div className={styles.centreColumn}>
+            <Box className={`${screenChassis} ${panelScrews} ${styles.screenChassisFill}`}>
               <Box className={`${styles.canvasBox} ${screenPowerOn}`}>
                 {/* CRT screen effects (scanlines, vignette, aberration), confined to this display. */}
                 <CrtScreen />
@@ -517,9 +519,9 @@ export function BattleRoute() {
               onSeek={onSeek}
               onRestoreFit={camera.restoreAutoFit}
             />
-          </Stack>
+          </div>
         )}
       </BattleWorkspace>
-    </Stack>
+    </div>
   );
 }

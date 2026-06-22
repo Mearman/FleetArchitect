@@ -15,10 +15,15 @@ export const workspace = style({
   flexDirection: "row",
   alignItems: "stretch",
   width: "100%",
+  height: "100%",
+  minHeight: 0,
+  flex: "1 1 auto",
   gap: 8,
   "@media": {
     "(max-width: 48em)": {
       flexDirection: "column",
+      height: "auto",
+      minHeight: "auto",
     },
   },
 });
@@ -60,12 +65,16 @@ export const wingBody = style({
 export const centre = style({
   flex: "1 1 auto",
   minWidth: 0,
+  minHeight: 0,
+  height: "100%",
   display: "flex",
   flexDirection: "column",
   gap: 8,
   "@media": {
     "(max-width: 48em)": {
       order: -1,
+      height: "auto",
+      minHeight: "auto",
     },
   },
 });

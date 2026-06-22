@@ -9,10 +9,72 @@ import { vars } from "@/ui/theme/vars.css";
  */
 
 /**
- * Canvas container: a tall viewport-relative box. Height is clamped so it never
- * dwarfs short screens but takes most of a tall one. The canvas inside stretches
- * to fill it; the world-to-display transform letterboxes to preserve aspect, so
- * the container no longer needs to lock to the 960x600 ratio.
+ * Route root: fills the bounded region delivered by AppShell.Main. On desktop
+ * this is a fixed-height flex column (height driven by the shell); on mobile
+ * it reverts to auto height so the page can scroll.
+ */
+export const routeRoot = style({
+  display: "flex",
+  flexDirection: "column",
+  height: "100%",
+  minHeight: 0,
+  "@media": {
+    "(max-width: 48em)": {
+      height: "auto",
+      minHeight: "auto",
+    },
+  },
+});
+
+/**
+ * Slim title strip — one line of amber mono text with the winner badge inline.
+ * Sits above the workspace and takes only its natural (small) height, leaving
+ * the rest to the BattleWorkspace.
+ */
+export const titleStrip = style({
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  flexShrink: 0,
+  fontFamily: vars.font.mono,
+  fontSize: "0.63rem",
+  fontWeight: 600,
+  letterSpacing: "0.12em",
+  textTransform: "uppercase",
+  color: vars.color.amber,
+  paddingBottom: "0.3rem",
+  marginBottom: "0.5rem",
+  borderBottom: `1px solid ${vars.color.border}`,
+  userSelect: "none",
+});
+
+/**
+ * The flex-fill wrapper inside the centre column: the screenChassis sits here
+ * and grows to fill all remaining height, with the playback bar pinned below.
+ */
+export const centreColumn = style({
+  display: "flex",
+  flexDirection: "column",
+  flex: "1 1 auto",
+  minHeight: 0,
+});
+
+/**
+ * The screenChassis override for the centre: fills the centreColumn so the
+ * canvas grows with the viewport. The playback bar follows as a natural footer.
+ */
+export const screenChassisFill = style({
+  flex: "1 1 auto",
+  minHeight: 0,
+});
+
+/**
+ * Canvas container: fills the available height driven by the flex parent
+ * (screenChassisFill). The canvas inside stretches to fill it; the
+ * world-to-display transform letterboxes to preserve aspect ratio.
+ *
+ * Under (max-width: 48em) the mobile stacked layout uses a fixed-ish height so
+ * a usable canvas is visible even without the viewport-lock.
  *
  * Includes the neon-cyan frame treatment: cyan border, bloom shadow, and amber
  * corner ticks via ::before / ::after.
@@ -23,11 +85,12 @@ const BRACKET_WEIGHT = "2px";
 export const canvasBox = style({
   position: "relative",
   width: "100%",
-  height: "min(72vh, 900px)",
-  minHeight: 360,
+  flex: "1 1 auto",
+  minHeight: 0,
   overflow: "hidden",
   "@media": {
     "(max-width: 48em)": {
+      flex: "none",
       height: "min(60vh, 600px)",
       minHeight: 280,
     },
