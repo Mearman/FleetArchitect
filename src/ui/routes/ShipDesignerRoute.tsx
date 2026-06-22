@@ -43,6 +43,7 @@ import { CrtScreen } from "@/ui/fx/CrtScreen";
 import { screenPowerOn } from "@/ui/fx/CrtOverlay.css";
 import { hardwareKey, hardwareKeySmall } from "@/ui/theme/controls.css";
 import { useShipDesigns } from "@/ui/hooks/storage";
+import { usePinchZoom } from "@/ui/hooks/usePinchZoom";
 import {
   copyDesign,
   deleteShipDesign,
@@ -104,6 +105,9 @@ export function ShipDesignerRoute() {
     null,
   );
   const [zoom, setZoom] = useState(ZOOM_DEFAULT);
+  // Trackpad pinch-to-zoom; two-finger scroll pans via the viewport's native
+  // overflow. The ref attaches to the scroll viewport below.
+  const viewportRef = usePinchZoom(setZoom, ZOOM_MIN, ZOOM_MAX, zoom);
   const [showAirtightness, setShowAirtightness] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [revisions, setRevisions] = useState<ShipDesign[]>([]);
@@ -594,7 +598,7 @@ export function ShipDesignerRoute() {
       <Box className={`${screenChassis} ${panelScrews} ${designerGridChassis}`}>
         {/* The scrollable, zoomable grid viewport */}
         <div className={`${zoomScreen} ${screenPowerOn}`}>
-          <div className={zoomViewport} style={{ touchAction: "none" }}>
+          <div ref={viewportRef} className={zoomViewport} style={{ touchAction: "none" }}>
             <div
               className={zoomInner}
               style={{ transform: `scale(${zoom})`, width: innerWidthPx }}
