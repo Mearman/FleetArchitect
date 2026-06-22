@@ -146,6 +146,33 @@ describe("computeHullOutline — every preset ship satisfies the invariants", ()
   }
 });
 
+describe("computeHullOutline — hull hugs the footprint (no big gaps)", () => {
+  // Distance (cells) from a lattice point to the nearest solid cell's square.
+  const gapToFootprint = (lx: number, ly: number, grid: TileGrid): number => {
+    let best = Infinity;
+    for (let r = 0; r < grid.rows; r += 1)
+      for (let c = 0; c < grid.cols; c += 1) {
+        if (grid.cells[r * grid.cols + c]?.kind !== "solid") continue;
+        const dx = Math.max(c - lx, 0, lx - (c + 1));
+        const dy = Math.max(r - ly, 0, ly - (r + 1));
+        best = Math.min(best, Math.hypot(dx, dy));
+      }
+    return best;
+  };
+  for (const d of presetDesigns) {
+    it(`${d.id}: every hull vertex within ~1 tile of the plating`, () => {
+      // grow (1) + a sqrt-2 corner bevel can sit ~1.5 cells out; never more.
+      const loops = computeHullOutline(d.grid);
+      for (const loop of loops)
+        for (const v of loop) {
+          const lx = v.x / CELL_SIZE + d.grid.cols / 2;
+          const ly = v.y / CELL_SIZE + d.grid.rows / 2;
+          expect(gapToFootprint(lx, ly, d.grid)).toBeLessThanOrEqual(1.5 + 1e-6);
+        }
+    });
+  }
+});
+
 describe("computeHullOutline — sub-floor shapes degrade without crashing", () => {
   // Features under three cells can't satisfy the hard invariants, but the
   // algorithm must still return a valid, finite, non-empty hull rather than

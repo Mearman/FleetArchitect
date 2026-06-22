@@ -172,13 +172,27 @@ function absorbTabs(poly: IPoint[]): IPoint[] {
 // corners by removing reflex vertices whose bridging chord is octilinear.
 // ---------------------------------------------------------------------------
 
+/** Perpendicular distance (lattice units) from v to the line through u and w. */
+function distToLine(v: IPoint, u: IPoint, w: IPoint): number {
+  const len = Math.hypot(w.x - u.x, w.y - u.y);
+  if (len === 0) return Math.hypot(v.x - u.x, v.y - u.y);
+  return Math.abs((w.x - u.x) * (v.y - u.y) - (w.y - u.y) * (v.x - u.x)) / len;
+}
+
+/** A reflex bridge may not pull the hull more than this far (cells) off the
+ *  footprint — keeps the hull hugging the cells (no big gaps over coarse
+ *  staircases). One cell admits collapsing 1-cell-step (45-degree) staircases to
+ *  clean diagonals; coarser steps stay stepped and are merely corner-bevelled. */
+const MAX_DEVIATION = 1 + 1e-9;
+
 /**
- * Remove every reflex vertex whose chord to its neighbours is octilinear and
- * keeps the polygon simple. Unlike the tight outline's gated smoother this is
- * ungated, so a *lone* step collapses to a single sqrt-2 diagonal and an
- * isolated concave corner fills with one — exactly what "no 90 degrees" needs.
- * A reflex whose chord is non-octilinear (a wide notch, a non-45 staircase) is
- * left for the corner chamfer.
+ * Remove every reflex vertex whose chord to its neighbours is octilinear, keeps
+ * the polygon simple, and stays within one cell of the vertex it bridges.
+ * Unlike the tight outline's gated smoother this is ungated by run length, so a
+ * *lone* step collapses to a single sqrt-2 diagonal and an isolated concave
+ * corner fills with one — what "no 90 degrees" needs. The deviation cap means a
+ * fine (1-cell-step) staircase collapses to one diagonal while a coarse
+ * staircase keeps its steps, so the hull never gaps far from the plating.
  */
 function smoothReflex(poly: IPoint[]): IPoint[] {
   let pts = poly;
@@ -193,6 +207,7 @@ function smoothReflex(poly: IPoint[]): IPoint[] {
       // CW (y-down): reflex turn has negative cross.
       if ((v.x - u.x) * (w.y - v.y) - (v.y - u.y) * (w.x - v.x) >= 0) continue;
       if (!edgeDirectionAllowed(w.x - u.x, w.y - u.y)) continue;
+      if (distToLine(v, u, w) > MAX_DEVIATION) continue;
       if (!chordKeepsSimple(pts, i, u, w)) continue;
       pts = collapseCollinear(pts.slice(0, i).concat(pts.slice(i + 1)));
       progressed = true;
