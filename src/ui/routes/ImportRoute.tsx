@@ -15,6 +15,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { saveFleet, saveShipDesign } from "@/storage/db";
 import { ShareDecodeError, decodeShareable } from "@/sharing/data-url";
 import type { Shareable } from "@/sharing/data-url";
+import { contentRouteScroll } from "./contentRoute.css";
 
 type Status =
   | { state: "decoding" }
@@ -84,31 +85,37 @@ export function ImportRoute() {
 
   if (status.state === "decoding") {
     return (
-      <Center h={300}>
-        <Stack align="center" gap="sm">
-          <Loader />
-          <Text c="dimmed">Decoding share link…</Text>
-        </Stack>
-      </Center>
+      <div className={contentRouteScroll}>
+        <Center h="100%">
+          <Stack align="center" gap="sm">
+            <Loader />
+            <Text c="dimmed">Decoding share link…</Text>
+          </Stack>
+        </Center>
+      </div>
     );
   }
 
   if (status.state === "error") {
     return (
-      <Stack gap="md" maw={560}>
-        <Title order={2}>Import failed</Title>
-        <Alert
-          icon={<IconAlertTriangle size={16} />}
-          color="red"
-          variant="light"
-          title="Couldn't read this link"
-        >
-          {status.message}
-        </Alert>
-        <Button variant="light" onClick={() => navigate("/")}>
-          Back to home
-        </Button>
-      </Stack>
+      <div className={contentRouteScroll}>
+        <Center h="100%" p="md">
+          <Stack gap="md" maw={560}>
+            <Title order={2}>Import failed</Title>
+            <Alert
+              icon={<IconAlertTriangle size={16} />}
+              color="red"
+              variant="light"
+              title="Couldn't read this link"
+            >
+              {status.message}
+            </Alert>
+            <Button variant="light" onClick={() => navigate("/")}>
+              Back to home
+            </Button>
+          </Stack>
+        </Center>
+      </div>
     );
   }
 
@@ -117,19 +124,21 @@ export function ImportRoute() {
     status.kind === "shipDesign" ? "Ship Designer" : "Fleet Builder";
 
   return (
-    <Center h={300}>
-      <Card withBorder padding="xl" maw={480}>
-        <Stack align="center" gap="sm">
-          <IconCircleCheck size={40} color="#51cf66" />
-          <Title order={3}>Imported {status.name}</Title>
-          <Text size="sm" c="dimmed" ta="center">
-            Saved to your browser. Open the {destinationLabel} to use it.
-          </Text>
-          <Button mt="xs" onClick={() => navigate(destination)}>
-            Open {destinationLabel}
-          </Button>
-        </Stack>
-      </Card>
-    </Center>
+    <div className={contentRouteScroll}>
+      <Center h="100%">
+        <Card withBorder padding="xl" maw={480}>
+          <Stack align="center" gap="sm">
+            <IconCircleCheck size={40} color="#51cf66" />
+            <Title order={3}>Imported {status.name}</Title>
+            <Text size="sm" c="dimmed" ta="center">
+              Saved to your browser. Open the {destinationLabel} to use it.
+            </Text>
+            <Button mt="xs" onClick={() => navigate(destination)}>
+              Open {destinationLabel}
+            </Button>
+          </Stack>
+        </Card>
+      </Center>
+    </div>
   );
 }
