@@ -3,7 +3,6 @@ import {
   Button,
   Collapse,
   Group,
-  ScrollArea,
   Select,
   Stack,
   Text,
@@ -47,6 +46,10 @@ import {
   browserWing,
   centre,
   centreBody,
+  centreFooter,
+  rosterRegion,
+  routeRoot,
+  titleStrip,
   wing,
   wingBody,
   workspace,
@@ -250,185 +253,192 @@ export function FleetBuilderRoute() {
   const canBuild = designs.length > 0;
 
   return (
-    <div className={workspace}>
-      {/* LEFT WING: saved fleets */}
-      <CassettePanel label="Fleets" className={wing}>
-        <div className={wingBody}>
-          <SavedFleetsList
-            fleets={fleets}
-            activeId={working.id}
-            onLoad={load}
-            onDelete={(id) => void remove(id)}
-            onNew={() => setWorking(blankFleet())}
-          />
-        </div>
-      </CassettePanel>
+    <div className={routeRoot}>
+      {/* Slim title strip — replaces the large <h1> */}
+      <div className={titleStrip}>Fleet Builder</div>
 
-      {/* CENTRE: working fleet roster */}
-      <CassettePanel className={centre}>
-        <div className={centreBody}>
-          {/* Fleet identity inputs */}
-          <Group grow align="flex-start">
-            <TextInput
-              label="Fleet name"
-              value={working.name}
-              onChange={(e) =>
-                setWorking((prev) => ({ ...prev, name: e.target.value }))
-              }
-              placeholder="e.g. 3rd Strike Wing"
+      {/* Three-zone console row */}
+      <div className={workspace}>
+        {/* LEFT WING: saved fleets */}
+        <CassettePanel label="Fleets" className={wing}>
+          <div className={wingBody}>
+            <SavedFleetsList
+              fleets={fleets}
+              activeId={working.id}
+              onLoad={load}
+              onDelete={(id) => void remove(id)}
+              onNew={() => setWorking(blankFleet())}
             />
-            <Select
-              label="Faction"
-              data={factions.map((f) => ({ value: f, label: f }))}
-              value={working.faction}
-              onChange={(f) => {
-                if (f !== null) setWorking((prev) => ({ ...prev, faction: f }));
-              }}
-            />
-          </Group>
-
-          {/* Roster */}
-          <div className={panelLabel} style={{ marginTop: 4 }}>
-            Ships ({working.rows.length})
           </div>
+        </CassettePanel>
 
-          {!canBuild ? (
-            <Text size="sm" c="dimmed">
-              <Anchor component={Link} to="/ships" size="sm">
-                Design a ship
-              </Anchor>{" "}
-              first before building a fleet.
-            </Text>
-          ) : working.rows.length === 0 ? (
-            <Text size="sm" c="dimmed">
-              Click a ship in the browser on the right to add it to your fleet.
-            </Text>
-          ) : (
-            <ScrollArea.Autosize mah={480} offsetScrollbars>
-              <Stack gap={6}>
-                {working.rows.map((row) => {
-                  const design = designMap.get(row.designId);
-                  if (design === undefined) return null;
-                  const pointEntry = pointBreakdown.find(
-                    (p) => p.rowId === row.rowId,
-                  );
-                  const cost = pointEntry === undefined ? 0 : pointEntry.cost;
-                  return (
-                    <FleetRowCard
-                      key={row.rowId}
-                      rowId={row.rowId}
-                      design={design}
-                      orders={row.orders}
-                      position={row.position}
-                      facing={row.facing}
-                      cost={cost}
-                      overBudget={overBudget}
-                      advancedOpen={advancedOpen.has(row.rowId)}
-                      onUpdateOrders={updateOrders}
-                      onUpdatePosition={(id, x, y) =>
-                        updateRow(id, { position: { x, y } })
-                      }
-                      onUpdateFacing={(id, f) => updateRow(id, { facing: f })}
-                      onToggleAdvanced={toggleAdvanced}
-                      onRemove={removeRow}
-                    />
-                  );
-                })}
-              </Stack>
-            </ScrollArea.Autosize>
-          )}
+        {/* CENTRE: working fleet roster */}
+        <CassettePanel className={centre}>
+          <div className={centreBody}>
+            {/* Fleet identity inputs — natural height */}
+            <Group grow align="flex-start">
+              <TextInput
+                label="Fleet name"
+                value={working.name}
+                onChange={(e) =>
+                  setWorking((prev) => ({ ...prev, name: e.target.value }))
+                }
+                placeholder="e.g. 3rd Strike Wing"
+              />
+              <Select
+                label="Faction"
+                data={factions.map((f) => ({ value: f, label: f }))}
+                value={working.faction}
+                onChange={(f) => {
+                  if (f !== null) setWorking((prev) => ({ ...prev, faction: f }));
+                }}
+              />
+            </Group>
 
-          {/* Budget gauge */}
-          <BudgetReadout total={total} />
+            {/* Roster label */}
+            <div className={panelLabel} style={{ marginTop: 4 }}>
+              Ships ({working.rows.length})
+            </div>
 
-          {/* Version history */}
-          <Collapse expanded={historyOpen}>
-            <VersionHistoryPanel
-              loading={historyLoading}
-              revisions={revisions}
-              onRestore={(revision) => void restoreRevision(revision)}
-              entityLabel="fleet"
-            />
-          </Collapse>
-
-          {/* Action bar */}
-          <div className={actionBar}>
-            <ShareButton
-              shareable={{
-                kind: "fleet",
-                value: {
-                  id: working.id ?? "draft",
-                  name: working.name || "Untitled",
-                  faction: working.faction || "Unaligned",
-                  ships: working.rows.map(toFleetShip),
-                  createdAt: working.createdAt ?? nowIso(),
-                  updatedAt: nowIso(),
-                  source: "user",
-                  revision: 1,
-                },
-              }}
-            />
-            {working.id !== null ? (
-              <Tooltip label="View version history">
-                <Button
-                  variant={historyOpen ? "filled" : "default"}
-                  className={hardwareKey}
-                  leftSection={<IconHistory size={16} />}
-                  onClick={() => void openHistory()}
-                >
-                  History
-                </Button>
-              </Tooltip>
-            ) : null}
-            <Button
-              className={hardwareKey}
-              onClick={() => void save()}
-              disabled={working.rows.length === 0}
-              leftSection={<IconBucketDroplet size={16} />}
-            >
-              Save fleet
-            </Button>
-            <Button
-              component={Link}
-              to="/battle"
-              variant="light"
-              className={hardwareKey}
-              leftSection={<IconSwords size={16} />}
-              disabled={working.id === null}
-            >
-              Go to battle
-            </Button>
-          </div>
-        </div>
-      </CassettePanel>
-
-      {/* RIGHT WING: ship browser */}
-      <CassettePanel label="Ship Browser" className={browserWing}>
-        <div className={wingBody}>
-          {factionDesigns.length === 0 ? (
-            <Text size="sm" c="dimmed">
-              {designs.length === 0 ? (
-                <>
-                  No ships designed yet.{" "}
+            {/* Roster — fills remaining height and scrolls internally on desktop */}
+            <div className={rosterRegion}>
+              {!canBuild ? (
+                <Text size="sm" c="dimmed">
                   <Anchor component={Link} to="/ships" size="sm">
-                    Open the ship designer
+                    Design a ship
                   </Anchor>{" "}
-                  to create some.
-                </>
+                  first before building a fleet.
+                </Text>
+              ) : working.rows.length === 0 ? (
+                <Text size="sm" c="dimmed">
+                  Click a ship in the browser on the right to add it to your fleet.
+                </Text>
               ) : (
-                `No ${working.faction} ships designed yet.`
+                <Stack gap={6}>
+                  {working.rows.map((row) => {
+                    const design = designMap.get(row.designId);
+                    if (design === undefined) return null;
+                    const pointEntry = pointBreakdown.find(
+                      (p) => p.rowId === row.rowId,
+                    );
+                    const cost = pointEntry === undefined ? 0 : pointEntry.cost;
+                    return (
+                      <FleetRowCard
+                        key={row.rowId}
+                        rowId={row.rowId}
+                        design={design}
+                        orders={row.orders}
+                        position={row.position}
+                        facing={row.facing}
+                        cost={cost}
+                        overBudget={overBudget}
+                        advancedOpen={advancedOpen.has(row.rowId)}
+                        onUpdateOrders={updateOrders}
+                        onUpdatePosition={(id, x, y) =>
+                          updateRow(id, { position: { x, y } })
+                        }
+                        onUpdateFacing={(id, f) => updateRow(id, { facing: f })}
+                        onToggleAdvanced={toggleAdvanced}
+                        onRemove={removeRow}
+                      />
+                    );
+                  })}
+                </Stack>
               )}
-            </Text>
-          ) : (
-            <ShipBrowser
-              designs={factionDesigns}
-              factionFilter={working.faction}
-              onSelect={addShip}
-              renderAction={() => undefined}
-            />
-          )}
-        </div>
-      </CassettePanel>
+            </div>
+
+            {/* Footer: budget gauge + version history + action bar — pinned below roster */}
+            <div className={centreFooter}>
+              <BudgetReadout total={total} />
+
+              <Collapse expanded={historyOpen}>
+                <VersionHistoryPanel
+                  loading={historyLoading}
+                  revisions={revisions}
+                  onRestore={(revision) => void restoreRevision(revision)}
+                  entityLabel="fleet"
+                />
+              </Collapse>
+
+              <div className={actionBar}>
+                <ShareButton
+                  shareable={{
+                    kind: "fleet",
+                    value: {
+                      id: working.id ?? "draft",
+                      name: working.name || "Untitled",
+                      faction: working.faction || "Unaligned",
+                      ships: working.rows.map(toFleetShip),
+                      createdAt: working.createdAt ?? nowIso(),
+                      updatedAt: nowIso(),
+                      source: "user",
+                      revision: 1,
+                    },
+                  }}
+                />
+                {working.id !== null ? (
+                  <Tooltip label="View version history">
+                    <Button
+                      variant={historyOpen ? "filled" : "default"}
+                      className={hardwareKey}
+                      leftSection={<IconHistory size={16} />}
+                      onClick={() => void openHistory()}
+                    >
+                      History
+                    </Button>
+                  </Tooltip>
+                ) : null}
+                <Button
+                  className={hardwareKey}
+                  onClick={() => void save()}
+                  disabled={working.rows.length === 0}
+                  leftSection={<IconBucketDroplet size={16} />}
+                >
+                  Save fleet
+                </Button>
+                <Button
+                  component={Link}
+                  to="/battle"
+                  variant="light"
+                  className={hardwareKey}
+                  leftSection={<IconSwords size={16} />}
+                  disabled={working.id === null}
+                >
+                  Go to battle
+                </Button>
+              </div>
+            </div>
+          </div>
+        </CassettePanel>
+
+        {/* RIGHT WING: ship browser */}
+        <CassettePanel label="Ship Browser" className={browserWing}>
+          <div className={wingBody}>
+            {factionDesigns.length === 0 ? (
+              <Text size="sm" c="dimmed">
+                {designs.length === 0 ? (
+                  <>
+                    No ships designed yet.{" "}
+                    <Anchor component={Link} to="/ships" size="sm">
+                      Open the ship designer
+                    </Anchor>{" "}
+                    to create some.
+                  </>
+                ) : (
+                  `No ${working.faction} ships designed yet.`
+                )}
+              </Text>
+            ) : (
+              <ShipBrowser
+                designs={factionDesigns}
+                factionFilter={working.faction}
+                onSelect={addShip}
+                renderAction={() => undefined}
+              />
+            )}
+          </div>
+        </CassettePanel>
+      </div>
     </div>
   );
 }

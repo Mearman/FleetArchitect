@@ -4,20 +4,59 @@ import { vars } from "@/ui/theme/vars.css";
 /**
  * Three-zone fleet-builder console layout.
  *
- * Desktop: [ saved-fleets wing | roster centre | ship-browser wing ]
- * Mobile:  vertical stack; CSS `order` puts the roster on top.
+ * Desktop: full-height flex column — slim title strip + three-zone workspace row
+ *   [ saved-fleets wing | roster centre | ship-browser wing ]
+ * Mobile:  vertical stack; CSS `order` puts the roster on top; page scrolls.
  */
+
+/**
+ * Route root: full-height flex column so the workspace fills the bounded
+ * AppShell.Main region without page scroll on desktop.
+ */
+export const routeRoot = style({
+  height: "100%",
+  display: "flex",
+  flexDirection: "column",
+  minHeight: 0,
+  "@media": {
+    "(max-width: 48em)": {
+      height: "auto",
+      minHeight: 0,
+    },
+  },
+});
+
+/**
+ * Slim one-line title strip: mono amber label, natural height, with a bottom
+ * separator. Reuses panelLabel vocabulary but at route scope.
+ */
+export const titleStrip = style({
+  fontFamily: vars.font.mono,
+  fontSize: "0.63rem",
+  fontWeight: 600,
+  letterSpacing: "0.12em",
+  textTransform: "uppercase",
+  color: vars.color.amber,
+  padding: "6px 8px 5px",
+  borderBottom: `1px solid ${vars.color.border}`,
+  userSelect: "none",
+  flexShrink: 0,
+});
 
 /** Outer flex-row holding the two wings and the roster centre. */
 export const workspace = style({
   display: "flex",
   flexDirection: "row",
   alignItems: "stretch",
+  flex: "1 1 auto",
+  minHeight: 0,
   width: "100%",
   gap: 8,
   "@media": {
     "(max-width: 48em)": {
       flexDirection: "column",
+      flex: "0 0 auto",
+      minHeight: "auto",
     },
   },
 });
@@ -72,22 +111,64 @@ export const browserWing = style({
 export const centre = style({
   flex: "1 1 auto",
   minWidth: 0,
+  minHeight: 0,
   display: "flex",
   flexDirection: "column",
-  gap: 8,
   "@media": {
     "(max-width: 48em)": {
       order: -1,
+      minHeight: "auto",
     },
   },
 });
 
-/** Recessed section within the centre pane for inputs and the roster. */
+/**
+ * Inner body of the centre pane: a full-height flex column that holds the
+ * identity inputs (natural height), roster (flex-filling), and footer (pinned).
+ */
 export const centreBody = style({
   display: "flex",
   flexDirection: "column",
-  gap: 8,
+  minHeight: 0,
+  flex: "1 1 auto",
   padding: 12,
+  gap: 8,
+  "@media": {
+    "(max-width: 48em)": {
+      minHeight: "auto",
+    },
+  },
+});
+
+/**
+ * Roster scroll region: fills the remaining height between the identity inputs
+ * and the footer, scrolling internally on desktop. On mobile it grows naturally
+ * (the page scrolls instead).
+ */
+export const rosterRegion = style({
+  flex: "1 1 auto",
+  minHeight: 0,
+  overflowY: "auto",
+  "@media": {
+    "(max-width: 48em)": {
+      flex: "0 0 auto",
+      minHeight: "auto",
+      overflowY: "visible",
+    },
+  },
+});
+
+/**
+ * Footer section containing the budget readout and action bar — pinned at the
+ * bottom of the centre column on desktop; flows naturally on mobile.
+ */
+export const centreFooter = style({
+  flexShrink: 0,
+  display: "flex",
+  flexDirection: "column",
+  gap: 6,
+  borderTop: `1px solid ${vars.color.border}`,
+  paddingTop: 6,
 });
 
 // ── Budget gauge ─────────────────────────────────────────────────────────────
@@ -295,11 +376,9 @@ export const fleetListFaction = style({
   flexShrink: 0,
 });
 
-/** Action button strip at the bottom of the builder. */
+/** Action button strip inside the centre footer. */
 export const actionBar = style({
   display: "flex",
   flexWrap: "wrap",
   gap: 6,
-  paddingTop: 6,
-  borderTop: `1px solid ${vars.color.border}`,
 });
