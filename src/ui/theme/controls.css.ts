@@ -1,4 +1,4 @@
-import { style } from "@vanilla-extract/css";
+import { createVar, style } from "@vanilla-extract/css";
 import { vars } from "@/ui/theme/vars.css";
 
 /** Raised-key box-shadow: lit top edge, shaded bottom edge, an extruded side of
@@ -84,3 +84,101 @@ export const hardwareKeySmall = hardwareKeyStyle({
   hoverTravel: "0.5px",
   fullTravel: "1px",
 });
+
+// ── Annunciator legend lamps ──────────────────────────────────────────────
+//
+// A backlit panel pushbutton (the illuminated legend switch you see on a
+// cockpit or control-room console). Distinct from the bevelled hardwareKey: the
+// whole translucent cap floods with light when engaged rather than just glowing
+// at its rim. Built for Mantine UnstyledButton / a plain element so it does NOT
+// inherit the global hardwareKey treatment Mantine applies to Button/ActionIcon.
+
+/** Per-lamp illumination colour. Tint-variant classes reassign it; the lit-state
+ *  rules below read it, so one base class lights in whatever colour the variant
+ *  sets. Defaults to amber. */
+const tint = createVar();
+
+/** Lit cap: the lens floods with the tint colour, the legend flips to a dark
+ *  silhouette, the segmented grid reads as dark divisions, and an outer bloom
+ *  appears. Shared by the momentary (:active) and latched
+ *  ([data-active]/[aria-pressed]) states. */
+const litCap = {
+  transform: "translateY(1px)",
+  background: `linear-gradient(180deg, color-mix(in srgb, ${tint} 85%, white) 0%, ${tint} 100%)`,
+  color: vars.color.base,
+  textShadow: "none",
+  boxShadow: [
+    `inset 0 0 0 1px color-mix(in srgb, ${tint} 60%, transparent)`,
+    "inset 0 1px 4px rgba(0,0,0,0.35)",
+    `0 0 12px -2px color-mix(in srgb, ${tint} 75%, transparent)`,
+  ].join(", "),
+};
+
+/**
+ * Annunciator base: an unlit dark plastic lens with a faint engraved legend and
+ * a fine segmented-lens grid (::before). Lights via :active (momentary) and
+ * [data-active="true"] / [aria-pressed="true"] (latched), so one class drives
+ * momentary buttons, toggle buttons, and (via data-active on a non-interactive
+ * element) status lamps.
+ */
+export const annunciator = style({
+  vars: { [tint]: vars.color.amber },
+  position: "relative",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: "0.4em",
+  minWidth: 0,
+  padding: "0.34rem 0.6rem",
+  fontFamily: vars.font.mono,
+  fontSize: "0.6rem",
+  fontWeight: 600,
+  letterSpacing: "0.1em",
+  textTransform: "uppercase",
+  lineHeight: 1,
+  border: `1px solid ${vars.color.border}`,
+  borderRadius: 1,
+  cursor: "pointer",
+  userSelect: "none",
+  background: `linear-gradient(180deg, ${vars.material.bezelTop} 0%, ${vars.material.bezelBottom} 100%)`,
+  color: `color-mix(in srgb, ${tint} 45%, ${vars.color.text})`,
+  textShadow: "0 1px 0 rgba(0,0,0,0.6)",
+  boxShadow: [
+    `inset 0 1px 0 ${vars.material.bevelHighlight}`,
+    `inset 0 -1px 0 ${vars.material.bevelShadow}`,
+    `0 1px 2px -1px ${vars.material.elevation}`,
+  ].join(", "),
+  transition:
+    "transform 80ms ease, color 120ms ease, box-shadow 120ms ease, background 120ms ease",
+  "::before": {
+    content: '""',
+    position: "absolute",
+    inset: 1,
+    backgroundImage: [
+      "repeating-linear-gradient(90deg, transparent 0, transparent 3px, rgba(0,0,0,0.3) 3px, rgba(0,0,0,0.3) 4px)",
+      "repeating-linear-gradient(0deg, transparent 0, transparent 3px, rgba(0,0,0,0.3) 3px, rgba(0,0,0,0.3) 4px)",
+    ].join(", "),
+    opacity: 0.3,
+    pointerEvents: "none",
+  },
+  selectors: {
+    "&:active": litCap,
+    '&[data-active="true"]': litCap,
+    '&[aria-pressed="true"]': litCap,
+    "&:disabled": { cursor: "not-allowed", opacity: 0.4 },
+  },
+  "@media": {
+    "(prefers-reduced-motion: reduce)": { transition: "none" },
+  },
+});
+
+/** Tint variants — assign the illumination colour. Defined after the base so the
+ *  custom-property assignment wins the cascade. */
+export const annunciatorAmber = style({ vars: { [tint]: vars.color.amber } });
+export const annunciatorGreen = style({ vars: { [tint]: vars.color.green } });
+export const annunciatorCyan = style({ vars: { [tint]: vars.color.cyan } });
+export const annunciatorMagenta = style({ vars: { [tint]: vars.color.magenta } });
+
+/** Non-interactive status-lamp modifier: same lens, no press affordance. Drive
+ *  its lit state with data-active on the element. */
+export const annunciatorLamp = style({ cursor: "default", pointerEvents: "none" });
