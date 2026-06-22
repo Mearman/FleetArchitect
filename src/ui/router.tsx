@@ -19,6 +19,9 @@ export const router = createHashRouter([
     children: [
       { index: true, element: <HomeRoute /> },
       { path: "ships", element: <ShipDesignerRoute /> },
+      // The working design is encoded into the path as you edit, so the URL is
+      // itself the shareable design; opening /ships/<payload> loads it.
+      { path: "ships/:payload", element: <ShipDesignerRoute /> },
       { path: "fleets", element: <FleetBuilderRoute /> },
       { path: "battle", element: <BattleRoute /> },
       // A battle's full config (both fleets, their designs, anomaly, seed) is

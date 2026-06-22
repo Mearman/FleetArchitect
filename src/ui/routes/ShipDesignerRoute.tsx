@@ -66,6 +66,7 @@ import {
 import { BehaviourPanel } from "./BehaviourPanel";
 import { DesignerPalette } from "./DesignerPalette";
 import { type BreachSet, GridBoard } from "./GridBoard";
+import { useShipDesignUrlSync } from "./useShipDesignUrlSync";
 import { CommsConfig, SensorConfig } from "./ModuleConfig";
 import {
   actionBar,
@@ -136,6 +137,9 @@ export function ShipDesignerRoute() {
       setSelected((s) => (s === null ? null : { col: s.col + dx, row: s.row + dy }));
     }
   }, [viewportW, viewportH]);
+  // Mirror the working design to/from the URL so the address bar is the
+  // shareable design (`load` is a hoisted declaration below).
+  useShipDesignUrlSync(working, load);
   const [showAirtightness, setShowAirtightness] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [revisions, setRevisions] = useState<ShipDesign[]>([]);
