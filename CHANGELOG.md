@@ -1,3 +1,31 @@
+# [1.16.0](https://github.com/Mearman/FleetArchitect/compare/v1.15.0...v1.16.0) (2026-06-22)
+
+
+### Bug Fixes
+
+* **deploy:** floor the edge inset so hulls never cross the midline ([49b806e](https://github.com/Mearman/FleetArchitect/commit/49b806e2e5faffa529d3a6f32045e83e3fe44c1a))
+* **fx:** light the active key from within, not with an outer halo ([71450fd](https://github.com/Mearman/FleetArchitect/commit/71450fde789af7b1274e7b9743183caa856e1a05))
+* **outline:** wrap the whole hull and smooth subdivided staircases ([cf90100](https://github.com/Mearman/FleetArchitect/commit/cf901005e38b9d3ad72e585dc96972be4195f6d8))
+* **sim:** correct thrust->acceleration units and re-scale engagement geometry to realistic speeds ([7f7f4a6](https://github.com/Mearman/FleetArchitect/commit/7f7f4a66cfd28c31d045870b3fb34562473c7f82))
+
+
+### Features
+
+* **battle:** make the URL the shareable battle scenario, no share button ([c9b9f42](https://github.com/Mearman/FleetArchitect/commit/c9b9f4235b7f620db01f0077650a71b398e44359))
+* **battle:** mount controls on a screen chassis; fixed console wings ([a529bf9](https://github.com/Mearman/FleetArchitect/commit/a529bf9d08ba5d25e2962a46d00f1b05286a1e68))
+* **battle:** show the idle prompt on the display screen itself ([e4a4280](https://github.com/Mearman/FleetArchitect/commit/e4a4280fb679ae1cca03f15555f60785bbe9ac13))
+* **fleets:** overhaul the fleet builder with an inline grouped ship browser ([d47da12](https://github.com/Mearman/FleetArchitect/commit/d47da122cec0d4212fb69abab3975bf049449497))
+* **fx:** glow controls when they become active, not on page load ([a113c41](https://github.com/Mearman/FleetArchitect/commit/a113c41e1291b6d9b61b8a091334d53d9e3d9f5c))
+* **fx:** hover half-presses a key; clicking it lights it; support toggle keys ([4cbe837](https://github.com/Mearman/FleetArchitect/commit/4cbe83764bd3669211edafdd66bb8f10b0cca9f6))
+* **fx:** power on displays and illuminate controls on mount, not the whole page ([94c89b6](https://github.com/Mearman/FleetArchitect/commit/94c89b606b7a5e60cb4d4e502cfa31e2e4c57fd5)), closes [#root](https://github.com/Mearman/FleetArchitect/issues/root)
+* **outline:** shrink-wrap the hull instead of chamfering corners ([14fbe28](https://github.com/Mearman/FleetArchitect/commit/14fbe2803a18ed8a02386b2e79744be2f741cece))
+* **sharing:** compact binary grid codec ([f1b4633](https://github.com/Mearman/FleetArchitect/commit/f1b4633d5a847cf36f30fb5a077e01e2ffcc918c))
+* **sharing:** compact self-contained share format v3 (binary grids) ([f4895f1](https://github.com/Mearman/FleetArchitect/commit/f4895f16f858fa9aa732244e3050a86a6d742487))
+* **ships:** overhaul the ship designer into the cassette console ([314275d](https://github.com/Mearman/FleetArchitect/commit/314275d63a781c8e7707e79aa79d13bc8b12b2eb))
+* **sim:** remove the battle tick cap; terminate on a no-progress watchdog ([85da3ed](https://github.com/Mearman/FleetArchitect/commit/85da3edb2190dafec5250223dc9cb3e574ef87e9))
+* **ui:** add annunciator legend-lamp button and indicator ([67822a6](https://github.com/Mearman/FleetArchitect/commit/67822a6786bf964fb56c65165b70ef9047ae54ee))
+* **ui:** grouped, visual ship browser with sprite thumbnails ([740d445](https://github.com/Mearman/FleetArchitect/commit/740d4452b005889565aa574c73d181dc3cad168b))
+
 # [1.15.0](https://github.com/Mearman/FleetArchitect/compare/v1.14.0...v1.15.0) (2026-06-21)
 
 
