@@ -107,6 +107,41 @@ function everyEdgeOctilinear(loops: readonly (readonly Pt[])[]): boolean {
   return true;
 }
 
+/** Whether every built (solid) cell's centre is inside-or-on the hull — i.e. no
+ *  plating was dropped. A sqrt-2 corner cut can leave a corner cell's centre
+ *  exactly on the boundary, so "contained" means inside-or-on, not strictly in. */
+function everyCellContained(grid: TileGrid, loops: readonly (readonly Pt[])[]): boolean {
+  const onBoundary = (p: Pt): boolean => {
+    for (const loop of loops)
+      for (let i = 0; i < loop.length; i += 1) {
+        const a = loop[i]!;
+        const b = loop[(i + 1) % loop.length]!;
+        const abx = b.x - a.x;
+        const aby = b.y - a.y;
+        const t = ((p.x - a.x) * abx + (p.y - a.y) * aby) / (abx * abx + aby * aby || 1);
+        const tc = Math.max(0, Math.min(1, t));
+        if (Math.hypot(p.x - (a.x + tc * abx), p.y - (a.y + tc * aby)) < CELL_SIZE * 1e-6)
+          return true;
+      }
+    return false;
+  };
+  const inside = (p: Pt): boolean => {
+    let parity = 0;
+    for (const loop of loops) if (pointInPolygon(p, loop)) parity ^= 1;
+    return parity === 1 || onBoundary(p);
+  };
+  for (let r = 0; r < grid.rows; r += 1)
+    for (let c = 0; c < grid.cols; c += 1) {
+      if (grid.cells[r * grid.cols + c]?.kind !== "solid") continue;
+      const centre = {
+        x: (c - (grid.cols - 1) / 2) * CELL_SIZE,
+        y: (r - (grid.rows - 1) / 2) * CELL_SIZE,
+      };
+      if (!inside(centre)) return false;
+    }
+  return true;
+}
+
 /**
  * Shapes whose every feature is at least three cells across — the floor below
  * which the hard invariants are geometrically impossible (a 2x2 bevels to a
@@ -114,13 +149,14 @@ function everyEdgeOctilinear(loops: readonly (readonly Pt[])[]): boolean {
  * sqrt-2 facet). Real ships are 1 m-subdivided and always above this floor; a
  * sub-floor shape is exercised separately by the no-crash test below.
  */
+// Shapes whose every feature is at least three cells, so all the hard invariants
+// — including the sqrt-2 minimum facet — are achievable simultaneously.
 const SHAPES: readonly string[][] = [
   ["###", "###", "###"],
   ["####", "####", "####", "####"],
   ["#####", "#####", "#####"],
   ["###...", "###...", "###...", "######", "######", "######"],
   ["..####..", ".######.", "########", "########", ".######.", "..####.."],
-  ["####....", "######..", "########", "########", "######..", "####...."],
 ];
 
 describe("computeHullOutline — invariants (HARD)", () => {
@@ -143,12 +179,32 @@ describe("computeHullOutline — invariants (HARD)", () => {
       if (m !== Infinity) expect(m).toBeGreaterThanOrEqual(SQRT2 - 1e-6);
     });
 
+    it(`${name}: contains every cell`, () => {
+      expect(everyCellContained(grid, computeHullOutline(grid))).toBe(true);
+    });
+
     it(`${name}: deterministic`, () => {
       expect(JSON.stringify(computeHullOutline(grid))).toBe(
         JSON.stringify(computeHullOutline(grid)),
       );
     });
   }
+});
+
+describe("computeHullOutline — thin-tipped shapes stay contained", () => {
+  // An asymmetric arrowhead whose tip is only two cells across. The sqrt-2
+  // minimum facet is geometrically impossible there (a 2-cell tip can carry only
+  // a half-cell chamfer), so the previous behaviour shaved the tip off — dropping
+  // real plating. Containment wins over the facet length: every cell must stay
+  // inside, while turns stay <= 45 and edges octilinear.
+  const arrowhead = ["####....", "######..", "########", "########", "######..", "####...."];
+  it("keeps every cell of a 2-cell tip inside the hull", () => {
+    const grid = armourGrid(arrowhead);
+    const loops = computeHullOutline(grid);
+    expect(everyCellContained(grid, loops)).toBe(true);
+    expect(maxAbsTurn(loops)).toBeLessThanOrEqual(45 + TURN_EPS);
+    expect(everyEdgeOctilinear(loops)).toBe(true);
+  });
 });
 
 describe("computeHullOutline — grown deck footprints obey the 45 invariant", () => {
@@ -229,39 +285,37 @@ describe("computeHullOutline — sub-floor shapes degrade without crashing", () 
 describe("computeHullOutline — contains original armour", () => {
   it("a plain block keeps all its cell centres inside the hull", () => {
     const grid = armourGrid(["####", "####", "####"]);
+    expect(everyCellContained(grid, computeHullOutline(grid))).toBe(true);
+  });
+});
+
+describe("computeHullOutline — keeps small protruding plating inside", () => {
+  it("a deck row over a single armour cell still wraps the armour", () => {
+    const deck = {
+      kind: "solid",
+      substrate: true,
+      surface: "deck",
+      edges: { n: "open", e: "open", s: "open", w: "open", doorStates: {} },
+    };
+    const armour = {
+      kind: "solid",
+      substrate: true,
+      surface: "armor",
+      edges: { n: "wall", e: "wall", s: "wall", w: "wall", doorStates: {} },
+    };
+    const empty = { kind: "empty" };
+    // The reported 2x2 design: two deck cells on top, one armour cell below the
+    // left one. The armour arm must not be absorbed away — its centre stays in.
+    const cells: unknown[] = [deck, deck, armour, empty];
+    const grid = TileGrid.parse({ cols: 2, rows: 2, cells, connections: [] });
     const loops = computeHullOutline(grid);
-    // A sqrt-2 corner cut bisects the corner cell, so a corner cell's centre can
-    // land *on* the hull boundary (that cell has lost HP). "Contained" therefore
-    // means inside-or-on, not strictly inside.
-    const onBoundary = (p: Pt): boolean => {
-      for (const loop of loops)
-        for (let i = 0; i < loop.length; i += 1) {
-          const a = loop[i]!;
-          const b = loop[(i + 1) % loop.length]!;
-          const abx = b.x - a.x;
-          const aby = b.y - a.y;
-          const t =
-            ((p.x - a.x) * abx + (p.y - a.y) * aby) / (abx * abx + aby * aby || 1);
-          const tc = Math.max(0, Math.min(1, t));
-          const dx = p.x - (a.x + tc * abx);
-          const dy = p.y - (a.y + tc * aby);
-          if (Math.hypot(dx, dy) < CELL_SIZE * 1e-6) return true;
-        }
-      return false;
+    const armourCentre = {
+      x: (0 - (grid.cols - 1) / 2) * CELL_SIZE,
+      y: (1 - (grid.rows - 1) / 2) * CELL_SIZE,
     };
-    const inside = (p: Pt): boolean => {
-      let parity = 0;
-      for (const loop of loops) if (pointInPolygon(p, loop)) parity ^= 1;
-      return parity === 1 || onBoundary(p);
-    };
-    for (let r = 0; r < grid.rows; r += 1)
-      for (let c = 0; c < grid.cols; c += 1) {
-        const centre = {
-          x: (c - (grid.cols - 1) / 2) * CELL_SIZE,
-          y: (r - (grid.rows - 1) / 2) * CELL_SIZE,
-        };
-        expect(inside(centre)).toBe(true);
-      }
+    let parity = 0;
+    for (const loop of loops) if (pointInPolygon(armourCentre, loop)) parity ^= 1;
+    expect(parity === 1).toBe(true);
   });
 });
 

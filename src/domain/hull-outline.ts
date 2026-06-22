@@ -3,6 +3,7 @@ import type { Vec2 } from "@/schema/primitives";
 import {
   edgeDirectionAllowed,
   latticeSeedLoops,
+  pointInPolygon,
   toMetreLoop,
   type IPoint,
   type Shell,
@@ -48,34 +49,49 @@ import {
  * fills one (it fills only genuinely empty cells). A bare cell enclosed by deck
  * or armour still ends up inside the hull simply because its neighbours are.
  */
-export function growFootprint(grid: TileGrid): Shell {
+/**
+ * The built (non-bare solid) cells of a grid, placed into the same one-cell
+ * border expansion the grown shell uses. This is the original plating footprint
+ * — what the bevel must never drop — distinct from the grown ring around it.
+ */
+export function builtFootprint(grid: TileGrid): Shell {
   const { cols, rows } = grid;
-  const cellAt = (c: number, r: number) =>
-    c < 0 || r < 0 || c >= cols || r >= rows ? undefined : grid.cells[r * cols + c];
   const isBuilt = (c: number, r: number): boolean => {
-    const cell = cellAt(c, r);
+    if (c < 0 || r < 0 || c >= cols || r >= rows) return false;
+    const cell = grid.cells[r * cols + c];
     return cell?.kind === "solid" && cell.surface !== "bare";
-  };
-  const isDeck = (c: number, r: number): boolean => {
-    const cell = cellAt(c, r);
-    return cell?.kind === "solid" && cell.surface === "deck";
-  };
-  const isEmpty = (c: number, r: number): boolean => {
-    const cell = cellAt(c, r);
-    return cell === undefined || cell.kind !== "solid";
   };
   const ncols = cols + 2;
   const nrows = rows + 2;
   const cells = new Set<number>();
-  for (let r = -1; r <= rows; r += 1) {
-    for (let c = -1; c <= cols; c += 1) {
-      const here = isBuilt(c, r);
-      const grow =
+  for (let r = 0; r < rows; r += 1)
+    for (let c = 0; c < cols; c += 1)
+      if (isBuilt(c, r)) cells.add((r + 1) * ncols + (c + 1));
+  return { cols: ncols, rows: nrows, cells };
+}
+
+export function growFootprint(grid: TileGrid): Shell {
+  const { cols, rows } = grid;
+  const isDeck = (c: number, r: number): boolean => {
+    if (c < 0 || r < 0 || c >= cols || r >= rows) return false;
+    const cell = grid.cells[r * cols + c];
+    return cell?.kind === "solid" && cell.surface === "deck";
+  };
+  const isEmpty = (c: number, r: number): boolean => {
+    if (c < 0 || r < 0 || c >= cols || r >= rows) return true;
+    return grid.cells[r * cols + c]?.kind !== "solid";
+  };
+  const built = builtFootprint(grid);
+  const { cols: ncols, rows: nrows } = built;
+  const cells = new Set(built.cells);
+  // Grow a one-cell armour ring into empty cells orthogonally adjacent to deck.
+  for (let r = -1; r <= rows; r += 1)
+    for (let c = -1; c <= cols; c += 1)
+      if (
         isEmpty(c, r) &&
-        (isDeck(c - 1, r) || isDeck(c + 1, r) || isDeck(c, r - 1) || isDeck(c, r + 1));
-      if (here || grow) cells.add((r + 1) * ncols + (c + 1));
-    }
-  }
+        (isDeck(c - 1, r) || isDeck(c + 1, r) || isDeck(c, r - 1) || isDeck(c, r + 1))
+      )
+        cells.add((r + 1) * ncols + (c + 1));
   return { cols: ncols, rows: nrows, cells };
 }
 
@@ -143,14 +159,40 @@ function collapseCollinear(poly: IPoint[]): IPoint[] {
 // Absorb narrow tabs / notches (HARD: features < 3 cells can't carry sqrt 2).
 // ---------------------------------------------------------------------------
 
+/** Whether the cap quad a->b->c->d encloses the centre of any built (original
+ *  plating) cell. Such a tab is real ship structure and must not be absorbed; a
+ *  notch or a purely-grown tab encloses none and may be. */
+function capCoversPlating(
+  a: IPoint,
+  b: IPoint,
+  c: IPoint,
+  d: IPoint,
+  built: Shell,
+): boolean {
+  const quad = [a, b, c, d];
+  const minX = Math.min(a.x, b.x, c.x, d.x);
+  const maxX = Math.max(a.x, b.x, c.x, d.x);
+  const minY = Math.min(a.y, b.y, c.y, d.y);
+  const maxY = Math.max(a.y, b.y, c.y, d.y);
+  for (let r = Math.floor(minY); r < maxY; r += 1)
+    for (let col = Math.floor(minX); col < maxX; col += 1) {
+      if (!built.cells.has(r * built.cols + col)) continue;
+      if (pointInPolygon({ x: col + 0.5, y: r + 0.5 }, quad)) return true;
+    }
+  return false;
+}
+
 /**
- * Collapse a tab or notch narrower than three cells: a short cap edge whose two
+ * Collapse a narrow tab or notch: a short cap edge (< three cells) whose two
  * flanking edges are *antiparallel* (boundary went out and straight back). A
  * staircase step has *parallel* flanks, so it is never collapsed — diagonals
- * survive. Only taken when the rejoined edge is octilinear. Fixpoint,
- * deterministic (lowest index first).
+ * survive. A cap is absorbed only if it covers no original plating: a notch is
+ * empty and a purely-grown tab is just the armour ring, but a tab over real
+ * plating (e.g. a lone armour cell hanging off a deck row) must be kept or the
+ * hull would drop those cells. Only taken when the rejoined edge is octilinear.
+ * Fixpoint, deterministic (lowest index first).
  */
-function absorbTabs(poly: IPoint[]): IPoint[] {
+function absorbTabs(poly: IPoint[], built: Shell): IPoint[] {
   let pts = poly.slice();
   let guard = 0;
   while (pts.length > 4 && guard < pts.length * 4) {
@@ -167,6 +209,7 @@ function absorbTabs(poly: IPoint[]): IPoint[] {
       const fIn = { x: sign(b.x - a.x), y: sign(b.y - a.y) };
       const fOut = { x: sign(d.x - c.x), y: sign(d.y - c.y) };
       if (fIn.x + fOut.x !== 0 || fIn.y + fOut.y !== 0) continue; // not antiparallel
+      if (capCoversPlating(a, b, c, d, built)) continue; // never drop real plating
       if (!edgeDirectionAllowed(d.x - a.x, d.y - a.y)) continue; // join must stay octilinear
       pts = collapseCollinear(pts.filter((_p, j) => j !== i && j !== (i + 1) % n));
       done = true;
@@ -324,9 +367,9 @@ function chamferRightAngles(poly: IPoint[]): IPoint[] {
   return collapseCollinear(out);
 }
 
-function bevelLoop(seed: IPoint[]): IPoint[] {
+function bevelLoop(seed: IPoint[], built: Shell): IPoint[] {
   if (seed.length < 4) return seed;
-  return chamferRightAngles(smoothReflex(absorbTabs(seed)));
+  return chamferRightAngles(smoothReflex(absorbTabs(seed, built)));
 }
 
 /**
@@ -337,8 +380,9 @@ function bevelLoop(seed: IPoint[]): IPoint[] {
  */
 export function computeHullOutline(grid: TileGrid): Vec2[][] {
   const shell = growFootprint(grid);
+  const built = builtFootprint(grid);
   return latticeSeedLoops(shell)
-    .map((seed) => bevelLoop(seed))
+    .map((seed) => bevelLoop(seed, built))
     .filter((loop) => loop.length >= 3)
     .map((loop) => toMetreLoop(loop, shell.cols, shell.rows));
 }
