@@ -15,22 +15,39 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
  * scroll-position writes (the sanctioned mutable handle) and mirrored into state
  * only to re-trigger the listener effect when it mounts.
  *
- * @returns a callback ref to attach to the scroll viewport element.
+ * Also reports the viewport's measured size (via a ResizeObserver) so callers
+ * can fit content to it.
+ *
+ * @returns `{ ref, width, height }` — a callback ref for the viewport and its
+ *   measured client size (0 until first measured).
  */
 export function usePinchZoom(
   setZoom: (update: (z: number) => number) => void,
   min: number,
   max: number,
   zoom: number,
-): (node: HTMLDivElement | null) => void {
+): { ref: (node: HTMLDivElement | null) => void; width: number; height: number } {
   const elRef = useRef<HTMLDivElement | null>(null);
   const [mounted, setMounted] = useState<HTMLDivElement | null>(null);
+  const [size, setSize] = useState({ width: 0, height: 0 });
   const pendingScroll = useRef<{ x: number; y: number } | null>(null);
 
   const attach = useCallback((node: HTMLDivElement | null) => {
     elRef.current = node;
     setMounted(node);
   }, []);
+
+  useEffect(() => {
+    if (mounted === null) return;
+    const measure = (): void =>
+      setSize({ width: mounted.clientWidth, height: mounted.clientHeight });
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(mounted);
+    return () => {
+      ro.disconnect();
+    };
+  }, [mounted]);
 
   useEffect(() => {
     const node = elRef.current;
@@ -70,5 +87,5 @@ export function usePinchZoom(
     }
   }, [zoom]);
 
-  return attach;
+  return { ref: attach, width: size.width, height: size.height };
 }

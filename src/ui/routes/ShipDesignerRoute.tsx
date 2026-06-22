@@ -105,9 +105,13 @@ export function ShipDesignerRoute() {
     null,
   );
   const [zoom, setZoom] = useState(ZOOM_DEFAULT);
-  // Trackpad pinch-to-zoom; two-finger scroll pans via the viewport's native
-  // overflow. Callback ref attaches to the scroll viewport below.
-  const attachViewport = usePinchZoom(setZoom, ZOOM_MIN, ZOOM_MAX, zoom);
+  // Trackpad pinch-to-zoom (two-finger scroll pans natively) plus the viewport's
+  // measured size, so the grid can fit-to-fill it at 1.0x zoom.
+  const {
+    ref: attachGridViewport,
+    width: viewportW,
+    height: viewportH,
+  } = usePinchZoom(setZoom, ZOOM_MIN, ZOOM_MAX, zoom);
   const [showAirtightness, setShowAirtightness] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [revisions, setRevisions] = useState<ShipDesign[]>([]);
@@ -426,7 +430,19 @@ export function ShipDesignerRoute() {
       ? selectedCell.equipment.facing
       : undefined;
 
-  const innerWidthPx = grid.cols * CELL_PITCH_PX * zoom;
+  // Fit the grid to the viewport at 1.0x zoom: pick the cell pitch that fills
+  // the limiting dimension (width or height), accounting for the inter-cell gap.
+  // Zoom multiplies that. Falls back to the nominal pitch before the first
+  // measurement.
+  const GRID_GAP_PX = 2;
+  const fitBaseWidth = (() => {
+    if (viewportW <= 0 || viewportH <= 0) return grid.cols * CELL_PITCH_PX;
+    const pitchFromWidth = (viewportW - (grid.cols - 1) * GRID_GAP_PX) / grid.cols;
+    const pitchFromHeight = (viewportH - (grid.rows - 1) * GRID_GAP_PX) / grid.rows;
+    const pitch = Math.max(1, Math.min(pitchFromWidth, pitchFromHeight) - 0.5);
+    return grid.cols * pitch + (grid.cols - 1) * GRID_GAP_PX;
+  })();
+  const innerWidthPx = fitBaseWidth * zoom;
 
   // Delete action rendered per-card in the ShipBrowser (user designs only).
   function renderDeleteAction(design: ShipDesign) {
@@ -598,11 +614,8 @@ export function ShipDesignerRoute() {
       <Box className={`${screenChassis} ${panelScrews} ${designerGridChassis}`}>
         {/* The scrollable, zoomable grid viewport */}
         <div className={`${zoomScreen} ${screenPowerOn}`}>
-          <div ref={attachViewport} className={zoomViewport} style={{ touchAction: "none" }}>
-            <div
-              className={zoomInner}
-              style={{ transform: `scale(${zoom})`, width: innerWidthPx }}
-            >
+          <div ref={attachGridViewport} className={zoomViewport} style={{ touchAction: "none" }}>
+            <div className={zoomInner} style={{ width: innerWidthPx }}>
               <GridBoard
                 grid={grid}
                 selected={selected}
