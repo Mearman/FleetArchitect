@@ -7,16 +7,61 @@ import { vars } from "@/ui/theme/vars.css";
  * Reflows to a column on mobile with the grid up top.
  */
 
+/**
+ * Route root: full-height flex column so the route fills the bounded AppShell.Main
+ * region on desktop. `minHeight: 0` is required so flex children can shrink below
+ * their content height and the viewport does not overflow.
+ */
+export const designerRouteRoot = style({
+  height: "100%",
+  flex: "1 1 auto",
+  minHeight: 0,
+  display: "flex",
+  flexDirection: "column",
+  gap: 8,
+  "@media": {
+    "(max-width: 48em)": {
+      height: "auto",
+      flex: "none",
+    },
+  },
+});
+
+/**
+ * Slim one-line title strip replacing the large h1 heading. Mono amber label
+ * with a hairline separator — matches the panelLabel vocabulary so it reads as
+ * part of the console chrome rather than generic page text.
+ */
+export const designerTitleStrip = style({
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  fontFamily: vars.font.mono,
+  fontSize: "0.63rem",
+  fontWeight: 600,
+  letterSpacing: "0.12em",
+  textTransform: "uppercase",
+  color: vars.color.amber,
+  paddingBottom: "0.3rem",
+  borderBottom: `1px solid ${vars.color.border}`,
+  userSelect: "none",
+  flexShrink: 0,
+});
+
 /** Outer flex-row holding the left wing, centre grid, and right wing. */
 export const designerConsole = style({
   display: "flex",
   flexDirection: "row",
   alignItems: "stretch",
   width: "100%",
+  flex: "1 1 auto",
+  minHeight: 0,
   gap: 8,
   "@media": {
     "(max-width: 48em)": {
       flexDirection: "column",
+      flex: "none",
+      minHeight: "auto",
     },
   },
 });
@@ -27,6 +72,7 @@ export const designerConsole = style({
  */
 export const designerWing = style({
   flex: "0 0 280px",
+  height: "100%",
   minHeight: 0,
   display: "flex",
   flexDirection: "column",
@@ -34,6 +80,7 @@ export const designerWing = style({
   "@media": {
     "(max-width: 48em)": {
       flex: "1 1 auto",
+      height: "auto",
       minHeight: "auto",
     },
   },
@@ -51,16 +98,19 @@ export const designerWingBody = style({
   },
 });
 
-/** Centre column: screen chassis + bezel strip + action bar. */
+/** Centre column: slim title strip + name/faction row + grid chassis + action bar. */
 export const designerCentre = style({
   flex: "1 1 auto",
   minWidth: 0,
+  height: "100%",
+  minHeight: 0,
   display: "flex",
   flexDirection: "column",
   gap: 8,
   "@media": {
     "(max-width: 48em)": {
       order: -1,
+      height: "auto",
     },
   },
 });
@@ -220,14 +270,34 @@ export const breachOverlay = style({
 });
 
 /**
- * Pan/zoom viewport. Scrollable container; transform: scale() applies zoom.
+ * Screen chassis wrapper that fills the available centre height on desktop.
+ * `flex: 1 1 auto` with `minHeight: 0` lets it grow to fill between the
+ * name/faction row and the action bar, without overflowing the viewport.
+ * On mobile a min-height keeps the grid usable when panels stack.
+ */
+export const designerGridChassis = style({
+  flex: "1 1 auto",
+  minHeight: 0,
+  display: "flex",
+  flexDirection: "column",
+  "@media": {
+    "(max-width: 48em)": {
+      flex: "none",
+      minHeight: 320,
+    },
+  },
+});
+
+/**
+ * Pan/zoom viewport. Fills the screen chassis on desktop (`flex: 1 1 auto`,
+ * `minHeight: 0`) so the grid grows with the window. The fixed `maxHeight` and
+ * `resize: vertical` are removed — size is now governed by flex layout.
  * Recessed screen well: dark inset bevel shadows sink the grid surface.
  */
 export const zoomViewport = style({
+  flex: "1 1 auto",
+  minHeight: 0,
   overflow: "auto",
-  maxHeight: "min(560px, 60vh)",
-  minHeight: 200,
-  resize: "vertical",
   borderRadius: 0,
   background: `linear-gradient(180deg, ${vars.material.surfaceBottom} 0%, ${vars.color.base} 100%)`,
   boxShadow: [
@@ -235,6 +305,11 @@ export const zoomViewport = style({
     `inset -1px -1px 4px rgba(0,0,0,0.5)`,
     `0 0 0 1px ${vars.color.border}`,
   ].join(", "),
+  "@media": {
+    "(max-width: 48em)": {
+      minHeight: 280,
+    },
+  },
 });
 
 /** Inner wrapper that the scale transform applies to. Width set inline. */
@@ -242,9 +317,16 @@ export const zoomInner = style({
   transformOrigin: "top left",
 });
 
-/** Positioned wrapper around the viewport so the CRT screen overlay pins over it. */
+/**
+ * Positioned wrapper around the viewport so the CRT screen overlay pins over it.
+ * Also a flex column filling the chassis so the viewport can grow to fill it.
+ */
 export const zoomScreen = style({
   position: "relative",
+  flex: "1 1 auto",
+  minHeight: 0,
+  display: "flex",
+  flexDirection: "column",
 });
 
 /** Row of dimension + action controls in the bezel area. */

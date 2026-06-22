@@ -76,6 +76,9 @@ import {
   controlRow,
   designerCentre,
   designerConsole,
+  designerGridChassis,
+  designerRouteRoot,
+  designerTitleStrip,
   designerWing,
   designerWingBody,
   zoomInner,
@@ -443,11 +446,6 @@ export function ShipDesignerRoute() {
   /** Left wing content: grouped ship browser + New button. */
   const leftWing = (
     <Stack gap="sm" h="100%">
-      {readOnly && (
-        <Badge size="sm" color="grape" leftSection={<IconLock size={12} />} mb={4}>
-          Preset — read only
-        </Badge>
-      )}
       <Button
         className={hardwareKey}
         size="xs"
@@ -470,7 +468,7 @@ export function ShipDesignerRoute() {
     </Stack>
   );
 
-  /** Right wing content: palette + behaviour. */
+  /** Right wing content: palette + behaviour + stats/faults + selected-cell config. */
   const rightWing = (
     <Stack gap="md">
       <div className={panelLabel}>Palette</div>
@@ -490,121 +488,6 @@ export function ShipDesignerRoute() {
         onPriorityChange={(p) => setWorking((prev) => ({ ...prev, crewPriority: p }))}
         onRulesChange={(r) => setWorking((prev) => ({ ...prev, rules: r }))}
       />
-    </Stack>
-  );
-
-  /** Centre content: screen chassis + stats/faults + action bar. */
-  const centre = (
-    <Stack gap={8}>
-      {/* Name / faction inputs above the chassis */}
-      <Group grow align="flex-start">
-        <TextInput
-          label="Name"
-          value={working.name}
-          onChange={(e) => setWorking((prev) => ({ ...prev, name: e.target.value }))}
-          placeholder="e.g. Sabre Mk II"
-          disabled={readOnly}
-        />
-        {/* Faction rendered as a segmented picker derived from the faction list */}
-        <Stack gap={4}>
-          <Text size="xs" c="dimmed">Faction</Text>
-          <SegmentedControl
-            size="xs"
-            data={factions.map((f) => ({ value: f, label: f }))}
-            value={working.faction}
-            disabled={readOnly}
-            onChange={(f) => {
-              setBrush((prev) => {
-                if (prev.kind !== "equipment") return prev;
-                const mod = catalog().module(prev.moduleId);
-                if (mod === undefined || mod.faction !== f) {
-                  return { kind: "substrate-deck" };
-                }
-                return prev;
-              });
-              setWorking((prev) => ({ ...prev, faction: f }));
-            }}
-          />
-        </Stack>
-      </Group>
-
-      {/* Grid chassis */}
-      <Box className={`${screenChassis} ${panelScrews}`}>
-        {/* The scrollable, zoomable grid viewport */}
-        <div className={`${zoomScreen} ${screenPowerOn}`}>
-          <div className={zoomViewport} style={{ touchAction: "none" }}>
-            <div
-              className={zoomInner}
-              style={{ transform: `scale(${zoom})`, width: innerWidthPx }}
-            >
-              <GridBoard
-                grid={grid}
-                selected={selected}
-                breached={breached}
-                showAirtightness={showAirtightness}
-                onPaint={paint}
-                onEdge={paintEdge}
-              />
-            </div>
-          </div>
-          {/* CRT screen effects pinned over the viewport. */}
-          <CrtScreen />
-        </div>
-
-        {/* Bezel strip — dimension controls + zoom buttons */}
-        <Box className={bezelStrip}>
-          <div className={`${bezelGroup} ${controlRow}`}>
-            <NumberInput
-              label="Cols"
-              size="xs"
-              min={1}
-              max={MAX_DIM}
-              value={grid.cols}
-              disabled={readOnly}
-              onChange={(v) => resize(clampDim(v, grid.cols), grid.rows)}
-              style={{ width: 70 }}
-            />
-            <NumberInput
-              label="Rows"
-              size="xs"
-              min={1}
-              max={MAX_DIM}
-              value={grid.rows}
-              disabled={readOnly}
-              onChange={(v) => resize(grid.cols, clampDim(v, grid.rows))}
-              style={{ width: 70 }}
-            />
-            <Checkbox
-              size="xs"
-              label="Airtight"
-              checked={showAirtightness}
-              onChange={(e) => setShowAirtightness(e.currentTarget.checked)}
-            />
-          </div>
-
-          <div className={bezelGroup}>
-            <Text size="xs" c="dimmed" style={{ fontVariantNumeric: "tabular-nums" }}>
-              {zoom.toFixed(1)}×
-            </Text>
-            <Tooltip label="Zoom out">
-              <AnnunciatorButton
-                icon={<IconMinus size={12} />}
-                aria-label="Zoom out"
-                tint="cyan"
-                onClick={() => setZoom((z) => Math.max(ZOOM_MIN, z - ZOOM_STEP))}
-              />
-            </Tooltip>
-            <Tooltip label="Zoom in">
-              <AnnunciatorButton
-                icon={<IconPlus size={12} />}
-                aria-label="Zoom in"
-                tint="cyan"
-                onClick={() => setZoom((z) => Math.min(ZOOM_MAX, z + ZOOM_STEP))}
-              />
-            </Tooltip>
-          </div>
-        </Box>
-      </Box>
 
       {/* Selected-cell config panels */}
       {readOnly && (
@@ -669,9 +552,124 @@ export function ShipDesignerRoute() {
           entityLabel="design"
         />
       </Collapse>
+    </Stack>
+  );
 
-      {/* Action bar */}
-      <div className={actionBar}>
+  /** Centre content: name/faction row + grid chassis (fills) + action bar. */
+  const centre = (
+    <div className={designerCentre}>
+      {/* Name / faction inputs above the chassis */}
+      <Group grow align="flex-start" style={{ flexShrink: 0 }}>
+        <TextInput
+          label="Name"
+          value={working.name}
+          onChange={(e) => setWorking((prev) => ({ ...prev, name: e.target.value }))}
+          placeholder="e.g. Sabre Mk II"
+          disabled={readOnly}
+        />
+        {/* Faction rendered as a segmented picker derived from the faction list */}
+        <Stack gap={4}>
+          <Text size="xs" c="dimmed">Faction</Text>
+          <SegmentedControl
+            size="xs"
+            data={factions.map((f) => ({ value: f, label: f }))}
+            value={working.faction}
+            disabled={readOnly}
+            onChange={(f) => {
+              setBrush((prev) => {
+                if (prev.kind !== "equipment") return prev;
+                const mod = catalog().module(prev.moduleId);
+                if (mod === undefined || mod.faction !== f) {
+                  return { kind: "substrate-deck" };
+                }
+                return prev;
+              });
+              setWorking((prev) => ({ ...prev, faction: f }));
+            }}
+          />
+        </Stack>
+      </Group>
+
+      {/* Grid chassis — fills the available height between the name row and action bar */}
+      <Box className={`${screenChassis} ${panelScrews} ${designerGridChassis}`}>
+        {/* The scrollable, zoomable grid viewport */}
+        <div className={`${zoomScreen} ${screenPowerOn}`}>
+          <div className={zoomViewport} style={{ touchAction: "none" }}>
+            <div
+              className={zoomInner}
+              style={{ transform: `scale(${zoom})`, width: innerWidthPx }}
+            >
+              <GridBoard
+                grid={grid}
+                selected={selected}
+                breached={breached}
+                showAirtightness={showAirtightness}
+                onPaint={paint}
+                onEdge={paintEdge}
+              />
+            </div>
+          </div>
+          {/* CRT screen effects pinned over the viewport. */}
+          <CrtScreen />
+        </div>
+
+        {/* Bezel strip — dimension controls + zoom buttons */}
+        <Box className={bezelStrip} style={{ flexShrink: 0 }}>
+          <div className={`${bezelGroup} ${controlRow}`}>
+            <NumberInput
+              label="Cols"
+              size="xs"
+              min={1}
+              max={MAX_DIM}
+              value={grid.cols}
+              disabled={readOnly}
+              onChange={(v) => resize(clampDim(v, grid.cols), grid.rows)}
+              style={{ width: 70 }}
+            />
+            <NumberInput
+              label="Rows"
+              size="xs"
+              min={1}
+              max={MAX_DIM}
+              value={grid.rows}
+              disabled={readOnly}
+              onChange={(v) => resize(grid.cols, clampDim(v, grid.rows))}
+              style={{ width: 70 }}
+            />
+            <Checkbox
+              size="xs"
+              label="Airtight"
+              checked={showAirtightness}
+              onChange={(e) => setShowAirtightness(e.currentTarget.checked)}
+            />
+          </div>
+
+          <div className={bezelGroup}>
+            <Text size="xs" c="dimmed" style={{ fontVariantNumeric: "tabular-nums" }}>
+              {zoom.toFixed(1)}×
+            </Text>
+            <Tooltip label="Zoom out">
+              <AnnunciatorButton
+                icon={<IconMinus size={12} />}
+                aria-label="Zoom out"
+                tint="cyan"
+                onClick={() => setZoom((z) => Math.max(ZOOM_MIN, z - ZOOM_STEP))}
+              />
+            </Tooltip>
+            <Tooltip label="Zoom in">
+              <AnnunciatorButton
+                icon={<IconPlus size={12} />}
+                aria-label="Zoom in"
+                tint="cyan"
+                onClick={() => setZoom((z) => Math.min(ZOOM_MAX, z + ZOOM_STEP))}
+              />
+            </Tooltip>
+          </div>
+        </Box>
+      </Box>
+
+      {/* Action bar — pinned at the bottom of the centre column */}
+      <div className={actionBar} style={{ flexShrink: 0 }}>
         <div className={actionBarLeft}>
           <ShareButton
             shareable={{
@@ -739,23 +737,36 @@ export function ShipDesignerRoute() {
           </div>
         )}
       </div>
-    </Stack>
+    </div>
   );
 
   return (
-    <div className={designerConsole}>
-      {/* Left wing: ship browser */}
-      <CassettePanel label="Your Designs" className={designerWing}>
-        <div className={designerWingBody}>{leftWing}</div>
-      </CassettePanel>
+    <div className={designerRouteRoot}>
+      {/* Slim title strip — replaces the large h1 */}
+      <div className={designerTitleStrip}>
+        <span>Ship Designer</span>
+        {readOnly && (
+          <Badge size="sm" color="grape" leftSection={<IconLock size={12} />}>
+            Preset — read only
+          </Badge>
+        )}
+      </div>
 
-      {/* Centre: grid viewport + controls */}
-      <div className={designerCentre}>{centre}</div>
+      {/* Console row: left wing + centre + right wing */}
+      <div className={designerConsole}>
+        {/* Left wing: ship browser */}
+        <CassettePanel label="Your Designs" className={designerWing}>
+          <div className={designerWingBody}>{leftWing}</div>
+        </CassettePanel>
 
-      {/* Right wing: palette + behaviour */}
-      <CassettePanel label="Tools" className={designerWing}>
-        <div className={designerWingBody}>{rightWing}</div>
-      </CassettePanel>
+        {/* Centre: name/faction + grid + action bar */}
+        {centre}
+
+        {/* Right wing: palette + behaviour + stats/faults + cell config */}
+        <CassettePanel label="Tools" className={designerWing}>
+          <div className={designerWingBody}>{rightWing}</div>
+        </CassettePanel>
+      </div>
     </div>
   );
 }
