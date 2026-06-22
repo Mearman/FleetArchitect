@@ -42,6 +42,7 @@ import { AnnunciatorButton, AnnunciatorLamp } from "@/ui/components/Annunciator"
 import { panelScrews } from "@/ui/components/panel.css";
 import { screenPowerOn } from "@/ui/fx/CrtOverlay.css";
 import { CrtScreen } from "@/ui/fx/CrtScreen";
+import { bezelGroup, bezelStrip, screenChassis } from "@/ui/components/screen.css";
 import * as styles from "./BattleRoute.css";
 
 export function BattleRoute() {
@@ -413,7 +414,7 @@ export function BattleRoute() {
         hasFrames={hasFrames}
       >
         {!hasFrames ? (
-          <Box className={`${styles.screenChassis} ${panelScrews}`}>
+          <Box className={`${screenChassis} ${panelScrews}`}>
             {/* The idle prompt sits on the powered-on display itself, not a
                 separate panel — an empty screen waiting for a battle. */}
             <Box className={`${styles.canvasBox} ${screenPowerOn}`}>
@@ -438,7 +439,7 @@ export function BattleRoute() {
           </Box>
         ) : (
           <Stack gap="sm">
-            <Box className={`${styles.screenChassis} ${panelScrews}`}>
+            <Box className={`${screenChassis} ${panelScrews}`}>
               <Box className={`${styles.canvasBox} ${screenPowerOn}`}>
                 {/* CRT screen effects (scanlines, vignette, aberration), confined to this display. */}
                 <CrtScreen />
@@ -457,8 +458,8 @@ export function BattleRoute() {
 
               {/* Bezel strip — indicator lamps and camera buttons mounted on the
                   chassis, not floating on the glass. */}
-              <Box className={styles.bezelStrip}>
-                <Group className={styles.bezelGroup} gap={6}>
+              <Box className={bezelStrip}>
+                <Group className={bezelGroup} gap={6}>
                   <AnnunciatorLamp tint="amber" lit={simulation.activeAnomaly !== "none"}>
                     {ANOMALY_LABEL[simulation.activeAnomaly]}
                     {camera.camera.followId !== null ? " · following" : ""}
@@ -476,7 +477,7 @@ export function BattleRoute() {
                   )}
                 </Group>
 
-                <Group className={styles.bezelGroup} gap={6}>
+                <Group className={bezelGroup} gap={6}>
                   <Tooltip label="Zoom in">
                     <AnnunciatorButton
                       icon={<IconPlus size={14} />}
