@@ -1,5 +1,6 @@
 import { style } from "@vanilla-extract/css";
 import { vars } from "@/ui/theme/vars.css";
+import { PHOSPHOR_GREEN } from "@/ui/theme/tokens";
 
 /**
  * Ship designer console layout. Mirrors the BattleWorkspace fixed-wing pattern:
@@ -115,47 +116,55 @@ export const designerCentre = style({
   },
 });
 
+/** Colour of the grid cell boundary lines (drawn as a board background so empty
+ *  cells cost no DOM nodes). */
+const GRID_LINE = "rgba(28,38,32,0.55)";
+
 /**
- * The grid canvas: a CSS grid laying out one button per cell. The column
- * template is set inline per render (it depends on the grid width).
+ * The grid canvas: a CSS grid whose tracks position the (sparse) built cells.
+ * Empty cells are not rendered as nodes — the cell boundaries are painted as a
+ * repeating background grid (`backgroundSize` set inline per render, since it
+ * depends on the grid dimensions), and painting is hit-tested by coordinate.
+ * This keeps a large grid cheap: node count tracks the built cells, not cols*rows.
  */
 export const gridBoard = style({
+  position: "relative",
   display: "grid",
-  gap: 2,
+  gap: 0,
   width: "100%",
+  cursor: "pointer",
+  userSelect: "none",
+  touchAction: "none",
+  backgroundImage: `linear-gradient(to right, ${GRID_LINE} 0 1px, transparent 1px), linear-gradient(to bottom, ${GRID_LINE} 0 1px, transparent 1px)`,
 });
 
 /**
- * One paintable cell. Square, with a subtle border so empty cells are still
- * visible targets. Position relative so edge indicators and overlays can
- * anchor to the cell.
+ * One built (non-empty) cell, placed on its grid track via `gridColumn`/`gridRow`
+ * (set inline). Position relative so edge indicators and overlays anchor to it.
  */
 export const gridCell = style({
   position: "relative",
-  // Squareness comes from the board's aspect-ratio + equal 1fr rows/cols (see
-  // GridBoard); a per-cell aspect-ratio would fight that and can desync the
-  // hull overlay.
   minWidth: 0,
   minHeight: 0,
   border: `1px solid rgba(28,38,32,0.4)`,
-  borderRadius: 3,
   padding: 0,
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
   fontSize: 10,
   fontWeight: 700,
-  cursor: "pointer",
   color: vars.color.base,
   lineHeight: 1,
   userSelect: "none",
-  touchAction: "none",
-  selectors: {
-    "&:focus-visible": {
-      outline: `2px solid ${vars.color.cyan}`,
-      outlineOffset: 1,
-    },
-  },
+});
+
+/** Selection highlight, placed on the selected cell's grid track. Non-interactive
+ *  so it never intercepts a paint. */
+export const gridSelection = style({
+  pointerEvents: "none",
+  outline: `2px solid ${PHOSPHOR_GREEN}`,
+  outlineOffset: -2,
+  zIndex: 2,
 });
 
 /** Wrapper to position the facing tick relative to the cell content. */

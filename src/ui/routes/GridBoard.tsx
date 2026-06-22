@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef } from "react";
 import type { EdgeKind, SolidCell, TileGrid } from "@/schema/grid";
 import { PHOSPHOR_GREEN } from "@/ui/theme/tokens";
 import { CELL_SIZE } from "@/domain/grid";
@@ -13,6 +13,7 @@ import {
   facingTick,
   gridBoard,
   gridCell as gridCellClass,
+  gridSelection,
 } from "./ShipDesignerRoute.css";
 
 /** Cells belonging to a breached (non-airtight) compartment. Drawn as a Set
@@ -66,18 +67,21 @@ export function GridBoard({
   onEdge: (col: number, row: number, dir: "n" | "e" | "s" | "w") => void;
 }) {
   /** True while the pointer is held down inside the board — enables
-   *  drag-to-paint by calling onPaint as the pointer enters each cell. */
+   *  drag-to-paint. */
   const isPainting = useRef(false);
+  /** The last cell painted in the current stroke, so a drag paints each cell
+   *  once as the pointer crosses it. */
+  const lastPainted = useRef<string | null>(null);
+  const boardRef = useRef<HTMLDivElement | null>(null);
 
   // Octilinear hull outline (grown one cell over exposed deck walls, every
   // corner bevelled to a 45-degree facet — no right angles). Rendered as an SVG
   // overlay so the editor previews the ship's silhouette. The outline vertices
-  // are in centred
-  // ship-local metres; converting back to lattice cell units (origin top-left)
-  // gives `v / CELL_SIZE + cols/2` in x and `+ rows/2` in y. The overlay SVG
-  // uses a `0 0 cols rows` viewBox stretched over the grid (preserveAspectRatio
-  // none), so cell units map straight onto the rendered board without measuring
-  // pixel sizes. Recomputed only when the grid changes.
+  // are in centred ship-local metres; converting back to lattice cell units
+  // (origin top-left) gives `v / CELL_SIZE + cols/2` in x and `+ rows/2` in y.
+  // The overlay SVG uses a `0 0 cols rows` viewBox stretched over the grid
+  // (preserveAspectRatio none), so cell units map straight onto the rendered
+  // board without measuring pixel sizes. Recomputed only when the grid changes.
   const outlineLoops = useMemo(() => {
     const loops = computeHullOutline(grid);
     return loops
@@ -95,6 +99,7 @@ export function GridBoard({
   useEffect(() => {
     function handlePointerUp() {
       isPainting.current = false;
+      lastPainted.current = null;
     }
     window.addEventListener("pointerup", handlePointerUp);
     return () => {
@@ -102,10 +107,56 @@ export function GridBoard({
     };
   }, []);
 
+  /** Map viewport client coords to a grid cell, or null if outside the board. */
+  function cellAtPointer(
+    clientX: number,
+    clientY: number,
+  ): { col: number; row: number } | null {
+    const node = boardRef.current;
+    if (node === null) return null;
+    const r = node.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return null;
+    const col = Math.floor(((clientX - r.left) / r.width) * grid.cols);
+    const row = Math.floor(((clientY - r.top) / r.height) * grid.rows);
+    if (col < 0 || row < 0 || col >= grid.cols || row >= grid.rows) return null;
+    return { col, row };
+  }
+
+  function handlePointerDown(e: ReactPointerEvent<HTMLDivElement>) {
+    const c = cellAtPointer(e.clientX, e.clientY);
+    if (c === null) return;
+    isPainting.current = true;
+    lastPainted.current = `${c.col},${c.row}`;
+    onPaint(c.col, c.row);
+  }
+
+  function handlePointerMove(e: ReactPointerEvent<HTMLDivElement>) {
+    if (!isPainting.current) return;
+    const c = cellAtPointer(e.clientX, e.clientY);
+    if (c === null) return;
+    const key = `${c.col},${c.row}`;
+    if (key === lastPainted.current) return;
+    lastPainted.current = key;
+    onPaint(c.col, c.row);
+  }
+
+  // Only the built (non-empty) cells become DOM nodes; the empty grid is a
+  // background pattern and paints are hit-tested by coordinate, so a large
+  // grid stays cheap to render.
+  const builtCells: { col: number; row: number; cell: SolidCell }[] = [];
+  for (let idx = 0; idx < grid.cells.length; idx += 1) {
+    const cell = grid.cells[idx];
+    if (cell === undefined || cell.kind !== "solid") continue;
+    builtCells.push({ col: idx % grid.cols, row: Math.floor(idx / grid.cols), cell });
+  }
+
   return (
     <div style={{ position: "relative", width: "100%" }}>
       <div
+        ref={boardRef}
         className={gridBoard}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
         style={{
           gridTemplateColumns: `repeat(${grid.cols}, 1fr)`,
           gridTemplateRows: `repeat(${grid.rows}, 1fr)`,
@@ -113,71 +164,67 @@ export function GridBoard({
           // overlay SVG (preserveAspectRatio="none", viewBox 0 0 cols rows)
           // maps one unit to one cell on both axes — keeping the hull in sync.
           aspectRatio: `${grid.cols} / ${grid.rows}`,
+          // One background tile per cell so the grid lines align with the tracks.
+          backgroundSize: `${100 / grid.cols}% ${100 / grid.rows}%`,
         }}
       >
-      {grid.cells.map((cell, idx) => {
-        const col = idx % grid.cols;
-        const row = Math.floor(idx / grid.cols);
-        const isSelected =
-          selected !== null && selected.col === col && selected.row === row;
-        const isBreached =
-          showAirtightness && breached.has(`${col},${row}`);
-        const edges =
-          cell.kind === "solid" ? renderedEdges(cell) : [];
-        return (
-          <button
-            key={`${col}-${row}`}
-            type="button"
-            className={`${gridCellClass} ${isBreached ? breachOverlay : ""}`}
-            onPointerDown={() => {
-              isPainting.current = true;
-              onPaint(col, row);
-            }}
-            onPointerEnter={() => {
-              if (isPainting.current) onPaint(col, row);
-            }}
-            style={{
-              background: cellColour(cell),
-              outline: isSelected ? `2px solid ${PHOSPHOR_GREEN}` : "none",
-            }}
-            aria-label={`cell ${col},${row}`}
-          >
-            {/* Edge indicators. stopPropagation so a click on the bar fires
-                onEdge, not onPaint (the cell-body handler). */}
-            {edges.map(({ dir, kind, doorOpen }) => {
-              const cls =
-                kind === "wall"
-                  ? `${edgeWall} ${edgePositionClass("wall", dir)}`
-                  : doorOpen
-                    ? `${edgeDoorOpen} ${edgePositionClass("door", dir)}`
-                    : `${edgeDoorClosed} ${edgePositionClass("door", dir)}`;
-              return (
-                <button
-                  key={dir}
-                  type="button"
-                  className={cls}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onEdge(col, row, dir);
-                  }}
-                  aria-label={`${dir} edge ${kind}`}
-                />
-              );
-            })}
-            <span className={cellInner}>
-              {cell.kind === "solid" && cell.equipment !== undefined ? (
-                <span
-                  className={facingTick}
-                  style={{
-                    transform: `rotate(${cell.equipment.facing + Math.PI / 2}rad)`,
-                  }}
-                />
-              ) : null}
-              {cellLabel(cell)}
-            </span>
-          </button>
-        );
-      })}
+        {builtCells.map(({ col, row, cell }) => {
+          const isBreached = showAirtightness && breached.has(`${col},${row}`);
+          const edges = renderedEdges(cell);
+          return (
+            <div
+              key={`${col}-${row}`}
+              className={`${gridCellClass} ${isBreached ? breachOverlay : ""}`}
+              style={{
+                gridColumn: col + 1,
+                gridRow: row + 1,
+                background: cellColour(cell),
+              }}
+              aria-label={`cell ${col},${row}`}
+            >
+              {/* Edge indicators. stopPropagation so a click on the bar fires
+                  onEdge, not onPaint (gated by the active brush in the parent). */}
+              {edges.map(({ dir, kind, doorOpen }) => {
+                const cls =
+                  kind === "wall"
+                    ? `${edgeWall} ${edgePositionClass("wall", dir)}`
+                    : doorOpen
+                      ? `${edgeDoorOpen} ${edgePositionClass("door", dir)}`
+                      : `${edgeDoorClosed} ${edgePositionClass("door", dir)}`;
+                return (
+                  <button
+                    key={dir}
+                    type="button"
+                    className={cls}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEdge(col, row, dir);
+                    }}
+                    aria-label={`${dir} edge ${kind}`}
+                  />
+                );
+              })}
+              <span className={cellInner}>
+                {cell.equipment !== undefined ? (
+                  <span
+                    className={facingTick}
+                    style={{
+                      transform: `rotate(${cell.equipment.facing + Math.PI / 2}rad)`,
+                    }}
+                  />
+                ) : null}
+                {cellLabel(cell)}
+              </span>
+            </div>
+          );
+        })}
+        {selected !== null ? (
+          <div
+            className={gridSelection}
+            style={{ gridColumn: selected.col + 1, gridRow: selected.row + 1 }}
+            aria-hidden="true"
+          />
+        ) : null}
       </div>
       {outlineLoops.length > 0 ? (
         <svg
