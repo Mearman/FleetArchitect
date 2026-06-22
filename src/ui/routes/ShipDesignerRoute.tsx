@@ -109,6 +109,7 @@ export function ShipDesignerRoute() {
     ref: attachGridViewport,
     width: viewportW,
     height: viewportH,
+    zoomByStep,
   } = usePinchZoom(setZoom, ZOOM_MIN, ZOOM_MAX, zoom);
   // Auto-size the grid to fill the viewport (no manual cols/rows): grow it to at
   // least as many cells as fit at the nominal pitch, keeping the built content
@@ -347,14 +348,24 @@ export function ShipDesignerRoute() {
     notifications.show({ message: "Design deleted", color: "gray" });
   }
 
-  /** Load a design into the working state, preserving its provenance. */
+  /** Load a design into the working state, preserving its provenance. The grid
+   *  is re-fit to the current viewport (centred) so a loaded design fills the
+   *  canvas like a new one, instead of showing at its saved size. */
   function load(design: ShipDesign) {
+    const grid =
+      viewportW > 0 && viewportH > 0
+        ? fitGridCentered(
+            design.grid,
+            Math.max(1, Math.floor(viewportW / CELL_PITCH_PX)),
+            Math.max(1, Math.floor(viewportH / CELL_PITCH_PX)),
+          ).grid
+        : design.grid;
     setWorking({
       id: design.id,
       createdAt: design.createdAt,
       name: design.name,
       faction: design.faction,
-      grid: design.grid,
+      grid,
       source: design.source,
       shipStance: design.shipStance,
       crewPriority: design.crewPriority,
@@ -645,7 +656,7 @@ export function ShipDesignerRoute() {
                 icon={<IconMinus size={12} />}
                 aria-label="Zoom out"
                 tint="cyan"
-                onClick={() => setZoom((z) => Math.max(ZOOM_MIN, z - ZOOM_STEP))}
+                onClick={() => zoomByStep(-ZOOM_STEP)}
               />
             </Tooltip>
             <Tooltip label="Zoom in">
@@ -653,7 +664,7 @@ export function ShipDesignerRoute() {
                 icon={<IconPlus size={12} />}
                 aria-label="Zoom in"
                 tint="cyan"
-                onClick={() => setZoom((z) => Math.min(ZOOM_MAX, z + ZOOM_STEP))}
+                onClick={() => zoomByStep(ZOOM_STEP)}
               />
             </Tooltip>
           </div>
