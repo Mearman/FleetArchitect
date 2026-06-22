@@ -85,7 +85,13 @@ import {
   zoomViewport,
 } from "./ShipDesignerRoute.css";
 
-/** Zoom range for the pan/zoom viewport, as a fraction of natural size. */
+/**
+ * Zoom range for the grid, as a fraction of natural cell size. Zoom sets the
+ * cell pitch; the grid then auto-grows/shrinks to fill the viewport at that
+ * pitch, so zooming out expands the buildable area (more, smaller cells) and
+ * zooming in contracts it (fewer, larger cells). `ZOOM_MIN` bounds how far the
+ * grid can grow on zoom-out.
+ */
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 2.5;
 const ZOOM_STEP = 0.1;
@@ -104,25 +110,28 @@ export function ShipDesignerRoute() {
   );
   const [zoom, setZoom] = useState(ZOOM_DEFAULT);
   // Trackpad pinch-to-zoom (two-finger scroll pans natively) plus the viewport's
-  // measured size, so the grid can fit-to-fill it at 1.0x zoom.
+  // measured size, so the grid can fit-to-fill it at the current cell pitch.
   const {
     ref: attachGridViewport,
     width: viewportW,
     height: viewportH,
     zoomByStep,
   } = usePinchZoom(setZoom, ZOOM_MIN, ZOOM_MAX, zoom);
-  // Auto-size the grid to fill the viewport (no manual cols/rows): grow it to at
-  // least as many cells as fit at the nominal pitch, keeping the built content
-  // centred. Runs only on viewport change (read via a ref so it doesn't re-fit
-  // on every paint, which would yank the content back to centre mid-edit).
+  // Auto-size the grid to fill the viewport (no manual cols/rows): fit it to as
+  // many cells as cover the viewport at the current zoomed cell pitch, keeping
+  // the built content centred. Depends on zoom so zooming out expands the grid
+  // (more, smaller cells) and zooming in contracts it (fewer, larger cells),
+  // never below the built content. Reads the design via a ref so it doesn't
+  // re-fit on every paint (which would yank the content back to centre mid-edit).
   const workingRef = useRef(working);
   useEffect(() => {
     workingRef.current = working;
   });
   useEffect(() => {
     if (viewportW <= 0 || viewportH <= 0) return;
-    const cols = Math.max(1, Math.floor(viewportW / CELL_PITCH_PX));
-    const rows = Math.max(1, Math.floor(viewportH / CELL_PITCH_PX));
+    const cellPx = CELL_PITCH_PX * zoom;
+    const cols = Math.max(1, Math.floor(viewportW / cellPx));
+    const rows = Math.max(1, Math.floor(viewportH / cellPx));
     const cur = workingRef.current;
     const { grid: fitted, dx, dy } = fitGridCentered(cur.grid, cols, rows);
     if (
@@ -137,7 +146,7 @@ export function ShipDesignerRoute() {
     if (dx !== 0 || dy !== 0) {
       setSelected((s) => (s === null ? null : { col: s.col + dx, row: s.row + dy }));
     }
-  }, [viewportW, viewportH]);
+  }, [viewportW, viewportH, zoom]);
   // Mirror the working design to/from the URL so the address bar is the
   // shareable design (`load` is a hoisted declaration below).
   useShipDesignUrlSync(working, load);
@@ -352,12 +361,13 @@ export function ShipDesignerRoute() {
    *  is re-fit to the current viewport (centred) so a loaded design fills the
    *  canvas like a new one, instead of showing at its saved size. */
   function load(design: ShipDesign) {
+    const cellPx = CELL_PITCH_PX * zoom;
     const grid =
       viewportW > 0 && viewportH > 0
         ? fitGridCentered(
             design.grid,
-            Math.max(1, Math.floor(viewportW / CELL_PITCH_PX)),
-            Math.max(1, Math.floor(viewportH / CELL_PITCH_PX)),
+            Math.max(1, Math.floor(viewportW / cellPx)),
+            Math.max(1, Math.floor(viewportH / cellPx)),
           ).grid
         : design.grid;
     setWorking({
@@ -445,9 +455,8 @@ export function ShipDesignerRoute() {
       ? selectedCell.equipment.facing
       : undefined;
 
-  // The grid auto-sizes to fill the viewport (see the fit effect below), so the
-  // cell pitch is fixed and zoom simply scales it; two-finger scroll/pinch then
-  // navigate.
+  // The grid auto-sizes to fill the viewport at the zoomed cell pitch (see the
+  // fit effect above), so the inner wrapper is exactly the grid's pixel width.
   const innerWidthPx = grid.cols * CELL_PITCH_PX * zoom;
 
   // Delete action rendered per-card in the ShipBrowser (user designs only).
