@@ -302,6 +302,11 @@ export const zoomViewport = style({
   flex: "1 1 auto",
   minHeight: 0,
   overflow: "auto",
+  // The board is sized to cover the viewport (ceil of cells), so it overflows by
+  // up to one cell; hide the scrollbars so that sub-cell overflow doesn't show a
+  // permanent bar (which would also shrink clientWidth and feed back into the
+  // fit). Panning still works via the wheel/trackpad.
+  scrollbarWidth: "none",
   borderRadius: 0,
   background: `linear-gradient(180deg, ${vars.material.surfaceBottom} 0%, ${vars.color.base} 100%)`,
   boxShadow: [
@@ -309,6 +314,11 @@ export const zoomViewport = style({
     `inset -1px -1px 4px rgba(0,0,0,0.5)`,
     `0 0 0 1px ${vars.color.border}`,
   ].join(", "),
+  selectors: {
+    "&::-webkit-scrollbar": {
+      display: "none",
+    },
+  },
   "@media": {
     "(max-width: 48em)": {
       minHeight: 280,

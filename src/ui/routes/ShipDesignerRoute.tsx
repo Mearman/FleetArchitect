@@ -23,7 +23,7 @@ import {
   IconPlus,
   IconTrash,
 } from "@tabler/icons-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { computeCompartments } from "@/domain/interior";
 import { analyseShipDesign } from "@/domain/stats";
 import { createId, nowIso } from "@/domain/id";
@@ -116,13 +116,15 @@ export function ShipDesignerRoute() {
     width: viewportW,
     height: viewportH,
     zoomByStep,
-  } = usePinchZoom(setZoom, ZOOM_MIN, ZOOM_MAX, zoom);
+    centre: centreGrid,
+  } = usePinchZoom(setZoom, ZOOM_MIN, ZOOM_MAX);
   // Auto-size the grid to fill the viewport (no manual cols/rows): fit it to as
-  // many cells as cover the viewport at the current zoomed cell pitch, keeping
-  // the built content centred. Depends on zoom so zooming out expands the grid
-  // (more, smaller cells) and zooming in contracts it (fewer, larger cells),
-  // never below the built content. Reads the design via a ref so it doesn't
-  // re-fit on every paint (which would yank the content back to centre mid-edit).
+  // many cells as cover the viewport at the current zoomed cell pitch (ceil, so
+  // the board fully covers the viewport with no leftover strip), keeping the
+  // built content centred. Depends on zoom so zooming out expands the grid (more,
+  // smaller cells) and zooming in contracts it (fewer, larger cells), never below
+  // the built content. Reads the design via a ref so it doesn't re-fit on every
+  // paint (which would yank the content back to centre mid-edit).
   const workingRef = useRef(working);
   useEffect(() => {
     workingRef.current = working;
@@ -130,8 +132,8 @@ export function ShipDesignerRoute() {
   useEffect(() => {
     if (viewportW <= 0 || viewportH <= 0) return;
     const cellPx = CELL_PITCH_PX * zoom;
-    const cols = Math.max(1, Math.floor(viewportW / cellPx));
-    const rows = Math.max(1, Math.floor(viewportH / cellPx));
+    const cols = Math.max(1, Math.ceil(viewportW / cellPx));
+    const rows = Math.max(1, Math.ceil(viewportH / cellPx));
     const cur = workingRef.current;
     const { grid: fitted, dx, dy } = fitGridCentered(cur.grid, cols, rows);
     if (
@@ -147,6 +149,12 @@ export function ShipDesignerRoute() {
       setSelected((s) => (s === null ? null : { col: s.col + dx, row: s.row + dy }));
     }
   }, [viewportW, viewportH, zoom]);
+  // After any zoom/resize changes the board, scroll it back to centre so a
+  // cell-count change keeps the (centred) content pinned to the viewport centre
+  // rather than jumping. Layout effect so it runs before the browser paints.
+  useLayoutEffect(() => {
+    centreGrid();
+  }, [centreGrid, working.grid.cols, working.grid.rows, zoom, viewportW, viewportH]);
   // Mirror the working design to/from the URL so the address bar is the
   // shareable design (`load` is a hoisted declaration below).
   useShipDesignUrlSync(working, load);
@@ -366,8 +374,8 @@ export function ShipDesignerRoute() {
       viewportW > 0 && viewportH > 0
         ? fitGridCentered(
             design.grid,
-            Math.max(1, Math.floor(viewportW / cellPx)),
-            Math.max(1, Math.floor(viewportH / cellPx)),
+            Math.max(1, Math.ceil(viewportW / cellPx)),
+            Math.max(1, Math.ceil(viewportH / cellPx)),
           ).grid
         : design.grid;
     setWorking({
