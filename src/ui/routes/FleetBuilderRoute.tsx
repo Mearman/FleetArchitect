@@ -1,41 +1,30 @@
 import {
-  ActionIcon,
   Anchor,
-  Badge,
   Button,
-  Checkbox,
   Collapse,
-  Container,
   Group,
-  NumberInput,
-  Paper,
-  Progress,
   ScrollArea,
-  SegmentedControl,
   Select,
-  Slider,
   Stack,
   Text,
   TextInput,
-  Title,
   Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import {
   IconBucketDroplet,
   IconHistory,
-  IconPlus,
   IconSwords,
-  IconTrash,
 } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { createId, nowIso } from "@/domain/id";
 import { analyseShipDesign } from "@/domain/stats";
-import { DEFAULT_FLEET_BUDGET } from "@/domain/points";
 import { catalog } from "@/data/catalog";
 import { ShareButton } from "@/ui/components/ShareButton";
 import { VersionHistoryPanel } from "@/ui/components/VersionHistoryPanel";
+import { CassettePanel } from "@/ui/components/CassettePanel";
+import { ShipBrowser } from "@/ui/components/ShipBrowser";
 import { useFleets, useShipDesigns } from "@/ui/hooks/storage";
 import {
   deleteFleet,
@@ -44,13 +33,24 @@ import {
   saveFleet,
 } from "@/storage/db";
 import {
-  EngageRange,
-  EngagementStance,
-  TargetPriority,
   defaultOrders,
 } from "@/schema/fleet";
 import type { Fleet, FleetShip, Orders } from "@/schema/fleet";
+import type { ShipDesign } from "@/schema/ship";
 import { panelLabel } from "@/ui/components/panel.css";
+import { hardwareKey } from "@/ui/theme/controls.css";
+import { BudgetReadout } from "./BudgetReadout";
+import { FleetRowCard } from "./FleetRowCard";
+import { SavedFleetsList } from "./SavedFleetsList";
+import {
+  actionBar,
+  browserWing,
+  centre,
+  centreBody,
+  wing,
+  wingBody,
+  workspace,
+} from "./FleetBuilderRoute.css";
 
 /** A fleet row carries a local React key alongside the schema's FleetShip. */
 interface FleetRow extends FleetShip {
@@ -78,40 +78,10 @@ function toFleetShip(row: FleetRow): FleetShip {
   };
 }
 
-function toNumber(val: number | string | undefined, fallback = 0): number {
-  return typeof val === "number" && Number.isFinite(val) ? val : fallback;
-}
-
-const STANCES = EngagementStance.options;
-const PRIORITIES = TargetPriority.options;
-const RANGES = EngageRange.options;
-
-const STANCE_LABEL: Record<EngagementStance, string> = {
-  aggressive: "Aggressive",
-  balanced: "Balanced",
-  defensive: "Defensive",
-  evasive: "Evasive",
-};
-
-const PRIORITY_LABEL: Record<TargetPriority, string> = {
-  nearest: "Nearest",
-  weakest: "Weakest",
-  strongest: "Strongest",
-  highestCost: "Highest cost",
-};
-
-const RANGE_LABEL: Record<EngageRange, string> = {
-  short: "Short",
-  medium: "Medium",
-  long: "Long",
-  hold: "Hold",
-};
-
 export function FleetBuilderRoute() {
   const fleets = useFleets();
   const designs = useShipDesigns();
   const [working, setWorking] = useState<WorkingFleet>(blankFleet);
-  const [addDesignId, setAddDesignId] = useState<string | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState<ReadonlySet<string>>(new Set());
   const [historyOpen, setHistoryOpen] = useState(false);
   const [revisions, setRevisions] = useState<Fleet[]>([]);
@@ -135,13 +105,8 @@ export function FleetBuilderRoute() {
     [designs],
   );
 
-  /** Only show designs that match the fleet's faction in the picker, so
-   *  a player can't accidentally mix faction parts across a fleet. */
-  const designOptions = useMemo(
-    () =>
-      (designs ?? [])
-        .filter((d) => d.faction === working.faction)
-        .map((d) => ({ value: d.id, label: d.name })),
+  const factionDesigns = useMemo(
+    () => (designs ?? []).filter((d) => d.faction === working.faction),
     [designs, working.faction],
   );
 
@@ -160,7 +125,7 @@ export function FleetBuilderRoute() {
   }, [working.rows, designMap]);
 
   const total = pointBreakdown.reduce((sum, p) => sum + p.cost, 0);
-  const overBudget = total > DEFAULT_FLEET_BUDGET;
+  const overBudget = total > 20000;
 
   if (fleets === undefined || designs === undefined) {
     return (
@@ -170,11 +135,11 @@ export function FleetBuilderRoute() {
     );
   }
 
-  function addShip(designId: string) {
+  function addShip(design: ShipDesign) {
     const index = working.rows.length;
     const row: FleetRow = {
       rowId: createId("row"),
-      designId,
+      designId: design.id,
       position: {
         x: -300 + (index % 3) * 50,
         y: ((index % 5) - 2) * 80,
@@ -183,7 +148,6 @@ export function FleetBuilderRoute() {
       orders: { ...defaultOrders },
     };
     setWorking((prev) => ({ ...prev, rows: [...prev.rows, row] }));
-    setAddDesignId(null);
   }
 
   function updateRow(rowId: string, patch: Partial<FleetRow>) {
@@ -252,7 +216,6 @@ export function FleetBuilderRoute() {
     });
   }
 
-  /** Fetch revisions for the current fleet and open the history panel. */
   async function openHistory() {
     const id = working.id;
     if (id === null) {
@@ -260,7 +223,6 @@ export function FleetBuilderRoute() {
       setHistoryOpen((prev) => !prev);
       return;
     }
-    // If the panel is already open, just close it — no need to re-fetch.
     if (historyOpen) {
       setHistoryOpen(false);
       return;
@@ -272,13 +234,10 @@ export function FleetBuilderRoute() {
     setHistoryLoading(false);
   }
 
-  /** Restore the working fleet to a prior revision. Archives the current HEAD
-   *  and loads the restored snapshot. */
   async function restoreRevision(revision: number) {
     if (working.id === null) return;
     const restored = await restoreFleetRevision(working.id, revision);
     load(restored);
-    // Reload the history list so the just-archived HEAD appears.
     const list = await listFleetRevisions(restored.id);
     setRevisions(list);
     notifications.show({
@@ -291,415 +250,98 @@ export function FleetBuilderRoute() {
   const canBuild = designs.length > 0;
 
   return (
-    <Container size="xl" py="lg">
-    <Stack gap="lg">
-      <Title order={1}>Fleet Builder</Title>
+    <div className={workspace}>
+      {/* LEFT WING: saved fleets */}
+      <CassettePanel label="Fleets" className={wing}>
+        <div className={wingBody}>
+          <SavedFleetsList
+            fleets={fleets}
+            activeId={working.id}
+            onLoad={load}
+            onDelete={(id) => void remove(id)}
+            onNew={() => setWorking(blankFleet())}
+          />
+        </div>
+      </CassettePanel>
 
-      <Group grow align="flex-start">
-        <TextInput
-          label="Fleet name"
-          value={working.name}
-          onChange={(e) =>
-            setWorking((prev) => ({ ...prev, name: e.target.value }))
-          }
-          placeholder="e.g. 3rd Strike Wing"
-        />
-        <Select
-          label="Faction"
-          data={factions.map((f) => ({ value: f, label: f }))}
-          value={working.faction}
-          onChange={(f) => {
-            if (f !== null) setWorking((prev) => ({ ...prev, faction: f }));
-          }}
-        />
-      </Group>
+      {/* CENTRE: working fleet roster */}
+      <CassettePanel className={centre}>
+        <div className={centreBody}>
+          {/* Fleet identity inputs */}
+          <Group grow align="flex-start">
+            <TextInput
+              label="Fleet name"
+              value={working.name}
+              onChange={(e) =>
+                setWorking((prev) => ({ ...prev, name: e.target.value }))
+              }
+              placeholder="e.g. 3rd Strike Wing"
+            />
+            <Select
+              label="Faction"
+              data={factions.map((f) => ({ value: f, label: f }))}
+              value={working.faction}
+              onChange={(f) => {
+                if (f !== null) setWorking((prev) => ({ ...prev, faction: f }));
+              }}
+            />
+          </Group>
 
-      <Group gap="lg" align="flex-start" wrap="wrap">
-        <Paper p="md" withBorder style={{ flex: "1 1 280px" }}>
-          <Stack gap="xs">
-            <Group justify="space-between">
-              <div className={panelLabel}>
-                Saved fleets
-              </div>
-              <Button
-                size="xs"
-                variant="light"
-                leftSection={<IconPlus size={14} />}
-                onClick={() => setWorking(blankFleet())}
-              >
-                New
-              </Button>
-            </Group>
-            <ScrollArea.Autosize mah={360} offsetScrollbars>
+          {/* Roster */}
+          <div className={panelLabel} style={{ marginTop: 4 }}>
+            Ships ({working.rows.length})
+          </div>
+
+          {!canBuild ? (
+            <Text size="sm" c="dimmed">
+              <Anchor component={Link} to="/ships" size="sm">
+                Design a ship
+              </Anchor>{" "}
+              first before building a fleet.
+            </Text>
+          ) : working.rows.length === 0 ? (
+            <Text size="sm" c="dimmed">
+              Click a ship in the browser on the right to add it to your fleet.
+            </Text>
+          ) : (
+            <ScrollArea.Autosize mah={480} offsetScrollbars>
               <Stack gap={6}>
-                {fleets.length === 0 ? (
-                  <Text size="sm" c="dimmed">
-                    No fleets yet.
-                  </Text>
-                ) : (
-                  fleets.map((fleet) => (
-                    <Group
-                      key={fleet.id}
-                      justify="space-between"
-                      wrap="nowrap"
-                    >
-                      <Button
-                        size="xs"
-                        variant={fleet.id === working.id ? "filled" : "subtle"}
-                        fullWidth
-                        justify="flex-start"
-                        onClick={() => load(fleet)}
-                      >
-                        {fleet.name}
-                      </Button>
-                      <Tooltip label="Delete">
-                        <ActionIcon
-                          color="red"
-                          variant="subtle"
-                          aria-label={`Delete fleet ${fleet.name}`}
-                          onClick={() => remove(fleet.id)}
-                        >
-                          <IconTrash size={14} />
-                        </ActionIcon>
-                      </Tooltip>
-                    </Group>
-                  ))
-                )}
+                {working.rows.map((row) => {
+                  const design = designMap.get(row.designId);
+                  if (design === undefined) return null;
+                  const pointEntry = pointBreakdown.find(
+                    (p) => p.rowId === row.rowId,
+                  );
+                  const cost = pointEntry === undefined ? 0 : pointEntry.cost;
+                  return (
+                    <FleetRowCard
+                      key={row.rowId}
+                      rowId={row.rowId}
+                      design={design}
+                      orders={row.orders}
+                      position={row.position}
+                      facing={row.facing}
+                      cost={cost}
+                      overBudget={overBudget}
+                      advancedOpen={advancedOpen.has(row.rowId)}
+                      onUpdateOrders={updateOrders}
+                      onUpdatePosition={(id, x, y) =>
+                        updateRow(id, { position: { x, y } })
+                      }
+                      onUpdateFacing={(id, f) => updateRow(id, { facing: f })}
+                      onToggleAdvanced={toggleAdvanced}
+                      onRemove={removeRow}
+                    />
+                  );
+                })}
               </Stack>
             </ScrollArea.Autosize>
-          </Stack>
-        </Paper>
+          )}
 
-        <Stack gap="md" style={{ flex: "1 1 480px" }}>
-          <Paper p="md" withBorder>
-            <Stack gap="xs">
-              <Group justify="space-between" align="flex-end">
-                <div className={panelLabel}>
-                  Ships ({working.rows.length})
-                </div>
-                <Select
-                  placeholder="Add a ship design…"
-                  data={designOptions}
-                  value={addDesignId}
-                  onChange={(id) => {
-                    if (id !== null) addShip(id);
-                  }}
-                  disabled={!canBuild}
-                  searchable
-                  maw={240}
-                  style={{ flex: 1, minWidth: 0 }}
-                />
-              </Group>
-              {!canBuild ? (
-                <Text size="sm" c="dimmed">
-                  <Anchor component={Link} to="/ships" size="sm">
-                    Design a ship
-                  </Anchor>{" "}
-                  first before building a fleet.
-                </Text>
-              ) : working.rows.length === 0 ? (
-                <Text size="sm" c="dimmed">
-                  Add ships to compose your fleet.
-                </Text>
-              ) : (
-                <Stack gap="sm">
-                  {working.rows.map((row) => {
-                    const cost = pointBreakdown.find(
-                      (p) => p.rowId === row.rowId,
-                    );
-                    return (
-                      <Paper
-                        key={row.rowId}
-                        p="sm"
-                        withBorder
-                        style={{ background: "rgba(255,255,255,0.02)" }}
-                      >
-                        <Stack gap="xs">
-                          <Group justify="space-between" wrap="nowrap">
-                            <Select
-                              size="xs"
-                              label="Ship design"
-                              data={designOptions}
-                              value={row.designId}
-                              onChange={(id) => {
-                                if (id !== null)
-                                  updateRow(row.rowId, { designId: id });
-                              }}
-                              style={{ flex: 1 }}
-                            />
-                            <Badge
-                              size="xs"
-                              variant="light"
-                              color={overBudget ? "red" : "indigo"}
-                            >
-                              {cost?.cost ?? 0} pts
-                            </Badge>
-                            <ActionIcon
-                              size="md"
-                              color="red"
-                              variant="subtle"
-                              aria-label="Remove ship"
-                              onClick={() => removeRow(row.rowId)}
-                            >
-                              <IconTrash size={14} />
-                            </ActionIcon>
-                          </Group>
+          {/* Budget gauge */}
+          <BudgetReadout total={total} />
 
-                          <Stack gap={4}>
-                            <Text size="xs" c="dimmed">
-                              Stance
-                            </Text>
-                            <SegmentedControl
-                              size="xs"
-                              fullWidth
-                              data={STANCES.map((s) => ({
-                                value: s,
-                                label: STANCE_LABEL[s],
-                              }))}
-                              value={row.orders.stance}
-                              onChange={(val) =>
-                                updateOrders(row.rowId, {
-                                  stance: EngagementStance.parse(val),
-                                })
-                              }
-                            />
-                          </Stack>
-
-                          <Group grow align="flex-start">
-                            <Select
-                              size="xs"
-                              label="Target"
-                              data={PRIORITIES.map((p) => ({
-                                value: p,
-                                label: PRIORITY_LABEL[p],
-                              }))}
-                              value={row.orders.targetPriority}
-                              onChange={(val) => {
-                                if (val !== null)
-                                  updateOrders(row.rowId, {
-                                    targetPriority: TargetPriority.parse(val),
-                                  });
-                              }}
-                            />
-                            <Select
-                              size="xs"
-                              label="Engage"
-                              data={RANGES.map((r) => ({
-                                value: r,
-                                label: RANGE_LABEL[r],
-                              }))}
-                              value={row.orders.engageRange}
-                              onChange={(val) => {
-                                if (val !== null)
-                                  updateOrders(row.rowId, {
-                                    engageRange: EngageRange.parse(val),
-                                  });
-                              }}
-                            />
-                          </Group>
-
-                          <Button
-                            size="xs"
-                            variant="subtle"
-                            onClick={() => toggleAdvanced(row.rowId)}
-                          >
-                            {advancedOpen.has(row.rowId)
-                              ? "Hide advanced"
-                              : "Show advanced"}
-                          </Button>
-
-                          <Collapse expanded={advancedOpen.has(row.rowId)}>
-                            <Stack gap="xs">
-                              <Group grow>
-                                <NumberInput
-                                  size="xs"
-                                  label="X"
-                                  value={row.position.x}
-                                  onChange={(val) =>
-                                    updateRow(row.rowId, {
-                                      position: {
-                                        ...row.position,
-                                        x: toNumber(val),
-                                      },
-                                    })
-                                  }
-                                />
-                                <NumberInput
-                                  size="xs"
-                                  label="Y"
-                                  value={row.position.y}
-                                  onChange={(val) =>
-                                    updateRow(row.rowId, {
-                                      position: {
-                                        ...row.position,
-                                        y: toNumber(val),
-                                      },
-                                    })
-                                  }
-                                />
-                                <NumberInput
-                                  size="xs"
-                                  label="Facing"
-                                  value={row.facing}
-                                  step={0.1}
-                                  onChange={(val) =>
-                                    updateRow(row.rowId, {
-                                      facing: toNumber(val),
-                                    })
-                                  }
-                                />
-                              </Group>
-
-                              <Stack gap={4}>
-                                <Group justify="space-between">
-                                  <Text size="xs" c="dimmed">
-                                    Retreat below
-                                  </Text>
-                                  <Text size="xs" c="dimmed">
-                                    {Math.round(row.orders.retreatThreshold * 100)}%
-                                  </Text>
-                                </Group>
-                                <Slider
-                                  size="md"
-                                  min={0}
-                                  max={1}
-                                  step={0.05}
-                                  value={row.orders.retreatThreshold}
-                                  onChange={(val) =>
-                                    updateOrders(row.rowId, {
-                                      retreatThreshold: val,
-                                    })
-                                  }
-                                />
-                              </Stack>
-
-                              <Checkbox
-                                size="xs"
-                                label="Focus fire (concentrate fleet on one target)"
-                                checked={row.orders.focusFire}
-                                onChange={(e) =>
-                                  updateOrders(row.rowId, {
-                                    focusFire: e.currentTarget.checked,
-                                  })
-                                }
-                              />
-
-                              <Stack gap={4}>
-                                <Group justify="space-between">
-                                  <Text size="xs" c="dimmed">
-                                    Vulnerable target weight
-                                  </Text>
-                                  <Text size="xs" c="dimmed">
-                                    {Math.round(
-                                      row.orders.vulnerableTargetWeight * 100,
-                                    )}
-                                    %
-                                  </Text>
-                                </Group>
-                                <Slider
-                                  size="md"
-                                  min={0}
-                                  max={1}
-                                  step={0.05}
-                                  value={row.orders.vulnerableTargetWeight}
-                                  onChange={(val) =>
-                                    updateOrders(row.rowId, {
-                                      vulnerableTargetWeight: val,
-                                    })
-                                  }
-                                />
-                              </Stack>
-
-                              <Stack gap={4}>
-                                <Group justify="space-between">
-                                  <Text size="xs" c="dimmed">
-                                    Formation keeping
-                                  </Text>
-                                  <Text size="xs" c="dimmed">
-                                    {Math.round(
-                                      row.orders.formationKeeping * 100,
-                                    )}
-                                    %
-                                  </Text>
-                                </Group>
-                                <Slider
-                                  size="md"
-                                  min={0}
-                                  max={1}
-                                  step={0.05}
-                                  value={row.orders.formationKeeping}
-                                  onChange={(val) =>
-                                    updateOrders(row.rowId, {
-                                      formationKeeping: val,
-                                    })
-                                  }
-                                />
-                              </Stack>
-
-                              <Stack gap={4}>
-                                <Group justify="space-between">
-                                  <Text size="xs" c="dimmed">
-                                    Range-keeping band
-                                  </Text>
-                                  <Text size="xs" c="dimmed">
-                                    ±
-                                    {Math.round(
-                                      row.orders.rangeKeepingBand * 50,
-                                    )}
-                                    %
-                                  </Text>
-                                </Group>
-                                <Slider
-                                  size="md"
-                                  min={0.1}
-                                  max={0.9}
-                                  step={0.05}
-                                  value={row.orders.rangeKeepingBand}
-                                  onChange={(val) =>
-                                    updateOrders(row.rowId, {
-                                      rangeKeepingBand: val,
-                                    })
-                                  }
-                                />
-                              </Stack>
-                            </Stack>
-                          </Collapse>
-                        </Stack>
-                      </Paper>
-                    );
-                  })}
-                </Stack>
-              )}
-            </Stack>
-          </Paper>
-
-          <Paper p="md" withBorder>
-            <Group justify="space-between" mb={6}>
-              <div className={panelLabel}>
-                Point budget
-              </div>
-              <Text
-                size="sm"
-                fw={600}
-                c={overBudget ? "red.4" : "gray.1"}
-              >
-                {total} / {DEFAULT_FLEET_BUDGET}
-              </Text>
-            </Group>
-            <Progress
-              value={Math.min(100, (total / DEFAULT_FLEET_BUDGET) * 100)}
-              color={overBudget ? "red" : "indigo"}
-              size="sm"
-            />
-            {overBudget && (
-              <Text size="xs" c="red.4" mt={4}>
-                Over budget — the battle will still run, but this exceeds the
-                default cap.
-              </Text>
-            )}
-          </Paper>
-
-          {/* Version history panel */}
+          {/* Version history */}
           <Collapse expanded={historyOpen}>
             <VersionHistoryPanel
               loading={historyLoading}
@@ -709,7 +351,8 @@ export function FleetBuilderRoute() {
             />
           </Collapse>
 
-          <Group justify="space-between">
+          {/* Action bar */}
+          <div className={actionBar}>
             <ShareButton
               shareable={{
                 kind: "fleet",
@@ -725,40 +368,67 @@ export function FleetBuilderRoute() {
                 },
               }}
             />
-            <Group gap="xs">
-              {working.id !== null ? (
-                <Tooltip label="View version history">
-                  <Button
-                    variant={historyOpen ? "light" : "subtle"}
-                    color={historyOpen ? "orange" : undefined}
-                    leftSection={<IconHistory size={16} />}
-                    onClick={() => void openHistory()}
-                  >
-                    History
-                  </Button>
-                </Tooltip>
-              ) : null}
-              <Button
-                onClick={() => void save()}
-                disabled={working.rows.length === 0}
-                leftSection={<IconBucketDroplet size={16} />}
-              >
-                Save fleet
-              </Button>
-              <Button
-                component={Link}
-                to="/battle"
-                variant="light"
-                leftSection={<IconSwords size={16} />}
-                disabled={working.id === null}
-              >
-                Go to battle
-              </Button>
-            </Group>
-          </Group>
-        </Stack>
-      </Group>
-    </Stack>
-    </Container>
+            {working.id !== null ? (
+              <Tooltip label="View version history">
+                <Button
+                  variant={historyOpen ? "filled" : "default"}
+                  className={hardwareKey}
+                  leftSection={<IconHistory size={16} />}
+                  onClick={() => void openHistory()}
+                >
+                  History
+                </Button>
+              </Tooltip>
+            ) : null}
+            <Button
+              className={hardwareKey}
+              onClick={() => void save()}
+              disabled={working.rows.length === 0}
+              leftSection={<IconBucketDroplet size={16} />}
+            >
+              Save fleet
+            </Button>
+            <Button
+              component={Link}
+              to="/battle"
+              variant="light"
+              className={hardwareKey}
+              leftSection={<IconSwords size={16} />}
+              disabled={working.id === null}
+            >
+              Go to battle
+            </Button>
+          </div>
+        </div>
+      </CassettePanel>
+
+      {/* RIGHT WING: ship browser */}
+      <CassettePanel label="Ship Browser" className={browserWing}>
+        <div className={wingBody}>
+          {factionDesigns.length === 0 ? (
+            <Text size="sm" c="dimmed">
+              {designs.length === 0 ? (
+                <>
+                  No ships designed yet.{" "}
+                  <Anchor component={Link} to="/ships" size="sm">
+                    Open the ship designer
+                  </Anchor>{" "}
+                  to create some.
+                </>
+              ) : (
+                `No ${working.faction} ships designed yet.`
+              )}
+            </Text>
+          ) : (
+            <ShipBrowser
+              designs={factionDesigns}
+              factionFilter={working.faction}
+              onSelect={addShip}
+              renderAction={() => undefined}
+            />
+          )}
+        </div>
+      </CassettePanel>
+    </div>
   );
 }
