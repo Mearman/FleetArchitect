@@ -85,6 +85,66 @@ export function blankGrid(cols: number, rows: number): TileGrid {
   return { cols, rows, cells, connections: [] };
 }
 
+/** Bounding box of the built (non-empty) cells, or null if the grid is empty. */
+function builtBounds(
+  grid: TileGrid,
+): { minCol: number; maxCol: number; minRow: number; maxRow: number } | null {
+  let minCol = Infinity;
+  let maxCol = -Infinity;
+  let minRow = Infinity;
+  let maxRow = -Infinity;
+  for (let r = 0; r < grid.rows; r += 1) {
+    for (let c = 0; c < grid.cols; c += 1) {
+      if (grid.cells[r * grid.cols + c]?.kind === "empty") continue;
+      if (c < minCol) minCol = c;
+      if (c > maxCol) maxCol = c;
+      if (r < minRow) minRow = r;
+      if (r > maxRow) maxRow = r;
+    }
+  }
+  if (maxCol < minCol) return null;
+  return { minCol, maxCol, minRow, maxRow };
+}
+
+/**
+ * Resize a grid to at least `targetCols` x `targetRows` (never smaller than its
+ * built content) with the built cells centred and the rest padded empty. Returns
+ * the new grid and the (dx, dy) coordinate shift applied to existing cells so a
+ * caller can remap a selection. Connections are shifted too. Centred padding is
+ * transparent to gameplay: empty cells contribute no mass/stats, and keeping the
+ * occupied region centred keeps the combat outline and centre-of-mass put.
+ */
+export function fitGridCentered(
+  grid: TileGrid,
+  targetCols: number,
+  targetRows: number,
+): { grid: TileGrid; dx: number; dy: number } {
+  const b = builtBounds(grid);
+  const cw = b ? b.maxCol - b.minCol + 1 : 1;
+  const ch = b ? b.maxRow - b.minRow + 1 : 1;
+  const cols = Math.max(targetCols, cw);
+  const rows = Math.max(targetRows, ch);
+  const dx = Math.floor((cols - cw) / 2) - (b ? b.minCol : 0);
+  const dy = Math.floor((rows - ch) / 2) - (b ? b.minRow : 0);
+  const cells: GridCell[] = Array.from({ length: cols * rows }, () => ({
+    kind: "empty",
+  }));
+  for (let r = 0; r < grid.rows; r += 1) {
+    for (let c = 0; c < grid.cols; c += 1) {
+      const cell = grid.cells[r * grid.cols + c];
+      if (cell !== undefined && cell.kind !== "empty") {
+        cells[(r + dy) * cols + (c + dx)] = cell;
+      }
+    }
+  }
+  const connections = grid.connections.map((cn) => ({
+    from: { col: cn.from.col + dx, row: cn.from.row + dy },
+    to: { col: cn.to.col + dx, row: cn.to.row + dy },
+    resource: cn.resource,
+  }));
+  return { grid: { cols, rows, cells, connections }, dx, dy };
+}
+
 export function blankDesign(): WorkingDesign {
   return {
     id: null,

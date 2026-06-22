@@ -6,7 +6,6 @@ import {
   Checkbox,
   Collapse,
   Group,
-  NumberInput,
   ScrollArea,
   SegmentedControl,
   Stack,
@@ -24,7 +23,7 @@ import {
   IconPlus,
   IconTrash,
 } from "@tabler/icons-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { computeCompartments } from "@/domain/interior";
 import { analyseShipDesign } from "@/domain/stats";
 import { createId, nowIso } from "@/domain/id";
@@ -51,19 +50,17 @@ import {
   restoreDesignRevision,
   saveShipDesign,
 } from "@/storage/db";
-import type { GridCell } from "@/schema/grid";
 import type { ShipDesign } from "@/schema/ship";
 import {
   type Brush,
   type WorkingDesign,
   FACINGS,
-  MAX_DIM,
 } from "./designerConstants";
 import {
   applyCellBrush,
   applyEdgeBrush,
   blankDesign,
-  clampDim,
+  fitGridCentered,
   isEdgeBrush,
 } from "./designerGrid";
 import { BehaviourPanel } from "./BehaviourPanel";
@@ -112,6 +109,33 @@ export function ShipDesignerRoute() {
     width: viewportW,
     height: viewportH,
   } = usePinchZoom(setZoom, ZOOM_MIN, ZOOM_MAX, zoom);
+  // Auto-size the grid to fill the viewport (no manual cols/rows): grow it to at
+  // least as many cells as fit at the nominal pitch, keeping the built content
+  // centred. Runs only on viewport change (read via a ref so it doesn't re-fit
+  // on every paint, which would yank the content back to centre mid-edit).
+  const workingRef = useRef(working);
+  useEffect(() => {
+    workingRef.current = working;
+  });
+  useEffect(() => {
+    if (viewportW <= 0 || viewportH <= 0) return;
+    const cols = Math.max(1, Math.floor(viewportW / CELL_PITCH_PX));
+    const rows = Math.max(1, Math.floor(viewportH / CELL_PITCH_PX));
+    const cur = workingRef.current;
+    const { grid: fitted, dx, dy } = fitGridCentered(cur.grid, cols, rows);
+    if (
+      fitted.cols === cur.grid.cols &&
+      fitted.rows === cur.grid.rows &&
+      dx === 0 &&
+      dy === 0
+    ) {
+      return;
+    }
+    setWorking({ ...cur, grid: fitted });
+    if (dx !== 0 || dy !== 0) {
+      setSelected((s) => (s === null ? null : { col: s.col + dx, row: s.row + dy }));
+    }
+  }, [viewportW, viewportH]);
   const [showAirtightness, setShowAirtightness] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [revisions, setRevisions] = useState<ShipDesign[]>([]);
@@ -287,30 +311,6 @@ export function ShipDesignerRoute() {
     });
   }
 
-  function resize(cols: number, rows: number) {
-    if (readOnly) return;
-    setWorking((prev) => {
-      const cells: GridCell[] = [];
-      for (let r = 0; r < rows; r += 1) {
-        for (let c = 0; c < cols; c += 1) {
-          const existing =
-            c < prev.grid.cols && r < prev.grid.rows
-              ? prev.grid.cells[r * prev.grid.cols + c]
-              : undefined;
-          cells.push(existing ?? { kind: "empty" });
-        }
-      }
-      const connections = prev.grid.connections.filter(
-        (cn) =>
-          cn.from.col < cols &&
-          cn.from.row < rows &&
-          cn.to.col < cols &&
-          cn.to.row < rows,
-      );
-      return { ...prev, grid: { cols, rows, cells, connections } };
-    });
-    setSelected(null);
-  }
 
   async function save() {
     if (readOnly) return;
@@ -430,19 +430,10 @@ export function ShipDesignerRoute() {
       ? selectedCell.equipment.facing
       : undefined;
 
-  // Fit the grid to the viewport at 1.0x zoom: pick the cell pitch that fills
-  // the limiting dimension (width or height), accounting for the inter-cell gap.
-  // Zoom multiplies that. Falls back to the nominal pitch before the first
-  // measurement.
-  const GRID_GAP_PX = 2;
-  const fitBaseWidth = (() => {
-    if (viewportW <= 0 || viewportH <= 0) return grid.cols * CELL_PITCH_PX;
-    const pitchFromWidth = (viewportW - (grid.cols - 1) * GRID_GAP_PX) / grid.cols;
-    const pitchFromHeight = (viewportH - (grid.rows - 1) * GRID_GAP_PX) / grid.rows;
-    const pitch = Math.max(1, Math.min(pitchFromWidth, pitchFromHeight) - 0.5);
-    return grid.cols * pitch + (grid.cols - 1) * GRID_GAP_PX;
-  })();
-  const innerWidthPx = fitBaseWidth * zoom;
+  // The grid auto-sizes to fill the viewport (see the fit effect below), so the
+  // cell pitch is fixed and zoom simply scales it; two-finger scroll/pinch then
+  // navigate.
+  const innerWidthPx = grid.cols * CELL_PITCH_PX * zoom;
 
   // Delete action rendered per-card in the ShipBrowser (user designs only).
   function renderDeleteAction(design: ShipDesign) {
@@ -630,29 +621,9 @@ export function ShipDesignerRoute() {
           <CrtScreen />
         </div>
 
-        {/* Bezel strip — dimension controls + zoom buttons */}
+        {/* Bezel strip — view controls (grid auto-sizes to the viewport). */}
         <Box className={bezelStrip} style={{ flexShrink: 0 }}>
           <div className={`${bezelGroup} ${controlRow}`}>
-            <NumberInput
-              label="Cols"
-              size="xs"
-              min={1}
-              max={MAX_DIM}
-              value={grid.cols}
-              disabled={readOnly}
-              onChange={(v) => resize(clampDim(v, grid.cols), grid.rows)}
-              style={{ width: 70 }}
-            />
-            <NumberInput
-              label="Rows"
-              size="xs"
-              min={1}
-              max={MAX_DIM}
-              value={grid.rows}
-              disabled={readOnly}
-              onChange={(v) => resize(grid.cols, clampDim(v, grid.rows))}
-              style={{ width: 70 }}
-            />
             <Checkbox
               size="xs"
               label="Airtight"
