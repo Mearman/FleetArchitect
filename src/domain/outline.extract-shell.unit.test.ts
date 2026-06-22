@@ -21,7 +21,7 @@ function gridFrom(rows: readonly string[]): TileGrid {
       }
     }
   }
-  return { cols, rows: rows.length, cells, connections: [], shape: { outlineMode: "octilinear" } };
+  return { cols, rows: rows.length, cells, connections: [] };
 }
 
 describe("outline.extractShell (layered)", () => {
@@ -53,7 +53,6 @@ describe("outline.extractShell (layered)", () => {
       rows: 1,
       cells: [open, { ...open }],
       connections: [],
-      shape: { outlineMode: "octilinear" },
     };
     const shell = extractShell(grid);
     expect(shell.cells.size).toBe(2);
@@ -66,13 +65,13 @@ describe("outline.extractShell (layered)", () => {
     const shell = extractShell(g);
     expect(shell.cells.size).toBe(8); // 8 solid, centre empty
     expect(shell.cells.has(4)).toBe(false);
-    expect(computeOutline(shell, { outlineMode: "octilinear" }).length).toBe(2);
+    expect(computeOutline(shell).length).toBe(2);
   });
 
   it("computeOutline produces a closed loop around the hull", () => {
     const g = gridFrom(["dd", "dd"]);
     const shell = extractShell(g);
-    const loops = computeOutline(shell, { outlineMode: "octilinear" });
+    const loops = computeOutline(shell);
     expect(loops.length).toBeGreaterThanOrEqual(1);
     const firstLoop = loops[0];
     expect(firstLoop, "at least one outline loop is produced").toBeDefined();

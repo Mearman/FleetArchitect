@@ -16,8 +16,7 @@ import type { SimModule } from "./types";
  * chunk wraps as a silhouette rather than only its armour cells. It is built on
  * the original design-grid dimensions (derived from the parent's full module
  * set) so vertices are centred consistently with the chunk's module.x/y
- * ship-local positions. `outlineMode` defaults to `"octilinear"` (the TileGrid
- * default) — the original mode is not stored on SimShip.
+ * ship-local positions. The hull is always traced octilinearly.
  */
 export function computeChunkOutline(
   parentModules: readonly SimModule[],
@@ -37,5 +36,5 @@ export function computeChunkOutline(
   }
   if (cells.size === 0) return [];
   const shell: Shell = { cols, rows, cells };
-  return computeOutline(shell, { outlineMode: "octilinear" });
+  return computeOutline(shell);
 }

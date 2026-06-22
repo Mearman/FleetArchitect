@@ -40,7 +40,6 @@ function armedFighter(id: string): ShipDesign {
         deck("mod-crew-quarters"),
       ],
       connections: [],
-      shape: { outlineMode: "octilinear" },
     },
     createdAt: nowIso(),
     updatedAt: nowIso(),

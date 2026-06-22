@@ -487,23 +487,6 @@ describe("subdivideGrid — connections", () => {
 });
 
 // ---------------------------------------------------------------------------
-// subdivideGrid — shape preservation
-// ---------------------------------------------------------------------------
-
-describe("subdivideGrid — shape / outlineMode", () => {
-  it("preserves the outlineMode from the source grid", () => {
-    const g = TileGrid.parse({
-      cols: 1,
-      rows: 1,
-      cells: [{ kind: "empty" }],
-      shape: { outlineMode: "octilinear" },
-    });
-    const out = subdivideGrid(g, 2);
-    expect(out.shape.outlineMode).toBe("octilinear");
-  });
-});
-
-// ---------------------------------------------------------------------------
 // subdivideGrid — f=1 identity behaviour
 // ---------------------------------------------------------------------------
 

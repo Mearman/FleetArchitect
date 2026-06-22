@@ -70,7 +70,6 @@ function sampleDesign(overrides?: Partial<ShipDesign>): ShipDesign {
         },
       ],
       connections: [],
-      shape: { outlineMode: "octilinear" },
     },
     createdAt: nowIso(),
     updatedAt: nowIso(),

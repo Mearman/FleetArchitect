@@ -83,7 +83,7 @@ export function subdivisionFactor(
  *
  * Connections from the coarse grid are not carried through to the output
  * because the absolute cell coordinates change (connection rescaling is a
- * separate concern). The `outlineMode` is preserved from the source grid.
+ * separate concern).
  *
  * The output is validated with `TileGrid.parse` before being returned, so a
  * malformed expansion fails loudly at the boundary.
@@ -106,7 +106,6 @@ export function subdivideGrid(coarse: TileGrid, f: number): TileGrid {
       rows: coarse.rows,
       cells: coarse.cells,
       connections: [],
-      shape: coarse.shape,
     });
   }
 
@@ -138,7 +137,6 @@ export function subdivideGrid(coarse: TileGrid, f: number): TileGrid {
     rows: newRows,
     cells,
     connections: [],
-    shape: coarse.shape,
   });
 }
 

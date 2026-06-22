@@ -78,7 +78,7 @@ export function GridBoard({
   // none), so cell units map straight onto the rendered board without measuring
   // pixel sizes. Recomputed only when the grid changes.
   const outlineLoops = useMemo(() => {
-    const loops = computeOutline(extractShell(grid), grid.shape);
+    const loops = computeOutline(extractShell(grid));
     return loops
       .filter((loop) => loop.length >= 2)
       .map((loop) =>

@@ -221,7 +221,7 @@ export function resolveFleetToCombatShips(
     const { deployed, design, stats, radius } = entry;
     const modules = resolveModules(design, catalog);
     const hardwires = resolveHardwires(design, modules);
-    const outline = computeOutline(extractShell(design.grid), design.grid.shape);
+    const outline = computeOutline(extractShell(design.grid));
     const x = dir * (edgeInset - radius);
     const y = cursorY + radius;
     cursorY += radius * 2 + DEPLOY_SHIP_MARGIN_M;

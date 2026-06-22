@@ -299,7 +299,7 @@ export function ShipDesignerRoute() {
           cn.to.col < cols &&
           cn.to.row < rows,
       );
-      return { ...prev, grid: { cols, rows, cells, connections, shape: prev.grid.shape } };
+      return { ...prev, grid: { cols, rows, cells, connections } };
     });
     setSelected(null);
   }

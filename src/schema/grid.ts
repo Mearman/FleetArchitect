@@ -176,37 +176,6 @@ export const Connection = z.object({
 export type Connection = z.infer<typeof Connection>;
 
 /**
- * Resolution at which the hull outline polygon is traced around the ship's
- * protective shell (armor cells plus wall/door edges). The outline itself is
- * computed in a later phase (`src/domain/outline.ts`); the grid only records
- * the author's preferred resolution so the same grid renders identically
- * everywhere.
- *
- * - `octilinear` — stepped outline: vertices sit on tile corners, producing
- *                  sharp 45-degree diagonal steps along every boundary edge.
- * - `arbitrary`  — exact straight diagonals at any angle; vertices are placed
- *                  at the true geometric intersection of the boundary edges,
- *                  giving the most faithful silhouette.
- *
- * Legacy value `"hexadecilinear"` maps to `"octilinear"` on parse so that
- * previously persisted designs and shared URLs remain valid.
- */
-export const OutlineMode = z.preprocess(
-  (v) => (v === "hexadecilinear" ? "octilinear" : v),
-  z.enum(["octilinear", "arbitrary"]),
-);
-export type OutlineMode = z.infer<typeof OutlineMode>;
-
-/**
- * Per-grid shape metadata. `outlineMode` selects the resolution for the hull
- * outline trace. Defaults to `octilinear` (stepped, vertices on tile corners).
- */
-export const GridShape = z.object({
-  outlineMode: OutlineMode.default("octilinear"),
-});
-export type GridShape = z.infer<typeof GridShape>;
-
-/**
  * A rectangular tile grid. `cells` is a flat, row-major array of length
  * `cols * rows`: the cell at (col, row) lives at index `row * cols + col`,
  * with col increasing left-to-right (+x) and row increasing top-to-bottom
@@ -215,9 +184,10 @@ export type GridShape = z.infer<typeof GridShape>;
  * time.
  *
  * `connections` are hardwire conduits between equipment cells; it defaults to
- * an empty array so grids authored before hardwiring parse unchanged. `shape`
- * carries outline-render metadata; it defaults to an `octilinear` outline
- * so existing grids parse unchanged.
+ * an empty array so grids authored before hardwiring parse unchanged. The hull
+ * outline is always traced octilinearly (`src/domain/outline.ts`), so there is
+ * no per-grid outline setting; a legacy `shape` field on older persisted grids
+ * is simply ignored on parse.
  */
 export const TileGrid = z
   .object({
@@ -225,7 +195,6 @@ export const TileGrid = z
     rows: z.number().int().min(1),
     cells: z.array(GridCell),
     connections: z.array(Connection).default([]),
-    shape: GridShape.default({ outlineMode: "octilinear" }),
   })
   .refine((g) => g.cells.length === g.cols * g.rows, {
     message: "cells length must equal cols * rows",

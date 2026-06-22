@@ -24,7 +24,6 @@ function sampleDesign(): ShipDesign {
         { kind: "solid", substrate: true, surface: "armor", edges: { n: "wall", e: "wall", s: "wall", w: "wall", doorStates: {} } },
       ],
       connections: [],
-      shape: { outlineMode: "octilinear" },
     },
     createdAt: nowIso(),
     updatedAt: nowIso(),

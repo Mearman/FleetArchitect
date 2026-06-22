@@ -1,5 +1,4 @@
 import type { TileGrid } from "@/schema/grid";
-import { OutlineMode } from "@/schema/grid";
 import { CELL_SIZE } from "@/domain/grid";
 import type { Vec2 } from "@/schema/primitives";
 
@@ -8,7 +7,9 @@ import type { Vec2 } from "@/schema/primitives";
  *
  * The hull outline is a tight polygon that wraps the ship's protective shell —
  * armour cells plus wall/door edges — through the integer lattice. It is a
- * *shrink-wrapped hull*, not a chamfer and not a convex hull:
+ * *shrink-wrapped hull*, not a chamfer and not a convex hull. There is a single
+ * outline style, octilinear: every edge is axis-aligned or a 45-degree
+ * diagonal. Its properties:
  *
  *   - NO BITE: the polygon contains every solid cell whole (every corner of
  *     every solid cell sits inside-or-on the polygon). It never cuts into solid
@@ -22,12 +23,10 @@ import type { Vec2 } from "@/schema/primitives";
  *     subdivided.
  *   - SHARP CORNERS: a convex corner already at an allowed angle stays sharp;
  *     corners are never rounded outward. A plain axis-aligned ship traces the
- *     exact rectilinear boundary, identical in both modes.
+ *     exact rectilinear boundary.
  *   - SMOOTH AS POSSIBLE: only genuine diagonal staircases are smoothed. A
- *     uniform 45-degree staircase collapses to one straight diagonal in both
- *     modes; a non-45 staircase collapses to the exact straight diagonal under
- *     `arbitrary` and to the tightest stepped 0/45/90 polyline under
- *     `octilinear`.
+ *     uniform 45-degree staircase collapses to one straight diagonal; a non-45
+ *     staircase stays the tightest stepped 0/45/90 polyline.
  *
  * Algorithm:
  *   - Stage A: trace the exact integer rectilinear staircase seed polygon
@@ -35,14 +34,14 @@ import type { Vec2 } from "@/schema/primitives";
  *     corners). The seed already satisfies no-bite/follows-shape/sharp-corners;
  *     every later step only removes sub-cell area, so those invariants hold
  *     throughout.
- *   - Stage B (both modes): greedy reflex-vertex removal. A reflex vertex is
- *     dropped only when it is part of a multi-step diagonal staircase (so an
- *     isolated re-entrant corner stays sharp), the new chord is an allowed
- *     direction for the mode, and the polygon stays simple. Convex vertices are
+ *   - Stage B: greedy reflex-vertex removal. A reflex vertex is dropped only
+ *     when it is part of a multi-step diagonal staircase (so an isolated
+ *     re-entrant corner stays sharp), the new chord is axis-aligned or a
+ *     45-degree diagonal, and the polygon stays simple. Convex vertices are
  *     never removed (that would cut into solid), which is what keeps the hull
  *     bite-free.
- *   - Stage C (octilinear only): approximate each remaining non-45 reflex run
- *     with {axis, 45-degree} steps, the tightest superset stepped polyline.
+ *   - Stage C: approximate each remaining non-45 reflex run with {axis,
+ *     45-degree} steps, the tightest superset stepped polyline.
  *   - Stage D: centre on the grid and scale to ship-local metres.
  *
  * Determinism anchors (all of them):
@@ -58,15 +57,6 @@ import type { Vec2 } from "@/schema/primitives";
  * No RNG anywhere. Two calls with identical inputs produce byte-identical
  * vertex lists.
  */
-
-/** Re-export the schema's outline mode so callers can name it from here. */
-export { OutlineMode };
-export type { OutlineMode as OutlineModeType };
-
-/** The per-ship shape descriptor consumed by the outline tracer. */
-export interface ShipShape {
-  readonly outlineMode: OutlineMode;
-}
 
 /**
  * The protective shell of a ship, expressed as a set of occupied integer cells
@@ -280,20 +270,12 @@ function seedPolygon(loop: readonly DirectedEdge[]): IPoint[] {
 // ---------------------------------------------------------------------------
 
 /**
- * Whether the edge vector (dx, dy) points in a direction the mode permits.
- * Exact, no trigonometry:
- *   - `arbitrary`  — any non-zero direction is allowed.
- *   - `octilinear` — only multiples of 45 degrees: axis-aligned (one of dx/dy
- *                    zero) or a pure diagonal (|dx| === |dy|).
- * A zero vector is never an edge direction.
+ * Whether the edge vector (dx, dy) is an octilinear direction — a multiple of
+ * 45 degrees: axis-aligned (one of dx/dy zero) or a pure diagonal
+ * (|dx| === |dy|). Exact, no trigonometry. A zero vector is never an edge.
  */
-export function edgeDirectionAllowed(
-  dx: number,
-  dy: number,
-  mode: OutlineMode,
-): boolean {
+export function edgeDirectionAllowed(dx: number, dy: number): boolean {
   if (dx === 0 && dy === 0) return false;
-  if (mode === "arbitrary") return true;
   if (dx === 0 || dy === 0) return true; // axis-aligned.
   return Math.abs(dx) === Math.abs(dy); // pure diagonal.
 }
@@ -491,7 +473,7 @@ function smoothableReflexVertices(seed: readonly IPoint[]): Set<IPoint> {
  *       are never removed: that would cut into solid);
  *   (b) v is SMOOTHABLE — part of a multi-step staircase (see
  *       `smoothableReflexVertices`), so isolated concavities stay sharp;
- *   (c) the chord u->w is an allowed direction for the mode;
+ *   (c) the chord u->w is octilinear (axis-aligned or a 45-degree diagonal);
  *   (d) the chord keeps the polygon simple (no crossing of a non-adjacent
  *       edge).
  * After each accepted removal, newly-collinear neighbours collapse and the
@@ -511,7 +493,7 @@ function smoothableReflexVertices(seed: readonly IPoint[]): Set<IPoint> {
  * only drop vertices (never create them), and a kept reflex stays a turn, so a
  * smoothable vertex keeps its identity until it is itself removed.
  */
-function removeReflexVertices(poly: IPoint[], mode: OutlineMode): IPoint[] {
+function removeReflexVertices(poly: IPoint[]): IPoint[] {
   const smoothable = smoothableReflexVertices(poly);
   let pts = poly;
   let progressed = true;
@@ -527,8 +509,8 @@ function removeReflexVertices(poly: IPoint[], mode: OutlineMode): IPoint[] {
       if (turn >= 0) continue;
       // (b) only smooth genuine multi-step staircases; keep isolated corners.
       if (!smoothable.has(v)) continue;
-      // (c) chord direction allowed for the mode.
-      if (!edgeDirectionAllowed(w.x - u.x, w.y - u.y, mode)) continue;
+      // (c) chord must be octilinear (axis-aligned or 45-degree diagonal).
+      if (!edgeDirectionAllowed(w.x - u.x, w.y - u.y)) continue;
       // (d) polygon stays simple.
       if (!chordKeepsSimple(pts, i, u, w)) continue;
       // Accept: drop v, collapse newly-collinear neighbours, restart.
@@ -546,20 +528,16 @@ function removeReflexVertices(poly: IPoint[], mode: OutlineMode): IPoint[] {
 // ---------------------------------------------------------------------------
 
 /**
- * For octilinear mode, replace each remaining reflex run that is not already a
- * 45-degree diagonal with the tightest stepped {axis, 45-degree} polyline that
- * stays a superset (never enters a solid cell) and encloses no whole empty
- * cell.
+ * Approximate each remaining non-45 reflex run with the tightest stepped {axis,
+ * 45-degree} polyline that stays a superset.
  *
- * After Stage B under octilinear, a chord only survives when it is axis-aligned
- * or a pure 45-degree diagonal — non-45 runs keep their original rectilinear
- * staircase, which is already the tightest stepped 0/90 superset and consists
- * solely of allowed directions. There is therefore nothing left to re-step: the
- * Stage B output for octilinear already satisfies invariant 5's octilinear
- * clause (uniform 45 staircases collapse to one diagonal; non-45 staircases
- * stay stepped on allowed directions). Stage C is the identity here, kept as an
- * explicit pass so the staged structure mirrors the algorithm description and
- * so any future relaxation of allowed octilinear chords has an obvious home.
+ * After Stage B a chord only survives when it is axis-aligned or a pure
+ * 45-degree diagonal — non-45 runs keep their original rectilinear staircase,
+ * which is already the tightest stepped 0/90 superset and consists solely of
+ * octilinear directions. There is therefore nothing left to re-step (uniform 45
+ * staircases collapse to one diagonal; non-45 staircases stay stepped). Stage C
+ * is the identity, kept as an explicit pass so the staged structure mirrors the
+ * algorithm description and any future re-stepping has an obvious home.
  */
 function approximateOctilinear(poly: IPoint[]): IPoint[] {
   return poly;
@@ -586,10 +564,8 @@ function toMetreLoop(loop: readonly IPoint[], cols: number, rows: number): Vec2[
 }
 
 /** Run the full simplification pipeline (Stages B and C) on one seed loop. */
-function simplifyLoop(seed: IPoint[], mode: OutlineMode): IPoint[] {
-  let pts = removeReflexVertices(seed, mode);
-  if (mode === "octilinear") pts = approximateOctilinear(pts);
-  return pts;
+function simplifyLoop(seed: IPoint[]): IPoint[] {
+  return approximateOctilinear(removeReflexVertices(seed));
 }
 
 /**
@@ -605,7 +581,7 @@ function simplifyLoop(seed: IPoint[], mode: OutlineMode): IPoint[] {
  * removal, octilinear stepping, centring — follows a fixed iteration order with
  * no RNG, and every geometric test is exact integer arithmetic.
  */
-export function computeOutline(shell: Shell, shape: ShipShape): Vec2[][] {
+export function computeOutline(shell: Shell): Vec2[][] {
   const edges = boundaryEdges(shell);
   const loops = chainLoops(edges);
   return loops.map((loop) => {
@@ -613,7 +589,7 @@ export function computeOutline(shell: Shell, shape: ShipShape): Vec2[][] {
     // loop so the output winding is uniform regardless of shell shape.
     const oriented = latticeSignedArea(loop) < 0 ? reverseLoop(loop) : loop;
     const seed = seedPolygon(oriented);
-    const simplified = simplifyLoop(seed, shape.outlineMode);
+    const simplified = simplifyLoop(seed);
     return toMetreLoop(simplified, shell.cols, shell.rows);
   });
 }

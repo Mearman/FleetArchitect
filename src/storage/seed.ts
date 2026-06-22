@@ -72,8 +72,12 @@ import { getMeta, setMeta, storage } from "@/storage/db";
  * Version 14: the cell's structural-base field `scaffold` is renamed to
  * `substrate` (a legacy `scaffold` key migrates on parse). This bump reseeds so
  * preset records store the renamed field rather than relying on the migration.
+ *
+ * Version 15: OutlineMode is removed — the hull is always traced octilinearly,
+ * so the grid's `shape` field is dropped. A legacy `shape` on older records is
+ * ignored on parse; this bump reseeds so preset records no longer carry it.
  */
-const PRESETS_VERSION = 14;
+const PRESETS_VERSION = 15;
 const VERSION_KEY = "presetsVersion";
 
 /**

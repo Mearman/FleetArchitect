@@ -209,7 +209,7 @@ function gridFromMapWith(
       cells.push(cell);
     }
   }
-  return { cols, rows: rows.length, cells, connections: [], shape: { outlineMode: "octilinear" } };
+  return { cols, rows: rows.length, cells, connections: [] };
 }
 
 /** Parse an ASCII map using the Terran token set. */

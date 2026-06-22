@@ -7,21 +7,19 @@ import {
   outerLoopIndex,
   pointInPolygon,
   type Shell,
-  type ShipShape,
 } from "@/domain/outline";
 import { CELL_SIZE } from "@/domain/grid";
 
 /**
- * Invariant-based tests for the shrink-wrap hull outline. The old chamfer count
- * and facet-angle assertions are gone with the chamfer code; what matters now is
- * that every outline satisfies the locked invariants:
+ * Invariant-based tests for the shrink-wrap hull outline. The hull is always
+ * traced octilinearly (there is no longer a mode), so what matters is that every
+ * outline satisfies the locked invariants:
  *   1. NO BITE — every solid cell corner is inside-or-on the outline.
  *   2. FOLLOWS SHAPE — no whole empty cell sits inside the outline.
- *   3/4. SHARP / ALLOWED — every edge direction is allowed for the mode; plain
- *        axis-aligned ships stay rectilinear and identical across both modes.
- *   5. SMOOTH — 45 staircases collapse to a single diagonal; non-45 staircases
- *        give a straight chord under arbitrary and a stepped polyline under
- *        octilinear.
+ *   3/4. SHARP / ALLOWED — every edge direction is axis-aligned or a multiple of
+ *        45 degrees; plain axis-aligned ships stay rectilinear.
+ *   5. SMOOTH — 45 staircases collapse to a single diagonal; isolated concavities
+ *        (an L inner corner, a cross armpit) stay sharp.
  *   6. DETERMINISTIC — byte-identical output for identical input.
  */
 
@@ -40,9 +38,6 @@ function shell(rows: readonly string[]): Shell {
   }
   return { cols, rows: rows.length, cells };
 }
-
-const MODES: readonly OutlineModeName[] = ["octilinear", "arbitrary"];
-type OutlineModeName = ShipShape["outlineMode"];
 
 /** Ship-local centre of cell (col, row) for the shell's bounding grid. */
 function cellCentre(
@@ -157,23 +152,15 @@ function noWholeEmptyCellInside(s: Shell, loops: Loops): boolean {
   return true;
 }
 
-/** INVARIANT 4: every consecutive edge direction is allowed for the mode. */
-function allEdgesAllowed(
-  poly: readonly { x: number; y: number }[],
-  mode: OutlineModeName,
-): boolean {
+/** INVARIANT 4: every consecutive edge direction is axis-aligned or 45 degrees. */
+function allEdgesAllowed(poly: readonly { x: number; y: number }[]): boolean {
   for (let i = 0; i < poly.length; i += 1) {
     const a = poly[i]!;
     const b = poly[(i + 1) % poly.length]!;
     // Work in cell units so the integer-style predicate sees integer steps.
     const dx = Math.round((b.x - a.x) / CELL_SIZE);
     const dy = Math.round((b.y - a.y) / CELL_SIZE);
-    if (!edgeDirectionAllowed(dx, dy, mode)) {
-      // Non-integer (arbitrary) chords are allowed in arbitrary mode but never
-      // appear in octilinear; the rounding above keeps integers exact.
-      if (mode === "arbitrary") continue;
-      return false;
-    }
+    if (!edgeDirectionAllowed(dx, dy)) return false;
   }
   return true;
 }
@@ -189,84 +176,72 @@ const SHAPES: ReadonlyArray<{ name: string; rows: string[] }> = [
   { name: "single-width spur", rows: ["####", ".#..", ".#.."] },
 ];
 
-describe("computeOutline — invariants over every (shape, mode)", () => {
+describe("computeOutline — invariants over every shape", () => {
   for (const { name, rows } of SHAPES) {
-    for (const mode of MODES) {
-      const s = shell(rows);
-      const shape: ShipShape = { outlineMode: mode };
+    const s = shell(rows);
 
-      it(`${name} / ${mode}: contains every solid cell (no bite)`, () => {
-        const loops = computeOutline(s, shape);
-        expect(everySolidCornerInsideOrOn(s, loops)).toBe(true);
-      });
+    it(`${name}: contains every solid cell (no bite)`, () => {
+      const loops = computeOutline(s);
+      expect(everySolidCornerInsideOrOn(s, loops)).toBe(true);
+    });
 
-      it(`${name} / ${mode}: encloses no whole empty cell (follows shape)`, () => {
-        const loops = computeOutline(s, shape);
-        expect(noWholeEmptyCellInside(s, loops)).toBe(true);
-      });
+    it(`${name}: encloses no whole empty cell (follows shape)`, () => {
+      const loops = computeOutline(s);
+      expect(noWholeEmptyCellInside(s, loops)).toBe(true);
+    });
 
-      it(`${name} / ${mode}: every edge direction is allowed`, () => {
-        const loops = computeOutline(s, shape);
-        for (const loop of loops) {
-          expect(allEdgesAllowed(loop, mode)).toBe(true);
+    it(`${name}: every edge direction is allowed`, () => {
+      const loops = computeOutline(s);
+      for (const loop of loops) {
+        expect(allEdgesAllowed(loop)).toBe(true);
+      }
+    });
+
+    it(`${name}: byte-identical across two calls (determinism)`, () => {
+      const a = computeOutline(s);
+      const b = computeOutline(s);
+      expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+    });
+
+    it(`${name}: outer loop is clockwise and largest-area`, () => {
+      const loops = computeOutline(s);
+      const idx = outerLoopIndex(loops);
+      expect(isClockwise(loops[idx]!)).toBe(true);
+      // outerLoopIndex picks the largest-area loop.
+      const areas = loops.map((l) => {
+        let sum = 0;
+        for (let i = 0; i < l.length; i += 1) {
+          const p = l[i]!;
+          const q = l[(i + 1) % l.length]!;
+          sum += p.x * q.y - q.x * p.y;
         }
+        return Math.abs(sum) / 2;
       });
-
-      it(`${name} / ${mode}: byte-identical across two calls (determinism)`, () => {
-        const a = computeOutline(s, shape);
-        const b = computeOutline(s, shape);
-        expect(JSON.stringify(a)).toBe(JSON.stringify(b));
-      });
-
-      it(`${name} / ${mode}: outer loop is clockwise and largest-area`, () => {
-        const loops = computeOutline(s, shape);
-        const idx = outerLoopIndex(loops);
-        expect(isClockwise(loops[idx]!)).toBe(true);
-        // outerLoopIndex picks the largest-area loop.
-        const areas = loops.map((l) => {
-          let sum = 0;
-          for (let i = 0; i < l.length; i += 1) {
-            const p = l[i]!;
-            const q = l[(i + 1) % l.length]!;
-            sum += p.x * q.y - q.x * p.y;
-          }
-          return Math.abs(sum) / 2;
-        });
-        const maxArea = Math.max(...areas);
-        expect(areas[idx]).toBe(maxArea);
-      });
-    }
+      const maxArea = Math.max(...areas);
+      expect(areas[idx]).toBe(maxArea);
+    });
   }
 });
 
 describe("edgeDirectionAllowed", () => {
-  it("arbitrary allows any non-zero direction", () => {
-    expect(edgeDirectionAllowed(2, 1, "arbitrary")).toBe(true);
-    expect(edgeDirectionAllowed(1, 0, "arbitrary")).toBe(true);
-    expect(edgeDirectionAllowed(3, -7, "arbitrary")).toBe(true);
-    expect(edgeDirectionAllowed(0, 0, "arbitrary")).toBe(false);
-  });
-
-  it("octilinear allows only multiples of 45 degrees", () => {
-    expect(edgeDirectionAllowed(1, 0, "octilinear")).toBe(true); // axis
-    expect(edgeDirectionAllowed(0, 3, "octilinear")).toBe(true); // axis
-    expect(edgeDirectionAllowed(2, 2, "octilinear")).toBe(true); // 45
-    expect(edgeDirectionAllowed(-4, 4, "octilinear")).toBe(true); // 45
-    expect(edgeDirectionAllowed(2, 1, "octilinear")).toBe(false); // not 45
-    expect(edgeDirectionAllowed(0, 0, "octilinear")).toBe(false); // zero
+  it("allows only multiples of 45 degrees", () => {
+    expect(edgeDirectionAllowed(1, 0)).toBe(true); // axis
+    expect(edgeDirectionAllowed(0, 3)).toBe(true); // axis
+    expect(edgeDirectionAllowed(2, 2)).toBe(true); // 45
+    expect(edgeDirectionAllowed(-4, 4)).toBe(true); // 45
+    expect(edgeDirectionAllowed(2, 1)).toBe(false); // not 45
+    expect(edgeDirectionAllowed(0, 0)).toBe(false); // zero
   });
 });
 
 describe("computeOutline — exact-geometry anchors", () => {
-  it("2x2 block is one 4-vertex loop, byte-identical across modes, area 4 cell-units", () => {
+  it("2x2 block is one 4-vertex loop, area 4 cell-units", () => {
     const s = shell(["##", "##"]);
-    const octi = computeOutline(s, { outlineMode: "octilinear" });
-    const arb = computeOutline(s, { outlineMode: "arbitrary" });
-    expect(octi.length).toBe(1);
-    expect(octi[0]!.length).toBe(4);
-    expect(JSON.stringify(octi)).toBe(JSON.stringify(arb));
+    const loops = computeOutline(s);
+    expect(loops.length).toBe(1);
+    expect(loops[0]!.length).toBe(4);
     // Area = 4 cell-units in metres: 4 * CELL_SIZE^2.
-    const poly = octi[0]!;
+    const poly = loops[0]!;
     let sum = 0;
     for (let i = 0; i < poly.length; i += 1) {
       const a = poly[i]!;
@@ -276,16 +251,11 @@ describe("computeOutline — exact-geometry anchors", () => {
     expect(Math.abs(sum) / 2).toBeCloseTo(4 * CELL_SIZE * CELL_SIZE, 9);
   });
 
-  it("45 staircase collapses its diagonal to a single straight segment, identical across modes", () => {
+  it("45 staircase collapses its diagonal to a single straight segment", () => {
     const s = shell(["#...", "##..", "###.", "####"]);
-    const octi = computeOutline(s, { outlineMode: "octilinear" });
-    const arb = computeOutline(s, { outlineMode: "arbitrary" });
-    // Both modes produce the same polygon: one diagonal, no steps.
-    expect(JSON.stringify(octi)).toBe(JSON.stringify(arb));
-    // The diagonal side is a single segment: the polygon has exactly one run of
-    // collinear hypotenuse vertices, i.e. no interior vertex lies on it.
-    const poly = octi[0]!;
-    // Find the diagonal edge (dx and dy both non-zero in cell units).
+    const poly = computeOutline(s)[0]!;
+    // The diagonal side is a single segment: exactly one edge has both dx and dy
+    // non-zero in cell units.
     let diagonalEdges = 0;
     for (let i = 0; i < poly.length; i += 1) {
       const a = poly[i]!;
@@ -297,38 +267,17 @@ describe("computeOutline — exact-geometry anchors", () => {
     expect(diagonalEdges).toBe(1);
   });
 
-  it("2:1 staircase: arbitrary is one straight chord, octilinear has more vertices (stepped)", () => {
-    const s = shell(["##....", "####..", "######"]);
-    const octi = computeOutline(s, { outlineMode: "octilinear" })[0]!;
-    const arb = computeOutline(s, { outlineMode: "arbitrary" })[0]!;
-    // Octilinear cannot use a 2:1 chord (not 45), so it keeps the rectilinear
-    // steps and therefore has strictly more vertices than the arbitrary chord.
-    expect(octi.length).toBeGreaterThan(arb.length);
-    // Arbitrary collapses the whole staircase side to a single non-axis chord.
-    let arbDiagonals = 0;
-    for (let i = 0; i < arb.length; i += 1) {
-      const a = arb[i]!;
-      const b = arb[(i + 1) % arb.length]!;
-      const dx = Math.round((b.x - a.x) / CELL_SIZE);
-      const dy = Math.round((b.y - a.y) / CELL_SIZE);
-      if (dx !== 0 && dy !== 0) arbDiagonals += 1;
-    }
-    expect(arbDiagonals).toBe(1);
-  });
-
-  it("plus/cross stays a sharp cross: rectilinear outline, armpits kept, identical across modes", () => {
+  it("plus/cross stays a sharp cross: rectilinear outline, armpits kept", () => {
     // Each armpit is a lone reflex corner in its monotone run, so it is NOT
     // smoothed: the cross keeps its exact rectilinear boundary (no diagonal
     // edges) and the four corner empty-cell centres sit strictly outside.
     const s = shell([".#.", "###", ".#."]);
-    const octi = computeOutline(s, { outlineMode: "octilinear" });
-    const arb = computeOutline(s, { outlineMode: "arbitrary" });
-    expect(JSON.stringify(octi)).toBe(JSON.stringify(arb));
-    expect(octi.length).toBe(1);
+    const loops = computeOutline(s);
+    expect(loops.length).toBe(1);
     // No diagonal edges anywhere: the cross is purely axis-aligned.
-    for (let i = 0; i < octi[0]!.length; i += 1) {
-      const a = octi[0]![i]!;
-      const b = octi[0]![(i + 1) % octi[0]!.length]!;
+    for (let i = 0; i < loops[0]!.length; i += 1) {
+      const a = loops[0]![i]!;
+      const b = loops[0]![(i + 1) % loops[0]!.length]!;
       const dx = Math.round((b.x - a.x) / CELL_SIZE);
       const dy = Math.round((b.y - a.y) / CELL_SIZE);
       expect(dx === 0 || dy === 0).toBe(true);
@@ -341,22 +290,18 @@ describe("computeOutline — exact-geometry anchors", () => {
       [2, 2],
     ];
     for (const [c, r] of cornerCells) {
-      for (const loops of [octi, arb]) {
-        expect(inFilledRegion(cellCentre(s, c, r), loops)).toBe(false);
-      }
+      expect(inFilledRegion(cellCentre(s, c, r), loops)).toBe(false);
     }
   });
 
-  it("L-shape keeps a sharp inner corner in both modes (isolated concavity not beveled)", () => {
+  it("L-shape keeps a sharp inner corner (isolated concavity not beveled)", () => {
     // The L has a single reflex corner; with no staircase partner it is never
-    // smoothed, so both modes trace the identical rectilinear L (no diagonals).
+    // smoothed, so it traces a rectilinear L (no diagonals).
     const s = shell(["##.", "##.", "###"]);
-    const octi = computeOutline(s, { outlineMode: "octilinear" });
-    const arb = computeOutline(s, { outlineMode: "arbitrary" });
-    expect(JSON.stringify(octi)).toBe(JSON.stringify(arb));
-    for (let i = 0; i < octi[0]!.length; i += 1) {
-      const a = octi[0]![i]!;
-      const b = octi[0]![(i + 1) % octi[0]!.length]!;
+    const loops = computeOutline(s);
+    for (let i = 0; i < loops[0]!.length; i += 1) {
+      const a = loops[0]![i]!;
+      const b = loops[0]![(i + 1) % loops[0]!.length]!;
       const dx = Math.round((b.x - a.x) / CELL_SIZE);
       const dy = Math.round((b.y - a.y) / CELL_SIZE);
       expect(dx === 0 || dy === 0).toBe(true);
@@ -365,15 +310,13 @@ describe("computeOutline — exact-geometry anchors", () => {
 
   it("ring traces exactly two loops (outer hull + inner hole)", () => {
     const s = shell(["###", "#.#", "###"]);
-    for (const mode of MODES) {
-      const loops = computeOutline(s, { outlineMode: mode });
-      expect(loops.length).toBe(2);
-      const outer = loops[outerLoopIndex(loops)]!;
-      // Outer encloses the hollow centre; the hole does not enclose the ring.
-      expect(pointInPolygon(cellCentre(s, 1, 1), outer)).toBe(true);
-      const hole = loops.find((l) => l !== outer)!;
-      expect(pointInPolygon(cellCentre(s, 0, 0), hole)).toBe(false);
-    }
+    const loops = computeOutline(s);
+    expect(loops.length).toBe(2);
+    const outer = loops[outerLoopIndex(loops)]!;
+    // Outer encloses the hollow centre; the hole does not enclose the ring.
+    expect(pointInPolygon(cellCentre(s, 1, 1), outer)).toBe(true);
+    const hole = loops.find((l) => l !== outer)!;
+    expect(pointInPolygon(cellCentre(s, 0, 0), hole)).toBe(false);
   });
 });
 
