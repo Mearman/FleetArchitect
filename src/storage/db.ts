@@ -1,7 +1,13 @@
 import Dexie, { type DexieOptions, type Table } from "dexie";
 import type { BattleResult } from "@/schema/battle";
 import type { Fleet } from "@/schema/fleet";
-import type { ShipDesign } from "@/schema/ship";
+import { z } from "zod";
+import { ShipDesign, DesignSource } from "@/schema/ship";
+import { EntityId } from "@/schema/primitives";
+import {
+  compactDesignForSerialization,
+  type SerializedShipDesign,
+} from "@/schema/grid-compact";
 import { createId, nowIso } from "@/domain/id";
 import type { Repository, Storage } from "./contract";
 
@@ -13,9 +19,11 @@ export interface MetaRecord {
 
 /**
  * A snapshot of a ShipDesign at a specific revision, stored for history.
- * The composite key is { id, revision }.
+ * The composite key is { id, revision }. Stored in the compacted
+ * serialisation shape (solid cells may omit all-open `edges`), reparsed to a
+ * full `ShipDesign` on read.
  */
-export type DesignRevisionRecord = ShipDesign;
+export type DesignRevisionRecord = SerializedShipDesign;
 
 /**
  * A snapshot of a Fleet at a specific revision, stored for history.
@@ -29,7 +37,7 @@ export type FleetRevisionRecord = Fleet;
  * mentioned in a newer version are inherited unchanged.
  */
 class FleetArchitectDatabase extends Dexie {
-  ships!: Table<ShipDesign, string>;
+  ships!: Table<SerializedShipDesign, string>;
   fleets!: Table<Fleet, string>;
   battles!: Table<BattleResult, string>;
   meta!: Table<MetaRecord, string>;
@@ -106,10 +114,34 @@ function makeRepository<T extends { id: string }>(
   };
 }
 
+/**
+ * Repository over ship designs. Designs are stored in the compacted
+ * serialisation shape (solid cells may omit all-open `edges`) and reparsed
+ * through `ShipDesign` on read so consumers always see a full design with its
+ * defaults filled in.
+ */
+function makeShipRepository(
+  table: Table<SerializedShipDesign, string>,
+): Repository<ShipDesign> {
+  return {
+    list: async () => (await table.toArray()).map((d) => ShipDesign.parse(d)),
+    get: async (id) => {
+      const record = await table.get(id);
+      return record === undefined ? undefined : ShipDesign.parse(record);
+    },
+    save: async (entity) => {
+      await table.put(compactDesignForSerialization(entity));
+    },
+    remove: async (id) => {
+      await table.delete(id);
+    },
+  };
+}
+
 export function createStorage(): Storage {
   const instance = database();
   return {
-    ships: makeRepository(instance.ships),
+    ships: makeShipRepository(instance.ships),
     fleets: makeRepository(instance.fleets),
     battles: makeRepository(instance.battles),
   };
@@ -153,27 +185,62 @@ export async function saveShipDesign(design: ShipDesign): Promise<void> {
     );
   }
   const instance = database();
-  const existing = await instance.ships.get(design.id);
+  const stored = await instance.ships.get(design.id);
+  const existing = stored === undefined ? undefined : ShipDesign.parse(stored);
   if (existing !== undefined && existing.source !== "preset") {
-    await instance.design_revisions.put(existing);
+    await instance.design_revisions.put(
+      compactDesignForSerialization(existing),
+    );
   }
   const nextRevision =
     existing !== undefined ? existing.revision + 1 : design.revision;
-  await instance.ships.put({ ...design, revision: nextRevision });
+  await instance.ships.put(
+    compactDesignForSerialization({ ...design, revision: nextRevision }),
+  );
 }
 
 /**
  * Load a ship design by id. Returns undefined if not found.
  */
 export async function loadShipDesign(id: string): Promise<ShipDesign | undefined> {
-  return database().ships.get(id);
+  const record = await database().ships.get(id);
+  return record === undefined ? undefined : ShipDesign.parse(record);
 }
 
 /**
  * List all ship designs.
  */
 export async function listShipDesigns(): Promise<ShipDesign[]> {
-  return database().ships.toArray();
+  const records = await database().ships.toArray();
+  return records.map((record) => ShipDesign.parse(record));
+}
+
+/**
+ * The minimal id + provenance projection of a stored ship record. Read without
+ * a full `ShipDesign.parse` so that stale or legacy-shaped records — which by
+ * design no longer parse — can still be enumerated for reseed. Reseed only ever
+ * needs to know which ids the player owns; it must not choke on a record whose
+ * grid shape predates the current schema.
+ */
+const ShipSummary = z.object({
+  id: EntityId,
+  source: DesignSource.optional(),
+});
+export type ShipSummary = z.infer<typeof ShipSummary>;
+
+/**
+ * List every stored ship record as an { id, source } summary, tolerating
+ * legacy/invalid full-record shapes. Rows whose id cannot be read are skipped
+ * (they cannot be addressed for replacement in any case).
+ */
+export async function listShipSummaries(): Promise<ShipSummary[]> {
+  const records = await database().ships.toArray();
+  const summaries: ShipSummary[] = [];
+  for (const record of records) {
+    const parsed = ShipSummary.safeParse(record);
+    if (parsed.success) summaries.push(parsed.data);
+  }
+  return summaries;
 }
 
 /**
@@ -189,10 +256,11 @@ export async function deleteShipDesign(id: string): Promise<void> {
  * the copy. Returns the new record.
  */
 export async function copyDesign(id: string): Promise<ShipDesign> {
-  const original = await database().ships.get(id);
-  if (original === undefined) {
+  const stored = await database().ships.get(id);
+  if (stored === undefined) {
     throw new Error(`Ship design not found: ${id}`);
   }
+  const original = ShipDesign.parse(stored);
   const copy: ShipDesign = {
     ...original,
     id: createId("design"),
@@ -202,7 +270,7 @@ export async function copyDesign(id: string): Promise<ShipDesign> {
     createdAt: nowIso(),
     updatedAt: nowIso(),
   };
-  await database().ships.put(copy);
+  await database().ships.put(compactDesignForSerialization(copy));
   return copy;
 }
 
@@ -287,7 +355,9 @@ export async function listDesignRevisions(id: string): Promise<ShipDesign[]> {
     .design_revisions.where("id")
     .equals(id)
     .toArray();
-  return revisions.sort((a, b) => b.revision - a.revision);
+  return revisions
+    .map((record) => ShipDesign.parse(record))
+    .sort((a, b) => b.revision - a.revision);
 }
 
 /**
@@ -299,17 +369,18 @@ export async function restoreDesignRevision(
   id: string,
   revision: number,
 ): Promise<ShipDesign> {
-  const snapshot = await database().design_revisions.get([id, revision]);
-  if (snapshot === undefined) {
+  const stored = await database().design_revisions.get([id, revision]);
+  if (stored === undefined) {
     throw new Error(`No revision ${revision} found for ship design ${id}`);
   }
+  const snapshot = ShipDesign.parse(stored);
   // saveShipDesign archives the current HEAD and bumps the revision.
   await saveShipDesign({ ...snapshot, updatedAt: nowIso() });
   const restored = await database().ships.get(id);
   if (restored === undefined) {
     throw new Error(`Ship design ${id} not found after restore`);
   }
-  return restored;
+  return ShipDesign.parse(restored);
 }
 
 /**

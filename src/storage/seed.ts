@@ -1,5 +1,10 @@
 import { presetDesigns, presetFleets } from "@/data/presets";
-import { getMeta, setMeta, storage } from "@/storage/db";
+import {
+  getMeta,
+  listShipSummaries,
+  setMeta,
+  storage,
+} from "@/storage/db";
 
 /**
  * Bump when the bundled preset set changes. On boot, if the stored version is
@@ -106,7 +111,11 @@ export async function seedPresets(): Promise<void> {
   if (seenVersion >= PRESETS_VERSION) return;
 
   const [existingShips, existingFleets] = await Promise.all([
-    storage().ships.list(),
+    // Read ships as id/source summaries, not full parsed designs: a stale
+    // legacy record (old cell shape, missing required fields) must still be
+    // enumerable here so it can be force-replaced. A full parse would throw on
+    // exactly the records this reseed exists to overwrite.
+    listShipSummaries(),
     storage().fleets.list(),
   ]);
 

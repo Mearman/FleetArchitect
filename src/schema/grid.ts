@@ -52,6 +52,37 @@ export const CellEdges = z.object({
 export type CellEdges = z.infer<typeof CellEdges>;
 
 /**
+ * The all-open edges value: every edge `open` with no doors. This is the
+ * overwhelmingly common case (a plain interior cell), so `SolidCell.edges`
+ * defaults to it and serialisation omits an `edges` key that equals it. Frozen
+ * so the shared default can never be mutated by a consumer.
+ */
+export const ALL_OPEN_EDGES: CellEdges = Object.freeze({
+  n: "open",
+  e: "open",
+  s: "open",
+  w: "open",
+  doorStates: Object.freeze({}),
+});
+
+/**
+ * Whether a parsed `CellEdges` is the all-open default: every edge `open` and
+ * no door states recorded. Serialisation drops an `edges` key that satisfies
+ * this, since parse refills it via `SolidCell.edges`'s default.
+ */
+export function isAllOpenEdges(edges: CellEdges): boolean {
+  if (edges.n !== "open" || edges.e !== "open") return false;
+  if (edges.s !== "open" || edges.w !== "open") return false;
+  const { doorStates } = edges;
+  return (
+    doorStates.n === undefined &&
+    doorStates.e === undefined &&
+    doorStates.s === undefined &&
+    doorStates.w === undefined
+  );
+}
+
+/**
  * Equipment carried on a solid cell (at most one per cell). Replaces the old
  * `ModuleCell`. Carries the per-instance comms/sensor override fields verbatim
  * so resolve's existing per-instance logic ports with no semantic change.
@@ -97,7 +128,10 @@ export const SolidCell = z
      *  prevents a meaningless `substrate: false` state. */
     substrate: z.literal(true),
     surface: SurfaceKind,
-    edges: CellEdges,
+    /** Per-edge walls/doors. Optional on input: a cell with no walls or doors
+     *  omits the field entirely and parse refills it with `ALL_OPEN_EDGES`, so
+     *  the inferred OUTPUT type stays required `CellEdges`. */
+    edges: CellEdges.default(ALL_OPEN_EDGES),
     equipment: CellEquipment.optional(),
   })
   .refine((c) => c.surface !== "armor" || c.equipment === undefined, {
