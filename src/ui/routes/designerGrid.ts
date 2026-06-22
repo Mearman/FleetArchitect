@@ -86,7 +86,7 @@ export function blankGrid(cols: number, rows: number): TileGrid {
 }
 
 /** Bounding box of the built (non-empty) cells, or null if the grid is empty. */
-function builtBounds(
+export function builtBounds(
   grid: TileGrid,
 ): { minCol: number; maxCol: number; minRow: number; maxRow: number } | null {
   let minCol = Infinity;
@@ -143,6 +143,28 @@ export function fitGridCentered(
     resource: cn.resource,
   }));
   return { grid: { cols, rows, cells, connections }, dx, dy };
+}
+
+/** Centre (half-cell precision) and extent of the built content, in cell units.
+ *  Used to position the board so the ship stays centred as the grid resizes on
+ *  zoom, and to bound panning to the content's edges. Falls back to the grid
+ *  centre with a 1x1 extent when nothing is built. */
+export function contentBox(grid: TileGrid): {
+  centreCol: number;
+  centreRow: number;
+  cols: number;
+  rows: number;
+} {
+  const b = builtBounds(grid);
+  if (b === null) {
+    return { centreCol: grid.cols / 2, centreRow: grid.rows / 2, cols: 1, rows: 1 };
+  }
+  return {
+    centreCol: (b.minCol + b.maxCol + 1) / 2,
+    centreRow: (b.minRow + b.maxRow + 1) / 2,
+    cols: b.maxCol - b.minCol + 1,
+    rows: b.maxRow - b.minRow + 1,
+  };
 }
 
 export function blankDesign(): WorkingDesign {

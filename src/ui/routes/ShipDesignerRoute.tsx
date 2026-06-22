@@ -23,7 +23,7 @@ import {
   IconPlus,
   IconTrash,
 } from "@tabler/icons-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { computeCompartments } from "@/domain/interior";
 import { analyseShipDesign } from "@/domain/stats";
 import { createId, nowIso } from "@/domain/id";
@@ -51,6 +51,7 @@ import {
   saveShipDesign,
 } from "@/storage/db";
 import type { ShipDesign } from "@/schema/ship";
+import type { CellEquipment } from "@/schema/grid";
 import {
   type Brush,
   type WorkingDesign,
@@ -60,6 +61,7 @@ import {
   applyCellBrush,
   applyEdgeBrush,
   blankDesign,
+  contentBox,
   fitGridCentered,
   isEdgeBrush,
 } from "./designerGrid";
@@ -97,8 +99,14 @@ const ZOOM_MAX = 2.5;
 const ZOOM_STEP = 0.1;
 const ZOOM_DEFAULT = 1;
 
-/** Nominal cell pitch (cell + 2px gap) used to size the zoomable inner wrapper. */
+/** Nominal cell pitch used to size the zoomable inner wrapper. */
 const CELL_PITCH_PX = 44;
+
+/** Extra empty cells padded around the viewport-covering grid, so the board
+ *  always overhangs the viewport by ~1 cell on each side. That overhang gives
+ *  the centring transform room to pin the content centre exactly without
+ *  exposing a gap at the board edge. */
+const FIT_PAD_CELLS = 2;
 
 export function ShipDesignerRoute() {
   const designs = useShipDesigns();
@@ -111,13 +119,24 @@ export function ShipDesignerRoute() {
   const [zoom, setZoom] = useState(ZOOM_DEFAULT);
   // Trackpad pinch-to-zoom (two-finger scroll pans natively) plus the viewport's
   // measured size, so the grid can fit-to-fill it at the current cell pitch.
+  // View transform inputs: the zoomed cell pitch and the built-content box (its
+  // centre keeps the ship centred; its extent bounds panning to the ship edges).
+  const cellPx = CELL_PITCH_PX * zoom;
   const {
     ref: attachGridViewport,
     width: viewportW,
     height: viewportH,
     zoomByStep,
-    centre: centreGrid,
-  } = usePinchZoom(setZoom, ZOOM_MIN, ZOOM_MAX);
+    boardTx,
+    boardTy,
+    resetPan,
+  } = usePinchZoom({
+    setZoom,
+    min: ZOOM_MIN,
+    max: ZOOM_MAX,
+    cellPx,
+    content: contentBox(working.grid),
+  });
   // Auto-size the grid to fill the viewport (no manual cols/rows): fit it to as
   // many cells as cover the viewport at the current zoomed cell pitch (ceil, so
   // the board fully covers the viewport with no leftover strip), keeping the
@@ -132,8 +151,8 @@ export function ShipDesignerRoute() {
   useEffect(() => {
     if (viewportW <= 0 || viewportH <= 0) return;
     const cellPx = CELL_PITCH_PX * zoom;
-    const cols = Math.max(1, Math.ceil(viewportW / cellPx));
-    const rows = Math.max(1, Math.ceil(viewportH / cellPx));
+    const cols = Math.max(1, Math.ceil(viewportW / cellPx) + FIT_PAD_CELLS);
+    const rows = Math.max(1, Math.ceil(viewportH / cellPx) + FIT_PAD_CELLS);
     const cur = workingRef.current;
     const { grid: fitted, dx, dy } = fitGridCentered(cur.grid, cols, rows);
     if (
@@ -149,12 +168,6 @@ export function ShipDesignerRoute() {
       setSelected((s) => (s === null ? null : { col: s.col + dx, row: s.row + dy }));
     }
   }, [viewportW, viewportH, zoom]);
-  // After any zoom/resize changes the board, scroll it back to centre so a
-  // cell-count change keeps the (centred) content pinned to the viewport centre
-  // rather than jumping. Layout effect so it runs before the browser paints.
-  useLayoutEffect(() => {
-    centreGrid();
-  }, [centreGrid, working.grid.cols, working.grid.rows, zoom, viewportW, viewportH]);
   // Mirror the working design to/from the URL so the address bar is the
   // shareable design (`load` is a hoisted declaration below).
   useShipDesignUrlSync(working, load);
@@ -261,74 +274,17 @@ export function ShipDesignerRoute() {
     setSelected({ col, row });
   }
 
-  function setSelectedFacing(facing: number) {
+  /** Patch the equipment of the selected solid cell (facing, comms/sensor
+   *  settings). No-op when nothing is selected, the design is read-only, or the
+   *  selected cell carries no equipment. */
+  function updateSelectedEquipment(patch: Partial<CellEquipment>) {
     if (selected === null || readOnly) return;
     setWorking((prev) => {
       const idx = selected.row * prev.grid.cols + selected.col;
       const cell = prev.grid.cells[idx];
       if (cell === undefined || cell.kind !== "solid" || cell.equipment === undefined) return prev;
       const cells = prev.grid.cells.slice();
-      cells[idx] = { ...cell, equipment: { ...cell.equipment, facing } };
-      return { ...prev, grid: { ...prev.grid, cells } };
-    });
-  }
-
-  function setSelectedCommsChannel(channel: number) {
-    if (selected === null || readOnly) return;
-    setWorking((prev) => {
-      const idx = selected.row * prev.grid.cols + selected.col;
-      const cell = prev.grid.cells[idx];
-      if (cell === undefined || cell.kind !== "solid" || cell.equipment === undefined) return prev;
-      const cells = prev.grid.cells.slice();
-      cells[idx] = { ...cell, equipment: { ...cell.equipment, channel } };
-      return { ...prev, grid: { ...prev.grid, cells } };
-    });
-  }
-
-  function setSelectedCommsBearing(commsBearing: number) {
-    if (selected === null || readOnly) return;
-    setWorking((prev) => {
-      const idx = selected.row * prev.grid.cols + selected.col;
-      const cell = prev.grid.cells[idx];
-      if (cell === undefined || cell.kind !== "solid" || cell.equipment === undefined) return prev;
-      const cells = prev.grid.cells.slice();
-      cells[idx] = { ...cell, equipment: { ...cell.equipment, commsBearing } };
-      return { ...prev, grid: { ...prev.grid, cells } };
-    });
-  }
-
-  function setSelectedCommsRange(commsRange: number) {
-    if (selected === null || readOnly) return;
-    setWorking((prev) => {
-      const idx = selected.row * prev.grid.cols + selected.col;
-      const cell = prev.grid.cells[idx];
-      if (cell === undefined || cell.kind !== "solid" || cell.equipment === undefined) return prev;
-      const cells = prev.grid.cells.slice();
-      cells[idx] = { ...cell, equipment: { ...cell.equipment, commsRange } };
-      return { ...prev, grid: { ...prev.grid, cells } };
-    });
-  }
-
-  function setSelectedSensorBearing(sensorBearing: number) {
-    if (selected === null || readOnly) return;
-    setWorking((prev) => {
-      const idx = selected.row * prev.grid.cols + selected.col;
-      const cell = prev.grid.cells[idx];
-      if (cell === undefined || cell.kind !== "solid" || cell.equipment === undefined) return prev;
-      const cells = prev.grid.cells.slice();
-      cells[idx] = { ...cell, equipment: { ...cell.equipment, sensorBearing } };
-      return { ...prev, grid: { ...prev.grid, cells } };
-    });
-  }
-
-  function setSelectedSensorRangeSetting(sensorRangeSetting: number) {
-    if (selected === null || readOnly) return;
-    setWorking((prev) => {
-      const idx = selected.row * prev.grid.cols + selected.col;
-      const cell = prev.grid.cells[idx];
-      if (cell === undefined || cell.kind !== "solid" || cell.equipment === undefined) return prev;
-      const cells = prev.grid.cells.slice();
-      cells[idx] = { ...cell, equipment: { ...cell.equipment, sensorRangeSetting } };
+      cells[idx] = { ...cell, equipment: { ...cell.equipment, ...patch } };
       return { ...prev, grid: { ...prev.grid, cells } };
     });
   }
@@ -369,13 +325,13 @@ export function ShipDesignerRoute() {
    *  is re-fit to the current viewport (centred) so a loaded design fills the
    *  canvas like a new one, instead of showing at its saved size. */
   function load(design: ShipDesign) {
-    const cellPx = CELL_PITCH_PX * zoom;
+    const loadCellPx = CELL_PITCH_PX * zoom;
     const grid =
       viewportW > 0 && viewportH > 0
         ? fitGridCentered(
             design.grid,
-            Math.max(1, Math.ceil(viewportW / cellPx)),
-            Math.max(1, Math.ceil(viewportH / cellPx)),
+            Math.max(1, Math.ceil(viewportW / loadCellPx) + FIT_PAD_CELLS),
+            Math.max(1, Math.ceil(viewportH / loadCellPx) + FIT_PAD_CELLS),
           ).grid
         : design.grid;
     setWorking({
@@ -390,6 +346,7 @@ export function ShipDesignerRoute() {
       rules: design.rules,
     });
     setSelected(null);
+    resetPan();
   }
 
   /** Copy the working design to a new editable user record. */
@@ -463,9 +420,10 @@ export function ShipDesignerRoute() {
       ? selectedCell.equipment.facing
       : undefined;
 
-  // The grid auto-sizes to fill the viewport at the zoomed cell pitch (see the
+  // The grid auto-sizes to cover the viewport at the zoomed cell pitch (see the
   // fit effect above), so the inner wrapper is exactly the grid's pixel width.
-  const innerWidthPx = grid.cols * CELL_PITCH_PX * zoom;
+  // `boardTx`/`boardTy` (from usePinchZoom) centre the content and apply the pan.
+  const innerWidthPx = grid.cols * cellPx;
 
   // Delete action rendered per-card in the ShipBrowser (user designs only).
   function renderDeleteAction(design: ShipDesign) {
@@ -494,7 +452,10 @@ export function ShipDesignerRoute() {
         size="xs"
         variant="default"
         leftSection={<IconPlus size={14} />}
-        onClick={() => setWorking(blankDesign())}
+        onClick={() => {
+          setWorking(blankDesign());
+          resetPan();
+        }}
         fullWidth
       >
         New
@@ -548,7 +509,7 @@ export function ShipDesignerRoute() {
               size="xs"
               data={FACINGS}
               value={`${selectedFacing}`}
-              onChange={(v) => setSelectedFacing(Number(v))}
+              onChange={(v) => updateSelectedEquipment({ facing: Number(v) })}
             />
           </Stack>
         )}
@@ -559,9 +520,9 @@ export function ShipDesignerRoute() {
           <CommsConfig
             cell={selectedCell.equipment}
             effect={selectedModuleDef.effect}
-            onChannelChange={setSelectedCommsChannel}
-            onBearingChange={setSelectedCommsBearing}
-            onRangeChange={setSelectedCommsRange}
+            onChannelChange={(channel) => updateSelectedEquipment({ channel })}
+            onBearingChange={(commsBearing) => updateSelectedEquipment({ commsBearing })}
+            onRangeChange={(commsRange) => updateSelectedEquipment({ commsRange })}
           />
         )}
       {selectedCell !== undefined &&
@@ -571,8 +532,8 @@ export function ShipDesignerRoute() {
           <SensorConfig
             cell={selectedCell.equipment}
             effect={selectedModuleDef.effect}
-            onBearingChange={setSelectedSensorBearing}
-            onRangeChange={setSelectedSensorRangeSetting}
+            onBearingChange={(sensorBearing) => updateSelectedEquipment({ sensorBearing })}
+            onRangeChange={(sensorRangeSetting) => updateSelectedEquipment({ sensorRangeSetting })}
           />
         )}
 
@@ -637,8 +598,21 @@ export function ShipDesignerRoute() {
       <Box className={`${screenChassis} ${panelScrews} ${designerGridChassis}`}>
         {/* The scrollable, zoomable grid viewport */}
         <div className={`${zoomScreen} ${screenPowerOn}`}>
-          <div ref={attachGridViewport} className={zoomViewport} style={{ touchAction: "none" }}>
-            <div className={zoomInner} style={{ width: innerWidthPx }}>
+          <div
+            ref={attachGridViewport}
+            className={zoomViewport}
+            style={{
+              touchAction: "none",
+              // Grid-line layers track the cell pitch and the board's transform;
+              // the screen gradient (last layer) fills the viewport.
+              backgroundSize: `${cellPx}px ${cellPx}px, ${cellPx}px ${cellPx}px, 100% 100%`,
+              backgroundPosition: `${boardTx}px ${boardTy}px, ${boardTx}px ${boardTy}px, 0 0`,
+            }}
+          >
+            <div
+              className={zoomInner}
+              style={{ width: innerWidthPx, transform: `translate(${boardTx}px, ${boardTy}px)` }}
+            >
               <GridBoard
                 grid={grid}
                 selected={selected}

@@ -1,38 +1,60 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+/** Pan headroom beyond the content's half-extent, in cells: the grown hull
+ *  overhangs the ship by ~1 cell, plus 1 grid square of margin. The pan limit
+ *  lets that outer edge reach the centre of the viewport. */
+const PAN_MARGIN_CELLS = 2;
+
+interface PinchZoomOptions {
+  setZoom: (update: (z: number) => number) => void;
+  /** Zoom clamp range. */
+  min: number;
+  max: number;
+  /** Current zoomed cell pitch in px (the nominal pitch times the zoom). */
+  cellPx: number;
+  /** Built-content box in cell units: centre (half-cell precision) and extent. */
+  content: { centreCol: number; centreRow: number; cols: number; rows: number };
+}
+
 /**
- * Trackpad pinch-to-zoom over a scrollable (`overflow: auto`) viewport, plus a
- * `zoomByStep` for button controls and a `centre` helper. A pinch arrives in
- * Chrome as a `ctrl`+wheel event, which the browser would otherwise hijack as
- * page zoom, so we intercept it (a non-passive listener so `preventDefault`
- * takes) and adjust the zoom; a plain two-finger scroll falls through to native
- * panning.
+ * Trackpad pinch-to-zoom and two-finger panning over the grid viewport, plus a
+ * `zoomByStep` for button controls. A pinch arrives in Chrome as a `ctrl`+wheel
+ * event (which the browser would otherwise hijack as page zoom), a plain
+ * two-finger scroll as a wheel without `ctrl`; we intercept both with a
+ * non-passive listener so `preventDefault` takes, mapping the former to zoom and
+ * the latter to a pan offset.
  *
- * Zoom here changes the grid's cell pitch, and the caller resizes the grid to
- * keep it covering the viewport at that pitch — so the board stays roughly
- * viewport-sized rather than scaling in pixels. Cursor-anchoring would be wrong
- * for that (there is nothing to scroll towards), so zoom simply re-centres the
- * board via `centre`, which the caller calls after each zoom/resize so a
- * cell-count change keeps the content pinned to the viewport centre.
+ * The viewport clips rather than scrolls: the caller sizes the grid to cover the
+ * viewport at the current cell pitch, and this hook returns `boardTx`/`boardTy`,
+ * a transform that pins the content centre to the viewport centre plus the pan
+ * offset. Pan is clamped so the content edge — plus the hull overhang and a
+ * square of margin — can reach the viewport centre but no further. It is all
+ * computed each render from the measured viewport, so it never lags or wobbles
+ * as the grid resizes.
  *
  * Returns a *callback ref* (the viewport may mount behind a loading state, and a
  * callback ref re-runs attach/detach when the node appears), the viewport's
- * measured size, `zoomByStep`, and `centre`.
+ * measured size, `zoomByStep`, the centring transform, and `resetPan`.
  */
-export function usePinchZoom(
-  setZoom: (update: (z: number) => number) => void,
-  min: number,
-  max: number,
-): {
+export function usePinchZoom({
+  setZoom,
+  min,
+  max,
+  cellPx,
+  content,
+}: PinchZoomOptions): {
   ref: (node: HTMLDivElement | null) => void;
   width: number;
   height: number;
   zoomByStep: (delta: number) => void;
-  centre: () => void;
+  boardTx: number;
+  boardTy: number;
+  resetPan: () => void;
 } {
   const elRef = useRef<HTMLDivElement | null>(null);
   const [mounted, setMounted] = useState<HTMLDivElement | null>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
+  const [pan, setPan] = useState({ x: 0, y: 0 });
 
   const attach = useCallback((node: HTMLDivElement | null) => {
     elRef.current = node;
@@ -51,15 +73,17 @@ export function usePinchZoom(
     [setZoom, clamp],
   );
 
-  // Scroll the (viewport-covering) board so its centre sits at the viewport
-  // centre. With the board sized to cover the viewport there is always enough
-  // scroll range for this, so the content stays put across a cell-count change.
-  const centre = useCallback(() => {
-    const node = elRef.current;
-    if (node === null) return;
-    node.scrollLeft = (node.scrollWidth - node.clientWidth) / 2;
-    node.scrollTop = (node.scrollHeight - node.clientHeight) / 2;
-  }, []);
+  const resetPan = useCallback(() => setPan({ x: 0, y: 0 }), []);
+
+  // Pan limit: bring the content edge (+ hull overhang + a square of margin) to
+  // the viewport centre. Independent of viewport size. Mirrored to a ref so the
+  // wheel listener clamps against the live limit without re-attaching on zoom.
+  const panLimitX = (content.cols / 2 + PAN_MARGIN_CELLS) * cellPx;
+  const panLimitY = (content.rows / 2 + PAN_MARGIN_CELLS) * cellPx;
+  const panLimitRef = useRef({ x: 0, y: 0 });
+  useEffect(() => {
+    panLimitRef.current = { x: panLimitX, y: panLimitY };
+  }, [panLimitX, panLimitY]);
 
   useEffect(() => {
     if (mounted === null) return;
@@ -76,9 +100,16 @@ export function usePinchZoom(
   useEffect(() => {
     if (mounted === null) return;
     const onWheel = (e: WheelEvent): void => {
-      if (!e.ctrlKey) return; // plain two-finger scroll -> native pan
       e.preventDefault();
-      setZoom((z) => clamp(z * Math.exp(-e.deltaY * 0.01)));
+      if (e.ctrlKey) {
+        setZoom((z) => clamp(z * Math.exp(-e.deltaY * 0.01)));
+        return;
+      }
+      const lim = panLimitRef.current;
+      setPan((p) => ({
+        x: Math.max(-lim.x, Math.min(lim.x, p.x - e.deltaX)),
+        y: Math.max(-lim.y, Math.min(lim.y, p.y - e.deltaY)),
+      }));
     };
     mounted.addEventListener("wheel", onWheel, { passive: false });
     return () => {
@@ -86,5 +117,22 @@ export function usePinchZoom(
     };
   }, [mounted, setZoom, clamp]);
 
-  return { ref: attach, width: size.width, height: size.height, zoomByStep, centre };
+  // Clamp the stored pan to the current limit (it can fall out of range when a
+  // zoom-out shrinks the limit) and position the board.
+  const clampedPanX = Math.max(-panLimitX, Math.min(panLimitX, pan.x));
+  const clampedPanY = Math.max(-panLimitY, Math.min(panLimitY, pan.y));
+  const boardTx =
+    size.width > 0 ? size.width / 2 - content.centreCol * cellPx + clampedPanX : 0;
+  const boardTy =
+    size.height > 0 ? size.height / 2 - content.centreRow * cellPx + clampedPanY : 0;
+
+  return {
+    ref: attach,
+    width: size.width,
+    height: size.height,
+    zoomByStep,
+    boardTx,
+    boardTy,
+    resetPan,
+  };
 }

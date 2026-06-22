@@ -164,8 +164,6 @@ export function GridBoard({
           // overlay SVG (preserveAspectRatio="none", viewBox 0 0 cols rows)
           // maps one unit to one cell on both axes — keeping the hull in sync.
           aspectRatio: `${grid.cols} / ${grid.rows}`,
-          // One background tile per cell so the grid lines align with the tracks.
-          backgroundSize: `${100 / grid.cols}% ${100 / grid.rows}%`,
         }}
       >
         {builtCells.map(({ col, row, cell }) => {

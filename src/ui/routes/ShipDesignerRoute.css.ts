@@ -116,16 +116,17 @@ export const designerCentre = style({
   },
 });
 
-/** Colour of the grid cell boundary lines (drawn as a board background so empty
- *  cells cost no DOM nodes). */
-const GRID_LINE = "rgba(28,38,32,0.55)";
+/** Colour of the grid cell boundary lines. Drawn on the (fixed) viewport — not
+ *  the moving board — so the lines always fill to the canvas edge as the board
+ *  pans, with the pattern's size/offset synced to the board's transform. */
+export const GRID_LINE = "rgba(28,38,32,0.55)";
 
 /**
  * The grid canvas: a CSS grid whose tracks position the (sparse) built cells.
- * Empty cells are not rendered as nodes — the cell boundaries are painted as a
- * repeating background grid (`backgroundSize` set inline per render, since it
- * depends on the grid dimensions), and painting is hit-tested by coordinate.
- * This keeps a large grid cheap: node count tracks the built cells, not cols*rows.
+ * Empty cells are not rendered as nodes (painting is hit-tested by coordinate);
+ * the cell boundary lines are drawn by the viewport behind it. This keeps a large
+ * grid cheap: node count tracks the built cells, not cols*rows. Transparent so
+ * the viewport's grid lines show through.
  */
 export const gridBoard = style({
   position: "relative",
@@ -135,7 +136,6 @@ export const gridBoard = style({
   cursor: "pointer",
   userSelect: "none",
   touchAction: "none",
-  backgroundImage: `linear-gradient(to right, ${GRID_LINE} 0 1px, transparent 1px), linear-gradient(to bottom, ${GRID_LINE} 0 1px, transparent 1px)`,
 });
 
 /**
@@ -310,24 +310,26 @@ export const designerGridChassis = style({
 export const zoomViewport = style({
   flex: "1 1 auto",
   minHeight: 0,
-  overflow: "auto",
-  // The board is sized to cover the viewport (ceil of cells), so it overflows by
-  // up to one cell; hide the scrollbars so that sub-cell overflow doesn't show a
-  // permanent bar (which would also shrink clientWidth and feed back into the
-  // fit). Panning still works via the wheel/trackpad.
-  scrollbarWidth: "none",
+  // Containing block for the absolutely-positioned board, so `overflow: hidden`
+  // clips it and — crucially — the board never contributes to this element's
+  // height. Otherwise the rows (derived from the measured viewport height) would
+  // feed back into the board height and grow the page without bound on mobile,
+  // where the column is not height-constrained.
+  position: "relative",
+  // The board is sized to overhang the viewport and positioned by a transform to
+  // keep the content centred, so the overhang is simply clipped — no scrolling.
+  overflow: "hidden",
   borderRadius: 0,
-  background: `linear-gradient(180deg, ${vars.material.surfaceBottom} 0%, ${vars.color.base} 100%)`,
+  // Grid lines (per-cell, two layers) over the recessed screen gradient. The
+  // line layers' size and offset are set inline to track the board's cell pitch
+  // and pan transform, so they stay aligned with the cells and fill to the edge.
+  backgroundImage: `linear-gradient(to right, ${GRID_LINE} 0 1px, transparent 1px), linear-gradient(to bottom, ${GRID_LINE} 0 1px, transparent 1px), linear-gradient(180deg, ${vars.material.surfaceBottom} 0%, ${vars.color.base} 100%)`,
+  backgroundRepeat: "repeat, repeat, no-repeat",
   boxShadow: [
     `inset 2px 2px 8px ${vars.material.bevelShadowDeep}`,
     `inset -1px -1px 4px rgba(0,0,0,0.5)`,
     `0 0 0 1px ${vars.color.border}`,
   ].join(", "),
-  selectors: {
-    "&::-webkit-scrollbar": {
-      display: "none",
-    },
-  },
   "@media": {
     "(max-width: 48em)": {
       minHeight: 280,
@@ -335,8 +337,13 @@ export const zoomViewport = style({
   },
 });
 
-/** Inner wrapper that the scale transform applies to. Width set inline. */
+/** Inner wrapper the centring transform applies to (width set inline). Absolutely
+ *  positioned so the board is out of flow and never expands the viewport — see
+ *  the note on `zoomViewport`. */
 export const zoomInner = style({
+  position: "absolute",
+  top: 0,
+  left: 0,
   transformOrigin: "top left",
 });
 
