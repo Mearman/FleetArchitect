@@ -63,8 +63,13 @@ import { getMeta, setMeta, storage } from "@/storage/db";
  * undefined). This bump force-replaces every bundled id that is not an explicit
  * `source: "user"` record, so the legacy ships are finally overwritten with the
  * current layered-cell designs.
+ *
+ * Version 13: OutlineMode collapse — `"hexadecilinear"` removed from the enum;
+ * existing persisted values migrate to `"octilinear"` via a Zod preprocess.
+ * All preset grids and fresh designs now carry `outlineMode: "octilinear"`.
+ * This bump reseeds so preset records carry the updated default explicitly.
  */
-const PRESETS_VERSION = 12;
+const PRESETS_VERSION = 13;
 const VERSION_KEY = "presetsVersion";
 
 /**

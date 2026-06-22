@@ -82,7 +82,7 @@ export function blankGrid(cols: number, rows: number): TileGrid {
     edges: OPEN_EDGES,
     equipment: { moduleId: "mod-reactor-fusion", facing: 0 },
   };
-  return { cols, rows, cells, connections: [], shape: { outlineMode: "hexadecilinear" } };
+  return { cols, rows, cells, connections: [], shape: { outlineMode: "octilinear" } };
 }
 
 export function blankDesign(): WorkingDesign {

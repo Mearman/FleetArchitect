@@ -161,31 +161,33 @@ export const Connection = z.object({
 export type Connection = z.infer<typeof Connection>;
 
 /**
- * Chamfer resolution at which the hull outline polygon is traced around the
- * ship's protective shell (armor cells plus wall/door edges). The outline
- * itself is computed in a later phase (`src/domain/outline.ts`); the grid
- * only records the author's preferred resolution so the same grid renders
- * identically everywhere.
+ * Resolution at which the hull outline polygon is traced around the ship's
+ * protective shell (armor cells plus wall/door edges). The outline itself is
+ * computed in a later phase (`src/domain/outline.ts`); the grid only records
+ * the author's preferred resolution so the same grid renders identically
+ * everywhere.
  *
- * - `octilinear`     — 45-degree chamfers (8 compass directions).
- * - `hexadecilinear` — 22.5-degree chamfers (16 directions); the default, a
- *                      good balance of silhouette fidelity and vertex count.
- * - `arbitrary`      — smooth boundary, chamfered at every boundary vertex.
+ * - `octilinear` — stepped outline: vertices sit on tile corners, producing
+ *                  sharp 45-degree diagonal steps along every boundary edge.
+ * - `arbitrary`  — exact straight diagonals at any angle; vertices are placed
+ *                  at the true geometric intersection of the boundary edges,
+ *                  giving the most faithful silhouette.
+ *
+ * Legacy value `"hexadecilinear"` maps to `"octilinear"` on parse so that
+ * previously persisted designs and shared URLs remain valid.
  */
-export const OutlineMode = z.enum([
-  "octilinear",
-  "hexadecilinear",
-  "arbitrary",
-]);
+export const OutlineMode = z.preprocess(
+  (v) => (v === "hexadecilinear" ? "octilinear" : v),
+  z.enum(["octilinear", "arbitrary"]),
+);
 export type OutlineMode = z.infer<typeof OutlineMode>;
 
 /**
- * Per-grid shape metadata. `outlineMode` selects the chamfer resolution for
- * the hull outline trace (Phase 7). Defaults to `hexadecilinear` so existing
- * grids parse unchanged and render at the recommended fidelity.
+ * Per-grid shape metadata. `outlineMode` selects the resolution for the hull
+ * outline trace. Defaults to `octilinear` (stepped, vertices on tile corners).
  */
 export const GridShape = z.object({
-  outlineMode: OutlineMode.default("hexadecilinear"),
+  outlineMode: OutlineMode.default("octilinear"),
 });
 export type GridShape = z.infer<typeof GridShape>;
 
@@ -199,7 +201,7 @@ export type GridShape = z.infer<typeof GridShape>;
  *
  * `connections` are hardwire conduits between equipment cells; it defaults to
  * an empty array so grids authored before hardwiring parse unchanged. `shape`
- * carries outline-render metadata; it defaults to a `hexadecilinear` outline
+ * carries outline-render metadata; it defaults to an `octilinear` outline
  * so existing grids parse unchanged.
  */
 export const TileGrid = z
@@ -208,7 +210,7 @@ export const TileGrid = z
     rows: z.number().int().min(1),
     cells: z.array(GridCell),
     connections: z.array(Connection).default([]),
-    shape: GridShape.default({ outlineMode: "hexadecilinear" }),
+    shape: GridShape.default({ outlineMode: "octilinear" }),
   })
   .refine((g) => g.cells.length === g.cols * g.rows, {
     message: "cells length must equal cols * rows",
