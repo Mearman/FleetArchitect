@@ -38,18 +38,91 @@ import type { ShipDesign } from "@/schema/ship";
 const DEPLOY_SHIP_MARGIN_M = 18;
 
 /**
- * Compute the deployment edge inset (metres from the arena midline) from the
- * resolved fleet's ship sizes and weapon ranges: `edgeInset = maxShipRadius +
- * maxWeaponRange`. The formation line sits one ship radius plus the fleet's
- * longest weapon reach inside the midline, so two opposing fleets placed at
- * `±edgeInset` begin just outside mutual weapon range and must close (or be
- * out-ranged) to engage — physically the "just out of range" start condition.
- * A fleet with no weapons falls back to `SIM.defaultRange` so an unarmed fleet
- * still deploys at a sensible separation. The ship radius term guarantees a
- * ship's hull never clips past its own edge.
+ * Target sim-time (seconds) within which a representative ship should close from
+ * its deployment line to contact with the enemy line. The deployment separation
+ * is sized so an engagement reaches weapon range and fights to a conclusion in a
+ * watchable span rather than the ships drifting apart for minutes.
+ *
+ * Why a fixed seconds target rather than a distance. With the thrust→acceleration
+ * units corrected (see `ACCEL_PER_TICK_FROM_SI` in simulation/types), catalogue
+ * ships accelerate at a realistic ~0.1-0.4 m/s² — three orders of magnitude below
+ * the pre-fix figure. Against the old "deploy just outside max weapon range"
+ * rule (which put fleets ~1 km apart) those ships could not close the gap inside
+ * the battle watchdog at all: they drifted, never reached range, and the battle
+ * timed out as a draw. Sizing the deployment from a kinematic CLOSING BUDGET
+ * instead keeps the engagement paced to real thrust.
+ *
+ * 45 s sits in the middle of the intended 20-60 s engagement-onset window; at the
+ * fleet's representative acceleration it yields a separation a ship can actually
+ * cover. Derived as a sim-time constant; the tick conversion uses
+ * `TICKS_PER_SECOND` (no magic distance literal).
+ */
+const DEPLOY_CLOSE_TIME_S = 45;
+
+/**
+ * Median of a list of numbers, used to pick a fleet's representative ship
+ * acceleration robustly (so one outlier hull does not set the deployment pace).
+ * Returns 0 for an empty list — the caller treats a zero representative
+ * acceleration as "no closing budget" and falls back to the weapon reach.
+ * Sorts a copy (does not mutate the input) and narrows the middle elements
+ * explicitly rather than asserting them non-undefined.
+ */
+function median(values: readonly number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 1) {
+    const m = sorted[mid];
+    return m === undefined ? 0 : m;
+  }
+  const lo = sorted[mid - 1];
+  const hi = sorted[mid];
+  if (lo === undefined || hi === undefined) return 0;
+  return (lo + hi) / 2;
+}
+
+/**
+ * Compute the deployment edge inset (metres from the arena midline) for ONE
+ * fleet from its ship sizes, weapon reach, and — crucially — its representative
+ * acceleration.
+ *
+ * Two opposing fleets are placed at `±edgeInset`, so the face-to-face separation
+ * is `attackerEdgeInset + defenderEdgeInset` and, because both fleets accelerate
+ * toward the midline, each side closes its own `edgeInset` worth of distance. The
+ * inset is the SMALLER of:
+ *
+ *  1. The classic "just outside weapon range" reach, `maxShipRadius +
+ *     maxWeaponRange` — the physically meaningful "start just out of range, then
+ *     close" condition, preserved whenever ships are fast enough to honour it.
+ *  2. A KINEMATIC CLOSING BUDGET: the distance a representative ship covers in
+ *     `DEPLOY_CLOSE_TIME_S` while accelerating from rest at `a` (m/s²) under a
+ *     stop-in-time profile (accelerate the first half, brake the second). That
+ *     distance is `a · (T/2)²` per side. Sizing from this guarantees the fleet
+ *     can actually reach contact in a watchable span at its real catalogue
+ *     thrust — without it, the corrected (~0.1-0.4 m/s²) ships never close the
+ *     kilometre-scale weapon-range separation and the battle times out.
+ *
+ * Taking the min means: when weapon ranges are modest relative to ship thrust the
+ * old behaviour is unchanged (ships still start just out of range); when weapon
+ * ranges out-reach what the ships can close in time, deployment is pulled in to
+ * the closable distance so an engagement still happens. The representative `a` is
+ * the fleet's MEDIAN ship acceleration (robust to a single sluggish capital or
+ * nimble fighter skewing the line).
+ *
+ * A fleet with no weapons falls back to `fallbackRange` for the weapon-reach
+ * term so an unarmed fleet still deploys at a sensible separation. The ship
+ * radius term guarantees a ship's hull never clips past its own edge.
+ *
+ * The closing budget is computed entirely in SI (acceleration in m/s², time in
+ * seconds → distance in metres); no tick conversion is needed because the
+ * profile depends only on real-world acceleration and a real-world target time.
  */
 function computeEdgeInsetM(
-  ships: ReadonlyArray<{ radius: number; weapons: readonly WeaponEffect[] }>,
+  ships: ReadonlyArray<{
+    radius: number;
+    weapons: readonly WeaponEffect[];
+    accelMps2: number;
+  }>,
   fallbackRange: number,
 ): number {
   let maxRadius = 0;
@@ -61,7 +134,24 @@ function computeEdgeInsetM(
     }
   }
   const range = maxRange > 0 ? maxRange : fallbackRange;
-  return maxRadius + range;
+  const weaponReach = maxRadius + range;
+
+  // Representative acceleration: the median across the fleet's ships, so one
+  // outlier (a heavy capital or a light interceptor) does not set the pace for
+  // the whole line. Empty fleets never reach here (the caller filters them).
+  const medianAccel = median(ships.map((s) => s.accelMps2));
+
+  // Kinematic closing budget per side: distance covered from rest in
+  // DEPLOY_CLOSE_TIME_S under a symmetric accelerate-then-brake profile, where
+  // peak speed is reached at the half-time. d = a · (T/2)². A zero-thrust fleet
+  // (no engines) has no budget; fall back to the weapon reach so it still
+  // deploys at a finite separation (it cannot close, but neither can it freeze
+  // the geometry to nothing).
+  const halfTimeS = DEPLOY_CLOSE_TIME_S / 2;
+  const kinematicBudget = medianAccel * halfTimeS * halfTimeS;
+
+  if (kinematicBudget <= 0) return weaponReach;
+  return Math.min(weaponReach, kinematicBudget);
 }
 
 export function resolveFleetToCombatShips(
@@ -84,6 +174,11 @@ export function resolveFleetToCombatShips(
         stats,
         radius: deriveRadius(design.grid),
         weapons: stats.weapons.map((w) => w.effect),
+        // SI acceleration (m/s²) = thrust[N] / mass[kg]. Feeds the deployment
+        // kinematic closing budget so the line is placed where this ship can
+        // actually close it at real catalogue thrust. Mass is floored at 1 to
+        // mirror the engine's `Math.max(ship.mass, 1)` divide-by-zero guard.
+        accelMps2: stats.thrust / Math.max(stats.mass, 1),
       };
     })
     .filter((entry): entry is NonNullable<typeof entry> => entry !== undefined);

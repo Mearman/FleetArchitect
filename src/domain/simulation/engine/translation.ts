@@ -8,7 +8,7 @@
  * result.
  */
 
-import type { BattleInputs } from "../types";
+import { ACCEL_PER_TICK_FROM_SI, type BattleInputs } from "../types";
 
 import { ARRIVAL_CLOSING_SPEED_MPS, SIM } from "./config";
 import { availableThrust, maxCommandableTorque } from "./physics";
@@ -211,8 +211,15 @@ function stopInTimeToward(
   const bearing = Math.atan2(dy, dx);
   const mass = Math.max(ship.mass, 1);
   const { prograde, retrograde } = availableThrust(ship);
-  const aPro = prograde / mass;
-  const aRet = retrograde / mass;
+  // Controller accelerations in m/tick². availableThrust returns catalogue
+  // Newtons, so prograde/mass is an SI acceleration (m/s²); ACCEL_PER_TICK_FROM_SI
+  // rescales it into the m/tick velocity clock the controller's kinematics run
+  // in (vClose, vMax, dBrake are all m/tick · m/tick²). Matching the integrator's
+  // own rescale keeps the controller's braking-distance look-ahead consistent
+  // with the velocity the ship actually gains per tick — without it the
+  // controller over-estimates its stopping power by 900× and never brakes.
+  const aPro = (prograde / mass) * ACCEL_PER_TICK_FROM_SI;
+  const aRet = (retrograde / mass) * ACCEL_PER_TICK_FROM_SI;
   const vClose = dist > 0 ? (ship.velX * dx + ship.velY * dy) / dist : 0;
   const band = ship.orders.rangeKeepingBand;
   const tFlip = flipTime(ship);

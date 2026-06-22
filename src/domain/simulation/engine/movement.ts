@@ -8,7 +8,7 @@
 
 import type { ShipStance } from "@/schema/ai";
 
-import type { BattleInputs } from "../types";
+import { ACCEL_PER_TICK_FROM_SI, type BattleInputs } from "../types";
 
 import { GRAVITY_CONSTANT_ARENA, SIM, THRUST_ALIGNMENT_RAD } from "./config";
 import { combinedDilation } from "./proper-time";
@@ -566,7 +566,13 @@ export function moveShips(
       // to the lateral budget. Pure CoM translation (no torque — see
       // `lateralForceAndTorque`), so it never spins the ship.
       const latBudget = availableThrust(ship).lateral;
-      const aLat = latBudget / Math.max(ship.mass, 1);
+      // Per-tick lateral Δv capacity (m/tick²): F/m is an SI acceleration
+      // (m/s²); ACCEL_PER_TICK_FROM_SI rescales it into the m/tick velocity
+      // clock so the `vPerp / aLat` throttle below compares like with like
+      // (vPerp is m/tick). Without the factor the damper thinks it has 900× the
+      // authority it really does and saturates instantly.
+      const aLat =
+        (latBudget / Math.max(ship.mass, 1)) * ACCEL_PER_TICK_FROM_SI;
       let lateralCmd = 0;
       if (aLat > 0) {
         const perpX = -Math.sin(ship.facing);
@@ -575,14 +581,26 @@ export function moveShips(
         lateralCmd = Math.max(-1, Math.min(1, -vPerp / aLat));
       }
       const lat = lateralForceAndTorque(ship, lateralCmd);
-      const world = rotateLocal(ship.facing, lx + lat.fx, ly + lat.fy);
-      // Linear integration. The relativistic path routes the net world force
+      const worldForce = rotateLocal(ship.facing, lx + lat.fx, ly + lat.fy);
+      // Engine forces are catalogue Newtons, so F/m is an SI acceleration
+      // (m/s²). World velocity is metres-per-TICK, so the per-tick velocity
+      // increment is (F/m) / TICKS_PER_SECOND² (m/tick²) — acceleration crosses
+      // the tick boundary squared (see ACCEL_PER_TICK_FROM_SI). Apply the factor
+      // to the force ONCE here, so the resulting impulse is F·dt in the tick
+      // clock; both integrator branches below then add a dimensionally-correct
+      // momentum/velocity increment. (Previously the raw Newton force was added
+      // as if it were m/tick², over-accelerating every ship by 900×.)
+      const world = {
+        x: worldForce.x * ACCEL_PER_TICK_FROM_SI,
+        y: worldForce.y * ACCEL_PER_TICK_FROM_SI,
+      };
+      // Linear integration. The relativistic path routes the net world impulse
       // through `relativisticMomentumStep` (p = gamma·m·v, velocity bounded by
-      // c); the Newtonian path adds F/m straight onto velocity. The two agree
-      // bit-for-bit at combat speeds (gamma → 1) and diverge only as the ship
-      // approaches c. Momentum is re-derived from the live velocity inside the
-      // step, so the gravity/collision/recoil writes above this point are
-      // preserved.
+      // c); the Newtonian path adds Δv = impulse/m straight onto velocity. The
+      // two agree bit-for-bit at combat speeds (gamma → 1) and diverge only as
+      // the ship approaches c. Momentum is re-derived from the live velocity
+      // inside the step, so the gravity/collision/recoil writes above this point
+      // are preserved.
       if (USE_RELATIVISTIC_INTEGRATOR) {
         const next = relativisticMomentumStep(
           ship.velX,
@@ -627,7 +645,14 @@ export function moveShips(
       // moves the ship in the commanded world direction (for a braking
       // command, desiredFacing is flipped PI so forward thrust becomes a brake).
       const maxSpeed = ship.thrust * boost.thrust;
-      const accel = (ship.thrust * boost.thrust) / Math.max(ship.mass, 1);
+      // Per-tick acceleration step (m/tick²). thrust/mass is F/m, an SI
+      // acceleration (m/s²); ACCEL_PER_TICK_FROM_SI rescales it into the m/tick
+      // velocity clock (acceleration crosses the tick boundary squared) so the
+      // `velX += dir * accel` step below adds a dimensionally-correct Δv. The
+      // legacy maxSpeed cap is left as authored (a velocity ceiling in m/tick).
+      const accel =
+        ((ship.thrust * boost.thrust) / Math.max(ship.mass, 1)) *
+        ACCEL_PER_TICK_FROM_SI;
       const desiredVX = shouldThrust ? Math.cos(ship.facing) * maxSpeed : 0;
       const desiredVY = shouldThrust ? Math.sin(ship.facing) * maxSpeed : 0;
       const dvx = desiredVX - ship.velX;

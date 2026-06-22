@@ -328,10 +328,34 @@ export interface BattleInputs {
 export const TICKS_PER_SECOND = 30;
 
 /**
- * Legacy early-stop cap, retained only for focused tests that pass `maxTicks`
- * explicitly to stop a battle early. It is no longer the product terminator: the
- * real game runs uncapped and ends via elimination or the no-progress watchdog
- * below.
+ * Converts an SI acceleration (m/s², i.e. `F/m` for a catalogue force in Newtons
+ * and a mass in kg) into the per-tick velocity increment (m/tick²) the
+ * integrator adds onto a velocity stored in metres-per-TICK. Used by the linear
+ * thrust integration (`movement.ts`) and the controller accelerations
+ * (`translation.ts`) so the kinematics (`v[m/tick]`, `a[m/tick²]`) stay
+ * dimensionally consistent.
+ *
+ * Why the square: velocity is m/tick, so `SPEED_OF_LIGHT_M_PER_TICK = c / TPS`
+ * carries one tick factor and is correct for a *speed*. Acceleration carries a
+ * second time dimension, so the SI→tick conversion is squared — over one tick
+ * (`dt = 1/TPS` s) acceleration `a` adds `a·dt` m/s, which per tick is `a/TPS²`.
+ * So `Δv[m/tick] = (F/m) / TPS²`. Before this factor the integrator added `F/m`
+ * straight onto an m/tick velocity, over-accelerating every ship by TPS² (900×);
+ * light was right because it crosses the speed boundary, not acceleration's two.
+ * Derived from the tick rate; no magic literal.
+ */
+export const ACCEL_PER_TICK_FROM_SI =
+  1 / (TICKS_PER_SECOND * TICKS_PER_SECOND);
+
+/**
+ * Safety cap so a stalemated battle terminates. With the world now at real-metre
+ * scale and `SPEED_OF_LIGHT_M_PER_TICK ≈ 9.99e6 m/tick`, a battle that spans
+ * light-lag distances (Phase 8/9) can take many hundreds of ticks for light
+ * alone to cross the engagement, and far longer for ships closing under
+ * catalogue thrust to come into weapon range. The cap is raised from the old
+ * 3600 to give a full light-second-scale engagement room to resolve while still
+ * terminating a truly stalemated battle in bounded time. ~10 min at
+ * `TICKS_PER_SECOND`. An explicit rate/limit spec.
  */
 export const DEFAULT_MAX_TICKS = 18_000;
 
