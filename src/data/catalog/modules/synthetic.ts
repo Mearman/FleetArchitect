@@ -4,26 +4,40 @@ import {
   moduleMass,
 } from "../physics";
 import {
+  ACTIVE_SENSOR_EMISSION_SCALE,
   ANTIMATTER_REACTOR_OUTPUT_W,
   BEAM_POWER_W,
+  BEAM_RANGE_M,
   FUSION_REACTOR_OUTPUT_W,
+  KM_DETECTION_RANGE_SCALE,
   MODULE_POWER_DRAW_W,
   MUZZLE_VELOCITY_M_PER_S,
   PROJECTILE_MASS_KG,
   SHIELD_CAPACITY_J,
   SHIELD_RECHARGE_W,
   beamDamageJoules,
+  cooldownTicks,
   kineticDamageJoules,
+  kineticRangeM,
   projectileSpeedMPerTick,
 } from "../combat-scale";
 
 // ---------------------------------------------------------------------------
-// Weapon damage and projectile speed are DERIVED from the combat-scale anchors
-// (`../combat-scale.ts`): kinetic `damage` = ½·m·v² via `kineticDamageJoules`,
-// beam `damage` = power × one-tick dwell via `beamDamageJoules`, and
-// `projectileSpeed` = `projectileSpeedMPerTick(muzzleVelocity)`. The Collective
-// field accurate kinetics — a fighter targeting cannon and a frigate coilgun —
-// and a pulse-grade close-range cutter beam.
+// Weapon damage, range, cooldown and projectile speed are DERIVED from the
+// combat-scale anchors (`../combat-scale.ts`):
+//
+//  - kinetic `damage` = ½·m·v² via `kineticDamageJoules`; `range` =
+//    `kineticRangeM(muzzleVelocity)` (muzzle × time-of-flight budget);
+//    `projectileSpeed` = `projectileSpeedMPerTick(muzzleVelocity)`.
+//  - beam `damage` = `beamDamageJoules(power, cooldown)`; `range` =
+//    `BEAM_RANGE_M` (√3 · Rayleigh reference ≈ 52 km). The beam cooldown is
+//    computed once and fed to both `cooldown` and `beamDamageJoules`.
+//  - `cooldown` = `cooldownTicks(reloadSeconds)` — the real mechanism interval
+//    (capacitor recharge, cyclic feed, thermal recovery) in seconds.
+//
+// Point-defence cooldown is left unchanged (not a named weapon cooldown).
+// The Collective fields accurate kinetics — a fighter targeting cannon and a
+// frigate coilgun — and a pulse-grade close-range cutter beam.
 // ---------------------------------------------------------------------------
 
 /** Synthetic targeting-cannon round: a fighter-class precision slug
@@ -35,21 +49,29 @@ const PRECISE_CANNON_MUZZLE_MS = MUZZLE_VELOCITY_M_PER_S.autocannon;
 const COILGUN_MASS_KG = PROJECTILE_MASS_KG.railgun;
 const COILGUN_MUZZLE_MS = MUZZLE_VELOCITY_M_PER_S.railgun;
 
-  // ---------------------------------------------------------------------------
-  // Synthetic Collective modules — machine intelligences in precision-machined
-  // hulls. The Collective fights as a co-ordinated network: dense point-defence
-  // that shreds missiles, drones and boarding pods; accurate cannons that rarely
-  // miss; sensors that strip enemy cloak; and ECCM that defeats jamming. Their
-  // ships are designed to be hardwired so an AI core runs them with almost no
-  // crew, and command auras let a coordinator buff the whole fleet. (Carrier
-  // hangars and decoy launchers join this set once the drone/decoy engine
-  // behaviour lands.) Trade-offs: mediocre raw alpha and middling speed, so they
-  // struggle in a sustained brawl against heavy armour or long-range beams.
-  // Counters: Foundry siege plasma overwhelms their modest shields; Crystalline
-  // beams outrange and out-pierce their cannons.
-  //
-  // Masses are in kilograms (see `../physics.ts`); thrust in Newtons.
-  // ---------------------------------------------------------------------------
+/** Targeting-cannon cyclic-feed interval (s): a fast-cycling precision gun. */
+const PRECISE_CANNON_COOLDOWN = cooldownTicks(35 / 30);
+/** Coilgun capacitor-recharge interval (s) between shots. */
+const COILGUN_COOLDOWN = cooldownTicks(100 / 30);
+/** Cutter Lance beam dwell / thermal-recovery interval (s). Used for both
+ *  `cooldown` and the `beamDamageJoules` 2nd arg so the two stay in sync. */
+const CUTTER_LANCE_COOLDOWN = cooldownTicks(20 / 30);
+
+// ---------------------------------------------------------------------------
+// Synthetic Collective modules — machine intelligences in precision-machined
+// hulls. The Collective fights as a co-ordinated network: dense point-defence
+// that shreds missiles, drones and boarding pods; accurate cannons that rarely
+// miss; sensors that strip enemy cloak; and ECCM that defeats jamming. Their
+// ships are designed to be hardwired so an AI core runs them with almost no
+// crew, and command auras let a coordinator buff the whole fleet. (Carrier
+// hangars and decoy launchers join this set once the drone/decoy engine
+// behaviour lands.) Trade-offs: mediocre raw alpha and middling speed, so they
+// struggle in a sustained brawl against heavy armour or long-range beams.
+// Counters: Foundry siege plasma overwhelms their modest shields; Crystalline
+// beams outrange and out-pierce their cannons.
+//
+// Masses are in kilograms (see `../physics.ts`); thrust in Newtons.
+// ---------------------------------------------------------------------------
 
 const precisionThrustN = driveThrustNewtons("precision");
 
@@ -70,8 +92,8 @@ export const syntheticModules: ModuleDefinition[] = [
       kind: "weapon",
       weaponType: "cannon",
       damage: kineticDamageJoules(PRECISE_CANNON_MASS_KG, PRECISE_CANNON_MUZZLE_MS),
-      range: 380,
-      cooldown: 35,
+      range: kineticRangeM(PRECISE_CANNON_MUZZLE_MS),
+      cooldown: PRECISE_CANNON_COOLDOWN,
       projectileSpeed: projectileSpeedMPerTick(PRECISE_CANNON_MUZZLE_MS),
       projectileMass: PRECISE_CANNON_MASS_KG,
       tracking: 1.6,
@@ -96,8 +118,8 @@ export const syntheticModules: ModuleDefinition[] = [
       kind: "weapon",
       weaponType: "cannon",
       damage: kineticDamageJoules(COILGUN_MASS_KG, COILGUN_MUZZLE_MS),
-      range: 520,
-      cooldown: 100,
+      range: kineticRangeM(COILGUN_MUZZLE_MS),
+      cooldown: COILGUN_COOLDOWN,
       projectileSpeed: projectileSpeedMPerTick(COILGUN_MUZZLE_MS),
       projectileMass: COILGUN_MASS_KG,
       tracking: 1.2,
@@ -124,9 +146,9 @@ export const syntheticModules: ModuleDefinition[] = [
     effect: {
       kind: "weapon",
       weaponType: "beam",
-      damage: beamDamageJoules(BEAM_POWER_W.pulse, 20),
-      range: 300,
-      cooldown: 20,
+      damage: beamDamageJoules(BEAM_POWER_W.pulse, CUTTER_LANCE_COOLDOWN),
+      range: BEAM_RANGE_M,
+      cooldown: CUTTER_LANCE_COOLDOWN,
       projectileSpeed: 0,
       projectileMass: 0,
       tracking: 0,
@@ -261,14 +283,14 @@ export const syntheticModules: ModuleDefinition[] = [
     effect: {
       kind: "sensor",
       sensorType: "omni",
-      detectionRange: 600,
+      detectionRange: 600 * KM_DETECTION_RANGE_SCALE,
       arc: Math.PI,
       bearing: 0,
       nebulaImmune: true,
       pierceCloak: true,
       mode: "active",
       sweepRate: 0.15,
-      emitStrength: 1000,
+      emitStrength: 1000 * ACTIVE_SENSOR_EMISSION_SCALE,
       gain: 2.0,
     },
   },

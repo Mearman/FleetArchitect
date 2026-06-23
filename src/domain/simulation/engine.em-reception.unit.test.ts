@@ -9,8 +9,8 @@ import {
 import {
   EM_HULL_AMBIENT_EMISSION,
   EM_RECEIVER_NOISE_FLOOR,
-  SIM,
-} from "@/domain/simulation/engine/config";
+} from "@/domain/simulation/engine/em-anchors";
+import { SIM } from "@/domain/simulation/engine/config";
 import {
   contactsOf,
   core,
@@ -82,13 +82,15 @@ describe("engine.em-reception — baseline receiver (sensor-free sight)", () => 
   });
 
   it("a sensor cone extends reception to its detection range", () => {
-    // The enemy sits at 250 — beyond the ~140 visual radius but inside a 300
-    // omni sensor's reach. Only the sensor-equipped ship receives it.
+    // The enemy sits at 6000 m — beyond the ~5000 m innate baseline but inside
+    // an 8000 m omni sensor's reach. The sensor-equipped ship (a1) receives it
+    // via its sensor cone; the sensorless ship (blind) at (0, 2000) cannot reach
+    // d1 at (6000, 0) — distance ~6325 m > 5000 m baseline — and receives nothing.
     const result = runBattle(
       inputs([
-        ship("a1", "attacker", 0, 0, [...core(), moduleOf("se", sensor(300), 1, 0)]),
-        ship("blind", "attacker", 0, 1000, [...core()]),
-        ship("d1", "defender", 250, 0, [...core()]),
+        ship("a1", "attacker", 0, 0, [...core(), moduleOf("se", sensor(8000), 1, 0)]),
+        ship("blind", "attacker", 0, 2000, [...core()]),
+        ship("d1", "defender", 6000, 0, [...core()]),
       ]),
     );
     expect(contactsOf(result, 0, "a1")).toContain("d1");

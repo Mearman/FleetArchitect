@@ -1,4 +1,7 @@
+import { BEAM_RAYLEIGH_REFERENCE_M } from "@/data/catalog/combat-scale";
 import { SPEED_OF_LIGHT_M_PER_S } from "./config";
+
+export { BEAM_RAYLEIGH_REFERENCE_M };
 
 /**
  * Beam optics: diffraction-limited divergence and intensity falloff for
@@ -41,23 +44,16 @@ export const OPTICS: {
 export const BEAM_WAVELENGTH_M = 532e-9;
 
 /**
- * The reference range (metres) at which a combat beam's spot has diverged to
- * its Rayleigh point — where the beam area has doubled and intensity has halved.
- * Anchored to a representative ship-scale beam reach so that divergence is a
- * real, felt effect across an engagement (a beam noticeably weaker at the far
- * edge of its range than point-blank) rather than a negligible far-field
- * correction. Authored catalogue content: a directed-energy weapon's effective
- * collimation distance.
- */
-export const BEAM_RAYLEIGH_REFERENCE_M = 400;
-
-/**
  * Emitter aperture radius (metres) of a ship-mounted beam weapon, DERIVED from
  * the wavelength and the reference Rayleigh range rather than hand-picked. The
  * Rayleigh range is z_R = π · w₀² / λ, so the aperture that places z_R at
- * BEAM_RAYLEIGH_REFERENCE_M is w₀ = sqrt(λ · z_R / π). For the 532 nm line and
- * a ~400 m reference this is a sub-centimetre emitter waist — a compact lasing
- * cavity, physically consistent with a ship-scale directed-energy mount.
+ * {@link BEAM_RAYLEIGH_REFERENCE_M} (the combat-scale beam-reach anchor, now
+ * ~30 km so a beam reaches ~50 km, see `combat-scale.ts`) is
+ * w₀ = sqrt(λ · z_R / π). For the 532 nm line and the ~30 km reference this is a
+ * few-millimetre emitter waist — a compact lasing cavity, physically consistent
+ * with a ship-scale directed-energy mount. The reference is imported from the
+ * combat-scale anchor leaf so a beam's divergence falloff and its catalogue
+ * `range` (`√3 · BEAM_RAYLEIGH_REFERENCE_M`) both trace to one km-scale figure.
  */
 export const BEAM_APERTURE_RADIUS_M = Math.sqrt(
   (BEAM_WAVELENGTH_M * BEAM_RAYLEIGH_REFERENCE_M) / OPTICS.RAYLEIGH_FACTOR,

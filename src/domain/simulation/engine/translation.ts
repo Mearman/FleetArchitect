@@ -14,9 +14,33 @@ import { ARRIVAL_CLOSING_SPEED_MPS, SIM } from "./config";
 import { availableThrust, maxCommandableTorque } from "./physics";
 import type { ThrustMode } from "./physics";
 import { angleDifference, angularAccelPerTick, anomalyAdjustedRange } from "./setup";
+import { effectiveSensorRange, sensorUnitsOf } from "./sensors";
 import type { DeploymentReference } from "./movement";
 import { effectiveStance, isRetreating } from "./movement";
 import type { SimShip } from "./types";
+
+/**
+ * The farthest distance (metres) a ship can hold a fix on an enemy: the greater
+ * of its innate naked-eye sight (`SIM.visualLosRadius`) and its best operational
+ * sensor's effective detection range. A ship cannot usefully stand off beyond
+ * this — past its sight it has no contact to range against, so a desired
+ * engagement range further out than its sight just makes it back away from a
+ * target it can actually see, milling and drifting instead of fighting. The
+ * km-combat range re-grounding (Phase 3) made weapon reach (a beam ~52 km) far
+ * exceed a sensorless ship's ~5 km sight, so the stance-scaled desired range
+ * (e.g. 30% of 52 km ≈ 16 km) routinely lands beyond sight; capping the held
+ * range at this reach keeps a myopic ship brawling at the edge of its vision
+ * while a sensor-equipped ship (its sight extended by the cone) holds further
+ * out — the same "sensors extend reach" principle the detection model enforces.
+ */
+function sightReach(ship: SimShip): number {
+  let reach = SIM.visualLosRadius;
+  for (const unit of sensorUnitsOf(ship)) {
+    const r = effectiveSensorRange(unit);
+    if (r > reach) reach = r;
+  }
+  return reach;
+}
 
 /**
  * Output of the stop-in-time translation controller: the world-space thrust
@@ -131,7 +155,10 @@ export function computeTranslationCommand(
       ship,
       enemyDeployment.x,
       enemyDeployment.y,
-      anomalyAdjustedRange(ship.orders, ship.weapons, anomaly, stance, defaultRange),
+      Math.min(
+        anomalyAdjustedRange(ship.orders, ship.weapons, anomaly, stance, defaultRange),
+        sightReach(ship),
+      ),
     );
   }
 
@@ -151,7 +178,15 @@ export function computeTranslationCommand(
     return holdFacing(bearingToTarget);
   }
 
-  const want = anomalyAdjustedRange(ship.orders, ship.weapons, anomaly, stance, defaultRange);
+  // Cap the held range at what the ship can see (`sightReach`): a desired range
+  // beyond its own sight would have it back away from a target it can actually
+  // engage. With km-scale weapon reach far exceeding a sensorless ship's sight,
+  // this is what keeps a myopic ship fighting at the edge of its vision rather
+  // than drifting out toward an unreachable stand-off.
+  const want = Math.min(
+    anomalyAdjustedRange(ship.orders, ship.weapons, anomaly, stance, defaultRange),
+    sightReach(ship),
+  );
   return stopInTimeToward(ship, target.x, target.y, want);
 }
 

@@ -28,7 +28,8 @@
 
 import type { BattleAnomaly } from "@/schema/battle";
 
-import { EM_HULL_AMBIENT_EMISSION, EM_RECEIVER_NOISE_FLOOR, SIM, SPEED_OF_LIGHT_M_PER_TICK } from "./config";
+import { EM_HULL_AMBIENT_EMISSION, EM_RECEIVER_NOISE_FLOOR } from "./em-anchors";
+import { SIM, SPEED_OF_LIGHT_M_PER_TICK } from "./config";
 import { continuousContact, type Emission } from "./emissions";
 import {
   dopplerFactor,

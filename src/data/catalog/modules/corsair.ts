@@ -5,22 +5,30 @@ import {
 } from "../physics";
 import {
   FUSION_REACTOR_OUTPUT_W,
+  MISSILE_RANGE_M,
   MODULE_POWER_DRAW_W,
   MUZZLE_VELOCITY_M_PER_S,
   PROJECTILE_MASS_KG,
   SHIELD_CAPACITY_J,
   SHIELD_RECHARGE_W,
+  cooldownTicks,
   kineticDamageJoules,
+  kineticRangeM,
   projectileSpeedMPerTick,
 } from "../combat-scale";
 
 // ---------------------------------------------------------------------------
-// Weapon damage and projectile speed are DERIVED from the combat-scale anchors
-// (`../combat-scale.ts`): kinetic `damage` = ½·m·v² via `kineticDamageJoules`,
-// `projectileSpeed` = `projectileSpeedMPerTick(muzzleVelocity)` (the m/s →
-// m/tick boundary). Missiles carry an authored warhead yield (J) plus a body
-// mass / cruise velocity. The Corsairs raid with light, fast ordnance: homing
-// missiles and a fighter-class finisher cannon.
+// Weapon damage, range, projectile speed and cooldown are DERIVED from the
+// combat-scale anchors (`../combat-scale.ts`):
+//  - kinetic `damage` = ½·m·v² via `kineticDamageJoules`;
+//  - kinetic `range`  = `kineticRangeM(muzzleVelocity)` (muzzle × MAX_TOF_S);
+//  - missile `range`  = `MISSILE_RANGE_M` (cruise Δv × burn time, ~80 km);
+//  - `projectileSpeed` = `projectileSpeedMPerTick(muzzleVelocity)` (m/s →
+//    m/tick boundary);
+//  - `cooldown` = `cooldownTicks(reloadSeconds)` (reload interval × TPS).
+// Missiles carry an authored warhead yield (J) plus a body mass / cruise
+// velocity. The Corsairs raid with light, fast ordnance: homing missiles and
+// a fighter-class finisher cannon.
 // ---------------------------------------------------------------------------
 
 /** Corsair raid-cannon round: a fighter-class autocannon slug (`autocannon`
@@ -46,6 +54,13 @@ const SWARM_MISSILE_CRUISE_MS = MUZZLE_VELOCITY_M_PER_S.autocannon / 2;
 /** Corsair swarm-missile warhead yield (J) — authored catalogue content: a
  *  light saturation warhead, lowest per-hit yield, fired in volleys. */
 const SWARM_MISSILE_WARHEAD_J = 8e7;
+
+/** Raider-missile rack reload interval (s) — one rail cycles every ~2.3 s. */
+const RAIDER_MISSILE_COOLDOWN = cooldownTicks(70 / 30);
+/** Swarm-launcher salvo interval (s) — a lighter launcher recycles faster, ~1.7 s. */
+const SWARM_MISSILE_COOLDOWN = cooldownTicks(50 / 30);
+/** Raid-cannon cyclic feed interval (s) — autocannon cycles at ~1 s. */
+const RAID_CANNON_COOLDOWN = cooldownTicks(1);
 
   // ---------------------------------------------------------------------------
   // Corsair Reavers modules — welded junk-hull raiders built to strike and
@@ -79,8 +94,8 @@ export const corsairModules: ModuleDefinition[] = [
       kind: "weapon",
       weaponType: "missile",
       damage: RAIDER_MISSILE_WARHEAD_J,
-      range: 520,
-      cooldown: 70,
+      range: MISSILE_RANGE_M,
+      cooldown: RAIDER_MISSILE_COOLDOWN,
       projectileSpeed: projectileSpeedMPerTick(RAIDER_MISSILE_CRUISE_MS),
       projectileMass: RAIDER_MISSILE_MASS_KG,
       tracking: 3,
@@ -107,8 +122,8 @@ export const corsairModules: ModuleDefinition[] = [
       kind: "weapon",
       weaponType: "missile",
       damage: SWARM_MISSILE_WARHEAD_J,
-      range: 460,
-      cooldown: 50,
+      range: MISSILE_RANGE_M,
+      cooldown: SWARM_MISSILE_COOLDOWN,
       projectileSpeed: projectileSpeedMPerTick(SWARM_MISSILE_CRUISE_MS),
       projectileMass: SWARM_MISSILE_MASS_KG,
       tracking: 3.5,
@@ -135,8 +150,8 @@ export const corsairModules: ModuleDefinition[] = [
       kind: "weapon",
       weaponType: "cannon",
       damage: kineticDamageJoules(RAID_CANNON_MASS_KG, RAID_CANNON_MUZZLE_MS),
-      range: 300,
-      cooldown: 30,
+      range: kineticRangeM(RAID_CANNON_MUZZLE_MS),
+      cooldown: RAID_CANNON_COOLDOWN,
       projectileSpeed: projectileSpeedMPerTick(RAID_CANNON_MUZZLE_MS),
       projectileMass: RAID_CANNON_MASS_KG,
       tracking: 1.2,

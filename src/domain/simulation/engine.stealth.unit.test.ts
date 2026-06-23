@@ -386,60 +386,26 @@ describe("engine.stealth – cloak", () => {
 
 describe("engine.stealth – signature", () => {
   it("a signature module shrinks acquisition range so a distant prey is hidden", () => {
-    // Prey 1500 units away with a 0.3 signature multiplier. The hunter's omni
-    // sensor (range 2000) puts the prey in awareness, but its effective acquire
-    // range is (base 2000 + sensor 2000) * 0.3 = 1200, short of 1500 — so the
-    // prey is aware-of but never locked onto. Ships are stationary (thrust 0).
-    const ships = [
-      ship({ id: "hunter", side: "attacker", x: 0, facing: 0, weapons: [beam()] }),
-      ship({
-        id: "prey",
-        side: "defender",
-        x: 1500,
-        facing: Math.PI,
-        extra: [
-          moduleOf("sig", { kind: "signature", acquisitionMultiplier: 0.3 }, 2, 0, 50, 5, 0),
-        ],
-      }),
-    ];
-    const result = runBattle(inputs(ships));
-    expect(tookDamage(result, "prey")).toBe(false);
-  });
-
-  it("the same prey is acquired once inside the reduced range", () => {
-    // Move the same signature-reduced prey to 800 units — inside the 1000-unit
-    // reduced acquire range — and it is acquired and damaged.
-    const ships = [
-      ship({ id: "hunter", side: "attacker", x: 0, facing: 0, weapons: [beam()] }),
-      ship({
-        id: "prey",
-        side: "defender",
-        x: 800,
-        facing: Math.PI,
-        extra: [
-          moduleOf("sig", { kind: "signature", acquisitionMultiplier: 0.5 }, 2, 0, 50, 5, 0),
-        ],
-      }),
-    ];
-    const result = runBattle(inputs(ships));
-    expect(tookDamage(result, "prey")).toBe(true);
-  });
-
-  it("a sensor uplift extends acquisition range to defeat a signature", () => {
-    // Hunter with a +1000 detection-range sensor: effective acquire range is
-    // 3000, halved by the prey's 0.5 signature to 1500, which now reaches the
-    // prey at 1500 (boundary inclusive), so it is acquired.
+    // Re-baselined for km combat: the engine's `SIM.baseAcquireRange` rose from
+    // 2000 m to 60000 m, so the signature-acquisition fixtures scale up with it.
+    // The hunter carries a 30000 m sensor so the prey at 30000 m IS in awareness
+    // (its innate 5000 m eye could not see that far) — this isolates the signature
+    // gate, not mere sight. The prey's 0.3 signature shrinks the effective acquire
+    // range to (base 60000 + sensor 30000) * 0.3 = 27000 m, short of 30000 m, so
+    // the prey is aware-of but never locked onto. The beam reaches 40000 m (past
+    // the prey), so escaping fire is purely the signature, not range. Ships are
+    // stationary (thrust 0).
     const ships = [
       ship({
         id: "hunter",
         side: "attacker",
         x: 0,
         facing: 0,
-        weapons: [beam()],
+        weapons: [beam({ range: 40000 })],
         extra: [
           moduleOf(
             "snr",
-            { kind: "sensor", sensorType: "omni", arc: Math.PI, bearing: 0, detectionRange: 1000, nebulaImmune: false },
+            { kind: "sensor", sensorType: "omni", arc: Math.PI, bearing: 0, detectionRange: 30000, nebulaImmune: false },
             2,
             0,
             50,
@@ -451,7 +417,68 @@ describe("engine.stealth – signature", () => {
       ship({
         id: "prey",
         side: "defender",
-        x: 1500,
+        x: 30000,
+        facing: Math.PI,
+        extra: [
+          moduleOf("sig", { kind: "signature", acquisitionMultiplier: 0.3 }, 2, 0, 50, 5, 0),
+        ],
+      }),
+    ];
+    const result = runBattle(inputs(ships));
+    expect(tookDamage(result, "prey")).toBe(false);
+  });
+
+  it("the same prey is acquired once inside the reduced range", () => {
+    // Move the same signature-reduced prey to 4000 m — inside the reduced acquire
+    // range (base 60000 * 0.5 = 30000 m) and inside the hunter's 5000 m beam — and
+    // it is acquired and damaged.
+    const ships = [
+      ship({ id: "hunter", side: "attacker", x: 0, facing: 0, weapons: [beam()] }),
+      ship({
+        id: "prey",
+        side: "defender",
+        x: 4000,
+        facing: Math.PI,
+        extra: [
+          moduleOf("sig", { kind: "signature", acquisitionMultiplier: 0.5 }, 2, 0, 50, 5, 0),
+        ],
+      }),
+    ];
+    const result = runBattle(inputs(ships));
+    expect(tookDamage(result, "prey")).toBe(true);
+  });
+
+  it("a sensor uplift extends acquisition range to defeat a signature", () => {
+    // Hunter with a 40000 m detection-range sensor: the cone first brings the
+    // distant prey into awareness (the innate 5000 m eye cannot), and the same
+    // sensor's additive acquire bonus lifts the effective acquire range to
+    // (base 60000 + sensor 40000) * 0.5-signature = 50000 m, comfortably past the
+    // prey at 31000 m — so it is locked and hit. WITHOUT the sensor the prey is
+    // both unseen (beyond 5000 m) and below the 60000 * 0.5 = 30000 m acquire, so
+    // the uplift is exactly what defeats the signature. Beam reaches 35000 m.
+    const ships = [
+      ship({
+        id: "hunter",
+        side: "attacker",
+        x: 0,
+        facing: 0,
+        weapons: [beam({ range: 35000 })],
+        extra: [
+          moduleOf(
+            "snr",
+            { kind: "sensor", sensorType: "omni", arc: Math.PI, bearing: 0, detectionRange: 40000, nebulaImmune: false },
+            2,
+            0,
+            50,
+            5,
+            0,
+          ),
+        ],
+      }),
+      ship({
+        id: "prey",
+        side: "defender",
+        x: 31000,
         facing: Math.PI,
         extra: [
           moduleOf("sig", { kind: "signature", acquisitionMultiplier: 0.5 }, 2, 0, 50, 5, 0),

@@ -41,6 +41,7 @@
 import { CELL_SIZE } from "@/domain/grid";
 import { LOCAL_CHARGE_BUFFER_J } from "@/data/catalog/combat-scale";
 import { BLACK_HOLE_TIDAL_RADIUS_M } from "@/domain/black-hole";
+import { BASE_ACQUIRE_RANGE_M, VISUAL_LOS_RADIUS_M } from "./em-anchors";
 import {
   BLACK_HOLE_GM_ARENA,
   BLACK_HOLE_MASS_ARENA,
@@ -84,69 +85,35 @@ export const SPEED_OF_LIGHT_M_PER_TICK =
   SPEED_OF_LIGHT_M_PER_S / TICKS_PER_SECOND;
 
 /**
- * The receiver noise floor (the minimum received EM power a baseline,
- * sensor-free receiver registers as a contact). The reference threshold the
- * whole Phase-9 reception model is measured against: a continuous emission is
- * "seen" when its inverse-square received strength at the receiver exceeds this.
- * Fixed at unit power so emission strengths read directly as multiples of the
- * noise floor and the derived ranges below stay legible; the catalogue's
- * authored emission powers and sensor gains carry the real scale.
+ * Cruise velocity (metres per second) of a breaching pod's drive — the real
+ * speed a boarding pod flies toward its target. Authored catalogue content (a
+ * short-range assault-craft drive output); converted to the engine's per-tick
+ * unit as `/ TICKS_PER_SECOND` for `SIM.boardingPodSpeed`. ~500 m/s: fast enough
+ * to cross the km-scale gaps boarding spans in the new combat geometry, far
+ * slower than a km/s gun round.
  */
-export const EM_RECEIVER_NOISE_FLOOR = 1;
+const BOARDING_POD_CRUISE_M_PER_S = 500;
 
 /**
- * The continuous EM power (watts, in the same unit scale as the noise floor) a
- * quiescent hull radiates and reflects every tick — its baseline self-emission.
- * A ship is never truly dark: it reflects ambient starlight and radiates its
- * own waste heat, so a passive receiver close enough picks it up with no sensor
- * at all. This is the authored anchor the innate visual radius derives from:
- * `visualLosRadius = continuousRange(EM_HULL_AMBIENT_EMISSION, noiseFloor, 1)`.
- * Sized so that range lands at the historical ~140 m innate sight (kept below
- * typical weapon ranges so a sensorless fleet is genuinely myopic), via
- * `4·PI·140^2 · noiseFloor`.
+ * Minimum relative impact speed (metres per second) below which a debris-fragment
+ * contact is treated as a near-stationary nudge and skipped for kinetic-energy
+ * transfer. Authored catalogue content (an impact-significance threshold);
+ * converted to per-tick as `/ TICKS_PER_SECOND` for `SIM.debrisMinRelSpeed`.
+ * ~150 m/s: sized to the hundreds-of-m/s relative speeds of km/s combat so a
+ * genuine glancing impact counts while a fragment drifting with a ship does not.
  */
-export const EM_HULL_AMBIENT_EMISSION =
-  4 * Math.PI * 140 * 140 * EM_RECEIVER_NOISE_FLOOR;
+const DEBRIS_MIN_REL_SPEED_M_PER_S = 150;
 
 /**
- * The innate visual line-of-sight radius (metres) DERIVED from the EM reception
- * model: the continuous-emission range at which a quiescent hull's baseline
- * self-emission is received at exactly the noise floor by a sensor-free
- * receiver (gain 1). The closed-form inverse-square range
- * `sqrt(strength · gain / (4·PI · sensitivity))` — the same formula
- * `continuousRange` in `emissions.ts` evaluates, inlined here because `config`
- * is the leaf both it and the engine import from (importing `emissions` back
- * would cycle). With the ambient emission anchored to `4·PI·140^2 · floor` this
- * recovers 140 m exactly, but the radius now FALLS OUT of the physics rather
- * than being an authored literal.
+ * Arrival closing-speed tolerance (metres per second): the real closing speed
+ * below which the translation controller treats a ship as "arrived" on its
+ * desired bearing and stops fine-tuning. Authored catalogue content (a
+ * positioning settle tolerance); converted to the engine's per-tick world unit
+ * as `/ TICKS_PER_SECOND` for {@link ARRIVAL_CLOSING_SPEED_MPS}. ~1 m/s: a tight
+ * "stopped" band that holds even against the larger peak closing speeds of
+ * km-scale approaches without the controller chattering around a settled hold.
  */
-const VISUAL_LOS_RADIUS_M = Math.sqrt(
-  (EM_HULL_AMBIENT_EMISSION * 1) / (4 * Math.PI * EM_RECEIVER_NOISE_FLOOR),
-);
-
-/**
- * The reference emission power (same unit scale as the noise floor) of a ship
- * carrying an active emitter or a strong signature — the anchor the base
- * passive acquisition radius derives from. Chosen so the acquisition range
- * lands at the historical ~2000 m reference (comfortably beyond the deployment
- * span plus battle drift), via `4·PI·2000^2 · floor`. Authored catalogue
- * content: it stands in for the EM cross-section a stealth-relevant target
- * presents, the multiplicand a signature module's `acquisitionMultiplier`
- * shrinks.
- */
-const EM_ACQUIRE_REFERENCE_EMISSION =
-  4 * Math.PI * 2000 * 2000 * EM_RECEIVER_NOISE_FLOOR;
-
-/**
- * The base passive acquisition radius (metres) DERIVED from the EM reception
- * model: the continuous-emission range at which `EM_ACQUIRE_REFERENCE_EMISSION`
- * is received at the noise floor (gain 1). Same closed-form inverse-square range
- * as the visual radius, off a stronger reference emission; recovers 2000 m
- * exactly while making the figure fall out of the physics.
- */
-const BASE_ACQUIRE_RANGE_M = Math.sqrt(
-  (EM_ACQUIRE_REFERENCE_EMISSION * 1) / (4 * Math.PI * EM_RECEIVER_NOISE_FLOOR),
-);
+const ARRIVAL_CLOSING_SPEED_TOLERANCE_M_PER_S = 1;
 
 // The per-battle projectile id counter (the one piece of module-level mutable
 // state) lives in its own leaf; re-exported here so callers keep importing it
@@ -503,14 +470,19 @@ export const SIM = {
    * `threat = -dist + threatCostWeight * cost`. Small, so distance dominates
    * (a near contact is the more pressing threat), but a far, very expensive
    * capital still ranks above a near, cheap fighter — exactly the prioritisation
-   * a relay's bounded bandwidth should forward first. Distances run to a few
-   * hundred world units and costs to a few hundred points, so a weight of ~0.01
-   * makes one cost point worth ~0.01 world units of nearness.
+   * a relay's bounded bandwidth should forward first. Re-grounded for km combat
+   * (Phase 3): distances now run to tens of thousands of world units (weapon
+   * reach is tens of km) while costs stay a few hundred catalogue points, so the
+   * weight is cut ~100× from the pre-km 0.01 to keep one cost point worth ~0.01
+   * of the NEW distance scale (~one metre of nearness per cost point at km
+   * ranges); the relative distance-vs-cost balance is preserved across the
+   * rescale rather than letting cost swamp distance now that distances are 100×
+   * larger.
    *
    * Classification: unit-spec-rate-epsilon (a scoring weight that normalises
    * two authored scales — world distance and catalogue cost points).
    */
-  threatCostWeight: 0.01,
+  threatCostWeight: 0.0001,
   /**
    * Ticks a ghost contact survives after its target leaves sensor coverage.
    * The observer keeps engaging the last-known position until this counts down
@@ -568,17 +540,20 @@ export const SIM = {
    */
   mineRingSpacing: CELL_SIZE,
   /**
-   * Speed (metres per tick) of a boarding pod in flight toward its target.
-   * A pod is a small assault craft; its speed is the catalogue figure for a
-   * short-range breaching pod's drive. Authored catalogue content representing
-   * the pod's physical drive output. A pod homes on its target each tick,
-   * stepping this far along the bearing to the target's current position
-   * (clamped so it never overshoots). Pure function of positions — no rng.
+   * Speed (metres per tick) of a boarding pod in flight toward its target —
+   * DERIVED from a real breaching-pod cruise velocity at the m/s → m/tick
+   * boundary: `BOARDING_POD_CRUISE_M_PER_S / TICKS_PER_SECOND`. A pod homes on
+   * its target each tick, stepping this far along the bearing to the target's
+   * current position (clamped so it never overshoots). Re-grounded for km combat
+   * (Phase 3): the pre-km 6 m/tick (180 m/s) could not cross the km-scale gaps
+   * boarding now spans, so the cruise is authored as a real ~500 m/s pod drive
+   * (`16.7 m/tick`) so a pod actually reaches a target tens of km out within the
+   * boarding launcher's reach. Pure function of positions — no rng.
    *
-   * Classification: authored catalogue content (a breaching-pod drive-output
-   * figure; Phase 14 supplies `thrust` / `Isp` in SI).
+   * Classification: derived-by-formula (`BOARDING_POD_CRUISE_M_PER_S /
+   * TICKS_PER_SECOND`); the anchor is an authored breaching-pod cruise velocity.
    */
-  boardingPodSpeed: 6,
+  boardingPodSpeed: BOARDING_POD_CRUISE_M_PER_S / TICKS_PER_SECOND,
   /**
    * Collision radius (metres) of a launched drone — a small, fighter-sized
    * craft. Derived from the drone's payload size: a drone carries a weapon
@@ -719,14 +694,21 @@ export const SIM = {
   /**
    * [Phase 12 — debris kinetic hazard] Minimum relative speed (world m/tick)
    * between a debris fragment and a ship for a kinetic-energy transfer to be
-   * applied. Contacts below this threshold are near-stationary nudges (the
-   * debris is drifting with the ship or is essentially at rest relative to it)
-   * and are ignored to avoid applying vanishingly small damage values that
-   * accumulate over many ticks without physical justification.
+   * applied — DERIVED from a real impact-speed threshold at the m/s → m/tick
+   * boundary: `DEBRIS_MIN_REL_SPEED_M_PER_S / TICKS_PER_SECOND`. Contacts below
+   * this are near-stationary nudges (the debris is drifting with the ship or is
+   * essentially at rest relative to it) and are ignored to avoid applying
+   * vanishingly small damage values that accumulate over many ticks without
+   * physical justification. Re-grounded for km combat (Phase 3): relative speeds
+   * now reach the hundreds-of-m/s scale of km/s combat, so the threshold is
+   * authored as a real ~150 m/s minimum impact speed (`5 m/tick`) rather than the
+   * pre-km 10 m/tick that, against the larger km/s closing speeds, would let too
+   * many genuine glancing impacts through.
    *
-   * Classification: authored catalogue content
+   * Classification: derived-by-formula (`DEBRIS_MIN_REL_SPEED_M_PER_S /
+   * TICKS_PER_SECOND`); the anchor is an authored minimum impact-speed threshold.
    */
-  debrisMinRelSpeed: 10,
+  debrisMinRelSpeed: DEBRIS_MIN_REL_SPEED_M_PER_S / TICKS_PER_SECOND,
   /**
    * Stopping energy (joules) a solid wall edge absorbs from a penetrating round
    * — DERIVED as the destruction energy of the interior bulkhead it presents
@@ -758,12 +740,16 @@ export const SIM = {
 
 /** Closing speed (world-units per tick) below which the translation controller
  *  considers the ship "arrived" on its desired bearing and stops fine-tuning.
- *  The one numerical settle epsilon in the movement model — every other
- *  quantity is kinematics over actual thrust and mass (`a = thrust / mass`,
- *  `vMax = sqrt(2·a·d)`, `dBrake = v² / (2·a)`), the ships' actual engine force
- *  vectors, and the existing `SIM.angularDeadband` heading band. No speed cap,
- *  no damping, no hand-tuned thresholds. */
-export const ARRIVAL_CLOSING_SPEED_MPS = 0.05;
+ *  DERIVED from a real arrival tolerance at the m/s → m/tick boundary
+ *  (`ARRIVAL_CLOSING_SPEED_TOLERANCE_M_PER_S / TICKS_PER_SECOND`) rather than a
+ *  hand-tuned per-tick literal, re-grounded for km combat (Phase 3) so the
+ *  "stopped" band tracks real arrival speed. The one numerical settle epsilon in
+ *  the movement model — every other quantity is kinematics over actual thrust and
+ *  mass (`a = thrust / mass`, `vMax = sqrt(2·a·d)`, `dBrake = v² / (2·a)`), the
+ *  ships' actual engine force vectors, and the existing `SIM.angularDeadband`
+ *  heading band. No speed cap, no damping, no hand-tuned thresholds. */
+export const ARRIVAL_CLOSING_SPEED_MPS =
+  ARRIVAL_CLOSING_SPEED_TOLERANCE_M_PER_S / TICKS_PER_SECOND;
 
 /** Max heading error (radians) at which the main engine may fire. A ship still
  *  turning onto its commanded heading would otherwise thrust along the

@@ -120,30 +120,36 @@ export const BLACK_HOLE_MASS_ARENA =
 /**
  * Representative path length (metres) a signal traverses through a nebula in a
  * combat engagement — the `d` in the Beer-Lambert transmittance `exp(-μ·d)`.
- * Set to the median weapon-range band (a few hundred metres), the distance over
- * which two engaged ships' sensor returns and EM coupling cross the intervening
- * gas. The catalogue's weapon ranges span ~100-640 m; 350 m is the centre of
- * mass of that distribution, so the attenuation is sized to the scale at which
- * ships actually fight rather than the full arena crossing.
+ * Set to the median weapon-range band, the distance over which two engaged ships'
+ * sensor returns and EM coupling cross the intervening gas. Re-grounded for km
+ * combat (Phase 3): the catalogue's weapon ranges now span ~12-80 km (kinetic
+ * ~12-30 km, beam ~52 km, missile ~80 km), so the engagement path is the
+ * ~35 km centre of mass of that km-scale distribution, not the pre-km few-hundred-
+ * metre band. The per-metre coefficients below are scaled down in lockstep so the
+ * dimensionless transmittance (`μ·d`, the value actually consumed) is preserved
+ * across the rescale.
  */
-const NEBULA_ENGAGEMENT_PATH_M = 350;
+const NEBULA_ENGAGEMENT_PATH_M = 35_000;
 
 /**
  * Per-metre Beer-Lambert attenuation coefficient (1/m) for a sensor return in a
- * dense nebula — the most strongly attenuated channel, because a radar/lidar
- * return is scattered twice (out and back) by charged particles. ~0.2 per 100 m
- * for a dense ionised cloud; over {@link NEBULA_ENGAGEMENT_PATH_M} this gives a
+ * nebula — the most strongly attenuated channel, because a radar/lidar return is
+ * scattered twice (out and back) by charged particles. ~0.2 per 10 km of the
+ * km-scale engagement path; over {@link NEBULA_ENGAGEMENT_PATH_M} this gives a
  * transmittance near one half, the historical sensor reduction, now grounded.
+ * Scaled down per-metre in lockstep with the km-scale engagement path so the
+ * product `μ·d` (and thus the transmittance) matches the pre-km calibration.
  */
-const NEBULA_MU_SENSOR_PER_M = 0.2 / 100;
+const NEBULA_MU_SENSOR_PER_M = 0.2 / 10_000;
 
 /**
  * Per-metre Beer-Lambert attenuation coefficient (1/m) for one-way EM coupling
- * in a dense nebula — a shield projector coupling to the local field, or a
- * homing weapon's EM return. About half the sensor coefficient (~0.1 per 100 m)
- * because the path is traversed once, not as a there-and-back scatter.
+ * in a nebula — a shield projector coupling to the local field, or a homing
+ * weapon's EM return. About half the sensor coefficient (~0.1 per 10 km of the
+ * km-scale engagement path) because the path is traversed once, not as a
+ * there-and-back scatter.
  */
-const NEBULA_MU_EM_PER_M = 0.1 / 100;
+const NEBULA_MU_EM_PER_M = 0.1 / 10_000;
 
 /** Beer-Lambert transmittance `exp(-μ·d)` over the engagement path. The shared
  *  closed form the nebula attenuation factors evaluate; each factor reads as one

@@ -4,16 +4,23 @@ import {
   moduleMass,
 } from "../physics";
 import {
+  ACTIVE_SENSOR_EMISSION_SCALE,
   ANTIMATTER_REACTOR_OUTPUT_W,
   BEAM_POWER_W,
+  BEAM_RANGE_M,
   FUSION_REACTOR_OUTPUT_W,
+  KM_DETECTION_RANGE_SCALE,
+  MISSILE_RANGE_M,
   MODULE_POWER_DRAW_W,
   MUZZLE_VELOCITY_M_PER_S,
   PROJECTILE_MASS_KG,
   SHIELD_CAPACITY_J,
   SHIELD_RECHARGE_W,
+  TORPEDO_RANGE_M,
   beamDamageJoules,
+  cooldownTicks,
   kineticDamageJoules,
+  kineticRangeM,
   projectileSpeedMPerTick,
 } from "../combat-scale";
 import {
@@ -37,9 +44,29 @@ import {
 //    mass / cruise velocity for momentum and flight, authored locally with a
 //    "DERIVED from" note naming the real quantity.
 //
-// `range` and `cooldown` stay as authored here for this phase; the range
-// re-grounding (km-scale) and mechanism-derived cooldowns land in later phases.
+// `range` is DERIVED per weapon type from the combat-scale anchors:
+//  - a beam reaches `BEAM_RANGE_M` (√3 · Rayleigh reference ≈ 52 km);
+//  - a kinetic gun reaches `kineticRangeM(muzzleVelocity)` (muzzle × time-of-
+//    flight budget);
+//  - a missile / torpedo reaches `MISSILE_RANGE_M` / `TORPEDO_RANGE_M`
+//    (cruise Δv × motor burn time).
+// `cooldown` is DERIVED as `cooldownTicks(reloadSeconds)` — the real refire
+// mechanism interval (a capacitor recharge, a cyclic feed, a magazine reload, a
+// beam dwell/thermal recovery) in seconds × TICKS_PER_SECOND. The reload-second
+// value is authored catalogue content per weapon (its mechanism's cycle time),
+// the same way muzzle velocity is; the tick conversion is the derivation. A
+// beam's per-shot energy is its power over that same cooldown dwell, so the
+// cooldown is computed once and fed to both `cooldown` and `beamDamageJoules`.
 // ---------------------------------------------------------------------------
+
+/** Pulse-laser refire / dwell (s): a fast-cycling point-defence-grade beam. */
+const PULSE_LASER_COOLDOWN = cooldownTicks(1);
+/** Railgun capacitor-recharge interval (s) between shots. */
+const RAILGUN_COOLDOWN = cooldownTicks(2);
+/** Missile-rack reload interval (s) from the magazine. */
+const MISSILE_RACK_COOLDOWN = cooldownTicks(3.3);
+/** Plasma-torpedo tube reload interval (s) — the slowest Terran weapon. */
+const TORPEDO_COOLDOWN = cooldownTicks(4.7);
 
 /** Terran railgun slug: a frigate-class electromagnetic round (`railgun`
  *  banding in `PROJECTILE_MASS_KG` / `MUZZLE_VELOCITY_M_PER_S`). */
@@ -100,9 +127,9 @@ export const terranModules: ModuleDefinition[] = [
     effect: {
       kind: "weapon",
       weaponType: "beam",
-      damage: beamDamageJoules(BEAM_POWER_W.pulse, 30),
-      range: 320,
-      cooldown: 30,
+      damage: beamDamageJoules(BEAM_POWER_W.pulse, PULSE_LASER_COOLDOWN),
+      range: BEAM_RANGE_M,
+      cooldown: PULSE_LASER_COOLDOWN,
       projectileSpeed: 0,
       projectileMass: 0,
       tracking: 0,
@@ -127,8 +154,8 @@ export const terranModules: ModuleDefinition[] = [
       kind: "weapon",
       weaponType: "cannon",
       damage: kineticDamageJoules(RAILGUN_MASS_KG, RAILGUN_MUZZLE_MS),
-      range: 480,
-      cooldown: 60,
+      range: kineticRangeM(RAILGUN_MUZZLE_MS),
+      cooldown: RAILGUN_COOLDOWN,
       projectileSpeed: projectileSpeedMPerTick(RAILGUN_MUZZLE_MS),
       projectileMass: RAILGUN_MASS_KG,
       tracking: 0.5,
@@ -159,8 +186,8 @@ export const terranModules: ModuleDefinition[] = [
       kind: "weapon",
       weaponType: "missile",
       damage: MISSILE_WARHEAD_J,
-      range: 560,
-      cooldown: 100,
+      range: MISSILE_RANGE_M,
+      cooldown: MISSILE_RACK_COOLDOWN,
       projectileSpeed: projectileSpeedMPerTick(MISSILE_CRUISE_MS),
       projectileMass: MISSILE_MASS_KG,
       tracking: 2.5,
@@ -191,8 +218,8 @@ export const terranModules: ModuleDefinition[] = [
       kind: "weapon",
       weaponType: "torpedo",
       damage: TORPEDO_WARHEAD_J,
-      range: 420,
-      cooldown: 140,
+      range: TORPEDO_RANGE_M,
+      cooldown: TORPEDO_COOLDOWN,
       projectileSpeed: projectileSpeedMPerTick(TORPEDO_CRUISE_MS),
       projectileMass: TORPEDO_MASS_KG,
       tracking: 1,
@@ -355,9 +382,13 @@ export const terranModules: ModuleDefinition[] = [
   // --- System: sensors (directional, mirroring the comms family) ---
   // Sensors project a detection cone (a sector of half-arc `arc` about their
   // world bearing) rather than a scalar radius. `bearing: 0` mounts the cone
-  // forward (+x). Ranges are tuned against weapon ranges (~180–600): an omni is
-  // short, a directional reaches outside most weapon envelopes, and a dish
-  // out-ranges every weapon for genuine early warning.
+  // forward (+x). Detection ranges are banded against the km-scale weapon reaches
+  // (an omni ~30 km is shorter than the guns, a directional ~60 km reaches outside
+  // most weapon envelopes, a dish ~90 km out-ranges every weapon for genuine early
+  // warning): each authored band figure is lifted to the km scale by
+  // `KM_DETECTION_RANGE_SCALE`, and an active sensor's `emitStrength` by
+  // `ACTIVE_SENSOR_EMISSION_SCALE` so going active stays as loud relative to the
+  // (now km-scale) hull ambient as before.
   {
     id: "mod-sensor-passive",
     faction: "Terran",
@@ -375,7 +406,7 @@ export const terranModules: ModuleDefinition[] = [
       // All-round: arc spans the full half-circle each side (effectively 360°),
       // so the cone is a full circle. Short reach, just outside the visual circle.
       arc: SENSOR_OMNI_ARC,
-      detectionRange: 320,
+      detectionRange: 320 * KM_DETECTION_RANGE_SCALE,
       bearing: 0,
       nebulaImmune: false,
       mode: "passive",
@@ -399,12 +430,12 @@ export const terranModules: ModuleDefinition[] = [
       sensorType: "directional",
       // ~29° half-arc forward cone; reaches just past missile range.
       arc: SENSOR_DIRECTIONAL_ARC,
-      detectionRange: 600,
+      detectionRange: 600 * KM_DETECTION_RANGE_SCALE,
       bearing: 0,
       nebulaImmune: false,
       mode: "active",
       sweepRate: 0.08,
-      emitStrength: 500,
+      emitStrength: 500 * ACTIVE_SENSOR_EMISSION_SCALE,
       gain: 2.0,
     },
   },
@@ -424,12 +455,12 @@ export const terranModules: ModuleDefinition[] = [
       sensorType: "dish",
       // ~11° half-arc, very long reach — genuine early warning straight ahead.
       arc: SENSOR_DISH_ARC,
-      detectionRange: 900,
+      detectionRange: 900 * KM_DETECTION_RANGE_SCALE,
       bearing: 0,
       nebulaImmune: false,
       mode: "active",
       sweepRate: 0.03,
-      emitStrength: 1200,
+      emitStrength: 1200 * ACTIVE_SENSOR_EMISSION_SCALE,
       gain: 5.0,
     },
   },
@@ -449,17 +480,17 @@ export const terranModules: ModuleDefinition[] = [
       sensorType: "variable",
       // Default mid-values; the sim interpolates min/max when steering. A longer
       // range narrows the arc (maxArc at minRange, minArc at maxRange).
-      detectionRange: 480,
+      detectionRange: 480 * KM_DETECTION_RANGE_SCALE,
       arc: 0.4,
       bearing: 0,
       nebulaImmune: false,
-      minRange: 300,
-      maxRange: 720,
+      minRange: 300 * KM_DETECTION_RANGE_SCALE,
+      maxRange: 720 * KM_DETECTION_RANGE_SCALE,
       minArc: 0.15,
       maxArc: 0.6,
       mode: "active",
       sweepRate: 0.12,
-      emitStrength: 800,
+      emitStrength: 800 * ACTIVE_SENSOR_EMISSION_SCALE,
       gain: 3.0,
     },
   },
@@ -480,17 +511,20 @@ export const terranModules: ModuleDefinition[] = [
       // Wide forward cone, nebula-immune — the distinguishing property is seeing
       // through gas, not raw reach.
       arc: SENSOR_WIDE_ARC,
-      detectionRange: 700,
+      detectionRange: 700 * KM_DETECTION_RANGE_SCALE,
       bearing: 0,
       nebulaImmune: true,
       mode: "active",
       sweepRate: 0.06,
-      emitStrength: 900,
+      emitStrength: 900 * ACTIVE_SENSOR_EMISSION_SCALE,
       gain: 2.5,
     },
   },
 
   // --- System: communications ---
+  // Comms ranges are lifted to the km combat scale by `KM_DETECTION_RANGE_SCALE`
+  // in lockstep with sensor reach, so the squad-net / relay banding holds at the
+  // new engagement distances (an omni for local chatter, a dish/laser for relay).
   {
     id: "mod-comms-omni",
     faction: "Terran",
@@ -507,7 +541,7 @@ export const terranModules: ModuleDefinition[] = [
       commsType: "omni",
       // Omni arc spans the full hemisphere each side — effectively 360°.
       arc: Math.PI,
-      range: 180,
+      range: 180 * KM_DETECTION_RANGE_SCALE,
       bearing: 0,
       channel: 0,
       // Low bandwidth: suitable for status pings, not data relay.
@@ -530,7 +564,7 @@ export const terranModules: ModuleDefinition[] = [
       commsType: "directional",
       // ~34° half-arc — a reasonably narrow forward sector.
       arc: 0.6,
-      range: 320,
+      range: 320 * KM_DETECTION_RANGE_SCALE,
       bearing: 0,
       channel: 0,
       bandwidth: 6,
@@ -552,7 +586,7 @@ export const terranModules: ModuleDefinition[] = [
       commsType: "dish",
       // ~14° half-arc — tightly steerable beam.
       arc: 0.25,
-      range: 520,
+      range: 520 * KM_DETECTION_RANGE_SCALE,
       bearing: 0,
       channel: 0,
       bandwidth: 10,
@@ -574,7 +608,7 @@ export const terranModules: ModuleDefinition[] = [
       commsType: "laser",
       // Near-zero arc: effectively a point link.
       arc: 0.12,
-      range: 600,
+      range: 600 * KM_DETECTION_RANGE_SCALE,
       bearing: 0,
       channel: 0,
       bandwidth: 16,
@@ -595,14 +629,14 @@ export const terranModules: ModuleDefinition[] = [
       kind: "comms",
       commsType: "variable",
       // Default to mid-values; the sim will use min/max when steering.
-      range: 340,
+      range: 340 * KM_DETECTION_RANGE_SCALE,
       arc: 0.5,
       bearing: 0,
       channel: 0,
       bandwidth: 8,
       // Electronically steerable bounds.
-      minRange: 200,
-      maxRange: 480,
+      minRange: 200 * KM_DETECTION_RANGE_SCALE,
+      maxRange: 480 * KM_DETECTION_RANGE_SCALE,
       // Wider arc = short range mode; narrower arc = long-haul relay mode.
       minArc: 0.15,
       maxArc: 0.5,

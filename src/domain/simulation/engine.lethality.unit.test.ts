@@ -19,25 +19,13 @@ import type { BattleResult } from "@/schema/battle";
  * silent revert to stalemate fails loudly.
  *
  * The assertions are robust against the pre-existing base-engine
- * non-determinism (large preset battles are not byte-identical run-to-run on
- * main, including crewless ones that never touch the crew code — see the
- * engine.crew-perf header comment). They check properties that hold on every
- * run: ships are destroyed, a winner is decided, and meaningful damage is
- * dealt. The stalemate produced zero kills and zero effective damage, so any of
- * these guards catches it.
+ * non-determinism. The engine is deterministic (a fixed-seed battle is
+ * byte-identical run-to-run: same ticks, same kill count), so these guards
+ * assert exact invariants that hold every run: ships are destroyed, a winner is
+ * decided, and meaningful damage is dealt. The stalemate produced zero kills
+ * and zero effective damage, so any of these guards catches it.
  */
 
-/**
- * Tick cap for the frigate/fighter crewed lethality guard (Strike Wing vs
- * Picket Screen). W4 (1 m scale) subdivides preset grids: frigates at f=3
- * have ~9× more hull cells than the coarse-grid Phase 14 designs, making each
- * tick slower. After auto-derived armour hull growth each frigate gains an
- * armour shell, raising per-tick cost from ~32 ms to ~91 ms on the development
- * machine. At 600 ticks (≈ 50 s isolated) Strike vs Picket has produced 2+
- * kills at seed 42. The test timeout is raised to 300 s to absorb CI contention
- * (observed ~5× slowdown on busy CI runners: 50 s × 5 = 250 s < 300 s).
- */
-const LETHALITY_GUARD_TICKS = 600;
 /**
  * Tick cap for the capital-ship lethality test at 1 m scale. Capital ships
  * (Leviathan at f=7, Titan at f=12) run ~2200 ms/tick after armour hull growth
@@ -66,9 +54,12 @@ function buildInputs(
   attackerId: string,
   defenderId: string,
   seed = 42,
-  // Pass `undefined` to run with no tick cap (the real game's behaviour): the
-  // battle then ends by elimination or the no-progress watchdog, not a clock.
-  tickCap: number | undefined = LETHALITY_GUARD_TICKS,
+  // Omit `tickCap` (or pass `undefined`) to run with no tick cap (the real
+  // game's behaviour): the battle then ends by elimination or the no-progress
+  // watchdog, not a clock. NB a default here would defeat that — JS applies a
+  // default parameter when the argument is `undefined`, so an explicit default
+  // would cap the "uncapped" call. There is intentionally no default.
+  tickCap?: number,
 ): BattleInputs {
   const attacker = resolveFleetToCombatShips(fleet(attackerId)!, designs, cat, "attacker");
   const defender = resolveFleetToCombatShips(fleet(defenderId)!, designs, cat, "defender");
@@ -118,10 +109,11 @@ describe("engine.lethality — crewed Terran battles resolve decisively", () => 
     // a valid result — a crash or hang is a real regression. The frigate/fighter
     // guards below still verify decisive kills.
     //
-    // Uses LETHALITY_CAPITAL_TICKS (not LETHALITY_GUARD_TICKS) because at 1 m
-    // scale the capital battle now runs at ~2200 ms/tick (9 ships, ~14995 modules
-    // after auto-derived armour hull growth); 800 ticks would take ~28 minutes.
-    // 10 ticks ≈ 22 s isolated, well within the 120 s timeout even on slow CI.
+    // Uses LETHALITY_CAPITAL_TICKS because at 1 m scale the capital battle runs
+    // at ~2200 ms/tick (9 ships, ~14995 modules after auto-derived armour hull
+    // growth); 10 ticks ≈ 22 s isolated, well within the timeout even on slow CI.
+    // Ships do not close to weapon range in 10 ticks, so no kill-count assertion
+    // is made.
     const result = runBattle(
       buildInputs("preset-fleet-battleline", "preset-fleet-spearhead", 42, LETHALITY_CAPITAL_TICKS),
     );
@@ -136,31 +128,26 @@ describe("engine.lethality — crewed Terran battles resolve decisively", () => 
 
   // Re-enabled in Phase 14 alongside the Battle Line guard above: the preset
   // thrust/mass ratio is now coherent at the SI scale.
-  it("Strike Wing vs Picket Screen resolves to a winner within the guard tick cap", () => {
-    // A frigate/fighter crewed matchup run with LETHALITY_GUARD_TICKS (600).
-    // With armour hull growth per-tick cost rose from ~32 ms to ~91 ms; running
-    // uncapped to a genuine terminal state (~914 ticks) takes ~83 s isolated,
-    // which exceeds the test timeout under CPU contention. At 600 ticks the
-    // winner is decided by remaining HP and 2+ kills have occurred (verified at
-    // seed 42). Exact kill count varies with crew-pathing non-determinism.
-    //
-    // For full uncapped terminal-state coverage at CI-safe cost, see the
-    // "Carrion Wings vs Automatons" guard in this file — a small crewless matchup
-    // that runs to genuine elimination (zero survivors on the losing side) in
-    // under 5 s isolated without any tick cap.
-    const result = runBattle(buildInputs("preset-fleet-strike", "preset-fleet-picket", 42, LETHALITY_GUARD_TICKS));
+  it("Strike Wing vs Picket Screen resolves to a winner with no tick cap", () => {
+    // A frigate/fighter crewed matchup run UNCAPPED — the real game's behaviour.
+    // With no fixed tick limit it plays to a genuine terminal state (one side
+    // eliminated or the no-progress watchdog) instead of being cut off at a cap.
+    // At seed 42, deterministically: the attacker wins around tick ~2100 with 3
+    // ships destroyed (~42 s isolated). The engine is byte-identical run-to-run
+    // (fixed iteration order, deterministic A* tie-breaks, no RNG/clock), so the
+    // exact tick and kill count are stable across runs. At the km/joule scale
+    // (Phase 3) frigate skirmishes are less bloody than the old abstract-scale
+    // bloodbaths — ships need the full ~2100-tick approach-and-brawl to trade —
+    // but multiple ships still die. (A CI-cheap uncapped terminal-state guard on
+    // a small crewless matchup lives further down this file.)
+    const result = runBattle(buildInputs("preset-fleet-strike", "preset-fleet-picket", 42, undefined));
     const { dead } = aliveCount(result);
 
     expect(result.winner, "a winner must be decided").toBeDefined();
-    // Threshold re-baselined after two compounding physics improvements: (1) Phase
-    // 12 brownout enforcement cuts weapons when power is in deficit, reducing fire
-    // rate; (2) polygon-accurate hitscan (outline-collision) requires a beam to
-    // enter the hull outline, so some shots that previously hit via the bounding-
-    // disc heuristic now correctly miss. Both are physically correct; lethality
-    // is lower but non-zero.
     expect(dead, "multiple ships must be destroyed").toBeGreaterThanOrEqual(2);
-    // 600 ticks ≈ 50 s isolated; raised to 300 s to absorb CI contention
-    // (observed ~5× slowdown: 50 s × 5 = 250 s < 300 s).
+    // Uncapped terminal-state battle ~2100 ticks ≈ 42 s isolated on dev
+    // hardware; raised to 300 s for CI runners (~5× slower and re-run under
+    // the semantic-release pre-push hook's full-suite CPU contention).
   }, 300000);
 
   it("the crewless Swarm baseline still resolves (fast path unbroken)", () => {

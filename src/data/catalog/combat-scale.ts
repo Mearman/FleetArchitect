@@ -63,6 +63,44 @@ import {
  */
 export const ENGAGEMENT_REFERENCE_RANGE_M = 40_000;
 
+// ---------------------------------------------------------------------------
+// The km-combat detection rescale (Phase 3). Sensor detection ranges, comms
+// ranges and active-sensor EM emission powers were authored at the pre-km
+// few-hundred-metre scale (banded against the old ~hundreds-of-metres weapon
+// ranges). Two named lift factors carry every one of them up to the km combat
+// scale in lockstep, so the banding (omni < weapon reach < dish) is preserved
+// and a sensor still extends sight past a sensorless ship's ~5 km naked eye.
+// ---------------------------------------------------------------------------
+
+/**
+ * The factor by which the legacy sub-km sensor `detectionRange` and comms `range`
+ * figures are lifted to the km combat scale. The pre-km catalogue banded these
+ * against ~hundreds-of-metres weapon ranges (an omni ~300 m, a dish ~900 m); the
+ * weapon-range re-grounding lifts weapon reach ~100× (to tens of km), so the
+ * detection / comms ranges lift by the same factor to keep their banding intact —
+ * a sensor still out-reaches the guns it spots for. With this an omni lands at
+ * ~30 km, a directional ~60 km, a dish ~90 km, spanning the ~30-120 km detection
+ * band against the new ~12-52 km weapon reaches. Applied to every catalogue
+ * sensor `detectionRange`, sensor `min`/`maxRange`, and comms `range`.
+ */
+export const KM_DETECTION_RANGE_SCALE = 100;
+
+/**
+ * The factor by which an active sensor's EM emit strength is lifted to the km
+ * combat scale. An active sensor's `emitStrength` adds to the hull's ambient
+ * self-emission (`EM_HULL_AMBIENT_EMISSION`, `engine/config.ts`), so a radar-
+ * blaring ship is easier to detect. That ambient is anchored to `4·PI · R² ·
+ * floor` and its reference radius R rose from the pre-km 140 m to the km-combat
+ * 5000 m, lifting the ambient by `(5000 / 140)²`. The active emit strength is
+ * lifted by the SAME ratio so going active stays as loud RELATIVE to the hull
+ * ambient as before the rescale (otherwise a fixed-magnitude emit would vanish
+ * against the ~1300× larger ambient and active mode would stop mattering).
+ * Restated as a self-contained ratio rather than imported from the engine config
+ * (which imports from this leaf — a back-import would cycle); it MUST track the
+ * `VISUAL_LOS_REFERENCE_M` lift in `engine/config.ts`.
+ */
+export const ACTIVE_SENSOR_EMISSION_SCALE = (5000 / 140) * (5000 / 140);
+
 /**
  * Maximum kinetic-weapon time of flight (seconds) — the longest a fired round
  * stays useful before the firing solution goes stale against a manoeuvring
@@ -83,6 +121,21 @@ export const MAX_TOF_S = 3;
  * Re-anchoring this one figure rescales every beam weapon's reach in lockstep.
  */
 export const BEAM_RAYLEIGH_REFERENCE_M = 30_000;
+
+/**
+ * Beam weapon reach (metres) — DERIVED as `√3 · BEAM_RAYLEIGH_REFERENCE_M`, the
+ * range at which a focused beam's on-target intensity has fallen to a quarter of
+ * its muzzle value (the spot radius has doubled, so the area is four times
+ * larger). The engine's `beamDamageFactor` (`intensityFalloff`, `optics.ts`)
+ * evaluates to `1 / (1 + (z/z_R)²) = 1 / (1 + 3) = 0.25` at exactly this range,
+ * so a beam at its catalogue `range` still lands a meaningful quarter-strength
+ * hit while a point-blank shot lands full strength. With the ~30 km Rayleigh
+ * reference this is ~52 km — the longest reach in the catalogue, fitting a
+ * directed-energy weapon that out-ranges kinetics. THE single derivation every
+ * beam weapon's `range` field is authored from, so re-anchoring the reference
+ * rescales every beam in lockstep.
+ */
+export const BEAM_RANGE_M = Math.sqrt(3) * BEAM_RAYLEIGH_REFERENCE_M;
 
 // ---------------------------------------------------------------------------
 // Kinetic-weapon muzzle velocities (metres per second).
@@ -140,6 +193,96 @@ export function kineticDamageJoules(
   muzzleVelocityMs: number,
 ): number {
   return 0.5 * projectileMassKg * muzzleVelocityMs * muzzleVelocityMs;
+}
+
+/**
+ * Kinetic weapon reach (metres) — DERIVED as `muzzleVelocity × MAX_TOF_S`, the
+ * distance a fired round covers within the time-of-flight budget before the
+ * firing solution against a manoeuvring target goes stale. THE single derivation
+ * a kinetic weapon's `range` field is authored from, so a faster gun reaches
+ * further for the same time-of-flight: an autocannon (4 km/s) reaches ~12 km, a
+ * railgun (8 km/s) ~24 km, a mass driver (10 km/s) ~30 km — all bracketing the
+ * engagement reference range and sitting below a beam's longer optical reach.
+ */
+export function kineticRangeM(muzzleVelocityMs: number): number {
+  return muzzleVelocityMs * MAX_TOF_S;
+}
+
+// ---------------------------------------------------------------------------
+// Guided-ordnance reach (metres): a missile or torpedo coasts under its own
+// motor, so its reach is the distance its propellant budget can drive it —
+// `cruiseDeltaV × burnSeconds` — not a time-of-flight against a ballistic
+// round. Banded by ordnance class: a missile is a long-reach, PD-interceptable
+// strike weapon; a torpedo is a heavy, short-legged hull-breaker.
+// ---------------------------------------------------------------------------
+
+/**
+ * Cruise delta-v (m/s) a guided round's motor delivers over its powered flight —
+ * the propellant velocity budget that, times the burn time, sets its reach. A
+ * missile carries a long-burn sustainer (a high reach); a torpedo carries a
+ * heavier warhead on a shorter, harder-driving motor (a shorter reach). Not the
+ * round's `projectileSpeed` (its per-tick cruise velocity, authored separately):
+ * this is the integrated velocity budget the motor can spend reaching out.
+ */
+export const ORDNANCE_CRUISE_DELTA_V_M_PER_S = {
+  /** Missile: a light sustainer motor, the longest powered reach. */
+  missile: 2_000,
+  /** Torpedo: a heavy short-burn motor, a much shorter powered reach. */
+  torpedo: 1_500,
+};
+
+/**
+ * Powered burn time (seconds) of a guided round's motor — how long it drives
+ * under power before it coasts. A missile sustains for the better part of a
+ * minute (long reach); a torpedo burns briefly and heavily (short reach). The
+ * reach is `cruiseDeltaV × burnSeconds` (see {@link ordnanceRangeM}).
+ */
+export const ORDNANCE_BURN_TIME_S = {
+  /** Missile: a long sustainer burn → `2000 × 40` ≈ 80 km reach. */
+  missile: 40,
+  /** Torpedo: a short heavy burn → `1500 × 8` ≈ 12 km reach. */
+  torpedo: 8,
+};
+
+/**
+ * Guided-ordnance reach (metres) — DERIVED as `cruiseDeltaV × burnSeconds`, the
+ * distance a missile or torpedo's motor can drive it within its propellant
+ * budget. THE single derivation a missile / torpedo `range` field is authored
+ * from: a missile (`2000 × 40` ≈ 80 km) reaches far past every gun, so it is
+ * the long-range opener a point-defence screen must whittle down in flight; a
+ * torpedo (`1500 × 8` ≈ 12 km) is a short-legged heavy hitter that must be
+ * brought close. Re-banding a class's delta-v or burn rescales its reach.
+ */
+export function ordnanceRangeM(
+  cruiseDeltaVMs: number,
+  burnSeconds: number,
+): number {
+  return cruiseDeltaVMs * burnSeconds;
+}
+
+/** Missile reach (metres): the long-sustainer ordnance band, ~80 km. */
+export const MISSILE_RANGE_M = ordnanceRangeM(
+  ORDNANCE_CRUISE_DELTA_V_M_PER_S.missile,
+  ORDNANCE_BURN_TIME_S.missile,
+);
+
+/** Torpedo reach (metres): the short-heavy-burn ordnance band, ~12 km. */
+export const TORPEDO_RANGE_M = ordnanceRangeM(
+  ORDNANCE_CRUISE_DELTA_V_M_PER_S.torpedo,
+  ORDNANCE_BURN_TIME_S.torpedo,
+);
+
+/**
+ * Convert a reload / thermal-recovery interval authored in SI seconds into the
+ * integer cooldown ticks the engine counts down between shots:
+ * `Math.round(reloadSeconds × TICKS_PER_SECOND)`. THE single derivation a
+ * weapon's `cooldown` field is authored from, so a refire interval traces to the
+ * real mechanism time (a capacitor recharge, a cyclic feed, a magazine reload)
+ * rather than a hand-tuned tick literal. Rounded to the nearest whole tick
+ * because `cooldown` is an integer count (the schema enforces `z.number().int()`).
+ */
+export function cooldownTicks(reloadSeconds: number): number {
+  return Math.round(reloadSeconds * TICKS_PER_SECOND);
 }
 
 /**

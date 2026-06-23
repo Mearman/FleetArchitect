@@ -132,31 +132,43 @@ describe("resolveFleetToCombatShips (grid)", () => {
     expect(def?.position.x).toBeCloseTo(-(att?.position.x ?? 0), 6);
   });
 
-  it("derives the edge inset from ship radius + weapon range (just-out-of-range start)", () => {
-    // Phase 1 grounding: the deployment edge inset is no longer a hand-set
-    // constant but `maxShipRadius + maxWeaponRange`, so two opposing fleets
-    // begin just outside mutual weapon range and must close (or be out-ranged)
-    // to engage. The probe design carries a pulse laser; its edge inset is its
-    // radius plus the pulse laser's range. A mirror match deploys each side at
-    // the same inset, so the gap between the two formation lines is twice the
-    // inset — just over twice the weapon range, i.e. both sides out of range.
+  it("caps the edge inset at mutual sight when weapon reach out-ranges it (km combat)", () => {
+    // Phase 3 (km combat): the deployment edge inset is the SMALLEST of three
+    // terms — `maxRadius + maxWeaponRange`, the kinematic closing budget, and the
+    // SIGHT CAP `maxRadius + sightReach / 2`. The probe design carries a pulse
+    // laser (a beam reaching ~52 km) but NO engine, so its closing budget is 0,
+    // and no sensor, so its sight reach is the innate ~5 km visual radius. With
+    // weapon reach (~52 km) far exceeding sight, the sight cap binds: the fleet
+    // forms up at `radius + visualLosRadius / 2`, placing the two lines exactly
+    // one visual radius apart so they can SEE one another and engage (a fleet
+    // deployed beyond its own sight would never acquire a target and stalemate).
+    // This is the deliberate km-combat consequence: a myopic fleet fights close,
+    // inside its long-reach guns, rather than spawning a hand-set step outside a
+    // weapon range it cannot see across.
     const designs = new Map([["d-1", design()]]);
     const [att] = resolveFleetToCombatShips(fleet(), designs, catalog(), "attacker");
     const [def] = resolveFleetToCombatShips(fleet(), designs, catalog(), "defender");
     if (att === undefined || def === undefined) return;
-    const radius = deriveRadius(design().grid);
     const pulseLaser = catalog().module("mod-pulse-laser");
     if (pulseLaser === undefined || pulseLaser.effect.kind !== "weapon") {
       throw new Error("test fixture: mod-pulse-laser must be a weapon");
     }
     const weaponRange = pulseLaser.effect.range;
-    // Attacker forms up radius-inside its edge so its hull doesn't clip past.
-    expect(Math.abs(att.position.x)).toBeCloseTo(radius + weaponRange - radius, 6);
+    // The innate visual radius (metres) every sensorless ship has — the same
+    // VISUAL_LOS_REFERENCE_M anchor `SIM.visualLosRadius` and the resolve sight
+    // cap derive from (~5 km at the km combat scale).
+    const visualLosRadius = 5_000;
+    // Attacker forms up at `radius + visualLosRadius / 2` from the midline; its
+    // centre sits `visualLosRadius / 2` inside the line (the `edgeInset - radius`
+    // placement cancels the radius term against the sight cap's `radius`).
+    expect(Math.abs(att.position.x)).toBeCloseTo(visualLosRadius / 2, 6);
     // The two sides sit symmetric about the midline.
     expect(att.position.x).toBeCloseTo(-def.position.x, 6);
-    // The separation between the two formation lines exceeds the weapon range,
-    // so neither side can fire at tick 0.
+    // The line-to-line gap equals the visual radius — within mutual sight, so the
+    // fleets can detect and engage — and is far INSIDE the (much longer) weapon
+    // reach, the inversion km combat introduces.
     const gap = def.position.x - att.position.x;
-    expect(gap).toBeGreaterThan(weaponRange);
+    expect(gap).toBeCloseTo(visualLosRadius, 6);
+    expect(gap).toBeLessThan(weaponRange);
   });
 });

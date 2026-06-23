@@ -122,14 +122,15 @@ describe("engine.awareness — relay and bandwidth", () => {
     // two omni units B forwards C's contact to A; with one unit B is a leaf and
     // A learns nothing.
     //
-    // Geometry on the x axis: A at -400, B at -200, C at 0, enemy d1 at 120.
-    // C (sensor 300) sees d1 at 120 wu. A (no sensor, visual 140 only) cannot
-    // see d1 at 520 wu, so any knowledge of d1 must arrive via the relay.
+    // Geometry on the x axis: A at 0, B at 2500, C at 5500, enemy d1 at 8000.
+    // C (innate ~5000 m baseline) sees d1 at 2500 m. Both A (8000 m from d1) and
+    // B (5500 m from d1) are beyond their ~5000 m innate baseline, so neither
+    // can see d1 directly. Any knowledge of d1 reaching A must travel via relay.
     //
-    // Omni range 250: A—B (200) and B—C (200) link, but A—C (400) does NOT, so
-    // the only path from C to A runs through B. That makes B's relay status the
-    // decisive factor (a direct C—A link would let A see d1 regardless of B).
-    const R = 250;
+    // Omni range 4000: A—B (2500) and B—C (3000) link, but A—C (5500) does NOT,
+    // so the only path from C to A runs through B. That makes B's relay status
+    // the decisive factor (a direct C—A link would let A see d1 regardless of B).
+    const R = 4000;
     const build = (middleUnits: 1 | 2): CombatShip[] => {
       const middleComms: ResolvedModule[] =
         middleUnits === 2
@@ -139,10 +140,10 @@ describe("engine.awareness — relay and bandwidth", () => {
             ]
           : [moduleOf("co1", comms({ commsType: "omni", channel: 7, range: R }), 1, 0, { channel: 7 })];
       return [
-        ship("A", "attacker", -400, 0, [...core(), moduleOf("co", comms({ commsType: "omni", channel: 7, range: R }), 1, 0, { channel: 7 })]),
-        ship("B", "attacker", -200, 0, [...core(), ...middleComms]),
-        ship("C", "attacker", 0, 0, [...core(), moduleOf("se", sensor(300), 1, 0), moduleOf("co", comms({ commsType: "omni", channel: 7, range: R }), -1, 0, { channel: 7 })]),
-        ship("d1", "defender", 120, 0, [...core()]),
+        ship("A", "attacker", 0, 0, [...core(), moduleOf("co", comms({ commsType: "omni", channel: 7, range: R }), 1, 0, { channel: 7 })]),
+        ship("B", "attacker", 2500, 0, [...core(), ...middleComms]),
+        ship("C", "attacker", 5500, 0, [...core(), moduleOf("co", comms({ commsType: "omni", channel: 7, range: R }), -1, 0, { channel: 7 })]),
+        ship("d1", "defender", 8000, 0, [...core()]),
       ];
     };
     const withRelay = runBattle(inputs(build(2)));
@@ -155,25 +156,28 @@ describe("engine.awareness — relay and bandwidth", () => {
     // C sees two enemies; the relay link B→A has bandwidth 1, so A learns about
     // exactly one — the higher-threat (nearer) of the two. d1 is nearer C than
     // d2, so d1 wins the single slot.
-    // Omni range 250 again so A links only through B (a direct A—C link would
+    // Omni range 4000 again so A links only through B (a direct A—C link would
     // hand A both contacts and defeat the bandwidth point). The link C→B is wide
     // (bandwidth 8) so B receives BOTH contacts; the link B→A is narrowed to 1
     // by A's unit, so the relay must drop the lower-priority (farther) contact.
-    const R = 250;
+    // Geometry: A at 0, B at 2500, C at 5500; enemies at 8000 (d1) and 8300 (d2).
+    // Both enemies are beyond A's and B's ~5000 m innate baseline, so neither A
+    // nor B can see them directly — all awareness must travel via the relay.
+    const R = 4000;
     const WIDE = 8;
     const build = (): CombatShip[] => [
-      ship("A", "attacker", -400, 0, [...core(), moduleOf("co", comms({ commsType: "omni", channel: 7, bandwidth: 1, range: R }), 1, 0, { channel: 7 })]),
-      ship("B", "attacker", -200, 0, [
+      ship("A", "attacker", 0, 0, [...core(), moduleOf("co", comms({ commsType: "omni", channel: 7, bandwidth: 1, range: R }), 1, 0, { channel: 7 })]),
+      ship("B", "attacker", 2500, 0, [
         ...core(),
         moduleOf("co1", comms({ commsType: "omni", channel: 7, bandwidth: WIDE, range: R }), 1, 0, { channel: 7 }),
         moduleOf("co2", comms({ commsType: "omni", channel: 7, bandwidth: WIDE, range: R }), -1, 0, { channel: 7 }),
       ]),
-      ship("C", "attacker", 0, 0, [...core(), moduleOf("se", sensor(400), 1, 0), moduleOf("co", comms({ commsType: "omni", channel: 7, bandwidth: WIDE, range: R }), -1, 0, { channel: 7 })]),
-      ship("d1", "defender", 100, 0, [...core()]),
-      ship("d2", "defender", 300, 0, [...core()]),
+      ship("C", "attacker", 5500, 0, [...core(), moduleOf("co", comms({ commsType: "omni", channel: 7, bandwidth: WIDE, range: R }), -1, 0, { channel: 7 })]),
+      ship("d1", "defender", 8000, 0, [...core()]),
+      ship("d2", "defender", 8300, 0, [...core()]),
     ];
     const result = runBattle(inputs(build()));
-    // C sees both directly.
+    // C sees both directly (2500 m and 2800 m away, within innate ~5000 m baseline).
     expect(contactsOf(result, 0, "C").sort()).toEqual(["d1", "d2"]);
     // A receives only the nearer (higher-threat) one through the 1-wide link.
     expect(contactsOf(result, 0, "A")).toEqual(["d1"]);
@@ -225,18 +229,19 @@ describe("engine.awareness — ghosts", () => {
 describe("engine.awareness — targeting gate", () => {
   it("a ship with comms but no sensor sees nothing and never fires; adding a sensor lets it fire", () => {
     // The shooter carries a comms unit (so it is on the fog-of-war path) but no
-    // sensor and no ally to relay from — its awareness is empty, so it holds
-    // fire forever. Adding a sensor gives it a direct contact and it engages.
+    // sensor and no ally to relay from — its awareness is empty beyond the ~5000 m
+    // innate baseline, so it holds fire against a target at 6000 m. Adding a
+    // sensor of range 8000 gives it a direct contact and it engages.
     const build = (withSensor: boolean): CombatShip[] => {
       const shooterModules: ResolvedModule[] = [
         ...core(),
         moduleOf("co", comms({ commsType: "omni", channel: 1 }), -1, 0, { channel: 1 }),
-        moduleOf("w", beam({ damage: 500, range: 600, cooldown: 1 }), 1, 0),
+        moduleOf("w", beam({ damage: 500, range: 7000, cooldown: 1 }), 1, 0),
       ];
-      if (withSensor) shooterModules.push(moduleOf("se", sensor(400), 2, 0));
+      if (withSensor) shooterModules.push(moduleOf("se", sensor(8000), 2, 0));
       return [
         ship("a1", "attacker", 0, 0, shooterModules),
-        ship("d1", "defender", 150, 0, [...core()]),
+        ship("d1", "defender", 6000, 0, [...core()]),
       ];
     };
     const blind = runBattle(inputs(build(false)));
@@ -261,15 +266,17 @@ describe("engine.awareness — per-ship isolation", () => {
     // Two same-side observers each see a different enemy directly. A separate
     // third observer (far away, its own component) sees neither.
     //
-    // Layout: a1 at (0,0) sees d1 at (120,0). a2 at (0,600) sees d2 at (120,600).
-    // a3 at (0,-600) sees nothing within range. Detection radius (visual 140 +
-    // 200) = 340, so each observer reaches only its own nearby enemy.
+    // Layout: a1 at (0,0) sees d1 at (120,0). a2 at (0,6000) sees d2 at
+    // (120,6000). a3 at (0,-11000) sees nothing in range. Observers are spaced
+    // more than 5000 m apart so the innate baseline of each covers only its own
+    // nearby enemy: a1→d2 and a2→d1 are ~6001 m apart, just beyond the ~5000 m
+    // innate visual radius.
     const noLink: CombatShip[] = [
       ship("a1", "attacker", 0, 0, [...core(), moduleOf("se", sensor(200), 1, 0)]),
-      ship("a2", "attacker", 0, 600, [...core(), moduleOf("se", sensor(200), 1, 0)]),
-      ship("a3", "attacker", 0, -1100, [...core(), moduleOf("se", sensor(200), 1, 0)]),
+      ship("a2", "attacker", 0, 6000, [...core(), moduleOf("se", sensor(200), 1, 0)]),
+      ship("a3", "attacker", 0, -11000, [...core(), moduleOf("se", sensor(200), 1, 0)]),
       ship("d1", "defender", 120, 0, [...core()]),
-      ship("d2", "defender", 120, 600, [...core()]),
+      ship("d2", "defender", 120, 6000, [...core()]),
     ];
     const result = runBattle(inputs(noLink));
     // Without any comms link a1 sees only d1, a2 only d2, a3 neither.
@@ -277,15 +284,15 @@ describe("engine.awareness — per-ship isolation", () => {
     expect(contactsOf(result, 0, "a2")).toEqual(["d2"]);
     expect(contactsOf(result, 0, "a3")).toEqual([]);
 
-    // Now link a1 and a2 with a long-range omni pair on a shared channel: they
-    // pool their contacts and each sees both d1 and d2. a3 is in its own
-    // component and still sees neither.
+    // Now link a1 and a2 with an omni pair on a shared channel: they pool their
+    // contacts and each sees both d1 and d2. a3 is in its own component and
+    // still sees neither.
     const linked: CombatShip[] = [
-      ship("a1", "attacker", 0, 0, [...core(), moduleOf("se", sensor(200), 1, 0), moduleOf("co", comms({ commsType: "omni", channel: 8, range: 1000 }), -1, 0, { channel: 8 })]),
-      ship("a2", "attacker", 0, 600, [...core(), moduleOf("se", sensor(200), 1, 0), moduleOf("co", comms({ commsType: "omni", channel: 8, range: 1000 }), -1, 0, { channel: 8 })]),
-      ship("a3", "attacker", 0, -1100, [...core(), moduleOf("se", sensor(200), 1, 0), moduleOf("co", comms({ commsType: "omni", channel: 8, range: 1000 }), -1, 0, { channel: 8 })]),
+      ship("a1", "attacker", 0, 0, [...core(), moduleOf("se", sensor(200), 1, 0), moduleOf("co", comms({ commsType: "omni", channel: 8, range: 8000 }), -1, 0, { channel: 8 })]),
+      ship("a2", "attacker", 0, 6000, [...core(), moduleOf("se", sensor(200), 1, 0), moduleOf("co", comms({ commsType: "omni", channel: 8, range: 8000 }), -1, 0, { channel: 8 })]),
+      ship("a3", "attacker", 0, -11000, [...core(), moduleOf("se", sensor(200), 1, 0), moduleOf("co", comms({ commsType: "omni", channel: 8, range: 8000 }), -1, 0, { channel: 8 })]),
       ship("d1", "defender", 120, 0, [...core()]),
-      ship("d2", "defender", 120, 600, [...core()]),
+      ship("d2", "defender", 120, 6000, [...core()]),
     ];
     const linkedResult = runBattle(inputs(linked));
     // a1 and a2 each carry a single comms unit, so neither is a relay (relay
@@ -293,9 +300,9 @@ describe("engine.awareness — per-ship isolation", () => {
     // contacts across the link, so a1 gains d2 and a2 gains d1.
     expect(contactsOf(linkedResult, 0, "a1").sort()).toEqual(["d1", "d2"]);
     expect(contactsOf(linkedResult, 0, "a2").sort()).toEqual(["d1", "d2"]);
-    // a3 at (0,-1100) is 1100 wu from a1 and 1700 from a2 — beyond the 1000 wu
-    // omni range of both, so it forms no link and stays its own component,
-    // sharing nothing and seeing no enemy within its own 340 wu reach.
+    // a3 at (0,-11000) is 11000 m from a1 and 17000 m from a2 — beyond the
+    // 8000 m omni range of both, so it forms no link and stays its own
+    // component, sharing nothing and seeing no enemy within its own visual reach.
     expect(contactsOf(linkedResult, 0, "a3")).toEqual([]);
   });
 });

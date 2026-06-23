@@ -1,5 +1,5 @@
 import { analyseShipDesign } from "@/domain/stats";
-import { cellToLocal, deriveClassification, deriveRadius, footprint } from "@/domain/grid";
+import { CELL_SIZE, cellToLocal, deriveClassification, deriveRadius, footprint } from "@/domain/grid";
 import { computeOutline, extractShell } from "@/domain/outline";
 import { growArmourHull, padGrid } from "@/domain/hull-armour";
 import type { Catalog } from "@/domain/catalog";
@@ -32,11 +32,26 @@ import type { ShipDesign } from "@/schema/ship";
 
 /**
  * Vertical clear space (metres) between adjacent ships' hull circles in the
- * deployment column. Derived from the cell grid: one cell-width
- * (`CELL_SIZE = 12 m`) plus half a cell of slack so adjacent hulls never clip
- * at tick 0. An explicit deployment-rate spec.
+ * deployment column. DERIVED from the cell grid as one ship-length of slack:
+ * `DEPLOY_SHIP_MARGIN_CELLS × CELL_SIZE`, so adjacent hulls never clip at tick 0
+ * and the column has visible breathing room at the km combat scale. Following
+ * the cell scale keeps it grounded rather than a bare metre literal.
  */
-const DEPLOY_SHIP_MARGIN_M = 18;
+const DEPLOY_SHIP_MARGIN_CELLS = 30;
+const DEPLOY_SHIP_MARGIN_M = DEPLOY_SHIP_MARGIN_CELLS * CELL_SIZE;
+
+/**
+ * The innate visual line-of-sight radius (metres) a sensorless ship has — the
+ * weaponless-fleet deployment fallback's dominant term. This MIRRORS the engine's
+ * `SIM.visualLosRadius` (the EM-derived `VISUAL_LOS_REFERENCE_M` in
+ * `engine/config.ts`): importing the engine config here would couple the pure
+ * `domain/resolve` layer to the engine leaf, so the anchor is restated rather than
+ * imported. It MUST track that config anchor — both are the same km-combat innate
+ * sight reference. A weaponless fleet has no weapon reach to stand off by, so it
+ * deploys at the range its own baseline receiver can keep a fix (this radius)
+ * plus the half-cell muzzle clearance.
+ */
+const VISUAL_LOS_REFERENCE_M = 5_000;
 
 /**
  * Target sim-time (seconds) within which a representative ship should close from
@@ -53,12 +68,26 @@ const DEPLOY_SHIP_MARGIN_M = 18;
  * timed out as a draw. Sizing the deployment from a kinematic CLOSING BUDGET
  * instead keeps the engagement paced to real thrust.
  *
- * 45 s sits in the middle of the intended 20-60 s engagement-onset window; at the
- * fleet's representative acceleration it yields a separation a ship can actually
- * cover. Derived as a sim-time constant; the tick conversion uses
- * `TICKS_PER_SECOND` (no magic distance literal).
+ * Re-grounded for km combat (Phase 3). Three coupled terms now bound deployment
+ * (see `computeEdgeInsetM`): weapon reach, this kinematic closing budget, and a
+ * SIGHT CAP (a fleet must form up within mutual detection range — ~5 km for a
+ * sensorless ship — or it cannot acquire a target and engage). The close-time is
+ * set so a representative fleet's closing budget (`a · (T/2)²`) lands at the
+ * KILOMETRE sight scale — at the catalogue's representative ~0.14 m/s²
+ * acceleration, `a · (T/2)²` at 270 s is ~2.5 km per side (~5 km line-to-line) —
+ * so a myopic fleet forms up right at the edge of its ~5 km sight, which is ALSO
+ * where its desired engagement range is now capped (the held range cannot exceed
+ * sight; see `sightReach` in `translation.ts`). The deployment range and the
+ * desired hold range therefore coincide, so the slow catalogue ships neither
+ * charge in nor back off — they hold at sight and brawl decisively while their
+ * long-reach guns (a beam ~52 km, the kinetics ~12-30 km) fire from the opening
+ * tick. A shorter close-time spawned them inside that hold range, where they
+ * milled and drifted apart trying to back off to it; a faster or sensor-equipped
+ * fleet has a larger budget or longer sight, so its weapon-reach or sight cap
+ * binds first and it stands off further. Derived as a sim-time constant; the tick
+ * conversion uses `TICKS_PER_SECOND` (no magic distance literal).
  */
-const DEPLOY_CLOSE_TIME_S = 45;
+const DEPLOY_CLOSE_TIME_S = 270;
 
 /**
  * Median of a list of numbers, used to pick a fleet's representative ship
@@ -83,9 +112,36 @@ function median(values: readonly number[]): number {
 }
 
 /**
+ * The longest distance (metres) at which a design can detect an enemy: the
+ * greater of the innate naked-eye visual radius ({@link VISUAL_LOS_REFERENCE_M},
+ * mirroring `SIM.visualLosRadius`) and its best sensor module's `detectionRange`.
+ * A design with no sensor module sees only as far as its naked eye; a sensor
+ * extends that reach. Walks the design's equipment cells and reads each sensor
+ * module's range from the catalogue. Used to cap the deployment separation so
+ * ships are never placed beyond mutual sight at tick 0 (a fleet that cannot see
+ * an enemy cannot steer toward it, and would stalemate where it stands).
+ */
+function maxSightReach(design: ShipDesign, catalog: Catalog): number {
+  let reach = VISUAL_LOS_REFERENCE_M;
+  const grid = design.grid;
+  for (const { col, row } of footprint(grid)) {
+    const cell = grid.cells[row * grid.cols + col];
+    if (cell === undefined || cell.kind !== "solid") continue;
+    const equipment = cell.equipment;
+    if (equipment === undefined) continue;
+    const moduleDef = catalog.module(equipment.moduleId);
+    if (moduleDef === undefined) continue;
+    const effect = moduleDef.effect;
+    if (effect.kind !== "sensor") continue;
+    if (effect.detectionRange > reach) reach = effect.detectionRange;
+  }
+  return reach;
+}
+
+/**
  * Compute the deployment edge inset (metres from the arena midline) for ONE
- * fleet from its ship sizes, weapon reach, and — crucially — its representative
- * acceleration.
+ * fleet from its ship sizes, weapon reach, sight reach, and — crucially — its
+ * representative acceleration.
  *
  * Two opposing fleets are placed at `±edgeInset`, so the face-to-face separation
  * is `attackerEdgeInset + defenderEdgeInset` and, because both fleets accelerate
@@ -102,13 +158,25 @@ function median(values: readonly number[]): number {
  *     can actually reach contact in a watchable span at its real catalogue
  *     thrust — without it, the corrected (~0.1-0.4 m/s²) ships never close the
  *     kilometre-scale weapon-range separation and the battle times out.
+ *  3. A SIGHT CAP: `maxRadius + fleetSightReach / 2`, so the two opposing fleet
+ *     lines are placed within mutual detection range at tick 0. A fleet that
+ *     cannot SEE the enemy cannot steer toward it (targeting reads the awareness
+ *     map, which is empty beyond sight), so it would stalemate where it stands.
+ *     With km-scale weapon reach now far exceeding a sensorless ship's ~5 km
+ *     innate sight, this cap is what keeps a myopic fleet engaging at all: it
+ *     forms up inside its sight and fights close, while a sensor-equipped fleet
+ *     (whose `fleetSightReach` is its sensor `detectionRange`) may deploy out at
+ *     the longer reach and open fire across the larger gap — sensors literally
+ *     extending the engagement range, exactly as intended.
  *
  * Taking the min means: when weapon ranges are modest relative to ship thrust the
  * old behaviour is unchanged (ships still start just out of range); when weapon
- * ranges out-reach what the ships can close in time, deployment is pulled in to
- * the closable distance so an engagement still happens. The representative `a` is
- * the fleet's MEDIAN ship acceleration (robust to a single sluggish capital or
- * nimble fighter skewing the line).
+ * ranges out-reach what the ships can close in time OR see across, deployment is
+ * pulled in to the closable, visible distance so an engagement still happens. The
+ * representative `a` is the fleet's MEDIAN ship acceleration (robust to a single
+ * sluggish capital or nimble fighter skewing the line); the sight reach is the
+ * fleet's BEST detection range (its longest-seeing ship sets how far the line can
+ * stand off, since one spotter feeds the comms net).
  *
  * A fleet with no weapons falls back to `fallbackRange` for the weapon-reach
  * term so an unarmed fleet still deploys at a sensible separation. Whichever term
@@ -123,20 +191,31 @@ function computeEdgeInsetM(
   ships: ReadonlyArray<{
     radius: number;
     weapons: readonly WeaponEffect[];
+    sightReachM: number;
     accelMps2: number;
   }>,
   fallbackRange: number,
 ): number {
   let maxRadius = 0;
   let maxRange = 0;
+  let maxSight = 0;
   for (const s of ships) {
     if (s.radius > maxRadius) maxRadius = s.radius;
+    if (s.sightReachM > maxSight) maxSight = s.sightReachM;
     for (const w of s.weapons) {
       if (w.range > maxRange) maxRange = w.range;
     }
   }
   const range = maxRange > 0 ? maxRange : fallbackRange;
   const weaponReach = maxRadius + range;
+
+  // Sight cap (term 3): place opposing lines within mutual detection at tick 0.
+  // Two ships' centres sit `2·(edgeInset - radius)` apart, so keeping that
+  // centre-to-centre gap within the fleet's best detection reach needs
+  // `edgeInset <= maxRadius + maxSight / 2`. A myopic fleet (sight = innate
+  // ~5 km) is held close; a sensor-equipped fleet may stand off at its sensor
+  // reach.
+  const sightCap = maxRadius + maxSight / 2;
 
   // Representative acceleration: the median across the fleet's ships, so one
   // outlier (a heavy capital or a light interceptor) does not set the pace for
@@ -163,8 +242,13 @@ function computeEdgeInsetM(
   // budget because the hull is wider than the ground it can cover, but it stays
   // on its own side. Fast fleets keep the smaller closing-budget inset unchanged.
   const minSeparation = 2 * maxRadius;
-  const raw = kinematicBudget <= 0 ? weaponReach : Math.min(weaponReach, kinematicBudget);
-  return Math.max(raw, minSeparation);
+  // Stand off no further than the closest of: just-outside-weapon-range, the
+  // kinematic closing budget, and mutual sight. A zero-thrust fleet has no
+  // closing budget, so it is held at the smaller of weapon reach and sight.
+  const reachCap = kinematicBudget <= 0
+    ? Math.min(weaponReach, sightCap)
+    : Math.min(weaponReach, kinematicBudget, sightCap);
+  return Math.max(reachCap, minSeparation);
 }
 
 export function resolveFleetToCombatShips(
@@ -191,6 +275,13 @@ export function resolveFleetToCombatShips(
         stats,
         radius: deriveRadius(grownDesign.grid),
         weapons: stats.weapons.map((w) => w.effect),
+        // The ship's effective detection reach (metres): the longer of its innate
+        // naked-eye sight and its best sensor module's detectionRange. Feeds the
+        // deployment sight cap so the line is never placed beyond where ships can
+        // see one another at tick 0 — a sensorless (myopic) fleet forms up inside
+        // its ~5 km sight and fights close, while a sensor-equipped fleet may
+        // deploy out at its sensor reach and trade fire across the longer gap.
+        sightReachM: maxSightReach(design, catalog),
         // SI acceleration (m/s²) = thrust[N] / mass[kg]. Feeds the deployment
         // kinematic closing budget so the line is placed where this ship can
         // actually close it at real catalogue thrust. Mass is floored at 1 to
@@ -201,13 +292,14 @@ export function resolveFleetToCombatShips(
     .filter((entry): entry is NonNullable<typeof entry> => entry !== undefined);
 
   // Edge inset derived from ship sizes + weapon range (see computeEdgeInsetM).
-  // The fallback for a weaponless fleet is SIM.defaultRange, now grounded
-  // (Phase 9) as the EM-derived visual radius (~140 m) plus the muzzle clearance
-  // (6 m). Importing SIM here would couple domain/resolve to the engine leaf, so
-  // the same derivation is mirrored: visualLosRadius is the inverse-square
-  // continuous-emission range sqrt(ambient / (4·PI · floor)) = 140 m (ambient is
-  // anchored to 4·PI·140^2·floor), giving 140 + 6 = 146.
-  const edgeInset = computeEdgeInsetM(resolved, 146);
+  // The fallback for a weaponless fleet is SIM.defaultRange, grounded as the
+  // EM-derived innate visual radius (now ~5 km at the km combat scale) plus the
+  // half-cell muzzle clearance. Importing SIM here would couple domain/resolve to
+  // the engine leaf, so the same derivation is mirrored from the same anchors:
+  // visualLosRadius = sqrt(ambient / (4·PI · floor)) = VISUAL_LOS_REFERENCE_M
+  // (5000 m, since ambient is anchored to 4·PI·5000^2·floor), giving
+  // 5000 + CELL_SIZE / 2 — the same value SIM.defaultRange evaluates to.
+  const edgeInset = computeEdgeInsetM(resolved, VISUAL_LOS_REFERENCE_M + CELL_SIZE / 2);
 
   // Total column height: every ship's diameter plus a margin between each pair.
   const totalHeight =

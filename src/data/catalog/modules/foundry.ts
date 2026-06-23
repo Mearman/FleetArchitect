@@ -9,18 +9,27 @@ import {
   MODULE_POWER_DRAW_W,
   MUZZLE_VELOCITY_M_PER_S,
   PROJECTILE_MASS_KG,
+  TORPEDO_RANGE_M,
+  cooldownTicks,
   kineticDamageJoules,
+  kineticRangeM,
   projectileSpeedMPerTick,
 } from "../combat-scale";
 
 // ---------------------------------------------------------------------------
-// Weapon damage and projectile speed are DERIVED from the combat-scale anchors
-// (`../combat-scale.ts`): kinetic `damage` = ½·m·v² via `kineticDamageJoules`,
-// `projectileSpeed` = `projectileSpeedMPerTick(muzzleVelocity)` (the m/s →
-// m/tick boundary). The siege plasma and torpedo carry an authored warhead yield
-// (J) plus a body mass / cruise velocity. The Foundry field the heaviest guns in
-// the catalogue: a frigate autocannon, a capital heavy cannon, and capital-grade
-// plasma and torpedo ordnance.
+// Weapon damage, range, cooldown and projectile speed are DERIVED from the
+// combat-scale anchors (`../combat-scale.ts`):
+//  - kinetic `damage`  = ½·m·v² via `kineticDamageJoules`
+//  - kinetic `range`   = `kineticRangeM(muzzleVelocity)` (v × MAX_TOF_S)
+//  - plasma `range`    = `kineticRangeM(muzzleVelocity)` (a launched slug, same
+//                        derivation as a kinetic round)
+//  - torpedo `range`   = `TORPEDO_RANGE_M` (cruise Δv × motor burn time)
+//  - `projectileSpeed` = `projectileSpeedMPerTick(muzzleVelocity)` (m/s → m/tick)
+//  - `cooldown`        = `cooldownTicks(reloadSeconds)` (seconds × TPS)
+// The siege plasma and torpedo carry an authored warhead yield (J) plus a body
+// mass / cruise velocity. The Foundry fields the heaviest guns in the catalogue:
+// a frigate autocannon, a capital heavy cannon, and capital-grade plasma and
+// torpedo ordnance.
 // ---------------------------------------------------------------------------
 
 /** Foundry autocannon round: a frigate-class rotary slug (`railgun` banding in
@@ -65,6 +74,16 @@ const TORPEDO_WARHEAD_J = 1.2e9;
   // Masses are in kilograms (see `../physics.ts`); thrust in Newtons.
   // ---------------------------------------------------------------------------
 
+/** Autocannon cyclic-feed interval (s): brisk refire, the Foundry workhorse. */
+const AUTOCANNON_COOLDOWN = cooldownTicks(1.5);
+/** Heavy-cannon breech-reload interval (s): slow single-shot reload. */
+const HEAVY_CANNON_COOLDOWN = cooldownTicks(3.67);
+/** Siege-plasma bolt generation and containment-charge interval (s): the slowest
+ *  Foundry weapon — charges a plasma capacitor bank between shots. */
+const SIEGE_PLASMA_COOLDOWN = cooldownTicks(6.67);
+/** Armour-cracking torpedo tube reload interval (s). */
+const TORPEDO_COOLDOWN = cooldownTicks(6);
+
 const thermalThrustN = driveThrustNewtons("thermal");
 
 export const foundryModules: ModuleDefinition[] = [
@@ -84,8 +103,8 @@ export const foundryModules: ModuleDefinition[] = [
       kind: "weapon",
       weaponType: "cannon",
       damage: kineticDamageJoules(AUTOCANNON_MASS_KG, AUTOCANNON_MUZZLE_MS),
-      range: 360,
-      cooldown: 45,
+      range: kineticRangeM(AUTOCANNON_MUZZLE_MS),
+      cooldown: AUTOCANNON_COOLDOWN,
       projectileSpeed: projectileSpeedMPerTick(AUTOCANNON_MUZZLE_MS),
       projectileMass: AUTOCANNON_MASS_KG,
       tracking: 0.6,
@@ -110,8 +129,8 @@ export const foundryModules: ModuleDefinition[] = [
       kind: "weapon",
       weaponType: "cannon",
       damage: kineticDamageJoules(HEAVY_CANNON_MASS_KG, HEAVY_CANNON_MUZZLE_MS),
-      range: 440,
-      cooldown: 110,
+      range: kineticRangeM(HEAVY_CANNON_MUZZLE_MS),
+      cooldown: HEAVY_CANNON_COOLDOWN,
       projectileSpeed: projectileSpeedMPerTick(HEAVY_CANNON_MUZZLE_MS),
       projectileMass: HEAVY_CANNON_MASS_KG,
       tracking: 0.4,
@@ -140,8 +159,8 @@ export const foundryModules: ModuleDefinition[] = [
       kind: "weapon",
       weaponType: "plasma",
       damage: SIEGE_PLASMA_WARHEAD_J,
-      range: 340,
-      cooldown: 200,
+      range: kineticRangeM(SIEGE_PLASMA_MUZZLE_MS),
+      cooldown: SIEGE_PLASMA_COOLDOWN,
       projectileSpeed: projectileSpeedMPerTick(SIEGE_PLASMA_MUZZLE_MS),
       projectileMass: SIEGE_PLASMA_MASS_KG,
       tracking: 0.3,
@@ -166,8 +185,8 @@ export const foundryModules: ModuleDefinition[] = [
       kind: "weapon",
       weaponType: "torpedo",
       damage: TORPEDO_WARHEAD_J,
-      range: 500,
-      cooldown: 180,
+      range: TORPEDO_RANGE_M,
+      cooldown: TORPEDO_COOLDOWN,
       projectileSpeed: projectileSpeedMPerTick(TORPEDO_CRUISE_MS),
       projectileMass: TORPEDO_MASS_KG,
       tracking: 0.8,

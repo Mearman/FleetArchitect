@@ -69,12 +69,14 @@ describe("engine.awareness — direct detection", () => {
   });
 
   it("an enemy beyond the effective sensor radius is not a contact", () => {
-    // Visual 140 + no sensor bonus on a1 means a1 sees only within ~140 wu; the
-    // enemy sits at 400. a1 has a comms unit so it is on the fog path but blind.
+    // The innate visual baseline is ~5000 m; the enemy sits at 8000 m, beyond
+    // the baseline. a1 has a comms unit (so it is on the fog path) but no sensor
+    // of its own — the baseline is the only receiver, and 8000 m exceeds it.
+    // d1's own sensor is irrelevant: it does not contribute to a1's awareness.
     const result = runBattle(
       inputs([
         ship("a1", "attacker", 0, 0, [...core(), moduleOf("co", comms({ commsType: "omni" }), 1, 0)]),
-        ship("d1", "defender", 400, 0, [...core(), moduleOf("se", sensor(50), 1, 0)]),
+        ship("d1", "defender", 8000, 0, [...core(), moduleOf("se", sensor(50), 1, 0)]),
       ]),
     );
     expect(contactsOf(result, 0, "a1")).not.toContain("d1");
@@ -88,18 +90,19 @@ describe("engine.awareness — direct detection", () => {
 describe("engine.awareness — directional sensor cones", () => {
   it("a directional sensor detects an enemy inside its arc but misses one at the same range outside it", () => {
     // a1 carries a forward (bearing 0) directional sensor of half-arc 0.4 rad
-    // and range 600. Both defenders sit 300 wu away — well within range — but
-    // at different bearings: d1 straight ahead (bearing 0, inside the arc) and
-    // d2 at ~90° (bearing PI/2, far outside the 0.4 arc). The cone sees d1, not
-    // d2 — the enemy at the same range is missed purely on angle.
+    // and range 8000. Both defenders sit 6000 m away — well within sensor range
+    // and beyond the ~5000 m innate baseline — at different bearings: d1 straight
+    // ahead (bearing 0, inside the arc) and d2 at ~90° (bearing PI/2, far outside
+    // the 0.4 arc). The cone sees d1; the innate baseline misses both (6000 >
+    // 5000) and d2 is off-bearing, so d2 is not a contact.
     const result = runBattle(
       inputs([
         ship("a1", "attacker", 0, 0, [
           ...core(),
-          moduleOf("se", sensor(600, { sensorType: "directional", arc: 0.4, bearing: 0 }), 1, 0),
+          moduleOf("se", sensor(8000, { sensorType: "directional", arc: 0.4, bearing: 0 }), 1, 0),
         ]),
-        ship("d1", "defender", 300, 0, [...core()]),
-        ship("d2", "defender", 0, 300, [...core()]),
+        ship("d1", "defender", 6000, 0, [...core()]),
+        ship("d2", "defender", 0, 6000, [...core()]),
       ]),
     );
     const seen = contactsOf(result, 0, "a1");
@@ -108,13 +111,15 @@ describe("engine.awareness — directional sensor cones", () => {
   });
 
   it("an omni sensor detects enemies all around, regardless of bearing", () => {
-    // The same geometry as above but with an omni sensor (full circle): both
-    // d1 (ahead) and d2 (abeam) are inside the 600 wu range and both are seen.
+    // The same geometry as the directional test but with an omni sensor (full
+    // circle): both d1 (ahead) and d2 (abeam) sit at 6000 m — beyond the ~5000 m
+    // innate baseline but within the 8000 m omni sensor range. The full-circle
+    // cone covers all bearings, so both are seen.
     const result = runBattle(
       inputs([
-        ship("a1", "attacker", 0, 0, [...core(), moduleOf("se", sensor(600), 1, 0)]),
-        ship("d1", "defender", 300, 0, [...core()]),
-        ship("d2", "defender", 0, 300, [...core()]),
+        ship("a1", "attacker", 0, 0, [...core(), moduleOf("se", sensor(8000), 1, 0)]),
+        ship("d1", "defender", 6000, 0, [...core()]),
+        ship("d2", "defender", 0, 6000, [...core()]),
       ]),
     );
     expect(contactsOf(result, 0, "a1").sort()).toEqual(["d1", "d2"]);
@@ -122,16 +127,17 @@ describe("engine.awareness — directional sensor cones", () => {
 
   it("a directional sensor's cone rotates with the ship's facing", () => {
     // Identical directional sensor (arc 0.4, mount bearing 0) on two ships that
-    // face different ways. The enemy sits straight up (+y, bearing PI/2). The
-    // ship facing +y (facing PI/2) sweeps its cone onto the enemy and sees it;
-    // the ship facing +x (facing 0) points its cone away and misses — the world
-    // cone bearing is mount + ship.facing.
+    // face different ways. The enemy sits straight up (+y, bearing PI/2) at
+    // 6000 m — beyond the ~5000 m innate baseline so the cone is what decides.
+    // The ship facing +y (facing PI/2) sweeps its cone onto the enemy and sees
+    // it; the ship facing +x (facing 0) points its cone away and misses — the
+    // world cone bearing is mount + ship.facing.
     const build = (facing: number): CombatShip[] => [
       ship("a1", "attacker", 0, 0, [
         ...core(),
-        moduleOf("se", sensor(600, { sensorType: "directional", arc: 0.4, bearing: 0 }), 1, 0),
+        moduleOf("se", sensor(8000, { sensorType: "directional", arc: 0.4, bearing: 0 }), 1, 0),
       ], { facing }),
-      ship("d1", "defender", 0, 300, [...core()]),
+      ship("d1", "defender", 0, 6000, [...core()]),
     ];
     const facingEnemy = runBattle(inputs(build(Math.PI / 2)));
     const facingAway = runBattle(inputs(build(0)));
@@ -140,16 +146,17 @@ describe("engine.awareness — directional sensor cones", () => {
   });
 
   it("a crewed dish only contributes detection when manned", () => {
-    // A long-range dish (range 800) with crewRequired 1 and no crew aboard is
-    // never manned, so it contributes no cone: a1 sees only its 140 wu visual
-    // circle and misses the enemy at 400 wu. The identical dish with
-    // crewRequired 0 (always manned) sweeps its cone onto the enemy.
+    // A long-range dish (range 8000) with crewRequired 1 and no crew aboard is
+    // never manned, so it contributes no cone: a1 sees only its ~5000 m innate
+    // baseline and misses the enemy at 6000 m. The identical dish with
+    // crewRequired 0 (always manned) sweeps its cone onto the enemy (arc 0.3,
+    // bearing 0, enemy dead ahead at 6000 m — well within 8000 m range).
     const build = (crewRequired: number): CombatShip[] => [
       ship("a1", "attacker", 0, 0, [
         ...core(),
-        moduleOf("se", sensor(800, { sensorType: "dish", arc: 0.3, bearing: 0 }), 1, 0, { crewRequired }),
+        moduleOf("se", sensor(8000, { sensorType: "dish", arc: 0.3, bearing: 0 }), 1, 0, { crewRequired }),
       ]),
-      ship("d1", "defender", 400, 0, [...core()]),
+      ship("d1", "defender", 6000, 0, [...core()]),
     ];
     const unmanned = runBattle(inputs(build(1)));
     const crewless = runBattle(inputs(build(0)));
@@ -158,19 +165,20 @@ describe("engine.awareness — directional sensor cones", () => {
   });
 
   it("a variable sensor trades range against arc with its range dial", () => {
-    // One variable sensor effect: at minRange 200 the arc is widest (maxArc 0.6),
-    // at maxRange 700 narrowest (minArc 0.1), interpolating linearly. The enemy
-    // sits at bearing atan2(90, 300) ≈ 0.291 rad, distance ≈ 313 wu.
-    //   - Dialled to 700: arc = 0.1 (< 0.291) — off-axis enemy outside the cone.
-    //   - Dialled to 200: arc = 0.6 (covers 0.291) but range 200 < 313 — too short.
-    //   - Dialled to 400: t = 0.4 so arc = 0.6 + (0.1 - 0.6)*0.4 = 0.4 (> 0.291)
-    //     AND range 400 > 313 — the only setting that both reaches and covers it.
-    const variable = sensor(400, {
+    // One variable sensor effect: at minRange 7000 the arc is widest (maxArc 0.6),
+    // at maxRange 25000 narrowest (minArc 0.1), interpolating linearly. The enemy
+    // sits at bearing atan2(3000, 10000) ≈ 0.291 rad, distance ≈ 10440 m —
+    // beyond the ~5000 m innate baseline, so the sensor cone is the decisive factor.
+    //   - Dialled to 25000: arc = 0.1 (< 0.291) — off-axis enemy outside the cone.
+    //   - Dialled to 7000: arc = 0.6 (covers 0.291) but range 7000 < 10440 — too short.
+    //   - Dialled to 14000: t ≈ 0.389 so arc = 0.6 + (0.1 - 0.6)*0.389 ≈ 0.406 (> 0.291)
+    //     AND range 14000 > 10440 — the only setting that both reaches and covers it.
+    const variable = sensor(14000, {
       sensorType: "variable",
-      arc: 0.4,
+      arc: 0.406,
       bearing: 0,
-      minRange: 200,
-      maxRange: 700,
+      minRange: 7000,
+      maxRange: 25000,
       minArc: 0.1,
       maxArc: 0.6,
     });
@@ -179,26 +187,29 @@ describe("engine.awareness — directional sensor cones", () => {
         ...core(),
         moduleOf("se", variable, 1, 0, { sensorRangeSetting: rangeSetting }),
       ]),
-      ship("d1", "defender", 300, 90, [...core()]),
+      ship("d1", "defender", 10000, 3000, [...core()]),
     ];
     // Long range => narrow arc: off-axis enemy missed.
-    expect(contactsOf(runBattle(inputs(build(700))), 0, "a1")).not.toContain("d1");
+    expect(contactsOf(runBattle(inputs(build(25000))), 0, "a1")).not.toContain("d1");
     // Short range => wide arc but out of range: missed.
-    expect(contactsOf(runBattle(inputs(build(200))), 0, "a1")).not.toContain("d1");
+    expect(contactsOf(runBattle(inputs(build(7000))), 0, "a1")).not.toContain("d1");
     // Mid range => arc wide enough and range covers it: detected.
-    expect(contactsOf(runBattle(inputs(build(400))), 0, "a1")).toContain("d1");
+    expect(contactsOf(runBattle(inputs(build(14000))), 0, "a1")).toContain("d1");
   });
 
   it("nebula attenuates a non-immune sensor cone but not an immune one", () => {
-    // Two attackers each with an omni sensor of range 300 looking at an enemy at
-    // 250 wu. In a nebula the non-immune sensor's range halves to 150 (< 250) so
-    // it loses the contact; the nebula-immune sensor keeps full 300 and holds it.
+    // Two attackers each with an omni sensor of range 5000 looking at an enemy
+    // at 3000 m. The innate baseline inside a nebula reaches only ~2483 m (the
+    // nebula sensor transmittance ~0.497 shrinks it), so the baseline alone
+    // cannot see the enemy at 3000 m. The non-immune sensor is also attenuated to
+    // ~2483 m (< 3000 m) and loses the contact; the nebula-immune sensor keeps its
+    // full 5000 m range and holds it.
     const build = (nebulaImmune: boolean): CombatShip[] => [
       ship("a1", "attacker", 0, 0, [
         ...core(),
-        moduleOf("se", sensor(300, { nebulaImmune }), 1, 0),
+        moduleOf("se", sensor(5000, { nebulaImmune }), 1, 0),
       ]),
-      ship("d1", "defender", 250, 0, [...core()]),
+      ship("d1", "defender", 3000, 0, [...core()]),
     ];
     const plain = runBattle(inputs(build(false), "nebula"));
     const immune = runBattle(inputs(build(true), "nebula"));
@@ -287,27 +298,28 @@ describe("engine.awareness — faithful fog (no omniscience)", () => {
   }
 
   it("a sensorless ship is blind beyond its visual radius — no omniscient fallback", () => {
-    // A module-less ship has no sensor cones, only its innate visual circle. An
-    // enemy at 400 wu is invisible: zero contacts. This is the whole point of
-    // faithful fog — there is no full-visibility escape hatch for such ships.
+    // A module-less ship has no sensor cones, only its innate visual circle of
+    // ~5000 m. An enemy at 6000 m is invisible: zero contacts. This is the whole
+    // point of faithful fog — there is no full-visibility escape hatch for such
+    // ships, and the innate 5000 m baseline does not stretch to 6000 m.
     const result = runBattle(
-      inputs([mobile("a1", "attacker", 0), mobile("d1", "defender", 400)]),
+      inputs([mobile("a1", "attacker", 0), mobile("d1", "defender", 6000)]),
     );
     expect(contactsOf(result, 0, "a1")).toEqual([]);
   });
 
   it("a blind fleet advances to contact and acquires the enemy it could not initially see", () => {
-    // Two blind ships deploy 800 wu apart — far outside each other's 140 wu
-    // visual range, so at tick 0 neither sees the other. They must steer toward
-    // the opposing deployment centroid, close the distance, and eventually
-    // detect each other within visual range.
+    // Two blind ships deploy 10 200 m apart (±5100 m) — far outside each
+    // other's ~5000 m innate visual range, so at tick 0 neither sees the other.
+    // They must steer toward the opposing deployment centroid, close the distance,
+    // and eventually detect each other within visual range.
     const result = runBattle({
-      ships: [mobile("a1", "attacker", -400), mobile("d1", "defender", 400)],
+      ships: [mobile("a1", "attacker", -5100), mobile("d1", "defender", 5100)],
       attackerFleetId: "fa",
       defenderFleetId: "fd",
       anomaly: "none",
       seed: 7,
-      // Enough ticks for the blind ships to close the 800 wu gap to within
+      // Enough ticks for the blind ships to close the 10 200 m gap to within
       // visual range under the corrected per-tick acceleration (thrust 540).
       maxTicks: 800,
     });
@@ -321,10 +333,10 @@ describe("engine.awareness — faithful fog (no omniscience)", () => {
       ),
     );
     expect(everSawEnemy, "the blind attacker should advance to contact and detect d1").toBe(true);
-    // And it genuinely moved toward the enemy (its x increased from -400).
+    // And it genuinely moved toward the enemy (its x increased from -5100).
     const lastFrame = result.frames[result.frames.length - 1];
-    const finalX = lastFrame?.ships.find((s) => s.instanceId === "a1")?.x ?? -400;
-    expect(finalX).toBeGreaterThan(-400);
+    const finalX = lastFrame?.ships.find((s) => s.instanceId === "a1")?.x ?? -5100;
+    expect(finalX).toBeGreaterThan(-5100);
   });
 });
 

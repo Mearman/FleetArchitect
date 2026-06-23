@@ -6,12 +6,17 @@ import {
 import {
   ANTIMATTER_REACTOR_OUTPUT_W,
   BEAM_POWER_W,
+  BEAM_RANGE_M,
   FUSION_REACTOR_OUTPUT_W,
+  KM_DETECTION_RANGE_SCALE,
+  MISSILE_RANGE_M,
   MODULE_POWER_DRAW_W,
   MUZZLE_VELOCITY_M_PER_S,
   PROJECTILE_MASS_KG,
   beamDamageJoules,
+  cooldownTicks,
   kineticDamageJoules,
+  kineticRangeM,
   projectileSpeedMPerTick,
 } from "../combat-scale";
 import {
@@ -23,11 +28,28 @@ import {
 
 // ---------------------------------------------------------------------------
 // Weapon damage and projectile speed are DERIVED from the combat-scale anchors
-// (`../combat-scale.ts`): kinetic `damage` = ½·m·v² via `kineticDamageJoules`,
-// beam `damage` = power × one-tick dwell via `beamDamageJoules`, and
-// `projectileSpeed` = `projectileSpeedMPerTick(muzzleVelocity)` (the m/s →
-// m/tick boundary). Missiles carry an authored warhead yield (J) plus a body
-// mass / cruise velocity. The Swarm's bio-weapons are the lightest class:
+// (`../combat-scale.ts`), not authored as point literals:
+//
+//  - a kinetic weapon's `damage` is its round's muzzle kinetic energy
+//    `kineticDamageJoules(projectileMass, muzzleVelocity)` (½·m·v²), and its
+//    `projectileSpeed` is `projectileSpeedMPerTick(muzzleVelocity)` (the m/s →
+//    m/tick boundary, so a round authored in km/s does not fly TPS× too fast);
+//  - a beam weapon's per-tick `damage` is `beamDamageJoules(beamPower, cooldown)`
+//    (power × inter-shot dwell), and it is hitscan (`projectileSpeed: 0`);
+//  - a missile / neural-sting carries an authored warhead yield (joules) and a
+//    body mass / cruise velocity for momentum and flight, authored locally with a
+//    "DERIVED from" note naming the real quantity.
+//
+// `range` is DERIVED per weapon type from the combat-scale anchors:
+//  - a beam reaches `BEAM_RANGE_M` (√3 · Rayleigh reference ≈ 52 km);
+//  - a kinetic gun reaches `kineticRangeM(muzzleVelocity)` (muzzle × time-of-
+//    flight budget — autocannon ≈ 12 km);
+//  - a missile / neural-sting reaches `MISSILE_RANGE_M` (cruise Δv × burn time
+//    ≈ 80 km).
+// `cooldown` is DERIVED as `cooldownTicks(reloadSeconds)` — the real refire
+// mechanism interval in seconds × TICKS_PER_SECOND. A beam's cooldown is
+// computed once and fed to both `cooldown` and `beamDamageJoules` so damage and
+// dwell stay consistent. The Swarm's bio-weapons are the lightest class:
 // fighter-scale spore rounds and a point-defence-grade acid beam.
 // ---------------------------------------------------------------------------
 
@@ -47,6 +69,16 @@ const STING_CRUISE_MS = MUZZLE_VELOCITY_M_PER_S.autocannon / 2;
  *  bio-electric charge, sized below a frigate missile so the Swarm trades raw
  *  per-hit yield for fast refire and tracking. */
 const STING_WARHEAD_J = 6e7;
+
+/** Acid-sprayer capacitor/gland recharge interval (s) — thermal recovery of the
+ *  bio-chemical reservoir between sprays. */
+const ACID_SPRAYER_COOLDOWN = cooldownTicks(0.83);
+/** Spore-launcher cyclic bio-feed interval (s) — the organic loading cycle
+ *  between bursts; fast refire is the Swarm's kinetic advantage. */
+const SPORE_LAUNCHER_COOLDOWN = cooldownTicks(0.6);
+/** Neural-sting launch-node reload interval (s) — the hive-mind regeneration
+ *  cycle between guided tendril launches. */
+const STING_LAUNCHER_COOLDOWN = cooldownTicks(3.0);
 
   // ---------------------------------------------------------------------------
   // Swarm modules — bio-organic alien technology. The Swarm uses living ships
@@ -77,8 +109,8 @@ export const swarmModules: ModuleDefinition[] = [
       kind: "weapon",
       weaponType: "cannon",
       damage: kineticDamageJoules(SPORE_MASS_KG, SPORE_MUZZLE_MS),
-      range: 260,
-      cooldown: 18,
+      range: kineticRangeM(SPORE_MUZZLE_MS),
+      cooldown: SPORE_LAUNCHER_COOLDOWN,
       projectileSpeed: projectileSpeedMPerTick(SPORE_MUZZLE_MS),
       projectileMass: SPORE_MASS_KG,
       tracking: 0.8,
@@ -102,9 +134,9 @@ export const swarmModules: ModuleDefinition[] = [
     effect: {
       kind: "weapon",
       weaponType: "beam",
-      damage: beamDamageJoules(BEAM_POWER_W.pulse, 25),
-      range: 180,
-      cooldown: 25,
+      damage: beamDamageJoules(BEAM_POWER_W.pulse, ACID_SPRAYER_COOLDOWN),
+      range: BEAM_RANGE_M,
+      cooldown: ACID_SPRAYER_COOLDOWN,
       projectileSpeed: 0,
       projectileMass: 0,
       tracking: 0,
@@ -128,8 +160,8 @@ export const swarmModules: ModuleDefinition[] = [
       kind: "weapon",
       weaponType: "missile",
       damage: STING_WARHEAD_J,
-      range: 440,
-      cooldown: 90,
+      range: MISSILE_RANGE_M,
+      cooldown: STING_LAUNCHER_COOLDOWN,
       projectileSpeed: projectileSpeedMPerTick(STING_CRUISE_MS),
       projectileMass: STING_MASS_KG,
       tracking: 3.5,
@@ -287,9 +319,10 @@ export const swarmModules: ModuleDefinition[] = [
     effect: {
       kind: "sensor",
       sensorType: "omni",
-      // All-round awareness, like the Terran Passive Array.
+      // All-round awareness, like the Terran Passive Array. Short reach, just
+      // outside the local hive-sense horizon (~32 km at km scale).
       arc: SENSOR_OMNI_ARC,
-      detectionRange: 320,
+      detectionRange: 320 * KM_DETECTION_RANGE_SCALE,
       bearing: 0,
       nebulaImmune: false,
       mode: "passive",
@@ -312,7 +345,7 @@ export const swarmModules: ModuleDefinition[] = [
       kind: "sensor",
       sensorType: "directional",
       arc: SENSOR_DIRECTIONAL_ARC,
-      detectionRange: 600,
+      detectionRange: 600 * KM_DETECTION_RANGE_SCALE,
       bearing: 0,
       nebulaImmune: false,
       mode: "passive",
@@ -335,8 +368,9 @@ export const swarmModules: ModuleDefinition[] = [
       kind: "sensor",
       sensorType: "dish",
       // Narrow, very long reach — the Swarm pays no crew (autonomous bio-organ).
+      // ~86 km at km scale, out-ranging every weapon for genuine early warning.
       arc: SENSOR_DISH_ARC,
-      detectionRange: 860,
+      detectionRange: 860 * KM_DETECTION_RANGE_SCALE,
       bearing: 0,
       nebulaImmune: false,
       mode: "passive",
@@ -358,9 +392,9 @@ export const swarmModules: ModuleDefinition[] = [
     effect: {
       kind: "sensor",
       sensorType: "directional",
-      // Wide nebula-immune cone; the Swarm trades raw range for autonomy.
+      // Wide nebula-immune cone; the Swarm trades raw range for autonomy (~70 km).
       arc: SENSOR_WIDE_ARC,
-      detectionRange: 700,
+      detectionRange: 700 * KM_DETECTION_RANGE_SCALE,
       bearing: 0,
       nebulaImmune: true,
       mode: "passive",
@@ -385,7 +419,7 @@ export const swarmModules: ModuleDefinition[] = [
       kind: "comms",
       commsType: "omni",
       arc: Math.PI,
-      range: 180,
+      range: 180 * KM_DETECTION_RANGE_SCALE,
       bearing: 0,
       channel: 0,
       bandwidth: 4,
@@ -406,7 +440,7 @@ export const swarmModules: ModuleDefinition[] = [
       kind: "comms",
       commsType: "directional",
       arc: 0.6,
-      range: 320,
+      range: 320 * KM_DETECTION_RANGE_SCALE,
       bearing: 0,
       channel: 0,
       bandwidth: 6,
@@ -427,7 +461,7 @@ export const swarmModules: ModuleDefinition[] = [
       kind: "comms",
       commsType: "dish",
       arc: 0.25,
-      range: 520,
+      range: 520 * KM_DETECTION_RANGE_SCALE,
       bearing: 0,
       channel: 0,
       bandwidth: 10,
@@ -448,7 +482,7 @@ export const swarmModules: ModuleDefinition[] = [
       kind: "comms",
       commsType: "laser",
       arc: 0.12,
-      range: 600,
+      range: 600 * KM_DETECTION_RANGE_SCALE,
       bearing: 0,
       channel: 0,
       bandwidth: 16,
@@ -468,13 +502,13 @@ export const swarmModules: ModuleDefinition[] = [
     effect: {
       kind: "comms",
       commsType: "variable",
-      range: 340,
+      range: 340 * KM_DETECTION_RANGE_SCALE,
       arc: 0.5,
       bearing: 0,
       channel: 0,
       bandwidth: 8,
-      minRange: 200,
-      maxRange: 480,
+      minRange: 200 * KM_DETECTION_RANGE_SCALE,
+      maxRange: 480 * KM_DETECTION_RANGE_SCALE,
       minArc: 0.15,
       maxArc: 0.5,
     },

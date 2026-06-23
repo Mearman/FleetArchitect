@@ -6,6 +6,7 @@ import {
 import {
   ANTIMATTER_REACTOR_OUTPUT_W,
   BEAM_POWER_W,
+  BEAM_RANGE_M,
   FUSION_REACTOR_OUTPUT_W,
   MODULE_POWER_DRAW_W,
   MUZZLE_VELOCITY_M_PER_S,
@@ -13,19 +14,31 @@ import {
   SHIELD_CAPACITY_J,
   SHIELD_RECHARGE_W,
   beamDamageJoules,
+  cooldownTicks,
   kineticDamageJoules,
+  kineticRangeM,
   projectileSpeedMPerTick,
 } from "../combat-scale";
 
 // ---------------------------------------------------------------------------
-// Weapon damage and projectile speed are DERIVED from the combat-scale anchors
-// (`../combat-scale.ts`): beam `damage` = power × one-tick dwell via
-// `beamDamageJoules`, kinetic `damage` = ½·m·v² via `kineticDamageJoules`, and
-// `projectileSpeed` = `projectileSpeedMPerTick(muzzleVelocity)`. The
-// Crystalline arm almost entirely with beams: a pulse-grade prism, a
-// frigate-grade phase lance, and a capital spinal lance, plus one lobbed kinetic
-// resonance shard for when a beam's line of sight is unwanted.
+// Weapon damage, range and cooldown are DERIVED from the combat-scale anchors
+// (`../combat-scale.ts`): beam `damage` = power × dwell via `beamDamageJoules`,
+// beam `range` = `BEAM_RANGE_M` (√3 · Rayleigh reference ≈ 52 km), `cooldown`
+// = `cooldownTicks(reloadSeconds)`. The Crystalline arm almost entirely with
+// beams: a pulse-grade prism, a frigate-grade phase lance, and a capital spinal
+// lance, plus one lobbed kinetic resonance shard for when a beam's line of
+// sight is unwanted.
+//
+// A beam's cooldown const is computed once and fed to BOTH `cooldown:` AND
+// `beamDamageJoules(..., <cooldown>)` so the two stay in lockstep.
 // ---------------------------------------------------------------------------
+
+/** Prism Beam refire / dwell (s): a fast-cycling pulse-grade beam. */
+const PRISM_BEAM_COOLDOWN = cooldownTicks(0.8);
+/** Phase Lance dwell (s): a sustained frigate-grade resonant beam. */
+const PHASE_LANCE_COOLDOWN = cooldownTicks(1.33);
+/** Spinal Resonance Lance dwell (s): a long thermal-recovery capital weapon. */
+const SPINAL_LANCE_COOLDOWN = cooldownTicks(6);
 
 /** Crystalline resonance shard: a fighter-class lobbed kinetic round
  *  (`autocannon` banding in `PROJECTILE_MASS_KG` / `MUZZLE_VELOCITY_M_PER_S`). */
@@ -62,9 +75,9 @@ export const crystallineModules: ModuleDefinition[] = [
     effect: {
       kind: "weapon",
       weaponType: "beam",
-      damage: beamDamageJoules(BEAM_POWER_W.pulse, 24),
-      range: 420,
-      cooldown: 24,
+      damage: beamDamageJoules(BEAM_POWER_W.pulse, PRISM_BEAM_COOLDOWN),
+      range: BEAM_RANGE_M,
+      cooldown: PRISM_BEAM_COOLDOWN,
       projectileSpeed: 0,
       projectileMass: 0,
       tracking: 0,
@@ -87,9 +100,9 @@ export const crystallineModules: ModuleDefinition[] = [
     effect: {
       kind: "weapon",
       weaponType: "beam",
-      damage: beamDamageJoules(BEAM_POWER_W.beam, 40),
-      range: 560,
-      cooldown: 40,
+      damage: beamDamageJoules(BEAM_POWER_W.beam, PHASE_LANCE_COOLDOWN),
+      range: BEAM_RANGE_M,
+      cooldown: PHASE_LANCE_COOLDOWN,
       projectileSpeed: 0,
       projectileMass: 0,
       tracking: 0,
@@ -112,9 +125,9 @@ export const crystallineModules: ModuleDefinition[] = [
     effect: {
       kind: "weapon",
       weaponType: "beam",
-      damage: beamDamageJoules(BEAM_POWER_W.lance, 180),
-      range: 640,
-      cooldown: 180,
+      damage: beamDamageJoules(BEAM_POWER_W.lance, SPINAL_LANCE_COOLDOWN),
+      range: BEAM_RANGE_M,
+      cooldown: SPINAL_LANCE_COOLDOWN,
       projectileSpeed: 0,
       projectileMass: 0,
       tracking: 0,
@@ -141,8 +154,8 @@ export const crystallineModules: ModuleDefinition[] = [
       kind: "weapon",
       weaponType: "cannon",
       damage: kineticDamageJoules(SHARD_MASS_KG, SHARD_MUZZLE_MS),
-      range: 380,
-      cooldown: 60,
+      range: kineticRangeM(SHARD_MUZZLE_MS),
+      cooldown: cooldownTicks(2),
       projectileSpeed: projectileSpeedMPerTick(SHARD_MUZZLE_MS),
       projectileMass: SHARD_MASS_KG,
       tracking: 1,
