@@ -2,6 +2,7 @@ import { z } from "zod";
 import { EntityId, IsoTimestamp } from "./primitives";
 import { WeaponType } from "./module";
 import { DoorState, SurfaceKind } from "./grid";
+import { EngineCheckpoint } from "./checkpoint";
 
 /** A side in a battle. `draw` is only a battle outcome, never a ship's side. */
 export const BattleSide = z.enum(["attacker", "defender", "draw"]);
@@ -593,6 +594,16 @@ export const BattleStreamMessage = z.discriminatedUnion("kind", [
      * Empty when the batch introduced no new instances.
      */
     descriptors: z.array(ShipDescriptor),
+    /**
+     * The latest captured {@link EngineCheckpoint} at the time this batch was
+     * posted, or `undefined` when the worker is not capturing (a fresh run with
+     * no resume requested never captures). The checkpoint may be a few ticks
+     * behind the batch's last frame: the worker emits one per cadence, so the
+     * latest captured at posting time is the most recent tick the cadence hit.
+     * The UI resume decorator persists it so an interrupted run resumes from
+     * there instead of recomputing from tick 0.
+     */
+    checkpoint: EngineCheckpoint.optional(),
   }),
   z.object({
     kind: z.literal("result"),

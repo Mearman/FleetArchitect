@@ -1,5 +1,6 @@
 import Dexie, { type DexieOptions, type Table } from "dexie";
-import type { BattleResult } from "@/schema/battle";
+import type { BattleFrame, BattleResult } from "@/schema/battle";
+import type { EngineCheckpoint } from "@/schema/checkpoint";
 import type { Fleet } from "@/schema/fleet";
 import { z } from "zod";
 import { ShipDesign, DesignSource } from "@/schema/ship";
@@ -47,6 +48,24 @@ export interface SimCacheRecord {
 }
 
 /**
+ * One in-progress battle checkpoint, the resume state for an interrupted run.
+ * Keyed by the same content `key` as {@link SimCacheRecord} (one latest
+ * checkpoint per matchup — overwrite on each capture). `checkpoint` is the
+ * engine snapshot to resume from; `preFrames` are the frames up to and including
+ * `checkpoint.tick`, which the resume decorator stitches onto the resumed run's
+ * tail (the resumed engine yields only frames `tick+1..end`) to reconstruct the
+ * full `BattleResult`. `updatedAt` is an epoch-ms timestamp for diagnostics.
+ * Stored via `structuredClone` semantics (Dexie / IndexedDB), never JSON, so
+ * the checkpoint's `±Infinity` / `-0` fields survive exactly.
+ */
+export interface CheckpointRecord {
+  key: string;
+  checkpoint: EngineCheckpoint;
+  preFrames: BattleFrame[];
+  updatedAt: number;
+}
+
+/**
  * Dexie-backed IndexedDB database. The schema version lives here; bump it and
  * add a `.version(n).upgrade()` step when the stored shape changes. Stores not
  * mentioned in a newer version are inherited unchanged.
@@ -59,6 +78,7 @@ class FleetArchitectDatabase extends Dexie {
   design_revisions!: Table<DesignRevisionRecord, [string, number]>;
   fleet_revisions!: Table<FleetRevisionRecord, [string, number]>;
   simCache!: Table<SimCacheRecord, string>;
+  checkpoints!: Table<CheckpointRecord, string>;
 
   constructor(name = "fleet-architect", options?: DexieOptions) {
     super(name, options);
@@ -90,6 +110,13 @@ class FleetArchitectDatabase extends Dexie {
     // eviction. Separate from the write-only `battles` history.
     this.version(5).stores({
       simCache: "key, lastAccess, bytes",
+    });
+    // In-progress battle checkpoints (Part 2 of the cache plan, Phase 10). One
+    // latest checkpoint per content key (overwrite on capture); `updatedAt` is
+    // indexed for diagnostics. The resume decorator deletes the entry once the
+    // full result is computed (and cached by the result-cache tier).
+    this.version(6).stores({
+      checkpoints: "key, updatedAt",
     });
   }
 }
@@ -188,6 +215,17 @@ export function storage(): Storage {
  */
 export function simCacheTable(): Table<SimCacheRecord, string> {
   return database().simCache;
+}
+
+/**
+ * The `checkpoints` Dexie table on the singleton database, for the IndexedDB
+ * tier of the in-progress-run resume store. Exposed so `DexieCheckpointStore`
+ * can be composed at the UI edge without the storage internals leaking; tests
+ * rebind the database via `_setDatabaseForTesting`, so this always resolves the
+ * current instance.
+ */
+export function checkpointsTable(): Table<CheckpointRecord, string> {
+  return database().checkpoints;
 }
 
 /** Read a meta value, or undefined if the key has never been set. Callers

@@ -8,8 +8,10 @@ import {
   type BattleRunner,
 } from "@/domain/simulation/runner";
 import { DexieSimCache } from "@/storage/sim-cache-dexie";
-import { simCacheTable } from "@/storage/db";
+import { DexieCheckpointStore } from "@/storage/checkpoint-store-dexie";
+import { checkpointsTable, simCacheTable } from "@/storage/db";
 import { CachingBattleRunner } from "@/ui/cachingBattleRunner";
+import { ResumingBattleRunner } from "@/ui/resumingBattleRunner";
 
 /**
  * The inner `BattleRunner`: when the browser supports Web Workers the simulation
@@ -18,10 +20,32 @@ import { CachingBattleRunner } from "@/ui/cachingBattleRunner";
  * import is confined to this UI module so the domain `runner.ts` stays free of
  * bundler specifics.
  */
-const innerRunner: BattleRunner =
+const computeRunner: BattleRunner =
   typeof Worker === "undefined"
     ? new DirectBattleRunner()
     : new WorkerBattleRunner(() => new BattleWorker());
+
+/**
+ * The resume decorator wraps the compute runner and owns the in-progress
+ * checkpoint store. On a run it looks up the latest checkpoint for the matchup
+ * and, if found, resumes the engine from there (stitching the checkpoint's
+ * preceding frames onto the resumed tail); during compute it persists each
+ * captured checkpoint so a later interruption resumes from a recent tick. Sits
+ * below the result cache so the resolve order is result-cache hit, then
+ * checkpoint resume, then fresh. A persist / delete failure is surfaced via the
+ * notifications channel rather than swallowed.
+ */
+const resumingRunner: BattleRunner = new ResumingBattleRunner(
+  computeRunner,
+  new DexieCheckpointStore(checkpointsTable()),
+  (error) => {
+    notifications.show({
+      title: "Battle resume checkpoint not persisted",
+      message: error.message,
+      color: "yellow",
+    });
+  },
+);
 
 /**
  * A two-tier read-through cache: a small in-memory LRU (the session working set)
@@ -34,14 +58,15 @@ const cache = new CompositeSimCache(
 );
 
 /**
- * The `BattleRunner` the UI uses: the Direct/Worker runner wrapped in the
- * read-through result cache. An identical matchup re-run returns its cached
- * result and replays it down the same streaming path; a cache miss runs the
- * inner runner and stores the result. A cache-write failure is surfaced via the
- * notifications channel rather than swallowed.
+ * The `BattleRunner` the UI uses: the resume-wrapped Direct/Worker runner
+ * wrapped in the read-through result cache. An identical matchup re-run returns
+ * its cached result and replays it down the same streaming path; a cache miss
+ * with a persisted checkpoint resumes the engine from there; otherwise the
+ * battle runs fresh from tick 0. A cache- or checkpoint-write failure is
+ * surfaced via the notifications channel rather than swallowed.
  */
 export const battleRunner: BattleRunner = new CachingBattleRunner(
-  innerRunner,
+  resumingRunner,
   cache,
   (error) => {
     notifications.show({

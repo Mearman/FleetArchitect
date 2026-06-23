@@ -1,4 +1,5 @@
-import { runBattle } from "@/domain/simulation/engine";
+import { createId, nowIso } from "@/domain/id";
+import { runBattle, simulateBattle } from "@/domain/simulation/engine";
 import type { BattleInputs } from "@/domain/simulation/types";
 import { BattleResult, BattleStreamMessage } from "@/schema/battle";
 import type {
@@ -6,6 +7,7 @@ import type {
   BattleResult as BattleResultType,
   ShipDescriptor,
 } from "@/schema/battle";
+import type { EngineCheckpoint } from "@/schema/checkpoint";
 
 /**
  * Streamed-batch callback. Receives a batch of frames, the highest tick computed
@@ -31,6 +33,25 @@ export interface BattleRunOptions {
    * entry.
    */
   noCache?: boolean;
+  /**
+   * Resume the battle from this captured {@link EngineCheckpoint} instead of
+   * starting at tick 0. The engine re-enters the loop at `checkpoint.tick + 1`
+   * and yields only frames after the checkpoint; the caller (the resume
+   * decorator) is responsible for stitching the checkpoint's preceding frames
+   * onto the resumed run's output to reconstruct the full `BattleResult`.
+   * Omitted on a fresh run.
+   */
+  resumeFrom?: EngineCheckpoint;
+  /**
+   * Receives each checkpoint the engine captures during this run (at the
+   * cadence the worker chooses). The resume decorator uses it to persist the
+   * latest in-progress checkpoint so an interrupted run resumes from there.
+   * With `resumeFrom` omitted and `onCheckpoint` set, the engine captures fresh
+   * checkpoints as it computes (the proactive-persist path); with both set, a
+   * resumed run also re-captures so a second interruption resumes from a later
+   * tick. Omitted when the caller does not want checkpoints.
+   */
+  onCheckpoint?: (checkpoint: EngineCheckpoint) => void;
 }
 
 /**
@@ -65,12 +86,26 @@ export class BattleAbortError extends Error {
 }
 
 /**
+ * The checkpoint capture cadence on the direct path: one checkpoint every
+ * {@link DIRECT_CHECKPOINT_EVERY_TICKS} ticks, matching the worker's coarse
+ * cadence. A named constant rather than a magic number so the cadence is
+ * discoverable and adjusted in one place.
+ */
+const DIRECT_CHECKPOINT_EVERY_TICKS = 30;
+
+/**
  * Runs the engine synchronously on the calling thread. Used by Vitest / node
  * where `Worker` is unavailable, and as a fallback. Still honours the async
  * contract (returns a resolved promise) and the abort signal.
  *
  * When `onFrames` is provided, it is called once with all frames after the
  * battle completes — streaming on the direct path is a single batch.
+ *
+ * When `resumeFrom` or `onCheckpoint` is set, drives `simulateBattle` directly
+ * (folding in the resume / capture options) and assembles a `BattleResult` from
+ * the generator summary, mirroring `runBattle`'s assembly. The plain
+ * `runBattle` path is kept byte-identical for runs with neither option, so
+ * existing behaviour is unchanged.
  */
 export class DirectBattleRunner implements BattleRunner {
   run(
@@ -82,13 +117,62 @@ export class DirectBattleRunner implements BattleRunner {
     if (signal?.aborted === true) {
       return Promise.reject(new BattleAbortError());
     }
-    const result = runBattle(inputs);
-    // runBattle always populates descriptors (the field is optional in the
-    // schema only so legacy replays from storage still parse); narrow rather
-    // than substitute a sentinel.
+    const resumeFrom = options?.resumeFrom;
+    const onCheckpoint = options?.onCheckpoint;
+    if (resumeFrom === undefined && onCheckpoint === undefined) {
+      const result = runBattle(inputs);
+      // runBattle always populates descriptors (the field is optional in the
+      // schema only so legacy replays from storage still parse); narrow rather
+      // than substitute a sentinel.
+      const descriptors = result.descriptors;
+      if (descriptors === undefined) {
+        throw new Error("runBattle returned a result without descriptors");
+      }
+      onFrames?.(result.frames, result.ticks, descriptors);
+      return Promise.resolve(result);
+    }
+    // Resume / capture path: drive simulateBattle directly and assemble a
+    // BattleResult from the generator summary, matching runBattle's shape. On a
+    // resume the generator yields only frames after the checkpoint; the caller
+    // (the resume decorator) stitches the checkpoint's preceding frames.
+    const frames: BattleFrame[] = [];
+    const gen = simulateBattle(inputs, {
+      resumeFrom,
+      checkpointEvery: DIRECT_CHECKPOINT_EVERY_TICKS,
+      onCheckpoint,
+    });
+    let step = gen.next();
+    while (!step.done) {
+      frames.push(step.value);
+      step = gen.next();
+    }
+    const summary = step.value;
+    const result: BattleResultType = {
+      id: createId("battle"),
+      config: {
+        attackerFleetId: inputs.attackerFleetId,
+        defenderFleetId: inputs.defenderFleetId,
+        anomaly: inputs.anomaly,
+        seed: inputs.seed,
+      },
+      winner: summary.winner,
+      ticks: summary.ticks,
+      playedAt: nowIso(),
+      frames,
+      roster: inputs.ships.map((s) => ({
+        instanceId: s.instanceId,
+        faction: s.faction,
+        side: s.side,
+      })),
+      descriptors: summary.descriptors,
+      ...(summary.salvage.length > 0 ? { salvage: summary.salvage } : {}),
+    };
+    // `result.descriptors` is optional in the schema (legacy replays), but this
+    // runner always sets it from the generator summary. Narrow rather than
+    // substitute a sentinel, matching the runBattle path's contract.
     const descriptors = result.descriptors;
     if (descriptors === undefined) {
-      throw new Error("runBattle returned a result without descriptors");
+      throw new Error("assembled BattleResult is missing descriptors");
     }
     onFrames?.(result.frames, result.ticks, descriptors);
     return Promise.resolve(result);
@@ -125,6 +209,7 @@ export class WorkerBattleRunner implements BattleRunner {
   ): Promise<BattleResultType> {
     const signal = options?.signal;
     const onFrames = options?.onFrames;
+    const onCheckpoint = options?.onCheckpoint;
 
     return new Promise<BattleResultType>((resolve, reject) => {
       if (signal?.aborted === true) {
@@ -158,6 +243,13 @@ export class WorkerBattleRunner implements BattleRunner {
           // Deliver the batch to the caller and keep the worker alive — more
           // batches (or the final result) are still on the way.
           onFrames?.(parsed.data.frames, parsed.data.computedTicks, parsed.data.descriptors);
+          // Forward the latest checkpoint (if the worker captured one with this
+          // batch) so the resume decorator persists it. The checkpoint may be a
+          // few ticks behind the batch's last frame — the worker emits one per
+          // cadence, so this is the most recent tick the cadence hit.
+          if (parsed.data.checkpoint !== undefined) {
+            onCheckpoint?.(parsed.data.checkpoint);
+          }
           return;
         }
 
@@ -180,7 +272,10 @@ export class WorkerBattleRunner implements BattleRunner {
       };
 
       if (signal !== undefined) signal.addEventListener("abort", onAbort);
-      worker.postMessage(inputs);
+      // Post the inputs and any resume checkpoint together: the worker threads
+      // `resumeFrom` into `simulateBattle` so the resumed run reproduces the
+      // fresh tail byte-identically and yields only frames after the checkpoint.
+      worker.postMessage({ inputs, resumeFrom: options?.resumeFrom });
     });
   }
 }

@@ -3,25 +3,66 @@ import { simulateBattle } from "@/domain/simulation/engine";
 import type { BattleInputs } from "@/domain/simulation/types";
 import { STREAM_BATCH_INTERVAL_MS } from "@/domain/simulation/types";
 import type { BattleFrame, ShipDescriptor } from "@/schema/battle";
+import type { EngineCheckpoint } from "@/schema/checkpoint";
 
 /**
- * Worker entry for the battle simulation. Receives `BattleInputs` (structured-
- * cloned across the thread boundary by `postMessage`), drives the deterministic
- * generator, and streams frame batches back as `{ kind: 'frames' }` messages
- * before posting a final `{ kind: 'result' }` with the assembled `BattleResult`.
+ * The checkpoint capture cadence inside the worker: one checkpoint every
+ * {@link WORKER_CHECKPOINT_EVERY_TICKS} ticks, so a long or interrupted battle
+ * resumes from a recent tick rather than recomputing from tick 0. Coarse on
+ * purpose: capture reads the live engine state and deep-clones it, so the
+ * cadence trades a small periodic cost against the progress lost on
+ * interruption. A named constant rather than a magic number so the cadence is
+ * discoverable and adjusted in one place.
+ */
+const WORKER_CHECKPOINT_EVERY_TICKS = 30;
+
+/**
+ * The message the worker accepts. Carries the battle inputs plus an optional
+ * {@link EngineCheckpoint} to resume from (the resume decorator passes the
+ * latest persisted checkpoint so the worker re-enters the loop at
+ * `checkpoint.tick + 1`). `postMessage` structured-clones both across the
+ * thread boundary, preserving the checkpoint's `±Infinity` / `-0` fields.
+ */
+interface BattleWorkerRequest {
+  inputs: BattleInputs;
+  resumeFrom?: EngineCheckpoint;
+}
+
+/**
+ * Worker entry for the battle simulation. Receives `{ inputs, resumeFrom? }`
+ * (structured-cloned across the thread boundary by `postMessage`), drives the
+ * deterministic generator, and streams frame batches back as
+ * `{ kind: 'frames' }` messages (each carrying the latest captured checkpoint,
+ * if any) before posting a final `{ kind: 'result' }` with the assembled
+ * `BattleResult`.
  *
  * Streaming lets the main thread begin rendering replay frames while the
  * simulation is still running, rather than waiting for the whole battle to
- * finish before receiving any data.
+ * finish before receiving any data. The forwarded checkpoints let the resume
+ * decorator persist the latest in-progress state so an interrupted run resumes
+ * from there.
  */
-self.onmessage = (event: MessageEvent<BattleInputs>) => {
-  const inputs = event.data;
+self.onmessage = (event: MessageEvent<BattleWorkerRequest>) => {
+  const { inputs, resumeFrom } = event.data;
   // The descriptor sink is populated by the generator the first frame each ship
   // instance appears. After each batch we forward descriptors captured since the
   // last post so the main thread can reconstruct cell positions for the streamed
   // frames before the final result lands.
   const descriptorSink = new Map<string, ShipDescriptor>();
-  const it = simulateBattle(inputs, { descriptorSink });
+  // The latest checkpoint captured by the generator (advanced every
+  // WORKER_CHECKPOINT_EVERY_TICKS ticks). Forwarded with each batch so the
+  // resume decorator can persist it; `undefined` until the cadence first hits
+  // (and always undefined on a fresh run with no resumeFrom, which never
+  // captures — `onCheckpoint` is what arms the capture path).
+  let latestCheckpoint: EngineCheckpoint | undefined;
+  const it = simulateBattle(inputs, {
+    descriptorSink,
+    resumeFrom,
+    checkpointEvery: WORKER_CHECKPOINT_EVERY_TICKS,
+    onCheckpoint: (cp) => {
+      latestCheckpoint = cp;
+    },
+  });
 
   const allFrames: BattleFrame[] = [];
   let batch: BattleFrame[] = [];
@@ -44,12 +85,19 @@ self.onmessage = (event: MessageEvent<BattleInputs>) => {
 
   const postBatch = (frames: BattleFrame[]): void => {
     const lastFrame = frames[frames.length - 1];
-    self.postMessage({
+    // Forward the latest captured checkpoint with the batch (may be undefined
+    // if the cadence has not hit yet). The resume decorator persists it; a
+    // few-tick lag behind the batch's last frame is fine — on resume the
+    // engine reproduces the tail byte-identically from wherever the checkpoint
+    // was taken.
+    const message: { kind: "frames"; frames: BattleFrame[]; computedTicks: number; descriptors: ShipDescriptor[]; checkpoint?: EngineCheckpoint } = {
       kind: "frames",
       frames,
       computedTicks: lastFrame !== undefined ? lastFrame.tick : 0,
       descriptors: drainNewDescriptors(),
-    });
+    };
+    if (latestCheckpoint !== undefined) message.checkpoint = latestCheckpoint;
+    self.postMessage(message);
   };
 
   let next = it.next();
