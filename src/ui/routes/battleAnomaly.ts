@@ -1,20 +1,24 @@
 import { computeOccluders } from "@/domain/occluders";
 import type { BattleAnomaly } from "@/schema/battle";
 import { CELL_SIZE } from "@/domain/grid";
+import {
+  BLACK_HOLE_SCHWARZSCHILD_RADIUS_M,
+  BLACK_HOLE_TIDAL_RADIUS_M,
+} from "@/domain/black-hole";
 import { PHOSPHOR_AMBER } from "@/ui/theme/tokens";
 import type { Bounds, Transform } from "./battleCamera";
 import { pathWorldCircle, withWorldTransform } from "./battleProject";
 
 /**
- * Render constants that MIRROR the engine's SIM values in
- * src/domain/simulation/engine.ts. They are duplicated here on purpose so the
- * UI stays decoupled from the engine (it imports no engine internals). If the
- * engine's black-hole geometry changes, update these to match:
- *   SIM.blackHoleLethalRadius = 24  (instant-death zone radius, world units)
- *   SIM.blackHoleTidalRadius  = 48  (tidal-damage zone radius, world units)
+ * Black-hole geometry the renderer draws, read from the shared pure-domain leaf
+ * `@/domain/black-hole` — the same lethal (event-horizon) and tidal radii the
+ * engine's `SIM.blackHoleLethalRadius` / `SIM.blackHoleTidalRadius` and the
+ * occluder module derive from. Importing the leaf (rather than mirroring bare
+ * literals) keeps the UI decoupled from engine internals while guaranteeing the
+ * rendered rings match the engine's geometry from a single source of truth.
  */
-const BLACK_HOLE_LETHAL_RADIUS = 24;
-const BLACK_HOLE_TIDAL_RADIUS = 48;
+const BLACK_HOLE_LETHAL_RADIUS = BLACK_HOLE_SCHWARZSCHILD_RADIUS_M;
+const BLACK_HOLE_TIDAL_RADIUS = BLACK_HOLE_TIDAL_RADIUS_M;
 
 /** Magenta tidal ring stroke for the black hole's outer danger zone. */
 const BH_TIDAL_STROKE = "rgba(255,43,214,0.45)";

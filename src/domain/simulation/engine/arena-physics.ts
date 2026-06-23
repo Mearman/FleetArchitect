@@ -8,6 +8,8 @@
  * consumer and re-exports what the engine needs.
  */
 
+import { BLACK_HOLE_SCHWARZSCHILD_RADIUS_M } from "@/domain/black-hole";
+
 /**
  * The arena gravitational constant: the proportionality `G` in Newton's law
  * `a = G·M / r^2`, in arena units (acceleration is m/tick^2, distance m, mass
@@ -24,18 +26,21 @@ export const GRAVITY_CONSTANT_ARENA = 0.1;
 
 /**
  * The arena black hole's Schwarzschild radius (metres) — the radius of its
- * event horizon, `r_s`. A physically meaningful combat-scale length (a couple
- * of dozen metres, a ship-length or two) rather than the sub-atomic figure the
- * real `r_s = 2·G·M / c^2` gives at the relativistic speed of light: the arena
- * well is a sub-km gameplay mechanic, so its gravitational sector propagates at
- * the much slower arena signal speed
+ * event horizon, `r_s`. Re-exported from the shared pure-domain leaf
+ * {@link BLACK_HOLE_SCHWARZSCHILD_RADIUS_M} (`@/domain/black-hole`) so the
+ * engine, the occluder module, and the renderer all read one source of truth;
+ * `config.ts` imports it from here. A physically meaningful combat-scale length
+ * (a couple of dozen metres, a ship-length or two) rather than the sub-atomic
+ * figure the real `r_s = 2·G·M / c^2` gives at the relativistic speed of light:
+ * the arena well is a sub-km gameplay mechanic, so its gravitational sector
+ * propagates at the much slower arena signal speed
  * {@link ARENA_GRAVITATIONAL_SIGNAL_SPEED_M_PER_TICK}, not the relativistic `c`.
  * This is the literal event-horizon proxy reused as `SIM.blackHoleLethalRadius`
  * (a ship inside it has crossed the horizon and is destroyed), and it is one of
  * the two anchors the black hole's `G·M` is derived from via the Schwarzschild
  * relation below.
  */
-export const BLACK_HOLE_SCHWARZSCHILD_RADIUS_M = 24;
+export { BLACK_HOLE_SCHWARZSCHILD_RADIUS_M };
 
 /**
  * The arena-scale `G·M` the black-hole well is tuned to (arena units). This is

@@ -38,6 +38,7 @@
  */
 
 import { CELL_SIZE } from "@/domain/grid";
+import { BLACK_HOLE_TIDAL_RADIUS_M } from "@/domain/black-hole";
 import {
   BLACK_HOLE_GM_ARENA,
   BLACK_HOLE_MASS_ARENA,
@@ -274,14 +275,17 @@ export const SIM = {
   /**
    * Outside the lethal radius but inside this zone, a ship takes damage
    * proportional to 1/r^3 — the leading-order tidal force across a body of
-   * finite size ("spaghettification"). Re-derived as the Roche-limit radius
-   * from the real tidal field vs hull structural tolerance when the SI catalogue
-   * lands in Phase 14.
+   * finite size ("spaghettification"). Read from the shared pure-domain leaf
+   * {@link BLACK_HOLE_TIDAL_RADIUS_M} (`@/domain/black-hole`), itself a fixed
+   * multiple of the event-horizon radius, so the engine, occluder module, and
+   * renderer share one black-hole geometry. Re-derived as the Roche-limit
+   * radius from the real tidal field vs hull structural tolerance when the SI
+   * catalogue lands in Phase 14.
    *
    * Classification: authored catalogue content (Phase 14 re-derives as the
    * Roche limit from the real tidal field × hull structural tolerance).
    */
-  blackHoleTidalRadius: 48,
+  blackHoleTidalRadius: BLACK_HOLE_TIDAL_RADIUS_M,
   /**
    * Coefficient for the 1/r^3 tidal damage. Re-derived as `2GM · r_body ·
    * k_hull` (real tidal acceleration × hull tolerance) when the SI catalogue

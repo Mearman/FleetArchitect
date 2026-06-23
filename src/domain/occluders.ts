@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { BattleAnomaly } from "@/schema/battle";
+import { BLACK_HOLE_SCHWARZSCHILD_RADIUS_M } from "@/domain/black-hole";
 
 /**
  * Pure, deterministic line-of-sight occluder module.
@@ -27,11 +28,15 @@ export type Disc = z.infer<typeof Disc>;
 // ---------------------------------------------------------------------------
 
 /**
- * Event-horizon radius of the black-hole occluder, in world units.
- * Matches SIM.blackHoleLethalRadius in the engine (24 wu); defined here
- * independently so this module does not import engine internals.
+ * Event-horizon radius of the black-hole occluder, in world units. The
+ * line-of-sight disc is sized to the black hole's lethal/horizon radius so the
+ * rock the player sees and the engine's death zone agree. Read from the shared
+ * pure-domain leaf {@link BLACK_HOLE_SCHWARZSCHILD_RADIUS_M}
+ * (`@/domain/black-hole`) — the same constant the engine and renderer use — so
+ * the three layers cannot drift apart. Aliased locally to keep the existing
+ * occluder-test export name stable.
  */
-const BLACK_HOLE_RADIUS = 24;
+const BLACK_HOLE_RADIUS = BLACK_HOLE_SCHWARZSCHILD_RADIUS_M;
 
 /**
  * Number of asteroid disc occluders generated for an asteroid-field anomaly.

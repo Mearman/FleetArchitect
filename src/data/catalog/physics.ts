@@ -325,3 +325,103 @@ export function moduleMass(
   }
   return density * volume;
 }
+
+// ---------------------------------------------------------------------------
+// Specific destruction energy (joules per kilogram).
+//
+// The energy a damaging hit must deposit per kilogram of a material to take
+// that mass out of the fight — spall, fracture, melt, and vaporise it past the
+// point of load-bearing integrity. Combined with a layer's already-real mass
+// (`arealDensity × CELL_AREA_M2`) this gives a cell's hit-point pool in joules:
+// `cellHP_J = layerMass(kg) × specificDestructionEnergy(J/kg)`. Because weapon
+// damage is re-authored as real joules (kinetic ½·m·v², beam power × dwell), a
+// hit and the armour it strikes are then in the same physical unit, and "armour
+// falls in a few clean hits" becomes a property of real energy budgets rather
+// than abstract damage points. Not yet consumed — later phases derive cell HP
+// from these.
+//
+// The per-material figures are representative enthalpies-of-destruction (the
+// spall/melt/vaporisation energy a mixed structural material absorbs before it
+// stops holding load), in the few-MJ/kg band typical of metals and composites:
+// a tougher alloy soaks more joules per kilogram than a brittle crystal.
+// ---------------------------------------------------------------------------
+
+/**
+ * Specific destruction energy (J/kg) for each faction's hull material — the
+ * energy per kilogram a hit must deposit to destroy that mass. Keyed by faction
+ * to match the per-faction layer materials in `./layer-materials.ts`; each
+ * value names the real material it represents.
+ *
+ *  - Terran ferro-steel: 6e6 J/kg — a steel-class alloy's spall-and-melt
+ *    enthalpy (latent + sensible heat to vaporisation is a few MJ/kg for iron).
+ *  - Swarm bio-chitin: 4e6 J/kg — a tough but lighter organic lattice, less
+ *    energy per kilogram to fracture than steel.
+ *  - Crystalline grown crystal: 2e6 J/kg — brittle; shatters at the lowest
+ *    energy per kilogram of the six (a crack propagates cheaply).
+ *  - Foundry forged composite: 8e6 J/kg — the toughest, a tungsten-rich forged
+ *    plate that soaks the most energy per kilogram before failing.
+ *  - Corsair scavenged scrap: 3e6 J/kg — mixed reclaimed metal, weak per
+ *    kilogram (voids and bad welds give way early).
+ *  - Synthetic machined alloy: 5e6 J/kg — a clean titanium-class alloy, mid-pack.
+ */
+export const SPECIFIC_DESTRUCTION_ENERGY: Record<string, number> = {
+  Terran: 6e6,
+  Swarm: 4e6,
+  Crystalline: 2e6,
+  Foundry: 8e6,
+  Corsair: 3e6,
+  Synthetic: 5e6,
+};
+
+/**
+ * Specific destruction energy (J/kg) for a faction's hull material.
+ * Throws if the faction is unknown rather than substituting a default, so a
+ * missing entry surfaces as a loud failure at the call site.
+ */
+export function specificDestructionEnergy(faction: string): number {
+  const energy = SPECIFIC_DESTRUCTION_ENERGY[faction];
+  if (energy === undefined) {
+    throw new Error(
+      `no specific destruction energy for faction "${faction}"`,
+    );
+  }
+  return energy;
+}
+
+// ---------------------------------------------------------------------------
+// Reactor power density (watts per cubic metre).
+//
+// A reactor's electrical output is its core's volumetric power density times the
+// reactor module's physical envelope: `output_W = powerDensity × MODULE_VOLUME_M3`.
+// Pairing a per-reactor-class power density with the already-real module volume
+// (`MODULE_VOLUME_M3`) makes reactor output a derived SI quantity (watts) rather
+// than an abstract "power unit", so it can be compared directly against weapon
+// joules and drive watts once power is re-authored. Not yet consumed — later
+// phases derive reactor output from these.
+//
+// The densities are far above any present-day fission plant: a compact
+// advanced-fusion core and an antimatter core are the in-universe energy sources
+// that make a ship-cell-sized reactor produce gigawatts, the licence the setting
+// takes for fast manoeuvring and energy weapons. The two figures band the well's
+// two reactor classes — a fusion vessel and a denser antimatter core.
+// ---------------------------------------------------------------------------
+
+/**
+ * Volumetric electrical power density (W/m³) of an advanced compact fusion
+ * reactor core — the `reactor` module class. Set so a fusion vessel of the
+ * authored `MODULE_VOLUME_M3.reactor` envelope produces order-gigawatt output,
+ * the energy budget a ship needs to run energy weapons and a fusion-torch drive.
+ * Orders of magnitude above any present-day power plant: the in-universe
+ * advanced-fusion core is the setting's premise for a gigawatt ship reactor.
+ */
+export const FUSION_POWER_DENSITY_W_PER_M3 = 5e7;
+
+/**
+ * Volumetric electrical power density (W/m³) of an antimatter-annihilation
+ * reactor core — the denser `reactorCompact` module class. Higher than fusion
+ * because annihilation converts rest mass to energy near-completely, so a
+ * smaller, heavier-shielded core yields more watts per cubic metre. Banded
+ * above {@link FUSION_POWER_DENSITY_W_PER_M3} so an antimatter reactor outputs
+ * several gigawatts from a compact envelope.
+ */
+export const ANTIMATTER_POWER_DENSITY_W_PER_M3 = 2e8;
