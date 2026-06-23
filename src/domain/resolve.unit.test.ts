@@ -61,9 +61,10 @@ describe("resolveFleetToCombatShips (grid)", () => {
     expect(ship).toBeDefined();
     if (ship === undefined) return;
     const modules = ship.modules ?? [];
-    // The 2-cell design (pulse laser + reactor) is padded by 1 and grown:
-    // a 2×1 grid becomes 4×3 with 6 auto-derived armour cells, so 8 modules total.
-    expect(modules).toHaveLength(8);
+    // The 2-cell design (pulse laser + reactor) is deck/equipment with no
+    // armour, so the armour grow adds nothing — only padGrid runs, shifting the
+    // cells by +1 on each axis (it does not change the module count).
+    expect(modules).toHaveLength(2);
 
     // The grown grid is the reference for cell coordinates: padGrid shifts every
     // authored cell by +1 on each axis, so the laser moves from (0,0) to (1,1).

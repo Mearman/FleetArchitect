@@ -39,18 +39,14 @@ function cellAt(grid: TileGrid, col: number, row: number): GridCell | undefined 
 }
 
 /**
- * Whether the cell at (col, row) is "plating" the hull wraps. Mirrors
- * `builtFootprint`'s `isBuilt` in `src/domain/hull-outline.ts`: deck and armour
- * are always plating; a bare cell is plating only when it carries a wall edge
- * (a wall is part of the ship's skin wherever it sits). Out-of-bounds and empty
- * cells are never plating.
+ * Whether the cell at (col, row) is armour. Only armour seeds hull growth: the
+ * shell extends and bevels the armour the designer has placed, so a deck (or
+ * bare-framing) edge is never auto-clad — armour is grown for armour, not for
+ * deck tiles. Out-of-bounds and non-solid cells are never armour.
  */
-function isPlating(grid: TileGrid, col: number, row: number): boolean {
+function isArmour(grid: TileGrid, col: number, row: number): boolean {
   const cell = cellAt(grid, col, row);
-  if (cell === undefined || cell.kind !== "solid") return false;
-  if (cell.surface !== "bare") return true;
-  const e = cell.edges;
-  return e.n === "wall" || e.e === "wall" || e.s === "wall" || e.w === "wall";
+  return cell !== undefined && cell.kind === "solid" && cell.surface === "armor";
 }
 
 /** Whether (col, row) is "empty" for flood-fill purposes: out of grid, or an
@@ -154,9 +150,12 @@ function exteriorEmpties(grid: TileGrid): boolean[] {
  *
  * A candidate is an EXTERIOR empty cell (reachable from the border by a
  * 4-connected flood, so enclosed interior holes are left alone) that is
- * 4-connected-adjacent (N/E/S/W) to at least one plating cell. Restricting to
- * orthogonal adjacency naturally leaves diagonal corner cells empty, giving the
- * octilinear cut-corner silhouette; diagonal corners are never filled.
+ * 4-connected-adjacent (N/E/S/W) to at least one ARMOUR cell. Only armour seeds
+ * growth, so deck-only ships grow nothing — the shell extends the armour the
+ * designer placed. Restricting to orthogonal adjacency naturally leaves diagonal
+ * corner cells empty, giving the octilinear cut-corner silhouette; diagonal
+ * corners are never filled. (Any solid cell — deck included — still BLOCKS the
+ * exterior flood, so an enclosed empty stays interior regardless of surface.)
  *
  * Does NOT resize. If the footprint touches the grid border there is simply no
  * room to grow there; callers that need a guaranteed border `padGrid` first.
@@ -171,7 +170,7 @@ export function growArmourHull(grid: TileGrid): TileGrid {
       if (!exterior[r * cols + c]) continue;
       let adjacent = false;
       for (const [dx, dy] of ORTHO) {
-        if (isPlating(grid, c + dx, r + dy)) {
+        if (isArmour(grid, c + dx, r + dy)) {
           adjacent = true;
           break;
         }

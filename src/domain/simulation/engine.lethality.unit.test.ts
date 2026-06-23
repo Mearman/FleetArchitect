@@ -135,7 +135,7 @@ describe("engine.lethality — crewed Terran battles resolve decisively", () => 
 
   // Re-enabled in Phase 14 alongside the Battle Line guard above: the preset
   // thrust/mass ratio is now coherent at the SI scale.
-  it("Strike Wing vs Picket Screen resolves to a winner with no tick cap", () => {
+  it("Strike Wing vs Picket Screen resolves to a winner within the guard tick cap", () => {
     // A frigate/fighter crewed matchup run with LETHALITY_GUARD_TICKS (600).
     // With armour hull growth per-tick cost rose from ~32 ms to ~91 ms; running
     // uncapped to a genuine terminal state (~914 ticks) takes ~83 s isolated,

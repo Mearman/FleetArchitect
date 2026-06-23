@@ -10,22 +10,21 @@ import { analyseShipDesign } from "@/domain/stats";
 import type { CellEdges, GridCell, TileGrid } from "@/schema/grid";
 import type { ShipDesign } from "@/schema/ship";
 
-/** All-open edges: a deck corridor through which crew can walk. */
-const OPEN: CellEdges = { n: "open", e: "open", s: "open", w: "open", doorStates: {} };
+/** All-wall edges: an armour plate is sealed on every side. */
+const WALL: CellEdges = { n: "wall", e: "wall", s: "wall", w: "wall", doorStates: {} };
 
 /**
- * Build a 3×3 grid with a single deck cell at the centre (1,1) that carries a
- * Terran fusion reactor (command module). Every surrounding cell is empty, so
- * after padGrid(1) + growArmourHull the four orthogonal neighbours of (2,2) in
- * the 5×5 padded grid will become armour cells. The design has NO armour cells
- * in the saved grid — they are all produced by the auto-grow.
+ * Build a 3×3 grid with a single ARMOUR cell at the centre (1,1). Only armour
+ * seeds growth, so after padGrid(1) + growArmourHull the four orthogonal
+ * neighbours of (2,2) in the 5×5 padded grid become grown armour cells — 1
+ * authored + 4 grown = 5 armour cells total. The 4 grown cells are produced by
+ * the auto-grow, not present in the saved design.
  */
 function singleCellDesign(): ShipDesign {
   const cells: GridCell[] = [
     { kind: "empty" }, { kind: "empty" }, { kind: "empty" },
     { kind: "empty" },
-    { kind: "solid", substrate: true, surface: "deck", edges: OPEN,
-      equipment: { moduleId: "mod-reactor-fusion", facing: 0 } },
+    { kind: "solid", substrate: true, surface: "armor", edges: WALL },
     { kind: "empty" },
     { kind: "empty" }, { kind: "empty" }, { kind: "empty" },
   ];
@@ -50,17 +49,19 @@ describe("hull-armour integration: analyseShipDesign includes auto-derived armou
     const design = singleCellDesign();
     const { stats } = analyseShipDesign(design, catalog());
 
-    // After padGrid(1) + growArmourHull the grown grid is 5×5. The single
-    // deck cell is at (2,2). Its 4 orthogonal neighbours — (1,2), (3,2),
-    // (2,1), (2,3) — become armour cells. So we expect:
-    //   1 deck cell:    substrate (25 HP) + deck (25 HP)   = 50 HP
-    //   4 armour cells: substrate (25 HP) + armor (70 HP)  = 95 HP each → 380 HP
-    //   total: 50 + 380 = 430 HP
-    //
-    // A bare design with no armour growth would have only 50 HP (the deck cell).
-    // Assert the grown total exceeds the bare total by at least the 4 armour
-    // cells' substrate contribution (100 HP) — a safe, non-magic lower bound.
-    expect(stats.structure).toBeGreaterThan(50);
+    // After padGrid(1) + growArmourHull the grown grid is 5×5: the single
+    // authored armour cell at (2,2) seeds armour on its 4 orthogonal neighbours
+    // — (1,2), (3,2), (2,1), (2,3) — for 5 armour cells total. Without growth the
+    // ship would be the one authored armour cell. Assert the grown total exceeds
+    // that single-cell HP (derived from the catalog, no magic number).
+    const cat = catalog();
+    const substrate = cat.substrateMaterial("Terran");
+    const armor = cat.armorMaterial("Terran");
+    if (substrate === undefined || armor === undefined) {
+      throw new Error("Terran layer materials missing from catalog");
+    }
+    const oneArmourCell = substrate.hp + armor.hp;
+    expect(stats.structure).toBeGreaterThan(oneArmourCell);
   });
 
   it("produces more total mass than a bare single-cell design", () => {
@@ -74,13 +75,12 @@ describe("hull-armour integration: analyseShipDesign includes auto-derived armou
     // We derive the bare-cell mass from the catalog directly so no magic number.
     const cat = catalog();
     const substrate = cat.substrateMaterial("Terran");
-    const deck = cat.deckMaterial("Terran");
     const armor = cat.armorMaterial("Terran");
-    if (substrate === undefined || deck === undefined || armor === undefined) {
+    if (substrate === undefined || armor === undefined) {
       throw new Error("Terran layer materials missing from catalog");
     }
-    const bareOneCell = substrate.mass + deck.mass;
-    expect(stats.mass).toBeGreaterThan(bareOneCell);
+    const oneArmourCell = substrate.mass + armor.mass;
+    expect(stats.mass).toBeGreaterThan(oneArmourCell);
   });
 
   it("structure matches explicitly pre-grown design", () => {
@@ -97,13 +97,12 @@ describe("hull-armour integration: analyseShipDesign includes auto-derived armou
 
     const cat = catalog();
     const substrate = cat.substrateMaterial("Terran");
-    const deck = cat.deckMaterial("Terran");
     const armor = cat.armorMaterial("Terran");
-    if (substrate === undefined || deck === undefined || armor === undefined) {
+    if (substrate === undefined || armor === undefined) {
       throw new Error("Terran layer materials missing from catalog");
     }
-    // 1 deck cell + 4 armour cells, each with substrate:
-    const expected = (substrate.hp + deck.hp) + 4 * (substrate.hp + armor.hp);
+    // 1 authored + 4 grown = 5 armour cells, each substrate + armor HP.
+    const expected = 5 * (substrate.hp + armor.hp);
     expect(stats.structure).toBe(expected);
   });
 

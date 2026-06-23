@@ -4,16 +4,27 @@ import type { GridCell } from "@/schema/grid";
 import { growArmourHull, padGrid } from "@/domain/hull-armour";
 
 /**
- * Contract for the octilinear armour grow. The hull adds armour on the four
- * orthogonal sides of plating but leaves diagonal corners empty (the cut-corner
- * silhouette), never armours an enclosed interior hole, never mutates its
+ * Contract for the octilinear armour grow. Only ARMOUR seeds growth — the hull
+ * adds armour on the four orthogonal sides of existing armour but leaves
+ * diagonal corners empty (the cut-corner silhouette), grows nothing for a
+ * deck-only ship, never armours an enclosed interior hole, never mutates its
  * input, and is deterministic. `padGrid` grows the canvas on every side so a
  * flush-to-border ship gains room to grow.
  */
 
 const EMPTY: GridCell = { kind: "empty" };
 
-/** A fresh deck cell, all edges open (the common interior plating). */
+/** A fresh armour cell, all edges walled (the growth seed). */
+function armour(): GridCell {
+  return {
+    kind: "solid",
+    substrate: true,
+    surface: "armor",
+    edges: { n: "wall", e: "wall", s: "wall", w: "wall", doorStates: {} },
+  };
+}
+
+/** A fresh deck cell, all edges open (interior plating; does NOT seed growth). */
 function deck(): GridCell {
   return {
     kind: "solid",
@@ -23,8 +34,9 @@ function deck(): GridCell {
   };
 }
 
-/** Parse a grid from an ASCII map; `#` is a deck cell, `.` is empty. The parse
- *  enforces the schema refine (cell count, in-bounds connections). */
+/** Parse a grid from an ASCII map: `#` is armour (the growth seed), `d` is deck,
+ *  `.` is empty. The parse enforces the schema refine (cell count, in-bounds
+ *  connections). */
 function gridFromAscii(rows: readonly string[]): TileGrid {
   const r0 = rows[0];
   if (r0 === undefined) throw new Error("empty map");
@@ -32,7 +44,7 @@ function gridFromAscii(rows: readonly string[]): TileGrid {
   const cells: GridCell[] = [];
   for (const row of rows) {
     if (row.length !== cols) throw new Error("ragged map");
-    for (const ch of row) cells.push(ch === "#" ? deck() : EMPTY);
+    for (const ch of row) cells.push(ch === "#" ? armour() : ch === "d" ? deck() : EMPTY);
   }
   return TileGrid.parse({ cols, rows: rows.length, cells, connections: [] });
 }
@@ -97,11 +109,9 @@ describe("growArmourHull", () => {
       expect(isEmpty(at(out, c, r))).toBe(true);
     }
 
-    // Exactly 12 armour cells were added.
-    const armourCount = out.cells.filter((cell) =>
-      isArmour(cell),
-    ).length;
-    expect(armourCount).toBe(12);
+    // 9 armour seed cells (the 3x3 block) + 12 grown side cells = 21.
+    const armourCount = out.cells.filter((cell) => isArmour(cell)).length;
+    expect(armourCount).toBe(21);
   });
 
   it("armour cells are solid armour with all edges walled", () => {
@@ -122,6 +132,40 @@ describe("growArmourHull", () => {
     expect(top.edges.s).toBe("wall");
     expect(top.edges.w).toBe("wall");
     expect(top.edges.doorStates).toEqual({});
+  });
+
+  it("grows no armour for a deck-only ship (armour is not grown for deck tiles)", () => {
+    // A solid deck block with an empty border: deck does not seed growth, so the
+    // grid is returned unchanged with zero armour added.
+    const grid = gridFromAscii([
+      ".....",
+      ".ddd.",
+      ".ddd.",
+      ".ddd.",
+      ".....",
+    ]);
+    const out = growArmourHull(grid);
+    expect(out.cells.filter((cell) => isArmour(cell)).length).toBe(0);
+    expect(out).toEqual(grid);
+  });
+
+  it("grows armour around armour even when deck sits between (deck never seeds)", () => {
+    // Armour on the left, deck on the right: only the armour's exposed sides
+    // gain a shell; the deck's exposed sides do not.
+    const grid = gridFromAscii([
+      ".....",
+      ".#dd.",
+      ".....",
+    ]);
+    const out = growArmourHull(grid);
+    // Armour at (1,1): N/S/W neighbours gain armour (E is the deck).
+    expect(isArmour(at(out, 1, 0))).toBe(true); // N of armour
+    expect(isArmour(at(out, 1, 2))).toBe(true); // S of armour
+    expect(isArmour(at(out, 0, 1))).toBe(true); // W of armour
+    // The deck's own exposed sides stay empty.
+    expect(isEmpty(at(out, 3, 0))).toBe(true); // N of a deck cell
+    expect(isEmpty(at(out, 3, 2))).toBe(true); // S of a deck cell
+    expect(isEmpty(at(out, 4, 1))).toBe(true); // E of the rightmost deck
   });
 
   it("never armours an enclosed interior hole", () => {
@@ -203,18 +247,18 @@ describe("padGrid", () => {
   });
 
   it("a ship flush to the original border gets armour on that side after padGrid + grow", () => {
-    // A single deck cell occupying the whole 1x1 grid: flush to every border,
+    // A single armour cell occupying the whole 1x1 grid: flush to every border,
     // so growArmourHull alone has no room to armour.
     const tight: TileGrid = TileGrid.parse({
       cols: 1,
       rows: 1,
-      cells: [deck()],
+      cells: [armour()],
       connections: [],
     });
-    expect(growArmourHull(tight).cells.filter((c) => isArmour(c)).length).toBe(0);
+    expect(growArmourHull(tight).cells.filter((c) => isArmour(c)).length).toBe(1); // only itself
 
-    // After padding by one, the deck sits at (1,1) of a 3x3 grid and gains
-    // armour on all four orthogonal sides.
+    // After padding by one, the armour sits at (1,1) of a 3x3 grid and grows a
+    // shell on all four orthogonal sides.
     const padded = padGrid(tight, 1);
     const out = growArmourHull(padded);
     expect(isArmour(at(out, 1, 0))).toBe(true); // N
