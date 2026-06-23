@@ -1,4 +1,6 @@
+import { CELL_SIZE } from "@/domain/grid";
 import { NEON_MAGENTA } from "@/ui/theme/tokens";
+import { pathWorldCircle } from "@/ui/routes/battleProject";
 import type { OverlayCtx, OverlayDef } from "./types";
 
 /** Colour of a damage pulse ring. Neon magenta — the weapons/damage channel —
@@ -12,17 +14,19 @@ const DAMAGE_ALPHA = 0.55;
 /** Stroke width of a damage pulse ring, in display pixels. */
 const DAMAGE_WIDTH = 2;
 
-/** Radius (in screen pixels) at the small end of a hit. Maps to the smallest
- *  structure loss that still registers a pulse. */
-const RADIUS_MIN = 6;
+/** Radius (in world units) at the small end of a hit — a cell and a half — so
+ *  the pulse is spatial: it tilts into an ellipse under iso and scales with the
+ *  view. Maps to the smallest structure loss that still registers a pulse. */
+const RADIUS_MIN = CELL_SIZE * 1.5;
 
-/** Upper clamp on pulse radius so a single huge hit does not cover the screen. */
-const RADIUS_MAX = 40;
+/** Upper clamp on pulse radius (world units) so a single huge hit does not swamp
+ *  the field. */
+const RADIUS_MAX = CELL_SIZE * 12;
 
-/** Scale factor converting a structure-delta into screen-pixel radius. Sized so
- *  a typical small-arms hit lands near `RADIUS_MIN` and a heavy hit approaches
+/** World units of radius added per point of structure lost. Sized so a typical
+ *  small-arms hit lands near `RADIUS_MIN` and a heavy hit approaches
  *  `RADIUS_MAX`. */
-const RADIUS_PER_HP = 0.8;
+const RADIUS_PER_HP = CELL_SIZE * 0.25;
 
 /** Additional alpha per point of structure lost, layered on top of
  *  `DAMAGE_ALPHA` so heavier hits brighten toward fully opaque. */
@@ -66,9 +70,7 @@ export function drawDamagePulse(c: OverlayCtx): void {
     // Brighten with magnitude: heavier hits push alpha above the baseline up
     // toward fully opaque.
     ctx.globalAlpha = Math.min(1, DAMAGE_ALPHA + delta * ALPHA_PER_HP);
-    const p = t.project(ship.x, ship.y);
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+    pathWorldCircle(ctx, t, ship.x, ship.y, radius);
     ctx.stroke();
   }
   ctx.restore();

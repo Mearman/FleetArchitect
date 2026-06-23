@@ -1,3 +1,4 @@
+import { CELL_SIZE } from "@/domain/grid";
 import type { OverlayCtx, OverlayDef } from "./types";
 import { appendWorldArc, pathWorldCircle } from "@/ui/routes/battleProject";
 
@@ -28,8 +29,9 @@ const STRENGTH_DRAW_THRESHOLD = 0.001;
 /** Emission flash alpha — brief bright dot at the emission origin. */
 const EMISSION_FLASH_ALPHA = 0.5;
 
-/** Emission flash radius, in display pixels. */
-const EMISSION_FLASH_RADIUS = 3;
+/** Emission flash radius, in world units (about three-quarters of a cell), so
+ *  the flash is spatial — it tilts and scales with the view. */
+const EMISSION_FLASH_RADIUS = CELL_SIZE * 0.75;
 
 /** Number of ticks an emission flash remains visible. The tick at which the
  *  emission was recorded (t0) is compared to the current tick; if the delta
@@ -123,9 +125,7 @@ function drawSensorPulse(c: OverlayCtx): void {
       const fadeFrac = 1 - age / EMISSION_FLASH_TICKS;
       ctx.globalAlpha = EMISSION_FLASH_ALPHA * fadeFrac;
       ctx.fillStyle = "#ffe0a0";
-      const ep = t.project(em.x, em.y);
-      ctx.beginPath();
-      ctx.arc(ep.x, ep.y, EMISSION_FLASH_RADIUS, 0, Math.PI * 2);
+      pathWorldCircle(ctx, t, em.x, em.y, EMISSION_FLASH_RADIUS);
       ctx.fill();
     }
   }

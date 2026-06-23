@@ -43,6 +43,30 @@ export function appendWorldArc(
   }
 }
 
+/**
+ * Run `draw` with the canvas transformed so that drawing in world-unit deltas
+ * around (cx, cy) lands on screen under the active projection — a unit circle
+ * becomes the projected ellipse. Use for radial gradients (which can't be traced
+ * as explicit world arcs). Inside `draw`, all coordinates, radii and stroke
+ * widths are in WORLD units (so they scale and tilt with the view); a radial
+ * gradient built here is squashed into the iso plane by the transform.
+ */
+export function withWorldTransform(
+  ctx: CanvasRenderingContext2D,
+  t: Transform,
+  cx: number,
+  cy: number,
+  draw: () => void,
+): void {
+  const o = t.project(cx, cy);
+  const ex = t.project(cx + 1, cy);
+  const ey = t.project(cx, cy + 1);
+  ctx.save();
+  ctx.transform(ex.x - o.x, ex.y - o.y, ey.x - o.x, ey.y - o.y, o.x, o.y);
+  draw();
+  ctx.restore();
+}
+
 /** Begin and trace a full world circle as a closed projected loop. */
 export function pathWorldCircle(
   ctx: CanvasRenderingContext2D,

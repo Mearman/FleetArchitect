@@ -195,38 +195,32 @@ export function useBattleCanvas({
         const base = palette?.accent ?? SIDE_COLOUR[s.side];
         const max = maxHp.get(s.instanceId);
 
+        // World extent of the hull (farthest cell from the centre), driving the
+        // ship rings and the wreck marker as world circles so they tilt into
+        // ellipses on the ship plane under iso. Legacy ships with no cell data
+        // fall back to a small world radius (a couple of cells).
+        const hullRadius = hullRadiusWorld(descriptor);
+        const hullR = hullRadius === undefined ? CELL_SIZE * 2 : hullRadius;
+
         if (!s.alive) {
+          // Wreck marker: a faint disc the size of the dead ship's hull, so it
+          // tilts and scales with the world rather than sitting as a flat dot.
           ctx.globalAlpha = 0.2;
           ctx.fillStyle = base;
-          ctx.beginPath();
-          ctx.arc(px, py, 5, 0, Math.PI * 2);
+          pathWorldCircle(ctx, t, s.x, s.y, hullR * 0.5);
           ctx.fill();
           ctx.globalAlpha = 1;
           continue;
         }
 
-        // Shield/outline ring radius: encircle the hull, so a big ship's rings
-        // sit outside its cells rather than buried inside them. Derived from the
-        // farthest cell from the ship centre. With a known hull extent the rings
-        // are world circles — so they tilt into ellipses on the ship plane under
-        // iso — with the small pixel gaps converted to world units (px / scale).
-        // Legacy ships with no cell data fall back to a fixed screen ring.
-        const hullRadius = hullRadiusWorld(descriptor);
-        const FALLBACK_RING_PX = 11;
-
         // Side outline ring (factions update): with hulls tinted by faction, a
         // thin ring in the side colour keeps attacker/defender legible at a
-        // glance, including same-faction mirror matches.
+        // glance, including same-faction mirror matches. A world circle (the
+        // small pixel gap mapped to world units) so it tilts under iso.
         ctx.strokeStyle = SIDE_COLOUR[s.side];
         ctx.lineWidth = 1.5;
         ctx.globalAlpha = 0.8;
-        ctx.beginPath();
-        if (hullRadius !== undefined) {
-          // hull + 3px cell gap + 2px ring offset, the gaps mapped to world.
-          pathWorldCircle(ctx, t, s.x, s.y, hullRadius + 5 / scale);
-        } else {
-          ctx.arc(px, py, FALLBACK_RING_PX + 2, 0, Math.PI * 2);
-        }
+        pathWorldCircle(ctx, t, s.x, s.y, hullR + 5 / scale);
         ctx.stroke();
         ctx.globalAlpha = 1;
 
@@ -239,11 +233,7 @@ export function useBattleCanvas({
             ctx.beginPath();
             const a0 = -Math.PI / 2;
             const a1 = a0 + Math.PI * 2 * frac;
-            if (hullRadius !== undefined) {
-              appendWorldArc(ctx, t, s.x, s.y, hullRadius + 3 / scale, a0, a1);
-            } else {
-              ctx.arc(px, py, FALLBACK_RING_PX, a0, a1);
-            }
+            appendWorldArc(ctx, t, s.x, s.y, hullR + 3 / scale, a0, a1);
             ctx.stroke();
           }
         }
@@ -336,26 +326,24 @@ export function useBattleCanvas({
             }
 
             // Crew dots: each crew offset is in ship-local units; rotate into
-            // world and project. Radius floored at 2 px so crew stay visible.
+            // world and draw as world circles (half-cell radius) so they tilt
+            // and scale with the view like the main-path crew dots.
             if (s.crew !== undefined) {
-              const dotR = Math.max(2, CELL_SIZE * scale * 0.28);
+              const dotR = CELL_SIZE * 0.28;
               for (const c of s.crew) {
                 const cwx = s.x + (c.x * cosF - c.y * sinF);
                 const cwy = s.y + (c.x * sinF + c.y * cosF);
-                const cdp = t.project(cwx, cwy);
                 const dotColour = CREW_COLOUR[c.state] ?? "#b0b0b8";
                 ctx.globalAlpha = 0.92;
                 ctx.fillStyle = dotColour;
-                ctx.beginPath();
-                ctx.arc(cdp.x, cdp.y, dotR, 0, Math.PI * 2);
+                pathWorldCircle(ctx, t, cwx, cwy, dotR);
                 ctx.fill();
                 if (c.carrying !== undefined) {
                   const accentColour = CARRYING_COLOUR[c.carrying];
                   if (accentColour !== undefined) {
                     ctx.globalAlpha = 1;
                     ctx.fillStyle = accentColour;
-                    ctx.beginPath();
-                    ctx.arc(cdp.x, cdp.y, Math.max(1, dotR * 0.45), 0, Math.PI * 2);
+                    pathWorldCircle(ctx, t, cwx, cwy, dotR * 0.45);
                     ctx.fill();
                   }
                 }
@@ -581,10 +569,10 @@ export function useBattleCanvas({
             ctx.globalAlpha = 1;
           }
         } else {
-          // Legacy aggregated ship with no per-cell data: a simple blob.
+          // Legacy aggregated ship with no per-cell data: a simple blob, drawn
+          // as a world disc (a couple of cells) so it tilts and scales too.
           ctx.fillStyle = base;
-          ctx.beginPath();
-          ctx.arc(px, py, 7, 0, Math.PI * 2);
+          pathWorldCircle(ctx, t, s.x, s.y, CELL_SIZE * 1.4);
           ctx.fill();
         }
 

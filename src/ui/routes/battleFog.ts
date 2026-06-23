@@ -1,4 +1,5 @@
 import type { AwarenessSnapshot } from "@/schema/battle";
+import { CELL_SIZE } from "@/domain/grid";
 import type { Bounds, Transform } from "./battleCamera";
 import { pathWorldCircle, pathWorldSector } from "./battleProject";
 
@@ -78,8 +79,9 @@ const GHOST_MAX_ALPHA = 0.55;
  */
 const GHOST_FADE_TICKS = 60;
 
-/** Radius of a ghost contact marker in display pixels (before scale). */
-const GHOST_MARKER_RADIUS_PX = 5;
+/** Radius of a ghost contact marker in world units (about one and a quarter
+ *  cells), so the marker tilts and scales with the view. */
+const GHOST_MARKER_RADIUS = CELL_SIZE * 1.25;
 
 /** Colour of a ghost marker (PHOSPHOR_AMBER). */
 const GHOST_MARKER_COLOUR = "#ffb000";
@@ -337,20 +339,17 @@ export function drawFogAndAwareness(
   // -------------------------------------------------------------------------
   ctx.save();
   for (const ghost of awareness.ghosts) {
-    const { x: px, y: py } = t.project(ghost.x, ghost.y);
     // Fade linearly: full at GHOST_FADE_TICKS remaining, zero at 0.
     const fadeFraction = Math.min(1, ghost.ticksLeft / GHOST_FADE_TICKS);
     ctx.globalAlpha = fadeFraction * GHOST_MAX_ALPHA;
     ctx.fillStyle = GHOST_MARKER_COLOUR;
-    ctx.beginPath();
-    ctx.arc(px, py, GHOST_MARKER_RADIUS_PX, 0, Math.PI * 2);
+    pathWorldCircle(ctx, t, ghost.x, ghost.y, GHOST_MARKER_RADIUS);
     ctx.fill();
     // A faint ring to mark it as "last known", not a confirmed contact.
     ctx.strokeStyle = GHOST_MARKER_COLOUR;
     ctx.lineWidth = 1;
     ctx.setLineDash([3, 3]);
-    ctx.beginPath();
-    ctx.arc(px, py, GHOST_MARKER_RADIUS_PX * 2, 0, Math.PI * 2);
+    pathWorldCircle(ctx, t, ghost.x, ghost.y, GHOST_MARKER_RADIUS * 2);
     ctx.stroke();
     ctx.setLineDash([]);
   }

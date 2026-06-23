@@ -1,7 +1,9 @@
 import { computeOccluders } from "@/domain/occluders";
 import type { BattleAnomaly } from "@/schema/battle";
+import { CELL_SIZE } from "@/domain/grid";
 import { PHOSPHOR_AMBER } from "@/ui/theme/tokens";
 import type { Bounds, Transform } from "./battleCamera";
+import { pathWorldCircle, withWorldTransform } from "./battleProject";
 
 /**
  * Render constants that MIRROR the engine's SIM values in
@@ -64,11 +66,11 @@ export function drawAnomaly(
 }
 
 function drawBlackHole(ctx: CanvasRenderingContext2D, t: Transform): void {
-  // Centred at the world origin; project it so it sits correctly under iso. The
-  // rings/glow stay screen-circular (radial gradients cannot be cheaply tilted).
-  const { x: cx, y: cy } = t.project(0, 0);
+  // Centred at the world origin. Everything is drawn in world units so the rings
+  // and glow tilt into ellipses on the battle plane under iso. The lethal/tidal
+  // radii are world distances; the glow gradient is filled inside a world-space
+  // transform so the radial falloff is squashed into the same ellipse.
   const lethalPx = BLACK_HOLE_LETHAL_RADIUS * t.scale;
-  const tidalPx = BLACK_HOLE_TIDAL_RADIUS * t.scale;
 
   ctx.save();
 
@@ -76,33 +78,40 @@ function drawBlackHole(ctx: CanvasRenderingContext2D, t: Transform): void {
   ctx.setLineDash([6, 5]);
   ctx.strokeStyle = BH_TIDAL_STROKE;
   ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.arc(cx, cy, tidalPx, 0, Math.PI * 2);
+  pathWorldCircle(ctx, t, 0, 0, BLACK_HOLE_TIDAL_RADIUS);
   ctx.stroke();
   ctx.setLineDash([]);
 
-  // Outer glow falling off from the lethal edge into the tidal zone.
-  const glow = ctx.createRadialGradient(cx, cy, lethalPx, cx, cy, tidalPx);
-  glow.addColorStop(0, BH_GLOW_START);
-  glow.addColorStop(1, "rgba(180,60,200,0)");
-  ctx.fillStyle = glow;
-  ctx.beginPath();
-  ctx.arc(cx, cy, tidalPx, 0, Math.PI * 2);
-  ctx.fill();
+  // Outer glow falling off from the lethal edge into the tidal zone, drawn in a
+  // world-space frame so the gradient becomes an iso ellipse.
+  withWorldTransform(ctx, t, 0, 0, () => {
+    const glow = ctx.createRadialGradient(
+      0,
+      0,
+      BLACK_HOLE_LETHAL_RADIUS,
+      0,
+      0,
+      BLACK_HOLE_TIDAL_RADIUS,
+    );
+    glow.addColorStop(0, BH_GLOW_START);
+    glow.addColorStop(1, "rgba(180,60,200,0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(0, 0, BLACK_HOLE_TIDAL_RADIUS, 0, Math.PI * 2);
+    ctx.fill();
+  });
 
-  // Bright accretion ring at the lethal edge.
+  // Bright accretion ring at the lethal edge (stroke width stays in pixels).
   ctx.strokeStyle = PHOSPHOR_AMBER;
   ctx.globalAlpha = 0.95;
   ctx.lineWidth = Math.max(2, lethalPx * 0.18);
-  ctx.beginPath();
-  ctx.arc(cx, cy, lethalPx, 0, Math.PI * 2);
+  pathWorldCircle(ctx, t, 0, 0, BLACK_HOLE_LETHAL_RADIUS);
   ctx.stroke();
 
   // Event-horizon disc: solid black sized to the lethal radius.
   ctx.globalAlpha = 1;
   ctx.fillStyle = "#000000";
-  ctx.beginPath();
-  ctx.arc(cx, cy, Math.max(2, lethalPx), 0, Math.PI * 2);
+  pathWorldCircle(ctx, t, 0, 0, BLACK_HOLE_LETHAL_RADIUS);
   ctx.fill();
 
   ctx.restore();
@@ -133,15 +142,18 @@ function drawNebula(ctx: CanvasRenderingContext2D, t: Transform, bounds: Bounds)
   for (let i = 0; i < blobCount; i += 1) {
     const wx = bounds.minX + hash01(i * 2 + 1) * rangeX;
     const wy = bounds.minY + hash01(i * 2 + 2) * rangeY;
-    const radiusPx = (0.12 + hash01(i + 17) * 0.12) * Math.min(rangeX, rangeY) * t.scale;
-    const { x: px, y: py } = t.project(wx, wy);
-    const blob = ctx.createRadialGradient(px, py, 0, px, py, radiusPx);
-    blob.addColorStop(0, NEBULA_BLOB_START);
-    blob.addColorStop(1, "rgba(200,60,220,0)");
-    ctx.fillStyle = blob;
-    ctx.beginPath();
-    ctx.arc(px, py, radiusPx, 0, Math.PI * 2);
-    ctx.fill();
+    // Blob radius in world units (a fraction of the smaller field dimension), so
+    // the soft blob tilts into an ellipse and scales with the view.
+    const radiusW = (0.12 + hash01(i + 17) * 0.12) * Math.min(rangeX, rangeY);
+    withWorldTransform(ctx, t, wx, wy, () => {
+      const blob = ctx.createRadialGradient(0, 0, 0, 0, 0, radiusW);
+      blob.addColorStop(0, NEBULA_BLOB_START);
+      blob.addColorStop(1, "rgba(200,60,220,0)");
+      ctx.fillStyle = blob;
+      ctx.beginPath();
+      ctx.arc(0, 0, radiusW, 0, Math.PI * 2);
+      ctx.fill();
+    });
   }
 
   ctx.restore();
@@ -162,22 +174,20 @@ function drawAsteroidField(ctx: CanvasRenderingContext2D, t: Transform, seed: nu
   for (let i = 0; i < discs.length; i += 1) {
     const disc = discs[i];
     if (disc === undefined) continue;
-    const { x: px, y: py } = t.project(disc.x, disc.y);
-    // Radius in display pixels; floored so distant rocks remain visible.
-    const rPx = Math.max(1.5, disc.r * t.scale);
+    // World radius (the occluder's own extent), floored so distant rocks stay
+    // visible. Drawn as a world circle so each rock tilts into an ellipse.
+    const rW = Math.max(CELL_SIZE * 0.3, disc.r);
     // Deterministic shade: use hash01 over the disc index so appearance is
     // stable between redraws. The index is stable since computeOccluders
     // always returns the same ordered array for a given (anomaly, seed).
     const shade = ASTEROID_ALPHA_BASE + hash01(i + 91) * ASTEROID_ALPHA_RANGE;
     ctx.fillStyle = `rgba(150,150,160,${shade})`;
-    ctx.beginPath();
-    ctx.arc(px, py, rPx, 0, Math.PI * 2);
+    pathWorldCircle(ctx, t, disc.x, disc.y, rW);
     ctx.fill();
     // A darker rim for a touch of relief (CHROME_BORDER at alpha 0.5).
     ctx.strokeStyle = "rgba(28,38,32,0.5)";
     ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.arc(px, py, rPx, 0, Math.PI * 2);
+    pathWorldCircle(ctx, t, disc.x, disc.y, rW);
     ctx.stroke();
   }
 
