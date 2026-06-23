@@ -8,6 +8,7 @@ import type { SimConfig } from "@/domain/cache/sim-config";
 import type { BattleInputs, CombatShip } from "@/domain/simulation/types";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import { defaultOrders } from "@/schema/fleet";
+import { normaliseAnomalies } from "@/schema/battle";
 import type { ShipStats } from "@/domain/stats";
 
 function shipStats(): ShipStats {
@@ -155,6 +156,22 @@ describe("deriveCacheKey", () => {
     const keyBase = await deriveCacheKey(base, SIM_CONFIG, ALGO);
     const keyAnomaly = await deriveCacheKey(withAnomaly, SIM_CONFIG, ALGO);
     expect(keyBase).not.toBe(keyAnomaly);
+  });
+
+  it("shares one key for differently-ordered selections (canonical set)", async () => {
+    // Anomalies are a set; construction normalises (dedupe + sort) so the cache
+    // key is order-independent even though canonicalize preserves array order.
+    const orderA: BattleInputs = {
+      ...baseInputs(),
+      anomalies: normaliseAnomalies(["blackHole", "nebula", "asteroidField"]),
+    };
+    const orderB: BattleInputs = {
+      ...baseInputs(),
+      anomalies: normaliseAnomalies(["nebula", "asteroidField", "blackHole"]),
+    };
+    const keyA = await deriveCacheKey(orderA, SIM_CONFIG, ALGO);
+    const keyB = await deriveCacheKey(orderB, SIM_CONFIG, ALGO);
+    expect(keyA).toBe(keyB);
   });
 
   it("changes the key when the simConfig changes", async () => {
