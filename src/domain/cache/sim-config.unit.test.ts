@@ -7,14 +7,16 @@ import {
 import {
   ARRIVAL_CLOSING_SPEED_MPS,
   CREW_HP,
-  EM_HULL_AMBIENT_EMISSION,
-  EM_RECEIVER_NOISE_FLOOR,
   GRAVITY_CONSTANT_ARENA,
   SIM,
   SPEED_OF_LIGHT_M_PER_S,
   SPEED_OF_LIGHT_M_PER_TICK,
   THRUST_ALIGNMENT_RAD,
 } from "@/domain/simulation/engine/config";
+import {
+  EM_HULL_AMBIENT_EMISSION,
+  EM_RECEIVER_NOISE_FLOOR,
+} from "@/domain/simulation/engine/em-anchors";
 import {
   ACCEL_PER_TICK_FROM_SI,
   STALEMATE_IDLE_TICKS,

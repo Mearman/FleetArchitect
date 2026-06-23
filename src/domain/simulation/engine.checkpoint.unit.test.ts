@@ -100,6 +100,7 @@ function beam(): WeaponEffect {
     range: 5000,
     cooldown: 4,
     projectileSpeed: 0,
+    projectileMass: 0,
     tracking: 0,
     shieldPiercing: 0,
     armourPiercing: 0,
@@ -143,7 +144,7 @@ function modularShip(id: string, side: "attacker" | "defender"): CombatShip {
   return {
     instanceId: id,
     designId: `d-${id}`,
-    faction: "test",
+    faction: "Terran",
     side,
     stats: baseStats(),
     position: { x: side === "attacker" ? -100 : 100, y: 0 },

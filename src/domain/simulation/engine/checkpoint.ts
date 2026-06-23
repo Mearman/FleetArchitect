@@ -29,6 +29,7 @@ import type {
 import { CHECKPOINT_VERSION } from "@/schema/checkpoint";
 import type { Rng } from "@/domain/simulation/rng";
 import { getProjectileCounter } from "./projectile-id";
+import { buildHeatCapacity } from "./resource-step";
 import type { StalemateWatch } from "./stalemate";
 import type { EngineState } from "./state";
 import type {
@@ -363,12 +364,16 @@ function restoreShip(s: CheckpointShip): SimShip {
   if (s.brokeOff !== undefined) ship.brokeOff = s.brokeOff;
   if (s.phantom !== undefined) ship.phantom = s.phantom;
   if (s.resource !== undefined) {
+    // heatCapacity is a pure function of the (restored) modules + moduleIndex +
+    // faction, so it is re-derived here rather than serialised in the checkpoint.
+    const modules = ship.modules ?? [];
     ship.resource = {
       moduleIndex: s.resource.moduleIndex,
       thermal: s.resource.thermal,
       propellant: s.resource.propellant,
       atmosphere: s.resource.atmosphere,
       powerBuffer: s.resource.powerBuffer,
+      heatCapacity: buildHeatCapacity(modules, s.resource.moduleIndex, ship.faction),
     };
   }
   return ship;

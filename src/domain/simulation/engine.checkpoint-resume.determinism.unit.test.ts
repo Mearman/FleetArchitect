@@ -57,6 +57,7 @@ function cannon(): ModuleEffect {
     range: 5000,
     cooldown: 2,
     projectileSpeed: 40,
+    projectileMass: 0.5,
     tracking: 0,
     shieldPiercing: 0,
     armourPiercing: 0,
@@ -147,7 +148,7 @@ function crewedShooter(
   return {
     instanceId: id,
     designId: `d-${id}`,
-    faction: "test",
+    faction: "Terran",
     side,
     stats: statsFor(99999),
     position: { x, y: 0 },
@@ -171,7 +172,7 @@ function toughTarget(
   return {
     instanceId: id,
     designId: `d-${id}`,
-    faction: "test",
+    faction: "Terran",
     side,
     stats: statsFor(1_000_000),
     position: { x, y: 0 },

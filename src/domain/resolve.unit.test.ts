@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { resolveFleetToCombatShips } from "@/domain/resolve";
-import { cellToLocal, deriveRadius } from "@/domain/grid";
+import { cellToLocal } from "@/domain/grid";
 import { growArmourHull, padGrid } from "@/domain/hull-armour";
 import { catalog } from "@/data/catalog";
 import { nowIso } from "@/domain/id";

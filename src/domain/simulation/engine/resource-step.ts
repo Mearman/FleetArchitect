@@ -125,6 +125,27 @@ function cellKey(col: number, row: number): string {
   return `${col},${row}`;
 }
 
+/**
+ * Per-cell heat capacity (J/K): each module's mass × its faction material's
+ * specific heat, keyed by the dense module index. A pure function of the
+ * module set and index map, so the checkpoint path re-derives it on restore
+ * (exact, since the restored modules carry their mass and faction) rather than
+ * serializing the map.
+ */
+export function buildHeatCapacity(
+  modules: readonly SimModule[],
+  moduleIndex: ReadonlyMap<string, number>,
+  faction: string,
+): Map<number, number> {
+  const cellSpecificHeat = specificHeat(faction);
+  const heatCapacity = new Map<number, number>();
+  for (const m of modules) {
+    const i = moduleIndex.get(cellKey(m.col, m.row));
+    if (i !== undefined) heatCapacity.set(i, m.mass * cellSpecificHeat);
+  }
+  return heatCapacity;
+}
+
 /** Whether a module cell is a deck (crew-walkable, atmosphere-retaining). */
 function isDeck(m: SimModule): boolean {
   return m.surface === "deck";
@@ -189,12 +210,7 @@ export function makeResourceState(ship: SimShip): ResourceState | undefined {
   // Per-cell heat capacity (J/K): cell mass × the faction material's specific
   // heat. Fixed for the battle (a cell's mass never changes and the index map is
   // stable), so it is built once here and reused every tick by the thermal step.
-  const cellSpecificHeat = specificHeat(ship.faction);
-  const heatCapacity = new Map<number, number>();
-  for (const m of sorted) {
-    const i = moduleIndex.get(cellKey(m.col, m.row));
-    if (i !== undefined) heatCapacity.set(i, m.mass * cellSpecificHeat);
-  }
+  const heatCapacity = buildHeatCapacity(sorted, moduleIndex, ship.faction);
 
   return { moduleIndex, thermal, propellant, atmosphere, powerBuffer, heatCapacity };
 }
