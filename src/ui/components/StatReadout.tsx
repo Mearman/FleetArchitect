@@ -1,5 +1,6 @@
 import { SimpleGrid, Stack, Text } from "@mantine/core";
 import type { ShipStats } from "@/domain/stats";
+import { formatJoules, formatWatts } from "@/ui/format";
 
 interface StatReadoutProps {
   stats: ShipStats;
@@ -40,20 +41,20 @@ export function StatReadout({ stats }: StatReadoutProps) {
         <StatCell label="Cost">{stats.cost} pts</StatCell>
         <StatCell label="Weapons">{stats.weapons.length}</StatCell>
         <StatCell label="Structure">
-          {Math.round(stats.structure)}
+          {formatJoules(stats.structure)}
           {stats.damageReduction > 0
             ? ` (−${Math.round(stats.damageReduction * 100)}%)`
             : ""}
         </StatCell>
         <StatCell label="Shield">
-          {Math.round(stats.shieldCapacity)}
+          {formatJoules(stats.shieldCapacity)}
           {stats.shieldCapacity > 0
-            ? ` (+${stats.shieldRechargeRate.toFixed(1)}/t)`
+            ? ` (+${formatWatts(stats.shieldRechargeRate)})`
             : ""}
         </StatCell>
         <StatCell label="Power" tone={stats.powerNet < 0 ? "bad" : "good"}>
           {stats.powerNet >= 0 ? "+" : ""}
-          {stats.powerNet.toFixed(0)} ({stats.powerOutput.toFixed(0)} out)
+          {formatWatts(stats.powerNet)} ({formatWatts(stats.powerOutput)} out)
         </StatCell>
         <StatCell label="Crew" tone={stats.crewNet < 0 ? "bad" : "good"}>
           {stats.crewNet >= 0 ? "+" : ""}

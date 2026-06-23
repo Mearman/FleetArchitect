@@ -1,6 +1,7 @@
 import { Alert, List, Stack } from "@mantine/core";
 import { IconCircleCheck, IconAlertTriangle, IconInfoCircle } from "@tabler/icons-react";
 import type { DesignFault } from "@/domain/stats";
+import { formatWatts } from "@/ui/format";
 
 function describe(fault: DesignFault): string {
   switch (fault.kind) {
@@ -15,7 +16,7 @@ function describe(fault: DesignFault): string {
     case "unknownLayerMaterial":
       return `Cell (${fault.col}, ${fault.row}) has no ${fault.layer} layer material for this design's faction.`;
     case "powerDeficit":
-      return `Power deficit of ${Math.abs(fault.net).toFixed(0)} — add a reactor.`;
+      return `Power deficit of ${formatWatts(Math.abs(fault.net))} — add a reactor.`;
     case "crewDeficit":
       return `Crew shortfall of ${Math.abs(fault.net).toFixed(0)} — add crew quarters.`;
     case "crossFaction":

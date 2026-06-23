@@ -1,5 +1,6 @@
 import { Box, Group, Progress, Stack, Text, Tooltip } from "@mantine/core";
 import type { BattleFrame } from "@/schema/battle";
+import { formatJoules } from "@/ui/format";
 import type { DescriptorMap } from "@/ui/cellLayout";
 import { renderCells } from "@/ui/cellLayout";
 import { MODULE_LABEL, SIDE_COLOUR } from "./battleConstants";
@@ -52,7 +53,7 @@ export function ModuleStatusPanel({
                 return (
                   <Tooltip
                     key={m.slotId}
-                    label={`${MODULE_LABEL[m.kind] ?? m.kind}: ${Math.round(m.hp)}/${m.maxHp}`}
+                    label={`${MODULE_LABEL[m.kind] ?? m.kind}: ${formatJoules(m.hp)} / ${formatJoules(m.maxHp)}`}
                   >
                     <Box style={{ width: 34 }}>
                       <Progress

@@ -5,6 +5,7 @@ import { catalog } from "@/data/catalog";
 import { deriveClassification } from "@/domain/grid";
 import { analyseShipDesign } from "@/domain/stats";
 import type { ShipDesign } from "@/schema/ship";
+import { formatJoules } from "@/ui/format";
 import { FACTION_PALETTE } from "@/ui/routes/battleConstants";
 import { ShipThumbnail } from "./ShipThumbnail";
 import {
@@ -59,7 +60,7 @@ export function ShipCard({ design, selected, onSelect, action, compact }: ShipCa
         <span className={shipCardBadge}>{classification}</span>
         <div className={shipCardStats}>
           <span className={shipCardStat}>{analysis.stats.cost} pts</span>
-          <span className={shipCardStat}>{Math.round(analysis.stats.structure)} hp</span>
+          <span className={shipCardStat}>{formatJoules(analysis.stats.structure)}</span>
           <span className={shipCardStat}>{analysis.stats.weapons.length} wpn</span>
         </div>
       </div>
