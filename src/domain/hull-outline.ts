@@ -31,13 +31,14 @@ import {
 // ---------------------------------------------------------------------------
 
 /**
- * The built (non-bare solid) cells of a grid — the plating the hull wraps —
- * placed into a one-cell border expansion so boundary tracing has room. Because
- * the border is symmetric, `toMetreLoop` on the expanded dimensions centres
- * identically to the original grid.
+ * The plating cells the hull wraps, placed into a one-cell border expansion so
+ * boundary tracing has room. Because the border is symmetric, `toMetreLoop` on
+ * the expanded dimensions centres identically to the original grid.
  *
- * Bare substrate is internal framing, not plating, so it is excluded: a bare
- * cell at the edge is not wrapped, while one enclosed by deck or armour still
+ * Deck and armour are always plating. Bare substrate is internal framing, so it
+ * is excluded UNLESS it carries a wall edge — a wall is part of the ship's skin
+ * wherever it sits, so a bare cell with a wall is wrapped (rectilinearly). A bare
+ * cell with no wall is not wrapped, though one enclosed by other plating still
  * ends up inside the hull because its neighbours are.
  */
 export function builtFootprint(grid: TileGrid): Shell {
@@ -45,7 +46,10 @@ export function builtFootprint(grid: TileGrid): Shell {
   const isBuilt = (c: number, r: number): boolean => {
     if (c < 0 || r < 0 || c >= cols || r >= rows) return false;
     const cell = grid.cells[r * cols + c];
-    return cell?.kind === "solid" && cell.surface !== "bare";
+    if (cell === undefined || cell.kind !== "solid") return false;
+    if (cell.surface !== "bare") return true; // deck/armour are always plating
+    const e = cell.edges;
+    return e.n === "wall" || e.e === "wall" || e.s === "wall" || e.w === "wall";
   };
   const ncols = cols + 2;
   const nrows = rows + 2;
@@ -54,6 +58,50 @@ export function builtFootprint(grid: TileGrid): Shell {
     for (let c = 0; c < cols; c += 1)
       if (isBuilt(c, r)) cells.add((r + 1) * ncols + (c + 1));
   return { cols: ncols, rows: nrows, cells };
+}
+
+/** The armour cells of a grid, in the same expanded coordinates as
+ *  {@link builtFootprint}. Only armour is bevelled; deck and bare-walled plating
+ *  stay rectilinear. */
+function armourCells(grid: TileGrid): Set<number> {
+  const { cols, rows } = grid;
+  const ncols = cols + 2;
+  const cells = new Set<number>();
+  for (let r = 0; r < rows; r += 1)
+    for (let c = 0; c < cols; c += 1) {
+      const cell = grid.cells[r * cols + c];
+      if (cell?.kind === "solid" && cell.surface === "armor")
+        cells.add((r + 1) * ncols + (c + 1));
+    }
+  return cells;
+}
+
+/** Predicate over a lattice corner (in expanded shell coords): true when every
+ *  footprint cell touching the corner is armour (and at least one is). Only such
+ *  corners may be bevelled; a corner touching any deck or bare-walled cell stays
+ *  a right angle. The four cells around corner (x, y) are (x-1,y-1), (x,y-1),
+ *  (x-1,y), (x,y) in shell-cell coordinates. */
+function makeArmourCorner(
+  footprint: Shell,
+  armour: ReadonlySet<number>,
+): (x: number, y: number) => boolean {
+  const { cols } = footprint;
+  return (x, y) => {
+    const quad: ReadonlyArray<readonly [number, number]> = [
+      [x - 1, y - 1],
+      [x, y - 1],
+      [x - 1, y],
+      [x, y],
+    ];
+    let any = false;
+    for (const [cc, rr] of quad) {
+      const idx = rr * cols + cc;
+      if (!footprint.cells.has(idx)) continue;
+      any = true;
+      if (!armour.has(idx)) return false;
+    }
+    return any;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -152,7 +200,11 @@ function capCoversPlating(
  * deck row) must be kept or the hull would drop those cells. Only taken when the
  * rejoined edge is octilinear. Fixpoint, deterministic (lowest index first).
  */
-function absorbTabs(poly: IPoint[], built: Shell): IPoint[] {
+function absorbTabs(
+  poly: IPoint[],
+  built: Shell,
+  isArmourCorner: (x: number, y: number) => boolean,
+): IPoint[] {
   let pts = poly.slice();
   let guard = 0;
   while (pts.length > 4 && guard < pts.length * 4) {
@@ -166,6 +218,8 @@ function absorbTabs(poly: IPoint[], built: Shell): IPoint[] {
       const d = pts[(i + 2) % n]!;
       const capLen = Math.hypot(c.x - b.x, c.y - b.y);
       if (capLen >= 3) continue;
+      // Only smooth away an armour notch; a deck/bare-walled notch stays square.
+      if (!isArmourCorner(b.x, b.y) || !isArmourCorner(c.x, c.y)) continue;
       const fIn = { x: sign(b.x - a.x), y: sign(b.y - a.y) };
       const fOut = { x: sign(d.x - c.x), y: sign(d.y - c.y) };
       if (fIn.x + fOut.x !== 0 || fIn.y + fOut.y !== 0) continue; // not antiparallel
@@ -230,7 +284,10 @@ function turnCos(a: IPoint, b: IPoint, c: IPoint): number {
  * into two 45 facets. (An axis chord is exempt — its right angles are exactly
  * what the chamfer turns into facets.)
  */
-function smoothReflex(poly: IPoint[]): IPoint[] {
+function smoothReflex(
+  poly: IPoint[],
+  isArmourCorner: (x: number, y: number) => boolean,
+): IPoint[] {
   let pts = poly;
   let progressed = true;
   while (progressed && pts.length > 3) {
@@ -242,6 +299,8 @@ function smoothReflex(poly: IPoint[]): IPoint[] {
       const v = pts[i]!;
       const w = pts[(i + 1) % n]!;
       const after = pts[(i + 2) % n]!;
+      // Only collapse a corner that is purely armour; deck/bare-walled stay square.
+      if (!isArmourCorner(v.x, v.y)) continue;
       // CW (y-down): reflex turn has negative cross.
       if ((v.x - u.x) * (w.y - v.y) - (v.y - u.y) * (w.x - v.x) >= 0) continue;
       if (!edgeDirectionAllowed(w.x - u.x, w.y - u.y)) continue;
@@ -296,7 +355,10 @@ const CHAMFER_GAP = 0.5;
  * the cut is the full cell, so facets stay exactly sqrt 2. Corners already
  * involving a diagonal edge are 45-degree turns and are left alone.
  */
-function chamferRightAngles(poly: IPoint[]): IPoint[] {
+function chamferRightAngles(
+  poly: IPoint[],
+  isArmourCorner: (x: number, y: number) => boolean,
+): IPoint[] {
   const n = poly.length;
   const ra = poly.map((_p, i) => rightAngleSign(poly, i));
   const out: IPoint[] = [];
@@ -304,7 +366,8 @@ function chamferRightAngles(poly: IPoint[]): IPoint[] {
     const p = poly[(i - 1 + n) % n]!;
     const v = poly[i]!;
     const w = poly[(i + 1) % n]!;
-    if (ra[i] === 0) {
+    // Only chamfer an armour corner; deck/bare-walled corners stay rectilinear.
+    if (ra[i] === 0 || !isArmourCorner(v.x, v.y)) {
       out.push(v);
       continue;
     }
@@ -327,21 +390,30 @@ function chamferRightAngles(poly: IPoint[]): IPoint[] {
   return collapseCollinear(out);
 }
 
-function bevelLoop(seed: IPoint[], built: Shell): IPoint[] {
+function bevelLoop(
+  seed: IPoint[],
+  built: Shell,
+  isArmourCorner: (x: number, y: number) => boolean,
+): IPoint[] {
   if (seed.length < 4) return seed;
-  return chamferRightAngles(smoothReflex(absorbTabs(seed, built)));
+  return chamferRightAngles(
+    smoothReflex(absorbTabs(seed, built, isArmourCorner), isArmourCorner),
+    isArmourCorner,
+  );
 }
 
 /**
  * Compute the bevelled hull outline polygon(s) for a ship grid, in ship-local
- * metres, clockwise wound — for rendering. Hugs the plating (no grown ring),
- * octilinear, no right angles, every facet at least sqrt 2 where features are
- * >= 3 cells, and contains every plating cell. Deterministic.
+ * metres, clockwise wound — for rendering. Hugs the plating (no grown ring) and
+ * bevels only armour: armour corners soften to 45-degree facets (>= sqrt 2 where
+ * the feature is at least three cells), while deck and bare-walled corners stay
+ * rectilinear. Contains every plating cell. Deterministic.
  */
 export function computeHullOutline(grid: TileGrid): Vec2[][] {
   const built = builtFootprint(grid);
+  const isArmourCorner = makeArmourCorner(built, armourCells(grid));
   return latticeSeedLoops(built)
-    .map((seed) => bevelLoop(seed, built))
+    .map((seed) => bevelLoop(seed, built, isArmourCorner))
     .filter((loop) => loop.length >= 3)
     .map((loop) => toMetreLoop(loop, built.cols, built.rows));
 }

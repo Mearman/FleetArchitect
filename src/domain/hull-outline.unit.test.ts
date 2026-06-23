@@ -40,8 +40,8 @@ function armourGrid(rows: readonly string[]): TileGrid {
   return TileGrid.parse({ cols, rows: rows.length, cells, connections: [] });
 }
 
-/** Build a grid of all-deck solid cells from an ASCII map (`#` solid). Deck
- *  cells grow a one-cell armour ring, so these exercise the grow path. */
+/** Build a grid of all-deck solid cells from an ASCII map (`#` solid). Deck is
+ *  never bevelled, so these exercise the rectilinear path. */
 function deckGrid(rows: readonly string[]): TileGrid {
   const cols = rows[0]?.length ?? 0;
   const deck = {
@@ -55,6 +55,47 @@ function deckGrid(rows: readonly string[]): TileGrid {
     Array.from({ length: cols }, (_unused, c) => (line[c] === "#" ? deck : empty)),
   );
   return TileGrid.parse({ cols, rows: rows.length, cells, connections: [] });
+}
+
+/** Build a mixed-surface grid: `#` armour (walled), `D` deck (open), `.` empty. */
+function surfaceGrid(rows: readonly string[]): TileGrid {
+  const cols = rows[0]?.length ?? 0;
+  const armour = {
+    kind: "solid",
+    substrate: true,
+    surface: "armor",
+    edges: { n: "wall", e: "wall", s: "wall", w: "wall", doorStates: {} },
+  };
+  const deck = {
+    kind: "solid",
+    substrate: true,
+    surface: "deck",
+    edges: { n: "open", e: "open", s: "open", w: "open", doorStates: {} },
+  };
+  const empty = { kind: "empty" };
+  const cells: unknown[] = rows.flatMap((line) =>
+    Array.from({ length: cols }, (_unused, c) =>
+      line[c] === "#" ? armour : line[c] === "D" ? deck : empty,
+    ),
+  );
+  return TileGrid.parse({ cols, rows: rows.length, cells, connections: [] });
+}
+
+/** A solid bare cell, optionally with a wall on its north edge. */
+function bareCellGrid(withWall: boolean): TileGrid {
+  const cell = {
+    kind: "solid",
+    substrate: true,
+    surface: "bare",
+    edges: {
+      n: withWall ? "wall" : "open",
+      e: "open",
+      s: "open",
+      w: "open",
+      doorStates: {},
+    },
+  };
+  return TileGrid.parse({ cols: 1, rows: 1, cells: [cell], connections: [] });
 }
 
 /** Turn angle (degrees) at vertex i of a loop. */
@@ -191,6 +232,40 @@ describe("computeHullOutline — invariants (HARD)", () => {
   }
 });
 
+describe("computeHullOutline — bevels armour only; deck/walls stay rectilinear", () => {
+  it("a deck block is rectilinear (no diagonal facets)", () => {
+    const grid = deckGrid(["####", "####", "####"]);
+    const loops = computeHullOutline(grid);
+    expect(minDiagonalFacet(loops)).toBe(Infinity); // no 45 facets at all
+    expect(everyEdgeOctilinear(loops)).toBe(true); // axis edges are octilinear
+    expect(everyCellContained(grid, loops)).toBe(true);
+  });
+
+  it("mixed armour/deck: armour corners bevel while deck corners stay square", () => {
+    // Top two rows armour, bottom two deck. Armour shoulders chamfer to 45s; the
+    // deck corners remain right angles. Both must coexist, and nothing is dropped.
+    const grid = surfaceGrid(["####", "####", "DDDD", "DDDD"]);
+    const loops = computeHullOutline(grid);
+    expect(minDiagonalFacet(loops)).toBeLessThan(Infinity); // an armour bevel exists
+    expect(maxAbsTurn(loops)).toBeGreaterThan(89); // a deck right angle survives
+    expect(everyEdgeOctilinear(loops)).toBe(true);
+    expect(everyCellContained(grid, loops)).toBe(true);
+  });
+
+  it("a bare cell with a wall edge is wrapped, rectilinear", () => {
+    const grid = bareCellGrid(true);
+    const loops = computeHullOutline(grid);
+    expect(loops.length).toBeGreaterThan(0);
+    expect(minDiagonalFacet(loops)).toBe(Infinity); // not bevelled
+    expect(everyCellContained(grid, loops)).toBe(true);
+  });
+
+  it("a bare cell with no wall edge is not wrapped at all", () => {
+    const loops = computeHullOutline(bareCellGrid(false));
+    expect(loops.length).toBe(0);
+  });
+});
+
 describe("computeHullOutline — thin-tipped shapes stay contained", () => {
   // An asymmetric arrowhead whose tip is only two cells across. The sqrt-2
   // minimum facet is geometrically impossible there (a 2-cell tip can carry only
@@ -207,26 +282,30 @@ describe("computeHullOutline — thin-tipped shapes stay contained", () => {
   });
 });
 
-describe("computeHullOutline — disjoint deck clusters obey the 45 invariant", () => {
-  // Two separate deck clusters in one grid. Each is bevelled independently and
-  // neither may leave a turn sharper than 45 degrees. (Regression: a pinched
-  // footprint once produced a -135 spike.)
-  it("leaves no turn sharper than 45 degrees", () => {
+describe("computeHullOutline — disjoint deck clusters stay rectilinear", () => {
+  // Two separate deck clusters in one grid. Deck never bevels, so the hull is the
+  // exact rectilinear outline of each cluster — no diagonal facets and no spike.
+  // (Regression: a pinched footprint once produced a -135 spike.)
+  it("are rectilinear with no diagonal facets", () => {
     const grid = deckGrid(["##..", "#...", "....", "....", "####"]);
     const loops = computeHullOutline(grid);
-    expect(maxAbsTurn(loops)).toBeLessThanOrEqual(45 + TURN_EPS);
+    expect(minDiagonalFacet(loops)).toBe(Infinity);
+    expect(maxAbsTurn(loops)).toBeLessThanOrEqual(90 + TURN_EPS);
+    expect(everyEdgeOctilinear(loops)).toBe(true);
+    expect(everyCellContained(grid, loops)).toBe(true);
   });
 });
 
 describe("computeHullOutline — every preset ship satisfies the invariants", () => {
   for (const d of presetDesigns) {
-    it(`${d.id}: octilinear, no 90, contains every cell`, () => {
+    it(`${d.id}: octilinear, turns <= 90, contains every cell`, () => {
       const loops = computeHullOutline(d.grid);
       expect(everyEdgeOctilinear(loops)).toBe(true);
-      expect(maxAbsTurn(loops)).toBeLessThanOrEqual(45 + 1e-3);
-      // sqrt-2 is not asserted here: with the hull hugging the plating (no grown
-      // ring) a 2-cell-wide boundary feature can only carry a half-cell chamfer.
-      // Containment is the invariant that matters — no plating is dropped.
+      // Only armour bevels (<=45); deck/bare-walled stretches stay rectilinear, so
+      // 90-degree corners are expected. sqrt-2 is not asserted (a sub-3-cell
+      // boundary feature can only carry a half-cell chamfer). Containment is the
+      // invariant that matters — no plating is dropped.
+      expect(maxAbsTurn(loops)).toBeLessThanOrEqual(90 + 1e-3);
       expect(everyCellContained(d.grid, loops)).toBe(true);
     });
   }
