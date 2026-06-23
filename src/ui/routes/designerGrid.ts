@@ -1,4 +1,6 @@
 import { catalog } from "@/data/catalog";
+import { MODULE_APPEARANCE } from "@/ui/render/moduleAppearance";
+import type { GlyphKey } from "@/ui/render/moduleAppearance";
 import type {
   CellEdges,
   DoorState,
@@ -182,8 +184,10 @@ export function blankDesign(): WorkingDesign {
 }
 
 /** Display colour per cell. The surface tints the cell; an equipment tint
- *  overlays it so a weapon on a deck cell is distinguishable from a bare
- *  corridor. Sensor and comms modules get distinct hues. */
+ *  overlays it so each installed module is distinguishable at a glance. The
+ *  equipment hue comes from the shared {@link MODULE_APPEARANCE} table, so a
+ *  weapon, an engine and a reactor read as different parts in the designer
+ *  exactly as they do in the battle and isometric views. */
 export function cellColour(cell: GridCell): string {
   if (cell.kind === "empty") return "transparent";
   if (cell.kind !== "solid") return "transparent";
@@ -198,16 +202,15 @@ export function cellColour(cell: GridCell): string {
         return "#c9a84c";
       }
       const mod = catalog().module(cell.equipment.moduleId);
-      if (mod?.effect.kind === "sensor") return "#4ecb9e"; // teal-green
-      if (mod?.effect.kind === "comms") return "#b87fff"; // purple
-      return "#6ea8ff"; // default equipment
+      if (mod === undefined) return "#6ea8ff";
+      return MODULE_APPEARANCE[mod.effect.kind].colour;
     }
   }
 }
 
-/** Short label drawn inside a cell. Equipment cells use the module name's
- *  initial; sensor/comms get distinct letters; bare cells get "/" (the
- *  legacy strut token); empty armour cells get "#". */
+/** Short label drawn inside a cell WITHOUT an equipment glyph: bare cells get
+ *  "/" (the legacy strut token), empty deck "~", empty armour "#". Equipment
+ *  cells render a {@link cellGlyph} instead, so they return "". */
 export function cellLabel(cell: GridCell): string {
   if (cell.kind === "empty") return "";
   if (cell.kind !== "solid") return "";
@@ -216,15 +219,21 @@ export function cellLabel(cell: GridCell): string {
       return "#";
     case "bare":
       return "/";
-    case "deck": {
-      if (cell.equipment === undefined) return "~";
-      const mod = catalog().module(cell.equipment.moduleId);
-      if (mod === undefined) return "?";
-      if (mod.effect.kind === "sensor") return "S";
-      if (mod.effect.kind === "comms") return "K";
-      return mod.name.charAt(0).toUpperCase();
-    }
+    case "deck":
+      return cell.equipment === undefined ? "~" : "";
   }
+}
+
+/** The glyph identifying a cell's installed module, or null when the cell holds
+ *  no equipment. Resolves the module's effect kind through the shared
+ *  {@link MODULE_APPEARANCE} table so the designer marks an engine, a weapon and
+ *  a sensor with the same glyphs the battle and isometric views use. */
+export function cellGlyph(cell: GridCell): GlyphKey | null {
+  if (cell.kind !== "solid" || cell.surface !== "deck") return null;
+  if (cell.equipment === undefined) return null;
+  const mod = catalog().module(cell.equipment.moduleId);
+  if (mod === undefined) return null;
+  return MODULE_APPEARANCE[mod.effect.kind].glyph;
 }
 
 /** Build a fresh solid cell for a `substrate-<surface>` brush. */

@@ -1,7 +1,8 @@
 import { TICKS_PER_SECOND } from "@/domain/simulation/types";
-import { BattleAnomaly } from "@/schema/battle";
+import { BattleAnomaly, CellKind } from "@/schema/battle";
 import type { BattleAnomaly as BattleAnomalyType } from "@/schema/battle";
 import type { WeaponType } from "@/schema/module";
+import { MODULE_APPEARANCE } from "@/ui/render/moduleAppearance";
 import { PHOSPHOR_AMBER, NEON_CYAN, NEON_MAGENTA, PHOSPHOR_GREEN } from "@/ui/theme/tokens";
 import type { Bounds } from "./battleCamera";
 
@@ -23,34 +24,16 @@ export const PROJECTILE_COLOUR: Record<WeaponType, string> = {
   plasma: "#cc44ff",
 };
 
-/** Per-module part colour, by module kind, for the battle canvas. */
-export const MODULE_COLOUR: Record<string, string> = {
-  weapon: NEON_MAGENTA,
-  shield: NEON_CYAN,
-  armour: "#4d544c",
-  engine: PHOSPHOR_GREEN,
-  power: PHOSPHOR_AMBER,
-  crew: "#9a66cc",
-  hull: "#2f342e",
-  magazine: "#ff8c1a",
-  pointDefense: NEON_MAGENTA,
-  repair: PHOSPHOR_GREEN,
-  sensor: NEON_CYAN,
-  comms: "#80c8ff",
-  // Tech modules (factions update).
-  blink: "#80d0ff",
-  afterburner: PHOSPHOR_AMBER,
-  overcharge: "#ffd24d",
-  cloak: "#9060cc",
-  signature: "#7040a0",
-  ecm: NEON_CYAN,
-  eccm: "#26c6da",
-  decoy: "#aab4a6",
-  commandAura: PHOSPHOR_AMBER,
-  hangar: NEON_CYAN,
-  mineLayer: "#ff5a1a",
-  boarding: NEON_MAGENTA,
-};
+/**
+ * Per-cell part colour, by kind, for the battle canvas — derived from the
+ * shared {@link MODULE_APPEARANCE} table so the battle, the designer, and the
+ * isometric views can never drift apart. Keyed over every {@link CellKind}, so
+ * (unlike the old hand-maintained map) `rcs` and `reactionWheel` cells are no
+ * longer invisible.
+ */
+export const MODULE_COLOUR: Record<string, string> = Object.fromEntries(
+  CellKind.options.map((kind) => [kind, MODULE_APPEARANCE[kind].colour]),
+);
 
 /**
  * Per-faction hull/accent palette (factions update). The hull base tints a

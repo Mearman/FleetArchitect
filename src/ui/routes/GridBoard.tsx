@@ -3,7 +3,8 @@ import type { EdgeKind, SolidCell, TileGrid } from "@/schema/grid";
 import { PHOSPHOR_GREEN } from "@/ui/theme/tokens";
 import { CELL_SIZE } from "@/domain/grid";
 import { computeHullOutline } from "@/domain/hull-outline";
-import { cellColour, cellLabel, edgePositionClass } from "./designerGrid";
+import { cellColour, cellGlyph, cellLabel, edgePositionClass } from "./designerGrid";
+import { GLYPH_PATHS } from "@/ui/render/moduleGlyphs";
 import {
   breachOverlay,
   cellInner,
@@ -249,7 +250,28 @@ export function GridBoard({
                     }}
                   />
                 ) : null}
-                {cellLabel(cell)}
+                {(() => {
+                  const glyph = cellGlyph(cell);
+                  if (glyph === null) return cellLabel(cell);
+                  // The shared module glyph, engraved on the cell. Authored in a
+                  // centred unit box, so a viewBox of (-0.5 -0.5 1 1) maps it to
+                  // the cell; non-scaling stroke keeps it crisp at any zoom.
+                  return (
+                    <svg
+                      viewBox="-0.5 -0.5 1 1"
+                      width="72%"
+                      height="72%"
+                      fill="none"
+                      stroke="rgba(8, 10, 8, 0.78)"
+                      strokeWidth={0.09}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d={GLYPH_PATHS[glyph]} />
+                    </svg>
+                  );
+                })()}
               </span>
             </div>
           );
