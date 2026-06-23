@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { notifications } from "@mantine/notifications";
 import type { Fleet } from "@/schema/fleet";
 import type { ShipDesign } from "@/schema/ship";
-import type { BattleAnomaly } from "@/schema/battle";
+import type { BattleAnomalyKind } from "@/schema/battle";
 import {
   ShareDecodeError,
   decodeShareable,
@@ -28,14 +28,14 @@ interface BattleUrlSyncParams {
   designs: ShipDesign[] | undefined;
   attackerId: string | null;
   defenderId: string | null;
-  anomaly: BattleAnomaly;
+  anomalies: BattleAnomalyKind[];
   seed: number;
-  setAnomaly: (anomaly: BattleAnomaly) => void;
+  setAnomalies: (anomalies: BattleAnomalyKind[]) => void;
   setSeed: (seed: number) => void;
   startBattle: (
     attacker: Fleet,
     defender: Fleet,
-    anomaly: BattleAnomaly,
+    anomalies: BattleAnomalyKind[],
     seed: number,
     designs: ShipDesign[],
   ) => void;
@@ -61,9 +61,9 @@ export function useBattleUrlSync({
   designs,
   attackerId,
   defenderId,
-  anomaly,
+  anomalies,
   seed,
-  setAnomaly,
+  setAnomalies,
   setSeed,
   startBattle,
 }: BattleUrlSyncParams): void {
@@ -103,9 +103,9 @@ export function useBattleUrlSync({
     }
     if (shareable.kind !== "battle") return;
 
-    const { attacker, defender, designs: shared, anomaly: a, seed: s } =
+    const { attacker, defender, designs: shared, anomalies: a, seed: s } =
       shareable.value;
-    setAnomaly(a);
+    setAnomalies(a);
     setSeed(s);
     notifications.show({
       title: "Replaying shared battle",
@@ -113,7 +113,7 @@ export function useBattleUrlSync({
       color: "indigo",
     });
     startBattleRef.current(attacker, defender, a, s, shared);
-  }, [payload, setAnomaly, setSeed]);
+  }, [payload, setAnomalies, setSeed]);
 
   // WRITE — mirror a complete local matchup into the URL.
   useEffect(() => {
@@ -129,7 +129,7 @@ export function useBattleUrlSync({
         attacker,
         defender,
         designs: referencedDesigns(attacker, defender, designs),
-        anomaly,
+        anomalies,
         seed,
       },
     });
@@ -137,5 +137,5 @@ export function useBattleUrlSync({
     if (encoded !== payload) {
       navigate(`/battle/${encoded}`, { replace: true });
     }
-  }, [fleets, designs, attackerId, defenderId, anomaly, seed, payload, navigate]);
+  }, [fleets, designs, attackerId, defenderId, anomalies, seed, payload, navigate]);
 }

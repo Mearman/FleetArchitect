@@ -1,6 +1,5 @@
 import { TICKS_PER_SECOND } from "@/domain/simulation/types";
-import { BattleAnomaly, CellKind } from "@/schema/battle";
-import type { BattleAnomaly as BattleAnomalyType } from "@/schema/battle";
+import { BattleAnomalyKind, CellKind } from "@/schema/battle";
 import type { WeaponType } from "@/schema/module";
 import { MODULE_APPEARANCE } from "@/ui/render/moduleAppearance";
 import { PHOSPHOR_AMBER, NEON_CYAN, NEON_MAGENTA, PHOSPHOR_GREEN } from "@/ui/theme/tokens";
@@ -113,8 +112,7 @@ export function resumeLeadSeconds(simTickRate: number, playbackTickRate: number)
   return Math.max(MIN_RESUME_LEAD_SECONDS, neededTicks / TICKS_PER_SECOND);
 }
 
-export const ANOMALY_LABEL: Record<BattleAnomalyType, string> = {
-  none: "Open space",
+export const ANOMALY_LABEL: Record<BattleAnomalyKind, string> = {
   asteroidField: "Asteroid field",
   nebula: "Nebula",
   blackHole: "Black hole",
@@ -132,4 +130,4 @@ export const MODULE_LABEL: Record<string, string> = {
 };
 
 /** Re-export so callers can use the canonical options list for anomaly UIs. */
-export { BattleAnomaly };
+export { BattleAnomalyKind };

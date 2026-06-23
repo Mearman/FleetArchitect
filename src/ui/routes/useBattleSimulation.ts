@@ -3,8 +3,9 @@ import { useEffect, useRef, useState } from "react";
 import { resolveFleetToCombatShips } from "@/domain/resolve";
 import { battleRunner } from "@/ui/battleRunner";
 import { catalog } from "@/data/catalog";
+import { normaliseAnomalies } from "@/schema/battle";
 import type {
-  BattleAnomaly as BattleAnomalyType,
+  BattleAnomalyKind,
   BattleFrame,
   BattleResult,
   ShipDescriptor,
@@ -128,13 +129,13 @@ export function useBattleSimulation({
   const lastBatchRef = useRef<{ timeMs: number; ticks: number } | null>(null);
 
   /**
-   * The anomaly baked into the running replay. Captured at battle start (the
-   * value passed to `startBattle`) so the rendered anomaly matches the simulated
+   * The anomalies baked into the running replay. Captured at battle start (the
+   * value passed to `startBattle`) so the rendered anomalies match the simulated
    * physics from the first streamed frame, before the final result — with its
-   * `config.anomaly` — has landed. Reconciled against the result on completion.
+   * `config.anomalies` — has landed. Reconciled against the result on completion.
    */
-  const [runningAnomaly, setRunningAnomaly] = useState<BattleAnomalyType>("none");
-  const activeAnomaly: BattleAnomalyType = result?.config.anomaly ?? runningAnomaly;
+  const [runningAnomalies, setRunningAnomalies] = useState<BattleAnomalyKind[]>([]);
+  const activeAnomalies: BattleAnomalyKind[] = result?.config.anomalies ?? runningAnomalies;
 
   /** Whether a run is in flight (drives the "Computing battle..." loader). */
   const [computing, setComputing] = useState(false);
@@ -157,7 +158,7 @@ export function useBattleSimulation({
   async function startBattle(
     attacker: Fleet,
     defender: Fleet,
-    chosenAnomaly: BattleAnomalyType,
+    chosenAnomalies: BattleAnomalyKind[],
     chosenSeed: number,
     allDesigns: ShipDesign[],
   ): Promise<void> {
@@ -198,7 +199,7 @@ export function useBattleSimulation({
     const freshDescriptors: Map<string, ShipDescriptor> = new Map();
     descriptorsRef.current = freshDescriptors;
     setDescriptors(freshDescriptors);
-    setRunningAnomaly(chosenAnomaly);
+    setRunningAnomalies(chosenAnomalies);
     setComputing(true);
 
     let firstBatch = true;
@@ -309,7 +310,7 @@ export function useBattleSimulation({
           ships: [...attackers, ...defenders],
           attackerFleetId: attacker.id,
           defenderFleetId: defender.id,
-          anomaly: chosenAnomaly,
+          anomalies: normaliseAnomalies(chosenAnomalies),
           seed: chosenSeed,
         },
         { signal: controller.signal, onFrames },
@@ -343,7 +344,7 @@ export function useBattleSimulation({
     deploymentFrame,
     computedTicks,
     rawBounds,
-    activeAnomaly,
+    activeAnomalies,
     computing,
     descriptors,
     startBattle,

@@ -1,6 +1,6 @@
 import { useCallback, useRef } from "react";
 import { CELL_SIZE } from "@/domain/grid";
-import type { BattleFrame, BattleResult } from "@/schema/battle";
+import type { BattleAnomalyKind, BattleFrame } from "@/schema/battle";
 import type { DescriptorMap } from "@/ui/cellLayout";
 import { hullRadiusWorld, renderCells } from "@/ui/cellLayout";
 import { interpolateFrame } from "@/ui/interpolateFrame";
@@ -34,9 +34,9 @@ export type OverlayState = Record<string, { on: boolean; scope: OverlayScope }>;
 
 /**
  * Props for {@link useBattleCanvas}. The draw callback closes over the current
- * view bounds, per-ship HP maxima, the active anomaly and seed, the fog toggle,
- * the per-ship faction map, and the per-overlay on/scope state — all owned by
- * sibling hooks. It reads the live camera via `cameraRef` so it stays
+ * view bounds, per-ship HP maxima, the active anomalies and seed, the fog
+ * toggle, the per-ship faction map, and the per-overlay on/scope state — all
+ * owned by sibling hooks. It reads the live camera via `cameraRef` so it stays
  * responsive to zoom/pan without re-creating the callback.
  */
 export interface UseBattleCanvasProps {
@@ -44,7 +44,7 @@ export interface UseBattleCanvasProps {
   cameraRef: React.RefObject<Camera>;
   bounds: Bounds;
   maxHp: Map<string, { structure: number; shield: number }>;
-  activeAnomaly: BattleResult["config"]["anomaly"];
+  activeAnomalies: readonly BattleAnomalyKind[];
   activeSeed: number;
   showFog: boolean;
   factionByInstance: Map<string, string>;
@@ -71,7 +71,7 @@ export function useBattleCanvas({
   cameraRef,
   bounds,
   maxHp,
-  activeAnomaly,
+  activeAnomalies,
   activeSeed,
   showFog,
   factionByInstance,
@@ -110,10 +110,10 @@ export function useBattleCanvas({
       // first so everything else sits on top of the atmosphere.
       drawBackdrop(ctx, width, height, t);
 
-      // Anomaly is drawn first, in world space, beneath everything else.
+      // Anomalies are drawn first, in world space, beneath everything else.
       // The seed is threaded through so asteroid rocks match the engine's
       // canonical occluder positions (single source of truth).
-      drawAnomaly(ctx, activeAnomaly, t, bounds, activeSeed);
+      drawAnomaly(ctx, activeAnomalies, t, bounds, activeSeed);
 
       // Fog-of-war overlay: drawn after the anomaly but before ships so the
       // fog shroud sits under hull graphics. Perimeters, ghost markers, links,
@@ -693,7 +693,7 @@ export function useBattleCanvas({
       // Over-ship layer: target lock, damage pulse, sensor pulses, boarding/debris.
       drawOverlays(OVER_SHIP_IDS);
     },
-    [bounds, maxHp, activeAnomaly, activeSeed, showFog, factionByInstance, overlays, descriptors, canvasRef, cameraRef],
+    [bounds, maxHp, activeAnomalies, activeSeed, showFog, factionByInstance, overlays, descriptors, canvasRef, cameraRef],
   );
 }
 

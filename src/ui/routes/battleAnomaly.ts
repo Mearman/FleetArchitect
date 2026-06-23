@@ -1,5 +1,6 @@
 import { computeOccluders } from "@/domain/occluders";
-import type { BattleAnomaly } from "@/schema/battle";
+import { hasAnomaly } from "@/domain/anomaly";
+import type { BattleAnomalyKind } from "@/schema/battle";
 import { CELL_SIZE } from "@/domain/grid";
 import {
   BLACK_HOLE_SCHWARZSCHILD_RADIUS_M,
@@ -44,7 +45,9 @@ export function hash01(n: number): number {
 }
 
 /**
- * Draw the active anomaly in world space, beneath the ships.
+ * Draw the active anomalies in world space, beneath the ships. All selected
+ * anomalies draw together (combinable): a black hole, a nebula, and an
+ * asteroid field can all be present at once.
  *
  * @param seed  The battle seed, forwarded to computeOccluders for asteroid
  *              field placement so the rendered rocks exactly match the engine's
@@ -52,21 +55,20 @@ export function hash01(n: number): number {
  */
 export function drawAnomaly(
   ctx: CanvasRenderingContext2D,
-  anomaly: BattleAnomaly,
+  anomalies: readonly BattleAnomalyKind[],
   t: Transform,
   bounds: Bounds,
   seed: number,
 ): void {
-  if (anomaly === "none") return;
-  if (anomaly === "blackHole") {
+  if (hasAnomaly(anomalies, "blackHole")) {
     drawBlackHole(ctx, t);
-    return;
   }
-  if (anomaly === "nebula") {
+  if (hasAnomaly(anomalies, "nebula")) {
     drawNebula(ctx, t, bounds);
-    return;
   }
-  drawAsteroidField(ctx, t, seed);
+  if (hasAnomaly(anomalies, "asteroidField")) {
+    drawAsteroidField(ctx, t, anomalies, seed);
+  }
 }
 
 function drawBlackHole(ctx: CanvasRenderingContext2D, t: Transform): void {
@@ -171,10 +173,15 @@ function drawNebula(ctx: CanvasRenderingContext2D, t: Transform, bounds: Bounds)
  * Previously this function invented its own scatter via hash01; that is now
  * replaced by the occluder module so visual and physics representations agree.
  */
-function drawAsteroidField(ctx: CanvasRenderingContext2D, t: Transform, seed: number): void {
+function drawAsteroidField(
+  ctx: CanvasRenderingContext2D,
+  t: Transform,
+  anomalies: readonly BattleAnomalyKind[],
+  seed: number,
+): void {
   ctx.save();
 
-  const discs = computeOccluders("asteroidField", seed);
+  const discs = computeOccluders(anomalies, seed);
   for (let i = 0; i < discs.length; i += 1) {
     const disc = discs[i];
     if (disc === undefined) continue;

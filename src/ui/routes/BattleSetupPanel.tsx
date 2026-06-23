@@ -1,28 +1,34 @@
-import { Button, Group, NativeSelect, NumberInput, SegmentedControl, Stack, Text, Tooltip } from "@mantine/core";
+import { Button, Chip, Group, NativeSelect, NumberInput, Stack, Text, Tooltip } from "@mantine/core";
 import { IconArrowsShuffle, IconRefresh, IconSwords } from "@tabler/icons-react";
 import { Link } from "react-router-dom";
-import { BattleAnomaly } from "@/schema/battle";
-import type { BattleAnomaly as BattleAnomalyType } from "@/schema/battle";
+import { BattleAnomalyKind } from "@/schema/battle";
 import { ANOMALY_LABEL } from "./battleConstants";
+
+/** Allowed anomaly kinds, as plain strings for Chip.Group narrowing. */
+const ALLOWED_ANOMALY_KINDS = new Set<string>(BattleAnomalyKind.options);
+
+function isAnomalyKind(value: string): value is BattleAnomalyKind {
+  return ALLOWED_ANOMALY_KINDS.has(value);
+}
 
 /**
  * Props for {@link BattleSetupPanel}. All state stays in the route; the panel is
  * a controlled form that reports changes through the setters and triggers a run
  * through `onEngage`/`onRandomBattle`. Keeping the panel stateless preserves the
- * original semantics (the route's `attackerId`/`defenderId`/`anomaly`/`seed`
+ * original semantics (the route's `attackerId`/`defenderId`/`anomalies`/`seed`
  * are the single source of truth, including for the auto-roll reflection).
  */
 export interface BattleSetupPanelProps {
   attackerId: string | null;
   defenderId: string | null;
-  anomaly: BattleAnomalyType;
+  anomalies: BattleAnomalyKind[];
   seed: number;
   fleetOptions: { value: string; label: string }[];
   computing: boolean;
   hasFleets: boolean;
   onAttackerIdChange: (value: string | null) => void;
   onDefenderIdChange: (value: string | null) => void;
-  onAnomalyChange: (value: BattleAnomalyType) => void;
+  onAnomaliesChange: (value: BattleAnomalyKind[]) => void;
   onSeedChange: (value: number) => void;
   onRandomSeed: () => void;
   onEngage: () => void;
@@ -37,14 +43,14 @@ export interface BattleSetupPanelProps {
 export function BattleSetupPanel({
   attackerId,
   defenderId,
-  anomaly,
+  anomalies,
   seed,
   fleetOptions,
   computing,
   hasFleets,
   onAttackerIdChange,
   onDefenderIdChange,
-  onAnomalyChange,
+  onAnomaliesChange,
   onSeedChange,
   onRandomSeed,
   onEngage,
@@ -93,18 +99,17 @@ export function BattleSetupPanel({
 
       <Stack gap={4}>
         <Text size="sm" fw={500}>
-          Spatial anomaly
+          Spatial anomalies
         </Text>
-        <SegmentedControl
-          fullWidth
-          size="xs"
-          data={BattleAnomaly.options.map((a) => ({
-            value: a,
-            label: ANOMALY_LABEL[a],
-          }))}
-          value={anomaly}
-          onChange={(val) => onAnomalyChange(BattleAnomaly.parse(val))}
-        />
+        <Chip.Group multiple value={anomalies} onChange={(values) => onAnomaliesChange(values.filter(isAnomalyKind))}>
+          <Group gap="xs">
+            {BattleAnomalyKind.options.map((kind) => (
+              <Chip key={kind} value={kind} size="xs" variant="light">
+                {ANOMALY_LABEL[kind]}
+              </Chip>
+            ))}
+          </Group>
+        </Chip.Group>
       </Stack>
 
       <Group align="flex-end">
@@ -133,7 +138,7 @@ export function BattleSetupPanel({
         >
           Engage
         </Button>
-        <Tooltip label="Auto-roll attacker, defender, anomaly and seed, then watch.">
+        <Tooltip label="Auto-roll attacker, defender and seed, then watch.">
           <Button
             variant="light"
             leftSection={<IconArrowsShuffle size={16} />}

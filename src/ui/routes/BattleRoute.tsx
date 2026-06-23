@@ -18,8 +18,8 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { TICKS_PER_SECOND } from "@/domain/simulation/types";
 import { useFleets, useShipDesigns } from "@/ui/hooks/storage";
-import { BattleAnomaly } from "@/schema/battle";
-import type { BattleAnomaly as BattleAnomalyType, BattleFrame } from "@/schema/battle";
+import { normaliseAnomalies } from "@/schema/battle";
+import type { BattleAnomalyKind, BattleFrame } from "@/schema/battle";
 import type { DescriptorMap } from "@/ui/cellLayout";
 import { interpolateFrame } from "@/ui/interpolateFrame";
 import { DEFAULT_CAMERA } from "./battleCamera";
@@ -49,7 +49,7 @@ export function BattleRoute() {
   const designs = useShipDesigns();
   const [attackerId, setAttackerId] = useState<string | null>(null);
   const [defenderId, setDefenderId] = useState<string | null>(null);
-  const [anomaly, setAnomaly] = useState<BattleAnomalyType>("none");
+  const [anomalies, setAnomalies] = useState<BattleAnomalyKind[]>([]);
   const [seed, setSeed] = useState(1);
 
   /** Active tab within the controls panel. */
@@ -110,12 +110,12 @@ export function BattleRoute() {
     designs,
     attackerId,
     defenderId,
-    anomaly,
+    anomalies,
     seed,
-    setAnomaly,
+    setAnomalies,
     setSeed,
-    startBattle: (attacker, defender, chosenAnomaly, chosenSeed, allDesigns) => {
-      void simulation.startBattle(attacker, defender, chosenAnomaly, chosenSeed, allDesigns);
+    startBattle: (attacker, defender, chosenAnomalies, chosenSeed, allDesigns) => {
+      void simulation.startBattle(attacker, defender, chosenAnomalies, chosenSeed, allDesigns);
     },
   });
 
@@ -178,7 +178,7 @@ export function BattleRoute() {
     cameraRef,
     bounds: camera.bounds,
     maxHp,
-    activeAnomaly: simulation.activeAnomaly,
+    activeAnomalies: simulation.activeAnomalies,
     activeSeed,
     showFog,
     factionByInstance,
@@ -244,13 +244,13 @@ export function BattleRoute() {
       });
       return;
     }
-    void simulation.startBattle(attacker, defender, anomaly, seed, designs);
+    void simulation.startBattle(attacker, defender, normaliseAnomalies(anomalies), seed, designs);
   }
 
   /**
-   * Auto-roll a matchup: pick two (different, when possible) fleets, a random
-   * anomaly, and a random seed, reflect the picks in the setup UI, and start
-   * the battle.
+   * Auto-roll a matchup: pick two (different, when possible) fleets and a random
+   * seed, reflect the picks in the setup UI, and start the battle. The currently-
+   * selected spatial anomalies are kept as-is (not re-rolled).
    */
   function randomBattle() {
     if (fleets === undefined) return;
@@ -275,19 +275,16 @@ export function BattleRoute() {
     if (attacker === undefined || defender === undefined) return;
     if (designs === undefined) return;
 
-    const anomalies = BattleAnomaly.options;
-    const chosenAnomaly = anomalies[Math.floor(Math.random() * anomalies.length)];
-    if (chosenAnomaly === undefined) return;
+    const chosenAnomalies = normaliseAnomalies(anomalies);
     const chosenSeed = Math.floor(Math.random() * 0xffffffff);
 
     setAttackerId(attacker.id);
     setDefenderId(defender.id);
-    setAnomaly(chosenAnomaly);
     setSeed(chosenSeed);
-    void simulation.startBattle(attacker, defender, chosenAnomaly, chosenSeed, designs);
+    void simulation.startBattle(attacker, defender, chosenAnomalies, chosenSeed, designs);
     notifications.show({
       title: "AI vs AI",
-      message: `${attacker.name} vs ${defender.name} on ${ANOMALY_LABEL[chosenAnomaly] ?? chosenAnomaly}.`,
+      message: `${attacker.name} vs ${defender.name}.`,
       color: "indigo",
     });
   }
@@ -360,14 +357,14 @@ export function BattleRoute() {
     <BattleSetupPanel
       attackerId={attackerId}
       defenderId={defenderId}
-      anomaly={anomaly}
+      anomalies={anomalies}
       seed={seed}
       fleetOptions={fleetOptions}
       computing={simulation.computing}
       hasFleets={fleets.length > 0}
       onAttackerIdChange={setAttackerId}
       onDefenderIdChange={setDefenderId}
-      onAnomalyChange={setAnomaly}
+      onAnomaliesChange={setAnomalies}
       onSeedChange={setSeed}
       onRandomSeed={() => setSeed(Math.floor(Math.random() * 1_000_000_000))}
       onEngage={engage}
@@ -462,8 +459,10 @@ export function BattleRoute() {
                   chassis, not floating on the glass. */}
               <Box className={bezelStrip}>
                 <Group className={bezelGroup} gap={6}>
-                  <AnnunciatorLamp tint="amber" lit={simulation.activeAnomaly !== "none"}>
-                    {ANOMALY_LABEL[simulation.activeAnomaly]}
+                  <AnnunciatorLamp tint="amber" lit={simulation.activeAnomalies.length > 0}>
+                    {simulation.activeAnomalies.length > 0
+                      ? simulation.activeAnomalies.map((a) => ANOMALY_LABEL[a]).join(" + ")
+                      : "Open space"}
                     {camera.camera.followId !== null ? " · following" : ""}
                   </AnnunciatorLamp>
                   {showFog && (
