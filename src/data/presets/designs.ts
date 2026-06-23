@@ -154,13 +154,14 @@ export const designData: ShipDesignInput[] = [
     faction: "Terran",
     // Frigate: the balanced workhorse. A spinal railgun battery backed by a
     // central magazine (G) fed by a floor corridor, twin fusion reactors, crew
-    // quarters, and an engine bank. The Mk I shields protect the flanks.
+    // quarters, and an engine bank. The Mk I shields protect the flanks, and a
+    // light armour shoulder (#) caps each prow corner ahead of the railguns.
     grid: scaleToTier(gridFromMap([
-      ".>JsRL..",
+      ".>JsRL#.",
       ".EFC~sWR",
       "EFFCGv#R",
       ".EFC~sWR",
-      ".<JeRL..",
+      ".<JeRL#.",
     ]), FRIGATE_LB_M, FRIGATE_MAX_M),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -190,15 +191,17 @@ export const designData: ShipDesignInput[] = [
     id: "preset-ship-aegis",
     name: "Aegis Monitor",
     faction: "Terran",
-    // Frigate: an armour brawler. A blunt prow of ablative plating over a Mk I
-    // shield soaks punishment while railgun turrets answer. The magazine (G) in
-    // the central corridor feeds all railguns; slow but unyielding.
+    // Frigate: an armour brawler. A blunt prow of ablative plating (#) over a Mk
+    // I shield soaks punishment while railgun turrets answer. The magazine (G) in
+    // the central corridor feeds all railguns; slow but unyielding. The armoured
+    // prow column caps the front of the railgun battery so incoming fire strikes
+    // plate before it reaches the guns.
     grid: scaleToTier(gridFromMap([
-      ".>J~~sR.",
-      ".EFCCGsR",
-      "EXEFWGvR",
-      ".EFCCGsR",
-      ".<JeW~se",
+      ".>J~~sR#.",
+      ".EFCCGsR#",
+      "EXEFWGvR#",
+      ".EFCCGsR#",
+      ".<JeW~se#",
     ]), FRIGATE_LB_M, FRIGATE_MAX_M),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -212,14 +215,14 @@ export const designData: ShipDesignInput[] = [
     // Frigate: stand-off artillery. Spinal plasma torpedoes and wingtip missile
     // turrets hit enormously hard. The munitions magazine (G) sits in the
     // reactor bay feeding all weapons; five crew quarters sustain the large crew
-    // needed to man torpedoes and missiles; titanium armour and shields protect
-    // the fragile innards.
+    // needed to man torpedoes and missiles; titanium armour plate (#) on the prow
+    // shoulders and core, plus shields, protect the fragile innards.
     grid: scaleToTier(gridFromMap([
-      ".>JeMM...",
+      ".>JeMM#..",
       ".EFCCEWTT",
       "EXFGCv#TT",
       ".EFCCEWTT",
-      ".<JeMM...",
+      ".<JeMM#..",
     ]), FRIGATE_LB_M, FRIGATE_MAX_M),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
