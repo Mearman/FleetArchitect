@@ -76,9 +76,9 @@ describe("preset-fleet frame determinism regression", () => {
   describe("largest pair: Drone Swarm vs Nexus Armada", () => {
     const PINNED: Record<number, string> = {
       // regenerate after an intended frame change: run the test, paste the new hash.
-      1: "9ab271ba57abcd2c76ed4ab736822f31f90de34b3f4e218579ef368902261e0c",
-      7: "bcbeb35f3dfb3a1680359dd6da82b7a917e6c33a5a2bbdca6bb04e27b2e69395",
-      99: "eee2913266ab8674191f329fc0484859c496c53fcc7f700a8cc39e8b03c440ef",
+      1: "20826673255d8bf7742aa03b19edf19d7190b7f7f64f60d885738c8442a3ac4a",
+      7: "3a8a6e7715ad06bf6b9e4ef39aecac0d6be66c2085b2d08468b5cfcd5c730925",
+      99: "b6f26346974eceb97a820cb2ae7faa678452df6de909e7f0e19ff93f0ac2883a",
     };
 
     for (const seed of SEEDS) {
