@@ -172,6 +172,7 @@ function snapshotModule(m: SimModule): CheckpointModule {
     boardingCooldown: m.boardingCooldown,
     exploded: m.exploded,
   };
+  if (m.transportIndex !== undefined) mod.transportIndex = m.transportIndex;
   if (m.hardwireSinks !== undefined) mod.hardwireSinks = m.hardwireSinks;
   if (m.hardwireSources !== undefined) mod.hardwireSources = m.hardwireSources;
   if (m.dishRangeSetting !== undefined) mod.dishRangeSetting = m.dishRangeSetting;
@@ -279,6 +280,7 @@ function restoreModule(m: CheckpointModule): SimModule {
     boardingCooldown: m.boardingCooldown,
     exploded: m.exploded,
   };
+  if (m.transportIndex !== undefined) mod.transportIndex = m.transportIndex;
   if (m.hardwireSinks !== undefined) mod.hardwireSinks = m.hardwireSinks;
   if (m.hardwireSources !== undefined) mod.hardwireSources = m.hardwireSources;
   if (m.dishRangeSetting !== undefined) mod.dishRangeSetting = m.dishRangeSetting;

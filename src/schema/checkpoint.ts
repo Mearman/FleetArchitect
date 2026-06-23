@@ -175,6 +175,13 @@ const CheckpointModule = z.object({
   mineCooldown: z.number(),
   boardingCooldown: z.number(),
   exploded: z.boolean(),
+  // Dense transport index (set once by makeResourceState; see SimModule).
+  // Authoritative — serialised so a checkpoint resume restores the optimised
+  // resource-step lookup. Optional for legacy checkpoints written before the
+  // field existed; the resource step falls back to the moduleIndex map when
+  // the field is absent (the oracle path), and makeResourceState re-derives
+  // it identically on a fresh build.
+  transportIndex: z.number().optional(),
 });
 
 /** A phantom (drone / decoy) sub-record on a SimShip. */

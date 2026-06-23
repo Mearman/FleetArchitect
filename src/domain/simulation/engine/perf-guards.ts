@@ -18,6 +18,14 @@ export interface PerfGuards {
   /** Bound the brownout power-cut victim search so it does not re-scan every
    *  cell per cut. */
   brownoutBounded: boolean;
+  /** Read each module's precomputed dense transport index
+   *  (`SimModule.transportIndex`, set once by `makeResourceState`) instead of
+   *  allocating a `"col,row"` template string and hashing the
+   *  `ResourceState.moduleIndex` map on every cell lookup inside the per-tick
+   *  resource step. The field is the same value the map returns, so the
+   *  optimised path is byte-identical to the map path; the flag exists only so
+   *  the A/B determinism suite can prove that. */
+  resourceModuleIndex: boolean;
 }
 
 /** The live guard configuration. Mutated only by the determinism A/B test, which
@@ -25,4 +33,5 @@ export interface PerfGuards {
 export const PERF_GUARDS: PerfGuards = {
   chainReactionSpatial: true,
   brownoutBounded: true,
+  resourceModuleIndex: true,
 };

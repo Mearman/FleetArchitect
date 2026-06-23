@@ -711,16 +711,15 @@ export interface SimModule {
    * launch path is inert.
    */
   boardingCooldown: number;
-  /**
-   * Explosive chain reactions (realism overhaul, Phase 4). Set true the moment a
-   * volatile module (a reactor `power` plant or a `magazine`) has its blast
-   * processed, so each volatile module detonates at most once across the whole
-   * battle even though the chain-reaction step runs every tick. A non-volatile
-   * module is never queued for explosion, so it keeps this at `false` for its
-   * whole life. Not snapshotted — it is pure internal bookkeeping for the
-   * deterministic single-detonation guard.
-   */
+  /** Explosive chain reactions (Phase 4). Set true once a volatile module (a
+   *  reactor or magazine) has its blast processed, so each detonates at most
+   *  once per battle. Non-volatile modules keep `false`. Not snapshotted. */
   exploded: boolean;
+  /** Dense transport index (Phase 12): cached copy of the value
+   *  `ResourceState.moduleIndex` maps this module's `"col,row"` cell to, written
+   *  once by `makeResourceState` from the map. The `resourceModuleIndex`
+   *  PERF_GUARDS flag toggles cached read vs map lookup; see `resource-step.ts`. */
+  transportIndex?: number;
 }
 
 /** Mutable in-flight projectile. */

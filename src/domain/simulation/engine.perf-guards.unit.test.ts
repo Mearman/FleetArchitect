@@ -181,17 +181,42 @@ function assertGuardIdempotence(inputs: BattleInputs): string {
   Object.assign(PERF_GUARDS, {
     chainReactionSpatial: false,
     brownoutBounded: false,
+    resourceModuleIndex: false,
   });
   const naive = frameHash(inputs);
 
   Object.assign(PERF_GUARDS, {
     chainReactionSpatial: true,
     brownoutBounded: true,
+    resourceModuleIndex: true,
   });
   const optimised = frameHash(inputs);
 
   expect(optimised).toBe(naive);
   return naive;
+}
+
+/** Assert byte-identical frames toggling ONLY `resourceModuleIndex`, leaving the
+ *  other guards on (so the new path is exercised against the established
+ *  production paths rather than against the naive everything-off baseline). */
+function assertResourceModuleIndexIdempotence(inputs: BattleInputs): void {
+  // Optimised path: flag on (production default), all other guards on too.
+  Object.assign(PERF_GUARDS, {
+    chainReactionSpatial: true,
+    brownoutBounded: true,
+    resourceModuleIndex: true,
+  });
+  const optimised = frameHash(inputs);
+
+  // Oracle path: flag off, all other guards still on.
+  Object.assign(PERF_GUARDS, {
+    chainReactionSpatial: true,
+    brownoutBounded: true,
+    resourceModuleIndex: false,
+  });
+  const naive = frameHash(inputs);
+
+  expect(optimised).toBe(naive);
 }
 
 /** Build a standard attacker: a reactor (command, bridge) at col=0,row=0 and a
@@ -331,6 +356,54 @@ describe("W5b perf guards preserve frame output", () => {
     });
     const result = runBattle({ ...inputs, ships: structuredClone(inputs.ships) });
     expect(result.ticks).toBe(10); // battle ran to full duration, not an early kill
+  });
+
+  // -------------------------------------------------------------------------
+  // Fixture D: resourceModuleIndex guard
+  //
+  // The per-tick resource step resolves each module to its dense transport
+  // index many times per module per tick. With `resourceModuleIndex` on it
+  // reads the `m.transportIndex` field that `makeResourceState` cached; with
+  // it off it allocates a `"col,row"` template string and hashes the
+  // `moduleIndex` map per call. The cache IS the map's value, so the two paths
+  // return the same index — but only a real run exercises the path at scale
+  // (every alive reactor, engine, deck cell, and crew cell on every modular
+  // ship, every tick).
+  //
+  // The heaviest preset pair (Drone Swarm vs Nexus Armada, 19 ships) is the
+  // workload the profiler flagged: it drives the resource step hardest and so
+  // stresses the optimised lookup across the most modules and the most ticks
+  // in the test suite. Running it twice on one resolved snapshot — flag on vs
+  // flag off — and asserting byte-identical frames proves the precomputed
+  // index agrees with the map under realistic load.
+  // -------------------------------------------------------------------------
+  it("resourceModuleIndex guard: heaviest preset pair is byte-identical over multiple ticks", () => {
+    const designs = new Map(presetDesigns.map((d) => [d.id, d]));
+    const droneSwarm = presetFleets.find((f) => f.id === "preset-fleet-drone-swarm");
+    const nexusArmada = presetFleets.find((f) => f.id === "preset-fleet-nexus-armada");
+    if (droneSwarm === undefined || nexusArmada === undefined) {
+      throw new Error("heaviest preset fleets not found");
+    }
+    const snapshot = [
+      ...resolveFleetToCombatShips(droneSwarm,  designs, catalog(), "attacker"),
+      ...resolveFleetToCombatShips(nexusArmada, designs, catalog(), "defender"),
+    ];
+    // Several seeds so the A/B covers different AI / damage paths, each of
+    // which drives the resource step through different module subsets. A
+    // handful of ticks is enough to exercise the lookup across the opening
+    // exchange (where the most modules are still alive and the per-module
+    // lookup count peaks) without making the test slow.
+    for (const seed of [1, 7, 99]) {
+      const inputs: BattleInputs = {
+        ships: snapshot,
+        attackerFleetId: droneSwarm.id,
+        defenderFleetId: nexusArmada.id,
+        anomalies: [],
+        seed,
+        maxTicks: 4,
+      };
+      assertResourceModuleIndexIdempotence(inputs);
+    }
   });
 
   // -------------------------------------------------------------------------

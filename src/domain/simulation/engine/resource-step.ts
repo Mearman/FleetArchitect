@@ -59,6 +59,7 @@ import {
   type VentMask,
 } from "@/domain/simulation/engine/lifesupport";
 import { CREW_HP, SIM } from "@/domain/simulation/engine/config";
+import { PERF_GUARDS } from "@/domain/simulation/engine/perf-guards";
 import { TICKS_PER_SECOND } from "@/domain/simulation/types";
 import { applyImpulse } from "@/domain/simulation/engine/weapons";
 import { recomputeAggregates } from "@/domain/simulation/engine/physics";
@@ -170,6 +171,24 @@ export function makeResourceState(ship: SimShip): ResourceState | undefined {
   for (let i = 0; i < n; i++) {
     const m = sorted[i];
     if (m !== undefined) moduleIndex.set(cellKey(m.col, m.row), i);
+  }
+  // Cache the dense index on each module. The per-tick resource step looks each
+  // cell up by this index many times per module; the map path allocates a
+  // "col,row" string and hashes it on every call, where reading the cached
+  // number is a property access. The cache must return byte-identically the
+  // value the map returns, so it is populated FROM the map in a second pass:
+  // when two modules share a cell (an authored design may stack a reactor,
+  // engine, and sensor at one grid coordinate) the map's "last writer wins"
+  // collision means every module at that cell reads the SAME dense index —
+  // the cell's one phi-slot. Writing the per-module rank instead (each module
+  // gets its own i) would break that: modules at a shared cell would address
+  // different phi-slots, diverging from the map path. Populating from the map
+  // preserves the collision exactly. `sorted` is a shallow copy of the module
+  // array — same module object references as `ship.modules` — so these writes
+  // land on the live modules the engine carries.
+  for (const m of sorted) {
+    const i = moduleIndex.get(cellKey(m.col, m.row));
+    if (i !== undefined) m.transportIndex = i;
   }
 
   // Thermal: every cell starts at cabin temperature.
@@ -363,7 +382,18 @@ export function resourceStep(ship: SimShip): void {
   if (state === undefined) return;
 
   const graph = transportGraph(ship, state);
-  const idx = (m: SimModule): number | undefined => state.moduleIndex.get(cellKey(m.col, m.row));
+  // Resolve a module to its dense transport index. The map path (oracle)
+  // allocates a "col,row" template string and hashes the moduleIndex map per
+  // call; the cached path (production, `resourceModuleIndex` flag on) reads
+  // the precomputed `m.transportIndex` that `makeResourceState` stored — a
+  // plain property access. The two paths return the same value (the cache is
+  // the map's value), so the optimised lookup is byte-identical to the map
+  // lookup. The A/B determinism suite (`engine.perf-guards.unit.test.ts`)
+  // toggles the flag and asserts frame-identical output.
+  const useCachedIndex = PERF_GUARDS.resourceModuleIndex;
+  const idx = useCachedIndex
+    ? (m: SimModule): number | undefined => m.transportIndex
+    : (m: SimModule): number | undefined => state.moduleIndex.get(cellKey(m.col, m.row));
 
   // Resource consequences are recomputed fresh every tick: clear the previous
   // tick's flame-out and grid-shed verdicts before the substance steps re-derive
