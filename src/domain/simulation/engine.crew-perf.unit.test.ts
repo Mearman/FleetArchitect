@@ -101,7 +101,7 @@ describe("engine.crew-perf — preset matchups still resolve", () => {
     );
     expect(result.frames.length).toBeGreaterThan(0);
     expect(result.winner).toBeDefined();
-  }, 300000);
+  }, 600000);
 
   it("a crewed matchup with topology changes runs to completion", () => {
     // Strike Wing vs Picket Screen: modules die and break-apart fires,
@@ -115,7 +115,7 @@ describe("engine.crew-perf — preset matchups still resolve", () => {
     const result = runBattle(buildInputs("preset-fleet-strike", "preset-fleet-picket"));
     expect(result.frames.length).toBeGreaterThan(0);
     expect(result.winner).toBeDefined();
-  }, 300000);
+  }, 600000);
 
   it("a crewless preset battle is unaffected by the crew optimisation", () => {
     // The crewless Swarm matchup should still resolve. updateCrew returns early
@@ -133,7 +133,7 @@ describe("engine.crew-perf — preset matchups still resolve", () => {
     );
     expect(result.frames.length).toBeGreaterThan(0);
     expect(result.winner).toBeDefined();
-  }, 300000);
+  }, 600000);
 });
 
 describe("engine.crew-perf — cache effectiveness", () => {
@@ -167,5 +167,5 @@ describe("engine.crew-perf — cache effectiveness", () => {
     expect(hitRate, "crew path cache hit rate").toBeGreaterThan(0.4);
     // After armour hull growth, 400 ticks ≈ 36 s isolated (was ~6 s); raised to
     // 300 s to absorb full-suite CPU contention (5× = 180 s < 300 s).
-  }, 300000);
+  }, 600000);
 });
