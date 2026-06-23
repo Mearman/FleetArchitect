@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import fakeIndexedDB, { IDBKeyRange } from "fake-indexeddb";
+import type { Table } from "dexie";
 import { FleetArchitectDatabase, _setDatabaseForTesting } from "@/storage/db";
+import type { SimCacheRecord } from "@/storage/db";
 import { DexieSimCache } from "@/storage/sim-cache-dexie";
 import { sampleResult } from "@/domain/cache/test-fixtures";
 
@@ -8,6 +10,25 @@ import { sampleResult } from "@/domain/cache/test-fixtures";
 const DEFAULT_LARGE_BYTES = 1024 * 1024 * 1024;
 /** An entry cap large enough never to trigger count eviction in byte tests. */
 const DEFAULT_LARGE_ENTRIES = 1_000_000;
+
+/**
+ * Wrap a Dexie table so every property access forwards to the underlying table
+ * except `put`, which is replaced by the supplied stub. Used to simulate the
+ * capacity-boundary errors a multi-hundred-MB BattleResult triggers in the
+ * browser without having to build such a result. The Proxy keeps the full
+ * `Table` structural type so no assertion is needed at the call site.
+ */
+function withPutStub(
+  table: Table<SimCacheRecord, string>,
+  put: (record: SimCacheRecord) => Promise<void>,
+): Table<SimCacheRecord, string> {
+  return new Proxy(table, {
+    get(target, prop, receiver) {
+      if (prop === "put") return put;
+      return Reflect.get(target, prop, receiver);
+    },
+  });
+}
 
 let dbCounter = 0;
 
@@ -131,5 +152,105 @@ describe("DexieSimCache", () => {
     expect(await cache.has("a")).toBe(false);
     expect(await cache.has("b")).toBe(false);
     expect(await cache.has("c")).toBe(true);
+  });
+
+  it("swallows a DataCloneError from put as a capacity boundary", async () => {
+    // An oversized BattleResult fails the structured clone in the browser with
+    // DataCloneError; the durable tier must treat that as a capacity boundary
+    // and skip the write rather than surfacing a scary toast on every large
+    // battle. Seed an existing row to prove the uncloneable path does NOT evict
+    // (unlike a quota failure, the table is not over budget).
+    await db.simCache.put({
+      key: "existing",
+      result: sampleResult("existing"),
+      bytes: 10,
+      lastAccess: 1000,
+    });
+    let putCalls = 0;
+    const table = withPutStub(db.simCache, async () => {
+      putCalls += 1;
+      const error = new Error("structured clone OOM");
+      error.name = "DataCloneError";
+      throw error;
+    });
+    const cache = new DexieSimCache(table);
+
+    // The set must not throw.
+    await expect(cache.set("oversized", sampleResult("r1"))).resolves.toBeUndefined();
+
+    // put was attempted exactly once; no retry (quota retry path not taken).
+    expect(putCalls).toBe(1);
+    // The pre-existing row survives: the uncloneable path must not evict.
+    expect(await cache.has("existing")).toBe(true);
+    // And the oversized key was never written.
+    expect(await cache.has("oversized")).toBe(false);
+  });
+
+  it("swallows a RangeError from estimateBytes as a capacity boundary", async () => {
+    // `estimateBytes` runs `JSON.stringify`; for a genuinely huge result that
+    // exceeds the V8 string limit it throws RangeError. We trigger the branch
+    // deterministically by attaching a `toJSON` that throws RangeError, which
+    // `JSON.stringify` propagates. The durable write is skipped, no throw, no
+    // eviction.
+    await db.simCache.put({
+      key: "existing",
+      result: sampleResult("existing"),
+      bytes: 10,
+      lastAccess: 1000,
+    });
+    let putCalls = 0;
+    const table = withPutStub(db.simCache, async () => {
+      putCalls += 1;
+    });
+    const cache = new DexieSimCache(table);
+    // Attach a toJSON that fails the way an oversized result fails the string
+    // limit. Object.assign broadens the type with toJSON, which is assignable
+    // to BattleResult.
+    const oversized = Object.assign(sampleResult("r1"), {
+      toJSON(): never {
+        const error = new Error("invalid string length");
+        error.name = "RangeError";
+        throw error;
+      },
+    });
+
+    await expect(cache.set("oversized", oversized)).resolves.toBeUndefined();
+
+    // The bytes estimate threw before put was reached.
+    expect(putCalls).toBe(0);
+    // The pre-existing row survives.
+    expect(await cache.has("existing")).toBe(true);
+    expect(await cache.has("oversized")).toBe(false);
+  });
+
+  it("still retries with eviction on a QuotaExceededError", async () => {
+    // The uncloneable capacity-boundary path must not regress the existing
+    // quota handling: a QuotaExceededError triggers evictOldest then a retry.
+    await db.simCache.put({
+      key: "old",
+      result: sampleResult("old"),
+      bytes: 10,
+      lastAccess: 1000,
+    });
+    let putCalls = 0;
+    const table = withPutStub(db.simCache, async (record) => {
+      putCalls += 1;
+      if (putCalls === 1) {
+        const error = new Error("quota");
+        error.name = "QuotaExceededError";
+        throw error;
+      }
+      // Retry after eviction: forward to the real table.
+      await db.simCache.put(record);
+    });
+    const cache = new DexieSimCache(table, DEFAULT_LARGE_BYTES, DEFAULT_LARGE_ENTRIES);
+
+    await cache.set("fresh", sampleResult("fresh"));
+
+    // First put hit quota, second succeeded.
+    expect(putCalls).toBe(2);
+    // The oldest row was evicted to make room.
+    expect(await cache.has("old")).toBe(false);
+    expect(await cache.has("fresh")).toBe(true);
   });
 });

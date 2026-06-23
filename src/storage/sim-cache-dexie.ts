@@ -58,6 +58,20 @@ function isQuotaExceeded(error: unknown): boolean {
   return error.name === "QuotaExceededError";
 }
 
+/**
+ * Whether a thrown value signals that the BattleResult is too large for the
+ * durable tier to handle. Two failure modes are both capacity boundaries, not
+ * bugs: a `DataCloneError` from `table.put` (the structured clone of a
+ * multi-hundred-MB result exhausts memory) and a `RangeError` from
+ * `estimateBytes` (`JSON.stringify` of the same result exceeds the string
+ * length limit). Narrow `unknown` with `in` and `typeof` — no assertions.
+ */
+function isUncloneable(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  if (!("name" in error)) return false;
+  return error.name === "DataCloneError" || error.name === "RangeError";
+}
+
 export class DexieSimCache implements SimCache {
   constructor(
     private readonly table: Table<SimCacheRecord, string>,
@@ -82,15 +96,33 @@ export class DexieSimCache implements SimCache {
   }
 
   async set(key: string, value: BattleResult): Promise<void> {
+    // The byte estimate and the structured-clone put can both fail on a result
+    // too large for the durable tier — `estimateBytes` throws RangeError when
+    // JSON.stringify exceeds the string limit, `table.put` throws
+    // DataCloneError when the structured clone exhausts memory. Both are
+    // capacity boundaries, not bugs: the memory tier in CompositeSimCache still
+    // holds the result for the session, so skip the durable write instead of
+    // surfacing a scary toast on every large battle. Do NOT evict on this path
+    // — the table is not over quota, and evicting cached results would not help
+    // a single oversized entry clone. QuotaExceededError is handled separately
+    // below (evict + retry); any other error is a real bug and propagates.
+    let bytes: number;
+    try {
+      bytes = estimateBytes(value);
+    } catch (error) {
+      if (!isUncloneable(error)) throw error;
+      return;
+    }
     const record: SimCacheRecord = {
       key,
       result: value,
-      bytes: estimateBytes(value),
+      bytes,
       lastAccess: Date.now(),
     };
     try {
       await this.table.put(record);
     } catch (error) {
+      if (isUncloneable(error)) return;
       // Only a quota exhaustion is recoverable here: drop the oldest entry to
       // free space and retry the write once. Any other failure (a real Dexie
       // error, a constraint violation) is a bug and is rethrown unchanged — the
