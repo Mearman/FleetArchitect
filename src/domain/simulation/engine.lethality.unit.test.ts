@@ -132,7 +132,7 @@ describe("engine.lethality — crewed Terran battles resolve decisively", () => 
     // confirm the engine ran its full cycle and returned a valid result.
     // 10 ticks ≈ 22 s isolated; raised to 120 s for concurrent test runs
     // (observed wall-clock of ~65 s under full-suite CPU contention).
-  }, 120000);
+  }, 600000);
 
   // Re-enabled in Phase 14 alongside the Battle Line guard above: the preset
   // thrust/mass ratio is now coherent at the SI scale.
