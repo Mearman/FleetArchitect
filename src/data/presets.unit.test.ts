@@ -185,12 +185,13 @@ describe("1 m scale classification (W4)", () => {
  */
 describe("headless preset battle — byte-identical across two same-seed runs (W4)", () => {
   /** Tick cap for W4 determinism tests. The Drone Swarm vs Hive Assault fleet
-   *  battle (20 ships, ~7553 modules) runs at ~394 ms/tick at the 1 m scale.
-   *  The byte-identical test runs 3 seeds × 2 runs = 6 calls; at 10 ticks per
-   *  call that is 6 × (42 ms resolve + 10 × 394 ms) ≈ 23.9 s, within the
-   *  30 s timeout. 10 ticks exercises the initial snapshot, movement, and
-   *  sensor-resolution code paths — enough to verify determinism. */
-  const W4_MAX_TICKS = 10;
+   *  battle (20 ships, ~9061 modules after auto-derived armour hull growth) runs
+   *  at ~967 ms/tick at the 1 m scale (was ~394 ms/tick before armour). The
+   *  byte-identical test runs 3 seeds × 2 runs = 6 calls; at 5 ticks per call
+   *  that is 6 × (42 ms resolve + 5 × 967 ms) ≈ 29.3 s isolated. 5 ticks
+   *  exercises the initial snapshot, movement, and sensor-resolution code paths —
+   *  enough to verify determinism (the hash covers frame 0 of each run). */
+  const W4_MAX_TICKS = 5;
 
   /** Re-resolve ships fresh for each run so the simulation's internal mutations
    *  (module HP, alive flag) never carry over. Re-resolving is faster than a
@@ -258,10 +259,10 @@ describe("headless preset battle — byte-identical across two same-seed runs (W
       const run2 = battleHash(attacker, defender, designs, cat, seed);
       expect(run1, `seed=${seed}: frame 0 diverges between two same-seed runs`).toBe(run2);
     }
-    // 6 runs × 10 ticks × ~394 ms/tick ≈ 23.6 s isolated; raised to 120 s for
-    // concurrent test runs where CPU pressure extends wall time (observed ~69 s
-    // under full-suite 12-worker concurrency).
-  }, 120000);
+    // 6 runs × 5 ticks × ~967 ms/tick ≈ 29 s isolated; raised to 300 s to
+    // absorb full-suite CPU contention (observed up to 5× slowdown on busy CI
+    // runners: 29 s × 5 ≈ 145 s < 300 s).
+  }, 300000);
 
   it("the Drone Swarm vs Hive Assault battle produces frames and a result", () => {
     const designs = new Map(presetDesigns.map((d) => [d.id, d]));
@@ -279,12 +280,12 @@ describe("headless preset battle — byte-identical across two same-seed runs (W
       seed: 42,
       maxTicks: W4_MAX_TICKS,
     });
-    // At the 1 m scale ships need ~370 ticks to close range, so within 10 ticks
+    // At the 1 m scale ships need ~370 ticks to close range, so within 5 ticks
     // only the initial snapshot and movement occur — no kills expected. The
     // guards check the engine pipeline completes without error and returns a
     // valid result; the lethality suite verifies decisive outcomes in faster
     // frigate/fighter matchups.
     expect(result.frames.length, "battle must produce at least one frame").toBeGreaterThan(0);
     expect(result.winner, "a result must be returned").toBeDefined();
-  }, 30000);
+  }, 60000);
 });

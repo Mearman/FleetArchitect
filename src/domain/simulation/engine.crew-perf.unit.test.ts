@@ -46,14 +46,14 @@ import { pathCacheStats, resetPathCacheStats } from "@/domain/simulation/engine/
  * the crew-perf test's timeout and is tested in the lethality suite.
  *
  * Measured timings at the 1 m scale on the development machine (per-fleet
- * battles, not two-ship timing tests):
- *   Capital (Battleline vs Spearhead): ~960 ms/tick (9 ships, 13709 modules)
- *   Crewless Swarm (Drone Swarm vs Hive Assault): ~394 ms/tick (20 ships, 7553 modules)
- *   Strike vs Picket (frigate/ftr)   : ~32 ms/tick initial, ~9.5 ms/tick avg (15 ships, 2091 modules)
+ * battles, not two-ship timing tests), after auto-derived armour hull growth:
+ *   Capital (Battleline vs Spearhead): ~2200 ms/tick (9 ships, 14995 modules)
+ *   Crewless Swarm (Drone Swarm vs Hive Assault): ~967 ms/tick (20 ships, 9061 modules)
+ *   Strike vs Picket (frigate/ftr)   : ~91 ms/tick initial (15 ships, 2823 modules)
  */
-const PRESET_CAPITAL_TICKS  = 10;    // 10 × ~960 ms ≈ 9.6 s, within 15 s
-const PRESET_CREWLESS_TICKS = 30;    // 30 × ~394 ms ≈ 11.8 s, within 15 s; all 20 ships alive so costly
-const PRESET_COMPLETION_TICKS = 400; // 400 ticks × ~15 ms avg ≈ 6 s, within 15 s
+const PRESET_CAPITAL_TICKS  = 10;    // 10 × ~2200 ms ≈ 22 s isolated
+const PRESET_CREWLESS_TICKS = 30;    // 30 × ~967 ms ≈ 29 s isolated
+const PRESET_COMPLETION_TICKS = 400; // 400 × ~91 ms ≈ 36 s isolated
 
 const cat = catalog();
 const designs = new Map(presetDesigns.map((d) => [d.id, d]));
@@ -92,29 +92,30 @@ describe("engine.crew-perf — preset matchups still resolve", () => {
     // produce kills within a short cap, so we only assert completion and a
     // result; the lethality guards cover the frigate/fighter matchups that do
     // resolve decisively.
-    // 10 ticks × ~960 ms/tick ≈ 9.6 s isolated; raised to 90 s for concurrent
-    // CI runs where multiple heavy test files execute in parallel (observed
-    // wall-clock of ~35 s under full-suite CPU contention).
+    // 10 ticks × ~2200 ms/tick ≈ 22 s isolated (was ~960 ms before auto-derived
+    // armour added ~1286 modules to the dreadnought); raised to 300 s to absorb
+    // full-suite CPU contention (observed ~68 s under 3-way heavy-test
+    // parallelism; full-suite 98-file runs can hit 5× slowdown).
     const result = runBattle(
       buildInputs("preset-fleet-battleline", "preset-fleet-spearhead", 42, PRESET_CAPITAL_TICKS),
     );
     expect(result.frames.length).toBeGreaterThan(0);
     expect(result.winner).toBeDefined();
-  }, 90000);
+  }, 300000);
 
   it("a crewed matchup with topology changes runs to completion", () => {
     // Strike Wing vs Picket Screen: modules die and break-apart fires,
     // exercising cache invalidation (fingerprint changes on module death).
-    // At the W4 1 m scale, 400 ticks takes ~6 s isolated (declining cost as
-    // ships die); raised to 120 s for concurrent CI runs (~45 s observed under
-    // full-suite CPU contention on CI hardware).
+    // After armour hull growth, 400 ticks takes ~36 s isolated (was ~6 s before
+    // armour); raised to 300 s to absorb full-suite CPU contention (observed
+    // ~5× slowdown on busy CI runners: 36 s × 5 = 180 s < 300 s).
     // Kills are not guaranteed within 400 ticks; the winner is decided by HP
     // comparison at the tick cap. The test only asserts the engine completes
     // without error and returns a valid result.
     const result = runBattle(buildInputs("preset-fleet-strike", "preset-fleet-picket"));
     expect(result.frames.length).toBeGreaterThan(0);
     expect(result.winner).toBeDefined();
-  }, 120000);
+  }, 300000);
 
   it("a crewless preset battle is unaffected by the crew optimisation", () => {
     // The crewless Swarm matchup should still resolve. updateCrew returns early
@@ -122,18 +123,17 @@ describe("engine.crew-perf — preset matchups still resolve", () => {
     // guards that the optimisation didn't accidentally engage the crew code path
     // for crewless designs.
     //
-    // At the 1 m scale the Drone Swarm vs Hive Assault fleet has 20 ships and
-    // ~7553 modules; each tick costs ~394 ms. Ships need ~370 ticks to close
-    // and produce kills, so the result is a stalemate decided by remaining HP
-    // — expected at this scale. The guard only checks the engine completes
-    // without error; 30 ticks ≈ 11.8 s isolated; raised to 120 s for CI runs
-    // (~31 s observed under full-suite CPU contention).
+    // After armour hull growth, the Drone Swarm vs Hive Assault fleet has
+    // ~9061 modules (was ~7553); each tick costs ~967 ms. Ships need ~370 ticks
+    // to close and produce kills, so the result is a stalemate decided by
+    // remaining HP — expected at this scale. 30 ticks ≈ 29 s isolated; raised
+    // to 300 s to absorb full-suite CPU contention (5× = 145 s < 300 s).
     const result = runBattle(
       buildInputs("preset-fleet-hive-assault", "preset-fleet-drone-swarm", 42, PRESET_CREWLESS_TICKS),
     );
     expect(result.frames.length).toBeGreaterThan(0);
     expect(result.winner).toBeDefined();
-  }, 120000);
+  }, 300000);
 });
 
 describe("engine.crew-perf — cache effectiveness", () => {
@@ -165,7 +165,7 @@ describe("engine.crew-perf — cache effectiveness", () => {
     // engine.crew.unit.test.ts prove the cache does not change behaviour; this
     // only proves it remains effective.
     expect(hitRate, "crew path cache hit rate").toBeGreaterThan(0.4);
-    // 400 ticks ≈ 6 s isolated; raised to 120 s for CI runners (~40 s under
-    // full-suite CPU contention).
-  }, 120000);
+    // After armour hull growth, 400 ticks ≈ 36 s isolated (was ~6 s); raised to
+    // 300 s to absorb full-suite CPU contention (5× = 180 s < 300 s).
+  }, 300000);
 });
