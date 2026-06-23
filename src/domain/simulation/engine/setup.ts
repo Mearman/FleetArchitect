@@ -8,6 +8,7 @@ import { DEFAULT_WEAPON_AMMO } from "@/schema/module";
 import type { WeaponEffect } from "@/schema/module";
 import type { Orders } from "@/schema/fleet";
 import type { ShipStance } from "@/schema/ai";
+import type { Rng } from "@/domain/simulation/rng";
 import { ACCEL_PER_TICK_FROM_SI } from "../types";
 import type { BattleInputs, CombatShip, ResolvedHardwire, ResolvedModule, SimCrew } from "../types";
 
@@ -208,7 +209,7 @@ export function slewTurret(
   return { angle, canFire: onTarget && reachable };
 }
 
-export function toSimShip(ship: CombatShip, rng: () => number): SimShip {
+export function toSimShip(ship: CombatShip, rng: Rng): SimShip {
   // Aggregated (legacy non-modular) weapon effects are taken straight from the
   // catalogue-shared effect objects on `ship.stats`. A modular ship rebuilds
   // `ship.weapons` from its own per-instance module clones in
@@ -328,7 +329,7 @@ export function toSimShip(ship: CombatShip, rng: () => number): SimShip {
   return base;
 }
 
-export function toSimModule(m: ResolvedModule, rng: () => number): SimModule {
+export function toSimModule(m: ResolvedModule, rng: Rng): SimModule {
   const effect = m.effect;
   const isWeapon = effect.kind === "weapon";
   const isPD = effect.kind === "pointDefense";

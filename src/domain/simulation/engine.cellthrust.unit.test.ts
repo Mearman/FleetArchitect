@@ -1,6 +1,7 @@
 import type { CellEdges } from "@/schema/grid";
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
+import { mulberry32 } from "@/domain/simulation/rng";
 import { toSimShip } from "@/domain/simulation/engine/setup";
 import { availableThrust, shipForceAndTorque } from "@/domain/simulation/engine/physics";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
@@ -206,10 +207,10 @@ function inputs(ships: CombatShip[]): BattleInputs {
  * Build a SimShip (with mass, CoM, and MoI derived by recomputeAggregates) from
  * a module set, so the force/torque primitive can be exercised directly. The rng
  * is unused for these crewless, weaponless fixtures (it only staggers weapon
- * cooldowns), so a constant 0 is fine and keeps the build deterministic.
+ * cooldowns), so a fixed-seed generator keeps the build deterministic.
  */
 function simShipOf(modules: ResolvedModule[], facing = 0) {
-  return toSimShip(modularShip("s1", "attacker", modules, { x: 0, y: 0 }, facing), () => 0);
+  return toSimShip(modularShip("s1", "attacker", modules, { x: 0, y: 0 }, facing), mulberry32(1));
 }
 
 describe("engine.cellthrust", () => {

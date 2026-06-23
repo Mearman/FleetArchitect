@@ -10,6 +10,7 @@ import type {
 import { defaultOrders } from "@/schema/fleet";
 import type { ModuleEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
+import { mulberry32 } from "@/domain/simulation/rng";
 import { toSimShip } from "./engine/setup";
 import { maxCommandableTorque } from "./engine/physics";
 
@@ -159,7 +160,7 @@ describe("engine.angular-units", () => {
     // (mct) and moment of inertia (I). The first integrated tick from rest, with
     // the target directly behind, applies exactly `mct / I` as an angular
     // acceleration — which must land in the per-tick clock.
-    const sim = toSimShip(s, () => 0.5);
+    const sim = toSimShip(s, mulberry32(1));
     const I = sim.momentOfInertia;
     const mct = maxCommandableTorque(sim, false);
     const expectedFirstTickTurn = (mct / I) * ACCEL_PER_TICK_FROM_SI;

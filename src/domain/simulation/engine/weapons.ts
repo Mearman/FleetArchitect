@@ -5,6 +5,7 @@
 
 import { CELL_SIZE } from "@/domain/grid";
 import { ranged } from "@/domain/simulation/rng";
+import type { Rng } from "@/domain/simulation/rng";
 import { cellWorldPosition } from "@/domain/simulation/spatial-hash";
 import type { BattleAnomaly, BattleSide } from "@/schema/battle";
 import type { PointDefenseEffect, WeaponEffect } from "@/schema/module";
@@ -133,7 +134,7 @@ export function applyImpulse(
 export function fireWeapons(
   ships: readonly SimShip[],
   byId: Map<string, SimShip>,
-  rng: () => number,
+  rng: Rng,
   tick: number,
   anomaly: BattleAnomaly,
 ): SimProjectile[] {
@@ -426,7 +427,7 @@ export function updateProjectiles(
   projectiles: readonly SimProjectile[],
   byId: Map<string, SimShip>,
   anomaly: BattleInputs["anomaly"],
-  rng: () => number,
+  rng: Rng,
 ): SimProjectile[] {
   const survivors: SimProjectile[] = [];
   const trackingFactor = anomaly === "nebula" ? SIM.nebulaTrackingFactor : 1;

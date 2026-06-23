@@ -1,6 +1,7 @@
 import type { CellEdges } from "@/schema/grid";
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
+import { mulberry32 } from "@/domain/simulation/rng";
 import { toSimShip } from "@/domain/simulation/engine/setup";
 import { shipForceAndTorque } from "@/domain/simulation/engine/physics";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
@@ -466,7 +467,7 @@ describe("engine.rigidbody — moment of inertia and engine torque", () => {
           5,
         ),
       ]),
-      () => 0,
+      mulberry32(1),
     );
     const { torque } = shipForceAndTorque(ship, 0, true, "all");
     expect(torque, "off-CoM engine must produce positive (counter-clockwise) torque").toBeGreaterThan(1e-4);

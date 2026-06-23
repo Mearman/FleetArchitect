@@ -1,10 +1,11 @@
 /**
  * Tunable gameplay constants and the per-battle projectile id counter.
  *
- * Leaf module: holds `SIM` (the tunable feel constants), `CREW_HP`, the real
- * speed-of-light anchors, and the single piece of module-level mutable state
- * (`projectileCounter`), which `index.ts` resets at the start of each
- * `simulateBattle` call.
+ * Leaf module: holds `SIM` (the tunable feel constants), `CREW_HP`, and the real
+ * speed-of-light anchors. The one piece of module-level mutable state — the
+ * projectile id counter — lives in `projectile-id.ts` and is re-exported here so
+ * callers keep importing `claimProjectileId`/`resetProjectileCounter` (and the
+ * new checkpoint get/set) from `./config` unchanged.
  *
  * ## Unit model and the "grounded constant" rule
  *
@@ -141,27 +142,15 @@ const BASE_ACQUIRE_RANGE_M = Math.sqrt(
   (EM_ACQUIRE_REFERENCE_EMISSION * 1) / (4 * Math.PI * EM_RECEIVER_NOISE_FLOOR),
 );
 
-/** Deterministic per-battle projectile id counter. Reset at the start of each
- *  `simulateBattle` call; incremented in spawn order so two same-seed runs
- *  produce identical ids. Used by the snapshot → interpolation path to match
- *  projectiles across consecutive frames for smooth sub-tick rendering. */
-let projectileCounter = 0;
-
-/** Reset the per-battle projectile id counter to zero. Called once at the top of
- *  `simulateBattle` so each run starts ids at 0 regardless of prior runs. */
-export function resetProjectileCounter(): void {
-  projectileCounter = 0;
-}
-
-/** Claim the next projectile id in spawn order, returning the `proj-<n>` form
- *  the snapshot path matches across frames. Increments the counter so the next
- *  call yields the next id — byte-identical to the original
- *  `\`proj-${projectileCounter++}\`` expression. */
-export function claimProjectileId(): string {
-  const id = `proj-${projectileCounter}`;
-  projectileCounter += 1;
-  return id;
-}
+// The per-battle projectile id counter (the one piece of module-level mutable
+// state) lives in its own leaf; re-exported here so callers keep importing it
+// from `./config` unchanged.
+export {
+  claimProjectileId,
+  getProjectileCounter,
+  resetProjectileCounter,
+  setProjectileCounter,
+} from "./projectile-id";
 
 /** Tunable gameplay constants. All "feel" lives here as named values. */
 export const SIM = {
