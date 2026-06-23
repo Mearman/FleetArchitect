@@ -1,7 +1,12 @@
 import { Group, SegmentedControl, Slider, Stack, Text, Tooltip } from "@mantine/core";
 import { IconFocus2, IconPlayerPause, IconPlayerPlay } from "@tabler/icons-react";
 import { AnnunciatorButton } from "@/ui/components/Annunciator";
-import type { Camera } from "./battleCamera";
+import type { Camera, ProjectionMode } from "./battleCamera";
+
+/** Narrow a SegmentedControl string value to a ProjectionMode without a cast. */
+function toProjectionMode(value: string): ProjectionMode {
+  return value === "isometric" ? "isometric" : "flat";
+}
 
 /**
  * Props for {@link PlaybackControls}. All playback/camera state lives in the
@@ -23,6 +28,9 @@ export interface PlaybackControlsProps {
   onSeek: (tick: number) => void;
   /** Restore auto-fit mode (the zoom badge acts as this button). */
   onRestoreFit: () => void;
+  /** Switch the battle view between the flat top-down and the 2.5D isometric
+   *  projection. The mode rides the camera, so this only sets it. */
+  onProjectionChange: (mode: ProjectionMode) => void;
 }
 
 /**
@@ -41,6 +49,7 @@ export function PlaybackControls({
   onSpeedChange,
   onSeek,
   onRestoreFit,
+  onProjectionChange,
 }: PlaybackControlsProps) {
   return (
     <Stack gap="xs">
@@ -76,6 +85,17 @@ export function PlaybackControls({
           Tick {currentTick} / {maxTick}
           {finished ? "" : "…"}
         </Text>
+        <Tooltip label="Toggle between the flat top-down and the 2.5D isometric view">
+          <SegmentedControl
+            size="xs"
+            data={[
+              { value: "flat", label: "2D" },
+              { value: "isometric", label: "2.5D" },
+            ]}
+            value={camera.projection}
+            onChange={(val) => onProjectionChange(toProjectionMode(val))}
+          />
+        </Tooltip>
         <SegmentedControl
           size="xs"
           data={[

@@ -5,11 +5,12 @@ import type { DescriptorMap } from "@/ui/cellLayout";
 import { hullRadiusWorld, renderCells } from "@/ui/cellLayout";
 import { interpolateFrame } from "@/ui/interpolateFrame";
 import { orderShipsForRender } from "@/ui/renderOrder";
-import { BASE_PANEL, BASE_VOID, NEON_MAGENTA, PHOSPHOR_AMBER, PHOSPHOR_GREEN } from "@/ui/theme/tokens";
-import { drawAnomaly, hash01 } from "./battleAnomaly";
+import { NEON_MAGENTA, PHOSPHOR_AMBER, PHOSPHOR_GREEN } from "@/ui/theme/tokens";
+import { drawAnomaly } from "./battleAnomaly";
+import { drawBackdrop } from "./battleBackdrop";
 import { drawFogAndAwareness } from "./battleFog";
 import type { ShipScreenPositions } from "./battleFog";
-import type { Bounds, Camera, Transform } from "./battleCamera";
+import type { Bounds, Camera } from "./battleCamera";
 import { resolveViewTransform } from "./battleCamera";
 import {
   CARRYING_COLOUR,
@@ -23,121 +24,6 @@ import { OVERLAYS, OVER_SHIP_IDS, UNDER_SHIP_IDS } from "./overlays";
 import type { OverlayScope } from "./overlays";
 import { SPRITE_PX_PER_WORLD, rasteriseShipSprite, spriteKey } from "./shipSprite";
 import type { ShipSprite } from "./shipSprite";
-
-/** Grid spacing in world units for the parallax background grid. */
-const GRID_WORLD_SPACING = 100;
-
-/** World spacing of the starfield lattice, metres. One star sits in each cell at
- *  a deterministic offset, so the field is fixed in world space (it pans and
- *  zooms with the camera) rather than being distributed across the battle bounds
- *  — distributing across bounds made every star shift and stretch while the
- *  bounds grew during buffering. */
-const STAR_CELL_WORLD = 70;
-
-/** Caps so a zoomed-far-out view does not iterate a huge lattice: the grid stops
- *  drawing past this many lines per axis, and the starfield lattice is coarsened
- *  (cell size doubled) until it fits this many cells. */
-const GRID_LINE_CAP = 240;
-const STAR_CELL_CAP = 2400;
-
-/** Deterministic unit float for lattice cell (ix, iy), variant k. */
-function cellHash(ix: number, iy: number, k: number): number {
-  return hash01((ix * 73856093) ^ (iy * 19349663) ^ (k * 83492791));
-}
-
-/**
- * Draw the canvas backdrop beneath everything else: a vertical base gradient,
- * a world-space grid, and a deterministic starfield. Both the grid and the
- * starfield live on fixed world lattices covering the visible region, so they
- * stay put in world space (parallaxing with the camera) instead of being keyed
- * to the battle bounds — which grow as frames stream in, and would otherwise
- * make the whole backdrop drift and stretch while the simulation buffers. The
- * starfield uses hash01 (a pure integer→unit float hash) rather than
- * Math.random/Date.now so replays stay byte-identical.
- */
-function drawBackdrop(
-  ctx: CanvasRenderingContext2D,
-  width: number,
-  height: number,
-  t: Transform,
-): void {
-  // 1. Base gradient — prevents the page background from bleeding through.
-  const grad = ctx.createLinearGradient(0, 0, 0, height);
-  grad.addColorStop(0, BASE_PANEL);
-  grad.addColorStop(1, BASE_VOID);
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, width, height);
-
-  // Visible world rectangle for the current transform.
-  const halfW = width / 2 / t.scale;
-  const halfH = height / 2 / t.scale;
-  const left = t.centreX - halfW;
-  const right = t.centreX + halfW;
-  const top = t.centreY - halfH;
-  const bottom = t.centreY + halfH;
-
-  // 2. World grid on a fixed lattice — lines at fixed world positions, so they
-  //    never move as the bounds grow. Skipped when zoomed so far out the lines
-  //    would crowd into a haze.
-  const gx0 = Math.floor(left / GRID_WORLD_SPACING);
-  const gx1 = Math.ceil(right / GRID_WORLD_SPACING);
-  const gy0 = Math.floor(top / GRID_WORLD_SPACING);
-  const gy1 = Math.ceil(bottom / GRID_WORLD_SPACING);
-  if (gx1 - gx0 <= GRID_LINE_CAP && gy1 - gy0 <= GRID_LINE_CAP) {
-    ctx.save();
-    ctx.strokeStyle = "rgba(28,38,32,0.25)";
-    ctx.lineWidth = 1;
-    for (let i = gx0; i <= gx1; i += 1) {
-      const px = t.sx(i * GRID_WORLD_SPACING);
-      ctx.beginPath();
-      ctx.moveTo(px, 0);
-      ctx.lineTo(px, height);
-      ctx.stroke();
-    }
-    for (let i = gy0; i <= gy1; i += 1) {
-      const py = t.sy(i * GRID_WORLD_SPACING);
-      ctx.beginPath();
-      ctx.moveTo(0, py);
-      ctx.lineTo(width, py);
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
-
-  // 3. Starfield on a fixed world lattice covering the visible rect. One star
-  //    per cell at a hashed offset; coarsened when a zoomed-out view would span
-  //    too many cells. Fixed in world space, so buffering never moves a star.
-  let cell = STAR_CELL_WORLD;
-  let sx0 = Math.floor(left / cell);
-  let sx1 = Math.ceil(right / cell);
-  let sy0 = Math.floor(top / cell);
-  let sy1 = Math.ceil(bottom / cell);
-  while ((sx1 - sx0 + 1) * (sy1 - sy0 + 1) > STAR_CELL_CAP) {
-    cell *= 2;
-    sx0 = Math.floor(left / cell);
-    sx1 = Math.ceil(right / cell);
-    sy0 = Math.floor(top / cell);
-    sy1 = Math.ceil(bottom / cell);
-  }
-  ctx.save();
-  ctx.fillStyle = "rgba(201,212,196,1)";
-  for (let ix = sx0; ix <= sx1; ix += 1) {
-    for (let iy = sy0; iy <= sy1; iy += 1) {
-      const wx = (ix + cellHash(ix, iy, 0)) * cell;
-      const wy = (iy + cellHash(ix, iy, 1)) * cell;
-      const px = t.sx(wx);
-      const py = t.sy(wy);
-      if (px < 0 || px > width || py < 0 || py > height) continue;
-      ctx.globalAlpha = 0.3 + cellHash(ix, iy, 2) * 0.6;
-      const radius = 0.8 + cellHash(ix, iy, 3) * 0.7;
-      ctx.beginPath();
-      ctx.arc(px, py, radius, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-  ctx.globalAlpha = 1;
-  ctx.restore();
-}
 
 /** Per-overlay on/scope state held by the route. */
 export type OverlayState = Record<string, { on: boolean; scope: OverlayScope }>;
@@ -215,8 +101,6 @@ export function useBattleCanvas({
       const cam = cameraRef.current;
       const t = resolveViewTransform(width, height, bounds, cam, frame, descriptors);
       const scale = t.scale;
-      const sx = t.sx;
-      const sy = t.sy;
 
       // Backdrop: base gradient, parallax grid, and seeded starfield, drawn
       // first so everything else sits on top of the atmosphere.
@@ -238,7 +122,7 @@ export function useBattleCanvas({
         const shipScreenPos: Map<string, { x: number; y: number }> = new Map();
         for (const s of frame.ships) {
           if (s.alive) {
-            shipScreenPos.set(s.instanceId, { x: t.sx(s.x), y: t.sy(s.y) });
+            shipScreenPos.set(s.instanceId, t.project(s.x, s.y));
           }
         }
         const shipPos: ShipScreenPositions = shipScreenPos;
@@ -279,15 +163,25 @@ export function useBattleCanvas({
       for (const p of frame.projectiles) {
         const colour = PROJECTILE_COLOUR[p.kind];
         if (colour === undefined) continue;
+        const pp = t.project(p.x, p.y);
         ctx.fillStyle = colour;
-        ctx.fillRect(sx(p.x) - 1, sy(p.y) - 1, 2.5, 2.5);
+        ctx.fillRect(pp.x - 1, pp.y - 1, 2.5, 2.5);
       }
 
-      // Back-to-front by world-y so closer (lower) ships overlap further ones,
-      // rather than the snapshot's attackers-then-defenders array order.
-      for (const s of orderShipsForRender(frame.ships)) {
-        const px = sx(s.x);
-        const py = sy(s.y);
+      // The projection's pure 2x2 delta map (its basis vectors): the screen
+      // delta for one world unit along x and along y. For the flat projection
+      // this is the identity, so the composed ship transform below reduces to
+      // scale * rotate(facing) and reproduces the old top-down draw exactly.
+      const mx = t.projection.project(1, 0);
+      const my = t.projection.project(0, 1);
+
+      // Back-to-front by projected depth so nearer ships overlap further ones,
+      // rather than the snapshot's attackers-then-defenders array order. Flat
+      // depth is world-y; iso depth is x+y along the tilted plane.
+      for (const s of orderShipsForRender(frame.ships, t.projection.depth)) {
+        const origin = t.project(s.x, s.y);
+        const px = origin.x;
+        const py = origin.y;
         // Static layout for this ship (cell offsets + outline), emitted once per
         // battle; the cells are reconstructed in world space from the ship pose.
         const descriptor = descriptors.get(s.instanceId);
@@ -352,65 +246,17 @@ export function useBattleCanvas({
         // side colour so faction allegiance stays legible at a glance. Destroyed
         // cells go dark with a cross; turreted weapons draw a tracking barrel.
         if (cells !== undefined && s.facing !== undefined) {
-          // Cell edge length in display pixels (world CELL_SIZE through the
-          // current world-to-display scale). Floored so distant fleets still
-          // show a visible hull rather than collapsing to sub-pixel specks.
-          const cellPx = Math.max(2, CELL_SIZE * scale);
-          const half = cellPx / 2;
           // Whether the cell size is being floored (distant zoom): in that
           // regime cells overlap to keep a tiny hull legible, which the baked
           // sprite (drawn at the natural scale) cannot reproduce, so we fall
           // back to the live per-cell fill. At normal/close zoom the sprite blit
           // is pixel-equivalent to the live fill, so it is used.
           const floored = CELL_SIZE * scale < 2;
-          ctx.save();
-          ctx.translate(px, py);
-          ctx.rotate(s.facing);
+          const cosF = Math.cos(s.facing);
+          const sinF = Math.sin(s.facing);
 
-          // Static cell layer: blit the cached sprite when at natural scale,
-          // re-rasterising only on a topology/colour change. The dynamic per-cell
-          // bits (starvation dimming, dead crosses, turret barrels) are always
-          // drawn live on top, so the visible result matches the live path.
-          const useSprite = !floored;
-          let sprite: ShipSprite | undefined;
-          if (useSprite) {
-            const key = spriteKey(cells, base);
-            const cached = spriteCache.current.get(s.instanceId);
-            if (cached !== undefined && cached.key === key) {
-              sprite = cached;
-            } else {
-              sprite = rasteriseShipSprite(cells, base, key);
-              if (sprite !== undefined) spriteCache.current.set(s.instanceId, sprite);
-            }
-          }
-
-          if (sprite !== undefined) {
-            // Map sprite pixels to display pixels: the sprite drew CELL_SIZE
-            // world units as SPRITE_PX_PER_WORLD pixels, so dividing the live
-            // display scale by that factor recovers the per-cell display size.
-            const blitScale = scale / SPRITE_PX_PER_WORLD;
-            ctx.globalAlpha = 1;
-            ctx.drawImage(
-              sprite.canvas,
-              -sprite.originX * blitScale,
-              -sprite.originY * blitScale,
-              sprite.canvas.width * blitScale,
-              sprite.canvas.height * blitScale,
-            );
-          }
-
-          for (const m of cells) {
-            // Cell centre in ship-local display space (static offset times the
-            // scale); the surrounding translate/rotate places it in world.
-            const lx = m.ox * scale;
-            const ly = m.oy * scale;
-            const colour = MODULE_COLOUR[m.kind];
-            if (colour === undefined) continue;
-
-            // Supply/manning dimming: a crewed station that is unmanned, or a
-            // module that has run out of ammo or charge, is rendered at reduced
-            // opacity so the player can see supply problems at a glance. Only
-            // applied to alive modules — destroyed cells use the existing 0.18 path.
+          // The dynamic dimming/manning flags are needed by both draw paths.
+          const cellState = (m: (typeof cells)[number]) => {
             const hasCrewReq =
               m.kind === "weapon" ||
               m.kind === "engine" ||
@@ -421,121 +267,308 @@ export function useBattleCanvas({
             const starvedAmmo = m.ammo !== undefined && m.ammo === 0;
             const starvedCharge = m.charge !== undefined && m.charge === 0;
             const unmanned = hasCrewReq && m.manned === false;
-            const isStarved = starvedAmmo || starvedCharge || unmanned;
+            return { isStarved: starvedAmmo || starvedCharge || unmanned };
+          };
 
-            // An alive, non-starved cell at natural zoom is already painted by
-            // the sprite blit above — skip re-filling it. Every other cell (dead,
-            // starved, or any cell when the sprite is not in use) is filled live,
-            // identically to the original path.
-            const paintedBySprite = sprite !== undefined && m.alive && !isStarved;
-            if (!paintedBySprite) {
-              // A starved/dead cell baked into the sprite must be knocked out
-              // before its dimmed version is drawn, or the bright baked fill
-              // would show through the lower-opacity overlay.
-              if (sprite !== undefined && sprite.aliveSlots.has(m.slotId)) {
-                ctx.globalCompositeOperation = "destination-out";
-                ctx.globalAlpha = 1;
-                ctx.fillStyle = "#000";
-                ctx.fillRect(lx - half, ly - half, cellPx, cellPx);
-                ctx.globalCompositeOperation = "source-over";
-              }
+          if (floored) {
+            // Distant-zoom fallback: the cells are below the legibility floor,
+            // so the matrix path would collapse them to sub-pixel specks. Each
+            // cell is instead projected from its world centre (ship pose plus
+            // the facing-rotated local offset) and drawn as a small floored,
+            // screen-axis-aligned square — legible under both projections.
+            const cellPx = Math.max(2, CELL_SIZE * scale);
+            const half = cellPx / 2;
+            for (const m of cells) {
+              const colour = MODULE_COLOUR[m.kind];
+              if (colour === undefined) continue;
+              // Local offset rotated into world, then projected to screen.
+              const wx = s.x + (m.ox * cosF - m.oy * sinF);
+              const wy = s.y + (m.ox * sinF + m.oy * cosF);
+              const cp = t.project(wx, wy);
+              const { isStarved } = cellState(m);
 
               ctx.globalAlpha = m.alive ? (isStarved ? 0.45 : 1) : 0.18;
               ctx.fillStyle = colour;
-              ctx.fillRect(lx - half, ly - half, cellPx, cellPx);
+              ctx.fillRect(cp.x - half, cp.y - half, cellPx, cellPx);
 
-              // A faint side-coloured inset keeps adjacent cells distinct and
-              // tints the whole hull toward its allegiance colour.
               ctx.globalAlpha = m.alive ? (isStarved ? 0.1 : 0.22) : 0.1;
               ctx.fillStyle = base;
-              ctx.fillRect(lx - half, ly - half, cellPx, cellPx);
+              ctx.fillRect(cp.x - half, cp.y - half, cellPx, cellPx);
+
+              if (!m.alive) {
+                ctx.globalAlpha = 0.35;
+                ctx.strokeStyle = "rgba(255,255,255,0.4)";
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(cp.x - half * 0.6, cp.y - half * 0.6);
+                ctx.lineTo(cp.x + half * 0.6, cp.y + half * 0.6);
+                ctx.moveTo(cp.x + half * 0.6, cp.y - half * 0.6);
+                ctx.lineTo(cp.x - half * 0.6, cp.y + half * 0.6);
+                ctx.stroke();
+              } else if (m.turretAngle !== undefined) {
+                // Turret barrel: its slew angle is in the ship-local frame, so
+                // the world direction adds the ship facing. Both ends are
+                // projected; the barrel reads as a short floored stub.
+                const wa = m.turretAngle + s.facing;
+                const tip = t.project(
+                  wx + Math.cos(wa) * CELL_SIZE,
+                  wy + Math.sin(wa) * CELL_SIZE,
+                );
+                ctx.globalAlpha = 1;
+                ctx.strokeStyle = colour;
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.moveTo(cp.x, cp.y);
+                ctx.lineTo(tip.x, tip.y);
+                ctx.stroke();
+              }
             }
 
-            if (!m.alive) {
-              ctx.globalAlpha = 0.35;
-              ctx.strokeStyle = "rgba(255,255,255,0.4)";
-              ctx.lineWidth = 1;
-              ctx.beginPath();
-              ctx.moveTo(lx - half * 0.6, ly - half * 0.6);
-              ctx.lineTo(lx + half * 0.6, ly + half * 0.6);
-              ctx.moveTo(lx + half * 0.6, ly - half * 0.6);
-              ctx.lineTo(lx - half * 0.6, ly + half * 0.6);
-              ctx.stroke();
-            } else if (m.turretAngle !== undefined) {
-              // Turret barrel: drawn in the local frame, so the ship's own
-              // rotation is already applied by the surrounding transform; only
-              // the turret's slew angle is added here.
-              ctx.globalAlpha = 1;
-              ctx.strokeStyle = colour;
-              ctx.lineWidth = 1.5;
-              ctx.beginPath();
-              ctx.moveTo(lx, ly);
-              ctx.lineTo(
-                lx + Math.cos(m.turretAngle) * cellPx,
-                ly + Math.sin(m.turretAngle) * cellPx,
-              );
-              ctx.stroke();
-            }
-          }
-
-          // Crew dots: drawn on top of cells in ship-local space so they are
-          // correctly positioned and rotate with the ship. Dot radius scales
-          // with zoom (half a cell) but is floored at 2 px so crew remain
-          // visible on distant ships.
-          if (s.crew !== undefined) {
-            const dotR = Math.max(2, cellPx * 0.28);
-            for (const c of s.crew) {
-              const cx = c.x * scale;
-              const cy = c.y * scale;
-              const dotColour = CREW_COLOUR[c.state] ?? "#b0b0b8";
-              ctx.globalAlpha = 0.92;
-              ctx.fillStyle = dotColour;
-              ctx.beginPath();
-              ctx.arc(cx, cy, dotR, 0, Math.PI * 2);
-              ctx.fill();
-              // Carrying accent: a tiny inner dot in the cargo colour.
-              if (c.carrying !== undefined) {
-                const accentColour = CARRYING_COLOUR[c.carrying];
-                if (accentColour !== undefined) {
-                  ctx.globalAlpha = 1;
-                  ctx.fillStyle = accentColour;
-                  ctx.beginPath();
-                  ctx.arc(cx, cy, Math.max(1, dotR * 0.45), 0, Math.PI * 2);
-                  ctx.fill();
+            // Crew dots: each crew offset is in ship-local units; rotate into
+            // world and project. Radius floored at 2 px so crew stay visible.
+            if (s.crew !== undefined) {
+              const dotR = Math.max(2, CELL_SIZE * scale * 0.28);
+              for (const c of s.crew) {
+                const cwx = s.x + (c.x * cosF - c.y * sinF);
+                const cwy = s.y + (c.x * sinF + c.y * cosF);
+                const cdp = t.project(cwx, cwy);
+                const dotColour = CREW_COLOUR[c.state] ?? "#b0b0b8";
+                ctx.globalAlpha = 0.92;
+                ctx.fillStyle = dotColour;
+                ctx.beginPath();
+                ctx.arc(cdp.x, cdp.y, dotR, 0, Math.PI * 2);
+                ctx.fill();
+                if (c.carrying !== undefined) {
+                  const accentColour = CARRYING_COLOUR[c.carrying];
+                  if (accentColour !== undefined) {
+                    ctx.globalAlpha = 1;
+                    ctx.fillStyle = accentColour;
+                    ctx.beginPath();
+                    ctx.arc(cdp.x, cdp.y, Math.max(1, dotR * 0.45), 0, Math.PI * 2);
+                    ctx.fill();
+                  }
                 }
               }
             }
-          }
 
-          // Chamfered hull outline (Phase 11): drawn over the cells as a
-          // semi-transparent stroke in the side colour, tracing the armor
-          // shell's boundary through its chamfered corner vertices. Vertices
-          // are in ship-local world units; the surrounding translate/rotate
-          // already places them in world space, so only the display scale
-          // is applied.
-          const outline = descriptor?.outline;
-          if (outline !== undefined) {
-            ctx.strokeStyle = SIDE_COLOUR[s.side];
-            ctx.lineWidth = 1;
-            ctx.globalAlpha = 0.5;
-            for (const loop of outline) {
-              if (loop.length < 2) continue;
-              const first = loop[0];
-              if (first === undefined) continue;
-              ctx.beginPath();
-              ctx.moveTo(first.x * scale, first.y * scale);
-              for (let i = 1; i < loop.length; i += 1) {
-                const v = loop[i];
-                if (v !== undefined) ctx.lineTo(v.x * scale, v.y * scale);
+            // Hull outline: vertices are in ship-local units; rotate into world
+            // and project each so the shell traces correctly under the tilt.
+            const outlineF = descriptor?.outline;
+            if (outlineF !== undefined) {
+              ctx.strokeStyle = SIDE_COLOUR[s.side];
+              ctx.lineWidth = 1;
+              ctx.globalAlpha = 0.5;
+              for (const loop of outlineF) {
+                if (loop.length < 2) continue;
+                const first = loop[0];
+                if (first === undefined) continue;
+                const f = t.project(
+                  s.x + (first.x * cosF - first.y * sinF),
+                  s.y + (first.x * sinF + first.y * cosF),
+                );
+                ctx.beginPath();
+                ctx.moveTo(f.x, f.y);
+                for (let i = 1; i < loop.length; i += 1) {
+                  const v = loop[i];
+                  if (v === undefined) continue;
+                  const vp = t.project(
+                    s.x + (v.x * cosF - v.y * sinF),
+                    s.y + (v.x * sinF + v.y * cosF),
+                  );
+                  ctx.lineTo(vp.x, vp.y);
+                }
+                ctx.closePath();
+                ctx.stroke();
               }
-              ctx.closePath();
-              ctx.stroke();
             }
             ctx.globalAlpha = 1;
-          }
+          } else {
+            // Normal/close zoom: compose a single affine that places the ship's
+            // local-world coordinate space onto the screen —
+            //   screen = project(s.x, s.y) + scale * M * R(facing) * local
+            // where M is the projection's pure 2x2 delta map (columns are the
+            // screen deltas for one world unit along x and along y). Everything
+            // below is then drawn in LOCAL WORLD UNITS; the matrix carries the
+            // scale and the projection tilt. For the flat projection M is the
+            // identity, so A reduces to scale * R(facing) and the result is the
+            // old top-down draw exactly.
+            const r00 = cosF;
+            const r01 = -sinF;
+            const r10 = sinF;
+            const r11 = cosF;
+            // M * R, then * scale. M = [[mx.x, my.x], [mx.y, my.y]].
+            const a00 = scale * (mx.x * r00 + my.x * r10);
+            const a01 = scale * (mx.x * r01 + my.x * r11);
+            const a10 = scale * (mx.y * r00 + my.y * r10);
+            const a11 = scale * (mx.y * r01 + my.y * r11);
+            ctx.save();
+            ctx.translate(px, py);
+            // ctx.transform(a, b, c, d, e, f): x' = a*x + c*y, y' = b*x + d*y.
+            ctx.transform(a00, a10, a01, a11, 0, 0);
 
-          ctx.restore();
-          ctx.globalAlpha = 1;
+            // Static cell layer: blit the cached sprite (a flat plate the matrix
+            // tilts), re-rasterising only on a topology/colour change. The
+            // dynamic per-cell bits (starvation dimming, dead crosses, turret
+            // barrels) are always drawn live on top, so the visible result
+            // matches the live path.
+            const key = spriteKey(cells, base);
+            const cached = spriteCache.current.get(s.instanceId);
+            let sprite: ShipSprite | undefined;
+            if (cached !== undefined && cached.key === key) {
+              sprite = cached;
+            } else {
+              sprite = rasteriseShipSprite(cells, base, key);
+              if (sprite !== undefined) spriteCache.current.set(s.instanceId, sprite);
+            }
+
+            if (sprite !== undefined) {
+              // The sprite drew CELL_SIZE world units as SPRITE_PX_PER_WORLD
+              // pixels; the composed matrix already carries the display scale,
+              // so the blit only needs to undo the sprite's own pixel density to
+              // land in local world units.
+              const blitScale = 1 / SPRITE_PX_PER_WORLD;
+              ctx.globalAlpha = 1;
+              ctx.drawImage(
+                sprite.canvas,
+                -sprite.originX * blitScale,
+                -sprite.originY * blitScale,
+                sprite.canvas.width * blitScale,
+                sprite.canvas.height * blitScale,
+              );
+            }
+
+            // A cell square is one world CELL_SIZE on each side, in local units.
+            const half = CELL_SIZE / 2;
+            // The composed matrix carries the display scale, so a stroke meant
+            // to read as N screen pixels must be authored as N / scale local
+            // units. (The projection skew makes this exact only for the flat
+            // mode; under iso it is the correct first-order width.)
+            const strokePx = (px2: number) => px2 / scale;
+            for (const m of cells) {
+              // Cell centre in ship-local world units; the composed matrix
+              // places it in screen space (with the projection tilt applied).
+              const lx = m.ox;
+              const ly = m.oy;
+              const colour = MODULE_COLOUR[m.kind];
+              if (colour === undefined) continue;
+
+              // Supply/manning dimming: a crewed station that is unmanned, or a
+              // module out of ammo or charge, renders at reduced opacity so
+              // supply problems read at a glance. Only on alive modules —
+              // destroyed cells use the 0.18 path.
+              const { isStarved } = cellState(m);
+
+              // An alive, non-starved cell at natural zoom is already painted by
+              // the sprite blit above — skip re-filling it. Every other cell
+              // (dead, starved, or any cell when the sprite is not in use) is
+              // filled live, identically to the original path.
+              const paintedBySprite = sprite !== undefined && m.alive && !isStarved;
+              if (!paintedBySprite) {
+                // A starved/dead cell baked into the sprite must be knocked out
+                // before its dimmed version is drawn, or the bright baked fill
+                // would show through the lower-opacity overlay.
+                if (sprite !== undefined && sprite.aliveSlots.has(m.slotId)) {
+                  ctx.globalCompositeOperation = "destination-out";
+                  ctx.globalAlpha = 1;
+                  ctx.fillStyle = "#000";
+                  ctx.fillRect(lx - half, ly - half, CELL_SIZE, CELL_SIZE);
+                  ctx.globalCompositeOperation = "source-over";
+                }
+
+                ctx.globalAlpha = m.alive ? (isStarved ? 0.45 : 1) : 0.18;
+                ctx.fillStyle = colour;
+                ctx.fillRect(lx - half, ly - half, CELL_SIZE, CELL_SIZE);
+
+                // A faint side-coloured inset keeps adjacent cells distinct and
+                // tints the whole hull toward its allegiance colour.
+                ctx.globalAlpha = m.alive ? (isStarved ? 0.1 : 0.22) : 0.1;
+                ctx.fillStyle = base;
+                ctx.fillRect(lx - half, ly - half, CELL_SIZE, CELL_SIZE);
+              }
+
+              if (!m.alive) {
+                ctx.globalAlpha = 0.35;
+                ctx.strokeStyle = "rgba(255,255,255,0.4)";
+                ctx.lineWidth = strokePx(1);
+                ctx.beginPath();
+                ctx.moveTo(lx - half * 0.6, ly - half * 0.6);
+                ctx.lineTo(lx + half * 0.6, ly + half * 0.6);
+                ctx.moveTo(lx + half * 0.6, ly - half * 0.6);
+                ctx.lineTo(lx - half * 0.6, ly + half * 0.6);
+                ctx.stroke();
+              } else if (m.turretAngle !== undefined) {
+                // Turret barrel: drawn in local units; the composed matrix
+                // applies the ship's facing and the projection, so only the
+                // turret's slew angle is added here.
+                ctx.globalAlpha = 1;
+                ctx.strokeStyle = colour;
+                ctx.lineWidth = strokePx(1.5);
+                ctx.beginPath();
+                ctx.moveTo(lx, ly);
+                ctx.lineTo(
+                  lx + Math.cos(m.turretAngle) * CELL_SIZE,
+                  ly + Math.sin(m.turretAngle) * CELL_SIZE,
+                );
+                ctx.stroke();
+              }
+            }
+
+            // Crew dots: drawn over the cells in ship-local world units, so they
+            // sit on the hull and follow the ship's facing and the projection.
+            // Radius is half a cell in world units.
+            if (s.crew !== undefined) {
+              const dotR = CELL_SIZE * 0.28;
+              for (const c of s.crew) {
+                const cx = c.x;
+                const cy = c.y;
+                const dotColour = CREW_COLOUR[c.state] ?? "#b0b0b8";
+                ctx.globalAlpha = 0.92;
+                ctx.fillStyle = dotColour;
+                ctx.beginPath();
+                ctx.arc(cx, cy, dotR, 0, Math.PI * 2);
+                ctx.fill();
+                // Carrying accent: a tiny inner dot in the cargo colour.
+                if (c.carrying !== undefined) {
+                  const accentColour = CARRYING_COLOUR[c.carrying];
+                  if (accentColour !== undefined) {
+                    ctx.globalAlpha = 1;
+                    ctx.fillStyle = accentColour;
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, dotR * 0.45, 0, Math.PI * 2);
+                    ctx.fill();
+                  }
+                }
+              }
+            }
+
+            // Chamfered hull outline: drawn over the cells as a semi-transparent
+            // side-colour stroke through the shell's corner vertices. Vertices
+            // are in ship-local world units; the composed matrix places them on
+            // screen (with the projection tilt applied).
+            const outline = descriptor?.outline;
+            if (outline !== undefined) {
+              ctx.strokeStyle = SIDE_COLOUR[s.side];
+              ctx.lineWidth = strokePx(1);
+              ctx.globalAlpha = 0.5;
+              for (const loop of outline) {
+                if (loop.length < 2) continue;
+                const first = loop[0];
+                if (first === undefined) continue;
+                ctx.beginPath();
+                ctx.moveTo(first.x, first.y);
+                for (let i = 1; i < loop.length; i += 1) {
+                  const v = loop[i];
+                  if (v !== undefined) ctx.lineTo(v.x, v.y);
+                }
+                ctx.closePath();
+                ctx.stroke();
+              }
+              ctx.globalAlpha = 1;
+            }
+
+            ctx.restore();
+            ctx.globalAlpha = 1;
+          }
         } else {
           // Legacy aggregated ship with no per-cell data: a simple blob.
           ctx.fillStyle = base;
@@ -584,8 +617,9 @@ export function useBattleCanvas({
         const POD_CELL_SIZE = Math.max(1.5, CELL_SIZE * 0.5 * scale);
         const POD_HALF = POD_CELL_SIZE / 2;
         for (const pod of frame.pods) {
-          const px = sx(pod.x);
-          const py = sy(pod.y);
+          const podCentre = t.project(pod.x, pod.y);
+          const px = podCentre.x;
+          const py = podCentre.y;
           ctx.globalAlpha = 0.85;
           ctx.fillStyle = SIDE_COLOUR[pod.side];
 

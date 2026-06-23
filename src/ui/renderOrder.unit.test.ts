@@ -6,6 +6,10 @@ function ship(instanceId: string, y: number, side: ShipSnapshot["side"] = "attac
   return { instanceId, side, x: 0, y, structure: 1, shield: 0, alive: true };
 }
 
+function shipAt(instanceId: string, x: number, y: number): ShipSnapshot {
+  return { instanceId, side: "attacker", x, y, structure: 1, shield: 0, alive: true };
+}
+
 describe("orderShipsForRender", () => {
   it("orders ships back-to-front by ascending world-y", () => {
     const ships = [ship("a", 150), ship("b", 50), ship("c", 100)];
@@ -38,6 +42,32 @@ describe("orderShipsForRender", () => {
     const result = orderShipsForRender(ships);
     expect(result).not.toBe(ships);
     expect(result).toHaveLength(2);
+  });
+
+  it("orders by an isometric depth key (x + y) when supplied", () => {
+    // Flat depth (y) would order by y alone; the iso depth x+y must reorder
+    // these so the ship with the largest x+y paints last (nearest the viewer).
+    const isoDepth = (x: number, y: number) => x + y;
+    const ships = [
+      shipAt("near", 200, 200), // x+y = 400 -> front
+      shipAt("far", 10, 10), // x+y = 20 -> back
+      shipAt("mid", 100, 50), // x+y = 150 -> middle
+    ];
+    expect(orderShipsForRender(ships, isoDepth).map((s) => s.instanceId)).toEqual([
+      "far",
+      "mid",
+      "near",
+    ]);
+  });
+
+  it("breaks iso-depth ties by instanceId", () => {
+    const isoDepth = (x: number, y: number) => x + y;
+    // Both sum to 100; deterministic tie-break on instanceId.
+    const ships = [shipAt("zeta", 60, 40), shipAt("alpha", 30, 70)];
+    expect(orderShipsForRender(ships, isoDepth).map((s) => s.instanceId)).toEqual([
+      "alpha",
+      "zeta",
+    ]);
   });
 
   it("handles a single ship and an empty list", () => {

@@ -518,6 +518,9 @@ export function BattleRoute() {
               onSpeedChange={playback.setSpeed}
               onSeek={onSeek}
               onRestoreFit={camera.restoreAutoFit}
+              onProjectionChange={(mode) =>
+                camera.setCamera((c) => ({ ...c, projection: mode }))
+              }
             />
           </div>
         )}

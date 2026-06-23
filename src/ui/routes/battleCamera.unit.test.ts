@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_CAMERA,
   FLAT_PROJECTION,
+  ISO_PROJECTION,
   liveShipsBounds,
   makeTransform,
   manualCameraFrom,
@@ -87,6 +88,7 @@ describe("battleCamera", () => {
         centreX: 50,
         centreY: 60,
         followId: null,
+        projection: "flat",
       };
       const frame = frameWith([{ id: "a", x: 0, y: 0, alive: true }]);
       const t = resolveViewTransform(800, 600, WIDE_BOUNDS, cam, frame, NO_DESCRIPTORS);
@@ -103,6 +105,7 @@ describe("battleCamera", () => {
         centreX: 999,
         centreY: 999,
         followId: "a",
+        projection: "flat",
       };
       const frame = frameWith([{ id: "a", x: 10, y: 20, alive: true }]);
       const t = resolveViewTransform(800, 600, WIDE_BOUNDS, cam, frame, NO_DESCRIPTORS);
@@ -147,6 +150,74 @@ describe("battleCamera", () => {
       expect(FLAT_PROJECTION.project(3, 7)).toEqual({ x: 3, y: 7 });
       expect(FLAT_PROJECTION.unproject(3, 7)).toEqual({ x: 3, y: 7 });
       expect(FLAT_PROJECTION.depth(3, 7)).toBe(7);
+    });
+  });
+
+  describe("ISO_PROJECTION", () => {
+    const cases: ReadonlyArray<readonly [number, number]> = [
+      [0, 0],
+      [100, 0],
+      [0, 100],
+      [-37, 84],
+      [250, -130],
+    ];
+
+    it("project/unproject round-trip", () => {
+      for (const [dx, dy] of cases) {
+        const p = ISO_PROJECTION.project(dx, dy);
+        const back = ISO_PROJECTION.unproject(p.x, p.y);
+        expect(back.x).toBeCloseTo(dx, 9);
+        expect(back.y).toBeCloseTo(dy, 9);
+      }
+    });
+
+    it("is a true 2:1 diamond — the vertical extent is half the horizontal", () => {
+      // Equal world steps along each axis: x-extent (dx-dy) is twice the
+      // y-extent (dx+dy) per unit, so the on-screen diamond is 2:1.
+      const px = ISO_PROJECTION.project(1, -1); // pure screen-x basis
+      const py = ISO_PROJECTION.project(1, 1); // pure screen-y basis
+      expect(px.y).toBeCloseTo(0, 9);
+      expect(py.x).toBeCloseTo(0, 9);
+      expect(Math.abs(px.x)).toBeCloseTo(Math.abs(py.y) * 2, 9);
+    });
+
+    it("depth = dx + dy increases monotonically toward the front", () => {
+      expect(ISO_PROJECTION.depth(0, 0)).toBe(0);
+      expect(ISO_PROJECTION.depth(10, 0)).toBeGreaterThan(ISO_PROJECTION.depth(0, 0));
+      expect(ISO_PROJECTION.depth(10, 10)).toBeGreaterThan(ISO_PROJECTION.depth(10, 0));
+      expect(ISO_PROJECTION.depth(-5, -5)).toBeLessThan(ISO_PROJECTION.depth(0, 0));
+    });
+
+    it("screenToWorld inverts an isometric transform", () => {
+      const t = makeTransform(800, 600, 5, 100, 200, ISO_PROJECTION);
+      const worldCases: ReadonlyArray<readonly [number, number]> = [
+        [100, 200],
+        [123, 77],
+        [-40, 310],
+      ];
+      for (const [wx, wy] of worldCases) {
+        const p = t.project(wx, wy);
+        const back = screenToWorld(t, p.x, p.y);
+        expect(back.x).toBeCloseTo(wx, 6);
+        expect(back.y).toBeCloseTo(wy, 6);
+      }
+    });
+  });
+
+  describe("projection mode rides the camera", () => {
+    it("resolveViewTransform picks the iso projection when the camera asks for it", () => {
+      const frame = frameWith([{ id: "a", x: 0, y: 0, alive: true }]);
+      const cam: Camera = { ...DEFAULT_CAMERA, projection: "isometric" };
+      const t = resolveViewTransform(800, 600, WIDE_BOUNDS, cam, frame, NO_DESCRIPTORS);
+      expect(t.projection.mode).toBe("isometric");
+    });
+
+    it("defaults to flat and preserves the mode through break-out", () => {
+      expect(DEFAULT_CAMERA.projection).toBe("flat");
+      const tIso = makeTransform(800, 600, 5, 100, 200, ISO_PROJECTION);
+      expect(manualCameraFrom(tIso).projection).toBe("isometric");
+      const tFlat = makeTransform(800, 600, 5, 100, 200);
+      expect(manualCameraFrom(tFlat).projection).toBe("flat");
     });
   });
 

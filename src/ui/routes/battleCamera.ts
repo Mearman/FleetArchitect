@@ -38,6 +38,9 @@ export interface Bounds {
  *    out baseline.
  *  - `centreX`/`centreY` are the world point at the canvas centre.
  *  - `followId` pins the centre to a ship's live position each frame.
+ *  - `projection` is the world-to-screen plane mapping: "flat" top-down or
+ *    "isometric" 2.5D tilt. It rides the camera (not persisted) so toggling the
+ *    view does not disturb zoom, pan, or follow.
  */
 export interface Camera {
   autoFit: boolean;
@@ -46,6 +49,7 @@ export interface Camera {
   centreX: number;
   centreY: number;
   followId: string | null;
+  projection: ProjectionMode;
 }
 
 export const DEFAULT_CAMERA: Camera = {
@@ -55,6 +59,7 @@ export const DEFAULT_CAMERA: Camera = {
   centreX: 0,
   centreY: 0,
   followId: null,
+  projection: "flat",
 };
 
 /**
@@ -82,6 +87,33 @@ export const FLAT_PROJECTION: Projection = {
   project: (dx, dy) => ({ x: dx, y: dy }),
   unproject: (sx, sy) => ({ x: sx, y: sy }),
   depth: (_dx, dy) => dy,
+};
+
+/**
+ * The horizontal half-width of the iso diamond per world unit. The vertical
+ * half-height is half of this (ISO_B = ISO_A / 2), giving the canonical 2:1
+ * isometric diamond. Chosen so the on-screen extent of a tilted plane stays
+ * close to the flat view's — a touch under 1 keeps a battle from ballooning off
+ * the canvas when the mode is flipped.
+ */
+const ISO_A = 0.8;
+const ISO_B = ISO_A / 2;
+
+/**
+ * True 2:1 isometric projection. A world delta `(dx, dy)` maps to a screen
+ * delta `{ x: (dx - dy) * A, y: (dx + dy) * B }`, so the two world axes run
+ * along the screen diagonals. `unproject` is the closed-form inverse
+ * (`dx = x/(2A) + y/(2B)`, `dy = -x/(2A) + y/(2B)`); `depth` is `dx + dy`, the
+ * coordinate that increases toward the front-bottom of the diamond.
+ */
+export const ISO_PROJECTION: Projection = {
+  mode: "isometric",
+  project: (dx, dy) => ({ x: (dx - dy) * ISO_A, y: (dx + dy) * ISO_B }),
+  unproject: (sx, sy) => ({
+    x: sx / (2 * ISO_A) + sy / (2 * ISO_B),
+    y: -sx / (2 * ISO_A) + sy / (2 * ISO_B),
+  }),
+  depth: (dx, dy) => dx + dy,
 };
 
 /**
@@ -197,11 +229,12 @@ export function resolveViewTransform(
   frame: BattleFrame,
   descriptors: DescriptorMap,
 ): Transform {
+  const projection = camera.projection === "isometric" ? ISO_PROJECTION : FLAT_PROJECTION;
   if (camera.autoFit) {
     const live = liveShipsBounds(frame, descriptors);
     const box = live !== null ? padLiveBounds(live) : staticBounds;
     const c = boundsCentre(box);
-    return makeTransform(width, height, fitScale(width, height, box), c.x, c.y);
+    return makeTransform(width, height, fitScale(width, height, box), c.x, c.y, projection);
   }
   const followPos =
     camera.followId !== null
@@ -210,7 +243,7 @@ export function resolveViewTransform(
   const scale = camera.baseScale * camera.zoom;
   const centreX = followPos !== undefined ? followPos.x : camera.centreX;
   const centreY = followPos !== undefined ? followPos.y : camera.centreY;
-  return makeTransform(width, height, scale, centreX, centreY);
+  return makeTransform(width, height, scale, centreX, centreY, projection);
 }
 
 /**
@@ -227,6 +260,9 @@ export function manualCameraFrom(t: Transform): Camera {
     centreX: t.centreX,
     centreY: t.centreY,
     followId: null,
+    // Preserve the active view mode — breaking out of auto-fit must not flip the
+    // plane back to flat under the player.
+    projection: t.projection.mode,
   };
 }
 

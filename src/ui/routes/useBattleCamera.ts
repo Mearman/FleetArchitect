@@ -186,8 +186,17 @@ export function useBattleCamera({
         // it fixed by re-deriving the centre at the new scale.
         if (base.followId !== null) return { ...base, zoom: nextZoom };
         const nextScale = base.baseScale * nextZoom;
-        const newCentreX = before.x - (px - resolved.t.width / 2) / nextScale;
-        const newCentreY = before.y - (py - resolved.t.height / 2) / nextScale;
+        // Keep the world point under the cursor fixed: at the new scale, the
+        // cursor's screen offset from centre unprojects to a world offset, and
+        // the centre is that world offset back from the point under the cursor.
+        // Unprojecting (not a bare /scale) makes this correct under any
+        // projection; for the flat one it reduces to the old axis-wise form.
+        const cursorWorldDelta = resolved.t.projection.unproject(
+          (px - resolved.t.width / 2) / nextScale,
+          (py - resolved.t.height / 2) / nextScale,
+        );
+        const newCentreX = before.x - cursorWorldDelta.x;
+        const newCentreY = before.y - cursorWorldDelta.y;
         return { ...base, autoFit: false, zoom: nextZoom, centreX: newCentreX, centreY: newCentreY };
       });
     };
@@ -216,10 +225,17 @@ export function useBattleCamera({
       setDragging(true);
       drag.startX = px;
       drag.startY = py;
-      // Convert the pixel delta to a world delta and shift the focus. Dragging
+      // Convert the pixel delta to a world delta and shift the focus. The pixel
+      // delta is first divided by the scale to a projected (screen-plane) delta,
+      // then unprojected to world so dragging tracks the cursor under any
+      // projection (for the flat one this is the plain dxPx/scale). Dragging
       // releases any follow lock so the player can free-look.
-      const worldDx = dxPx / resolved.t.scale;
-      const worldDy = dyPx / resolved.t.scale;
+      const worldDelta = resolved.t.projection.unproject(
+        dxPx / resolved.t.scale,
+        dyPx / resolved.t.scale,
+      );
+      const worldDx = worldDelta.x;
+      const worldDy = worldDelta.y;
       setCamera((cam) => {
         // Dragging breaks out of auto-fit and any follow lock. Seed the manual
         // camera from the current view (scale and centre) so the drag continues
