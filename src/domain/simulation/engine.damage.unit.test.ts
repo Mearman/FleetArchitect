@@ -177,8 +177,9 @@ describe("engine.damage — explosive chain reactions", () => {
 
     resolveChainReactions(ship, [ship]);
 
-    // 10 rounds * 500 = 5000 J yield; falloff 0.5 at one cell → 2500 damage,
-    // far past the neighbour's 1000 HP, so it is destroyed.
+    // 10 rounds * MAGAZINE_ROUND_YIELD_J (½·10·8000² ≈ 320 MJ each) ≈ 3.2 GJ
+    // yield; falloff 0.5 at one cell → ~1.6 GJ damage, far past the neighbour's
+    // 1000 HP, so it is destroyed.
     expect(mag.exploded).toBe(true);
     expect(n1.hp).toBeLessThan(hpBefore);
     expect(n1.alive).toBe(false);
