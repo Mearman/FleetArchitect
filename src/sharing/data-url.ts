@@ -6,7 +6,7 @@ import { z } from "zod";
 import { Fleet, FleetShip, Orders, defaultOrders } from "@/schema/fleet";
 import { ShipDesign } from "@/schema/ship";
 import type { TileGrid } from "@/schema/grid";
-import { BattleAnomaly } from "@/schema/battle";
+import { BattleAnomalyKind } from "@/schema/battle";
 import { decodeGrid, encodeGrid } from "@/sharing/grid-codec";
 
 /**
@@ -38,7 +38,7 @@ export const BattleShare = z.object({
   attacker: Fleet,
   defender: Fleet,
   designs: z.array(ShipDesign),
-  anomaly: BattleAnomaly,
+  anomalies: z.array(BattleAnomalyKind),
   seed: z.number().int(),
 });
 export type BattleShare = z.infer<typeof BattleShare>;
@@ -300,7 +300,7 @@ const BattleEnvelope = z.object({
   a: CompactFleet,
   d: CompactFleet,
   g: z.array(CompactDesign),
-  x: BattleAnomaly,
+  x: z.array(BattleAnomalyKind),
   s: z.number().int(),
 });
 
@@ -325,7 +325,7 @@ function encodeBattle(battle: BattleShare): unknown {
     a: compactFleet(battle.attacker, designIndexById),
     d: compactFleet(battle.defender, designIndexById),
     g: battle.designs.map(compactDesign),
-    x: battle.anomaly,
+    x: battle.anomalies,
     s: battle.seed,
   };
 }
@@ -405,7 +405,7 @@ export function decodeShareable(encoded: string): Shareable {
       attacker: rebuildFleet(envelope.a),
       defender: rebuildFleet(envelope.d),
       designs: envelope.g.map((entry, index) => rebuildDesign(entry, index)),
-      anomaly: envelope.x,
+      anomalies: envelope.x,
       seed: envelope.s,
     });
     return { kind: "battle", value };
