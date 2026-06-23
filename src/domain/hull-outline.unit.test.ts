@@ -207,11 +207,11 @@ describe("computeHullOutline — thin-tipped shapes stay contained", () => {
   });
 });
 
-describe("computeHullOutline — grown deck footprints obey the 45 invariant", () => {
-  // Two separate deck clusters two rows apart: their grown armour rings meet in
-  // the gap, merging into one pinched footprint. The bevel must not leave a
-  // sharper-than-45 turn at the waist. (Regression: a -135 spike was produced.)
-  it("merged grown rings leave no turn sharper than 45 degrees", () => {
+describe("computeHullOutline — disjoint deck clusters obey the 45 invariant", () => {
+  // Two separate deck clusters in one grid. Each is bevelled independently and
+  // neither may leave a turn sharper than 45 degrees. (Regression: a pinched
+  // footprint once produced a -135 spike.)
+  it("leaves no turn sharper than 45 degrees", () => {
     const grid = deckGrid(["##..", "#...", "....", "....", "####"]);
     const loops = computeHullOutline(grid);
     expect(maxAbsTurn(loops)).toBeLessThanOrEqual(45 + TURN_EPS);
@@ -220,12 +220,14 @@ describe("computeHullOutline — grown deck footprints obey the 45 invariant", (
 
 describe("computeHullOutline — every preset ship satisfies the invariants", () => {
   for (const d of presetDesigns) {
-    it(`${d.id}: octilinear, no 90, facets >= sqrt(2)`, () => {
+    it(`${d.id}: octilinear, no 90, contains every cell`, () => {
       const loops = computeHullOutline(d.grid);
       expect(everyEdgeOctilinear(loops)).toBe(true);
       expect(maxAbsTurn(loops)).toBeLessThanOrEqual(45 + 1e-3);
-      const m = minDiagonalFacet(loops);
-      if (m !== Infinity) expect(m).toBeGreaterThanOrEqual(SQRT2 - 1e-6);
+      // sqrt-2 is not asserted here: with the hull hugging the plating (no grown
+      // ring) a 2-cell-wide boundary feature can only carry a half-cell chamfer.
+      // Containment is the invariant that matters — no plating is dropped.
+      expect(everyCellContained(d.grid, loops)).toBe(true);
     });
   }
 });
@@ -245,7 +247,8 @@ describe("computeHullOutline — hull hugs the footprint (no big gaps)", () => {
   };
   for (const d of presetDesigns) {
     it(`${d.id}: every hull vertex within ~1 tile of the plating`, () => {
-      // grow (1) + a sqrt-2 corner bevel can sit ~1.5 cells out; never more.
+      // The hull hugs the plating; only a concave-corner fill bridging a dent
+      // can sit ~1 cell out, and a sqrt-2 bevel a little more — never past 1.5.
       const loops = computeHullOutline(d.grid);
       for (const loop of loops)
         for (const v of loop) {
@@ -255,6 +258,33 @@ describe("computeHullOutline — hull hugs the footprint (no big gaps)", () => {
         }
     });
   }
+});
+
+describe("computeHullOutline — does not add plating beyond the cells", () => {
+  // The hull hugs the actual plating and only ever chamfers *into* corner cells;
+  // it must never grow a ring of armour outside the cells. So every hull vertex
+  // is inside-or-on the plating — gap to the nearest solid cell square is zero.
+  const gap = (lx: number, ly: number, grid: TileGrid): number => {
+    let best = Infinity;
+    for (let r = 0; r < grid.rows; r += 1)
+      for (let c = 0; c < grid.cols; c += 1) {
+        if (grid.cells[r * grid.cols + c]?.kind !== "solid") continue;
+        const dx = Math.max(c - lx, 0, lx - (c + 1));
+        const dy = Math.max(r - ly, 0, ly - (r + 1));
+        best = Math.min(best, Math.hypot(dx, dy));
+      }
+    return best;
+  };
+  it("a deck block's hull stays within the plating (no grown ring)", () => {
+    const grid = deckGrid(["###", "###", "###"]);
+    const loops = computeHullOutline(grid);
+    for (const loop of loops)
+      for (const v of loop) {
+        const lx = v.x / CELL_SIZE + grid.cols / 2;
+        const ly = v.y / CELL_SIZE + grid.rows / 2;
+        expect(gap(lx, ly, grid)).toBeLessThanOrEqual(1e-6);
+      }
+  });
 });
 
 describe("computeHullOutline — sub-floor shapes degrade without crashing", () => {

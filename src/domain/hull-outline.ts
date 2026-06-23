@@ -10,49 +10,35 @@ import {
 } from "@/domain/outline";
 
 /**
- * The grown-and-bevelled hull outline used for *rendering* (collision/hitscan
- * stays on the tight `computeOutline`). It realises the design locked in with
- * the user:
+ * The bevelled hull outline used for *rendering* (collision/hitscan stays on the
+ * tight `computeOutline`). It hugs the ship's plating and softens the boundary:
  *
- *   - GROW: a one-cell armour layer is added outside every deck cell that faces
- *     open space (the deck's outward wall "grows into armour"), never over deck.
- *     This pushes the boundary outside the deck walls so the boundary is all
- *     cuttable armour with the walls safely interior.
  *   - BEVEL: every 90-degree corner becomes a 45-degree facet — staircases (and
- *     lone steps) collapse to diagonals, concave corners fill, isolated convex
- *     shoulders are chamfered.
- *   - INVARIANTS (HARD): every turn is a multiple of 45 degrees (no right
- *     angles) and every diagonal facet is at least one cell diagonal (sqrt 2).
- *     Narrow tab/notch features too small to carry a sqrt-2 facet are absorbed.
+ *     lone steps) collapse to diagonals, concave corners fill, convex shoulders
+ *     are chamfered. The hull only ever cuts *into* corner cells; it never adds
+ *     plating outside them (no grown armour ring).
+ *   - INVARIANTS: every turn is a multiple of 45 degrees (no right angles) and
+ *     no plating cell is ever dropped. A diagonal facet is one cell diagonal
+ *     (sqrt 2) wherever a feature is at least three cells across; a thinner
+ *     feature can only carry a shorter chamfer.
  *
- * Everything runs on the integer lattice: a one-cell chamfer of integer corners
- * yields integer endpoints, so facets are exactly sqrt 2 and angles exactly 45
- * degrees by construction. The genuine exception is a feature smaller than three
- * cells (a 2x2 block bevels to a diamond whose tips are new right angles): no
- * octilinear shape that small has sqrt-2 facets, so it would have to grow. Real
- * ships are 1 m-subdivided and never hit this.
+ * Everything runs on the integer lattice, so a one-cell chamfer of integer
+ * corners yields integer endpoints and exact 45-degree angles by construction.
  */
 
 // ---------------------------------------------------------------------------
-// Grow: add a one-cell armour layer outside exposed deck.
+// Footprint.
 // ---------------------------------------------------------------------------
 
 /**
- * Build the grown footprint Shell from a grid: every built hull cell, plus each
- * empty cell orthogonally adjacent to a deck cell (the deck's outward wall grown
- * into armour). The grid is expanded by a one-cell border so grown cells on the
- * original edge have room. Because the border is symmetric, `toMetreLoop` on the
- * expanded dimensions centres identically to the original grid.
+ * The built (non-bare solid) cells of a grid — the plating the hull wraps —
+ * placed into a one-cell border expansion so boundary tracing has room. Because
+ * the border is symmetric, `toMetreLoop` on the expanded dimensions centres
+ * identically to the original grid.
  *
- * Bare substrate is internal framing, not hull plating, so it is excluded from
- * the footprint: a bare cell at the edge is not wrapped, and the grow step never
- * fills one (it fills only genuinely empty cells). A bare cell enclosed by deck
- * or armour still ends up inside the hull simply because its neighbours are.
- */
-/**
- * The built (non-bare solid) cells of a grid, placed into the same one-cell
- * border expansion the grown shell uses. This is the original plating footprint
- * — what the bevel must never drop — distinct from the grown ring around it.
+ * Bare substrate is internal framing, not plating, so it is excluded: a bare
+ * cell at the edge is not wrapped, while one enclosed by deck or armour still
+ * ends up inside the hull because its neighbours are.
  */
 export function builtFootprint(grid: TileGrid): Shell {
   const { cols, rows } = grid;
@@ -67,31 +53,6 @@ export function builtFootprint(grid: TileGrid): Shell {
   for (let r = 0; r < rows; r += 1)
     for (let c = 0; c < cols; c += 1)
       if (isBuilt(c, r)) cells.add((r + 1) * ncols + (c + 1));
-  return { cols: ncols, rows: nrows, cells };
-}
-
-export function growFootprint(grid: TileGrid): Shell {
-  const { cols, rows } = grid;
-  const isDeck = (c: number, r: number): boolean => {
-    if (c < 0 || r < 0 || c >= cols || r >= rows) return false;
-    const cell = grid.cells[r * cols + c];
-    return cell?.kind === "solid" && cell.surface === "deck";
-  };
-  const isEmpty = (c: number, r: number): boolean => {
-    if (c < 0 || r < 0 || c >= cols || r >= rows) return true;
-    return grid.cells[r * cols + c]?.kind !== "solid";
-  };
-  const built = builtFootprint(grid);
-  const { cols: ncols, rows: nrows } = built;
-  const cells = new Set(built.cells);
-  // Grow a one-cell armour ring into empty cells orthogonally adjacent to deck.
-  for (let r = -1; r <= rows; r += 1)
-    for (let c = -1; c <= cols; c += 1)
-      if (
-        isEmpty(c, r) &&
-        (isDeck(c - 1, r) || isDeck(c + 1, r) || isDeck(c, r - 1) || isDeck(c, r + 1))
-      )
-        cells.add((r + 1) * ncols + (c + 1));
   return { cols: ncols, rows: nrows, cells };
 }
 
@@ -183,14 +144,13 @@ function capCoversPlating(
 }
 
 /**
- * Collapse a narrow tab or notch: a short cap edge (< three cells) whose two
- * flanking edges are *antiparallel* (boundary went out and straight back). A
+ * Collapse a narrow concave notch: a short cap edge (< three cells) whose two
+ * flanking edges are *antiparallel* (boundary went in and straight back out). A
  * staircase step has *parallel* flanks, so it is never collapsed — diagonals
- * survive. A cap is absorbed only if it covers no original plating: a notch is
- * empty and a purely-grown tab is just the armour ring, but a tab over real
- * plating (e.g. a lone armour cell hanging off a deck row) must be kept or the
- * hull would drop those cells. Only taken when the rejoined edge is octilinear.
- * Fixpoint, deterministic (lowest index first).
+ * survive. A cap is absorbed only if it covers no plating: an empty notch
+ * collapses, but a tab of real plating (e.g. a lone armour cell hanging off a
+ * deck row) must be kept or the hull would drop those cells. Only taken when the
+ * rejoined edge is octilinear. Fixpoint, deterministic (lowest index first).
  */
 function absorbTabs(poly: IPoint[], built: Shell): IPoint[] {
   let pts = poly.slice();
@@ -373,16 +333,15 @@ function bevelLoop(seed: IPoint[], built: Shell): IPoint[] {
 }
 
 /**
- * Compute the grown, bevelled hull outline polygon(s) for a ship grid, in
- * ship-local metres, clockwise wound — for rendering. Octilinear, no right
- * angles, every facet at least sqrt 2 (for features >= 3 cells), containing
- * every armour cell. Deterministic.
+ * Compute the bevelled hull outline polygon(s) for a ship grid, in ship-local
+ * metres, clockwise wound — for rendering. Hugs the plating (no grown ring),
+ * octilinear, no right angles, every facet at least sqrt 2 where features are
+ * >= 3 cells, and contains every plating cell. Deterministic.
  */
 export function computeHullOutline(grid: TileGrid): Vec2[][] {
-  const shell = growFootprint(grid);
   const built = builtFootprint(grid);
-  return latticeSeedLoops(shell)
+  return latticeSeedLoops(built)
     .map((seed) => bevelLoop(seed, built))
     .filter((loop) => loop.length >= 3)
-    .map((loop) => toMetreLoop(loop, shell.cols, shell.rows));
+    .map((loop) => toMetreLoop(loop, built.cols, built.rows));
 }
