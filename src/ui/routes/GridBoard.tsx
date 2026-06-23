@@ -1,4 +1,10 @@
-import { type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef } from "react";
+import {
+  type PointerEvent as ReactPointerEvent,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+} from "react";
 import type { EdgeKind, SolidCell, TileGrid } from "@/schema/grid";
 import { PHOSPHOR_GREEN } from "@/ui/theme/tokens";
 import { CELL_SIZE } from "@/domain/grid";
@@ -88,25 +94,60 @@ export function GridBoard({
 
   // Octilinear hull outline (grown one cell over exposed deck walls, every
   // corner bevelled to a 45-degree facet — no right angles). Rendered as an SVG
-  // overlay so the editor previews the ship's silhouette. The outline vertices
-  // are in centred ship-local metres; converting back to lattice cell units
-  // (origin top-left) gives `v / CELL_SIZE + cols/2` in x and `+ rows/2` in y.
-  // The overlay SVG uses a `0 0 cols rows` viewBox stretched over the grid
+  // overlay so the editor previews the ship's silhouette, and used as a clip
+  // path so the built cells conform to the bevelled hull silhouette instead of
+  // poking past the diagonal facets as full squares. The outline vertices are
+  // in centred ship-local metres; converting back to lattice cell units (origin
+  // top-left) gives `v / CELL_SIZE + cols/2` in x and `+ rows/2` in y. The
+  // overlay SVG uses a `0 0 cols rows` viewBox stretched over the grid
   // (preserveAspectRatio none), so cell units map straight onto the rendered
   // board without measuring pixel sizes. Recomputed only when the grid changes.
-  const outlineLoops = useMemo(() => {
+  const outlinePoints = useMemo(() => {
     const loops = computeHullOutline(grid);
     return loops
       .filter((loop) => loop.length >= 2)
       .map((loop) =>
-        loop
-          .map(
-            (v) =>
-              `${v.x / CELL_SIZE + grid.cols / 2},${v.y / CELL_SIZE + grid.rows / 2}`,
-          )
-          .join(" "),
+        loop.map((v) => ({
+          x: v.x / CELL_SIZE + grid.cols / 2,
+          y: v.y / CELL_SIZE + grid.rows / 2,
+        })),
       );
   }, [grid]);
+
+  // Polygon point strings for the stroke overlay (one space-separated "x,y"
+  // list per loop, in cell units).
+  const outlineLoops = useMemo(
+    () =>
+      outlinePoints.map((loop) =>
+        loop.map((p) => `${p.x},${p.y}`).join(" "),
+      ),
+    [outlinePoints],
+  );
+
+  // Path `d` for the cell clip, normalised to [0,1] objectBoundingBox units so
+  // it scales with the board. All loops are joined into a single path with
+  // even-odd winding (the clipPath carries clip-rule="evenodd"), keeping holes
+  // open and the outer hull solid.
+  const outlineClipPath = useMemo(() => {
+    if (outlinePoints.length === 0) return "";
+    const parts: string[] = [];
+    for (const loop of outlinePoints) {
+      for (let i = 0; i < loop.length; i += 1) {
+        const p = loop[i];
+        if (p === undefined) continue;
+        const nx = p.x / grid.cols;
+        const ny = p.y / grid.rows;
+        parts.push(i === 0 ? `M ${nx} ${ny}` : `L ${nx} ${ny}`);
+      }
+      parts.push("Z");
+    }
+    return parts.join(" ");
+  }, [outlinePoints, grid.cols, grid.rows]);
+
+  // Stable, unique id for the clipPath so multiple boards on one page cannot
+  // collide.
+  const rawClipId = useId();
+  const clipId = `hull-clip-${rawClipId.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 
   useEffect(() => {
     function handlePointerUp() {
@@ -187,6 +228,25 @@ export function GridBoard({
 
   return (
     <div style={{ position: "relative", width: "100%" }}>
+      {/* Hidden SVG defining the hull clipPath. Zero layout footprint; the
+          clipPath is referenced by url(#clipId) on the grid board below.
+          objectBoundingBox units keep it resolution-independent. */}
+      {outlineClipPath !== "" ? (
+        <svg
+          width={0}
+          height={0}
+          aria-hidden="true"
+          style={{ position: "absolute", pointerEvents: "none" }}
+        >
+          <clipPath
+            id={clipId}
+            clipPathUnits="objectBoundingBox"
+            clipRule="evenodd"
+          >
+            <path d={outlineClipPath} />
+          </clipPath>
+        </svg>
+      ) : null}
       <div
         ref={boardRef}
         className={gridBoard}
@@ -199,6 +259,11 @@ export function GridBoard({
           // overlay SVG (preserveAspectRatio="none", viewBox 0 0 cols rows)
           // maps one unit to one cell on both axes — keeping the hull in sync.
           aspectRatio: `${grid.cols} / ${grid.rows}`,
+          // Crop the built cells to the chamfered hull outline so they conform
+          // to the bevelled silhouette instead of poking past the diagonal
+          // facets as full squares. Applied in local space before the iso
+          // transform, so it tilts correctly in iso view.
+          clipPath: outlineClipPath !== "" ? `url(#${clipId})` : undefined,
           // 2.5D: tilt the whole board into the iso plane about its centre.
           // Painting inverts this same matrix in cellAtPointer.
           transform: view === "iso" ? ISO_TRANSFORM : undefined,

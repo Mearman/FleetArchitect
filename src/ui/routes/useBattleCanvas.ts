@@ -434,7 +434,7 @@ export function useBattleCanvas({
             if (cached !== undefined && cached.key === key) {
               sprite = cached;
             } else {
-              sprite = rasteriseShipSprite(cells, base, key);
+              sprite = rasteriseShipSprite(cells, base, key, descriptor?.outline);
               if (sprite !== undefined) spriteCache.current.set(s.instanceId, sprite);
             }
 

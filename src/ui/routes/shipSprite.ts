@@ -93,6 +93,7 @@ export function rasteriseShipSprite(
   cells: readonly RenderCell[],
   base: string,
   key: string,
+  outline?: ReadonlyArray<ReadonlyArray<{ x: number; y: number }>>,
 ): ShipSprite | undefined {
   // Bounding box over alive cell centres, in cell offsets (world units).
   let minX = Infinity;
@@ -121,6 +122,28 @@ export function rasteriseShipSprite(
   const surface = createSurface(width, height);
   if (surface === undefined) return undefined;
   const { ctx } = surface;
+
+  // Clip the baked cells to the chamfered outline so armour corners do not
+  // poke past the bevel. The outline vertices are in ship-local metres, the
+  // SAME origin and scale as the cell offsets, so they map into sprite pixels
+  // with the same originX/originY and SPRITE_PX_PER_WORLD as the cells.
+  // evenodd correctly handles multiple loops and holes.
+  if (outline !== undefined && outline.length > 0) {
+    const path = new Path2D();
+    for (const loop of outline) {
+      if (loop.length === 0) continue;
+      const first = loop[0];
+      if (first === undefined) continue;
+      path.moveTo(originX + first.x * SPRITE_PX_PER_WORLD, originY + first.y * SPRITE_PX_PER_WORLD);
+      for (let i = 1; i < loop.length; i += 1) {
+        const v = loop[i];
+        if (v === undefined) continue;
+        path.lineTo(originX + v.x * SPRITE_PX_PER_WORLD, originY + v.y * SPRITE_PX_PER_WORLD);
+      }
+      path.closePath();
+    }
+    ctx.clip(path, "evenodd");
+  }
 
   for (const c of cells) {
     if (!c.alive) continue;
