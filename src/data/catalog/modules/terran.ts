@@ -4,9 +4,14 @@ import {
   moduleMass,
 } from "../physics";
 import {
+  ANTIMATTER_REACTOR_OUTPUT_W,
   BEAM_POWER_W,
+  FUSION_REACTOR_OUTPUT_W,
+  MODULE_POWER_DRAW_W,
   MUZZLE_VELOCITY_M_PER_S,
   PROJECTILE_MASS_KG,
+  SHIELD_CAPACITY_J,
+  SHIELD_RECHARGE_W,
   beamDamageJoules,
   kineticDamageJoules,
   projectileSpeedMPerTick,
@@ -66,8 +71,13 @@ const TORPEDO_WARHEAD_J = 1.5e9;
 // Masses are in kilograms, derived from `moduleMass` in `../physics.ts`
 // (`meanDensity × moduleVolume`). Thrust is in Newtons, derived from
 // `driveThrustNewtons` (`massFlow × exhaustVelocity`). Range is in metres
-// (world coordinates). Power output/draw and crew values are in the same
-// authored units the engine has always used.
+// (world coordinates). Power output and module power draw are in watts, DERIVED
+// from the combat-scale anchors: a reactor's output is its core's power density
+// times its module volume (`FUSION_REACTOR_OUTPUT_W` / `ANTIMATTER_REACTOR_OUTPUT_W`),
+// a beam weapon's draw is its delivered optical power (`BEAM_POWER_W`), a shield's
+// draw is its recharge wattage (`SHIELD_RECHARGE_W`, so rebuilding the field
+// competes for reactor watts), and every other powered module draws its class
+// figure (`MODULE_POWER_DRAW_W`). Crew values are unit-free counts.
 // ---------------------------------------------------------------------------
 const ionThrustN = driveThrustNewtons("ion");
 const plasmaThrustN = driveThrustNewtons("plasma");
@@ -82,7 +92,9 @@ export const terranModules: ModuleDefinition[] = [
     category: "weapon",
     mass: moduleMass("lightWeapon"),
     cost: 40,
-    powerDraw: 6,
+    // A beam's draw IS its delivered optical power — the grid power it converts
+    // straight into the energy it deposits on target.
+    powerDraw: BEAM_POWER_W.pulse,
     crewRequired: 1,
     techLevel: 1,
     effect: {
@@ -107,7 +119,8 @@ export const terranModules: ModuleDefinition[] = [
     category: "weapon",
     mass: moduleMass("mediumWeapon"),
     cost: 90,
-    powerDraw: 12,
+    // A railgun draws the power to recharge its capacitor bank and run its rails.
+    powerDraw: MODULE_POWER_DRAW_W.kineticWeapon,
     crewRequired: 1,
     techLevel: 2,
     effect: {
@@ -137,7 +150,9 @@ export const terranModules: ModuleDefinition[] = [
     category: "weapon",
     mass: moduleMass("mediumWeapon"),
     cost: 110,
-    powerDraw: 8,
+    // A missile launcher draws only its autoloader/handling power — the round
+    // carries its own energy — so far less than a kinetic gun.
+    powerDraw: MODULE_POWER_DRAW_W.ordnanceWeapon,
     crewRequired: 1,
     techLevel: 2,
     effect: {
@@ -167,7 +182,9 @@ export const terranModules: ModuleDefinition[] = [
     category: "weapon",
     mass: moduleMass("heavyWeapon"),
     cost: 180,
-    powerDraw: 16,
+    // A torpedo tube draws its loader/handling power; the warhead carries its own
+    // energy, so like the missile rack it is an ordnance-class draw.
+    powerDraw: MODULE_POWER_DRAW_W.ordnanceWeapon,
     crewRequired: 2,
     techLevel: 3,
     effect: {
@@ -195,13 +212,15 @@ export const terranModules: ModuleDefinition[] = [
     category: "defence",
     mass: moduleMass("shield"),
     cost: 70,
-    powerDraw: 6,
+    // A shield's draw IS its recharge wattage, so rebuilding the field competes
+    // with the weapons and drive for reactor output.
+    powerDraw: SHIELD_RECHARGE_W.light,
     crewRequired: 1,
     techLevel: 1,
     effect: {
       kind: "shield",
-      capacity: 60,
-      rechargeRate: 0.5,
+      capacity: SHIELD_CAPACITY_J.light,
+      rechargeRate: SHIELD_RECHARGE_W.light,
       rechargeDelay: 120,
     },
   },
@@ -213,13 +232,14 @@ export const terranModules: ModuleDefinition[] = [
     category: "defence",
     mass: moduleMass("shield"),
     cost: 150,
-    powerDraw: 12,
+    // Heavier array: draw equals its recharge wattage (the medium band).
+    powerDraw: SHIELD_RECHARGE_W.medium,
     crewRequired: 2,
     techLevel: 3,
     effect: {
       kind: "shield",
-      capacity: 90,
-      rechargeRate: 0.6,
+      capacity: SHIELD_CAPACITY_J.medium,
+      rechargeRate: SHIELD_RECHARGE_W.medium,
       rechargeDelay: 150,
     },
   },
@@ -232,7 +252,7 @@ export const terranModules: ModuleDefinition[] = [
     category: "propulsion",
     mass: moduleMass("engine"),
     cost: 30,
-    powerDraw: 4,
+    powerDraw: MODULE_POWER_DRAW_W.drive,
     crewRequired: 0,
     techLevel: 1,
     effect: { kind: "engine", thrust: ionThrustN },
@@ -245,7 +265,7 @@ export const terranModules: ModuleDefinition[] = [
     category: "propulsion",
     mass: moduleMass("engine"),
     cost: 70,
-    powerDraw: 8,
+    powerDraw: MODULE_POWER_DRAW_W.drive,
     crewRequired: 1,
     techLevel: 2,
     effect: { kind: "engine", thrust: plasmaThrustN, gimbalArc: Math.PI / 6 },
@@ -258,7 +278,7 @@ export const terranModules: ModuleDefinition[] = [
     category: "propulsion",
     mass: moduleMass("rcs"),
     cost: 35,
-    powerDraw: 3,
+    powerDraw: MODULE_POWER_DRAW_W.attitude,
     crewRequired: 0,
     techLevel: 1,
     effect: { kind: "rcs", torque: 10_000_000 },
@@ -271,7 +291,7 @@ export const terranModules: ModuleDefinition[] = [
     category: "propulsion",
     mass: moduleMass("reactionWheel"),
     cost: 45,
-    powerDraw: 2,
+    powerDraw: MODULE_POWER_DRAW_W.attitude,
     crewRequired: 0,
     techLevel: 2,
     effect: { kind: "reactionWheel", torque: 8_000_000 },
@@ -288,7 +308,7 @@ export const terranModules: ModuleDefinition[] = [
     powerDraw: 0,
     crewRequired: 1,
     techLevel: 1,
-    effect: { kind: "power", output: 40 },
+    effect: { kind: "power", output: FUSION_REACTOR_OUTPUT_W },
     command: true,
   },
   {
@@ -302,7 +322,7 @@ export const terranModules: ModuleDefinition[] = [
     powerDraw: 0,
     crewRequired: 2,
     techLevel: 3,
-    effect: { kind: "power", output: 90 },
+    effect: { kind: "power", output: ANTIMATTER_REACTOR_OUTPUT_W },
     command: true,
   },
   // --- Crew ---
@@ -314,7 +334,7 @@ export const terranModules: ModuleDefinition[] = [
     category: "crew",
     mass: moduleMass("crew"),
     cost: 30,
-    powerDraw: 2,
+    powerDraw: MODULE_POWER_DRAW_W.crew,
     crewRequired: 0,
     techLevel: 1,
     effect: { kind: "crew", capacity: 8 },
@@ -371,7 +391,7 @@ export const terranModules: ModuleDefinition[] = [
     category: "system",
     mass: moduleMass("sensor"),
     cost: 70,
-    powerDraw: 4,
+    powerDraw: MODULE_POWER_DRAW_W.sensor,
     crewRequired: 0,
     techLevel: 2,
     effect: {
@@ -396,7 +416,7 @@ export const terranModules: ModuleDefinition[] = [
     category: "system",
     mass: moduleMass("sensor"),
     cost: 90,
-    powerDraw: 6,
+    powerDraw: MODULE_POWER_DRAW_W.sensor,
     crewRequired: 1,
     techLevel: 2,
     effect: {
@@ -421,7 +441,7 @@ export const terranModules: ModuleDefinition[] = [
     category: "system",
     mass: moduleMass("sensor"),
     cost: 135,
-    powerDraw: 9,
+    powerDraw: MODULE_POWER_DRAW_W.sensor,
     crewRequired: 0,
     techLevel: 3,
     effect: {
@@ -451,7 +471,7 @@ export const terranModules: ModuleDefinition[] = [
     category: "system",
     mass: moduleMass("sensor"),
     cost: 140,
-    powerDraw: 8,
+    powerDraw: MODULE_POWER_DRAW_W.sensor,
     crewRequired: 1,
     techLevel: 3,
     effect: {
@@ -479,7 +499,7 @@ export const terranModules: ModuleDefinition[] = [
     category: "system",
     mass: moduleMass("comms"),
     cost: 20,
-    powerDraw: 1,
+    powerDraw: MODULE_POWER_DRAW_W.comms,
     crewRequired: 0,
     techLevel: 1,
     effect: {
@@ -502,7 +522,7 @@ export const terranModules: ModuleDefinition[] = [
     category: "system",
     mass: moduleMass("comms"),
     cost: 45,
-    powerDraw: 3,
+    powerDraw: MODULE_POWER_DRAW_W.comms,
     crewRequired: 0,
     techLevel: 2,
     effect: {
@@ -524,7 +544,7 @@ export const terranModules: ModuleDefinition[] = [
     category: "system",
     mass: moduleMass("comms"),
     cost: 80,
-    powerDraw: 5,
+    powerDraw: MODULE_POWER_DRAW_W.comms,
     crewRequired: 1,
     techLevel: 2,
     effect: {
@@ -546,7 +566,7 @@ export const terranModules: ModuleDefinition[] = [
     category: "system",
     mass: moduleMass("comms"),
     cost: 110,
-    powerDraw: 7,
+    powerDraw: MODULE_POWER_DRAW_W.comms,
     crewRequired: 1,
     techLevel: 3,
     effect: {
@@ -568,7 +588,7 @@ export const terranModules: ModuleDefinition[] = [
     category: "system",
     mass: moduleMass("comms"),
     cost: 130,
-    powerDraw: 9,
+    powerDraw: MODULE_POWER_DRAW_W.comms,
     crewRequired: 0,
     techLevel: 3,
     effect: {

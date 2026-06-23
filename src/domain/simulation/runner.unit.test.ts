@@ -52,7 +52,7 @@ function makeShip(id: string, side: "attacker" | "defender", x: number): CombatS
   return {
     instanceId: id,
     designId: `design-${id}`,
-    faction: "test",
+    faction: "Terran",
     side,
     stats,
     position: { x, y: 0 },

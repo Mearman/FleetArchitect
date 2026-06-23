@@ -4,9 +4,14 @@ import {
   moduleMass,
 } from "../physics";
 import {
+  ANTIMATTER_REACTOR_OUTPUT_W,
   BEAM_POWER_W,
+  FUSION_REACTOR_OUTPUT_W,
+  MODULE_POWER_DRAW_W,
   MUZZLE_VELOCITY_M_PER_S,
   PROJECTILE_MASS_KG,
+  SHIELD_CAPACITY_J,
+  SHIELD_RECHARGE_W,
   beamDamageJoules,
   kineticDamageJoules,
   projectileSpeedMPerTick,
@@ -50,7 +55,8 @@ export const crystallineModules: ModuleDefinition[] = [
     category: "weapon",
     mass: moduleMass("lightWeapon"),
     cost: 55,
-    powerDraw: 9,
+    // A beam's draw IS its delivered optical power.
+    powerDraw: BEAM_POWER_W.pulse,
     crewRequired: 1,
     techLevel: 1,
     effect: {
@@ -75,7 +81,7 @@ export const crystallineModules: ModuleDefinition[] = [
     category: "weapon",
     mass: moduleMass("mediumWeapon"),
     cost: 120,
-    powerDraw: 16,
+    powerDraw: BEAM_POWER_W.beam,
     crewRequired: 2,
     techLevel: 2,
     effect: {
@@ -100,7 +106,7 @@ export const crystallineModules: ModuleDefinition[] = [
     category: "weapon",
     mass: moduleMass("heavyWeapon"),
     cost: 240,
-    powerDraw: 30,
+    powerDraw: BEAM_POWER_W.lance,
     crewRequired: 3,
     techLevel: 4,
     effect: {
@@ -128,7 +134,7 @@ export const crystallineModules: ModuleDefinition[] = [
     category: "weapon",
     mass: moduleMass("lightWeapon"),
     cost: 70,
-    powerDraw: 10,
+    powerDraw: MODULE_POWER_DRAW_W.kineticWeapon,
     crewRequired: 1,
     techLevel: 2,
     effect: {
@@ -154,13 +160,14 @@ export const crystallineModules: ModuleDefinition[] = [
     category: "defence",
     mass: moduleMass("shield"),
     cost: 90,
-    powerDraw: 9,
+    // A shield's draw IS its recharge wattage.
+    powerDraw: SHIELD_RECHARGE_W.medium,
     crewRequired: 1,
     techLevel: 2,
     effect: {
       kind: "shield",
-      capacity: 150,
-      rechargeRate: 1.4,
+      capacity: SHIELD_CAPACITY_J.medium,
+      rechargeRate: SHIELD_RECHARGE_W.medium,
       rechargeDelay: 55,
       adaptiveRampRate: 0.04,
     },
@@ -173,13 +180,13 @@ export const crystallineModules: ModuleDefinition[] = [
     category: "defence",
     mass: moduleMass("shield"),
     cost: 200,
-    powerDraw: 18,
+    powerDraw: SHIELD_RECHARGE_W.heavy,
     crewRequired: 2,
     techLevel: 4,
     effect: {
       kind: "shield",
-      capacity: 360,
-      rechargeRate: 3.0,
+      capacity: SHIELD_CAPACITY_J.heavy,
+      rechargeRate: SHIELD_RECHARGE_W.heavy,
       rechargeDelay: 65,
       adaptiveRampRate: 0.06,
     },
@@ -192,7 +199,7 @@ export const crystallineModules: ModuleDefinition[] = [
     category: "propulsion",
     mass: moduleMass("engine"),
     cost: 40,
-    powerDraw: 5,
+    powerDraw: MODULE_POWER_DRAW_W.drive,
     crewRequired: 0,
     techLevel: 1,
     effect: { kind: "engine", thrust: crystalThrustN },
@@ -205,7 +212,8 @@ export const crystallineModules: ModuleDefinition[] = [
     category: "propulsion",
     mass: moduleMass("engine"),
     cost: 130,
-    powerDraw: 12,
+    // A folding drive draws its power-conditioning load like a thruster.
+    powerDraw: MODULE_POWER_DRAW_W.drive,
     crewRequired: 1,
     techLevel: 3,
     effect: {
@@ -227,7 +235,7 @@ export const crystallineModules: ModuleDefinition[] = [
     powerDraw: 0,
     crewRequired: 1,
     techLevel: 2,
-    effect: { kind: "power", output: 55 },
+    effect: { kind: "power", output: FUSION_REACTOR_OUTPUT_W },
     command: true,
   },
   {
@@ -241,7 +249,7 @@ export const crystallineModules: ModuleDefinition[] = [
     powerDraw: 0,
     crewRequired: 2,
     techLevel: 4,
-    effect: { kind: "power", output: 120 },
+    effect: { kind: "power", output: ANTIMATTER_REACTOR_OUTPUT_W },
     command: true,
   },
   {
@@ -252,7 +260,7 @@ export const crystallineModules: ModuleDefinition[] = [
     category: "crew",
     mass: moduleMass("crew"),
     cost: 35,
-    powerDraw: 2,
+    powerDraw: MODULE_POWER_DRAW_W.crew,
     crewRequired: 0,
     techLevel: 1,
     effect: { kind: "crew", capacity: 5 },
@@ -284,7 +292,8 @@ export const crystallineModules: ModuleDefinition[] = [
     category: "system",
     mass: moduleMass("shield"),
     cost: 110,
-    powerDraw: 10,
+    // An active stealth field draws sensor-class electronics power.
+    powerDraw: MODULE_POWER_DRAW_W.sensor,
     crewRequired: 1,
     techLevel: 3,
     effect: {
@@ -300,7 +309,7 @@ export const crystallineModules: ModuleDefinition[] = [
     category: "system",
     mass: moduleMass("sensor"),
     cost: 60,
-    powerDraw: 4,
+    powerDraw: MODULE_POWER_DRAW_W.sensor,
     crewRequired: 0,
     techLevel: 2,
     effect: {

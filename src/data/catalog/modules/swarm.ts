@@ -4,7 +4,10 @@ import {
   moduleMass,
 } from "../physics";
 import {
+  ANTIMATTER_REACTOR_OUTPUT_W,
   BEAM_POWER_W,
+  FUSION_REACTOR_OUTPUT_W,
+  MODULE_POWER_DRAW_W,
   MUZZLE_VELOCITY_M_PER_S,
   PROJECTILE_MASS_KG,
   beamDamageJoules,
@@ -67,7 +70,7 @@ export const swarmModules: ModuleDefinition[] = [
     category: "weapon",
     mass: moduleMass("lightWeapon"),
     cost: 35,
-    powerDraw: 3,
+    powerDraw: MODULE_POWER_DRAW_W.kineticWeapon,
     crewRequired: 0,
     techLevel: 1,
     effect: {
@@ -92,7 +95,8 @@ export const swarmModules: ModuleDefinition[] = [
     category: "weapon",
     mass: moduleMass("lightWeapon"),
     cost: 55,
-    powerDraw: 5,
+    // A beam's draw IS its delivered optical power.
+    powerDraw: BEAM_POWER_W.pulse,
     crewRequired: 0,
     techLevel: 1,
     effect: {
@@ -117,7 +121,7 @@ export const swarmModules: ModuleDefinition[] = [
     category: "weapon",
     mass: moduleMass("mediumWeapon"),
     cost: 80,
-    powerDraw: 7,
+    powerDraw: MODULE_POWER_DRAW_W.ordnanceWeapon,
     crewRequired: 0,
     techLevel: 2,
     effect: {
@@ -143,7 +147,8 @@ export const swarmModules: ModuleDefinition[] = [
     category: "defence",
     mass: moduleMass("shield"),
     cost: 65,
-    powerDraw: 4,
+    // A repair organ draws a small housekeeping load, like a sensor array.
+    powerDraw: MODULE_POWER_DRAW_W.sensor,
     crewRequired: 0,
     techLevel: 1,
     effect: {
@@ -159,7 +164,7 @@ export const swarmModules: ModuleDefinition[] = [
     category: "defence",
     mass: moduleMass("pointDefense"),
     cost: 90,
-    powerDraw: 5,
+    powerDraw: MODULE_POWER_DRAW_W.pointDefense,
     crewRequired: 0,
     techLevel: 2,
     effect: {
@@ -180,7 +185,7 @@ export const swarmModules: ModuleDefinition[] = [
     category: "propulsion",
     mass: moduleMass("engine"),
     cost: 28,
-    powerDraw: 2,
+    powerDraw: MODULE_POWER_DRAW_W.drive,
     crewRequired: 0,
     techLevel: 1,
     effect: { kind: "engine", thrust: bioThrustN },
@@ -193,7 +198,7 @@ export const swarmModules: ModuleDefinition[] = [
     category: "propulsion",
     mass: moduleMass("engine"),
     cost: 60,
-    powerDraw: 6,
+    powerDraw: MODULE_POWER_DRAW_W.drive,
     crewRequired: 0,
     techLevel: 2,
     effect: { kind: "engine", thrust: bioPulseThrustN, gimbalArc: Math.PI / 8 },
@@ -206,7 +211,7 @@ export const swarmModules: ModuleDefinition[] = [
     category: "propulsion",
     mass: moduleMass("rcs"),
     cost: 32,
-    powerDraw: 2,
+    powerDraw: MODULE_POWER_DRAW_W.attitude,
     crewRequired: 0,
     techLevel: 1,
     effect: { kind: "rcs", torque: 12_000_000 },
@@ -219,7 +224,7 @@ export const swarmModules: ModuleDefinition[] = [
     category: "propulsion",
     mass: moduleMass("reactionWheel"),
     cost: 48,
-    powerDraw: 1,
+    powerDraw: MODULE_POWER_DRAW_W.attitude,
     crewRequired: 0,
     techLevel: 2,
     effect: { kind: "reactionWheel", torque: 9_000_000 },
@@ -236,7 +241,7 @@ export const swarmModules: ModuleDefinition[] = [
     powerDraw: 0,
     crewRequired: 0,
     techLevel: 1,
-    effect: { kind: "power", output: 30 },
+    effect: { kind: "power", output: FUSION_REACTOR_OUTPUT_W },
     command: true,
   },
   {
@@ -250,7 +255,7 @@ export const swarmModules: ModuleDefinition[] = [
     powerDraw: 0,
     crewRequired: 0,
     techLevel: 3,
-    effect: { kind: "power", output: 75 },
+    effect: { kind: "power", output: ANTIMATTER_REACTOR_OUTPUT_W },
     command: true,
   },
   {
@@ -261,7 +266,7 @@ export const swarmModules: ModuleDefinition[] = [
     category: "system",
     mass: moduleMass("magazine"),
     cost: 55,
-    powerDraw: 1,
+    powerDraw: MODULE_POWER_DRAW_W.magazine,
     crewRequired: 1,
     techLevel: 2,
     effect: { kind: "magazine", ammoStored: 250 },
@@ -300,7 +305,7 @@ export const swarmModules: ModuleDefinition[] = [
     category: "system",
     mass: moduleMass("sensor"),
     cost: 75,
-    powerDraw: 4,
+    powerDraw: MODULE_POWER_DRAW_W.sensor,
     crewRequired: 0,
     techLevel: 2,
     effect: {
@@ -323,7 +328,7 @@ export const swarmModules: ModuleDefinition[] = [
     category: "system",
     mass: moduleMass("sensor"),
     cost: 95,
-    powerDraw: 5,
+    powerDraw: MODULE_POWER_DRAW_W.sensor,
     crewRequired: 0,
     techLevel: 2,
     effect: {
@@ -347,7 +352,7 @@ export const swarmModules: ModuleDefinition[] = [
     category: "system",
     mass: moduleMass("sensor"),
     cost: 130,
-    powerDraw: 7,
+    powerDraw: MODULE_POWER_DRAW_W.sensor,
     crewRequired: 0,
     techLevel: 3,
     effect: {
@@ -373,7 +378,7 @@ export const swarmModules: ModuleDefinition[] = [
     category: "system",
     mass: moduleMass("comms"),
     cost: 18,
-    powerDraw: 1,
+    powerDraw: MODULE_POWER_DRAW_W.comms,
     crewRequired: 0,
     techLevel: 1,
     effect: {
@@ -394,7 +399,7 @@ export const swarmModules: ModuleDefinition[] = [
     category: "system",
     mass: moduleMass("comms"),
     cost: 42,
-    powerDraw: 3,
+    powerDraw: MODULE_POWER_DRAW_W.comms,
     crewRequired: 0,
     techLevel: 2,
     effect: {
@@ -415,7 +420,7 @@ export const swarmModules: ModuleDefinition[] = [
     category: "system",
     mass: moduleMass("comms"),
     cost: 78,
-    powerDraw: 5,
+    powerDraw: MODULE_POWER_DRAW_W.comms,
     crewRequired: 0,
     techLevel: 2,
     effect: {
@@ -436,7 +441,7 @@ export const swarmModules: ModuleDefinition[] = [
     category: "system",
     mass: moduleMass("comms"),
     cost: 105,
-    powerDraw: 6,
+    powerDraw: MODULE_POWER_DRAW_W.comms,
     crewRequired: 0,
     techLevel: 3,
     effect: {
@@ -457,7 +462,7 @@ export const swarmModules: ModuleDefinition[] = [
     category: "system",
     mass: moduleMass("comms"),
     cost: 120,
-    powerDraw: 8,
+    powerDraw: MODULE_POWER_DRAW_W.comms,
     crewRequired: 0,
     techLevel: 3,
     effect: {

@@ -106,7 +106,7 @@ function rammer(
   return {
     instanceId: id,
     designId: `d-${id}`,
-    faction: "test",
+    faction: "Terran",
     side,
     stats: stats({ thrust: 1 }),
     position,
@@ -160,7 +160,7 @@ function coaster(
   return {
     instanceId: id,
     designId: `d-${id}`,
-    faction: "test",
+    faction: "Terran",
     side,
     stats: stats({ thrust: 0 }),
     position,

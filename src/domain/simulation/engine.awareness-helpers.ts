@@ -177,7 +177,7 @@ export function ship(
   return {
     instanceId: id,
     designId: `d-`,
-    faction: "test",
+    faction: "Terran",
     side,
     stats: statsFor(100_000, opts.cost ?? 100),
     position: { x, y },

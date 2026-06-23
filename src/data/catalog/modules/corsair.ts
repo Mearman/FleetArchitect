@@ -4,8 +4,12 @@ import {
   moduleMass,
 } from "../physics";
 import {
+  FUSION_REACTOR_OUTPUT_W,
+  MODULE_POWER_DRAW_W,
   MUZZLE_VELOCITY_M_PER_S,
   PROJECTILE_MASS_KG,
+  SHIELD_CAPACITY_J,
+  SHIELD_RECHARGE_W,
   kineticDamageJoules,
   projectileSpeedMPerTick,
 } from "../combat-scale";
@@ -68,7 +72,7 @@ export const corsairModules: ModuleDefinition[] = [
     category: "weapon",
     mass: moduleMass("mediumWeapon"),
     cost: 75,
-    powerDraw: 5,
+    powerDraw: MODULE_POWER_DRAW_W.ordnanceWeapon,
     crewRequired: 1,
     techLevel: 1,
     effect: {
@@ -96,7 +100,7 @@ export const corsairModules: ModuleDefinition[] = [
     category: "weapon",
     mass: moduleMass("mediumWeapon"),
     cost: 110,
-    powerDraw: 7,
+    powerDraw: MODULE_POWER_DRAW_W.ordnanceWeapon,
     crewRequired: 2,
     techLevel: 2,
     effect: {
@@ -124,7 +128,7 @@ export const corsairModules: ModuleDefinition[] = [
     category: "weapon",
     mass: moduleMass("lightWeapon"),
     cost: 45,
-    powerDraw: 4,
+    powerDraw: MODULE_POWER_DRAW_W.kineticWeapon,
     crewRequired: 0,
     techLevel: 1,
     effect: {
@@ -150,7 +154,8 @@ export const corsairModules: ModuleDefinition[] = [
     category: "defence",
     mass: moduleMass("shield"),
     cost: 80,
-    powerDraw: 6,
+    // An active jammer draws sensor-class electronics power.
+    powerDraw: MODULE_POWER_DRAW_W.sensor,
     crewRequired: 1,
     techLevel: 2,
     effect: {
@@ -167,13 +172,14 @@ export const corsairModules: ModuleDefinition[] = [
     category: "defence",
     mass: moduleMass("shield"),
     cost: 55,
-    powerDraw: 5,
+    // A shield's draw IS its recharge wattage.
+    powerDraw: SHIELD_RECHARGE_W.light,
     crewRequired: 0,
     techLevel: 1,
     effect: {
       kind: "shield",
-      capacity: 80,
-      rechargeRate: 1.0,
+      capacity: SHIELD_CAPACITY_J.light,
+      rechargeRate: SHIELD_RECHARGE_W.light,
       rechargeDelay: 70,
     },
   },
@@ -186,7 +192,7 @@ export const corsairModules: ModuleDefinition[] = [
     category: "propulsion",
     mass: moduleMass("engine"),
     cost: 45,
-    powerDraw: 5,
+    powerDraw: MODULE_POWER_DRAW_W.drive,
     crewRequired: 0,
     techLevel: 1,
     effect: { kind: "engine", thrust: raiderThrustN },
@@ -199,7 +205,7 @@ export const corsairModules: ModuleDefinition[] = [
     category: "propulsion",
     mass: moduleMass("engine"),
     cost: 70,
-    powerDraw: 4,
+    powerDraw: MODULE_POWER_DRAW_W.drive,
     crewRequired: 0,
     techLevel: 2,
     effect: {
@@ -218,7 +224,8 @@ export const corsairModules: ModuleDefinition[] = [
     category: "propulsion",
     mass: moduleMass("engine"),
     cost: 120,
-    powerDraw: 10,
+    // A folding drive draws its power-conditioning load like a thruster.
+    powerDraw: MODULE_POWER_DRAW_W.drive,
     crewRequired: 1,
     techLevel: 3,
     effect: {
@@ -240,7 +247,7 @@ export const corsairModules: ModuleDefinition[] = [
     powerDraw: 0,
     crewRequired: 1,
     techLevel: 1,
-    effect: { kind: "power", output: 42 },
+    effect: { kind: "power", output: FUSION_REACTOR_OUTPUT_W },
     command: true,
   },
   {
@@ -251,7 +258,7 @@ export const corsairModules: ModuleDefinition[] = [
     category: "crew",
     mass: moduleMass("crew"),
     cost: 28,
-    powerDraw: 2,
+    powerDraw: MODULE_POWER_DRAW_W.crew,
     crewRequired: 0,
     techLevel: 1,
     effect: { kind: "crew", capacity: 6 },
@@ -278,7 +285,8 @@ export const corsairModules: ModuleDefinition[] = [
     category: "system",
     mass: moduleMass("shield"),
     cost: 95,
-    powerDraw: 8,
+    // An active stealth field draws sensor-class electronics power.
+    powerDraw: MODULE_POWER_DRAW_W.sensor,
     crewRequired: 1,
     techLevel: 2,
     effect: {
@@ -294,7 +302,7 @@ export const corsairModules: ModuleDefinition[] = [
     category: "system",
     mass: moduleMass("sensor"),
     cost: 55,
-    powerDraw: 4,
+    powerDraw: MODULE_POWER_DRAW_W.sensor,
     crewRequired: 0,
     techLevel: 2,
     effect: {
@@ -311,7 +319,8 @@ export const corsairModules: ModuleDefinition[] = [
     category: "weapon",
     mass: moduleMass("mediumWeapon"),
     cost: 105,
-    powerDraw: 6,
+    // A pod launcher draws its handling/launch load, like an ordnance launcher.
+    powerDraw: MODULE_POWER_DRAW_W.ordnanceWeapon,
     crewRequired: 1,
     techLevel: 3,
     effect: {
@@ -330,7 +339,8 @@ export const corsairModules: ModuleDefinition[] = [
     category: "weapon",
     mass: moduleMass("mediumWeapon"),
     cost: 80,
-    powerDraw: 4,
+    // A mine layer draws its handling/arming load, like an ordnance launcher.
+    powerDraw: MODULE_POWER_DRAW_W.ordnanceWeapon,
     crewRequired: 1,
     techLevel: 2,
     effect: {
@@ -350,7 +360,8 @@ export const corsairModules: ModuleDefinition[] = [
     category: "defence",
     mass: moduleMass("shield"),
     cost: 75,
-    powerDraw: 5,
+    // A decoy projector draws sensor-class electronics power.
+    powerDraw: MODULE_POWER_DRAW_W.sensor,
     crewRequired: 1,
     techLevel: 2,
     effect: {

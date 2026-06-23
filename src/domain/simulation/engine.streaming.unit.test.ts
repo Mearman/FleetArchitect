@@ -61,7 +61,7 @@ function makeShip(opts: {
   return {
     instanceId: opts.id,
     designId: `design-${opts.id}`,
-    faction: "test",side: opts.side,
+    faction: "Terran",side: opts.side,
     stats,
     position: { x: opts.x, y: 0 },
     facing: 0,

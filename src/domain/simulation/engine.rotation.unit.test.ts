@@ -129,7 +129,7 @@ function rcsShip(
   return {
     instanceId: id,
     designId: `d-`,
-    faction: "test",
+    faction: "Terran",
     side,
     stats: shipStats({}),
     position: pos,
@@ -169,7 +169,7 @@ function noTorqueShip(
   return {
     instanceId: id,
     designId: `d-`,
-    faction: "test",
+    faction: "Terran",
     side,
     stats: shipStats({}),
     position: pos,
@@ -332,7 +332,7 @@ describe("bang-bang attitude control", () => {
       return {
         instanceId: id,
         designId: `d-`,
-        faction: "test",
+        faction: "Terran",
         side,
         stats: shipStats({}),
         position: { x: 0, y: 0 },
@@ -360,7 +360,7 @@ describe("bang-bang attitude control", () => {
       return {
         instanceId: id,
         designId: `d-`,
-        faction: "test",
+        faction: "Terran",
         side,
         stats: shipStats({}),
         position: { x: 100, y: 0 },

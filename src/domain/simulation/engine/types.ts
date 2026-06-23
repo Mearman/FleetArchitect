@@ -37,6 +37,17 @@ export interface ResourceState {
   propellant: number[];
   atmosphere: number[];
   powerBuffer: EnergyBuffer;
+  /**
+   * Per-cell thermal heat capacity (J/K), keyed by dense φ index — `cell mass ×
+   * the faction material's specific heat`. The thermal field divides each watt
+   * source and watt radiative flux by this to get a kelvin-per-second rate. A
+   * cell's mass is fixed for the battle (damage destroys a cell, it does not
+   * lighten it) and the index map is fixed, so this is built ONCE in
+   * `makeResourceState` and reused every tick rather than rebuilt — the thermal
+   * step would otherwise rebuild an n-entry map per ship per tick, a measurable
+   * cost on capital ships with thousands of cells.
+   */
+  heatCapacity: ReadonlyMap<number, number>;
 }
 
 /** Cached transport graph for a ship's current topology (Phase 12 wiring).

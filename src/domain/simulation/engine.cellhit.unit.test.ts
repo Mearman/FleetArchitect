@@ -125,7 +125,7 @@ function shooter(weapon: WeaponEffect): CombatShip {
   return {
     instanceId: "a1",
     designId: "d-a1",
-    faction: "test",
+    faction: "Terran",
     side: "attacker",
     stats: stats({ thrust: 0 }),
     position: { x: 0, y: 0 },
@@ -156,7 +156,7 @@ function defenderColumn(distance: number, cellHp: number[]): CombatShip {
   return {
     instanceId: "d1",
     designId: "d-d1",
-    faction: "test",
+    faction: "Terran",
     side: "defender",
     stats: stats(),
     position: { x: distance, y: 0 },

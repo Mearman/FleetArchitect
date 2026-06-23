@@ -133,7 +133,7 @@ function attacker(id: string, x: number): CombatShip {
   return {
     instanceId: id,
     designId: `d-${id}`,
-    faction: "test",
+    faction: "Terran",
     side: "attacker",
     stats: baseStats({ weapons: [{ slotId: "w0", effect: w }] }),
     position: { x, y: 0 },
@@ -159,7 +159,7 @@ function shieldDefender(id: string, x: number): CombatShip {
   return {
     instanceId: id,
     designId: `d-${id}`,
-    faction: "test",
+    faction: "Terran",
     side: "defender",
     stats: baseStats({
       shieldCapacity: 100,
@@ -191,7 +191,7 @@ function repairDefender(id: string, x: number): CombatShip {
   return {
     instanceId: id,
     designId: `d-${id}`,
-    faction: "test",
+    faction: "Terran",
     side: "defender",
     stats: baseStats(),
     position: { x, y: 0 },
@@ -220,7 +220,7 @@ function crewedShip(id: string, x: number, side: "attacker" | "defender"): Comba
   return {
     instanceId: id,
     designId: `d-${id}`,
-    faction: "test",
+    faction: "Terran",
     side,
     stats: baseStats({
       weapons: [{ slotId: "w-agg", effect: beam({ damage: 5, cooldown: 3 }) }],

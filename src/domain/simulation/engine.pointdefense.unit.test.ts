@@ -137,7 +137,7 @@ function modularAttacker(id: string): CombatShip {
   return {
     instanceId: id,
     designId: `d-${id}`,
-    faction: "test",
+    faction: "Terran",
     side: "attacker",
     stats,
     position: { x: 0, y: 0 },
@@ -195,7 +195,7 @@ function modularDefender(id: string, withPd: boolean): CombatShip {
   return {
     instanceId: id,
     designId: `d-${id}`,
-    faction: "test",
+    faction: "Terran",
     side: "defender",
     stats,
     position: { x: 80, y: 0 },

@@ -132,7 +132,7 @@ function shooterShip(
   return {
     instanceId: id,
     designId: `d-${id}`,
-    faction: "test",
+    faction: "Terran",
     side: "attacker",
     stats: baseStats(structure),
     position: { x, y: 0 },
@@ -152,7 +152,7 @@ function toughTarget(id: string, x: number): CombatShip {
   return {
     instanceId: id,
     designId: `d-${id}`,
-    faction: "test",
+    faction: "Terran",
     side: "defender",
     stats: baseStats(1_000_000),
     position: { x, y: 0 },
@@ -278,19 +278,19 @@ describe("engine.hardwire — power conduit", () => {
    * proximity wiring radius of 3 cells — with no crew to haul charge.
    *
    * Without the conduit: the weapon starts with a full local charge buffer
-   * (60 units) and immediately begins draining it at `powerDraw` per tick.
-   * It fires a handful of shots while the buffer lasts, then goes idle and
-   * deals no further damage. Over a long battle (maxTicks = 3600) almost all
-   * of the damage occurs in those first few ticks.
+   * (`SIM.chargeBufferMax` joules) and drains it at `powerDraw × dt` joules per
+   * firing tick. It fires while the buffer lasts (~100 ticks at a ~300 MW draw),
+   * then goes idle and deals no further damage. Over a long battle (maxTicks =
+   * 3600) almost all of the damage occurs in those first ~100 ticks.
    *
    * With the conduit: the reactor tops the weapon's buffer to full every tick
    * regardless of distance → the weapon fires continuously for the whole battle,
    * dealing vastly more total damage.
    *
    * We assert: total damage (across all frames) with conduit ≫ without conduit.
-   * Specifically, without the conduit the weapon drains after `chargeBufferMax /
-   * powerDraw` ticks; with it the weapon fires for all 3600 ticks. The ratio
-   * of total damage is large enough to be unambiguous.
+   * Without the conduit the weapon drains after `chargeBufferMax / (powerDraw ×
+   * dt)` ticks; with it the weapon fires for all 3600 ticks. The ratio of total
+   * damage is large enough to be unambiguous.
    *
    * Corridor length of 7 cells (reactor at col 0, weapon at col 7) puts the
    * weapon 7 hops from the reactor — well beyond the proximity radius of 3 —
@@ -311,10 +311,15 @@ describe("engine.hardwire — power conduit", () => {
    *   col 6: weapon (powerDraw=20) — 5 hops from reactor, beyond the 3-hop
    *           proximity radius; the busy crew cannot haul charge to it
    *
-   * Without the conduit: the weapon starts with chargeBufferMax=60, fires for
-   * a few ticks while the buffer lasts (60/20 = 3 ticks), then starves.
-   * With the conduit: the reactor tops the weapon's buffer to full each tick,
-   * so it fires for the entire battle.
+   * Without the conduit: the weapon starts with its full local charge buffer
+   * (`SIM.chargeBufferMax` joules) and drains it at `powerDraw × dt` joules per
+   * firing tick. With a realistic energy-weapon draw (~300 MW) the buffer lasts
+   * on the order of a hundred ticks, then the weapon starves for the rest of the
+   * battle. With the conduit: the reactor tops the weapon's buffer to full each
+   * tick, so it fires for the entire 3600-tick battle. (Re-baselined from the
+   * old abstract power scale — output 200, draw 20, buffer 60 — to real watts,
+   * since the local charge buffer is now a joule capacitor sized to the heaviest
+   * weapon's draw.)
    */
 
   function powerShip(id: string, x: number, withConduit: boolean): CombatShip {
@@ -322,14 +327,29 @@ describe("engine.hardwire — power conduit", () => {
     const quartersSlotId = "q1";
     const weaponSlotId = "w6";
 
+    // Realistic energy-weapon draw (~300 MW, a pulse-laser-class beam): drains the
+    // joule charge buffer in ~100 firing ticks without a refill, so the no-conduit
+    // weapon starves well within the 3600-tick battle while the conduit-fed one
+    // fires throughout. The reactor outputs gigawatts (covers the draw when wired).
+    const WEAPON_DRAW_W = 3e8;
+    const REACTOR_OUTPUT_W = 1.5e9;
+    // Realistic reactor module mass (kg) so its thermal heat capacity tames the
+    // gigawatt reactor's waste-heat transient — a 5 kg test cell would overheat to
+    // destruction on the first tick before the radiators could balance it, which
+    // is correct physics but defeats this test (it studies power conduits, not
+    // thermal). Sized to a real fusion reactor module's mass so the cell settles
+    // below the overheat threshold and the conduit comparison is what is measured.
+    const REACTOR_MASS_KG = 120_000;
+
     const modules: ResolvedModule[] = [
       // Crew quarters at col 0 — spawns 1 crew member.
       moduleOf(quartersSlotId, { kind: "crew", capacity: 1 }, 0, 0, 60),
       // Command/reactor at col 1 — requires crew to man (output only when manned).
       // The single crew member will man this station and stay there all battle.
-      moduleOf(reactorSlotId, { kind: "power", output: 200 }, 1, 0, 200, {
+      moduleOf(reactorSlotId, { kind: "power", output: REACTOR_OUTPUT_W }, 1, 0, 200, {
         command: true,
         crewRequired: 1,
+        mass: REACTOR_MASS_KG,
       }),
       // Hull corridor: cols 2–8 (7 cells). Bridge between reactor and weapon.
       moduleOf("h2", { kind: "hull" }, 2, 0, 60),
@@ -347,7 +367,7 @@ describe("engine.hardwire — power conduit", () => {
         9,
         0,
         100,
-        { powerDraw: 20 },
+        { powerDraw: WEAPON_DRAW_W },
       ),
     ];
 
@@ -382,9 +402,9 @@ describe("engine.hardwire — power conduit", () => {
     // Hardwired weapon fires continuously → far more damage than the starved weapon.
     expect(damageHw, "hardwired weapon should fire continuously").toBeGreaterThan(0);
     // The no-conduit weapon fires only while its initial charge buffer lasts
-    // (chargeBufferMax=60, powerDraw=20 → a few shots), whereas the hardwired
-    // weapon fires across the entire 3600-tick battle. The hardwired ship must
-    // deal at least 10× more damage.
+    // (a joule capacitor drained by a ~300 MW draw in ~100 firing ticks),
+    // whereas the hardwired weapon fires across the entire 3600-tick battle. The
+    // hardwired ship must deal at least 10× more damage.
     expect(damageHw, "conduit weapon should deal far more damage than starved weapon").toBeGreaterThan(damageNo * 10);
   });
 
@@ -521,7 +541,7 @@ describe("engine.hardwire — severed link reverts sink", () => {
     const enemy: CombatShip = {
       instanceId: "enemy",
       designId: "d-enemy",
-      faction: "test",
+      faction: "Terran",
       side: "defender",
       stats: {
         ...baseStats(999_999),
@@ -630,7 +650,7 @@ describe("engine.hardwire — severed link reverts sink", () => {
     const enemy: CombatShip = {
       instanceId: "enemy",
       designId: "d-enemy",
-      faction: "test",
+      faction: "Terran",
       side: "defender",
       stats: {
         ...baseStats(999_999),

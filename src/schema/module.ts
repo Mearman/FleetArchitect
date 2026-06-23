@@ -87,10 +87,21 @@ export const WeaponEffect = z.object({
 export const DEFAULT_WEAPON_AMMO = 9999;
 export type WeaponEffect = z.infer<typeof WeaponEffect>;
 
-/** Effect payload for a shield generator. */
+/**
+ * Effect payload for a shield generator. `capacity` and `rechargeRate` are SI:
+ *  - `capacity` is the energy (joules) the field can absorb before it collapses,
+ *    on the same joule scale as weapon damage and cell HP.
+ *  - `rechargeRate` is the power (watts, joules per second) the projector draws to
+ *    rebuild the field. The engine adds it as `rechargeRate / TICKS_PER_SECOND`
+ *    joules per tick (the watts → joules-per-tick boundary), and the catalogue
+ *    sets the module's `powerDraw` to this same wattage so recharge competes with
+ *    the weapons and drive for reactor output.
+ */
 export const ShieldEffect = z.object({
   kind: z.literal("shield"),
+  /** Energy the field absorbs before collapsing, in joules. */
   capacity: z.number().min(0),
+  /** Power drawn to rebuild the field, in watts (joules per second). */
   rechargeRate: z.number().min(0),
   rechargeDelay: z.number().int().min(0),
   /** Adaptive shield: an extra fraction added to the effective recharge rate for
@@ -136,9 +147,12 @@ export const EngineEffect = z.object({
 });
 export type EngineEffect = z.infer<typeof EngineEffect>;
 
-/** Effect payload for a power plant. */
+/** Effect payload for a power plant. `output` is the reactor's electrical output
+ *  in watts (joules per second), on the same SI scale as the module power draws
+ *  it must cover. */
 export const PowerPlantEffect = z.object({
   kind: z.literal("power"),
+  /** Reactor electrical output, in watts (joules per second). */
   output: z.number().min(0),
 });
 export type PowerPlantEffect = z.infer<typeof PowerPlantEffect>;
@@ -561,7 +575,11 @@ export const ModuleDefinition = z.object({
   category: z.enum(["weapon", "defence", "propulsion", "system", "crew"]),
   mass: z.number().min(0),
   cost: z.number().min(0),
-  /** Power required to run this module (always >= 0). Supply comes from the effect. */
+  /** Electrical power this module draws to operate, in watts (joules per second),
+   *  on the same SI scale as a reactor's `output`. The resource step builds a
+   *  power-sink terminal from this figure each tick, so a reactor's output must
+   *  cover the summed draw of the modules it feeds. Always >= 0; supply comes from
+   *  a `power` effect. */
   powerDraw: z.number().min(0),
   /** Crew required to operate this module (always >= 0). Supply comes from the effect. */
   crewRequired: z.number().min(0),

@@ -4,6 +4,9 @@ import {
   moduleMass,
 } from "../physics";
 import {
+  ANTIMATTER_REACTOR_OUTPUT_W,
+  FUSION_REACTOR_OUTPUT_W,
+  MODULE_POWER_DRAW_W,
   MUZZLE_VELOCITY_M_PER_S,
   PROJECTILE_MASS_KG,
   kineticDamageJoules,
@@ -74,7 +77,7 @@ export const foundryModules: ModuleDefinition[] = [
     category: "weapon",
     mass: moduleMass("mediumWeapon"),
     cost: 65,
-    powerDraw: 6,
+    powerDraw: MODULE_POWER_DRAW_W.kineticWeapon,
     crewRequired: 1,
     techLevel: 1,
     effect: {
@@ -100,7 +103,7 @@ export const foundryModules: ModuleDefinition[] = [
     category: "weapon",
     mass: moduleMass("heavyWeapon"),
     cost: 130,
-    powerDraw: 10,
+    powerDraw: MODULE_POWER_DRAW_W.kineticWeapon,
     crewRequired: 2,
     techLevel: 2,
     effect: {
@@ -128,7 +131,9 @@ export const foundryModules: ModuleDefinition[] = [
     category: "weapon",
     mass: moduleMass("heavyWeapon"),
     cost: 220,
-    powerDraw: 18,
+    // A plasma mortar generates and contains its bolt with grid power, like a
+    // kinetic launcher's capacitor.
+    powerDraw: MODULE_POWER_DRAW_W.kineticWeapon,
     crewRequired: 3,
     techLevel: 3,
     effect: {
@@ -154,7 +159,7 @@ export const foundryModules: ModuleDefinition[] = [
     category: "weapon",
     mass: moduleMass("heavyWeapon"),
     cost: 150,
-    powerDraw: 8,
+    powerDraw: MODULE_POWER_DRAW_W.ordnanceWeapon,
     crewRequired: 2,
     techLevel: 2,
     effect: {
@@ -181,7 +186,8 @@ export const foundryModules: ModuleDefinition[] = [
     category: "defence",
     mass: moduleMass("shield"),
     cost: 95,
-    powerDraw: 6,
+    // A repair bay draws a small housekeeping load, like a sensor array.
+    powerDraw: MODULE_POWER_DRAW_W.sensor,
     crewRequired: 1,
     techLevel: 2,
     effect: {
@@ -197,7 +203,7 @@ export const foundryModules: ModuleDefinition[] = [
     category: "defence",
     mass: moduleMass("pointDefense"),
     cost: 85,
-    powerDraw: 5,
+    powerDraw: MODULE_POWER_DRAW_W.pointDefense,
     crewRequired: 1,
     techLevel: 2,
     effect: {
@@ -219,7 +225,7 @@ export const foundryModules: ModuleDefinition[] = [
     category: "propulsion",
     mass: moduleMass("engine"),
     cost: 35,
-    powerDraw: 4,
+    powerDraw: MODULE_POWER_DRAW_W.drive,
     crewRequired: 0,
     techLevel: 1,
     effect: { kind: "engine", thrust: thermalThrustN },
@@ -232,7 +238,7 @@ export const foundryModules: ModuleDefinition[] = [
     category: "propulsion",
     mass: moduleMass("engine"),
     cost: 75,
-    powerDraw: 8,
+    powerDraw: MODULE_POWER_DRAW_W.drive,
     crewRequired: 1,
     techLevel: 2,
     effect: { kind: "engine", thrust: thermalThrustN * 2 },
@@ -249,7 +255,7 @@ export const foundryModules: ModuleDefinition[] = [
     powerDraw: 0,
     crewRequired: 1,
     techLevel: 1,
-    effect: { kind: "power", output: 45 },
+    effect: { kind: "power", output: FUSION_REACTOR_OUTPUT_W },
     command: true,
   },
   {
@@ -263,7 +269,7 @@ export const foundryModules: ModuleDefinition[] = [
     powerDraw: 0,
     crewRequired: 2,
     techLevel: 3,
-    effect: { kind: "power", output: 105 },
+    effect: { kind: "power", output: ANTIMATTER_REACTOR_OUTPUT_W },
     command: true,
   },
   {
@@ -274,7 +280,7 @@ export const foundryModules: ModuleDefinition[] = [
     category: "crew",
     mass: moduleMass("crew"),
     cost: 30,
-    powerDraw: 2,
+    powerDraw: MODULE_POWER_DRAW_W.crew,
     crewRequired: 0,
     techLevel: 1,
     effect: { kind: "crew", capacity: 6 },
@@ -301,7 +307,8 @@ export const foundryModules: ModuleDefinition[] = [
     category: "weapon",
     mass: moduleMass("mediumWeapon"),
     cost: 110,
-    powerDraw: 6,
+    // A mine layer draws its handling/arming load, like an ordnance launcher.
+    powerDraw: MODULE_POWER_DRAW_W.ordnanceWeapon,
     crewRequired: 1,
     techLevel: 2,
     effect: {

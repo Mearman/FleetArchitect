@@ -159,7 +159,7 @@ function attacker(opts: {
   return {
     instanceId: opts.id,
     designId: `design-${opts.id}`,
-    faction: "test",side: "attacker",
+    faction: "Terran",side: "attacker",
     stats,
     position: { x: opts.x, y: opts.y },
     facing: opts.facing ?? 0,

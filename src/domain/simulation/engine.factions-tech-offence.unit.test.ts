@@ -69,7 +69,7 @@ describe("engine.factions-tech – overcharge", () => {
     return {
       instanceId: "attacker",
       designId: "d-attacker",
-      faction: "test",
+      faction: "Terran",
       side: "attacker",
       // stats.thrust = hull base + engine. Engine = 0.5, hull base = 0.
       stats: baseStats({
@@ -103,7 +103,7 @@ describe("engine.factions-tech – overcharge", () => {
     const weakDefender: CombatShip = {
       instanceId: "defender",
       designId: "d-defender",
-      faction: "test",
+      faction: "Terran",
       side: "defender",
       stats: baseStats({ structure: 500, weapons: [] }),
       position: { x: 150, y: 0 },
@@ -131,7 +131,7 @@ describe("engine.factions-tech – overcharge", () => {
     const weakDefender: CombatShip = {
       instanceId: "defender",
       designId: "d-defender",
-      faction: "test",
+      faction: "Terran",
       side: "defender",
       stats: baseStats({ structure: 300, weapons: [] }),
       position: { x: 150, y: 0 },
@@ -176,7 +176,7 @@ describe("engine.factions-tech – command aura", () => {
     return {
       instanceId: "carrier",
       designId: "d-carrier",
-      faction: "test",
+      faction: "Terran",
       side: "attacker",
       stats: baseStats({ structure: 99999, weapons: [] }),
       position: { x: 50, y: 0 },
@@ -217,7 +217,7 @@ describe("engine.factions-tech – command aura", () => {
     return {
       instanceId: "gunship",
       designId: "d-gunship",
-      faction: "test",
+      faction: "Terran",
       side: "attacker",
       stats: baseStats({
         structure: 99999,
@@ -254,7 +254,7 @@ describe("engine.factions-tech – command aura", () => {
     return {
       instanceId: "defender",
       designId: "d-defender",
-      faction: "test",
+      faction: "Terran",
       side: "defender",
       stats: baseStats({ structure: 5000, weapons: [] }),
       position: { x: 250, y: 0 },
@@ -357,7 +357,7 @@ describe("engine.factions-tech – determinism (non-tech designs)", () => {
     return {
       instanceId: id,
       designId: `d-${id}`,
-      faction: "test",
+      faction: "Terran",
       side,
       stats: baseStats({
         structure: 300,

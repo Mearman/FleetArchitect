@@ -41,7 +41,12 @@
  */
 
 import { TICKS_PER_SECOND } from "@/domain/simulation/types";
-import { specificDestructionEnergy } from "./physics";
+import {
+  ANTIMATTER_POWER_DENSITY_W_PER_M3,
+  FUSION_POWER_DENSITY_W_PER_M3,
+  moduleVolume,
+  specificDestructionEnergy,
+} from "./physics";
 
 // ---------------------------------------------------------------------------
 // Engagement reference range and weapon-range derivations (metres).
@@ -249,8 +254,237 @@ export const BEAM_POWER_W = {
 // reactor's gigawatt output and the weapons it must feed is visible in one
 // place. The combat-economy consequence: a reactor's gigawatt output must cover
 // the summed watt draw of its beams, drives, and shield recharge, which is the
-// "shields vs guns" power tension later phases introduce.
+// "shields vs guns" power tension this phase introduces.
 // ---------------------------------------------------------------------------
+
+/**
+ * Electrical output (watts) of a fusion reactor module — DERIVED as the fusion
+ * core's volumetric power density times the reactor module's physical envelope:
+ * `FUSION_POWER_DENSITY_W_PER_M3 × MODULE_VOLUME_M3.reactor` (`physics.ts`). With
+ * the authored anchors (`5e7 W/m³ × 30 m³`) this is ~1.5 GW — the energy budget a
+ * frigate-to-cruiser needs to run a railgun's capacitor, a fusion-torch drive and
+ * a shield's recharge at once. No hand-tuned "power unit" literal: a reactor's
+ * output traces straight to its core density and its module volume, so it can be
+ * compared in watts against the draws below.
+ */
+export const FUSION_REACTOR_OUTPUT_W =
+  FUSION_POWER_DENSITY_W_PER_M3 * moduleVolume("reactor");
+
+/**
+ * Electrical output (watts) of an antimatter reactor module — DERIVED as the
+ * antimatter core's volumetric power density times the compact reactor module's
+ * envelope: `ANTIMATTER_POWER_DENSITY_W_PER_M3 × MODULE_VOLUME_M3.reactorCompact`
+ * (`physics.ts`). With the anchors (`2e8 W/m³ × 25 m³`) this is ~5 GW — several
+ * times a fusion reactor's output from a smaller, heavier-shielded core, the
+ * supply an energy-weapon capital ship (a gigawatt lance plus drive and shields)
+ * needs. The denser core is why an antimatter ship can feed a capital lance that a
+ * single fusion reactor only just covers.
+ */
+export const ANTIMATTER_REACTOR_OUTPUT_W =
+  ANTIMATTER_POWER_DENSITY_W_PER_M3 * moduleVolume("reactorCompact");
+
+// ---------------------------------------------------------------------------
+// Reactor waste heat and radiator sizing (thermal re-grounding).
+//
+// A reactor's electrical output is not free: the conversion is imperfect, so the
+// fraction of the released power that does NOT become usable electricity is dumped
+// into the hull as waste heat, which the radiators must shed to space. The
+// thermal field (`engine/thermal.ts`) sheds heat by Stefan-Boltzmann radiation
+// from the radiator cells; at steady state a radiator cell settles at
+// `T = (P_waste / (ε·σ·A))^(1/4)`, INDEPENDENT of heat capacity. Survival below
+// the `SIM.overheatThresholdK` (1500 K) material limit is therefore a balance of
+// two named anchors: how much waste heat a reactor produces
+// ({@link REACTOR_THERMAL_EFFICIENCY}) and how much effective radiating area a
+// radiator cell deploys ({@link RADIATOR_FIN_AREA_FACTOR}).
+//
+// Before this re-grounding the resource step injected the reactor's FULL
+// electrical output as the heat source, which is wrong twice over: it is the
+// electricity, not the waste, and at gigawatts it drove a 2 m²/cell radiator past
+// 1500 K on the first tick (every reactor died instantly). Injecting the real
+// waste heat and giving radiators a realistic deployed-fin area fixes both: an
+// undamaged reactor-equipped ship reaches a steady state comfortably below
+// 1500 K, while a combat heat spike (a damaged reactor that loses radiator cells,
+// or future weapon-heat deposition) still drives a cell over the threshold and
+// triggers the overheat death — overheat stays possible, it is no longer
+// automatic.
+// ---------------------------------------------------------------------------
+
+/**
+ * Reactor thermal efficiency η (dimensionless, 0–1) — the fraction of a
+ * reactor's released power that becomes usable electrical output. The remainder,
+ * `output × (1/η − 1)`, is dumped into the hull as waste heat the radiators must
+ * shed (see {@link reactorWasteHeatWatts}).
+ *
+ * Set to 0.85 for an advanced DIRECT-CONVERSION fusion reactor: rather than
+ * boiling a working fluid and running a heat-engine turbine (Carnot-limited to
+ * ~40-60%), the in-universe reactor decelerates the charged fusion products
+ * directly in an electrostatic/inductive converter, which can in principle reach
+ * 80-90% conversion because it sidesteps the thermodynamic heat-engine limit.
+ * 0.85 is the high-but-defensible end of that direct-conversion band — chosen so
+ * a fusion reactor's waste heat (`1.5 GW × (1/0.85 − 1)` ≈ 265 MW) is a quarter
+ * of the spike a naive `1/η = ∞` (all-output-as-waste) model would impose, which
+ * is what lets a realistically-sized deployed radiator hold the reactor cell
+ * below the 1500 K material limit. A lower η would raise the waste heat past
+ * what any credible deployed-fin area can shed from a single cell.
+ */
+export const REACTOR_THERMAL_EFFICIENCY = 0.85;
+
+/**
+ * Waste heat (watts) a reactor dumps into the hull — DERIVED from its electrical
+ * output and the thermal efficiency: `output × (1/η − 1)`. A reactor producing
+ * `output` watts of electricity at efficiency η released `output / η` watts in
+ * total, of which `output / η − output = output × (1/η − 1)` is rejected as heat.
+ * This is the figure the resource step injects as the reactor cell's thermal
+ * source (NOT the electrical output, which is the grid supply, not heat).
+ */
+export function reactorWasteHeatWatts(outputWatts: number): number {
+  return outputWatts * (1 / REACTOR_THERMAL_EFFICIENCY - 1);
+}
+
+/**
+ * Deployed-fin effective-area amplification factor (dimensionless) for a
+ * radiator cell — how many times its bare 1 m² cell-face footprint of effective
+ * radiating area a deployed radiator unfolds. A spacecraft radiator is not a
+ * flat patch of hull: it is a large folded/deployed fin array (think the ISS's
+ * thousands of square metres of panels unfolding from a compact stowed mount),
+ * so the effective area radiating to space is far larger than the cell footprint
+ * the panel mounts on. The thermal field multiplies a radiator cell's geometric
+ * footprint by this factor to get its effective radiating area.
+ *
+ * Set to 800: a fusion reactor's waste heat (~265 MW at η = 0.85) shed from a
+ * single reactor cell needs an effective radiating area of order `waste /
+ * (ε·σ·T⁴)` to settle below 1500 K, which at a working temperature near 1300 K
+ * is ~1300 m²; with the 2 m² both-faces footprint of one cell that is an ~650×
+ * amplification, so 800× lands the reactor cell's steady state at ~1340 K — below
+ * the 1500 K material limit with margin — while keeping the factor in the
+ * high-but-physical band a large deployed multi-fin warship radiator reaches.
+ * The corvette in the engagement integration test (a single fusion reactor cell)
+ * survives at this figure; a combat heat spike that destroys radiator cells, or a
+ * reactor far over-sized for its radiating area, still crosses 1500 K and dies.
+ */
+export const RADIATOR_FIN_AREA_FACTOR = 800;
+
+// ---------------------------------------------------------------------------
+// Module power draws (watts).
+//
+// A powered module spends watts off the grid each tick it operates; the engine's
+// resource step builds a power-sink terminal from each module's `powerDraw`, so a
+// reactor's output (above) must cover the summed draw of the modules it feeds.
+// Each draw is authored as the real electrical demand of that mechanism's class,
+// in watts, so "shields vs guns vs drive" is a competition for real reactor watts
+// rather than abstract power points. A beam weapon is the special case: its draw
+// IS its delivered optical power (`BEAM_POWER_W`), because the beam converts grid
+// power straight into the energy it deposits on target.
+// ---------------------------------------------------------------------------
+
+/**
+ * Electrical power draw (watts) for the non-beam powered-module classes — the
+ * grid demand each mechanism places while operating. A kinetic launcher draws the
+ * power to recharge its capacitor bank or run its autoloader; a drive draws its
+ * power-conditioning and magnetic-nozzle load; attitude control, sensors, comms,
+ * crew life-support and a magazine's handling gear each draw their own much
+ * smaller load. Beam weapons are NOT listed here — a beam's draw is its delivered
+ * optical power {@link BEAM_POWER_W}, applied directly in the catalogue. Sized so a
+ * reactor (~1.5 GW fusion, ~5 GW antimatter) comfortably covers a conventional
+ * fit while an all-energy-weapon capital design pushes a single fusion reactor to
+ * its limit — the intended power tension.
+ */
+export const MODULE_POWER_DRAW_W = {
+  /** Kinetic launcher (railgun / autocannon / mass driver): capacitor recharge
+   *  and rail current — the dominant non-beam draw, ~100 MW. */
+  kineticWeapon: 1e8,
+  /** Missile / torpedo launcher: autoloader and launch-rail handling, far less
+   *  than a kinetic gun (the round carries its own energy), ~10 MW. */
+  ordnanceWeapon: 1e7,
+  /** Point-defence mount: a small fast turret, ~5 MW. */
+  pointDefense: 5e6,
+  /** Drive: power conditioning and magnetic-nozzle load, ~5 MW. */
+  drive: 5e6,
+  /** Attitude control (RCS / reaction wheel): small actuators, ~1 MW. */
+  attitude: 1e6,
+  /** Sensor array: transmit/receive electronics, ~2 MW. */
+  sensor: 2e6,
+  /** Comms transceiver: link electronics, ~1 MW. */
+  comms: 1e6,
+  /** Crew life support: habitat power, ~0.5 MW. */
+  crew: 5e5,
+  /** Magazine handling gear: ~0.5 MW. */
+  magazine: 5e5,
+};
+
+/**
+ * Seconds of peak draw a powered module's local capacitor holds — the reserve
+ * that sizes {@link LOCAL_CHARGE_BUFFER_J}. A buffer-sizing duration (the
+ * rate/epsilon category): one second is comfortably more than the single tick a
+ * weapon needs to fire, a believable capacitor ride-through.
+ */
+export const LOCAL_CAPACITOR_RESERVE_S = 1;
+
+/**
+ * Capacity (joules) of a powered module's local charge buffer — DERIVED as the
+ * heaviest single module draw (a capital lance's {@link BEAM_POWER_W}.lance
+ * watts) over {@link LOCAL_CAPACITOR_RESERVE_S}: `BEAM_POWER_W.lance ×
+ * LOCAL_CAPACITOR_RESERVE_S`. The per-module sibling of the ship-wide power
+ * buffer (`POWER_BUFFER_RESERVE_S`, `resource-step.ts`); sizing it from the
+ * heaviest draw guarantees the buffer holds at least one tick of any weapon's
+ * draw, so a fully-wired weapon can always fire. The engine consumes `powerDraw
+ * × dt` joules per tick against it (`crew.ts`).
+ */
+export const LOCAL_CHARGE_BUFFER_J =
+  BEAM_POWER_W.lance * LOCAL_CAPACITOR_RESERVE_S;
+
+// ---------------------------------------------------------------------------
+// Shield energetics (joules of capacity, watts of recharge).
+//
+// A shield is an energy store: its `capacity` is the joules it can absorb before
+// collapsing, and its `rechargeRate` is the watts it draws to rebuild that store.
+// Both are now real SI, on the same joule scale as the weapon damage that hits it
+// and the cell HP behind it, so a shield soaks a realistic number of salvos and
+// rebuilds over a watchable time. Crucially the recharge wattage is also the
+// shield's grid draw (the catalogue sets the module's `powerDraw` to its
+// `rechargeRate`), so a shield's recovery competes with the weapons and drive for
+// reactor output — the "shields vs guns" tension. The engine adds the recharge as
+// `rechargeRate / TICKS_PER_SECOND` joules per tick (watts → joules-per-tick at
+// the per-tick boundary), so a watt-rated recharge regenerates at the correct
+// real rate rather than TPS× too fast.
+// ---------------------------------------------------------------------------
+
+/**
+ * Shield capacity (joules) for each shield class — the energy the projector can
+ * absorb before the field collapses. Banded by class so a hit (kinetic ½·m·v² or
+ * beam power × dwell, both now real joules) drains a realistic share of the field:
+ * a light deflector (~200 MJ) collapses to a couple of frigate salvos while a
+ * heavy capital array (~600 MJ) rides out several. On the same joule scale as the
+ * armour behind it, so shields buy time rather than trivially soaking or instantly
+ * popping.
+ */
+export const SHIELD_CAPACITY_J = {
+  /** Light deflector: the smallest field, ~200 MJ. */
+  light: 2e8,
+  /** Medium shield: a frigate-grade array, ~400 MJ. */
+  medium: 4e8,
+  /** Heavy shield: a capital-grade array, the largest field, ~600 MJ. */
+  heavy: 6e8,
+};
+
+/**
+ * Shield recharge power (watts) for each shield class — the grid power the
+ * projector draws to rebuild its field, and (because the catalogue sets the
+ * shield module's `powerDraw` to this figure) the watts it takes off the reactor
+ * while active. Banded so a field rebuilds over a watchable handful of seconds
+ * (`capacity / rechargeRate` ≈ several seconds) and so shield recovery is a
+ * meaningful, weapon-comparable load on the reactor: a light shield ~20 MW, a
+ * heavy capital shield ~60 MW. The engine converts this to joules per tick as
+ * `rechargeRate / TICKS_PER_SECOND` (the watts → joules-per-tick boundary).
+ */
+export const SHIELD_RECHARGE_W = {
+  /** Light deflector: ~20 MW — a ~10 s rebuild of its ~200 MJ field. */
+  light: 2e7,
+  /** Medium shield: ~40 MW — a ~10 s rebuild of its ~400 MJ field. */
+  medium: 4e7,
+  /** Heavy shield: ~60 MW — a ~10 s rebuild of its ~600 MJ field. */
+  heavy: 6e7,
+};
 
 // ---------------------------------------------------------------------------
 // Attitude-control slew spec (radians per second, seconds, newton-metres).

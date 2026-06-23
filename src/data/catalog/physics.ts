@@ -310,6 +310,21 @@ export const MODULE_VOLUME_M3: Record<string, number> = {
 };
 
 /**
+ * Physical envelope volume (m³) of a module class. Throws if the class is
+ * unknown rather than substituting a default, so a missing entry surfaces as a
+ * loud failure at the call site (mirrors {@link moduleMass}). Used both for the
+ * module's installed mass and, for a reactor, for its electrical output
+ * (`powerDensity × moduleVolume`).
+ */
+export function moduleVolume(classKey: keyof typeof MODULE_VOLUME_M3): number {
+  const volume = MODULE_VOLUME_M3[classKey];
+  if (volume === undefined) {
+    throw new Error(`no module volume for class "${String(classKey)}"`);
+  }
+  return volume;
+}
+
+/**
  * Installed mass (kg) of a module: `meanDensity × moduleVolume`.
  */
 export function moduleMass(
@@ -479,3 +494,64 @@ export const FUSION_POWER_DENSITY_W_PER_M3 = 5e7;
  * several gigawatts from a compact envelope.
  */
 export const ANTIMATTER_POWER_DENSITY_W_PER_M3 = 2e8;
+
+// ---------------------------------------------------------------------------
+// Specific heat capacity (joules per kilogram per kelvin).
+//
+// How much energy one kilogram of a faction's hull material must absorb to rise
+// one kelvin. Combined with a cell's already-real mass (`arealDensity ×
+// CELL_AREA_M2` for each layer, plus the installed module mass) this gives the
+// cell's thermal heat capacity in joules per kelvin:
+// `cellHeatCapacity_J_per_K = cellMass(kg) × specificHeat(J/(kg·K))`. The
+// thermal transport field (`engine/thermal.ts`) needs this to convert a heat
+// SOURCE in watts and a radiative boundary flux in watts into a temperature
+// rate in kelvin per second — `dT/dt = P(W) / C(J/K)` — rather than assuming an
+// implicit unit heat capacity. With real reactor waste heat now in gigawatts,
+// the heat capacity is what fixes the integration transient: a heavy reactor
+// cell (its installed mass dominates) heats by only tens of kelvin per second,
+// not the ~50 M K/tick spike a unit heat capacity produced. The steady-state
+// temperature is independent of heat capacity (it is fixed by the radiative
+// balance `P = ε·σ·A·T⁴`), so this term governs the transient and numerical
+// stability, not survival; survival is set by the radiator area and waste heat.
+//
+// The per-material figures are representative specific heats (J/(kg·K)) of the
+// real material each faction's hull is built from.
+// ---------------------------------------------------------------------------
+
+/**
+ * Specific heat capacity (J/(kg·K)) for each faction's hull material — the
+ * energy per kilogram per kelvin the material absorbs as it heats. Keyed by
+ * faction to match the per-faction layer materials; each value names the real
+ * material it represents.
+ *
+ *  - Terran ferro-steel: ~490 J/(kg·K) — the specific heat of structural steel.
+ *  - Swarm bio-chitin: ~1500 J/(kg·K) — a wet organic lattice (close to chitin/
+ *    keratin, well above metals because of its water and polymer content).
+ *  - Crystalline grown crystal: ~700 J/(kg·K) — a quartz-class grown crystal.
+ *  - Foundry forged-tungsten composite: ~140 J/(kg·K) — tungsten-rich, the
+ *    lowest specific heat of the six (heavy metals heat with little energy).
+ *  - Corsair scrap-aluminium: ~900 J/(kg·K) — reclaimed aluminium-class scrap.
+ *  - Synthetic alloy-titanium: ~520 J/(kg·K) — a machined titanium-class alloy.
+ */
+export const SPECIFIC_HEAT_J_PER_KG_K: Record<string, number> = {
+  Terran: 490,
+  Swarm: 1500,
+  Crystalline: 700,
+  Foundry: 140,
+  Corsair: 900,
+  Synthetic: 520,
+};
+
+/**
+ * Specific heat capacity (J/(kg·K)) for a faction's hull material. Throws if the
+ * faction is unknown rather than substituting a default, so a missing entry
+ * surfaces as a loud failure at the call site (mirrors
+ * {@link specificDestructionEnergy}).
+ */
+export function specificHeat(faction: string): number {
+  const c = SPECIFIC_HEAT_J_PER_KG_K[faction];
+  if (c === undefined) {
+    throw new Error(`no specific heat for faction "${faction}"`);
+  }
+  return c;
+}

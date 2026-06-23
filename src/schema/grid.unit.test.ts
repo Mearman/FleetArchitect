@@ -75,7 +75,7 @@ describe("compactDesignForSerialization", () => {
   const baseDesign = {
     id: "design_test",
     name: "Compact Fixture",
-    faction: "test",
+    faction: "Terran",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
     grid: {

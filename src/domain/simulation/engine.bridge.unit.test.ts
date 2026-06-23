@@ -109,7 +109,7 @@ function dummy(id: string, x: number): CombatShip {
   return {
     instanceId: id,
     designId: `d-${id}`,
-    faction: "test",
+    faction: "Terran",
     side: "defender",
     stats,
     position: { x, y: 0 },
@@ -163,7 +163,7 @@ function modularAttacker(id: string, commandHp: number): CombatShip {
   return {
     instanceId: id,
     designId: `d-${id}`,
-    faction: "test",
+    faction: "Terran",
     side: "attacker",
     stats,
     position: { x: -80, y: 0 },

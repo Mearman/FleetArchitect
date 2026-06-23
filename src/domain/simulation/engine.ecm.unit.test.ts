@@ -186,7 +186,7 @@ function ship(opts: {
   return {
     instanceId: opts.id,
     designId: `d-${opts.id}`,
-    faction: "test",
+    faction: "Terran",
     side: opts.side,
     stats: baseStats({
       structure: 500,

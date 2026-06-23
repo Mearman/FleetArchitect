@@ -126,7 +126,7 @@ function attackerShip(id: string, x: number): CombatShip {
   return {
     instanceId: id,
     designId: `d-${id}`,
-    faction: "test",
+    faction: "Terran",
     side: "attacker",
     stats: baseStats({ weapons: [] }),
     position: { x, y: 0 },
@@ -167,7 +167,7 @@ function defenderShip(id: string, x: number): CombatShip {
   return {
     instanceId: id,
     designId: `d-${id}`,
-    faction: "test",
+    faction: "Terran",
     side: "defender",
     stats: baseStats({ thrust: 100 }),
     position: { x, y: 0 },
@@ -217,7 +217,7 @@ function fragileDefenderShip(id: string, x: number): CombatShip {
   return {
     instanceId: id,
     designId: `d-${id}`,
-    faction: "test",
+    faction: "Terran",
     side: "defender",
     stats: baseStats({ thrust: 100 }),
     position: { x, y: 0 },

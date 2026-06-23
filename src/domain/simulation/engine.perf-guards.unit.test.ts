@@ -132,7 +132,7 @@ function combatShip(
   return {
     instanceId: id,
     designId: `d-${id}`,
-    faction: "test",
+    faction: "Terran",
     side,
     stats: stats(),
     position,

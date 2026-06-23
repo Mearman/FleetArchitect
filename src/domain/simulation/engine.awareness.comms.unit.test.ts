@@ -199,7 +199,7 @@ describe("engine.awareness — ghosts", () => {
         {
           instanceId: "d1",
           designId: "dd1",
-          faction: "test",side: "defender",
+          faction: "Terran",side: "defender",
           stats: statsFor(1, 100),
           position: { x: 150, y: 0 },
           facing: Math.PI,

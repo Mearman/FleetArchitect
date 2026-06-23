@@ -4,9 +4,14 @@ import {
   moduleMass,
 } from "../physics";
 import {
+  ANTIMATTER_REACTOR_OUTPUT_W,
   BEAM_POWER_W,
+  FUSION_REACTOR_OUTPUT_W,
+  MODULE_POWER_DRAW_W,
   MUZZLE_VELOCITY_M_PER_S,
   PROJECTILE_MASS_KG,
+  SHIELD_CAPACITY_J,
+  SHIELD_RECHARGE_W,
   beamDamageJoules,
   kineticDamageJoules,
   projectileSpeedMPerTick,
@@ -58,7 +63,7 @@ export const syntheticModules: ModuleDefinition[] = [
     category: "weapon",
     mass: moduleMass("lightWeapon"),
     cost: 60,
-    powerDraw: 5,
+    powerDraw: MODULE_POWER_DRAW_W.kineticWeapon,
     crewRequired: 0,
     techLevel: 1,
     effect: {
@@ -84,7 +89,7 @@ export const syntheticModules: ModuleDefinition[] = [
     category: "weapon",
     mass: moduleMass("mediumWeapon"),
     cost: 130,
-    powerDraw: 12,
+    powerDraw: MODULE_POWER_DRAW_W.kineticWeapon,
     crewRequired: 0,
     techLevel: 3,
     effect: {
@@ -112,7 +117,8 @@ export const syntheticModules: ModuleDefinition[] = [
     category: "weapon",
     mass: moduleMass("lightWeapon"),
     cost: 65,
-    powerDraw: 8,
+    // A beam's draw IS its delivered optical power.
+    powerDraw: BEAM_POWER_W.pulse,
     crewRequired: 0,
     techLevel: 2,
     effect: {
@@ -138,7 +144,7 @@ export const syntheticModules: ModuleDefinition[] = [
     category: "defence",
     mass: moduleMass("pointDefense"),
     cost: 95,
-    powerDraw: 6,
+    powerDraw: MODULE_POWER_DRAW_W.pointDefense,
     crewRequired: 0,
     techLevel: 2,
     effect: {
@@ -159,13 +165,16 @@ export const syntheticModules: ModuleDefinition[] = [
     category: "defence",
     mass: moduleMass("shield"),
     cost: 75,
-    powerDraw: 7,
+    // A shield's draw IS its recharge wattage, so rebuilding the field competes
+    // with the weapons and drive for reactor output. The Grid Shield is a modest
+    // light-band field.
+    powerDraw: SHIELD_RECHARGE_W.light,
     crewRequired: 0,
     techLevel: 1,
     effect: {
       kind: "shield",
-      capacity: 130,
-      rechargeRate: 1.6,
+      capacity: SHIELD_CAPACITY_J.light,
+      rechargeRate: SHIELD_RECHARGE_W.light,
       rechargeDelay: 60,
     },
   },  // --- Propulsion: efficient, average engines ---
@@ -177,7 +186,7 @@ export const syntheticModules: ModuleDefinition[] = [
     category: "propulsion",
     mass: moduleMass("engine"),
     cost: 38,
-    powerDraw: 4,
+    powerDraw: MODULE_POWER_DRAW_W.drive,
     crewRequired: 0,
     techLevel: 1,
     effect: { kind: "engine", thrust: precisionThrustN },
@@ -194,7 +203,7 @@ export const syntheticModules: ModuleDefinition[] = [
     powerDraw: 0,
     crewRequired: 0,
     techLevel: 2,
-    effect: { kind: "power", output: 58 },
+    effect: { kind: "power", output: FUSION_REACTOR_OUTPUT_W },
     command: true,
   },
   {
@@ -208,7 +217,7 @@ export const syntheticModules: ModuleDefinition[] = [
     powerDraw: 0,
     crewRequired: 0,
     techLevel: 4,
-    effect: { kind: "power", output: 125 },
+    effect: { kind: "power", output: ANTIMATTER_REACTOR_OUTPUT_W },
     command: true,
   },
   {
@@ -219,7 +228,7 @@ export const syntheticModules: ModuleDefinition[] = [
     category: "crew",
     mass: moduleMass("crew"),
     cost: 25,
-    powerDraw: 2,
+    powerDraw: MODULE_POWER_DRAW_W.crew,
     crewRequired: 0,
     techLevel: 1,
     effect: { kind: "crew", capacity: 4 },
@@ -246,7 +255,7 @@ export const syntheticModules: ModuleDefinition[] = [
     category: "system",
     mass: moduleMass("sensor"),
     cost: 90,
-    powerDraw: 6,
+    powerDraw: MODULE_POWER_DRAW_W.sensor,
     crewRequired: 0,
     techLevel: 2,
     effect: {
@@ -271,7 +280,8 @@ export const syntheticModules: ModuleDefinition[] = [
     category: "system",
     mass: moduleMass("sensor"),
     cost: 75,
-    powerDraw: 5,
+    // An ECCM suite draws sensor-class electronics power.
+    powerDraw: MODULE_POWER_DRAW_W.sensor,
     crewRequired: 0,
     techLevel: 2,
     effect: {
@@ -287,7 +297,9 @@ export const syntheticModules: ModuleDefinition[] = [
     category: "system",
     mass: moduleMass("shield"),
     cost: 110,
-    powerDraw: 8,
+    // A coordination node shares targeting solutions over the fleet datalink, so
+    // it draws comms-class link electronics power.
+    powerDraw: MODULE_POWER_DRAW_W.comms,
     crewRequired: 0,
     techLevel: 3,
     effect: {
@@ -305,7 +317,9 @@ export const syntheticModules: ModuleDefinition[] = [
     category: "weapon",
     mass: moduleMass("heavyWeapon"),
     cost: 150,
-    powerDraw: 10,
+    // A drone hangar draws its fabrication and launch-handling load, like an
+    // ordnance launcher.
+    powerDraw: MODULE_POWER_DRAW_W.ordnanceWeapon,
     crewRequired: 0,
     techLevel: 3,
     effect: {
@@ -326,7 +340,8 @@ export const syntheticModules: ModuleDefinition[] = [
     category: "defence",
     mass: moduleMass("pointDefense"),
     cost: 90,
-    powerDraw: 6,
+    // A decoy projector draws sensor-class electronics power.
+    powerDraw: MODULE_POWER_DRAW_W.sensor,
     crewRequired: 0,
     techLevel: 2,
     effect: {

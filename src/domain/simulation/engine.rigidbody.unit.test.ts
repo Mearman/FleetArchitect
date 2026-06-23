@@ -139,7 +139,7 @@ function modularShip(
   return {
     instanceId: id,
     designId: `d-${id}`,
-    faction: "test",
+    faction: "Terran",
     side,
     stats: stats({
       thrust: modules
@@ -485,7 +485,7 @@ describe("engine.rigidbody — break-apart chunks", () => {
     const attacker: CombatShip = {
       instanceId: "a1",
       designId: "d-a1",
-      faction: "test",
+      faction: "Terran",
       side: "attacker",
       stats: stats({
         weapons: [
@@ -519,7 +519,7 @@ describe("engine.rigidbody — break-apart chunks", () => {
     const defender: CombatShip = {
       instanceId: "d1",
       designId: "d-d1",
-      faction: "test",
+      faction: "Terran",
       side: "defender",
       stats: stats({ structure: 5000 }),
       position: { x: 80, y: 0 },

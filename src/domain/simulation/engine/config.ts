@@ -39,6 +39,7 @@
  */
 
 import { CELL_SIZE } from "@/domain/grid";
+import { LOCAL_CHARGE_BUFFER_J } from "@/data/catalog/combat-scale";
 import { BLACK_HOLE_TIDAL_RADIUS_M } from "@/domain/black-hole";
 import {
   BLACK_HOLE_GM_ARENA,
@@ -435,22 +436,22 @@ export const SIM = {
    */
   ammoRunAmount: 60,
   /**
-   * Charge packets a crew member carries per power-run from a reactor to a
-   * starved module. Each packet refills the sink module's local charge buffer
-   * by this much (capped at the buffer ceiling).
-   *
-   * Classification: authored catalogue content (a crew carrying-capacity
-   * figure).
+   * Energy (joules) a crew member carries per power-run to a starved module —
+   * half the local buffer ceiling, so a run is a meaningful top-up.
+   * Classification: derived-by-formula (`LOCAL_CHARGE_BUFFER_J / 2`).
    */
-  powerRunAmount: 60,
+  powerRunAmount: LOCAL_CHARGE_BUFFER_J / 2,
   /**
-   * Ceiling on a powered module's local charge buffer. Crew top it up from a
-   * reactor; the module spends `powerDraw` from it each tick it operates. A
-   * module whose buffer hits zero goes idle until a crew power-run refills it.
-   *
-   * Classification: unit-spec-rate-epsilon (a module-buffer spec ceiling).
+   * Capacity (joules) of a powered module's local charge buffer — a per-module
+   * capacitor. Crew (or passive wiring) refill it; the module spends `powerDraw
+   * × dt` joules per operating tick (`crew.ts`). DERIVED from the heaviest module
+   * draw over the capacitor reserve (`LOCAL_CHARGE_BUFFER_J`, `combat-scale.ts`),
+   * so the buffer holds a tick of any weapon's draw and a wired weapon can fire —
+   * the unit-coherent replacement for the old abstract `120`-unit ceiling, which
+   * at watt-scale `powerDraw` drained below zero in one tick, disabling every gun.
+   * Classification: derived-by-formula (`LOCAL_CHARGE_BUFFER_J`).
    */
-  chargeBufferMax: 120,
+  chargeBufferMax: LOCAL_CHARGE_BUFFER_J,
   /**
    * Passive wiring reach, in cells of walkable path distance from a reactor.
    * A power-drawing module within this many alive cells of an alive reactor is

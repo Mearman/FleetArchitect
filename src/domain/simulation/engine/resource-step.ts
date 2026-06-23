@@ -48,6 +48,8 @@
  * to the module count rather than the rectangular footprint.
  */
 
+import { reactorWasteHeatWatts } from "@/data/catalog/combat-scale";
+import { specificHeat } from "@/data/catalog/physics";
 import {
   CABIN_TEMPERATURE_K,
   CREW_VACUUM_LETHAL_TIME_S,
@@ -184,7 +186,17 @@ export function makeResourceState(ship: SimShip): ResourceState | undefined {
   const capacityJoules = reactorWatts * POWER_BUFFER_RESERVE_S;
   const powerBuffer: EnergyBuffer = { energy: capacityJoules, capacityJoules };
 
-  return { moduleIndex, thermal, propellant, atmosphere, powerBuffer };
+  // Per-cell heat capacity (J/K): cell mass × the faction material's specific
+  // heat. Fixed for the battle (a cell's mass never changes and the index map is
+  // stable), so it is built once here and reused every tick by the thermal step.
+  const cellSpecificHeat = specificHeat(ship.faction);
+  const heatCapacity = new Map<number, number>();
+  for (const m of sorted) {
+    const i = moduleIndex.get(cellKey(m.col, m.row));
+    if (i !== undefined) heatCapacity.set(i, m.mass * cellSpecificHeat);
+  }
+
+  return { moduleIndex, thermal, propellant, atmosphere, powerBuffer, heatCapacity };
 }
 
 /** Build (or return the cached) sparse transport graph for the ship's alive
@@ -357,18 +369,34 @@ export function resourceStep(ship: SimShip): void {
   }
 
   // --- Thermal substance ---
-  // Heat sources: alive reactors inject their output as waste heat.
+  // Heat sources: alive reactors inject their WASTE heat — not their electrical
+  // output. A reactor producing `output` watts of usable electricity at
+  // efficiency η rejects `output × (1/η − 1)` watts as heat into the hull
+  // (`reactorWasteHeatWatts`); the electrical output itself is the grid supply,
+  // not heat. Injecting the full output (the previous behaviour) overstated the
+  // heat by `1/(1/η − 1)` ≈ 5.7× and, at gigawatt outputs, drove every reactor
+  // cell over the overheat threshold on the first tick.
   const thermalSources = new Map<number, number>();
   for (const m of ship.modules) {
     if (!m.alive || m.effect.kind !== "power") continue;
     const i = idx(m);
-    if (i !== undefined) thermalSources.set(i, m.effect.output);
+    if (i !== undefined) thermalSources.set(i, reactorWasteHeatWatts(m.effect.output));
   }
+  // Per-cell heat capacity (J/K): cell mass × the faction material's specific
+  // heat. Built once in `makeResourceState` and cached on the state (a cell's
+  // mass and the index map are fixed for the battle), so the thermal step reuses
+  // it rather than rebuilding an n-entry map per ship per tick. The thermal
+  // field divides each watt source and watt radiative flux by this to convert
+  // power into the kelvin-per-second rate the temperature field integrates. A
+  // heavy reactor cell (its installed mass dominates) gets a large heat capacity,
+  // so even a gigawatt waste-heat source heats it by only tens of kelvin per
+  // second — the term that tames the transient.
+  //
   // Radiator cells: every perimeter cell of the bounding rectangle is a
   // radiator surface (v1 simplification). Use the pre-built set from the
   // cached graph to avoid O(n) Set construction on every tick.
   const thermalField: TransportField = {
-    substance: makeThermalSubstance(thermalSources, graph.boundaryCellSet),
+    substance: makeThermalSubstance(thermalSources, graph.boundaryCellSet, state.heatCapacity),
     faces: graph.faces,
     facesFrom: graph.facesFrom,
     boundaryCells: graph.boundaryCells,

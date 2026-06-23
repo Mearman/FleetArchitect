@@ -10,7 +10,7 @@ import { mulberry32 } from "@/domain/simulation/rng";
 import { computeOccluders } from "@/domain/occluders";
 import type { BattleFrame, BattleResult, ShipDescriptor } from "@/schema/battle";
 import type { BattleInputs, BattleSummary } from "../types";
-import { STALEMATE_IDLE_TICKS } from "../types";
+import { STALEMATE_IDLE_TICKS, TICKS_PER_SECOND } from "../types";
 import { createStalemateWatch, tickStalemateWatch } from "./stalemate";
 import type { StalemateWatch } from "./stalemate";
 
@@ -644,10 +644,11 @@ export function* simulateBattle(
           SIM.adaptiveShieldMaxMultiple,
           1 + ship.shieldAdaptiveRamp * ship.shieldUntouchedTicks,
         );
-        ship.shield = Math.min(
-          ship.maxShield,
-          ship.shield + ship.shieldRechargeRate * rampMultiple * regenFactor * ship.dilationFactor,
-        );
+        // `shieldRechargeRate` is watts; /TICKS_PER_SECOND gives joules-per-tick
+        // (else it regens TPS× too fast). The ramp multiple stays unitless.
+        const rechargeJoulesThisTick =
+          (ship.shieldRechargeRate / TICKS_PER_SECOND) * rampMultiple * regenFactor * ship.dilationFactor;
+        ship.shield = Math.min(ship.maxShield, ship.shield + rechargeJoulesThisTick);
       }
     }
 

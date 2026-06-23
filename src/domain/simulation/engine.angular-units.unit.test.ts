@@ -130,7 +130,7 @@ function reactionWheelShip(
   return {
     instanceId: id,
     designId: "d-",
-    faction: "test",
+    faction: "Terran",
     side,
     stats: shipStats({}),
     position: pos,

@@ -269,7 +269,7 @@ describe("engine.awareness — faithful fog (no omniscience)", () => {
     return {
       instanceId: id,
       designId: `d-`,
-      faction: "test",
+      faction: "Terran",
       side,
       stats,
       position: { x, y: 0 },

@@ -106,7 +106,7 @@ function combatShip(
   return {
     instanceId: id,
     designId: `d-${id}`,
-    faction: "test",
+    faction: "Terran",
     side,
     stats: stats(),
     position: { x: 0, y: 0 },
@@ -518,7 +518,7 @@ describe("engine.damage — determinism", () => {
     const attacker: CombatShip = {
       instanceId: "atk",
       designId: "d-atk",
-      faction: "test",
+      faction: "Terran",
       side: "attacker",
       stats: stats({ structure: 99_999, weapons: [{ slotId: "s", effect: beam }] }),
       position: { x: 0, y: 0 },

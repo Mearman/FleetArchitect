@@ -63,7 +63,7 @@ describe("engine.factions-tech – blink (tactical)", () => {
     return {
       instanceId: "attacker",
       designId: "d-attacker",
-      faction: "test",
+      faction: "Terran",
       side: "attacker",
       // stats.thrust = hull base + engine thrust. Engine = 0.8, hull base = 0.
       stats: baseStats({ thrust: 0.8, turnRate: 0.15, weapons: [{ slotId: "w1", effect: beam({ damage: 5, range: 400 }) }] }),
@@ -82,7 +82,7 @@ describe("engine.factions-tech – blink (tactical)", () => {
     return {
       instanceId: "defender",
       designId: "d-defender",
-      faction: "test",
+      faction: "Terran",
       side: "defender",
       stats: baseStats({ structure: 99999, weapons: [] }),
       position: { x: 500, y: 0 },
@@ -136,7 +136,7 @@ describe("engine.factions-tech – blink (escape)", () => {
     return {
       instanceId: "pursuer",
       designId: "d-pursuer",
-      faction: "test",
+      faction: "Terran",
       side: "defender",
       stats: baseStats({ structure: 99999, weapons: [{ slotId: "w1", effect: beam({ damage: 1 }) }] }),
       position: { x: 100, y: 0 },
@@ -177,7 +177,7 @@ describe("engine.factions-tech – blink (escape)", () => {
     const alwaysEscaper: CombatShip = {
       instanceId: "escaper",
       designId: "d-escaper",
-      faction: "test",
+      faction: "Terran",
       side: "attacker",
       stats: baseStats({ structure: 100, thrust: 0.5, turnRate: 0.1, weapons: [] }),
       position: { x: 0, y: 0 },
@@ -223,7 +223,7 @@ describe("engine.factions-tech – blink (escape)", () => {
     const healthyShip: CombatShip = {
       instanceId: "escaper",
       designId: "d-escaper",
-      faction: "test",
+      faction: "Terran",
       side: "attacker",
       stats: baseStats({ structure: 200, thrust: 0.5, turnRate: 0.1, weapons: [] }),
       position: { x: 0, y: 0 },
@@ -288,7 +288,7 @@ describe("engine.factions-tech – afterburner", () => {
     return {
       instanceId: "attacker",
       designId: "d-attacker",
-      faction: "test",
+      faction: "Terran",
       side: "attacker",
       // hull thrust reflects the engine: stats.thrust = hull base + engine.thrust.
       // hullBaseThrust = stats.thrust − sum(engine thrust) in toSimShip.
@@ -309,7 +309,7 @@ describe("engine.factions-tech – afterburner", () => {
     return {
       instanceId: "defender",
       designId: "d-defender",
-      faction: "test",
+      faction: "Terran",
       side: "defender",
       stats: baseStats({ structure: 99999, weapons: [] }),
       position: { x: 600, y: 0 },

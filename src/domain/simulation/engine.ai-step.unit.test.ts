@@ -8,7 +8,7 @@ import type { SimShip } from "./engine/types";
 function ship(over: Partial<SimShip> & { instanceId: string; side: "attacker" | "defender" }): SimShip {
   return {
     instanceId: over.instanceId,
-    faction: "test",
+    faction: "Terran",
     side: over.side,
     classification: "frigate",
     x: 0,

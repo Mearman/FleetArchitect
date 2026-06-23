@@ -6,6 +6,7 @@
 import type { SimCrew } from "../types";
 
 import { SIM } from "./config";
+import { TICK_DURATION_SECONDS } from "./power";
 import { crewTaskOrder, type CrewTaskKind } from "./crew-priority";
 import { ammoShortfall, chargeShortfall, chooseAmmoRun, choosePowerRun, hasLiveManningHardwire, reactorWiringReach, refillHardwiredPower, resolveAmmoArrival, resolvePowerArrival } from "./crew-haul";
 import { aliveCellMap, compareByCell, crewCellKey, findCrewPath, refreshPathCache } from "./crew-pathfinding";
@@ -238,11 +239,15 @@ export function rechargeAndConsume(ship: SimShip): void {
   //     power hardwires (`hardwireSinks` omitted), keeping them byte-identical.
   refillHardwiredPower(ship);
 
-  // 2. Spend a tick of charge from operating modules.
+  // 2. Spend a tick of charge from operating modules. `charge` is a joule
+  //    buffer and `powerDraw` is watts, so one tick draws `powerDraw × dt`
+  //    joules (the watts → joules-per-tick boundary), not the raw wattage —
+  //    spending the wattage directly would drain a real-watt buffer ~30× too
+  //    fast.
   for (const m of ship.modules) {
     if (m.powerDraw <= 0) continue;
     if (!m.alive || !m.powered || !m.manned || m.charge <= 0) continue;
-    m.charge = Math.max(0, m.charge - m.powerDraw);
+    m.charge = Math.max(0, m.charge - m.powerDraw * TICK_DURATION_SECONDS);
   }
 }
 

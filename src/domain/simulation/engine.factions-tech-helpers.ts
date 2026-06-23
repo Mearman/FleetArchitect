@@ -396,7 +396,7 @@ export function modularShip(opts: {
   return {
     instanceId: opts.id,
     designId: `design-${opts.id}`,
-    faction: "test",
+    faction: "Terran",
     side: opts.side,
     stats,
     position: { x: opts.x, y: opts.y },
@@ -529,7 +529,7 @@ export function targetDummy(opts: {
   return {
     instanceId: opts.id,
     designId: `design-${opts.id}`,
-    faction: "test",
+    faction: "Terran",
     side: opts.side,
     stats,
     position: { x: opts.x, y: opts.y },

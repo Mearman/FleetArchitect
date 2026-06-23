@@ -76,7 +76,10 @@ function shipWith(over: Partial<SimShip> = {}): SimShip {
   ];
   return {
     instanceId: "s1",
-    faction: "test",
+    // A real faction: the thermal field looks up the faction's material specific
+    // heat to size each cell's heat capacity, and the accessor throws on an
+    // unknown faction, so the test ship carries a catalogued faction.
+    faction: "Terran",
     side: "attacker",
     classification: "frigate",
     x: 0,

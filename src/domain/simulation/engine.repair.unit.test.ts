@@ -112,7 +112,7 @@ function hammerShip(id: string, x: number): CombatShip {
   return {
     instanceId: id,
     designId: `d-${id}`,
-    faction: "test",
+    faction: "Terran",
     side: "attacker",
     stats,
     position: { x, y: 0 },
@@ -171,7 +171,7 @@ function modularDefender(id: string, x: number, repairRate: number): CombatShip 
   return {
     instanceId: id,
     designId: `d-${id}`,
-    faction: "test",
+    faction: "Terran",
     side: "defender",
     stats,
     position: { x, y: 0 },
