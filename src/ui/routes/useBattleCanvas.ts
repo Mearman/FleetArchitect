@@ -21,6 +21,9 @@ import {
   PROJECTILE_COLOUR,
   SIDE_COLOUR,
 } from "./battleConstants";
+import { appearanceOf } from "@/ui/render/moduleAppearance";
+import { glyphPath2D } from "@/ui/render/moduleGlyphs";
+import { drawIsoShipCells } from "./isoShipCells";
 import { OVERLAYS, OVER_SHIP_IDS, UNDER_SHIP_IDS } from "./overlays";
 import type { OverlayScope } from "./overlays";
 import { SPRITE_PX_PER_WORLD, rasteriseShipSprite, spriteKey } from "./shipSprite";
@@ -271,7 +274,22 @@ export function useBattleCanvas({
             return { isStarved: starvedAmmo || starvedCharge || unmanned };
           };
 
-          if (floored) {
+          const isoExtruded = !floored && t.projection.mode === "isometric";
+
+          if (isoExtruded) {
+            // Isometric 2.5D: draw each cell as an extruded box (lit top, shaded
+            // sides, glyph on top) with per-kind height, so components read as
+            // 3-D parts. Drawn live in screen space (the projection has no
+            // z-axis), painter-sorted inside the helper.
+            drawIsoShipCells(
+              ctx,
+              t,
+              { x: s.x, y: s.y, facing: s.facing },
+              cells,
+              base,
+              (m) => cellState(m).isStarved,
+            );
+          } else if (floored) {
             // Distant-zoom fallback: the cells are below the legibility floor,
             // so the matrix path would collapse them to sub-pixel specks. Each
             // cell is instead projected from its world centre (ship pose plus
@@ -509,6 +527,23 @@ export function useBattleCanvas({
                   ly + Math.sin(m.turretAngle) * CELL_SIZE,
                 );
                 ctx.stroke();
+              }
+
+              // Glyph: engrave the module's mark on the cell, in local units so
+              // the composed matrix scales it with the hull. Only on alive cells
+              // big enough on screen to read it.
+              if (m.alive && CELL_SIZE * scale > 12) {
+                ctx.save();
+                ctx.translate(lx, ly);
+                ctx.scale(CELL_SIZE, CELL_SIZE);
+                ctx.globalAlpha = 0.78;
+                ctx.strokeStyle = "rgba(8, 10, 8, 1)";
+                ctx.lineWidth = 0.08;
+                ctx.lineJoin = "round";
+                ctx.lineCap = "round";
+                ctx.stroke(glyphPath2D(appearanceOf(m.kind).glyph));
+                ctx.restore();
+                ctx.globalAlpha = 1;
               }
             }
 
