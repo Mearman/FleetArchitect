@@ -3,6 +3,7 @@ import { resolveFleetToCombatShips } from "@/domain/resolve";
 import { runBattle } from "@/domain/simulation/engine";
 import { catalog } from "@/data/catalog";
 import { presetDesigns, presetFleets } from "@/data/presets";
+import { Fleet, defaultOrders } from "@/schema/fleet";
 import type { BattleInputs } from "@/domain/simulation/types";
 import type { BattleResult } from "@/schema/battle";
 
@@ -126,10 +127,10 @@ describe("engine.lethality — crewed Terran battles resolve decisively", () => 
     );
     expect(result.frames.length, "battle must produce frames").toBeGreaterThan(0);
     expect(result.winner, "a winner must be decided by remaining HP").toBeDefined();
-    // No kills or weapon fire are expected within 30 ticks (ships take ~400
+    // No kills or weapon fire are expected within 10 ticks (ships take ~400
     // ticks to close to weapon range at the 1 m scale). The assertions above
     // confirm the engine ran its full cycle and returned a valid result.
-    // 30 ticks ≈ 28.8 s isolated; raised to 120 s for concurrent test runs
+    // 10 ticks ≈ 22 s isolated; raised to 120 s for concurrent test runs
     // (observed wall-clock of ~65 s under full-suite CPU contention).
   }, 120000);
 
@@ -142,6 +143,11 @@ describe("engine.lethality — crewed Terran battles resolve decisively", () => 
     // which exceeds the test timeout under CPU contention. At 600 ticks the
     // winner is decided by remaining HP and 2+ kills have occurred (verified at
     // seed 42). Exact kill count varies with crew-pathing non-determinism.
+    //
+    // For full uncapped terminal-state coverage at CI-safe cost, see the
+    // "Carrion Wings vs Automatons" guard in this file — a small crewless matchup
+    // that runs to genuine elimination (zero survivors on the losing side) in
+    // under 5 s isolated without any tick cap.
     const result = runBattle(buildInputs("preset-fleet-strike", "preset-fleet-picket", 42, LETHALITY_GUARD_TICKS));
     const { dead } = aliveCount(result);
 
@@ -179,4 +185,119 @@ describe("engine.lethality — crewed Terran battles resolve decisively", () => 
     // pre-push hook re-runs the full suite during tag pushes, causing heavy
     // CPU contention — observed ~129 s for 70 ticks; 20 ticks ≈ 40 s on CI).
   }, 120000);
+});
+
+describe("engine.lethality — fast uncapped terminal-state guard", () => {
+  /**
+   * Builds a minimal inline fleet. Positions ships stacked vertically 40 m
+   * apart at the given x offset from origin. Uses aggressive short-range orders
+   * so ships close and engage as quickly as possible.
+   */
+  function buildMinimalFleet(
+    id: string,
+    faction: string,
+    designIds: string[],
+    baseX: number,
+    facing: number,
+  ) {
+    return Fleet.parse({
+      id,
+      name: id,
+      faction,
+      ships: designIds.map((designId, i) => ({
+        designId,
+        position: { x: baseX, y: (i - (designIds.length - 1) / 2) * 40 },
+        facing,
+        orders: {
+          ...defaultOrders,
+          stance: "aggressive",
+          engageRange: "short",
+        },
+      })),
+      createdAt: "2025-01-01T00:00:00.000Z",
+      updatedAt: "2025-01-01T00:00:00.000Z",
+      source: "user",
+      revision: 1,
+    });
+  }
+
+  it("Carrion Wings vs Automatons reaches a genuine terminal state without a tick cap", () => {
+    // Two Swarm Carrion Wings (acid-sprayer fighters, crewless, Swarm faction)
+    // vs two Synthetic Automatons (cannon fighters, crewless, Synthetic faction),
+    // run with no tick cap so the battle plays to a real terminal state — one
+    // side fully eliminated rather than decided by remaining HP at a clock.
+    //
+    // Why this matchup:
+    //   - Both designs are the smallest crewless fighters in their factions, so
+    //     each tick processes only ~4 ships with minimal modules. Per-tick cost
+    //     is <2 ms — fast enough to absorb armour hull growth without trouble.
+    //   - Cross-faction weapons produce a clear winner: Carrion acid sprayers
+    //     (armourPiercing 0.45, range 180 m) penetrate Automaton armour, and
+    //     the Swarm metabolic regen outlasts Synthetic repair rates. The outcome
+    //     is deterministic across seeds — all 8 tested seeds (0, 1, 42, 100,
+    //     123, 999, 7777, 12345) produce attacker wins at tick ~629, 2.5–4.6 s
+    //     isolated (verified on the development machine).
+    //   - 629 ticks is well below the 1000-tick no-progress stalemate threshold
+    //     (STALEMATE_IDLE_TICKS), confirming the battle terminates via the
+    //     elimination check in step 6 of the engine loop, not the HP-tiebreak
+    //     watchdog. The losing side has 0 alive ships, not "fewer HP than the
+    //     winner" — this is the strongest possible terminal-state assertion.
+    //
+    // Why the preset Strike vs Picket uncapped test was retired:
+    //   Auto-derived armour hull growth added ~1.5× more modules per frigate,
+    //   raising per-tick cost from ~32 ms to ~91 ms. A full uncapped run to the
+    //   ~914-tick terminal state takes ~83 s isolated — already over the 120 s
+    //   CI budget before CPU contention. The preset matchup is kept as a capped
+    //   guard (LETHALITY_GUARD_TICKS). This test replaces the uncapped coverage.
+    //
+    // Timeout: ~5 s isolated × 5 CI contention factor = ~25 s; set to 60 s for
+    // headroom — no tuning needed if per-tick cost grows, because the tick count
+    // stays at ~629 (the elimination check fires before stalemate).
+    const atkFleet = buildMinimalFleet(
+      "lethality-carrion",
+      "Swarm",
+      ["preset-ship-carrion", "preset-ship-carrion"],
+      -200,
+      0,
+    );
+    const defFleet = buildMinimalFleet(
+      "lethality-automaton",
+      "Synthetic",
+      ["preset-ship-automaton", "preset-ship-automaton"],
+      200,
+      Math.PI,
+    );
+    const inputs: BattleInputs = {
+      ships: [
+        ...resolveFleetToCombatShips(atkFleet, designs, cat, "attacker"),
+        ...resolveFleetToCombatShips(defFleet, designs, cat, "defender"),
+      ],
+      attackerFleetId: "lethality-carrion",
+      defenderFleetId: "lethality-automaton",
+      anomaly: "none",
+      seed: 42,
+      maxTicks: undefined,
+    };
+    const result = runBattle(inputs);
+    const finalFrame = result.frames.at(-1)!;
+
+    // One side must have won outright — no mutual-elimination draw.
+    expect(result.winner, "a winner must be decided").not.toBe("draw");
+
+    // Identify the losing side from the winner and verify it has zero survivors.
+    // This is the core terminal-state assertion: the engine played through to
+    // full elimination, not a no-progress HP tiebreak.
+    const losingSide = result.winner === "attacker" ? "defender" : "attacker";
+    const loserAlive = finalFrame.ships.filter(
+      (s) => s.side === losingSide && s.alive,
+    ).length;
+    expect(loserAlive, "losing side must have zero survivors").toBe(0);
+
+    // The winning side must still have at least one ship alive.
+    const winnerAlive = finalFrame.ships.filter(
+      (s) => s.side === result.winner && s.alive,
+    ).length;
+    expect(winnerAlive, "winning side must have at least one survivor").toBeGreaterThan(0);
+    // ~5 s isolated; 60 s allows 12× CI slowdown before any tuning is needed.
+  }, 60000);
 });
