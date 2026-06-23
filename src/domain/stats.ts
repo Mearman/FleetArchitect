@@ -5,6 +5,7 @@ import {
   occupiedCount,
   reachableFrom,
 } from "@/domain/grid";
+import { growArmourHull, padGrid } from "@/domain/hull-armour";
 import { computeCompartments } from "@/domain/interior";
 import type { LayerMaterial } from "@/schema/armor";
 import type { GridCell, HardwireResource } from "@/schema/grid";
@@ -271,7 +272,12 @@ export function analyseShipDesign(
   design: ShipDesign,
   catalog: Catalog,
 ): ShipDesignAnalysis {
-  const grid = design.grid;
+  // Auto-derive the armour hull: pad by 1 so a footprint flush to the border
+  // gains room to grow, then plate the exterior neighbours of every plating
+  // cell with fresh armour. The grown grid is ephemeral — never persisted —
+  // so mass, HP, and compartment counts all reflect the armoured hull without
+  // changing the saved design.
+  const grid = growArmourHull(padGrid(design.grid, 1));
   const faults: DesignFault[] = [];
   const cellCount = occupiedCount(grid);
   const stats = emptyStats();

@@ -26,6 +26,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { computeCompartments } from "@/domain/interior";
 import { analyseShipDesign } from "@/domain/stats";
+import { growArmourHull } from "@/domain/hull-armour";
 import { createId, nowIso } from "@/domain/id";
 import { catalog } from "@/data/catalog";
 import { cellAt } from "@/domain/grid";
@@ -185,6 +186,11 @@ export function ShipDesignerRoute() {
   /** Whether the working design is read-only (a preset). Copy is the only way
    *  to make changes to a preset. */
   const readOnly = working.source === "preset";
+
+  // Display grid: armour grown in-place (no padding, same coordinate space as
+  // working.grid) so GridBoard shows the auto-derived armour ring. Painting and
+  // saving still target `working.grid` directly — the armour is never persisted.
+  const displayGrid = useMemo(() => growArmourHull(working.grid), [working.grid]);
 
   const analysis = useMemo(() => {
     const design: ShipDesign = {
@@ -426,7 +432,7 @@ export function ShipDesignerRoute() {
   // The grid auto-sizes to cover the viewport at the zoomed cell pitch (see the
   // fit effect above), so the inner wrapper is exactly the grid's pixel width.
   // `boardTx`/`boardTy` (from usePinchZoom) centre the content and apply the pan.
-  const innerWidthPx = grid.cols * cellPx;
+  const innerWidthPx = displayGrid.cols * cellPx;
 
   // Delete action rendered per-card in the ShipBrowser (user designs only).
   function renderDeleteAction(design: ShipDesign) {
@@ -617,7 +623,7 @@ export function ShipDesignerRoute() {
               style={{ width: innerWidthPx, transform: `translate(${boardTx}px, ${boardTy}px)` }}
             >
               <GridBoard
-                grid={grid}
+                grid={displayGrid}
                 selected={selected}
                 breached={breached}
                 showAirtightness={showAirtightness}

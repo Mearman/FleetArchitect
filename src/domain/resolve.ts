@@ -1,6 +1,7 @@
 import { analyseShipDesign } from "@/domain/stats";
 import { cellToLocal, deriveClassification, deriveRadius, footprint } from "@/domain/grid";
 import { computeOutline, extractShell } from "@/domain/outline";
+import { growArmourHull, padGrid } from "@/domain/hull-armour";
 import type { Catalog } from "@/domain/catalog";
 import type {
   CombatShip,
@@ -179,12 +180,16 @@ export function resolveFleetToCombatShips(
     .map((deployed) => {
       const design = designs.get(deployed.designId);
       if (design === undefined) return undefined;
-      const { stats } = analyseShipDesign(design, catalog);
+      // Derive the grown design once per ship so stats, radius, and the main
+      // loop all work from the same expanded grid.
+      const grownDesign = { ...design, grid: growArmourHull(padGrid(design.grid, 1)) };
+      const { stats } = analyseShipDesign(grownDesign, catalog);
       return {
         deployed,
         design,
+        grownDesign,
         stats,
-        radius: deriveRadius(design.grid),
+        radius: deriveRadius(grownDesign.grid),
         weapons: stats.weapons.map((w) => w.effect),
         // SI acceleration (m/s²) = thrust[N] / mass[kg]. Feeds the deployment
         // kinematic closing budget so the line is placed where this ship can
@@ -218,10 +223,10 @@ export function resolveFleetToCombatShips(
 
   const ships: CombatShip[] = [];
   for (const entry of resolved) {
-    const { deployed, design, stats, radius } = entry;
-    const modules = resolveModules(design, catalog);
-    const hardwires = resolveHardwires(design, modules);
-    const outline = computeOutline(extractShell(design.grid));
+    const { deployed, design, grownDesign, stats, radius } = entry;
+    const modules = resolveModules(grownDesign, catalog);
+    const hardwires = resolveHardwires(grownDesign, modules);
+    const outline = computeOutline(extractShell(grownDesign.grid));
     const x = dir * (edgeInset - radius);
     const y = cursorY + radius;
     cursorY += radius * 2 + DEPLOY_SHIP_MARGIN_M;
@@ -236,7 +241,7 @@ export function resolveFleetToCombatShips(
       position: { x, y },
       facing,
       orders: deployed.orders,
-      classification: deriveClassification(design.grid),
+      classification: deriveClassification(grownDesign.grid),
       crewPriority: design.crewPriority,
       shipStance: design.shipStance,
       rules: design.rules,

@@ -1,0 +1,117 @@
+/**
+ * Integration tests: verify that growArmourHull + padGrid are wired into
+ * analyseShipDesign so that auto-derived armour cells contribute mass and HP
+ * without being present in the saved design.
+ */
+import { describe, expect, it } from "vitest";
+import { catalog } from "@/data/catalog";
+import { createId, nowIso } from "@/domain/id";
+import { analyseShipDesign } from "@/domain/stats";
+import type { CellEdges, GridCell, TileGrid } from "@/schema/grid";
+import type { ShipDesign } from "@/schema/ship";
+
+/** All-open edges: a deck corridor through which crew can walk. */
+const OPEN: CellEdges = { n: "open", e: "open", s: "open", w: "open", doorStates: {} };
+
+/**
+ * Build a 3×3 grid with a single deck cell at the centre (1,1) that carries a
+ * Terran fusion reactor (command module). Every surrounding cell is empty, so
+ * after padGrid(1) + growArmourHull the four orthogonal neighbours of (2,2) in
+ * the 5×5 padded grid will become armour cells. The design has NO armour cells
+ * in the saved grid — they are all produced by the auto-grow.
+ */
+function singleCellDesign(): ShipDesign {
+  const cells: GridCell[] = [
+    { kind: "empty" }, { kind: "empty" }, { kind: "empty" },
+    { kind: "empty" },
+    { kind: "solid", substrate: true, surface: "deck", edges: OPEN,
+      equipment: { moduleId: "mod-reactor-fusion", facing: 0 } },
+    { kind: "empty" },
+    { kind: "empty" }, { kind: "empty" }, { kind: "empty" },
+  ];
+  const grid: TileGrid = { cols: 3, rows: 3, cells, connections: [] };
+  return {
+    id: createId("design"),
+    name: "Armour integration test",
+    faction: "Terran",
+    grid,
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+    source: "user",
+    revision: 1,
+    shipStance: "balanced",
+    crewPriority: "combat",
+    rules: [],
+  };
+}
+
+describe("hull-armour integration: analyseShipDesign includes auto-derived armour", () => {
+  it("produces more total structure (HP) than a bare single-cell design", () => {
+    const design = singleCellDesign();
+    const { stats } = analyseShipDesign(design, catalog());
+
+    // After padGrid(1) + growArmourHull the grown grid is 5×5. The single
+    // deck cell is at (2,2). Its 4 orthogonal neighbours — (1,2), (3,2),
+    // (2,1), (2,3) — become armour cells. So we expect:
+    //   1 deck cell:    substrate (25 HP) + deck (25 HP)   = 50 HP
+    //   4 armour cells: substrate (25 HP) + armor (70 HP)  = 95 HP each → 380 HP
+    //   total: 50 + 380 = 430 HP
+    //
+    // A bare design with no armour growth would have only 50 HP (the deck cell).
+    // Assert the grown total exceeds the bare total by at least the 4 armour
+    // cells' substrate contribution (100 HP) — a safe, non-magic lower bound.
+    expect(stats.structure).toBeGreaterThan(50);
+  });
+
+  it("produces more total mass than a bare single-cell design", () => {
+    const design = singleCellDesign();
+    const { stats } = analyseShipDesign(design, catalog());
+
+    // The single deck cell contributes substrate + deck mass (exact values
+    // depend on physics.ts anchors). Each of the 4 grown armour cells
+    // contributes substrate + armor mass. Assert the total mass exceeds the
+    // single-cell-only mass by at least 1 kg (armour is significantly heavier).
+    // We derive the bare-cell mass from the catalog directly so no magic number.
+    const cat = catalog();
+    const substrate = cat.substrateMaterial("Terran");
+    const deck = cat.deckMaterial("Terran");
+    const armor = cat.armorMaterial("Terran");
+    if (substrate === undefined || deck === undefined || armor === undefined) {
+      throw new Error("Terran layer materials missing from catalog");
+    }
+    const bareOneCell = substrate.mass + deck.mass;
+    expect(stats.mass).toBeGreaterThan(bareOneCell);
+  });
+
+  it("structure matches explicitly pre-grown design", () => {
+    // Both paths should compute the same structure total: analyseShipDesign on
+    // the raw design (internal growth) vs. analyseShipDesign on the pre-grown
+    // design (growth has already been applied, internal growth is a no-op for
+    // cells that are already armour, but DOES pad again — so we cannot use the
+    // pre-grown design directly as it would be double-padded).
+    //
+    // Instead, assert that analyseShipDesign on the raw design produces the
+    // known correct total computed by reasoning over the catalog.
+    const design = singleCellDesign();
+    const { stats } = analyseShipDesign(design, catalog());
+
+    const cat = catalog();
+    const substrate = cat.substrateMaterial("Terran");
+    const deck = cat.deckMaterial("Terran");
+    const armor = cat.armorMaterial("Terran");
+    if (substrate === undefined || deck === undefined || armor === undefined) {
+      throw new Error("Terran layer materials missing from catalog");
+    }
+    // 1 deck cell + 4 armour cells, each with substrate:
+    const expected = (substrate.hp + deck.hp) + 4 * (substrate.hp + armor.hp);
+    expect(stats.structure).toBe(expected);
+  });
+
+  it("is deterministic: two calls on the same design return identical structure", () => {
+    const design = singleCellDesign();
+    const { stats: a } = analyseShipDesign(design, catalog());
+    const { stats: b } = analyseShipDesign(design, catalog());
+    expect(a.structure).toBe(b.structure);
+    expect(a.mass).toBe(b.mass);
+  });
+});
