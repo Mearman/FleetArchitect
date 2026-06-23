@@ -2,7 +2,7 @@
  * Content-addressed cache key for a deterministic battle.
  *
  * `runBattle` is a pure function of its data determinants: the resolved
- * `CombatShip[]` (which already bakes in every catalogue stat), the anomaly,
+ * `CombatShip[]` (which already bakes in every catalogue stat), the anomaly set,
  * the seed, the effective `maxTicks`, the `SimConfig` snapshot (see
  * `sim-config.ts`), and the integer algorithm version for pure-code changes the
  * data hash cannot observe. The key is a SHA-256 of a canonical JSON encoding of
@@ -85,7 +85,7 @@ function toHex(bytes: Uint8Array): string {
 
 /**
  * Derive the content-addressed cache key for a battle. The key depends ONLY on
- * the simulation determinants: the resolved ships, anomaly, seed, effective
+ * the simulation determinants: the resolved ships, anomaly set, seed, effective
  * `maxTicks` (a missing `maxTicks` is the same battle as an explicit
  * {@link DEFAULT_MAX_TICKS}, so they collapse to one key), the `SimConfig`
  * snapshot, and the algorithm version. Fleet ids and result metadata are
@@ -99,7 +99,7 @@ export async function deriveCacheKey(
 ): Promise<string> {
   const determinants = {
     ships: inputs.ships,
-    anomaly: inputs.anomaly,
+    anomalies: inputs.anomalies,
     seed: inputs.seed,
     maxTicks: inputs.maxTicks ?? DEFAULT_MAX_TICKS,
     sim: simConfig,

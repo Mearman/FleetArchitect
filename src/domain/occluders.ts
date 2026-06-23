@@ -1,12 +1,13 @@
 import { z } from "zod";
-import type { BattleAnomaly } from "@/schema/battle";
+import type { BattleAnomalyKind } from "@/schema/battle";
 import { BLACK_HOLE_SCHWARZSCHILD_RADIUS_M } from "@/domain/black-hole";
+import { hasAnomaly } from "@/domain/anomaly";
 
 /**
  * Pure, deterministic line-of-sight occluder module.
  *
- * Computes the set of solid disc occluders for a given battle anomaly and seed,
- * and tests whether a segment between two points is blocked by any of them.
+ * Computes the set of solid disc occluders for a battle's active anomaly set and
+ * seed, and tests whether a segment between two points is blocked by any of them.
  * No dependency on the simulation engine — the renderer and future awareness
  * logic both import this module safely.
  */
@@ -113,42 +114,49 @@ function ranged(rng: () => number, min: number, max: number): number {
 // ---------------------------------------------------------------------------
 
 /**
- * Compute the list of solid disc occluders for a given anomaly and battle seed.
+ * Compute the list of solid disc occluders for the active anomaly set and battle
+ * seed. Anomalies combine: the result is the union of each active kind's discs
+ * in a fixed canonical order — the black-hole disc first (if present), then the
+ * asteroid-field discs (if present); a nebula contributes no hard occluders.
  *
- * Results are fully deterministic: two calls with the same (anomaly, seed)
+ * The order is fixed (black hole before asteroids) so the emitted
+ * `AwarenessSnapshot.occluders` array — rendered and used for line-of-sight — is
+ * byte-identical for a given anomaly set regardless of how it was selected. The
+ * asteroid RNG sequence is unchanged whether or not a black hole is also active:
+ * the black-hole disc draws no RNG, so asteroid positions are identical to an
+ * asteroid-field-only battle.
+ *
+ * Results are fully deterministic: two calls with the same (anomalies, seed)
  * always return deep-equal arrays. The iteration count and order are fixed,
  * so no floating-point non-determinism can creep in.
- *
- * - "blackHole"    → one disc at the origin with radius BLACK_HOLE_RADIUS.
- * - "asteroidField" → ASTEROID_OCCLUDER_COUNT discs scattered in the field
- *                     rectangle, generated with mulberry32(seed ^ OCCLUDER_SALT).
- * - "none" / "nebula" → empty array (nebula attenuates sensors but has no
- *                        hard occluders).
  */
-export function computeOccluders(anomaly: BattleAnomaly, seed: number): Disc[] {
-  switch (anomaly) {
-    case "blackHole":
-      return [{ x: 0, y: 0, r: BLACK_HOLE_RADIUS }];
+export function computeOccluders(
+  anomalies: readonly BattleAnomalyKind[],
+  seed: number,
+): Disc[] {
+  const discs: Disc[] = [];
 
-    case "asteroidField": {
-      // XOR the seed with the golden-ratio salt so occluder draws are
-      // independent of the main battle RNG sequence.
-      const rng = mulberry32((seed ^ OCCLUDER_SALT) >>> 0);
-      const discs: Disc[] = [];
-      for (let i = 0; i < ASTEROID_OCCLUDER_COUNT; i++) {
-        discs.push({
-          x: ranged(rng, FIELD_X_MIN, FIELD_X_MAX),
-          y: ranged(rng, FIELD_Y_MIN, FIELD_Y_MAX),
-          r: ranged(rng, ASTEROID_MIN_R, ASTEROID_MAX_R),
-        });
-      }
-      return discs;
-    }
-
-    case "none":
-    case "nebula":
-      return [];
+  // Black hole: one disc at the origin sized to the event horizon. Emitted first
+  // so the canonical order is stable.
+  if (hasAnomaly(anomalies, "blackHole")) {
+    discs.push({ x: 0, y: 0, r: BLACK_HOLE_RADIUS });
   }
+
+  // Asteroid field: ASTEROID_OCCLUDER_COUNT discs scattered in the field
+  // rectangle. The seed is XORed with the golden-ratio salt so occluder draws
+  // are independent of the main battle RNG sequence.
+  if (hasAnomaly(anomalies, "asteroidField")) {
+    const rng = mulberry32((seed ^ OCCLUDER_SALT) >>> 0);
+    for (let i = 0; i < ASTEROID_OCCLUDER_COUNT; i++) {
+      discs.push({
+        x: ranged(rng, FIELD_X_MIN, FIELD_X_MAX),
+        y: ranged(rng, FIELD_Y_MIN, FIELD_Y_MAX),
+        r: ranged(rng, ASTEROID_MIN_R, ASTEROID_MAX_R),
+      });
+    }
+  }
+
+  return discs;
 }
 
 /**

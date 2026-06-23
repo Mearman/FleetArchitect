@@ -3,7 +3,7 @@ import type { Orders } from "@/schema/fleet";
 import type { CellEdges, HardwireResource, SurfaceKind } from "@/schema/grid";
 import type { ShipClassification } from "@/schema/armor";
 import type { ModuleEffect } from "@/schema/module";
-import type { BattleAnomaly, BattleSide, ShipDescriptor } from "@/schema/battle";
+import type { BattleAnomalyKind, BattleSide, ShipDescriptor } from "@/schema/battle";
 import type { Vec2 } from "@/schema/primitives";
 import type { CrewPriority, Rule, ShipStance } from "@/schema/ai";
 
@@ -308,7 +308,7 @@ export interface BattleInputs {
   ships: CombatShip[];
   attackerFleetId: string;
   defenderFleetId: string;
-  anomaly: BattleAnomaly;
+  anomalies: BattleAnomalyKind[];
   seed: number;
   /**
    * Optional early-stop tick cap. Omit it for the real game: a battle then runs

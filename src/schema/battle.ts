@@ -24,20 +24,38 @@ export const CrewSnapshot = z.object({
 });
 export type CrewSnapshot = z.infer<typeof CrewSnapshot>;
 
-/** Environmental modifier for a battle (GSB's "spatial anomalies"). */
-export const BattleAnomaly = z.enum([
-  "none",
-  "asteroidField",
-  "nebula",
-  "blackHole",
-]);
-export type BattleAnomaly = z.infer<typeof BattleAnomaly>;
+/**
+ * A kind of spatial anomaly that can be active during a battle (GSB's "spatial
+ * anomalies"). Anomalies are not mutually exclusive — a battle carries a SET of
+ * these ({@link BattleConfig.anomalies}); the empty set means open space.
+ */
+export const BattleAnomalyKind = z.enum(["asteroidField", "nebula", "blackHole"]);
+export type BattleAnomalyKind = z.infer<typeof BattleAnomalyKind>;
+
+/**
+ * Canonicalise an anomaly selection to a sorted, de-duplicated array. Anomalies
+ * are a set — their order is irrelevant to gameplay — so this fixed canonical
+ * form is what lets two equivalent selections share one cache key and produce
+ * byte-identical frames. The cache key canonicalises arrays in their given
+ * order, so the array MUST already be canonical by the time it reaches it; this
+ * transform guarantees that for every parsed value (URL, storage).
+ */
+export function normaliseAnomalies(
+  anomalies: readonly BattleAnomalyKind[],
+): BattleAnomalyKind[] {
+  return [...new Set(anomalies)].sort();
+}
 
 /** The inputs to a battle. The seed makes the outcome deterministic. */
 export const BattleConfig = z.object({
   attackerFleetId: EntityId,
   defenderFleetId: EntityId,
-  anomaly: BattleAnomaly,
+  /**
+   * The set of spatial anomalies active in this battle (combinable; an empty
+   * array is open space). Normalised on parse to a canonical sorted, de-duplicated
+   * array so the simulation determinants are order-independent.
+   */
+  anomalies: z.array(BattleAnomalyKind).transform(normaliseAnomalies),
   seed: z.number().int(),
 });
 export type BattleConfig = z.infer<typeof BattleConfig>;
