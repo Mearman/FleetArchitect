@@ -2,7 +2,7 @@ import type { CellEdges } from "@/schema/grid";
 import { describe, expect, it } from "vitest";
 import { CELL_SIZE } from "@/domain/grid";
 import { runBattle } from "@/domain/simulation/engine";
-import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
+import { ACCEL_PER_TICK_FROM_SI, DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleAnomaly } from "@/schema/battle";
 import type { CombatShip, BattleInputs, ResolvedModule } from "@/domain/simulation/types";
 import { defaultOrders } from "@/schema/fleet";
@@ -149,7 +149,9 @@ function attacker(opts: {
     moduleOf(`${opts.id}-eng`, { kind: "engine", thrust: 0.5, facing: Math.PI }, -1, 0),
     // RCS at the origin so the attacker has commandable turn authority under
     // the torque-driven attitude model (replaces the removed engine `turnRate`).
-    moduleOf(`${opts.id}-rcs`, { kind: "rcs", torque: 0.5 }, 0, 0),
+    // SI torque: the integrator rescales torque/I into the per-tick clock via
+    // ACCEL_PER_TICK_FROM_SI, so the bare per-tick authority is divided by it.
+    moduleOf(`${opts.id}-rcs`, { kind: "rcs", torque: 0.5 / ACCEL_PER_TICK_FROM_SI }, 0, 0),
     moduleOf(`${opts.id}-se`, omniSensor(2000), 1, 0),
     ...weapons.map((w, i) => moduleOf(`${opts.id}-w${i}`, w, 0, 1 + i)),
   ];

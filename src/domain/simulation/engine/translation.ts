@@ -13,7 +13,7 @@ import { ACCEL_PER_TICK_FROM_SI, type BattleInputs } from "../types";
 import { ARRIVAL_CLOSING_SPEED_MPS, SIM } from "./config";
 import { availableThrust, maxCommandableTorque } from "./physics";
 import type { ThrustMode } from "./physics";
-import { angleDifference, anomalyAdjustedRange } from "./setup";
+import { angleDifference, angularAccelPerTick, anomalyAdjustedRange } from "./setup";
 import type { DeploymentReference } from "./movement";
 import { effectiveStance, isRetreating } from "./movement";
 import type { SimShip } from "./types";
@@ -441,7 +441,9 @@ function flipTime(ship: SimShip): number {
   // pass shouldThrust = false to count RCS and reaction wheels alone.
   const maxTorque = maxCommandableTorque(ship, false);
   if (maxTorque <= 0) return Infinity;
-  const alpha = maxTorque / I;
+  // Per-tick angular acceleration so the flip time comes out in TICKS, matching
+  // the tick-based braking distances this feeds (see angularAccelPerTick).
+  const alpha = angularAccelPerTick(maxTorque, I);
   return 2 * Math.sqrt(Math.PI / alpha);
 }
 

@@ -10,7 +10,7 @@ import type { CombatShip } from "../types";
 import { SIM } from "./config";
 import { isCharged, isOperational } from "./crew";
 import { PERF_GUARDS } from "./perf-guards";
-import { angleDifference, gridRadius } from "./setup";
+import { angleDifference, angularAccelPerTick, gridRadius } from "./setup";
 import type { SimModule, SimShip } from "./types";
 /**
  * Which engines the force/torque computation should fire. The translation
@@ -746,7 +746,7 @@ export function commandedTurn(
   const e = angleDifference(ship.facing, desiredFacing);
   const w = ship.angVel;
   const I = ship.momentOfInertia;
-  const alpha = I > 0 ? mct / I : 0;
+  const alpha = angularAccelPerTick(mct, I);
 
   // No commandable torque authority — cannot steer.
   if (alpha <= 0) return 0;
@@ -754,7 +754,7 @@ export function commandedTurn(
   // Net geometric disturbance angular acceleration (uncommandable r × F).
   // Only non-zero when engines are actually firing this tick.
   const gTorque = geometricTorque(ship, shouldThrust);
-  const gAlpha = I > 0 ? gTorque / I : 0;
+  const gAlpha = angularAccelPerTick(gTorque, I);
 
   // Settle deadband: the ship is close enough to the target that this tick's
   // angular displacement will carry it across (or it is within the static

@@ -8,6 +8,7 @@ import { DEFAULT_WEAPON_AMMO } from "@/schema/module";
 import type { WeaponEffect } from "@/schema/module";
 import type { Orders } from "@/schema/fleet";
 import type { ShipStance } from "@/schema/ai";
+import { ACCEL_PER_TICK_FROM_SI } from "../types";
 import type { BattleInputs, CombatShip, ResolvedHardwire, ResolvedModule, SimCrew } from "../types";
 
 import { defaultAiDecisions } from "./ai-step";
@@ -129,6 +130,30 @@ export function angleDifference(a: number, b: number): number {
   while (diff > Math.PI) diff -= Math.PI * 2;
   while (diff < -Math.PI) diff += Math.PI * 2;
   return diff;
+}
+
+/**
+ * Convert an SI torque acting on a moment of inertia into the per-tick angular
+ * acceleration (rad/tick²) the integrator adds onto an `angVel` stored in
+ * rad/tick. The angular twin of {@link ACCEL_PER_TICK_FROM_SI}: `torque` is in
+ * N·m and `momentOfInertia` in kg·m², so `torque / I` is an SI angular
+ * acceleration (rad/s²); over one tick (`dt = 1/TPS` s) it adds `(torque/I)/TPS²`
+ * rad/tick. Every site that derives an angular acceleration from a torque — the
+ * integrator, the bang-bang controller's `alpha`/`gAlpha`, the deadband settle,
+ * and the flip-time estimate — must route through this so the attitude clock
+ * matches the linear clock. Without it every ship spins up TPS² (900×) too fast,
+ * which both over-accelerates commanded turns and makes the controller's
+ * stopping-angle estimate 900× too small, so it brakes far too late and spins
+ * out of control. (Weapon recoil is NOT routed here: an impulse `m·v` is already
+ * in the per-tick momentum clock, so `torque/I` there is already rad/tick.)
+ * Returns 0 when `momentOfInertia <= 0` — a degenerate ship cannot rotate.
+ */
+export function angularAccelPerTick(
+  torque: number,
+  momentOfInertia: number,
+): number {
+  if (momentOfInertia <= 0) return 0;
+  return (torque / momentOfInertia) * ACCEL_PER_TICK_FROM_SI;
 }
 
 /** Rotate `facing` toward `target` by at most `maxStep` radians. */

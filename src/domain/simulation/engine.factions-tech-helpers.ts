@@ -5,6 +5,7 @@
  * every describe block keeps its assertions, fixtures, and setup identical.
  */
 
+import { ACCEL_PER_TICK_FROM_SI } from "@/domain/simulation/types";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
 import type { CellEdges } from "@/schema/grid";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
@@ -297,9 +298,12 @@ export function modularShip(opts: {
     );
   }
   // Reaction wheel: pure commandable torque, available whether or not the
-  // ship is thrusting. Sized so the ship's angular acceleration matches the
-  // requested `turnRate` directly: alpha = torque / MoI, so torque = alpha *
-  // MoI = turnRate * MoI. `turnRate` is a physical angular acceleration
+  // ship is thrusting. Sized so the ship's per-tick angular acceleration matches
+  // the requested `turnRate` directly. The integrator rescales an SI torque into
+  // the per-tick clock (alpha_tick = (torque / MoI) * ACCEL_PER_TICK_FROM_SI), so
+  // to hit a target alpha of `turnRate` rad/tick² the SI torque is
+  // `turnRate * MoI / ACCEL_PER_TICK_FROM_SI` — which also lands the wheel on the
+  // catalogue's real SI N·m scale. `turnRate` is a physical angular acceleration
   // (rad/tick^2), not a legacy feel scalar. Computing MoI from the real cell
   // distribution keeps the agility comparable however the grid is laid out.
   if (turnRate > 0) {
@@ -314,8 +318,9 @@ export function modularShip(opts: {
       0,
     );
     const moi = momentOfInertiaOf([...modules, preview]);
-    // alpha = torque / MoI; target alpha = turnRate (rad/tick^2).
-    const torque = moi * turnRate;
+    // Target per-tick alpha = turnRate (rad/tick^2); the integrator applies
+    // ACCEL_PER_TICK_FROM_SI, so the SI torque is turnRate * MoI / that factor.
+    const torque = (moi * turnRate) / ACCEL_PER_TICK_FROM_SI;
     modules.push(
       moduleOf(
         `${prefix}-rw`,

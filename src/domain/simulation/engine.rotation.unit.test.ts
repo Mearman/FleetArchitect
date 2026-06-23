@@ -1,11 +1,21 @@
 import type { CellEdges } from "@/schema/grid";
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
+import { ACCEL_PER_TICK_FROM_SI } from "@/domain/simulation/types";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
 import { defaultOrders } from "@/schema/fleet";
 import type { ModuleEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
 
+/**
+ * Synthetic RCS/reaction torque is authored in SI N·m (the catalogue's scale),
+ * because the integrator rescales an SI torque into the per-tick clock via
+ * ACCEL_PER_TICK_FROM_SI. A bare per-tick authority of ~0.5/MoI rad/tick² is
+ * therefore expressed as an SI torque of `0.5 / ACCEL_PER_TICK_FROM_SI` per unit
+ * MoI — the angular twin of the linear ×TICKS_PER_SECOND² fixture rescale, so
+ * the ship turns at the same visible rate the bang-bang assertions were tuned to.
+ */
+const RCS_TORQUE = 0.5 / ACCEL_PER_TICK_FROM_SI;
 
 const OPEN_EDGES: CellEdges = {
   n: "open",
@@ -114,7 +124,7 @@ function rcsShip(
   side: "attacker" | "defender",
   pos: { x: number; y: number },
   facing: number,
-  rcsTorque = 0.5,
+  rcsTorque = RCS_TORQUE,
 ): CombatShip {
   return {
     instanceId: id,
@@ -206,7 +216,7 @@ describe("bang-bang attitude control", () => {
    * exceed a single tick's α, proving angular momentum is accumulating.
    */
   it("angVel accumulates under sustained torque (can exceed any single-tick step)", () => {
-    // rcsShip with torque 0.5 and MoI ≈ mass*legacyMoI → α ≈ 0.5 / MoI.
+    // rcsShip's SI torque rescales to a per-tick α ≈ 0.5 / MoI rad/tick².
     // With modular ships MoI is from module distribution; let it build up.
     const s = rcsShip("s1", "attacker", { x: 0, y: 0 }, 0);
     const t = rcsShip("t1", "defender", { x: -600, y: 0 }, Math.PI);
@@ -225,10 +235,10 @@ describe("bang-bang attitude control", () => {
       maxPerTickTurn = Math.max(maxPerTickTurn, Math.abs(wrap(a - b)));
     }
 
-    // A single tick of rcs torque 0.5 on a small ship: α = 0.5 / MoI.
-    // MoI for two mass-5 modules at ±1 from CoM ≈ 2 * 5 * 1 = 10 → α ≈ 0.05.
-    // After many ticks of acceleration the accumulated angVel should clearly
-    // exceed 0.05. We check it exceeds 0.1 (twice α) conservatively.
+    // The per-tick α from the rescaled SI torque is ≈ 0.5 / MoI; for this small
+    // ship MoI ≈ 10 → α ≈ 0.05. After many ticks of acceleration the accumulated
+    // angVel should clearly exceed 0.05. We check it exceeds 0.1 (twice α)
+    // conservatively.
     expect(
       maxPerTickTurn,
       `peak angVel per tick ${maxPerTickTurn.toFixed(4)} should exceed one tick's α`,
@@ -337,7 +347,7 @@ describe("bang-bang attitude control", () => {
           moduleOf("e", { kind: "engine", thrust: 1, facing: Math.PI }, 0, 0),
           // RCS at origin: no contribution to MoI offset (r=0), but torque is
           // position-independent for pure-torque modules. MoI comes from masses.
-          moduleOf("r", { kind: "rcs", torque: 0.5 }, 0, 0),
+          moduleOf("r", { kind: "rcs", torque: RCS_TORQUE }, 0, 0),
           // Omni sensor so the ship acquires the target and the controller
           // engages (replaces the removed sensorRange scalar).
           moduleOf("se", omniSensor(1000), 0, 0),
@@ -369,7 +379,7 @@ describe("bang-bang attitude control", () => {
           moduleOf("h4", { kind: "hull" }, 0, 5),
           moduleOf("e", { kind: "engine", thrust: 1, facing: Math.PI }, 0, 0),
           // Same RCS torque as the low-MoI ship.
-          moduleOf("r", { kind: "rcs", torque: 0.5 }, 0, 0),
+          moduleOf("r", { kind: "rcs", torque: RCS_TORQUE }, 0, 0),
           // Omni sensor so the ship acquires the target and the controller
           // engages (replaces the removed sensorRange scalar).
           moduleOf("se", omniSensor(1000), 0, 0),

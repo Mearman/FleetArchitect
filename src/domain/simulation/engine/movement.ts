@@ -20,7 +20,7 @@ import {
   shipForceAndTorque,
 } from "./physics";
 import { relativisticMomentumStep } from "./relativistic-momentum";
-import { angleDifference, blackHoleAvoidWeight, rotateLocal } from "./setup";
+import { angleDifference, angularAccelPerTick, blackHoleAvoidWeight, rotateLocal } from "./setup";
 import { computeTranslationCommand } from "./translation";
 import { afterburnerMultipliers } from "./tech";
 import type { SimShip } from "./types";
@@ -494,7 +494,7 @@ export function moveShips(
     // Pre-compute the commandable torque and angular alpha so the bang-bang
     // controller and the post-integration settle snap share the same value.
     const mct = maxCommandableTorque(ship, shouldThrust);
-    const alpha = ship.momentOfInertia > 0 ? mct / ship.momentOfInertia : 0;
+    const alpha = angularAccelPerTick(mct, ship.momentOfInertia);
     const turnSign = commandedTurn(ship, desiredFacing, mct, shouldThrust);
     // Afterburner (factions update): when the ship has movement intent this
     // tick, fire any ready afterburner and fold its thrust/turn surge into the
@@ -620,12 +620,13 @@ export function moveShips(
         ship.px = ship.velX * Math.max(ship.mass, 1);
         ship.py = ship.velY * Math.max(ship.mass, 1);
       }
-      // Newtonian rotation: alpha = torque / I. The lateral engines' torque is
-      // included so the attitude controller sees (and counters) any unbalanced
-      // lateral firing; a balanced RCS pair contributes none.
+      // Newtonian rotation: alpha = torque / I, rescaled into the per-tick clock
+      // (rad/tick²) by angularAccelPerTick — the angular twin of the linear
+      // ACCEL_PER_TICK_FROM_SI. The lateral engines' torque is included so the
+      // attitude controller sees (and counters) any unbalanced lateral firing; a
+      // balanced RCS pair contributes none.
       const totalTorque = torque + lat.torque;
-      const angularAccel = ship.momentOfInertia > 0 ? totalTorque / ship.momentOfInertia : 0;
-      ship.angVel += angularAccel;
+      ship.angVel += angularAccelPerTick(totalTorque, ship.momentOfInertia);
     } else {
       // Legacy aggregated ship: no module geometry, so its commandable torque
       // is a scalar authority derived from ShipStats.turnRate. Scaling by mass
@@ -636,8 +637,7 @@ export function moveShips(
       // with NO maximum angular speed. A turnRate-0 hull genuinely cannot turn.
       const torqueAuthority = ship.turnRate * ship.mass;
       const torque = turnSign * torqueAuthority;
-      const angularAccel = ship.momentOfInertia > 0 ? torque / ship.momentOfInertia : 0;
-      ship.angVel += angularAccel;
+      ship.angVel += angularAccelPerTick(torque, ship.momentOfInertia);
 
       // Afterburner raises both the top speed and the acceleration for its
       // window; identity multiplier leaves the legacy scalar model unchanged.

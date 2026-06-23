@@ -30,6 +30,7 @@ import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import { relativisticMomentumStep } from "@/domain/simulation/engine/relativistic-momentum";
 import { SPEED_OF_LIGHT_M_PER_TICK } from "@/domain/simulation/engine/config";
+import { ACCEL_PER_TICK_FROM_SI } from "@/domain/simulation/types";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
 import type { ModuleEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
@@ -167,7 +168,11 @@ function ship(opts: {
   const modules: ResolvedModule[] = [
     moduleOf(`${opts.id}-cmd`, { kind: "power", output: 1000 }, 0, 0, true),
     moduleOf(`${opts.id}-eng`, { kind: "engine", thrust: opts.thrust, facing: Math.PI }, -1, 0),
-    moduleOf(`${opts.id}-rcs`, { kind: "rcs", torque: 0.5 }, 0, 0),
+    // SI torque (the catalogue's scale): the integrator rescales torque/I into
+    // the per-tick clock via ACCEL_PER_TICK_FROM_SI, so a bare ~0.5/MoI rad/tick²
+    // authority is authored as 0.5 / that factor — enough commandable torque to
+    // hold the rocket aligned against its enormous engine's geometric r×F.
+    moduleOf(`${opts.id}-rcs`, { kind: "rcs", torque: 0.5 / ACCEL_PER_TICK_FROM_SI }, 0, 0),
     moduleOf(
       `${opts.id}-sen`,
       { kind: "sensor", sensorType: "omni", arc: Math.PI, bearing: 0, detectionRange: 4e9, nebulaImmune: false },

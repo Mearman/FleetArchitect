@@ -22,6 +22,7 @@
 import { describe, expect, it } from "vitest";
 
 import { runBattle } from "@/domain/simulation/engine";
+import { ACCEL_PER_TICK_FROM_SI } from "@/domain/simulation/types";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
 import type { ModuleEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
@@ -109,7 +110,10 @@ function ship(opts: {
   const modules: ResolvedModule[] = [
     moduleOf(`${opts.id}-cmd`, { kind: "power", output: 1000 }, 0, 0, true),
     moduleOf(`${opts.id}-eng`, { kind: "engine", thrust: 0.5, facing: Math.PI }, -1, 0),
-    moduleOf(`${opts.id}-rcs`, { kind: "rcs", torque: 0.5 }, 0, 0),
+    // SI torque (see ACCEL_PER_TICK_FROM_SI): the integrator rescales torque/I
+    // into the per-tick clock, so this is authored 1/that-factor larger than the
+    // bare per-tick authority — the angular twin of the linear thrust scale.
+    moduleOf(`${opts.id}-rcs`, { kind: "rcs", torque: 0.5 / ACCEL_PER_TICK_FROM_SI }, 0, 0),
   ];
   return {
     instanceId: opts.id,
