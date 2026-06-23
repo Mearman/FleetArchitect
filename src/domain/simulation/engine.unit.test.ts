@@ -81,13 +81,13 @@ function inputs(
   ships: CombatShip[],
   seed = 1,
   maxTicks = DEFAULT_MAX_TICKS,
-  anomaly: BattleInputs["anomaly"] = "none",
+  anomalies: BattleInputs["anomalies"] = [],
 ): BattleInputs {
   return {
     ships,
     attackerFleetId: "fleet-attacker",
     defenderFleetId: "fleet-defender",
-    anomaly,
+    anomalies,
     seed,
     maxTicks,
   };

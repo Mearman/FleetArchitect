@@ -99,7 +99,7 @@ function retreatBattle(seed: number, maxTicks: number): BattleInputs {
     ships: [attacker, defender],
     attackerFleetId: "fa",
     defenderFleetId: "fd",
-    anomaly: "none",
+    anomalies: [],
     seed,
     maxTicks,
   };

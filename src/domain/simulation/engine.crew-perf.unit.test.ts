@@ -71,7 +71,7 @@ function buildInputs(
     ships: [...attacker, ...defender],
     attackerFleetId: attackerId,
     defenderFleetId: defenderId,
-    anomaly: "none",
+    anomalies: [],
     seed,
     maxTicks: tickCap,
   };

@@ -202,7 +202,7 @@ function battle(ships: CombatShip[], seed: number, maxTicks: number): BattleInpu
     ships,
     attackerFleetId: "fa",
     defenderFleetId: "fd",
-    anomaly: "none",
+    anomalies: [],
     seed,
     maxTicks,
   };

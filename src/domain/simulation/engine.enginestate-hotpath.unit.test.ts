@@ -135,7 +135,7 @@ function combatInputs(maxTicks: number): BattleInputs {
     ],
     attackerFleetId: "fa",
     defenderFleetId: "fd",
-    anomaly: "none",
+    anomalies: [],
     seed: 1234,
     maxTicks,
   };

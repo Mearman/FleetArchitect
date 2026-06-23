@@ -57,7 +57,7 @@ function baseInputs(): BattleInputs {
     ships: [ship("a"), ship("b")],
     attackerFleetId: "fleet-attacker",
     defenderFleetId: "fleet-defender",
-    anomaly: "none",
+    anomalies: [],
     seed: 7,
   };
 }
@@ -97,7 +97,7 @@ describe("deriveCacheKey", () => {
     const inputsA = baseInputs();
     const reordered: BattleInputs = {
       seed: inputsA.seed,
-      anomaly: inputsA.anomaly,
+      anomalies: inputsA.anomalies,
       ships: inputsA.ships,
       defenderFleetId: inputsA.defenderFleetId,
       attackerFleetId: inputsA.attackerFleetId,
@@ -149,9 +149,9 @@ describe("deriveCacheKey", () => {
     expect(keyBase).not.toBe(keyReseeded);
   });
 
-  it("changes the key when the anomaly changes", async () => {
+  it("changes the key when the anomalies changes", async () => {
     const base = baseInputs();
-    const withAnomaly: BattleInputs = { ...base, anomaly: "blackHole" };
+    const withAnomaly: BattleInputs = { ...base, anomalies: ["blackHole"] };
     const keyBase = await deriveCacheKey(base, SIM_CONFIG, ALGO);
     const keyAnomaly = await deriveCacheKey(withAnomaly, SIM_CONFIG, ALGO);
     expect(keyBase).not.toBe(keyAnomaly);

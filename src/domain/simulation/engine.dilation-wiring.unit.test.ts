@@ -11,7 +11,7 @@ import type { ShipStats } from "@/domain/stats";
  * Phase 4 gap A3: time dilation wired to shield recharge, repair, and crew
  * advancement. Each test runs the same battle twice with the same seed and
  * asserts byte-identical frames, proving the new dilation paths are
- * deterministic. A `blackHole` anomaly is used so gravitational dilation is
+ * deterministic. A `blackHole` anomalies is used so gravitational dilation is
  * active throughout the battle, exercising the code branches added here.
  */
 
@@ -121,7 +121,7 @@ function inputs(ships: CombatShip[], seed = 42): BattleInputs {
     defenderFleetId: "fd",
     // Black hole applies gravitational time dilation, exercising the dilated
     // shield-recharge, repair, and crew-movement code paths.
-    anomaly: "blackHole",
+    anomalies: ["blackHole"],
     seed,
     maxTicks: 600,
   };
@@ -238,7 +238,7 @@ function crewedShip(id: string, x: number, side: "attacker" | "defender"): Comba
 
 describe("engine.dilation-wiring — determinism under gravitational time dilation", () => {
   it("shield recharge with dilation replays byte-identically (run-twice)", () => {
-    // The blackHole anomaly applies gravitational dilation each tick; a ship
+    // The blackHole anomalies applies gravitational dilation each tick; a ship
     // near the hole has dilationFactor < 1, exercising the dilated countdown
     // decrement and dilated recharge-rate paths.
     const mk = () => runBattle(inputs([attacker("a1", -200), shieldDefender("d1", 200)]));
@@ -269,22 +269,22 @@ describe("engine.dilation-wiring — determinism under gravitational time dilati
   });
 
   it("shield recharge with dilation is slower than without", () => {
-    // Under the blackHole anomaly the defender's shield recharges less per tick
+    // Under the blackHole anomalies the defender's shield recharges less per tick
     // than at dilationFactor = 1. We verify by running the same setup without
-    // dilation (anomaly "none") and checking the no-dilation version has more
+    // dilation (anomalies []) and checking the no-dilation version has more
     // total shield at the same tick.
-    function inputsWithAnomaly(anomaly: "none" | "blackHole"): BattleInputs {
+    function inputsWithAnomaly(anomalies: [] | ["blackHole"]): BattleInputs {
       return {
         ships: [attacker("a1", -200), shieldDefender("d1", 200)],
         attackerFleetId: "fa",
         defenderFleetId: "fd",
-        anomaly,
+        anomalies,
         seed: 42,
         maxTicks: DEFAULT_MAX_TICKS,
       };
     }
-    const withDilation = runBattle(inputsWithAnomaly("blackHole"));
-    const withoutDilation = runBattle(inputsWithAnomaly("none"));
+    const withDilation = runBattle(inputsWithAnomaly(["blackHole"]));
+    const withoutDilation = runBattle(inputsWithAnomaly([]));
 
     // If gravitational dilation slows shield recharge, the dilated defender
     // should end with less total shield HP across a window where both are alive.

@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
-import type { BattleAnomaly } from "@/schema/battle";
+import type { BattleAnomalyKind } from "@/schema/battle";
 import type { CombatShip, BattleInputs } from "@/domain/simulation/types";
 import type { WeaponEffect } from "@/schema/module";
 import { modularShip, targetDummy } from "./engine.factions-tech-helpers";
 
 /**
- * Anomaly-aware AI: ships should REACT to the active spatial anomaly rather
+ * Anomaly-aware AI: ships should REACT to the active spatial anomalies rather
  * than fly into it blind. Three behaviours are covered:
  *  - black-hole avoidance: a ship whose direct path to its target crosses the
  *    well arcs around the danger zone instead of ploughing through it, so its
@@ -17,10 +17,10 @@ import { modularShip, targetDummy } from "./engine.factions-tech-helpers";
  *  - asteroid-field range closing: ships fight somewhat closer to cut the
  *    time-of-flight over which rounds are destroyed.
  * Plus determinism (two black-hole runs are byte-identical) and a regression
- * guard that anomaly="none" is unchanged.
+ * guard that anomalies=[] is unchanged.
  *
- * Each behavioural test compares the anomaly-on battle against the same battle
- * with a baseline anomaly so the assertion is robust to the rest of the engine.
+ * Each behavioural test compares the anomalies-on battle against the same battle
+ * with a baseline anomalies so the assertion is robust to the rest of the engine.
  */
 
 function weapon(over: Partial<WeaponEffect> = {}): WeaponEffect {
@@ -85,7 +85,7 @@ function makeShip(opts: {
 
 function inputs(
   ships: CombatShip[],
-  anomaly: BattleAnomaly,
+  anomalies: BattleAnomalyKind[],
   seed = 1,
   maxTicks = DEFAULT_MAX_TICKS,
 ): BattleInputs {
@@ -93,7 +93,7 @@ function inputs(
     ships,
     attackerFleetId: "fa",
     defenderFleetId: "fd",
-    anomaly,
+    anomalies,
     seed,
     maxTicks,
   };
@@ -157,11 +157,11 @@ function settledSeparation(
   return total / tail.length;
 }
 
-describe("engine.anomaly-ai", () => {
+describe("engine.anomalies-ai", () => {
   it("black hole: a ship arcs around the well instead of ploughing through it", () => {
     // The attacker starts on the near side of the hole; its only target sits on
     // the FAR side, so the straight-line path to it runs right through the
-    // centre. With no anomaly the ship flies dead through the origin (its
+    // centre. With no anomalies the ship flies dead through the origin (its
     // closest approach is deep inside the lethal radius). With the black hole,
     // the avoidance steering bends its path around the danger zone, so the
     // avoiding ship keeps measurably wider clearance than the unaware control.
@@ -184,7 +184,7 @@ describe("engine.anomaly-ai", () => {
     // and the tidal zone 4 km, so the crossing geometry is rescaled from the
     // pre-km tens-of-metres positions to km positions. The attacker starts just
     // outside the tidal zone and its target sits far on the opposite side.
-    const mk = (anomaly: BattleAnomaly) =>
+    const mk = (anomalies: BattleAnomalyKind[]) =>
       runBattle(
         inputs(
           [
@@ -210,13 +210,13 @@ describe("engine.anomaly-ai", () => {
               orders: { engageRange: "hold" },
             }),
           ],
-          anomaly,
+          anomalies,
           1,
           200,
         ),
       );
-    const none = mk("none");
-    const hole = mk("blackHole");
+    const none = mk([]);
+    const hole = mk(["blackHole"]);
 
     const noneMin = minDistanceToOrigin(none, "a1");
     const holeMin = minDistanceToOrigin(hole, "a1");
@@ -233,13 +233,13 @@ describe("engine.anomaly-ai", () => {
 
   it("black hole: avoidance deflects the ship's path off the straight line", () => {
     // Same crossing geometry; here we check the deflection directly. With no
-    // anomaly the ship stays on the y=0 axis to its target. With the black
+    // anomalies the ship stays on the y=0 axis to its target. With the black
     // hole, avoidance pushes it off-axis (a non-trivial |y|) as it routes
     // around the centre.
     //
     // Re-baselined for km combat (Phase 5): crossing geometry rescaled to km
     // positions matching the 2 km horizon / 4 km tidal zone.
-    const mk = (anomaly: BattleAnomaly) =>
+    const mk = (anomalies: BattleAnomalyKind[]) =>
       runBattle(
         inputs(
           [
@@ -265,13 +265,13 @@ describe("engine.anomaly-ai", () => {
               orders: { engageRange: "hold" },
             }),
           ],
-          anomaly,
+          anomalies,
           1,
           60,
         ),
       );
-    const none = mk("none");
-    const hole = mk("blackHole");
+    const none = mk([]);
+    const hole = mk(["blackHole"]);
     // Sample mid-crossing, where the ship is near the hole.
     const noneY = Math.abs(posAt(none, 20, "a1").y);
     const holeY = Math.abs(posAt(hole, 20, "a1").y);
@@ -287,7 +287,7 @@ describe("engine.anomaly-ai", () => {
     // well outside its desired range. In open space it settles at its full
     // stand-off range; in a nebula the desired range is scaled down, so it
     // settles closer.
-    const mk = (anomaly: BattleAnomaly) =>
+    const mk = (anomalies: BattleAnomalyKind[]) =>
       runBattle(
         inputs(
           [
@@ -312,20 +312,20 @@ describe("engine.anomaly-ai", () => {
               orders: { engageRange: "hold" },
             }),
           ],
-          anomaly,
+          anomalies,
           1,
           600,
         ),
       );
-    const none = mk("none");
-    const nebula = mk("nebula");
+    const none = mk([]);
+    const nebula = mk(["nebula"]);
     const openSep = settledSeparation(none, "a1", "d1", 400);
     const nebulaSep = settledSeparation(nebula, "a1", "d1", 400);
     expect(nebulaSep).toBeLessThan(openSep);
   });
 
   it("asteroid field: ships close to a shorter engagement range than in open space", () => {
-    const mk = (anomaly: BattleAnomaly) =>
+    const mk = (anomalies: BattleAnomalyKind[]) =>
       runBattle(
         inputs(
           [
@@ -350,13 +350,13 @@ describe("engine.anomaly-ai", () => {
               orders: { engageRange: "hold" },
             }),
           ],
-          anomaly,
+          anomalies,
           1,
           600,
         ),
       );
-    const none = mk("none");
-    const field = mk("asteroidField");
+    const none = mk([]);
+    const field = mk(["asteroidField"]);
     const openSep = settledSeparation(none, "a1", "d1", 400);
     const fieldSep = settledSeparation(field, "a1", "d1", 400);
     expect(fieldSep).toBeLessThan(openSep);
@@ -389,7 +389,7 @@ describe("engine.anomaly-ai", () => {
             weapons: [weapon({ range: 33_000 })],
           }),
         ],
-        "blackHole",
+        ["blackHole"],
         12345,
         400,
       );
@@ -398,7 +398,7 @@ describe("engine.anomaly-ai", () => {
     expect(JSON.stringify(a.frames)).toBe(JSON.stringify(b.frames));
   });
 
-  it("regression: anomaly=none still closes and fires as before", () => {
+  it("regression: anomalies=none still closes and fires as before", () => {
     // Sanity that the guarded code leaves open-space combat working: the
     // attacker closes on a stationary defender from a long way out and lands
     // hits.
@@ -426,7 +426,7 @@ describe("engine.anomaly-ai", () => {
             orders: { engageRange: "hold" },
           }),
         ],
-        "none",
+        [],
         1,
         600,
       ),

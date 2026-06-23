@@ -163,7 +163,7 @@ function battleInputs(ships: CombatShip[], seed = 1, maxTicks = 15): BattleInput
     ships,
     attackerFleetId: "fa",
     defenderFleetId: "fd",
-    anomaly: "none",
+    anomalies: [],
     seed,
     maxTicks,
   };
@@ -357,7 +357,7 @@ describe("W5b perf guards preserve frame output", () => {
         ships: snapshot,
         attackerFleetId: phaseLance.id,
         defenderFleetId: ironWall.id,
-        anomaly: "none",
+        anomalies: [],
         seed,
         maxTicks: 3,
       };

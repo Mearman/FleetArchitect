@@ -48,7 +48,7 @@ function inputsFor(
     ships,
     attackerFleetId,
     defenderFleetId,
-    anomaly: "none",
+    anomalies: [],
     seed,
     maxTicks,
   };

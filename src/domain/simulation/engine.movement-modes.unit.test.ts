@@ -79,7 +79,7 @@ function inputs(ships: CombatShip[]): BattleInputs {
     ships,
     attackerFleetId: "fa",
     defenderFleetId: "fd",
-    anomaly: "none",
+    anomalies: [],
     seed: 1,
     // These tests sample movement state by tick 80 at the latest; a short cap
     // keeps them fast (the tanky 99999-structure defender never resolves the

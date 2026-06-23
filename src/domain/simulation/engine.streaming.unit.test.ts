@@ -81,7 +81,7 @@ function fixedInputs(maxTicks = DEFAULT_MAX_TICKS): BattleInputs {
     ],
     attackerFleetId: "fleet-attacker",
     defenderFleetId: "fleet-defender",
-    anomaly: "none",
+    anomalies: [],
     seed: 42,
     maxTicks,
   };

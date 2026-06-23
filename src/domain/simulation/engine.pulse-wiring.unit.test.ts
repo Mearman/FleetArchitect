@@ -39,7 +39,7 @@ function radarBattle(maxTicks: number) {
         ]),
         ship("def", "defender", 200, 0, [...core()]),
       ],
-      "none",
+      [],
       maxTicks,
     ),
   );
@@ -78,7 +78,7 @@ describe("engine — active radar pulse wiring", () => {
           ]),
           ship("def", "defender", 200, 0, [...core()]),
         ],
-        "none",
+        [],
         8,
       ),
     );

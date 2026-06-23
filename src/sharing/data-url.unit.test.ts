@@ -99,7 +99,7 @@ describe("sharing round-trip (replay-relevant data)", () => {
     expect(ship.orders).toEqual(fleet.ships[0]?.orders);
   });
 
-  it("round-trips a whole battle's grids, factions, composition, orders, anomaly and seed", () => {
+  it("round-trips a whole battle's grids, factions, composition, orders, anomalies and seed", () => {
     const design = sampleDesign();
     const makeFleet = (name: string): Fleet => ({
       id: createId("fleet"),
@@ -122,7 +122,7 @@ describe("sharing round-trip (replay-relevant data)", () => {
       attacker: makeFleet("Attacker"),
       defender: makeFleet("Defender"),
       designs: [design],
-      anomaly: "asteroidField",
+      anomalies: ["asteroidField"],
       seed: 42,
     };
     const encoded = encodeShareable({ kind: "battle", value: battle });
@@ -131,7 +131,7 @@ describe("sharing round-trip (replay-relevant data)", () => {
       throw new Error("expected a battle share");
     }
     const { value } = decoded;
-    expect(value.anomaly).toBe("asteroidField");
+    expect(value.anomalies).toEqual(["asteroidField"]);
     expect(value.seed).toBe(42);
     expect(value.designs).toHaveLength(1);
     expect(value.designs[0]?.grid).toEqual(design.grid);
@@ -160,7 +160,7 @@ describe("sharing round-trip (replay-relevant data)", () => {
 
 /**
  * Build the preset 5-v-7 battle the way the Battle Arena does: the first two
- * preset fleets, every preset design, a fixed anomaly and seed.
+ * preset fleets, every preset design, a fixed anomalies and seed.
  */
 function presetBattle(): BattleShare {
   const attacker = presetFleets[0];
@@ -178,7 +178,7 @@ function presetBattle(): BattleShare {
     attacker,
     defender,
     designs: presetDesigns.filter((d) => referenced.has(d.id)),
-    anomaly: "asteroidField",
+    anomalies: ["asteroidField"],
     seed: 1234,
   };
 }
@@ -223,7 +223,7 @@ function framesFor(battle: BattleShare) {
     ships,
     attackerFleetId: battle.attacker.id,
     defenderFleetId: battle.defender.id,
-    anomaly: battle.anomaly,
+    anomalies: battle.anomalies,
     seed: battle.seed,
     maxTicks: DETERMINISM_TICKS,
   }).frames;

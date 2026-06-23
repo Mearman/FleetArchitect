@@ -141,7 +141,7 @@ function blackHoleBattle(ships: CombatShip[], seed: number, maxTicks: number): B
     ships,
     attackerFleetId: "fa",
     defenderFleetId: "fd",
-    anomaly: "blackHole",
+    anomalies: ["blackHole"],
     seed,
     maxTicks,
   };

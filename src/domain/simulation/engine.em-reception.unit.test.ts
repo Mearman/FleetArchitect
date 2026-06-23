@@ -151,7 +151,7 @@ describe("engine.em-reception — emission snapshot", () => {
             ship("a1", "attacker", -100, 0, [...core(), moduleOf("se", sensor(300), 1, 0)]),
             ship("d1", "defender", 100, 0, [...core(), moduleOf("se", sensor(300), 1, 0)]),
           ],
-          "none",
+          [],
           20,
         ),
       );

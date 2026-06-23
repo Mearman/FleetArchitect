@@ -70,7 +70,7 @@ function fixedInputs(): BattleInputs {
     ships: [makeShip("a1", "attacker", -100), makeShip("d1", "defender", 100)],
     attackerFleetId: "fleet-attacker",
     defenderFleetId: "fleet-defender",
-    anomaly: "none",
+    anomalies: [],
     seed: 42,
     maxTicks: DEFAULT_MAX_TICKS,
   };

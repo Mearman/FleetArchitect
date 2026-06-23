@@ -220,7 +220,7 @@ describe("headless preset battle — byte-identical across two same-seed runs (W
       ships: freshShips(attacker, defender, designs, cat),
       attackerFleetId: attacker.id,
       defenderFleetId: defender.id,
-      anomaly: "none",
+      anomalies: [],
       seed,
       maxTicks: W4_MAX_TICKS,
     });
@@ -276,7 +276,7 @@ describe("headless preset battle — byte-identical across two same-seed runs (W
       ships: freshShips(attacker, defender, designs, cat),
       attackerFleetId: attacker.id,
       defenderFleetId: defender.id,
-      anomaly: "none",
+      anomalies: [],
       seed: 42,
       maxTicks: W4_MAX_TICKS,
     });

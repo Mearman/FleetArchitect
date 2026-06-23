@@ -95,7 +95,7 @@ function runEngagement(seed: number) {
     ships,
     attackerFleetId: attacker.id,
     defenderFleetId: defender.id,
-    anomaly: "none",
+    anomalies: [],
     seed,
     maxTicks: DEFAULT_MAX_TICKS,
   });
@@ -187,7 +187,7 @@ function runLopsided(seed: number) {
     ships,
     attackerFleetId,
     defenderFleetId,
-    anomaly: "none",
+    anomalies: [],
     seed,
     maxTicks: DEFAULT_MAX_TICKS,
   });
@@ -226,7 +226,7 @@ describe("debris: destroyed hulls leave drifting wreckage", () => {
     // non-determinism. Determinism is a property of identical inputs.
     const { ships, attackerFleetId, defenderFleetId } = lopsidedInputs();
     const run = () =>
-      runBattle({ ships, attackerFleetId, defenderFleetId, anomaly: "none", seed: 3, maxTicks: DEFAULT_MAX_TICKS });
+      runBattle({ ships, attackerFleetId, defenderFleetId, anomalies: [], seed: 3, maxTicks: DEFAULT_MAX_TICKS });
     const a = run();
     const b = run();
     expect(b.frames.map((f) => f.debris ?? [])).toEqual(a.frames.map((f) => f.debris ?? []));

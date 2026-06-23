@@ -195,7 +195,7 @@ function inputs(ships: CombatShip[], maxTicks = 300): BattleInputs {
     ships,
     attackerFleetId: "a",
     defenderFleetId: "b",
-    anomaly: "none",
+    anomalies: [],
     seed: 1,
     maxTicks,
   };
@@ -396,7 +396,7 @@ describe("bang-bang attitude control", () => {
       ships: [lowMoiShip("low", "attacker"), lowTarget],
       attackerFleetId: "a",
       defenderFleetId: "b",
-      anomaly: "none",
+      anomalies: [],
       seed: 1,
       maxTicks: 600,
     });
@@ -405,7 +405,7 @@ describe("bang-bang attitude control", () => {
       ships: [highMoiShip("high", "attacker"), highTarget],
       attackerFleetId: "a",
       defenderFleetId: "b",
-      anomaly: "none",
+      anomalies: [],
       seed: 1,
       maxTicks: 600,
     });
@@ -446,7 +446,7 @@ describe("bang-bang attitude control", () => {
       ],
       attackerFleetId: "a",
       defenderFleetId: "b",
-      anomaly: "none",
+      anomalies: [],
       seed: 42,
       maxTicks: 150,
     });

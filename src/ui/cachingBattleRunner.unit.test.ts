@@ -23,7 +23,7 @@ const inputs: BattleInputs = {
   ships: [],
   attackerFleetId: "fleet-a",
   defenderFleetId: "fleet-b",
-  anomaly: "none",
+  anomalies: [],
   seed: 42,
 };
 
@@ -34,7 +34,7 @@ function result(id: string): BattleResult {
     config: {
       attackerFleetId: "fleet-a",
       defenderFleetId: "fleet-b",
-      anomaly: "none",
+      anomalies: [],
       seed: 42,
     },
     winner: "attacker",

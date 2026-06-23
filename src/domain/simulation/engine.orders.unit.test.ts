@@ -255,7 +255,7 @@ function inputs(ships: CombatShip[], maxTicks = 200): BattleInputs {
     ships,
     attackerFleetId: "fa",
     defenderFleetId: "fd",
-    anomaly: "none",
+    anomalies: [],
     seed: 42,
     maxTicks,
   };

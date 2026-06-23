@@ -27,7 +27,7 @@ const inputs: BattleInputs = {
   ships: [],
   attackerFleetId: "fleet-a",
   defenderFleetId: "fleet-b",
-  anomaly: "none",
+  anomalies: [],
   seed: 42,
 };
 
@@ -80,7 +80,7 @@ function resultWithFrames(frames: BattleFrame[], ticks: number): BattleResult {
     config: {
       attackerFleetId: "fleet-a",
       defenderFleetId: "fleet-b",
-      anomaly: "none",
+      anomalies: [],
       seed: 42,
     },
     winner: "attacker",

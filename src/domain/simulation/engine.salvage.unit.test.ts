@@ -186,7 +186,7 @@ function inputs(ships: CombatShip[]): BattleInputs {
     ships,
     attackerFleetId: "fa",
     defenderFleetId: "fd",
-    anomaly: "none",
+    anomalies: [],
     seed: 1,
     // A short cap: the defender's command survives, so the battle never
     // terminates by side-death — bound it so the test runs fast. The claim

@@ -3,7 +3,7 @@ import { runBattle } from "@/domain/simulation/engine";
 import type {
   CombatShip,
 } from "@/domain/simulation/types";
-import type { BattleAnomaly } from "@/schema/battle";
+import type { BattleAnomalyKind } from "@/schema/battle";
 import {
   comms,
   contactsOf,
@@ -21,7 +21,7 @@ import { defaultOrders } from "@/schema/fleet";
 // ---------------------------------------------------------------------------
 
 describe("engine.awareness — determinism", () => {
-  function mixedBattle(anomaly: BattleAnomaly) {
+  function mixedBattle(anomalies: BattleAnomalyKind[]) {
     return runBattle(
       inputs(
         [
@@ -30,7 +30,7 @@ describe("engine.awareness — determinism", () => {
           ship("d1", "defender", 100, 0, [...core(), moduleOf("se", sensor(300), 1, 0)]),
           ship("d2", "defender", 100, 40, [...core(), moduleOf("se", sensor(300), 1, 0)]),
         ],
-        anomaly,
+        anomalies,
         // A moderate run exercises many awareness ticks (these ships carry no
         // weapons, so the battle would otherwise run to the full cap).
         30,
@@ -39,14 +39,14 @@ describe("engine.awareness — determinism", () => {
   }
 
   it("two runs produce byte-identical awareness in an asteroid field", () => {
-    const a = mixedBattle("asteroidField");
-    const b = mixedBattle("asteroidField");
+    const a = mixedBattle(["asteroidField"]);
+    const b = mixedBattle(["asteroidField"]);
     expect(b.frames.map((f) => f.awareness)).toEqual(a.frames.map((f) => f.awareness));
   });
 
   it("two runs produce byte-identical awareness in a nebula", () => {
-    const a = mixedBattle("nebula");
-    const b = mixedBattle("nebula");
+    const a = mixedBattle(["nebula"]);
+    const b = mixedBattle(["nebula"]);
     expect(b.frames.map((f) => f.awareness)).toEqual(a.frames.map((f) => f.awareness));
   });
 });
@@ -211,8 +211,8 @@ describe("engine.awareness — directional sensor cones", () => {
       ]),
       ship("d1", "defender", 3000, 0, [...core()]),
     ];
-    const plain = runBattle(inputs(build(false), "nebula"));
-    const immune = runBattle(inputs(build(true), "nebula"));
+    const plain = runBattle(inputs(build(false), ["nebula"]));
+    const immune = runBattle(inputs(build(true), ["nebula"]));
     expect(contactsOf(plain, 0, "a1")).not.toContain("d1");
     expect(contactsOf(immune, 0, "a1")).toContain("d1");
   });
@@ -233,7 +233,7 @@ describe("engine.awareness — directional sensor cones", () => {
               moduleOf("se", sensor(800, { sensorType: "dish", arc: 0.25, bearing: 0 }), 1, 0),
             ]),
           ],
-          "none",
+          [],
           30,
         ),
       );
@@ -317,7 +317,7 @@ describe("engine.awareness — faithful fog (no omniscience)", () => {
       ships: [mobile("a1", "attacker", -5100), mobile("d1", "defender", 5100)],
       attackerFleetId: "fa",
       defenderFleetId: "fd",
-      anomaly: "none",
+      anomalies: [],
       seed: 7,
       // Enough ticks for the blind ships to close the 10 200 m gap to within
       // visual range under the corrected per-tick acceleration (thrust 540).
@@ -354,7 +354,7 @@ describe("engine.awareness — occlusion", () => {
           ship("d1", "defender", 16_000, 0, [...core(), moduleOf("se", sensor(50_000), 1, 0)]),
           ship("d2", "defender", 16_000, 16_000, [...core(), moduleOf("se", sensor(50_000), 1, 0)]),
         ],
-        "blackHole",
+        ["blackHole"],
       ),
     );
     const seen = contactsOf(result, 0, "a1");

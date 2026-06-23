@@ -17,7 +17,7 @@ export function sampleResult(
     config: {
       attackerFleetId: "fleet-a",
       defenderFleetId: "fleet-b",
-      anomaly: "none",
+      anomalies: [],
       seed: 1,
     },
     winner: "attacker",

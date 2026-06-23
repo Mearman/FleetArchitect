@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { CELL_SIZE } from "@/domain/grid";
 import { runBattle } from "@/domain/simulation/engine";
 import { ACCEL_PER_TICK_FROM_SI, DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
-import type { BattleAnomaly } from "@/schema/battle";
+import type { BattleAnomalyKind } from "@/schema/battle";
 import type { CombatShip, BattleInputs, ResolvedModule } from "@/domain/simulation/types";
 import { defaultOrders } from "@/schema/fleet";
 import type { ShipClassification } from "@/schema/armor";
@@ -26,13 +26,13 @@ const OPEN_EDGES: CellEdges = {
  * update). They have the most physics, the most "what could go wrong,"
  * and previously zero regression coverage.
  *
- * Each test compares the anomaly-on battle against the same battle with
- * anomaly=none so the assertion is robust to the rest of the engine.
+ * Each test compares the anomalies-on battle against the same battle with
+ * anomalies=none so the assertion is robust to the rest of the engine.
  *
  * Helper duplicated so this file is self-contained.
  *
  * Fixture split: the attacker is a per-module ship (it needs a sensor module
- * to acquire the defender at range across every anomaly — a nebula halves the
+ * to acquire the defender at range across every anomalies — a nebula halves the
  * innate visual radius so the 80–300 wu separations in these tests would be
  * blind without one), while the defender is a legacy aggregated ship so
  * `totalHitsOn` — which counts structure decrements — sees every projectile
@@ -111,7 +111,7 @@ function omniSensor(detectionRange: number): ModuleEffect {
 }
 
 /** The attacker: a per-module ship (command + engine + omni sensor + weapons)
- *  so it acquires the defender at range across every anomaly (a nebula halves
+ *  so it acquires the defender at range across every anomalies (a nebula halves
  *  the innate visual radius, so without a sensor the longer-range fixtures
  *  would be blind). Weapons are modules so the per-module fire path runs. */
 function attacker(opts: {
@@ -210,12 +210,12 @@ function defender(opts: {
   });
 }
 
-function inputs(ships: CombatShip[], anomaly: BattleAnomaly, seed = 1, maxTicks = DEFAULT_MAX_TICKS): BattleInputs {
+function inputs(ships: CombatShip[], anomalies: BattleAnomalyKind[], seed = 1, maxTicks = DEFAULT_MAX_TICKS): BattleInputs {
   return {
     ships,
     attackerFleetId: "fa",
     defenderFleetId: "fd",
-    anomaly,
+    anomalies,
     seed,
     maxTicks,
   };
@@ -243,11 +243,11 @@ function shieldAt(result: ReturnType<typeof runBattle>, tick: number, id: string
 }
 
 describe("engine.anomalies", () => {
-  it("asteroid field deflects projectiles: fewer hits than anomaly=none", () => {
+  it("asteroid field deflects projectiles: fewer hits than anomalies=none", () => {
     // The defender has effectively infinite structure so it never dies;
     // the only difference between the two battles is how many projectiles
     // the asteroid field destroys on the way to the target.
-    const mkAttacker = (anomaly: BattleAnomaly) =>
+    const mkAttacker = (anomalies: BattleAnomalyKind[]) =>
       runBattle(
         inputs(
           [
@@ -281,13 +281,13 @@ describe("engine.anomalies", () => {
               orders: { engageRange: "hold" },
             }),
           ],
-          anomaly,
+          anomalies,
           1,
           1500,
         ),
       );
-    const none = mkAttacker("none");
-    const field = mkAttacker("asteroidField");
+    const none = mkAttacker([]);
+    const field = mkAttacker(["asteroidField"]);
     const noneHits = cellsDestroyed(none, "d1");
     const fieldHits = cellsDestroyed(field, "d1");
     expect(noneHits, "control battle should destroy cells").toBeGreaterThan(0);
@@ -298,8 +298,8 @@ describe("engine.anomalies", () => {
     // A huge shield with a single big hit drops it to a level where
     // regen brings it back up but does not cap within the sample
     // window. The nebula regen factor (0.5) must produce a strictly
-    // smaller shield value than anomaly=none over the same time.
-    const mkDefender = (anomaly: BattleAnomaly) =>
+    // smaller shield value than anomalies=none over the same time.
+    const mkDefender = (anomalies: BattleAnomalyKind[]) =>
       runBattle(
         inputs(
           [
@@ -325,13 +325,13 @@ describe("engine.anomalies", () => {
               orders: { engageRange: "hold" },
             }),
           ],
-          anomaly,
+          anomalies,
           1,
           300,
         ),
       );
-    const none = mkDefender("none");
-    const nebula = mkDefender("nebula");
+    const none = mkDefender([]);
+    const nebula = mkDefender(["nebula"]);
     const sampleTick = 250;
     const noneShield = shieldAt(none, sampleTick, "d1");
     const nebulaShield = shieldAt(nebula, sampleTick, "d1");
@@ -353,7 +353,7 @@ describe("engine.anomalies", () => {
     // dummy starts just outside the tidal zone at 4.5 km; structure is in
     // joules (well above the tidal damage it takes while falling through the
     // zone, so the kill is the horizon crossing not the tidal grind).
-    const mkShip = (anomaly: BattleAnomaly) =>
+    const mkShip = (anomalies: BattleAnomalyKind[]) =>
       runBattle(
         inputs(
           [
@@ -366,13 +366,13 @@ describe("engine.anomalies", () => {
             }),
             defender({ id: "d1", x: 4_500, y: 0, structure: 1e12, orders: { engageRange: "hold" } }),
           ],
-          anomaly,
+          anomalies,
           1,
           800,
         ),
       );
-    const none = mkShip("none");
-    const hole = mkShip("blackHole");
+    const none = mkShip([]);
+    const hole = mkShip(["blackHole"]);
     // Control: the dummy holds near its starting position.
     const lastNone = none.frames.at(-1);
     const dNone = lastNone?.ships.find((s) => s.instanceId === "d1");
@@ -396,7 +396,7 @@ describe("engine.anomalies", () => {
     // region. The slow round (4 m/tick) is the pre-km projectile speed; here
     // it is rescaled so the round still samples the field rather than
     // tunnelling across the km arena in a single tick.
-    const mk = (projectileSpeed: number, anomaly: BattleAnomaly) =>
+    const mk = (projectileSpeed: number, anomalies: BattleAnomalyKind[]) =>
       runBattle(
         inputs(
           [
@@ -417,7 +417,7 @@ describe("engine.anomalies", () => {
             }),
             defender({ id: "d1", x: 800, y: 5_000, structure: 99999 }),
           ],
-          anomaly,
+          anomalies,
         ),
       );
     // y of the first projectile in flight a few ticks after the first round is
@@ -435,11 +435,11 @@ describe("engine.anomalies", () => {
       if (p === undefined) throw new Error("no projectile at the inspection tick");
       return p.y;
     };
-    // Control: with no anomaly the projectile travels straight along y=5000.
-    const noneY = earlyProjY(mk(4, "none"));
+    // Control: with no anomalies the projectile travels straight along y=5000.
+    const noneY = earlyProjY(mk(4, []));
     // Black hole: the field pulls the projectile toward (0,0), so y drops below
     // the straight-line value.
-    const holeY = earlyProjY(mk(4, "blackHole"));
+    const holeY = earlyProjY(mk(4, ["blackHole"]));
     expect(Math.abs(noneY - 5_000)).toBeLessThan(1);
     expect(holeY).toBeLessThan(noneY);
     expect(holeY).toBeLessThan(5_000);

@@ -169,7 +169,7 @@ describe("engine.angular-units", () => {
       ships: [s, t],
       attackerFleetId: "a",
       defenderFleetId: "b",
-      anomaly: "none",
+      anomalies: [],
       seed: 1,
       maxTicks: 10,
     };

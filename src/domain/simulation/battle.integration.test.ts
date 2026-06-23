@@ -95,7 +95,7 @@ describe("battle pipeline (resolve -> runBattle)", () => {
       ships,
       attackerFleetId: attacker.id,
       defenderFleetId: defender.id,
-      anomaly: "none",
+      anomalies: [],
       seed: 1,
     });
 
@@ -146,8 +146,8 @@ describe("battle pipeline (resolve -> runBattle)", () => {
     // full stalemate cap twice. `DEFAULT_MAX_TICKS` is sized for light-lag
     // battles; running it twice here would time out the test for no gain.
     const DETERMINISM_TICKS = 600;
-    const resultA = runBattle({ ships: shipsA, attackerFleetId: attacker.id, defenderFleetId: defender.id, anomaly: "none", seed: 7, maxTicks: DETERMINISM_TICKS });
-    const resultB = runBattle({ ships: shipsB, attackerFleetId: attacker.id, defenderFleetId: defender.id, anomaly: "none", seed: 7, maxTicks: DETERMINISM_TICKS });
+    const resultA = runBattle({ ships: shipsA, attackerFleetId: attacker.id, defenderFleetId: defender.id, anomalies: [], seed: 7, maxTicks: DETERMINISM_TICKS });
+    const resultB = runBattle({ ships: shipsB, attackerFleetId: attacker.id, defenderFleetId: defender.id, anomalies: [], seed: 7, maxTicks: DETERMINISM_TICKS });
     expect(resultB.frames).toEqual(resultA.frames);
     expect(resultB.winner).toBe(resultA.winner);
     expect(resultB.ticks).toBe(resultA.ticks);
@@ -162,7 +162,7 @@ describe("battle pipeline (resolve -> runBattle)", () => {
       ...resolveFleetToCombatShips(attacker, designs, catalog(), "attacker"),
       ...resolveFleetToCombatShips(defender, designs, catalog(), "defender"),
     ];
-    const result = runBattle({ ships, attackerFleetId: attacker.id, defenderFleetId: defender.id, anomaly: "none", seed: 42 });
+    const result = runBattle({ ships, attackerFleetId: attacker.id, defenderFleetId: defender.id, anomalies: [], seed: 42 });
     // The per-module power grid makes a symmetric single-reactor mirror
     // match draw: both reactors die, weapons go unpowered, neither side
     // can land a killing blow. The pipeline still produces a well-formed

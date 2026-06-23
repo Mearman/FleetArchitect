@@ -77,7 +77,7 @@ function buildInputs(
     ships: [...attacker, ...defender],
     attackerFleetId: attackerId,
     defenderFleetId: defenderId,
-    anomaly: "none",
+    anomalies: [],
     seed,
     maxTicks: tickCap,
   };
@@ -272,7 +272,7 @@ describe("engine.lethality — fast uncapped terminal-state guard", () => {
       ],
       attackerFleetId: "lethality-carrion",
       defenderFleetId: "lethality-automaton",
-      anomaly: "none",
+      anomalies: [],
       seed: 42,
       maxTicks: undefined,
     };

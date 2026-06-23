@@ -84,8 +84,8 @@ describe("engine.awareness — comms links", () => {
       ]),
       ship("d1", "defender", 0, 900, [...core()]),
     ];
-    const rf = runBattle(inputs(allyPair("omni"), "blackHole"));
-    const laser = runBattle(inputs(allyPair("laser"), "blackHole"));
+    const rf = runBattle(inputs(allyPair("omni"), ["blackHole"]));
+    const laser = runBattle(inputs(allyPair("laser"), ["blackHole"]));
     expect(linksOf(rf, 0).length).toBe(1);
     expect(linksOf(laser, 0).length).toBe(0);
   });
