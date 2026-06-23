@@ -15,6 +15,7 @@ import {
   shipCardName,
   shipCardStat,
   shipCardStats,
+  shipCardWrap,
 } from "./shipCard.css";
 
 interface ShipCardProps {
@@ -52,11 +53,6 @@ export function ShipCard({ design, selected, onSelect, action, compact }: ShipCa
 
   const body = (
     <>
-      {action !== undefined && (
-        <div className={shipCardAction} onClick={(e) => e.stopPropagation()}>
-          {action}
-        </div>
-      )}
       <ShipThumbnail design={design} size={thumbSize} accent={accent} />
       <div className={shipCardMeta}>
         <span className={shipCardName}>{design.name}</span>
@@ -70,8 +66,10 @@ export function ShipCard({ design, selected, onSelect, action, compact }: ShipCa
     </>
   );
 
-  if (onSelect === undefined) {
-    return (
+  // The card is a button when selectable; the action is a *sibling* in the
+  // wrapper (never nested inside the button — that is invalid HTML).
+  const card =
+    onSelect === undefined ? (
       <div
         className={shipCard}
         style={{ borderColor: accent }}
@@ -79,19 +77,23 @@ export function ShipCard({ design, selected, onSelect, action, compact }: ShipCa
       >
         {body}
       </div>
+    ) : (
+      <UnstyledButton
+        type="button"
+        className={shipCard}
+        style={{ borderColor: accent }}
+        data-selected={selected === true ? "true" : undefined}
+        onClick={() => onSelect(design)}
+        aria-pressed={selected}
+      >
+        {body}
+      </UnstyledButton>
     );
-  }
 
   return (
-    <UnstyledButton
-      type="button"
-      className={shipCard}
-      style={{ borderColor: accent }}
-      data-selected={selected === true ? "true" : undefined}
-      onClick={() => onSelect(design)}
-      aria-pressed={selected}
-    >
-      {body}
-    </UnstyledButton>
+    <div className={shipCardWrap}>
+      {card}
+      {action !== undefined && <div className={shipCardAction}>{action}</div>}
+    </div>
   );
 }

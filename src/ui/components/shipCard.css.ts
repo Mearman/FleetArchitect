@@ -44,6 +44,17 @@ export const shipCard = style({
   },
 });
 
+/**
+ * Positioned wrapper so a per-card action can sit as a *sibling* of the card
+ * button rather than nested inside it (a button inside a button is invalid HTML
+ * and triggers a hydration error). The card fills the wrapper.
+ */
+export const shipCardWrap = style({
+  position: "relative",
+  width: "100%",
+  display: "flex",
+});
+
 /** Top-right corner slot for a per-card action (e.g. a delete button). */
 export const shipCardAction = style({
   position: "absolute",
