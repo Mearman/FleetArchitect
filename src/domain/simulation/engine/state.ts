@@ -23,7 +23,7 @@ import type { SimMine, SimPod, SimProjectile, SimShip } from "./types";
  * - `ships` — every live SimShip, including phantoms (drones/decoys) and
  *   break-away chunks pushed in mid-run.
  * - `attackers` / `defenders` / `byId` — per-side views and the id index,
- *   rebuilt at the top of each tick from `ships`.
+ *   rebuilt only when the `ships` array grows (see ./roster.ts).
  * - `deployment` — each side's centroid at the moment of deployment, captured
  *   once before any ship moves; blind fleets steer toward the opposing one.
  * - `projectiles` / `mines` / `pods` / `pulses` / `emissions` / `debris` —

@@ -15,9 +15,8 @@ import type { ShipStats } from "@/domain/stats";
 
 /**
  * W5b: the O(C^2)-bounding guards (break-apart topology skip, chain-reaction
- * spatial pre-filter, bounded brownout cut, incremental roster rebuild) must be
- * pure optimisations — the engine produces byte-identical frames with each
- * guard on or off.
+ * spatial pre-filter, bounded brownout cut) must be pure optimisations — the
+ * engine produces byte-identical frames with each guard on or off.
  *
  * Each guard is exercised by a targeted synthetic close-range fixture that
  * places ships within weapon range from tick one, ensuring the guard path is
@@ -33,9 +32,6 @@ import type { ShipStats } from "@/domain/stats";
  *    is destroyed.
  *  - brownoutBounded: sort power-draw candidates once rather than re-scanning
  *    per cut. Triggered when power demand exceeds supply.
- *  - incrementalRoster: rebuild the per-side roster lists and id index only
- *    when the ships array grows, not every tick. Triggered when break-apart
- *    chunks or phantom launches push into the ships array.
  *
  * Geometry note
  * =============
@@ -192,7 +188,6 @@ function assertGuardIdempotence(inputs: BattleInputs): string {
     breakApartTopology: false,
     chainReactionSpatial: false,
     brownoutBounded: false,
-    incrementalRoster: false,
   });
   const naive = frameHash(inputs);
 
@@ -200,7 +195,6 @@ function assertGuardIdempotence(inputs: BattleInputs): string {
     breakApartTopology: true,
     chainReactionSpatial: true,
     brownoutBounded: true,
-    incrementalRoster: true,
   });
   const optimised = frameHash(inputs);
 
@@ -272,7 +266,6 @@ describe("W5b perf guards preserve frame output", () => {
       breakApartTopology: false,
       chainReactionSpatial: false,
       brownoutBounded: false,
-      incrementalRoster: false,
     });
     const result = runBattle({ ...inputs, ships: structuredClone(inputs.ships) });
     const bridgeDied = result.frames.some((f) => {
@@ -324,7 +317,6 @@ describe("W5b perf guards preserve frame output", () => {
       breakApartTopology: false,
       chainReactionSpatial: false,
       brownoutBounded: false,
-      incrementalRoster: false,
     });
     const result = runBattle({ ...inputs, ships: structuredClone(inputs.ships) });
     const magDied = result.frames.some((f) => {
@@ -398,65 +390,9 @@ describe("W5b perf guards preserve frame output", () => {
       breakApartTopology: false,
       chainReactionSpatial: false,
       brownoutBounded: false,
-      incrementalRoster: false,
     });
     const result = runBattle({ ...inputs, ships: structuredClone(inputs.ships) });
     expect(result.ticks).toBe(10); // battle ran to full duration, not an early kill
-  });
-
-  // -------------------------------------------------------------------------
-  // Fixture D: incrementalRoster guard
-  //
-  // The per-side roster lists (attackers/defenders) and the id index (byId) are
-  // rebuilt at the top of every tick in the naive path. The incremental guard
-  // rebuilds only when the live ships array has grown since the last rebuild.
-  // Membership only ever grows: break-apart chunks and phantom launches push
-  // into the same stable array, and ships never change side. So whenever the
-  // length is unchanged the rebuilt structures would have identical contents.
-  //
-  // To exercise the rebuild path this fixture must trigger a break-apart so
-  // ships.push runs and the array grows mid-battle. It mirrors fixture A's
-  // vertical I-beam geometry: a low-HP bridge cell at row=0 linking a top and
-  // bottom flank. When the bridge dies the flanks are no longer 4-connected and
-  // two chunks are spawned, growing the ships array and exercising both the
-  // mid-tick manual roster refresh (in the break-apart block) and the
-  // top-of-tick incremental rebuild on the following tick.
-  // -------------------------------------------------------------------------
-  it("incrementalRoster guard: frames are byte-identical when break-apart grows the ships array", () => {
-    const defender = combatShip(
-      "def-roster",
-      "defender",
-      [
-        moduleOf("dt", { kind: "hull" },  0, -1, 5_000, 5, true), // top flank (command, high HP)
-        moduleOf("db", { kind: "hull" },  0,  0,    40),           // bridge (low HP, dies first)
-        moduleOf("dk", { kind: "hull" },  0,  1, 5_000),           // bottom flank (high HP)
-      ],
-      { x: 80, y: 0 },
-      0,
-    );
-
-    const inputs = battleInputs([standardAttacker("atk-roster"), defender]);
-    assertGuardIdempotence(inputs);
-
-    // Sanity: the bridge must die and the ship must break apart so the ships
-    // array grows and the incremental rebuild path is actually traversed.
-    Object.assign(PERF_GUARDS, {
-      breakApartTopology: false,
-      chainReactionSpatial: false,
-      brownoutBounded: false,
-      incrementalRoster: false,
-    });
-    const result = runBattle({ ...inputs, ships: structuredClone(inputs.ships) });
-    const bridgeDied = result.frames.some((f) => {
-      const ship = f.ships.find((s) => s.instanceId === "def-roster");
-      return (ship?.cells ?? []).some((c) => c.slotId === "db" && !c.alive);
-    });
-    expect(bridgeDied, "the bridge cell must die for the roster to grow via break-apart").toBe(true);
-    // A break-apart that severs the flanks spawns at least one chunk, so the
-    // final frame must carry more ships than the initial two.
-    const lastFrame = result.frames[result.frames.length - 1];
-    if (lastFrame === undefined) throw new Error("no frames produced");
-    expect(lastFrame.ships.length, "break-apart must grow the ship count for the incremental rebuild to fire").toBeGreaterThan(2);
   });
 
   // -------------------------------------------------------------------------

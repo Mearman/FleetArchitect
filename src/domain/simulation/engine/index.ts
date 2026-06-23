@@ -36,8 +36,8 @@ import { moveShips } from "./movement";
 import { launchDecoys, launchDrones, stepPhantoms } from "./phantoms";
 import { stepPulses } from "./pulse-step";
 import { hasAliveCommand, recomputeAggregates } from "./physics";
-import { PERF_GUARDS } from "./perf-guards";
 import { electFocusTarget, pickTarget } from "./targeting";
+import { refreshRosterIncremental } from "./roster";
 import { applyBlink, applyCommandAuras, stepOvercharge } from "./tech";
 import { shipDescriptor, snapshot } from "./snapshot";
 import type { SimShip } from "./types";
@@ -184,10 +184,6 @@ export function* simulateBattle(
         }
       : undefined;
 
-  // Roster length tracker for the incremental-roster guard: rebuild the
-  // per-side lists and id index only when the ships array grows.
-  let rosterLen = state.ships.length;
-
   for (let tick = startTick; inputs.maxTicks === undefined || tick <= inputs.maxTicks; tick++) {
     // 0. Awareness phase (sensors, comms, fog of war). Runs first so the
     //    targeting pass below reads each ship's freshly computed `awareness`.
@@ -223,14 +219,9 @@ export function* simulateBattle(
     // 0. Refresh the per-side ship lists and id index from the live `ships`
     //    array so they include phantoms (drones/decoys) and break-away chunks
     //    added on a previous tick. Incremental: membership only grows and ships
-    //    never change side, so rebuild only when the count changed (naive path
-    //    rebuilds every tick for the A/B determinism test).
-    if (!PERF_GUARDS.incrementalRoster || state.ships.length !== rosterLen) {
-      state.attackers = state.ships.filter((s) => s.side === "attacker");
-      state.defenders = state.ships.filter((s) => s.side === "defender");
-      state.byId = new Map(state.ships.map((s) => [s.instanceId, s]));
-      rosterLen = state.ships.length;
-    }
+    //    never change side, so the rebuild runs only when the count changed
+    //    (see ./roster.ts).
+    refreshRosterIncremental(state);
 
     // 0a-debris. Record which real ships are alive entering this tick, so the
     //     debris step after the damage phases can spawn wreckage for exactly the
@@ -541,9 +532,6 @@ export function* simulateBattle(
         if (s.side === "attacker") state.attackers.push(s);
         else state.defenders.push(s);
       }
-      // The manual rebuild above has already brought the roster up to date
-      // with the grown ships array, so advance the tracker to match.
-      rosterLen = state.ships.length;
     }
 
     // 4d. A modular ship whose bridge (every command module) has been
