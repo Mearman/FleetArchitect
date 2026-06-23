@@ -21,6 +21,12 @@ export interface PerfGuards {
   /** Bound the brownout power-cut victim search so it does not re-scan every
    *  cell per cut. */
   brownoutBounded: boolean;
+  /** Rebuild the per-side roster lists and id index only when the live ships
+   *  array grows, rather than every tick. Membership only grows (break-apart
+   *  chunks and phantom launches push into the same stable array) and ships
+   *  never change side, so the rebuilt structures have identical contents
+   *  whenever the length is unchanged. */
+  incrementalRoster: boolean;
 }
 
 /** The live guard configuration. Mutated only by the determinism A/B test, which
@@ -29,4 +35,5 @@ export const PERF_GUARDS: PerfGuards = {
   breakApartTopology: true,
   chainReactionSpatial: true,
   brownoutBounded: true,
+  incrementalRoster: true,
 };
