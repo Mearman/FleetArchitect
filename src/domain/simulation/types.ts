@@ -360,18 +360,68 @@ export const ACCEL_PER_TICK_FROM_SI =
 export const DEFAULT_MAX_TICKS = 18_000;
 
 /**
+ * Maximum kinetic-weapon time of flight (seconds) — the longest a fired round
+ * stays useful before the firing solution goes stale. This is the same anchor
+ * as `MAX_TOF_S` in `combat-scale.ts`, restated here so the stalemate
+ * derivation below does not back-import from `combat-scale.ts` (which itself
+ * imports `TICKS_PER_SECOND` from this module — a circular value import would
+ * hit the temporal dead zone). The two MUST stay in sync; the value is the
+ * `t` in `range = v · t` for a kinetic weapon.
+ */
+const STALEMATE_MAX_TOF_S = 3;
+
+/**
+ * Maximum reasonable single-weapon reload interval (seconds) across the
+ * catalogue — the longest a heavy weapon sits between shots. The named
+ * `RELOAD_THERMAL_TIME_S` anchor in `combat-scale.ts` tops out at the torpedo's
+ * ~5 s, but a handful of catalogue specials run longer (the Foundry siege
+ * plasma at ~6.67 s). 7 s covers the worst catalogue weapon reload with
+ * margin, so the stalemate window below is sized against the true ceiling
+ * rather than the generic anchor alone.
+ */
+const STALEMATE_MAX_RELOAD_S = 7;
+
+/**
+ * Safety multiplier applied to the single-ship worst-case idle gap when sizing
+ * the stalemate window. A single ship's longest no-progress gap is its heaviest
+ * reload plus its slowest projectile's flight time, but the watchdog resets on
+ * ANY progress across the WHOLE battle (any ship landing a hit, any pair
+ * closing, any ship drifting onto a mine). A 4× factor covers staggered
+ * multi-ship volleys where several ships fire out of phase and the gap between
+ * the last and next progress event is several reload cycles, while still
+ * terminating a genuinely stuck battle in bounded time (~40 s at
+ * `TICKS_PER_SECOND`).
+ */
+const STALEMATE_SAFETY_FACTOR = 4;
+
+/**
  * No-progress stalemate window — the sole termination guarantee for an uncapped
  * battle. The engine tracks all-time lows of three monotone quantities: combined
  * hull+shield HP across live ships (damage landing, or a kill), the closest
  * enemy-pair distance (the sides closing), and the closest ship-to-mine distance
  * (a ship drifting onto a hazard). A tick that sets no new low in any of them is
  * "idle"; this many consecutive idle ticks means neither side can make further
- * progress, so the battle is decided on remaining HP. Sized well above the
- * longest realistic gap between progress events — a heavy weapon's reload plus a
- * light-lag projectile's flight time — so an actively (even slowly) fighting
- * battle never trips it, while a genuinely stuck one terminates in bounded time.
+ * progress, so the battle is decided on remaining HP.
+ *
+ * DERIVED from the maximum realistic single-ship no-progress gap — a heavy
+ * weapon's reload (`STALEMATE_MAX_RELOAD_S`) plus a kinetic round's flight time
+ * (`STALEMATE_MAX_TOF_S`, mirroring `MAX_TOF_S` in `combat-scale.ts`) — times
+ * `TICKS_PER_SECOND`, then scaled by `STALEMATE_SAFETY_FACTOR` so a real-but-
+ * slow km-scale exchange (where salvos arrive on staggered multi-second cycles
+ * and ships close under thrust over tens of kilometres) is never mistaken for a
+ * stalemate. With the anchors above this is `(7 + 3) × 30 × 4` = 1200 ticks
+ * (~40 s), up from the pre-km 1000 so the longer km-scale flight times and
+ * derived cooldowns have full headroom. A genuinely stuck battle (neither side
+ * closing, no damage landing) still terminates in bounded time.
+ *
+ * Classification: derived-by-formula (reload + time-of-flight, tick-converted
+ * and safety-scaled).
  */
-export const STALEMATE_IDLE_TICKS = 1_000;
+export const STALEMATE_IDLE_TICKS = Math.ceil(
+  (STALEMATE_MAX_RELOAD_S + STALEMATE_MAX_TOF_S) *
+    TICKS_PER_SECOND *
+    STALEMATE_SAFETY_FACTOR,
+);
 
 /**
  * Wall-clock interval between streamed frame batches, in milliseconds. The

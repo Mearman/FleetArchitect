@@ -235,7 +235,7 @@ describe("engine.lethality — fast uncapped terminal-state guard", () => {
     //     is deterministic across seeds — all 8 tested seeds (0, 1, 42, 100,
     //     123, 999, 7777, 12345) produce attacker wins at tick ~629, 2.5–4.6 s
     //     isolated (verified on the development machine).
-    //   - 629 ticks is well below the 1000-tick no-progress stalemate threshold
+    //   - 629 ticks is well below the 1200-tick no-progress stalemate threshold
     //     (STALEMATE_IDLE_TICKS), confirming the battle terminates via the
     //     elimination check in step 6 of the engine loop, not the HP-tiebreak
     //     watchdog. The losing side has 0 alive ships, not "fewer HP than the
