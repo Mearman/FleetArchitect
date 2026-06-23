@@ -172,6 +172,9 @@ export function ShipDesignerRoute() {
   // shareable design (`load` is a hoisted declaration below).
   useShipDesignUrlSync(working, load);
   const [showAirtightness, setShowAirtightness] = useState(true);
+  // Flat top-down editing vs an isometric 2.5D tilt (GridBoard applies the CSS
+  // transform and inverts the same matrix when hit-testing paints).
+  const [view, setView] = useState<"2d" | "iso">("2d");
   const [historyOpen, setHistoryOpen] = useState(false);
   const [revisions, setRevisions] = useState<ShipDesign[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -618,6 +621,7 @@ export function ShipDesignerRoute() {
                 selected={selected}
                 breached={breached}
                 showAirtightness={showAirtightness}
+                view={view}
                 onPaint={paint}
                 onEdge={paintEdge}
               />
@@ -635,6 +639,17 @@ export function ShipDesignerRoute() {
               label="Airtight"
               checked={showAirtightness}
               onChange={(e) => setShowAirtightness(e.currentTarget.checked)}
+            />
+            <SegmentedControl
+              size="xs"
+              value={view}
+              onChange={(v) => {
+                setView(v === "iso" ? "iso" : "2d");
+              }}
+              data={[
+                { label: "2D", value: "2d" },
+                { label: "2.5D", value: "iso" },
+              ]}
             />
           </div>
 

@@ -46,11 +46,20 @@ function renderedEdges(cell: SolidCell): RenderedEdge[] {
   return out;
 }
 
+/** True 2:1 isometric tilt for the designer board. The CSS matrix maps a local
+ *  board point (px, relative to the centred transform-origin) to screen:
+ *  matrix(A, B, -A, B, 0, 0) i.e. x' = A(x - y), y' = B(x + y). Painting inverts
+ *  it (see `cellAtPointer`): x = sx/(2A) + sy/(2B), y = -sx/(2A) + sy/(2B). */
+const ISO_A = 0.8;
+const ISO_B = ISO_A / 2;
+const ISO_TRANSFORM = `matrix(${ISO_A}, ${ISO_B}, ${-ISO_A}, ${ISO_B}, 0, 0)`;
+
 export function GridBoard({
   grid,
   selected,
   breached,
   showAirtightness,
+  view,
   onPaint,
   onEdge,
 }: {
@@ -60,6 +69,8 @@ export function GridBoard({
    *  `showAirtightness` is true. */
   breached: BreachSet;
   showAirtightness: boolean;
+  /** Flat top-down ("2d") or isometric 2.5D ("iso") rendering + hit-testing. */
+  view: "2d" | "iso";
   /** Paint the whole cell at (col, row). Called for a cell-body click. */
   onPaint: (col: number, row: number) => void;
   /** Paint the edge of the cell at (col, row) on the given side. Called for an
@@ -116,8 +127,31 @@ export function GridBoard({
     if (node === null) return null;
     const r = node.getBoundingClientRect();
     if (r.width === 0 || r.height === 0) return null;
-    const col = Math.floor(((clientX - r.left) / r.width) * grid.cols);
-    const row = Math.floor(((clientY - r.top) / r.height) * grid.rows);
+
+    let fracX: number;
+    let fracY: number;
+    if (view === "iso") {
+      // The board carries ISO_TRANSFORM around its centred origin, so its
+      // visual AABB (`r`) is the tilted diamond — its centre is the board
+      // centre (the origin is fixed by the linear map). offsetWidth/Height are
+      // the untransformed layout px. Invert the iso matrix on the screen delta
+      // from centre to recover the local board point, then normalise to [0,1).
+      const w = node.offsetWidth;
+      const h = node.offsetHeight;
+      if (w === 0 || h === 0) return null;
+      const dx = clientX - (r.left + r.width / 2);
+      const dy = clientY - (r.top + r.height / 2);
+      const localX = dx / (2 * ISO_A) + dy / (2 * ISO_B);
+      const localY = -dx / (2 * ISO_A) + dy / (2 * ISO_B);
+      fracX = (w / 2 + localX) / w;
+      fracY = (h / 2 + localY) / h;
+    } else {
+      fracX = (clientX - r.left) / r.width;
+      fracY = (clientY - r.top) / r.height;
+    }
+
+    const col = Math.floor(fracX * grid.cols);
+    const row = Math.floor(fracY * grid.rows);
     if (col < 0 || row < 0 || col >= grid.cols || row >= grid.rows) return null;
     return { col, row };
   }
@@ -164,6 +198,10 @@ export function GridBoard({
           // overlay SVG (preserveAspectRatio="none", viewBox 0 0 cols rows)
           // maps one unit to one cell on both axes — keeping the hull in sync.
           aspectRatio: `${grid.cols} / ${grid.rows}`,
+          // 2.5D: tilt the whole board into the iso plane about its centre.
+          // Painting inverts this same matrix in cellAtPointer.
+          transform: view === "iso" ? ISO_TRANSFORM : undefined,
+          transformOrigin: "center",
         }}
       >
         {builtCells.map(({ col, row, cell }) => {
@@ -235,6 +273,9 @@ export function GridBoard({
             height: "100%",
             overflow: "visible",
             pointerEvents: "none",
+            // Match the board's iso tilt so the hull silhouette stays aligned.
+            transform: view === "iso" ? ISO_TRANSFORM : undefined,
+            transformOrigin: "center",
           }}
           aria-hidden="true"
         >
