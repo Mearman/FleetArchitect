@@ -179,6 +179,17 @@ export function storage(): Storage {
   return singleton;
 }
 
+/**
+ * The `simCache` Dexie table on the singleton database, for the IndexedDB
+ * durable tier of the result cache. Exposed so `DexieSimCache` can be composed
+ * at the UI edge without the storage internals leaking; tests rebind the
+ * database via `_setDatabaseForTesting`, so this always resolves the current
+ * instance.
+ */
+export function simCacheTable(): Table<SimCacheRecord, string> {
+  return database().simCache;
+}
+
 /** Read a meta value, or undefined if the key has never been set. Callers
  *  narrow the `unknown` value with a type guard — meta stores untyped flags. */
 export async function getMeta(key: string): Promise<unknown> {

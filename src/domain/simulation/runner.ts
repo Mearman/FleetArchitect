@@ -23,6 +23,14 @@ export type OnFramesCallback = (
 export interface BattleRunOptions {
   signal?: AbortSignal;
   onFrames?: OnFramesCallback;
+  /**
+   * Bypass the result cache for this run: skip the lookup and skip storing the
+   * result. The decorating {@link BattleRunner} (the caching runner at the UI
+   * edge) honours this; the inner Direct/Worker runners ignore it. Used to force
+   * a fresh re-simulation (the "recompute" path) without disturbing any cached
+   * entry.
+   */
+  noCache?: boolean;
 }
 
 /**

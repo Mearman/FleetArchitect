@@ -46,6 +46,18 @@ function estimateBytes(result: BattleResult): number {
   return new TextEncoder().encode(JSON.stringify(result)).length;
 }
 
+/**
+ * Whether a thrown value is a storage quota-exceeded error. IndexedDB surfaces
+ * an exhausted quota as a `DOMException` named `QuotaExceededError`; Dexie
+ * propagates it (or wraps it in an error whose `name` is preserved). Narrow
+ * `unknown` with `in` and `typeof` — no assertions.
+ */
+function isQuotaExceeded(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  if (!("name" in error)) return false;
+  return error.name === "QuotaExceededError";
+}
+
 export class DexieSimCache implements SimCache {
   constructor(
     private readonly table: Table<SimCacheRecord, string>,
@@ -76,13 +88,34 @@ export class DexieSimCache implements SimCache {
       bytes: estimateBytes(value),
       lastAccess: Date.now(),
     };
-    await this.table.put(record);
+    try {
+      await this.table.put(record);
+    } catch (error) {
+      // Only a quota exhaustion is recoverable here: drop the oldest entry to
+      // free space and retry the write once. Any other failure (a real Dexie
+      // error, a constraint violation) is a bug and is rethrown unchanged — the
+      // UI decorator surfaces it rather than serving stale or losing the write
+      // silently.
+      if (!isQuotaExceeded(error)) throw error;
+      await this.evictOldest();
+      await this.table.put(record);
+    }
     await this.evict();
   }
 
   async has(key: string): Promise<boolean> {
     const count = await this.table.where("key").equals(key).count();
     return count > 0;
+  }
+
+  /**
+   * Delete the single oldest-`lastAccess` row, if any. Used to free space after
+   * a quota-exceeded `put` before retrying it once.
+   */
+  private async evictOldest(): Promise<void> {
+    const oldest = await this.table.orderBy("lastAccess").first();
+    if (oldest === undefined) return;
+    await this.table.delete(oldest.key);
   }
 
   /**

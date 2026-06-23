@@ -10,3 +10,4 @@ coverage
 .vite
 *.tsbuildinfo
 .playwright-mcp
+.cache
