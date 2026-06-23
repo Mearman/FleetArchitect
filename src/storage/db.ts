@@ -32,6 +32,21 @@ export type DesignRevisionRecord = SerializedShipDesign;
 export type FleetRevisionRecord = Fleet;
 
 /**
+ * One cached deterministic battle result. The composite content `key` (see
+ * `src/domain/cache/key.ts`) addresses the entry; `bytes` is the serialised size
+ * for the byte-budget eviction; `lastAccess` is an epoch-ms timestamp bumped on
+ * read for LRU eviction. This table is SEPARATE from the write-only `battles`
+ * history (which is keyed by random id and records every play): the cache is a
+ * memoisation tier read back by content hash, the history is an audit log.
+ */
+export interface SimCacheRecord {
+  key: string;
+  result: BattleResult;
+  bytes: number;
+  lastAccess: number;
+}
+
+/**
  * Dexie-backed IndexedDB database. The schema version lives here; bump it and
  * add a `.version(n).upgrade()` step when the stored shape changes. Stores not
  * mentioned in a newer version are inherited unchanged.
@@ -43,6 +58,7 @@ class FleetArchitectDatabase extends Dexie {
   meta!: Table<MetaRecord, string>;
   design_revisions!: Table<DesignRevisionRecord, [string, number]>;
   fleet_revisions!: Table<FleetRevisionRecord, [string, number]>;
+  simCache!: Table<SimCacheRecord, string>;
 
   constructor(name = "fleet-architect", options?: DexieOptions) {
     super(name, options);
@@ -68,6 +84,12 @@ class FleetArchitectDatabase extends Dexie {
     this.version(4).stores({
       design_revisions: "[id+revision], id",
       fleet_revisions: "[id+revision], id",
+    });
+    // Deterministic battle result cache (Part 1 of the cache plan). Keyed by the
+    // content hash; `lastAccess` and `bytes` are indexed for LRU + byte-budget
+    // eviction. Separate from the write-only `battles` history.
+    this.version(5).stores({
+      simCache: "key, lastAccess, bytes",
     });
   }
 }
