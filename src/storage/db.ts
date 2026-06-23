@@ -73,7 +73,6 @@ export interface CheckpointRecord {
 class FleetArchitectDatabase extends Dexie {
   ships!: Table<SerializedShipDesign, string>;
   fleets!: Table<Fleet, string>;
-  battles!: Table<BattleResult, string>;
   meta!: Table<MetaRecord, string>;
   design_revisions!: Table<DesignRevisionRecord, [string, number]>;
   fleet_revisions!: Table<FleetRevisionRecord, [string, number]>;
@@ -118,6 +117,12 @@ class FleetArchitectDatabase extends Dexie {
     this.version(6).stores({
       checkpoints: "key, updatedAt",
     });
+    // Drop the write-only battles history. Nothing read it, and after SI
+    // re-grounding inflated per-tick frames the structured clone of the full
+    // BattleResult threw DataCloneError out of memory. Dexie deletes a store
+    // only when a newer version sets it to null; version(1)'s declaration is
+    // left intact so the upgrade chain stays consistent.
+    this.version(7).stores({ battles: null });
   }
 }
 
@@ -192,7 +197,6 @@ export function createStorage(): Storage {
   return {
     ships: makeShipRepository(instance.ships),
     fleets: makeRepository(instance.fleets),
-    battles: makeRepository(instance.battles),
   };
 }
 

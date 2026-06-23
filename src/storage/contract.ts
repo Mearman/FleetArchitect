@@ -1,4 +1,3 @@
-import type { BattleResult } from "@/schema/battle";
 import type { Fleet } from "@/schema/fleet";
 import type { ShipDesign } from "@/schema/ship";
 
@@ -16,10 +15,8 @@ export interface Repository<T extends { id: string }> {
 
 export type ShipDesignRepository = Repository<ShipDesign>;
 export type FleetRepository = Repository<Fleet>;
-export type BattleResultRepository = Repository<BattleResult>;
 
 export interface Storage {
   ships: ShipDesignRepository;
   fleets: FleetRepository;
-  battles: BattleResultRepository;
 }

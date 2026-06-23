@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from "react";
 import { resolveFleetToCombatShips } from "@/domain/resolve";
 import { battleRunner } from "@/ui/battleRunner";
 import { catalog } from "@/data/catalog";
-import { storage } from "@/storage/db";
 import type {
   BattleAnomaly as BattleAnomalyType,
   BattleFrame,
@@ -317,7 +316,6 @@ export function useBattleSimulation({
       );
       // A superseded run that resolves anyway must not clobber the current one.
       if (controller.signal.aborted) return;
-      void storage().battles.save(battle);
       setResult(battle);
       // Reconcile the descriptor map against the authoritative complete list on
       // the result, so any instance the stream did not surface (or a replay that
