@@ -59,7 +59,7 @@ export function spawnProjectile(
   // divided by the ship's moment of inertia. Applied before the projectile
   // enters the world so the first tick of travel already reflects the
   // ship's post-recoil velocity.
-  applyImpulse(owner, -SIM.projectileMass * vx, -SIM.projectileMass * vy, muzzleLocalX, muzzleLocalY);
+  applyImpulse(owner, -weapon.projectileMass * vx, -weapon.projectileMass * vy, muzzleLocalX, muzzleLocalY);
   return {
     id: claimProjectileId(),
     x: muzzleX,
@@ -67,7 +67,7 @@ export function spawnProjectile(
     vx,
     vy,
     kind: weapon.weaponType,
-    mass: SIM.projectileMass,
+    mass: weapon.projectileMass,
     muzzleLocalX,
     muzzleLocalY,
     damage: weapon.damage,

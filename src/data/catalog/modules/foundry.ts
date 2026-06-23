@@ -3,6 +3,49 @@ import {
   driveThrustNewtons,
   moduleMass,
 } from "../physics";
+import {
+  MUZZLE_VELOCITY_M_PER_S,
+  PROJECTILE_MASS_KG,
+  kineticDamageJoules,
+  projectileSpeedMPerTick,
+} from "../combat-scale";
+
+// ---------------------------------------------------------------------------
+// Weapon damage and projectile speed are DERIVED from the combat-scale anchors
+// (`../combat-scale.ts`): kinetic `damage` = ½·m·v² via `kineticDamageJoules`,
+// `projectileSpeed` = `projectileSpeedMPerTick(muzzleVelocity)` (the m/s →
+// m/tick boundary). The siege plasma and torpedo carry an authored warhead yield
+// (J) plus a body mass / cruise velocity. The Foundry field the heaviest guns in
+// the catalogue: a frigate autocannon, a capital heavy cannon, and capital-grade
+// plasma and torpedo ordnance.
+// ---------------------------------------------------------------------------
+
+/** Foundry autocannon round: a frigate-class rotary slug (`railgun` banding in
+ *  `PROJECTILE_MASS_KG` / `MUZZLE_VELOCITY_M_PER_S`). */
+const AUTOCANNON_MASS_KG = PROJECTILE_MASS_KG.railgun;
+const AUTOCANNON_MUZZLE_MS = MUZZLE_VELOCITY_M_PER_S.autocannon;
+/** Foundry heavy-cannon round: a capital-class kinetic slug (`driver` banding):
+ *  the heaviest gun round in the catalogue. */
+const HEAVY_CANNON_MASS_KG = PROJECTILE_MASS_KG.driver;
+const HEAVY_CANNON_MUZZLE_MS = MUZZLE_VELOCITY_M_PER_S.railgun;
+/** Foundry siege-plasma bolt body mass (kg) — DERIVED from a capital-class round
+ *  (`driver` banding): a heavy magnetically-bottled plasma slug. */
+const SIEGE_PLASMA_MASS_KG = PROJECTILE_MASS_KG.driver;
+/** Siege-plasma muzzle velocity (m/s) — DERIVED as a fraction of a mass-driver
+ *  velocity: a lobbed plasma bolt is slow. */
+const SIEGE_PLASMA_MUZZLE_MS = MUZZLE_VELOCITY_M_PER_S.driver / 5;
+/** Foundry siege-plasma warhead yield (J) — authored catalogue content: a
+ *  capital matter-plasma bolt, ~GJ, the Foundry's signature alpha strike. */
+const SIEGE_PLASMA_WARHEAD_J = 1.8e9;
+/** Foundry torpedo body mass (kg) — DERIVED from a capital-class round
+ *  (`driver` banding): a heavy armour-cracking torpedo. */
+const TORPEDO_MASS_KG = PROJECTILE_MASS_KG.driver;
+/** Torpedo cruise velocity (m/s) — DERIVED as a fraction of a mass-driver
+ *  velocity: a heavy torpedo is the slowest round in flight. */
+const TORPEDO_CRUISE_MS = MUZZLE_VELOCITY_M_PER_S.driver / 8;
+/** Foundry torpedo warhead yield (J) — authored catalogue content: a heavy
+ *  armour-cracking warhead, ~GJ. */
+const TORPEDO_WARHEAD_J = 1.2e9;
 
   // ---------------------------------------------------------------------------
   // Foundry Combine modules — furnace-forged war machines. The Foundry forgoes
@@ -37,10 +80,11 @@ export const foundryModules: ModuleDefinition[] = [
     effect: {
       kind: "weapon",
       weaponType: "cannon",
-      damage: 12,
+      damage: kineticDamageJoules(AUTOCANNON_MASS_KG, AUTOCANNON_MUZZLE_MS),
       range: 360,
       cooldown: 45,
-      projectileSpeed: 7,
+      projectileSpeed: projectileSpeedMPerTick(AUTOCANNON_MUZZLE_MS),
+      projectileMass: AUTOCANNON_MASS_KG,
       tracking: 0.6,
       shieldPiercing: 0.1,
       armourPiercing: 0.4,
@@ -62,10 +106,11 @@ export const foundryModules: ModuleDefinition[] = [
     effect: {
       kind: "weapon",
       weaponType: "cannon",
-      damage: 34,
+      damage: kineticDamageJoules(HEAVY_CANNON_MASS_KG, HEAVY_CANNON_MUZZLE_MS),
       range: 440,
       cooldown: 110,
-      projectileSpeed: 6,
+      projectileSpeed: projectileSpeedMPerTick(HEAVY_CANNON_MUZZLE_MS),
+      projectileMass: HEAVY_CANNON_MASS_KG,
       tracking: 0.4,
       shieldPiercing: 0.15,
       armourPiercing: 0.6,
@@ -89,10 +134,11 @@ export const foundryModules: ModuleDefinition[] = [
     effect: {
       kind: "weapon",
       weaponType: "plasma",
-      damage: 95,
+      damage: SIEGE_PLASMA_WARHEAD_J,
       range: 340,
       cooldown: 200,
-      projectileSpeed: 2,
+      projectileSpeed: projectileSpeedMPerTick(SIEGE_PLASMA_MUZZLE_MS),
+      projectileMass: SIEGE_PLASMA_MASS_KG,
       tracking: 0.3,
       shieldPiercing: 0.2,
       armourPiercing: 0.7,
@@ -114,10 +160,11 @@ export const foundryModules: ModuleDefinition[] = [
     effect: {
       kind: "weapon",
       weaponType: "torpedo",
-      damage: 60,
+      damage: TORPEDO_WARHEAD_J,
       range: 500,
       cooldown: 180,
-      projectileSpeed: 2.2,
+      projectileSpeed: projectileSpeedMPerTick(TORPEDO_CRUISE_MS),
+      projectileMass: TORPEDO_MASS_KG,
       tracking: 0.8,
       shieldPiercing: 0.25,
       armourPiercing: 0.65,

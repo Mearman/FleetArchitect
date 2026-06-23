@@ -36,6 +36,7 @@ function missileLauncher(over: Partial<WeaponEffect> = {}): WeaponEffect {
     range: 500,
     cooldown: 20,
     projectileSpeed: 8,
+    projectileMass: 0.5,
     tracking: 0,
     shieldPiercing: 0,
     armourPiercing: 0.2,

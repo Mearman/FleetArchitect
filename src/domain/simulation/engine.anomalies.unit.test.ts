@@ -47,6 +47,7 @@ function weapon(over: Partial<WeaponEffect> = {}): WeaponEffect {
     range: 600,
     cooldown: 1,
     projectileSpeed: 8,
+    projectileMass: 0.5,
     tracking: 0,
     shieldPiercing: 0,
     armourPiercing: 0,

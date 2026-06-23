@@ -59,6 +59,7 @@ function missile(over: Partial<WeaponEffect> = {}): WeaponEffect {
     range: 6000,
     cooldown: 2,
     projectileSpeed: 30,
+    projectileMass: 0.5,
     tracking: 0.5,
     shieldPiercing: 0,
     armourPiercing: 0,

@@ -3,6 +3,29 @@ import {
   driveThrustNewtons,
   moduleMass,
 } from "../physics";
+import {
+  BEAM_POWER_W,
+  MUZZLE_VELOCITY_M_PER_S,
+  PROJECTILE_MASS_KG,
+  beamDamageJoules,
+  kineticDamageJoules,
+  projectileSpeedMPerTick,
+} from "../combat-scale";
+
+// ---------------------------------------------------------------------------
+// Weapon damage and projectile speed are DERIVED from the combat-scale anchors
+// (`../combat-scale.ts`): beam `damage` = power × one-tick dwell via
+// `beamDamageJoules`, kinetic `damage` = ½·m·v² via `kineticDamageJoules`, and
+// `projectileSpeed` = `projectileSpeedMPerTick(muzzleVelocity)`. The
+// Crystalline arm almost entirely with beams: a pulse-grade prism, a
+// frigate-grade phase lance, and a capital spinal lance, plus one lobbed kinetic
+// resonance shard for when a beam's line of sight is unwanted.
+// ---------------------------------------------------------------------------
+
+/** Crystalline resonance shard: a fighter-class lobbed kinetic round
+ *  (`autocannon` banding in `PROJECTILE_MASS_KG` / `MUZZLE_VELOCITY_M_PER_S`). */
+const SHARD_MASS_KG = PROJECTILE_MASS_KG.autocannon;
+const SHARD_MUZZLE_MS = MUZZLE_VELOCITY_M_PER_S.autocannon;
 
   // Crystalline Concord modules — energy beings in grown-crystal hulls. They
   // fight at range with hitscan beams that punch shields, behind the strongest
@@ -33,10 +56,11 @@ export const crystallineModules: ModuleDefinition[] = [
     effect: {
       kind: "weapon",
       weaponType: "beam",
-      damage: 7,
+      damage: beamDamageJoules(BEAM_POWER_W.pulse, 24),
       range: 420,
       cooldown: 24,
       projectileSpeed: 0,
+      projectileMass: 0,
       tracking: 0,
       shieldPiercing: 0.55,
       armourPiercing: 0.05,
@@ -57,10 +81,11 @@ export const crystallineModules: ModuleDefinition[] = [
     effect: {
       kind: "weapon",
       weaponType: "beam",
-      damage: 14,
+      damage: beamDamageJoules(BEAM_POWER_W.beam, 40),
       range: 560,
       cooldown: 40,
       projectileSpeed: 0,
+      projectileMass: 0,
       tracking: 0,
       shieldPiercing: 0.7,
       armourPiercing: 0.1,
@@ -81,10 +106,11 @@ export const crystallineModules: ModuleDefinition[] = [
     effect: {
       kind: "weapon",
       weaponType: "beam",
-      damage: 90,
+      damage: beamDamageJoules(BEAM_POWER_W.lance, 180),
       range: 640,
       cooldown: 180,
       projectileSpeed: 0,
+      projectileMass: 0,
       tracking: 0,
       shieldPiercing: 0.8,
       armourPiercing: 0.2,
@@ -108,10 +134,11 @@ export const crystallineModules: ModuleDefinition[] = [
     effect: {
       kind: "weapon",
       weaponType: "cannon",
-      damage: 16,
+      damage: kineticDamageJoules(SHARD_MASS_KG, SHARD_MUZZLE_MS),
       range: 380,
       cooldown: 60,
-      projectileSpeed: 9,
+      projectileSpeed: projectileSpeedMPerTick(SHARD_MUZZLE_MS),
+      projectileMass: SHARD_MASS_KG,
       tracking: 1,
       shieldPiercing: 0.4,
       armourPiercing: 0.15,

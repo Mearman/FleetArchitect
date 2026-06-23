@@ -27,10 +27,27 @@ const zeroToOne = z.number().min(0).max(1);
 export const WeaponEffect = z.object({
   kind: z.literal("weapon"),
   weaponType: WeaponType,
+  /** Damage of one hit, in joules. Kinetic weapons author this as the round's
+   *  muzzle kinetic energy `½·projectileMass·muzzleVelocity²`; beam weapons as
+   *  `beamPower(W) × (1 / TICKS_PER_SECOND)` — the energy deposited in one tick's
+   *  dwell. Both derive from the anchors in `@/data/catalog/combat-scale`. The
+   *  engine subtracts this straight from a cell's joule hit-point pool. */
   damage: z.number().min(0),
   range: z.number().min(0),
   cooldown: z.number().int().min(0),
+  /** Round speed in metres PER TICK (consumed raw each tick). The catalogue
+   *  authors a muzzle velocity in m/s and stores `v_SI / TICKS_PER_SECOND` here
+   *  (see `projectileSpeedMPerTick` in `@/data/catalog/combat-scale`); a raw
+   *  m/s value would fly the round `TICKS_PER_SECOND`× too fast. `0` means
+   *  hitscan (an instantaneous beam, no projectile). */
   projectileSpeed: z.number().min(0),
+  /** Mass of one fired round, in kilograms. Sets both the round's kinetic
+   *  energy (`½·m·v²`, the `damage` above for a kinetic weapon) and the recoil
+   *  the firing ship feels / the impulse the target absorbs (`m·v`), so momentum
+   *  and energy come from one authored mass. Banded by mount class in
+   *  `PROJECTILE_MASS_KG` (`@/data/catalog/combat-scale`). A hitscan beam carries
+   *  no round, so its mass is 0. */
+  projectileMass: z.number().min(0),
   tracking: z.number().min(0),
   shieldPiercing: zeroToOne,
   armourPiercing: zeroToOne,

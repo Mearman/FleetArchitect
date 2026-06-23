@@ -1,7 +1,10 @@
 import type { LayerMaterial } from "@/schema/armor";
 import {
+  armorHpJoules,
   armorMass,
+  deckHpJoules,
   deckMass,
+  substrateHpJoules,
   substrateMass,
 } from "./physics";
 
@@ -16,37 +19,42 @@ import {
  * `materialDensity × effectiveThickness`, with a void fill factor for truss
  * layers). See `physics.ts` for the per-faction areal densities.
  *
- * `hp` is in damage points (the engine's current damage unit). Phase 5
- * unifies damage in joules as
- * `materialDensity × cellArea × plateThickness × specificDestructionEnergy`;
- * until then the values below are authored catalogue content representing the
- * layer's structural tolerance, tuned so a typical weapon salvo destroys
- * armor over a few clean hits. The relative ordering is preserved from the
- * pre-SI values (Foundry heaviest, Crystalline lightest).
+ * `hp` is in real joules, DERIVED from the same physical anchors as the cell's
+ * mass: `layerMass(kg) × specificDestructionEnergy(faction)(J/kg)` (see
+ * `substrateHpJoules` / `deckHpJoules` / `armorHpJoules` in `./physics.ts`). A
+ * cell's hit-point pool is therefore a real energy budget — the energy a
+ * damaging hit must deposit to destroy that mass — in the SAME joule unit as
+ * weapon damage (kinetic `½·m·v²`, beam power × dwell, both authored from
+ * `./combat-scale.ts`). With the catalogue's masses and specific energies this
+ * lands armour cells at ~1-9 GJ and substrate/deck cells sub-GJ, preserving the
+ * pre-SI relative ordering (Foundry heaviest, Crystalline lightest) because both
+ * the areal density and the specific destruction energy rank that way.
  *
  * `damageReduction` — fraction of incoming damage absorbed before it reaches
- * the cell; meaningful only on `armor`.
+ * the cell; meaningful only on `armor`. Dimensionless, unchanged by the unit
+ * rescale. `reactiveReduction` / `reactiveWindow` (Foundry) are likewise a
+ * dimensionless fraction and a tick count.
  */
 export const layerMaterialData: LayerMaterial[] = [
   // Terran — ferro-steel construction (ρ ≈ 7850 kg/m³).
   {
     layer: "substrate",
     faction: "Terran",
-    hp: 25,
+    hp: substrateHpJoules("Terran"),
     damageReduction: 0,
     mass: substrateMass("Terran"),
   },
   {
     layer: "deck",
     faction: "Terran",
-    hp: 25,
+    hp: deckHpJoules("Terran"),
     damageReduction: 0,
     mass: deckMass("Terran"),
   },
   {
     layer: "armor",
     faction: "Terran",
-    hp: 70,
+    hp: armorHpJoules("Terran"),
     damageReduction: 0.35,
     mass: armorMass("Terran"),
   },
@@ -55,21 +63,21 @@ export const layerMaterialData: LayerMaterial[] = [
   {
     layer: "substrate",
     faction: "Swarm",
-    hp: 30,
+    hp: substrateHpJoules("Swarm"),
     damageReduction: 0,
     mass: substrateMass("Swarm"),
   },
   {
     layer: "deck",
     faction: "Swarm",
-    hp: 30,
+    hp: deckHpJoules("Swarm"),
     damageReduction: 0,
     mass: deckMass("Swarm"),
   },
   {
     layer: "armor",
     faction: "Swarm",
-    hp: 100,
+    hp: armorHpJoules("Swarm"),
     damageReduction: 0.3,
     mass: armorMass("Swarm"),
   },
@@ -78,21 +86,21 @@ export const layerMaterialData: LayerMaterial[] = [
   {
     layer: "substrate",
     faction: "Crystalline",
-    hp: 16,
+    hp: substrateHpJoules("Crystalline"),
     damageReduction: 0,
     mass: substrateMass("Crystalline"),
   },
   {
     layer: "deck",
     faction: "Crystalline",
-    hp: 16,
+    hp: deckHpJoules("Crystalline"),
     damageReduction: 0,
     mass: deckMass("Crystalline"),
   },
   {
     layer: "armor",
     faction: "Crystalline",
-    hp: 50,
+    hp: armorHpJoules("Crystalline"),
     damageReduction: 0.15,
     mass: armorMass("Crystalline"),
   },
@@ -101,21 +109,21 @@ export const layerMaterialData: LayerMaterial[] = [
   {
     layer: "substrate",
     faction: "Foundry",
-    hp: 46,
+    hp: substrateHpJoules("Foundry"),
     damageReduction: 0,
     mass: substrateMass("Foundry"),
   },
   {
     layer: "deck",
     faction: "Foundry",
-    hp: 46,
+    hp: deckHpJoules("Foundry"),
     damageReduction: 0,
     mass: deckMass("Foundry"),
   },
   {
     layer: "armor",
     faction: "Foundry",
-    hp: 200,
+    hp: armorHpJoules("Foundry"),
     damageReduction: 0.5,
     mass: armorMass("Foundry"),
     reactiveReduction: 0.5,
@@ -126,21 +134,21 @@ export const layerMaterialData: LayerMaterial[] = [
   {
     layer: "substrate",
     faction: "Corsair",
-    hp: 20,
+    hp: substrateHpJoules("Corsair"),
     damageReduction: 0,
     mass: substrateMass("Corsair"),
   },
   {
     layer: "deck",
     faction: "Corsair",
-    hp: 20,
+    hp: deckHpJoules("Corsair"),
     damageReduction: 0,
     mass: deckMass("Corsair"),
   },
   {
     layer: "armor",
     faction: "Corsair",
-    hp: 60,
+    hp: armorHpJoules("Corsair"),
     damageReduction: 0.2,
     mass: armorMass("Corsair"),
   },
@@ -148,21 +156,21 @@ export const layerMaterialData: LayerMaterial[] = [
   {
     layer: "substrate",
     faction: "Synthetic",
-    hp: 26,
+    hp: substrateHpJoules("Synthetic"),
     damageReduction: 0,
     mass: substrateMass("Synthetic"),
   },
   {
     layer: "deck",
     faction: "Synthetic",
-    hp: 26,
+    hp: deckHpJoules("Synthetic"),
     damageReduction: 0,
     mass: deckMass("Synthetic"),
   },
   {
     layer: "armor",
     faction: "Synthetic",
-    hp: 90,
+    hp: armorHpJoules("Synthetic"),
     damageReduction: 0.3,
     mass: armorMass("Synthetic"),
   },

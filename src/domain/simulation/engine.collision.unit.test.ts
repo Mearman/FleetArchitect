@@ -130,6 +130,7 @@ function rammer(
           range: 4,
           cooldown: 1000,
           projectileSpeed: 6,
+          projectileMass: 0.5,
           tracking: 0,
           shieldPiercing: 0,
           armourPiercing: 0,

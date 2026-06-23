@@ -130,8 +130,8 @@ describe("engine.lethality — crewed Terran battles resolve decisively", () => 
     // No kills or weapon fire are expected within 10 ticks (ships take ~400
     // ticks to close to weapon range at the 1 m scale). The assertions above
     // confirm the engine ran its full cycle and returned a valid result.
-    // 10 ticks ≈ 22 s isolated; raised to 120 s for concurrent test runs
-    // (observed wall-clock of ~65 s under full-suite CPU contention).
+    // Capital battle per-tick cost is the ~13709-module count alone (no combat
+    // in 30 ticks); raised to 600 s to absorb full-suite CPU contention.
   }, 600000);
 
   // Re-enabled in Phase 14 alongside the Battle Line guard above: the preset

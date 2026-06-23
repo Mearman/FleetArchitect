@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DOOR_STOPPING_J, WALL_STOPPING_J } from "@/data/catalog/combat-scale";
 import { CELL_SIZE } from "@/domain/grid";
 import { resolveChainReactions } from "@/domain/simulation/engine/chain-reaction";
 import { applyDamage } from "@/domain/simulation/engine/damage";
@@ -220,12 +221,23 @@ describe("engine.wall-substrate — surface tier mutation", () => {
 // ---------------------------------------------------------------------------
 
 describe("engine.wall-substrate — wall-edge projectile stopping", () => {
+  // The barrier stopping energies are now real joules (`WALL_STOPPING_J` ≈
+  // 940 MJ, `DOOR_STOPPING_J` a third of it), so these fixtures are sized off the
+  // constants rather than the pre-SI integers: a small front-cell HP so it dies,
+  // and a spill chosen between the door and wall thresholds so a wall fully stops
+  // the round while a door lets the excess through.
+  const FRONT_HP = 1e8; // 100 MJ — the front cell's substrate pool
+  // Spill past the front cell, chosen so DOOR_STOPPING_J < SPILL < WALL_STOPPING_J:
+  // the wall absorbs all of it, a closed door absorbs only its share.
+  const SPILL = (DOOR_STOPPING_J + WALL_STOPPING_J) / 2;
+  const FRONT_DAMAGE = FRONT_HP + SPILL; // kills the front cell, leaving SPILL
+  // A deep rear cell, comfortably larger than anything that could reach it.
+  const REAR_HP = WALL_STOPPING_J;
+
   it("a wall edge between two path cells reduces penetrating energy before the next cell is struck", () => {
     // Cell A (col 0) has a wall on its east edge. Cell B (col 1) is behind it.
-    // SIM.wallStopping = 25 HP units.
-    // Fire 30 damage: A has substrate HP 25, so A dies and 5 spills.
-    // Without wall stopping: B would receive 5 damage.
-    // With wall stopping: 5 − 25 ≤ 0, so the round is stopped; B survives.
+    // Fire FRONT_DAMAGE: A dies and SPILL spills. With SPILL < WALL_STOPPING_J the
+    // wall absorbs the whole remainder, so B survives untouched.
     const wallEdges: CellEdges = {
       n: "open",
       e: "wall",
@@ -234,8 +246,8 @@ describe("engine.wall-substrate — wall-edge projectile stopping", () => {
       doorStates: {},
     };
     const ship = buildSim("w1", [
-      moduleOf("a", { kind: "hull" }, 0, 0, 25, { command: true, edges: wallEdges }),
-      moduleOf("b", { kind: "hull" }, 1, 0, 25),
+      moduleOf("a", { kind: "hull" }, 0, 0, FRONT_HP, { command: true, edges: wallEdges }),
+      moduleOf("b", { kind: "hull" }, 1, 0, REAR_HP),
     ]);
     const cellA = findModule(ship, "a");
     const cellB = findModule(ship, "b");
@@ -243,19 +255,19 @@ describe("engine.wall-substrate — wall-edge projectile stopping", () => {
 
     // Provide an explicit penetration path so the wall-stopping path is exercised.
     const path = [cellA, cellB];
-    applyDamage(ship, 30, 0, 0, 0, 0, undefined, path);
+    applyDamage(ship, FRONT_DAMAGE, 0, 0, 0, 0, undefined, path);
 
-    // A should be dead (30 damage > 25 HP).
+    // A should be dead (damage exceeds its HP).
     expect(cellA.alive).toBe(false);
-    // B must be untouched: 5 remainder − 25 wall stopping ≤ 0.
+    // B must be untouched: SPILL − WALL_STOPPING_J ≤ 0.
     expect(cellB.hp).toBe(hpBBefore);
     expect(cellB.alive).toBe(true);
   });
 
   it("a closed door edge reduces penetrating energy but less than a wall", () => {
-    // SIM.doorStopping = 8. Cell A (substrate HP 25) has a door on east edge
-    // (closed). Fire 40 damage: A dies leaving 15 remainder.
-    // 15 − 8 = 7 reaches B (substrate HP 25 → 18 remaining).
+    // Cell A has a closed door on its east edge. Fire FRONT_DAMAGE: A dies leaving
+    // SPILL. A closed door absorbs only DOOR_STOPPING_J, so SPILL − DOOR_STOPPING_J
+    // reaches B (which survives with REAR_HP minus that remainder).
     const doorEdges: CellEdges = {
       n: "open",
       e: "door",
@@ -264,23 +276,25 @@ describe("engine.wall-substrate — wall-edge projectile stopping", () => {
       doorStates: { e: "closed" },
     };
     const ship = buildSim("d1", [
-      moduleOf("a", { kind: "hull" }, 0, 0, 25, { command: true, edges: doorEdges }),
-      moduleOf("b", { kind: "hull" }, 1, 0, 25),
+      moduleOf("a", { kind: "hull" }, 0, 0, FRONT_HP, { command: true, edges: doorEdges }),
+      moduleOf("b", { kind: "hull" }, 1, 0, REAR_HP),
     ]);
     const cellA = findModule(ship, "a");
     const cellB = findModule(ship, "b");
 
     const path = [cellA, cellB];
-    applyDamage(ship, 40, 0, 0, 0, 0, undefined, path);
+    applyDamage(ship, FRONT_DAMAGE, 0, 0, 0, 0, undefined, path);
 
     expect(cellA.alive).toBe(false);
-    // 15 − 8 = 7 reaches B; B survives with 25 − 7 = 18 HP.
+    // SPILL − DOOR_STOPPING_J reaches B; B survives with REAR_HP minus that.
+    const reachedB = SPILL - DOOR_STOPPING_J;
     expect(cellB.alive).toBe(true);
-    expect(cellB.hp).toBeCloseTo(18, 6);
+    expect(cellB.hp).toBeCloseTo(REAR_HP - reachedB, 0);
   });
 
   it("an open door edge does not stop the round", () => {
-    // An open door provides zero stopping energy — the round passes freely.
+    // An open door provides zero stopping energy — the round passes freely, so the
+    // full SPILL reaches B.
     const openDoorEdges: CellEdges = {
       n: "open",
       e: "door",
@@ -289,20 +303,19 @@ describe("engine.wall-substrate — wall-edge projectile stopping", () => {
       doorStates: { e: "open" },
     };
     const ship = buildSim("od1", [
-      moduleOf("a", { kind: "hull" }, 0, 0, 25, { command: true, edges: openDoorEdges }),
-      moduleOf("b", { kind: "hull" }, 1, 0, 25),
+      moduleOf("a", { kind: "hull" }, 0, 0, FRONT_HP, { command: true, edges: openDoorEdges }),
+      moduleOf("b", { kind: "hull" }, 1, 0, REAR_HP),
     ]);
     const cellA = findModule(ship, "a");
     const cellB = findModule(ship, "b");
 
     const path = [cellA, cellB];
-    // 40 damage: A dies (25 HP) leaving 15 → no door stopping → 15 reaches B.
-    applyDamage(ship, 40, 0, 0, 0, 0, undefined, path);
+    applyDamage(ship, FRONT_DAMAGE, 0, 0, 0, 0, undefined, path);
 
     expect(cellA.alive).toBe(false);
     expect(cellB.alive).toBe(true);
-    // B receives 15: 25 − 15 = 10.
-    expect(cellB.hp).toBeCloseTo(10, 6);
+    // The whole SPILL reaches B: REAR_HP − SPILL remaining.
+    expect(cellB.hp).toBeCloseTo(REAR_HP - SPILL, 0);
   });
 });
 

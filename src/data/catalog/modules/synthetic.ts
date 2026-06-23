@@ -3,6 +3,32 @@ import {
   driveThrustNewtons,
   moduleMass,
 } from "../physics";
+import {
+  BEAM_POWER_W,
+  MUZZLE_VELOCITY_M_PER_S,
+  PROJECTILE_MASS_KG,
+  beamDamageJoules,
+  kineticDamageJoules,
+  projectileSpeedMPerTick,
+} from "../combat-scale";
+
+// ---------------------------------------------------------------------------
+// Weapon damage and projectile speed are DERIVED from the combat-scale anchors
+// (`../combat-scale.ts`): kinetic `damage` = ½·m·v² via `kineticDamageJoules`,
+// beam `damage` = power × one-tick dwell via `beamDamageJoules`, and
+// `projectileSpeed` = `projectileSpeedMPerTick(muzzleVelocity)`. The Collective
+// field accurate kinetics — a fighter targeting cannon and a frigate coilgun —
+// and a pulse-grade close-range cutter beam.
+// ---------------------------------------------------------------------------
+
+/** Synthetic targeting-cannon round: a fighter-class precision slug
+ *  (`autocannon` banding in `PROJECTILE_MASS_KG` / `MUZZLE_VELOCITY_M_PER_S`). */
+const PRECISE_CANNON_MASS_KG = PROJECTILE_MASS_KG.autocannon;
+const PRECISE_CANNON_MUZZLE_MS = MUZZLE_VELOCITY_M_PER_S.autocannon;
+/** Synthetic coilgun round: a frigate-class electromagnetic slug (`railgun`
+ *  banding). */
+const COILGUN_MASS_KG = PROJECTILE_MASS_KG.railgun;
+const COILGUN_MUZZLE_MS = MUZZLE_VELOCITY_M_PER_S.railgun;
 
   // ---------------------------------------------------------------------------
   // Synthetic Collective modules — machine intelligences in precision-machined
@@ -38,10 +64,11 @@ export const syntheticModules: ModuleDefinition[] = [
     effect: {
       kind: "weapon",
       weaponType: "cannon",
-      damage: 10,
+      damage: kineticDamageJoules(PRECISE_CANNON_MASS_KG, PRECISE_CANNON_MUZZLE_MS),
       range: 380,
       cooldown: 35,
-      projectileSpeed: 9,
+      projectileSpeed: projectileSpeedMPerTick(PRECISE_CANNON_MUZZLE_MS),
+      projectileMass: PRECISE_CANNON_MASS_KG,
       tracking: 1.6,
       shieldPiercing: 0.15,
       armourPiercing: 0.3,
@@ -63,10 +90,11 @@ export const syntheticModules: ModuleDefinition[] = [
     effect: {
       kind: "weapon",
       weaponType: "cannon",
-      damage: 30,
+      damage: kineticDamageJoules(COILGUN_MASS_KG, COILGUN_MUZZLE_MS),
       range: 520,
       cooldown: 100,
-      projectileSpeed: 11,
+      projectileSpeed: projectileSpeedMPerTick(COILGUN_MUZZLE_MS),
+      projectileMass: COILGUN_MASS_KG,
       tracking: 1.2,
       shieldPiercing: 0.25,
       armourPiercing: 0.6,
@@ -90,10 +118,11 @@ export const syntheticModules: ModuleDefinition[] = [
     effect: {
       kind: "weapon",
       weaponType: "beam",
-      damage: 9,
+      damage: beamDamageJoules(BEAM_POWER_W.pulse, 20),
       range: 300,
       cooldown: 20,
       projectileSpeed: 0,
+      projectileMass: 0,
       tracking: 0,
       shieldPiercing: 0.45,
       armourPiercing: 0.1,

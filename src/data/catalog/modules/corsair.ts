@@ -3,6 +3,45 @@ import {
   driveThrustNewtons,
   moduleMass,
 } from "../physics";
+import {
+  MUZZLE_VELOCITY_M_PER_S,
+  PROJECTILE_MASS_KG,
+  kineticDamageJoules,
+  projectileSpeedMPerTick,
+} from "../combat-scale";
+
+// ---------------------------------------------------------------------------
+// Weapon damage and projectile speed are DERIVED from the combat-scale anchors
+// (`../combat-scale.ts`): kinetic `damage` = ½·m·v² via `kineticDamageJoules`,
+// `projectileSpeed` = `projectileSpeedMPerTick(muzzleVelocity)` (the m/s →
+// m/tick boundary). Missiles carry an authored warhead yield (J) plus a body
+// mass / cruise velocity. The Corsairs raid with light, fast ordnance: homing
+// missiles and a fighter-class finisher cannon.
+// ---------------------------------------------------------------------------
+
+/** Corsair raid-cannon round: a fighter-class autocannon slug (`autocannon`
+ *  banding in `PROJECTILE_MASS_KG` / `MUZZLE_VELOCITY_M_PER_S`). */
+const RAID_CANNON_MASS_KG = PROJECTILE_MASS_KG.autocannon;
+const RAID_CANNON_MUZZLE_MS = MUZZLE_VELOCITY_M_PER_S.autocannon;
+/** Corsair raider-missile body mass (kg) — DERIVED from a frigate-class guided
+ *  round (`railgun` banding). */
+const RAIDER_MISSILE_MASS_KG = PROJECTILE_MASS_KG.railgun;
+/** Raider-missile cruise velocity (m/s) — DERIVED as a fraction of a railgun
+ *  muzzle velocity. */
+const RAIDER_MISSILE_CRUISE_MS = MUZZLE_VELOCITY_M_PER_S.railgun / 4;
+/** Corsair raider-missile warhead yield (J) — authored catalogue content: a
+ *  frigate-class missile sized below a Terran missile, trading yield for refire
+ *  and tracking. */
+const RAIDER_MISSILE_WARHEAD_J = 3e8;
+/** Corsair swarm-missile body mass (kg) — DERIVED from a fighter-class guided
+ *  round (`autocannon` banding): a light saturation missile. */
+const SWARM_MISSILE_MASS_KG = PROJECTILE_MASS_KG.autocannon;
+/** Swarm-missile cruise velocity (m/s) — DERIVED as a fraction of an autocannon
+ *  muzzle velocity. */
+const SWARM_MISSILE_CRUISE_MS = MUZZLE_VELOCITY_M_PER_S.autocannon / 2;
+/** Corsair swarm-missile warhead yield (J) — authored catalogue content: a
+ *  light saturation warhead, lowest per-hit yield, fired in volleys. */
+const SWARM_MISSILE_WARHEAD_J = 8e7;
 
   // ---------------------------------------------------------------------------
   // Corsair Reavers modules — welded junk-hull raiders built to strike and
@@ -35,10 +74,11 @@ export const corsairModules: ModuleDefinition[] = [
     effect: {
       kind: "weapon",
       weaponType: "missile",
-      damage: 24,
+      damage: RAIDER_MISSILE_WARHEAD_J,
       range: 520,
       cooldown: 70,
-      projectileSpeed: 5,
+      projectileSpeed: projectileSpeedMPerTick(RAIDER_MISSILE_CRUISE_MS),
+      projectileMass: RAIDER_MISSILE_MASS_KG,
       tracking: 3,
       shieldPiercing: 0.1,
       armourPiercing: 0.3,
@@ -62,10 +102,11 @@ export const corsairModules: ModuleDefinition[] = [
     effect: {
       kind: "weapon",
       weaponType: "missile",
-      damage: 12,
+      damage: SWARM_MISSILE_WARHEAD_J,
       range: 460,
       cooldown: 50,
-      projectileSpeed: 5.5,
+      projectileSpeed: projectileSpeedMPerTick(SWARM_MISSILE_CRUISE_MS),
+      projectileMass: SWARM_MISSILE_MASS_KG,
       tracking: 3.5,
       shieldPiercing: 0.1,
       armourPiercing: 0.2,
@@ -89,10 +130,11 @@ export const corsairModules: ModuleDefinition[] = [
     effect: {
       kind: "weapon",
       weaponType: "cannon",
-      damage: 9,
+      damage: kineticDamageJoules(RAID_CANNON_MASS_KG, RAID_CANNON_MUZZLE_MS),
       range: 300,
       cooldown: 30,
-      projectileSpeed: 8,
+      projectileSpeed: projectileSpeedMPerTick(RAID_CANNON_MUZZLE_MS),
+      projectileMass: RAID_CANNON_MASS_KG,
       tracking: 1.2,
       shieldPiercing: 0.15,
       armourPiercing: 0.25,

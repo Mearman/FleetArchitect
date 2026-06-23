@@ -4,11 +4,61 @@ import {
   moduleMass,
 } from "../physics";
 import {
+  BEAM_POWER_W,
+  MUZZLE_VELOCITY_M_PER_S,
+  PROJECTILE_MASS_KG,
+  beamDamageJoules,
+  kineticDamageJoules,
+  projectileSpeedMPerTick,
+} from "../combat-scale";
+import {
   SENSOR_OMNI_ARC,
   SENSOR_DIRECTIONAL_ARC,
   SENSOR_WIDE_ARC,
   SENSOR_DISH_ARC,
 } from "../sensor-arcs";
+
+// ---------------------------------------------------------------------------
+// Weapon damage and projectile speed are DERIVED from the combat-scale anchors
+// (`../combat-scale.ts`), not authored as point literals:
+//
+//  - a kinetic weapon's `damage` is its round's muzzle kinetic energy
+//    `kineticDamageJoules(projectileMass, muzzleVelocity)` (½·m·v²), and its
+//    `projectileSpeed` is `projectileSpeedMPerTick(muzzleVelocity)` (the m/s →
+//    m/tick boundary, so a round authored in km/s does not fly TPS× too fast);
+//  - a beam weapon's per-tick `damage` is `beamDamageJoules(beamPower)`
+//    (power × one-tick dwell), and it is hitscan (`projectileSpeed: 0`);
+//  - a missile / torpedo carries an authored warhead yield (joules) and a body
+//    mass / cruise velocity for momentum and flight, authored locally with a
+//    "DERIVED from" note naming the real quantity.
+//
+// `range` and `cooldown` stay as authored here for this phase; the range
+// re-grounding (km-scale) and mechanism-derived cooldowns land in later phases.
+// ---------------------------------------------------------------------------
+
+/** Terran railgun slug: a frigate-class electromagnetic round (`railgun`
+ *  banding in `PROJECTILE_MASS_KG` / `MUZZLE_VELOCITY_M_PER_S`). */
+const RAILGUN_MASS_KG = PROJECTILE_MASS_KG.railgun;
+const RAILGUN_MUZZLE_MS = MUZZLE_VELOCITY_M_PER_S.railgun;
+/** Terran missile body mass (kg) — DERIVED from a frigate-scale guided round,
+ *  the same banding a railgun slug uses, since both are frigate ordnance. */
+const MISSILE_MASS_KG = PROJECTILE_MASS_KG.railgun;
+/** Missile cruise velocity (m/s) — DERIVED as a fraction of a railgun muzzle
+ *  velocity: a powered guided round is slower than a launched slug. */
+const MISSILE_CRUISE_MS = MUZZLE_VELOCITY_M_PER_S.railgun / 4;
+/** Terran missile warhead yield (J) — authored catalogue content: a shaped
+ *  chemical/plasma warhead sized to a frigate-class railgun salvo (~hundreds of
+ *  MJ) so a missile and a slug are comparably decisive against GJ armour. */
+const MISSILE_WARHEAD_J = 4e8;
+/** Terran torpedo body mass (kg) — DERIVED from a capital-class round (`driver`
+ *  banding): a torpedo is the heaviest ordnance a Terran ship carries. */
+const TORPEDO_MASS_KG = PROJECTILE_MASS_KG.driver;
+/** Torpedo cruise velocity (m/s) — DERIVED as a fraction of a mass-driver
+ *  muzzle velocity: a heavy torpedo is the slowest round in flight. */
+const TORPEDO_CRUISE_MS = MUZZLE_VELOCITY_M_PER_S.driver / 8;
+/** Terran plasma-torpedo warhead yield (J) — authored catalogue content: a
+ *  capital-grade matter-plasma warhead, ~GJ, the heaviest single Terran hit. */
+const TORPEDO_WARHEAD_J = 1.5e9;
 
 // ---------------------------------------------------------------------------
 // Terran modules — conventional human technology.
@@ -38,10 +88,11 @@ export const terranModules: ModuleDefinition[] = [
     effect: {
       kind: "weapon",
       weaponType: "beam",
-      damage: 25,
+      damage: beamDamageJoules(BEAM_POWER_W.pulse, 30),
       range: 320,
       cooldown: 30,
       projectileSpeed: 0,
+      projectileMass: 0,
       tracking: 0,
       shieldPiercing: 0,
       armourPiercing: 0.1,
@@ -62,10 +113,11 @@ export const terranModules: ModuleDefinition[] = [
     effect: {
       kind: "weapon",
       weaponType: "cannon",
-      damage: 90,
+      damage: kineticDamageJoules(RAILGUN_MASS_KG, RAILGUN_MUZZLE_MS),
       range: 480,
       cooldown: 60,
-      projectileSpeed: 8,
+      projectileSpeed: projectileSpeedMPerTick(RAILGUN_MUZZLE_MS),
+      projectileMass: RAILGUN_MASS_KG,
       tracking: 0.5,
       shieldPiercing: 0.35,
       armourPiercing: 0.5,
@@ -91,10 +143,11 @@ export const terranModules: ModuleDefinition[] = [
     effect: {
       kind: "weapon",
       weaponType: "missile",
-      damage: 110,
+      damage: MISSILE_WARHEAD_J,
       range: 560,
       cooldown: 100,
-      projectileSpeed: 4,
+      projectileSpeed: projectileSpeedMPerTick(MISSILE_CRUISE_MS),
+      projectileMass: MISSILE_MASS_KG,
       tracking: 2.5,
       shieldPiercing: 0.15,
       armourPiercing: 0.3,
@@ -120,10 +173,11 @@ export const terranModules: ModuleDefinition[] = [
     effect: {
       kind: "weapon",
       weaponType: "torpedo",
-      damage: 250,
+      damage: TORPEDO_WARHEAD_J,
       range: 420,
       cooldown: 140,
-      projectileSpeed: 2.5,
+      projectileSpeed: projectileSpeedMPerTick(TORPEDO_CRUISE_MS),
+      projectileMass: TORPEDO_MASS_KG,
       tracking: 1,
       shieldPiercing: 0.45,
       armourPiercing: 0.4,

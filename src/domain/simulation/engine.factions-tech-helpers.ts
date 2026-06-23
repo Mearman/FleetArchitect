@@ -40,6 +40,7 @@ export function beam(over: Partial<WeaponEffect> = {}): WeaponEffect {
     range: 400,
     cooldown: 5,
     projectileSpeed: 0,
+    projectileMass: 0.5,
     tracking: 0,
     shieldPiercing: 0,
     armourPiercing: 0,

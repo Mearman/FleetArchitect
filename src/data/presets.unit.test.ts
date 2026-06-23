@@ -259,9 +259,9 @@ describe("headless preset battle — byte-identical across two same-seed runs (W
       const run2 = battleHash(attacker, defender, designs, cat, seed);
       expect(run1, `seed=${seed}: frame 0 diverges between two same-seed runs`).toBe(run2);
     }
-    // 6 runs × 5 ticks × ~967 ms/tick ≈ 29 s isolated; raised to 300 s to
+    // 6 runs × 5 ticks × ~967 ms/tick ≈ 29 s isolated; raised to 600 s to
     // absorb full-suite CPU contention (observed up to 5× slowdown on busy CI
-    // runners: 29 s × 5 ≈ 145 s < 300 s).
+    // runners: 29 s × 5 ≈ 145 s < 600 s).
   }, 600000);
 
   it("the Drone Swarm vs Hive Assault battle produces frames and a result", () => {

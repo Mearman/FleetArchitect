@@ -50,6 +50,11 @@ import {
 } from "@/domain/simulation/engine/arena-physics";
 import { TICKS_PER_SECOND } from "@/domain/simulation/types";
 import {
+  DOOR_STOPPING_J,
+  MAGAZINE_ROUND_YIELD_J,
+  WALL_STOPPING_J,
+} from "@/data/catalog/combat-scale";
+import {
   STANCE_RANGE_FACTOR,
   STANCE_TARGET_DISTANCE_BIAS,
 } from "./stance-doctrine";
@@ -404,25 +409,6 @@ export const SIM = {
    */
   angularDeadband: 0.01,
   /**
-   * Mass of a single spawned projectile, in the same mass units as ship
-   * modules. Derived from the physical projectile: `mass = density × volume`.
-   * A kinetic slug of a dense metal (depleted-uranium / tungsten-alloy class,
-   * representative density ~19_000 kg/m³) of the small calibre a fighter or
-   * frigate mounts — a cylinder a few centimetres across and ~10 cm long.
-   * The engine's mass unit is not yet SI (the catalogue is re-authored in kg
-   * in Phase 14), so the value below is the authored catalogue figure for that
-   * slug in the current unit system; the recoil a firing ship feels is
-   * `m_p · v_p / M_ship` and the impulse a target absorbs on hit is the same.
-   * A small fixed projectile mass keeps recoil visible (a stationary ship
-   * firing a fast round kicks backward) without destabilising the movement
-   * model for slow, heavy projectiles like torpedoes.
-   *
-   * Classification: derived-by-formula (`mass = density × volume`); the anchor
-   * (dense-metal density, slug geometry) is authored catalogue content pending
-   * the Phase 14 SI catalogue.
-   */
-  projectileMass: 0.5,
-  /**
    * Per-PD-module per-tick chance of intercepting a single in-range missile
    * or torpedo. Multiple PD modules stack their chances (1 - (1-p)^n) but
    * the cumulative chance is capped here so a screen of PD modules can never
@@ -642,11 +628,20 @@ export const SIM = {
      */
     reactorYieldFraction: 0.001,
     /**
-     * Magazine blast yield per stored round (energy-equivalent units). A full
-     * magazine going up is a serious secondary explosion; an empty one barely
-     * pops. Multiplied by the module's `ammoStored` at the moment it dies.
+     * Magazine blast yield per stored round, in joules — DERIVED as the kinetic
+     * energy of one frigate-class round a magazine stores
+     * ({@link MAGAZINE_ROUND_YIELD_J}, `½·m·v²` ≈ 320 MJ). A magazine cook-off
+     * is the sympathetic ignition of its rounds, so each releases its own muzzle
+     * energy; a full magazine going up is then a multi-gigajoule secondary
+     * explosion on the same joule scale as the GJ armour around it, while an
+     * empty one barely pops. Multiplied by the module's `ammoStored` at the
+     * moment it dies. Re-grounded from the pre-SI authored 500 to real joules in
+     * Phase 1 (HP and weapon damage are now joules).
+     *
+     * Classification: derived-by-formula (`MAGAZINE_ROUND_YIELD_J`, the kinetic
+     * energy `½·m·v²` of one stored frigate-class round).
      */
-    magazineYieldPerRound: 500,
+    magazineYieldPerRound: MAGAZINE_ROUND_YIELD_J,
     /**
      * Blast radius (world units) within which an exploding module damages its
      * neighbours. Damage falls off linearly from the full yield at the blast
@@ -731,10 +726,27 @@ export const SIM = {
    * Classification: authored catalogue content
    */
   debrisMinRelSpeed: 10,
-  /** Stopping energy (HP) a wall edge absorbs from a penetrating round. Classification: authored catalogue content. */
-  wallStopping: 25,
-  /** Stopping energy (HP) a closed door absorbs; open doors absorb zero. Classification: authored catalogue content. */
-  doorStopping: 8,
+  /**
+   * Stopping energy (joules) a solid wall edge absorbs from a penetrating round
+   * — DERIVED as the destruction energy of the interior bulkhead it presents
+   * ({@link WALL_STOPPING_J}, `bulkheadMass × steel J/kg` ≈ 940 MJ). A round must
+   * spend this much to punch through an internal wall before reaching the cell
+   * behind. Re-grounded from the pre-SI authored 25 to real joules in Phase 1.
+   *
+   * Classification: derived-by-formula (`WALL_STOPPING_J`, the destruction energy
+   * `bulkheadMass × specificDestructionEnergy` of an interior partition).
+   */
+  wallStopping: WALL_STOPPING_J,
+  /**
+   * Stopping energy (joules) a closed door absorbs; open doors absorb zero —
+   * DERIVED as a fraction of the wall value ({@link DOOR_STOPPING_J}, a third of
+   * `wallStopping`): a door is a thinner, weaker barrier than a solid bulkhead.
+   * Re-grounded from the pre-SI authored 8 to real joules in Phase 1.
+   *
+   * Classification: derived-by-formula (`DOOR_STOPPING_J`, a fraction of the
+   * wall stopping energy).
+   */
+  doorStopping: DOOR_STOPPING_J,
   /** Blast-energy fraction (0–1) transmitting through a wall edge. Classification: authored catalogue content. */
   wallBlastAttenuation: 0.1,
   /** Blast-energy fraction transmitting through a closed door edge. Classification: authored catalogue content. */

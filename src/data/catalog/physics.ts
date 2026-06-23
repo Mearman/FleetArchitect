@@ -388,6 +388,60 @@ export function specificDestructionEnergy(faction: string): number {
   return energy;
 }
 
+/**
+ * Fraction of a material's full destruction energy that a FRAMED layer (a
+ * substrate truss or a thin deck plate) absorbs before it fails — the
+ * structural-failure fraction. A solid armour plate is destroyed by melting and
+ * spalling its whole mass (the full specific destruction energy), but a truss
+ * frame or a thin pressure deck loses load-bearing integrity by buckling and
+ * tearing at far less energy than it would take to melt the same mass: the
+ * member fails structurally long before it vaporises. Set to a quarter — a
+ * representative ratio of buckling/tearing energy to full melt-and-spall energy
+ * for a thin-walled structural member — so a framed cell's hit-point pool is a
+ * realistic fraction of the solid-plate value, and a structure cell falls to a
+ * clean kinetic hit or beam shot while solid armour still takes a few. Authored
+ * catalogue content (the failure-energy ratio); applied only to framed layers.
+ */
+export const STRUCTURAL_FAILURE_FRACTION = 0.25;
+
+/**
+ * Hit-point pool (joules) of a faction's substrate layer — DERIVED as
+ * `substrateMass(kg) × specificDestructionEnergy(faction)(J/kg) ×
+ * STRUCTURAL_FAILURE_FRACTION`. The substrate is a truss frame, so it fails
+ * structurally (buckling/tearing) at a fraction of the energy needed to melt its
+ * mass — the framed-layer reduction below. The layer mass already traces to real
+ * areal density and cell area, so a cell's HP is a real energy budget in the same
+ * joule unit as weapon damage rather than an authored point literal. With the
+ * catalogue's masses and specific energies this lands substrate/deck cells in the
+ * tens-to-low-hundreds of megajoules (a clean kinetic hit or beam shot drops one)
+ * and solid armour cells at ~1-9 GJ (Foundry heaviest, Crystalline lightest, a
+ * few hits each).
+ */
+export function substrateHpJoules(faction: string): number {
+  return (
+    substrateMass(faction) *
+    specificDestructionEnergy(faction) *
+    STRUCTURAL_FAILURE_FRACTION
+  );
+}
+
+/** Hit-point pool (joules) of a faction's deck layer — a thin pressure deck, a
+ *  framed layer like the substrate; see {@link substrateHpJoules}. */
+export function deckHpJoules(faction: string): number {
+  return (
+    deckMass(faction) *
+    specificDestructionEnergy(faction) *
+    STRUCTURAL_FAILURE_FRACTION
+  );
+}
+
+/** Hit-point pool (joules) of a faction's armour layer — a solid plate destroyed
+ *  by melting/spalling its whole mass, so it absorbs the FULL specific
+ *  destruction energy (no framed-layer reduction); see {@link substrateHpJoules}. */
+export function armorHpJoules(faction: string): number {
+  return armorMass(faction) * specificDestructionEnergy(faction);
+}
+
 // ---------------------------------------------------------------------------
 // Reactor power density (watts per cubic metre).
 //

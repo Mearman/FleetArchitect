@@ -110,6 +110,7 @@ function cannon(over: Partial<WeaponEffect> = {}): WeaponEffect {
     range: 1000,
     cooldown: 1,
     projectileSpeed: CELL_SIZE / 2,
+    projectileMass: 0.5,
     tracking: 0,
     shieldPiercing: 0,
     armourPiercing: 0,

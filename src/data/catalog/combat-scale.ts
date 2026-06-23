@@ -41,6 +41,7 @@
  */
 
 import { TICKS_PER_SECOND } from "@/domain/simulation/types";
+import { specificDestructionEnergy } from "./physics";
 
 // ---------------------------------------------------------------------------
 // Engagement reference range and weapon-range derivations (metres).
@@ -118,6 +119,63 @@ export const PROJECTILE_MASS_KG = {
   driver: 50,
 };
 
+/**
+ * Kinetic damage (joules) of one round — its muzzle kinetic energy
+ * `½·projectileMass·muzzleVelocity²`. The single derivation a kinetic weapon's
+ * `damage` field is authored from, so a heavier or faster round hits harder by
+ * physics rather than by a hand-tuned literal. With the class anchors above this
+ * lands a fighter autocannon round at ~8 MJ (`½·1·4000²`), a frigate railgun
+ * slug at ~320 MJ (`½·10·8000²`), and a capital mass-driver round at ~2.5 GJ
+ * (`½·50·10000²`) — so a capital round drops a multi-gigajoule armour cell
+ * (`SPECIFIC_DESTRUCTION_ENERGY`, `physics.ts`) in a couple of clean hits while a
+ * fighter round chips it.
+ */
+export function kineticDamageJoules(
+  projectileMassKg: number,
+  muzzleVelocityMs: number,
+): number {
+  return 0.5 * projectileMassKg * muzzleVelocityMs * muzzleVelocityMs;
+}
+
+/**
+ * Beam damage (joules) per shot — `beamPower(W) × dwellSeconds`, the optical
+ * power on target times the time the beam dwells on it between shots. THE beam
+ * derivation a beam weapon's `damage` field is authored from. The engine fires a
+ * beam once every `cooldown` ticks (a beam is a cooldown-gated weapon, not a
+ * continuous-per-tick deposit), so the energy one shot deposits is the power
+ * integrated over that whole inter-shot interval: `dwellSeconds =
+ * cooldownTicks / TICKS_PER_SECOND`. A faster-cycling beam therefore deposits
+ * less per shot but fires more often, and a slow heavy lance deposits a large
+ * pulse on a long cooldown — so beam DPS (`power`) is directly comparable, in
+ * joules per second, against a kinetic salvo regardless of refire rate. The
+ * engine then scales this by the range-dependent `beamDamageFactor`.
+ *
+ * With the class powers in {@link BEAM_POWER_W} and the catalogue cooldowns this
+ * lands a pulse laser at ~300 MJ/shot on a one-second cycle and a capital lance
+ * in the multi-gigajoule-per-shot band on its long cooldown — carving the
+ * gigajoule armour above over a watchable number of seconds while a fighter
+ * pulse chips lighter targets.
+ */
+export function beamDamageJoules(
+  beamPowerW: number,
+  cooldownTicks: number,
+): number {
+  return beamPowerW * (cooldownTicks / TICKS_PER_SECOND);
+}
+
+/**
+ * Convert a muzzle velocity authored in SI metres-per-second into the
+ * metres-per-tick value the engine consumes raw for `projectileSpeed`. THE
+ * unit-boundary fix: `projectileSpeed` is added to a round's position every tick
+ * (not every second), so a value authored straight in m/s would fly the round
+ * `TICKS_PER_SECOND`× too fast. The catalogue authors muzzle velocity in m/s and
+ * stores `v_SI / TICKS_PER_SECOND` through this helper, keeping the SI anchor
+ * visible while the stored field is in the engine's per-tick unit.
+ */
+export function projectileSpeedMPerTick(muzzleVelocityMs: number): number {
+  return muzzleVelocityMs / TICKS_PER_SECOND;
+}
+
 // ---------------------------------------------------------------------------
 // Reload / thermal-recovery intervals (seconds).
 //
@@ -148,39 +206,38 @@ export const RELOAD_THERMAL_TIME_S = {
 // ---------------------------------------------------------------------------
 // Beam-weapon powers (watts).
 //
-// A beam weapon kills by dwell: its per-tick damage is its delivered optical
-// power times the dwell time of one tick, `beamPower × (1 / TICKS_PER_SECOND)`,
-// before the existing range-dependent `beamDamageFactor`. Authored in watts so
-// beam DPS is directly comparable, in joules, against a kinetic salvo. Tuned so
-// a capital lance's DPS lands beside a capital railgun's now that both are in
-// joules.
+// A beam weapon kills by dwell: it fires once every `cooldown` ticks (a beam is
+// a cooldown-gated weapon, not a continuous-per-tick deposit), and the energy one
+// shot deposits is its delivered optical power integrated over that inter-shot
+// dwell, `beamPower × (cooldown / TICKS_PER_SECOND)` (see `beamDamageJoules`),
+// before the range-dependent `beamDamageFactor`. The power below is therefore the
+// beam's SUSTAINED DPS rating in watts; the per-shot pulse size falls out of it
+// and the weapon's cooldown. Authored in watts so beam DPS is directly
+// comparable against a kinetic salvo: a capital lance's DPS lands beside a
+// capital mass-driver's (driver round ~2.5 GJ on a ~3.2 s reload ≈ ~780 MW DPS),
+// so a few hundred megawatts to ~1 GW spans the classes.
 // ---------------------------------------------------------------------------
 
 /**
- * Delivered beam power (W) for each beam-weapon class — the optical power on
- * target before range falloff. A pulse laser is a light mount (~300 MW, ~10 MJ
- * per tick); a capital lance is the heaviest energy weapon (~6 GW, ~200 MJ per
- * tick). Per-tick beam damage is `BEAM_POWER_W × (1 / TICKS_PER_SECOND)`, so a
- * capital lance carves the gigajoule armour above over a watchable dwell while a
- * pulse laser chips lighter targets.
+ * Sustained delivered beam power (W) for each beam-weapon class — the optical
+ * power on target before range falloff, i.e. the beam's DPS rating. The energy a
+ * single shot deposits is this power times the inter-shot dwell
+ * (`cooldown / TICKS_PER_SECOND`, see {@link beamDamageJoules}), so a fast-
+ * cycling pulse deposits a small pulse often and a slow capital lance a large one
+ * on a long cooldown — both at a DPS comparable to a kinetic salvo. Banded so a
+ * pulse laser chips lighter targets (~300 MW, ~300 MJ/shot at its ~1 s cooldown)
+ * while a capital lance carves the gigajoule armour above (~1 GW, multi-gigajoule
+ * per shot on its long cooldown).
  */
 export const BEAM_POWER_W = {
-  /** Pulse laser: light energy mount, the point-defence-grade beam. */
+  /** Pulse laser: light point-defence-grade beam, the lowest DPS. */
   pulse: 3e8,
-  /** Beam laser: a frigate-grade sustained beam, mid power. */
-  beam: 1.2e9,
-  /** Capital lance: the heaviest energy weapon, gigawatt class. */
-  lance: 6e9,
+  /** Beam laser: a frigate-grade sustained beam, mid DPS. */
+  beam: 6e8,
+  /** Capital lance: the heaviest energy weapon, the highest DPS (~1 GW), beside
+   *  a capital mass-driver's sustained kinetic DPS. */
+  lance: 1e9,
 };
-
-/**
- * The dwell time (seconds) of a single engine tick — the interval over which a
- * beam deposits its power in one simulation step, `1 / TICKS_PER_SECOND`. A
- * beam's per-tick energy is `BEAM_POWER_W × BEAM_TICK_DWELL_S` joules. Named
- * here so the power-to-damage conversion reads as an explicit `power × time`
- * rather than a bare reciprocal of the tick rate.
- */
-export const BEAM_TICK_DWELL_S = 1 / TICKS_PER_SECOND;
 
 // ---------------------------------------------------------------------------
 // Reactor power density (watts per cubic metre).
@@ -235,3 +292,58 @@ export const ATTITUDE_SLEW_TIME_S = 2;
  */
 export const ATTITUDE_ANGULAR_ACCEL_RAD_PER_S2 =
   MAX_TURN_RATE_RAD_PER_S / ATTITUDE_SLEW_TIME_S;
+
+// ---------------------------------------------------------------------------
+// Secondary-blast and interior-barrier energies (joules).
+//
+// Now that cell HP and weapon damage are real joules, the engine's own secondary
+// energies — a magazine cook-off, a wall/door stopping a penetrating round — must
+// be on the same gigajoule scale or they read as zero against GJ armour. Each is
+// DERIVED from a named real quantity: a stored round's own energy, or the
+// destruction energy of the barrier's mass.
+// ---------------------------------------------------------------------------
+
+/**
+ * Blast energy (joules) released per stored round when a magazine cooks off —
+ * DERIVED as the kinetic energy of one frigate-class round it stores
+ * (`kineticDamageJoules(railgun mass, railgun muzzle)`, ~320 MJ). A magazine
+ * detonation is the sympathetic ignition of its rounds, so each contributes its
+ * own muzzle energy; a full magazine going up is then a multi-gigajoule
+ * secondary explosion that wrecks the cells around it, on the same joule scale as
+ * the armour it neighbours. The engine multiplies this by the rounds stored at
+ * the moment the magazine dies.
+ */
+export const MAGAZINE_ROUND_YIELD_J = kineticDamageJoules(
+  PROJECTILE_MASS_KG.railgun,
+  MUZZLE_VELOCITY_M_PER_S.railgun,
+);
+
+/**
+ * Mass (kg) of the steel an interior bulkhead presents across one cell face — a
+ * thin internal partition, far lighter than an exterior armour plate. Anchored
+ * to a representative 2 cm steel partition (`ρ_steel ≈ 7850 kg/m³ × 0.02 m`)
+ * over one 1 m² cell face: ~157 kg. Authored catalogue content (the partition
+ * thickness); used only to derive the wall/door stopping energies below.
+ */
+const INTERIOR_BULKHEAD_MASS_KG = 7850 * 0.02;
+
+/**
+ * Stopping energy (joules) a solid wall edge absorbs from a penetrating round —
+ * DERIVED as the destruction energy of the interior bulkhead it presents,
+ * `INTERIOR_BULKHEAD_MASS_KG × SPECIFIC_DESTRUCTION_ENERGY.Terran` (steel
+ * J/kg), ~940 MJ. A round must spend this much energy to punch through an
+ * internal wall before it can reach the cell behind, so an interior partition
+ * meaningfully shields a deeper cell on the same gigajoule scale as the rounds
+ * and armour around it.
+ */
+export const WALL_STOPPING_J =
+  INTERIOR_BULKHEAD_MASS_KG * specificDestructionEnergy("Terran");
+
+/**
+ * Stopping energy (joules) a closed door edge absorbs — DERIVED as a fraction
+ * of the wall stopping energy: a door is a thinner, weaker barrier than a solid
+ * bulkhead. Set to a third of the wall value so a door slows a penetrating round
+ * but stops far less of it than a full wall, preserving the wall-stronger-than-
+ * door ordering the engine's penetration model relies on.
+ */
+export const DOOR_STOPPING_J = WALL_STOPPING_J / 3;

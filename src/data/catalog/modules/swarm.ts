@@ -4,11 +4,46 @@ import {
   moduleMass,
 } from "../physics";
 import {
+  BEAM_POWER_W,
+  MUZZLE_VELOCITY_M_PER_S,
+  PROJECTILE_MASS_KG,
+  beamDamageJoules,
+  kineticDamageJoules,
+  projectileSpeedMPerTick,
+} from "../combat-scale";
+import {
   SENSOR_OMNI_ARC,
   SENSOR_DIRECTIONAL_ARC,
   SENSOR_WIDE_ARC,
   SENSOR_DISH_ARC,
 } from "../sensor-arcs";
+
+// ---------------------------------------------------------------------------
+// Weapon damage and projectile speed are DERIVED from the combat-scale anchors
+// (`../combat-scale.ts`): kinetic `damage` = ½·m·v² via `kineticDamageJoules`,
+// beam `damage` = power × one-tick dwell via `beamDamageJoules`, and
+// `projectileSpeed` = `projectileSpeedMPerTick(muzzleVelocity)` (the m/s →
+// m/tick boundary). Missiles carry an authored warhead yield (J) plus a body
+// mass / cruise velocity. The Swarm's bio-weapons are the lightest class:
+// fighter-scale spore rounds and a point-defence-grade acid beam.
+// ---------------------------------------------------------------------------
+
+/** Swarm spore round: a fighter-class organic projectile (`autocannon` banding
+ *  in `PROJECTILE_MASS_KG` / `MUZZLE_VELOCITY_M_PER_S`), the lightest kinetic
+ *  round in the catalogue. */
+const SPORE_MASS_KG = PROJECTILE_MASS_KG.autocannon;
+const SPORE_MUZZLE_MS = MUZZLE_VELOCITY_M_PER_S.autocannon;
+/** Swarm neural-sting body mass (kg) — DERIVED from a fighter-class guided
+ *  round (`autocannon` banding): a light bio-electric tendril, not a heavy
+ *  warhead. */
+const STING_MASS_KG = PROJECTILE_MASS_KG.autocannon;
+/** Neural-sting cruise velocity (m/s) — DERIVED as a fraction of an autocannon
+ *  muzzle velocity: a powered homing tendril is slower than a launched slug. */
+const STING_CRUISE_MS = MUZZLE_VELOCITY_M_PER_S.autocannon / 2;
+/** Swarm neural-sting warhead yield (J) — authored catalogue content: a light
+ *  bio-electric charge, sized below a frigate missile so the Swarm trades raw
+ *  per-hit yield for fast refire and tracking. */
+const STING_WARHEAD_J = 6e7;
 
   // ---------------------------------------------------------------------------
   // Swarm modules — bio-organic alien technology. The Swarm uses living ships
@@ -38,10 +73,11 @@ export const swarmModules: ModuleDefinition[] = [
     effect: {
       kind: "weapon",
       weaponType: "cannon",
-      damage: 7,
+      damage: kineticDamageJoules(SPORE_MASS_KG, SPORE_MUZZLE_MS),
       range: 260,
       cooldown: 18,
-      projectileSpeed: 6,
+      projectileSpeed: projectileSpeedMPerTick(SPORE_MUZZLE_MS),
+      projectileMass: SPORE_MASS_KG,
       tracking: 0.8,
       shieldPiercing: 0.15,
       armourPiercing: 0,
@@ -62,10 +98,11 @@ export const swarmModules: ModuleDefinition[] = [
     effect: {
       kind: "weapon",
       weaponType: "beam",
-      damage: 13,
+      damage: beamDamageJoules(BEAM_POWER_W.pulse, 25),
       range: 180,
       cooldown: 25,
       projectileSpeed: 0,
+      projectileMass: 0,
       tracking: 0,
       shieldPiercing: 0,
       armourPiercing: 0.45,
@@ -86,10 +123,11 @@ export const swarmModules: ModuleDefinition[] = [
     effect: {
       kind: "weapon",
       weaponType: "missile",
-      damage: 28,
+      damage: STING_WARHEAD_J,
       range: 440,
       cooldown: 90,
-      projectileSpeed: 5,
+      projectileSpeed: projectileSpeedMPerTick(STING_CRUISE_MS),
+      projectileMass: STING_MASS_KG,
       tracking: 3.5,
       shieldPiercing: 0.1,
       armourPiercing: 0.2,
