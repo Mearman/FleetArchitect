@@ -432,11 +432,15 @@ export const STALEMATE_IDLE_TICKS = Math.ceil(
  * more frames per batch, slower ones fewer — rather than being a fixed count
  * that can't account for the main-thread render cost each batch triggers.
  *
- * 100 ms = 10 updates/s, matching typical animation cadence and giving each
- * batch enough playback depth (several seconds at typical sim rates) that the
- * playhead never catches the streamed leading edge between batches.
+ * 50 ms = 20 updates/s. Smaller batches mean less per-message
+ * `structuredClone` deserialisation on the main thread, keeping each `message`
+ * handler task shorter — the goal is to stay under Chrome's 50 ms
+ * long-task threshold so the handler never shows up as a `[Violation]` warning.
+ * At typical sim rates each batch still has enough playback depth (a second or
+ * more) that the playhead never catches the streamed leading edge between
+ * batches.
  */
-export const STREAM_BATCH_INTERVAL_MS = 100;
+export const STREAM_BATCH_INTERVAL_MS = 50;
 
 /** Terminal value produced by the streaming generator: battle outcome and duration. */
 export interface BattleSummary {

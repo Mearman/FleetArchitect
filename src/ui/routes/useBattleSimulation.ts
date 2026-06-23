@@ -124,9 +124,35 @@ export function useBattleSimulation({
 
   /**
    * Arrival time (ms) and tick count of the previous batch, for the rate EMA.
-   * Local to this hook: only `onFrames` reads and writes it.
+   * Local to this hook: only the rAF flush reads and writes it.
    */
   const lastBatchRef = useRef<{ timeMs: number; ticks: number } | null>(null);
+
+  /**
+   * Pending batches awaiting a rAF flush. The worker `message` handler pushes
+   * each batch here and schedules a single coalesced rAF; the rAF drains the
+   * queue and does the framesRef push, setFrameCount, EMA, and bounds work.
+   * Keeping the queue off the message task means the worker handler does only
+   * the cheap domain-level push (the resume decorator's synchronous
+   * `streamedFrames` accumulation) plus the schedule, so the `message` task
+   * stays short and Chrome stops logging `[Violation] 'message' handler` for
+   * every batch during a battle.
+   */
+  const pendingBatchesRef = useRef<
+    {
+      frames: readonly BattleFrame[];
+      streamedTicks: number;
+      descriptors: readonly ShipDescriptor[];
+      arrivalMs: number;
+    }[]
+  >([]);
+
+  /**
+   * Handle of the pending rAF flush, or null when none is scheduled. Coalesces
+   * multiple batches into one rAF so a burst of batches from the worker cannot
+   * schedule a storm of callbacks.
+   */
+  const rafHandleRef = useRef<number | null>(null);
 
   /**
    * The anomalies baked into the running replay. Captured at battle start (the
@@ -141,8 +167,18 @@ export function useBattleSimulation({
   const [computing, setComputing] = useState(false);
 
   // Abort any in-flight run when the route unmounts so a stream can't keep
-  // appending frames into a torn-down component.
-  useEffect(() => () => runAbortRef.current?.abort(), []);
+  // appending frames into a torn-down component. Cancel any pending rAF flush
+  // so a deferred batch does not fire after teardown.
+  useEffect(
+    () => () => {
+      runAbortRef.current?.abort();
+      if (rafHandleRef.current !== null) {
+        cancelAnimationFrame(rafHandleRef.current);
+        rafHandleRef.current = null;
+      }
+    },
+    [],
+  );
 
   /**
    * Resolve the chosen fleets, run the engine, and start the replay. The
@@ -181,6 +217,13 @@ export function useBattleSimulation({
 
     // Abort any run still in flight so its stale stream can't feed this one.
     runAbortRef.current?.abort();
+    // Cancel any deferred rAF flush from the previous run and drop its pending
+    // batches so they cannot land in the fresh run's accumulator.
+    if (rafHandleRef.current !== null) {
+      cancelAnimationFrame(rafHandleRef.current);
+      rafHandleRef.current = null;
+    }
+    pendingBatchesRef.current = [];
     const controller = new AbortController();
     runAbortRef.current = controller;
 
@@ -203,6 +246,120 @@ export function useBattleSimulation({
     setComputing(true);
 
     let firstBatch = true;
+
+    // Drains every batch stashed since the last flush, applying the descriptor
+    // fold, EMA, deployment-frame capture, framesRef push, bounds expansion, and
+    // state mirrors in arrival order. Runs inside a rAF so the work happens off
+    // the worker `message` handler task; one pending rAF at a time (coalesced)
+    // so a burst of batches produces a single flush.
+    const flushPendingBatches = () => {
+      rafHandleRef.current = null;
+      // A superseded or aborted run must not touch the accumulator or state.
+      if (controller.signal.aborted) {
+        pendingBatchesRef.current = [];
+        return;
+      }
+      const batches = pendingBatchesRef.current;
+      if (batches.length === 0) return;
+      pendingBatchesRef.current = [];
+
+      for (const batch of batches) {
+        const { frames, streamedTicks, descriptors: batchDescriptors, arrivalMs } = batch;
+
+        // Fold any newly-introduced ship descriptors into the live map so the
+        // renderer can reconstruct cell positions for this batch's frames. A
+        // fresh Map identity makes the descriptors state update reactively; the
+        // ref keeps the camera pointer handler current without a render.
+        if (batchDescriptors.length > 0) {
+          const merged: Map<string, ShipDescriptor> = new Map(descriptorsRef.current);
+          for (const d of batchDescriptors) merged.set(d.instanceId, d);
+          descriptorsRef.current = merged;
+          setDescriptors(merged);
+        }
+
+        // Update the measured simulation rate (ticks computed per real second)
+        // as an EMA over batch arrivals. The rAF loop uses it to decide how much
+        // lead to buffer before resuming playback at the leading edge.
+        const prevBatch = lastBatchRef.current;
+        if (prevBatch !== null) {
+          const dtSeconds = (arrivalMs - prevBatch.timeMs) / 1000;
+          const dTicks = streamedTicks - prevBatch.ticks;
+          if (dtSeconds > 0 && dTicks > 0) {
+            const instantRate = dTicks / dtSeconds;
+            simTickRateRef.current =
+              simTickRateRef.current === 0
+                ? instantRate
+                : SIM_RATE_EMA_WEIGHT * instantRate +
+                  (1 - SIM_RATE_EMA_WEIGHT) * simTickRateRef.current;
+          }
+        }
+        lastBatchRef.current = { timeMs: arrivalMs, ticks: streamedTicks };
+
+        // Capture the very first streamed frame (the tick-0 deployment snapshot)
+        // before appending, so the HP-bar maxima can be taken from it.
+        const firstFrame = framesRef.current.length === 0 ? frames[0] : undefined;
+
+        // Append the batch into the ref the rAF loop reads from. The runner
+        // hands us a readonly view; push each frame reference into the
+        // accumulator.
+        for (const frame of frames) {
+          framesRef.current.push(frame);
+        }
+
+        // Expand the running world extent with this batch's ships and
+        // projectiles, growing the camera view as the battle spreads. Folded
+        // into the previous bounds state so render reads a reactive value, never
+        // the ref. Only emit a fresh object when the extent actually grew, so
+        // the bounds memo stays stable across batches that add nothing new.
+        setRawBounds((prev) => {
+          let minX = prev?.minX ?? Infinity;
+          let maxX = prev?.maxX ?? -Infinity;
+          let minY = prev?.minY ?? Infinity;
+          let maxY = prev?.maxY ?? -Infinity;
+          for (const frame of frames) {
+            for (const s of frame.ships) {
+              if (s.x < minX) minX = s.x;
+              if (s.x > maxX) maxX = s.x;
+              if (s.y < minY) minY = s.y;
+              if (s.y > maxY) maxY = s.y;
+            }
+            for (const p of frame.projectiles) {
+              if (p.x < minX) minX = p.x;
+              if (p.x > maxX) maxX = p.x;
+              if (p.y < minY) minY = p.y;
+              if (p.y > maxY) maxY = p.y;
+            }
+          }
+          if (
+            prev !== null &&
+            minX === prev.minX &&
+            maxX === prev.maxX &&
+            minY === prev.minY &&
+            maxY === prev.maxY
+          ) {
+            return prev;
+          }
+          return { minX, maxX, minY, maxY };
+        });
+
+        setFrameCount(framesRef.current.length);
+        setComputedTicks(streamedTicks);
+
+        if (firstFrame !== undefined) {
+          // Capture the tick-0 deployment frame for the HP-bar maxima.
+          setDeploymentFrame(firstFrame);
+        }
+
+        if (firstBatch) {
+          firstBatch = false;
+          // Start playback from the top of the fresh battle and hand the stage
+          // the full width once the first frames are on screen.
+          playbackTimeRef.current = 0;
+          onFirstBatch();
+        }
+      }
+    };
+
     const onFrames = (
       frames: readonly BattleFrame[],
       streamedTicks: number,
@@ -211,96 +368,20 @@ export function useBattleSimulation({
       // Ignore late batches from a run that has since been superseded.
       if (controller.signal.aborted) return;
 
-      // Fold any newly-introduced ship descriptors into the live map so the
-      // renderer can reconstruct cell positions for this batch's frames. A fresh
-      // Map identity makes the descriptors state update reactively; the ref keeps
-      // the camera pointer handler current without a render.
-      if (batchDescriptors.length > 0) {
-        const merged: Map<string, ShipDescriptor> = new Map(descriptorsRef.current);
-        for (const d of batchDescriptors) merged.set(d.instanceId, d);
-        descriptorsRef.current = merged;
-        setDescriptors(merged);
-      }
-
-      // Update the measured simulation rate (ticks computed per real second) as
-      // an EMA over batch arrivals. The rAF loop uses it to decide how much lead
-      // to buffer before resuming playback at the leading edge.
-      const nowMs = performance.now();
-      const prevBatch = lastBatchRef.current;
-      if (prevBatch !== null) {
-        const dtSeconds = (nowMs - prevBatch.timeMs) / 1000;
-        const dTicks = streamedTicks - prevBatch.ticks;
-        if (dtSeconds > 0 && dTicks > 0) {
-          const instantRate = dTicks / dtSeconds;
-          simTickRateRef.current =
-            simTickRateRef.current === 0
-              ? instantRate
-              : SIM_RATE_EMA_WEIGHT * instantRate +
-                (1 - SIM_RATE_EMA_WEIGHT) * simTickRateRef.current;
-        }
-      }
-      lastBatchRef.current = { timeMs: nowMs, ticks: streamedTicks };
-
-      // Capture the very first streamed frame (the tick-0 deployment snapshot)
-      // before appending, so the HP-bar maxima can be taken from it.
-      const firstFrame = framesRef.current.length === 0 ? frames[0] : undefined;
-
-      // Append the batch into the ref the rAF loop reads from. The runner hands
-      // us a readonly view; push each frame reference into the accumulator.
-      for (const frame of frames) {
-        framesRef.current.push(frame);
-      }
-
-      // Expand the running world extent with this batch's ships and projectiles,
-      // growing the camera view as the battle spreads. Folded into the previous
-      // bounds state so render reads a reactive value, never the ref. Only emit
-      // a fresh object when the extent actually grew, so the bounds memo stays
-      // stable across batches that add nothing new.
-      setRawBounds((prev) => {
-        let minX = prev?.minX ?? Infinity;
-        let maxX = prev?.maxX ?? -Infinity;
-        let minY = prev?.minY ?? Infinity;
-        let maxY = prev?.maxY ?? -Infinity;
-        for (const frame of frames) {
-          for (const s of frame.ships) {
-            if (s.x < minX) minX = s.x;
-            if (s.x > maxX) maxX = s.x;
-            if (s.y < minY) minY = s.y;
-            if (s.y > maxY) maxY = s.y;
-          }
-          for (const p of frame.projectiles) {
-            if (p.x < minX) minX = p.x;
-            if (p.x > maxX) maxX = p.x;
-            if (p.y < minY) minY = p.y;
-            if (p.y > maxY) maxY = p.y;
-          }
-        }
-        if (
-          prev !== null &&
-          minX === prev.minX &&
-          maxX === prev.maxX &&
-          minY === prev.minY &&
-          maxY === prev.maxY
-        ) {
-          return prev;
-        }
-        return { minX, maxX, minY, maxY };
+      // Stash the batch and schedule a single coalesced rAF to drain the queue.
+      // The worker `message` handler task only does this cheap push (plus the
+      // resume decorator's synchronous streamedFrames accumulation, which
+      // already ran before this callback); the expensive UI accumulation
+      // (framesRef push, state mirrors, bounds expansion, EMA) happens in the
+      // rAF, off the message task.
+      pendingBatchesRef.current.push({
+        frames,
+        streamedTicks,
+        descriptors: batchDescriptors,
+        arrivalMs: performance.now(),
       });
-
-      setFrameCount(framesRef.current.length);
-      setComputedTicks(streamedTicks);
-
-      if (firstFrame !== undefined) {
-        // Capture the tick-0 deployment frame for the HP-bar maxima.
-        setDeploymentFrame(firstFrame);
-      }
-
-      if (firstBatch) {
-        firstBatch = false;
-        // Start playback from the top of the fresh battle and hand the stage the
-        // full width once the first frames are on screen.
-        playbackTimeRef.current = 0;
-        onFirstBatch();
+      if (rafHandleRef.current === null) {
+        rafHandleRef.current = requestAnimationFrame(flushPendingBatches);
       }
     };
 

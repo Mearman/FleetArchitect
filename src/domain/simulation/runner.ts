@@ -1,13 +1,34 @@
 import { createId, nowIso } from "@/domain/id";
 import { runBattle, simulateBattle } from "@/domain/simulation/engine";
 import type { BattleInputs } from "@/domain/simulation/types";
-import { BattleResult, BattleStreamMessage } from "@/schema/battle";
+import { BattleResult } from "@/schema/battle";
 import type {
   BattleFrame,
   BattleResult as BattleResultType,
+  BattleStreamMessage,
   ShipDescriptor,
 } from "@/schema/battle";
 import type { EngineCheckpoint } from "@/schema/checkpoint";
+
+/**
+ * Lightweight envelope guard for incoming worker messages. Narrows `unknown` to
+ * {@link BattleStreamMessage} by checking only the top-level `kind` discriminant
+ * and object shape — NOT every frame/ship/cell field.
+ *
+ * The worker is first-party and same-origin, so the deep per-field validation
+ * the schema's `safeParse` performs is defensive overhead that scales with
+ * batch size (the faster the sim, the more frames per batch, the longer each
+ * `message` handler task runs). The deep parse was the source of Chrome's
+ * `[Violation] 'message' handler took <N>ms` warnings during a battle. This
+ * guard keeps the per-batch cost constant while still narrowing at the thread
+ * boundary; the final `BattleResult` continues to be validated once (with
+ * `BattleResult.safeParse`) when the `result` message lands.
+ */
+function isBattleStreamMessage(value: unknown): value is BattleStreamMessage {
+  if (typeof value !== "object" || value === null) return false;
+  if (!("kind" in value)) return false;
+  return value.kind === "frames" || value.kind === "result";
+}
 
 /**
  * Streamed-batch callback. Receives a batch of frames, the highest tick computed
@@ -189,10 +210,19 @@ export class DirectBattleRunner implements BattleRunner {
  *
  * The worker streams frame batches via `{ kind: 'frames' }` messages before
  * posting a `{ kind: 'result' }` message with the final `BattleResult`. Each
- * incoming message is validated with `BattleStreamMessage.safeParse` at the
- * thread boundary. On a `frames` message `onFrames` is invoked and the worker
- * is kept alive; on a `result` message the worker is cleaned up and the
- * promise resolves.
+ * incoming message is narrowed at the thread boundary with the lightweight
+ * {@link isBattleStreamMessage} envelope guard, which checks only the
+ * top-level `kind` discriminant and object shape — NOT every frame/ship/cell
+ * field. The previous per-batch `BattleStreamMessage.safeParse` deep-validated
+ * the whole message every batch; that cost scaled with batch size and was the
+ * source of Chrome's `[Violation] 'message' handler took <N>ms` warnings on the
+ * faster engine. The worker is first-party and same-origin, so the per-field
+ * defence was overhead with no real-world boundary to defend. The final
+ * `BattleResult` is still validated once (with `BattleResult.safeParse`) when
+ * the `result` message lands, keeping the boundary check for the authoritative
+ * output. On a `frames` message `onFrames` is invoked and the worker is kept
+ * alive; on a `result` message the worker is cleaned up and the promise
+ * resolves.
  */
 export type WorkerFactory = () => Worker;
 
@@ -232,32 +262,32 @@ export class WorkerBattleRunner implements BattleRunner {
       };
 
       worker.onmessage = (event: MessageEvent<unknown>) => {
-        const parsed = BattleStreamMessage.safeParse(event.data);
-        if (!parsed.success) {
+        if (!isBattleStreamMessage(event.data)) {
           cleanup();
-          reject(new Error(`Worker sent an invalid BattleStreamMessage: ${parsed.error.message}`));
+          reject(new Error("Worker sent a message that is not a BattleStreamMessage"));
           return;
         }
 
-        if (parsed.data.kind === "frames") {
+        if (event.data.kind === "frames") {
           // Deliver the batch to the caller and keep the worker alive — more
           // batches (or the final result) are still on the way.
-          onFrames?.(parsed.data.frames, parsed.data.computedTicks, parsed.data.descriptors);
+          onFrames?.(event.data.frames, event.data.computedTicks, event.data.descriptors);
           // Forward the latest checkpoint (if the worker captured one with this
           // batch) so the resume decorator persists it. The checkpoint may be a
           // few ticks behind the batch's last frame — the worker emits one per
           // cadence, so this is the most recent tick the cadence hit.
-          if (parsed.data.checkpoint !== undefined) {
-            onCheckpoint?.(parsed.data.checkpoint);
+          if (event.data.checkpoint !== undefined) {
+            onCheckpoint?.(event.data.checkpoint);
           }
           return;
         }
 
         // kind === "result": the simulation has finished — clean up and resolve.
-        // Re-parse the embedded result through BattleResult to narrow to the
-        // correct type; BattleStreamMessage already validated the shape, so
-        // this parse will always succeed.
-        const resultParsed = BattleResult.safeParse(parsed.data.result);
+        // The envelope guard narrowed the message to the `result` variant but did
+        // NOT validate the embedded `BattleResult` (the guard checks only the
+        // discriminant), so parse the result once here. This runs only at the end
+        // of a run, not per batch, so it is not on the hot path.
+        const resultParsed = BattleResult.safeParse(event.data.result);
         cleanup();
         if (resultParsed.success) {
           resolve(resultParsed.data);
