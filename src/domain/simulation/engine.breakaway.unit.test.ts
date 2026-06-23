@@ -402,4 +402,129 @@ describe("engine.breakaway", () => {
     expect(optSkipAfterSplit, "post-split survivor does not re-split (optimised skip)").toEqual([]);
     expect(refAfterSplit, "post-split survivor does not re-split (reference analysis)").toEqual([]);
   });
+
+  /**
+   * A genuine multi-component split: a cross-shaped layout where a single
+   * central bridge cell is the only edge-adjacency joining three weapon
+   * spokes. Killing the bridge severs the graph into three single-cell
+   * components, exercising the union-find → components → survivor →
+   * chunk-emission-order path on both implementations with more than two
+   * fragments. The chunk instanceIds come from the monotonic `nextChunkId`,
+   * so the order chunks are emitted (first-root-appearance in `alive`
+   * iteration) is load-bearing; this fixture pins it.
+   *
+   * Layout: bridge at (col 0, row 0); three weapon spokes at (−1, 0),
+   * (1, 0), and (0, −1) — each edge-adjacent to the bridge and to nothing
+   * else. Killing the bridge leaves three disconnected single-cell
+   * components. The survivor is chosen by largest-then-first-slotId; with
+   * all components size 1, the survivor is the one whose sole module has
+   * the smallest slotId.
+   */
+  it("reference and optimised break-apart produce identical chunks on a three-way split", () => {
+    let chunkCounter = 0;
+    const nextChunkId = (parentId: string, tick: number): string =>
+      `${parentId}-chunk-${tick}-${chunkCounter++}`;
+
+    /**
+     * Cross layout: bridge (h0) at origin with three weapon spokes —
+     * wL (col −1), wR (col +1), wT (row −1) — each edge-adjacent only to
+     * the bridge. Killing h0 severs the graph into three components.
+     */
+    const crossShip = (): SimShip => {
+      const modules: ResolvedModule[] = [
+        moduleOf("h0", { kind: "hull" }, 0, 0, 0, 0, 1_000_000, 5),
+        moduleOf("wL", beam({ damage: 1, range: 50 }), -1, 0, -12, 0, 50, 5, 0, true),
+        moduleOf("wR", beam({ damage: 1, range: 50 }), 1, 0, 12, 0, 50, 5, 0, false),
+        moduleOf("wT", beam({ damage: 1, range: 50 }), 0, -1, 0, -12, 50, 5, 0, false),
+      ];
+      const combat: CombatShip = {
+        instanceId: "d-cross",
+        designId: "d-cross",
+        faction: "Terran",
+        side: "defender",
+        stats: {
+          mass: 10,
+          cost: 100,
+          powerDraw: 0,
+          powerOutput: 0,
+          powerNet: 0,
+          crewRequired: 0,
+          crewCapacity: 0,
+          crewNet: 0,
+          structure: 5000,
+          damageReduction: 0,
+          shieldCapacity: 0,
+          shieldRechargeRate: 0,
+          shieldRechargeDelay: 30,
+          thrust: 0,
+          turnRate: 0,
+          weapons: [],
+          compartments: 0,
+          airtightCompartments: 0,
+        },
+        position: { x: 80, y: 0 },
+        facing: Math.PI,
+        orders: { ...defaultOrders, engageRange: "hold" },
+        crewPriority: "combat",
+        shipStance: "balanced",
+        rules: [],
+        classification: "frigate",
+        modules,
+      };
+      const sim = toSimShip(combat, mulberry32(1));
+      recomputeAggregates(sim);
+      return sim;
+    };
+
+    const killBridge = (ship: SimShip): void => {
+      const bridge = ship.modules?.find((m) => m.slotId === "h0");
+      if (bridge === undefined) throw new Error("bridge module h0 not found");
+      bridge.alive = false;
+      bridge.hp = 0;
+      bridge.surfaceHp = 0;
+      recomputeAggregates(ship);
+    };
+
+    chunkCounter = 0;
+    const shipRef = structuredClone(crossShip());
+    killBridge(shipRef);
+    const refChunks = splitBreakApartReference(shipRef, 2, nextChunkId);
+
+    chunkCounter = 0;
+    const shipOpt = structuredClone(crossShip());
+    killBridge(shipOpt);
+    const optChunks = splitBreakApart(shipOpt, 2, nextChunkId);
+
+    // A genuine three-way split: two chunks break off and one component
+    // stays as the survivor (the original ship).
+    expect(refChunks.length, "the severed cross must produce two break-away chunks").toBe(2);
+    expect(optChunks.length, "both implementations produce the same chunk count").toBe(refChunks.length);
+
+    const slotsOf = (ship: SimShip): string[] =>
+      (ship.modules ?? []).filter((m) => m.alive).map((m) => m.slotId);
+
+    // Chunk-by-chunk deep equivalence: same instanceId and same alive-module
+    // slotIds in the same order. This pins chunk-emission order across the
+    // Map-based and array-indexed union-find implementations.
+    for (let i = 0; i < refChunks.length; i += 1) {
+      const ref = refChunks[i];
+      const opt = optChunks[i];
+      if (ref === undefined || opt === undefined) throw new Error("chunk index out of range");
+      expect(opt.instanceId, "chunk instanceId matches").toBe(ref.instanceId);
+      expect(slotsOf(opt), "chunk alive-module slotIds match").toEqual(slotsOf(ref));
+    }
+
+    // The survivor (original ship, post-split) keeps exactly one alive module
+    // and the same slotId in both implementations.
+    expect(slotsOf(shipOpt), "survivor alive-module slotIds match").toEqual(slotsOf(shipRef));
+    expect(slotsOf(shipOpt).length, "survivor keeps exactly one module").toBe(1);
+
+    // The three distinct alive slotIds across all chunks and the survivor are
+    // exactly the three weapon spokes (the bridge is dead in all fragments).
+    const allAliveSlots = new Set<string>([
+      ...slotsOf(shipOpt),
+      ...optChunks.flatMap((c) => slotsOf(c)),
+    ]);
+    expect([...allAliveSlots].sort()).toEqual(["wL", "wR", "wT"]);
+  });
 });

@@ -7,6 +7,7 @@
 import type { SimCrew } from "../types";
 
 import { computeChunkOutline } from "./chunk-outline";
+import { analyseBreakApartFast } from "./damage-break-apart-fast";
 import { defaultAiDecisions } from "./ai-step";
 import { SIM } from "./config";
 import { resetCrewForFragment } from "./crew";
@@ -586,7 +587,7 @@ export function splitBreakApart(
 ): SimShip[] {
   if (ship.aliveCount === ship.breakApartLastAliveCount) return [];
   ship.breakApartLastAliveCount = ship.aliveCount;
-  return analyseBreakApart(ship, currentTick, nextChunkId);
+  return analyseBreakApartFast(ship, currentTick, nextChunkId);
 }
 
 /**
