@@ -14,6 +14,8 @@ import {
   MODULE_POWER_DRAW_W,
   MUZZLE_VELOCITY_M_PER_S,
   PROJECTILE_MASS_KG,
+  RCS_TORQUE_N_M,
+  REACTION_WHEEL_TORQUE_N_M,
   SHIELD_CAPACITY_J,
   SHIELD_RECHARGE_W,
   TORPEDO_RANGE_M,
@@ -308,7 +310,10 @@ export const terranModules: ModuleDefinition[] = [
     powerDraw: MODULE_POWER_DRAW_W.attitude,
     crewRequired: 0,
     techLevel: 1,
-    effect: { kind: "rcs", torque: 10_000_000 },
+    // DERIVED from RCS_TORQUE_N_M (combat-scale.ts): the slew spec
+    // (MAX_TURN_RATE / SLEW_TIME) applied to a frigate-band reference hull's
+    // moment of inertia, so a frigate reaches max turn rate in the slew time.
+    effect: { kind: "rcs", torque: RCS_TORQUE_N_M },
   },
   {
     id: "mod-reaction-wheel",
@@ -321,7 +326,10 @@ export const terranModules: ModuleDefinition[] = [
     powerDraw: MODULE_POWER_DRAW_W.attitude,
     crewRequired: 0,
     techLevel: 2,
-    effect: { kind: "reactionWheel", torque: 8_000_000 },
+    // DERIVED from REACTION_WHEEL_TORQUE_N_M (combat-scale.ts): the slew spec
+    // applied to a heavy-frigate / light-cruiser reference hull's moment of
+    // inertia — the heavier, more powerful momentum-exchange rotor.
+    effect: { kind: "reactionWheel", torque: REACTION_WHEEL_TORQUE_N_M },
   },
   // --- System: power ---
   {

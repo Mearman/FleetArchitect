@@ -13,6 +13,8 @@ import {
   MODULE_POWER_DRAW_W,
   MUZZLE_VELOCITY_M_PER_S,
   PROJECTILE_MASS_KG,
+  RCS_TORQUE_N_M,
+  REACTION_WHEEL_TORQUE_N_M,
   beamDamageJoules,
   cooldownTicks,
   kineticDamageJoules,
@@ -246,7 +248,10 @@ export const swarmModules: ModuleDefinition[] = [
     powerDraw: MODULE_POWER_DRAW_W.attitude,
     crewRequired: 0,
     techLevel: 1,
-    effect: { kind: "rcs", torque: 12_000_000 },
+    // DERIVED from RCS_TORQUE_N_M (combat-scale.ts): the slew spec applied to a
+    // frigate-band reference hull's moment of inertia — the organic equivalent
+    // produces the same angular authority against the same inertia.
+    effect: { kind: "rcs", torque: RCS_TORQUE_N_M },
   },
   {
     id: "swm-gyral-organ",
@@ -259,7 +264,10 @@ export const swarmModules: ModuleDefinition[] = [
     powerDraw: MODULE_POWER_DRAW_W.attitude,
     crewRequired: 0,
     techLevel: 2,
-    effect: { kind: "reactionWheel", torque: 9_000_000 },
+    // DERIVED from REACTION_WHEEL_TORQUE_N_M (combat-scale.ts): the slew spec
+    // applied to a heavy-frigate / light-cruiser reference hull's inertia — the
+    // living gyroscopic organ matches the wheel's angular authority.
+    effect: { kind: "reactionWheel", torque: REACTION_WHEEL_TORQUE_N_M },
   },
   // --- System: neural command / bio-power ---
   {

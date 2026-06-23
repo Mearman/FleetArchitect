@@ -671,6 +671,80 @@ export const ATTITUDE_ANGULAR_ACCEL_RAD_PER_S2 =
   MAX_TURN_RATE_RAD_PER_S / ATTITUDE_SLEW_TIME_S;
 
 // ---------------------------------------------------------------------------
+// Representative reference hulls and attitude-control torque (newton-metres).
+//
+// Each attitude module (an RCS jet ring, a reaction wheel) is a single
+// general-purpose module, so each carries ONE torque value, DERIVED from the
+// slew spec above and the moment of inertia of a representative reference hull:
+// `τ = ATTITUDE_ANGULAR_ACCEL_RAD_PER_S2 × I_ref`. The reference hull is a
+// uniform thin slab of the tier's characteristic footprint and a representative
+// combat areal density, so its in-plane MoI is `(1/12) · M · (L² + W²)` — the
+// closed-form twin of the engine's cell-by-cell `Σ m·r²`
+// (`recomputeAggregates`, `engine/physics.ts`). An RCS ring is sized against a
+// frigate-band reference; a reaction wheel against a heavy-frigate / light-
+// cruiser reference. Both land in the ~5e7-1e8 N·m band, the wheel above the
+// RCS (correct ordering), and a reference-tier ship reaches
+// MAX_TURN_RATE_RAD_PER_S in ~ATTITUDE_SLEW_TIME_S.
+
+/**
+ * Representative combat areal density (kg/m²) of a fully-built warship hull —
+ * the mean mass per unit deck area used to size a reference hull's MoI. Every
+ * cell carries the substrate truss (~100 kg/m²), a deck plate (~120 kg/m²) and,
+ * on the exterior, a solid armour plate (~800 kg/m²): ~1020 kg/m² in structural
+ * layers alone, plus a dense module (reactor, weapon, magazine) averaging well
+ * over a tonne per cell. 2500 kg/m² is the mean over a hull that is mostly
+ * armour plate and dense machinery, anchoring `M = arealDensity × L × W`.
+ */
+const COMBAT_HULL_AREAL_DENSITY_KG_PER_M2 = 2500;
+
+/**
+ * Moment of inertia (kg·m²) of a representative uniform-slab reference hull —
+ * DERIVED as `(1/12) · M · (L² + W²)` for mass
+ * `M = COMBAT_HULL_AREAL_DENSITY_KG_PER_M2 × L × W`. The closed-form twin of
+ * the engine's cell-by-cell `Σ m·r²`, so an attitude module's torque traces to
+ * a real inertia rather than a round literal.
+ */
+export function representativeMomentOfInertia(
+  hullLengthM: number,
+  hullBeamM: number,
+): number {
+  const mass =
+    COMBAT_HULL_AREAL_DENSITY_KG_PER_M2 * hullLengthM * hullBeamM;
+  return (mass * (hullLengthM * hullLengthM + hullBeamM * hullBeamM)) / 12;
+}
+
+/**
+ * Attitude-control torque (N·m) DERIVED from the slew spec and a reference
+ * hull's MoI: `τ = ATTITUDE_ANGULAR_ACCEL_RAD_PER_S2 × I_ref`. THE derivation an
+ * RCS or reaction-wheel `torque` field is authored from. A ship of the reference
+ * hull reaches {@link MAX_TURN_RATE_RAD_PER_S} in ~{@link ATTITUDE_SLEW_TIME_S}.
+ */
+export function attitudeTorqueNewtonMetres(
+  hullLengthM: number,
+  hullBeamM: number,
+): number {
+  return (
+    ATTITUDE_ANGULAR_ACCEL_RAD_PER_S2 *
+    representativeMomentOfInertia(hullLengthM, hullBeamM)
+  );
+}
+
+/**
+ * RCS (reaction-control jet ring) torque (N·m) — DERIVED from the slew spec
+ * against a frigate-band reference hull (60 m × 12 m): ~5.6e7 N·m
+ * (`0.1 × 5.6e8 kg·m²`). THE derivation an RCS module's `torque` field.
+ */
+export const RCS_TORQUE_N_M = attitudeTorqueNewtonMetres(60, 12);
+
+/**
+ * Reaction-wheel torque (N·m) — DERIVED from the slew spec against a heavy-
+ * frigate / light-cruiser reference hull (70 m × 14 m): ~1.0e8 N·m
+ * (`0.1 × 1.04e9 kg·m²`), above the RCS torque (correct ordering). THE
+ * derivation a reaction-wheel module's `torque` field.
+ */
+export const REACTION_WHEEL_TORQUE_N_M = attitudeTorqueNewtonMetres(70, 14);
+
+// ---------------------------------------------------------------------------
 // Secondary-blast and interior-barrier energies (joules).
 //
 // Now that cell HP and weapon damage are real joules, the engine's own secondary
