@@ -84,8 +84,11 @@ export class ResumingBattleRunner implements BattleRunner {
     // incoming checkpoint can be persisted alongside the frames that precede
     // it (the ones with tick <= checkpoint.tick — the resumed engine reproduces
     // the tail from checkpoint.tick + 1, so those are exactly the frames a
-    // later resume must stitch back on).
-    const streamedFrames: BattleFrame[] = [];
+    // later resume must stitch back on). Seed with the resumed checkpoint's
+    // pre-frames so a checkpoint persisted DURING a resumed run captures the
+    // full 0..tick (not just the resumed tail) — a second interruption that
+    // re-resumes from it would otherwise lose frames 0..checkpoint.tick.
+    const streamedFrames: BattleFrame[] = found !== undefined ? [...found.preFrames] : [];
     const userOnFrames = options?.onFrames;
     const onFrames: typeof userOnFrames = (frames, computedTicks, descriptors) => {
       for (const frame of frames) streamedFrames.push(frame);
