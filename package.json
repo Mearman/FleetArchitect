@@ -12,6 +12,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "bench": "vitest bench --run",
     "prepare": "husky",
     "release": "semantic-release"
   },
