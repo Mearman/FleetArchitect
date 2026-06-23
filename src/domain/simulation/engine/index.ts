@@ -8,17 +8,22 @@
 import { createId, nowIso } from "@/domain/id";
 import { mulberry32 } from "@/domain/simulation/rng";
 import { computeOccluders } from "@/domain/occluders";
-import type { BattleFrame, BattleResult, BattleSide, ShipDescriptor } from "@/schema/battle";
+import type { BattleFrame, BattleResult, ShipDescriptor } from "@/schema/battle";
 import type { BattleInputs, BattleSummary } from "../types";
 import { STALEMATE_IDLE_TICKS } from "../types";
 import { createStalemateWatch, tickStalemateWatch } from "./stalemate";
+import type { StalemateWatch } from "./stalemate";
 
 import { computeAwareness } from "./awareness";
 import { stepAi } from "./ai-step";
 import { rebuildEmissions } from "./em-reception";
 import { launchPods, updatePods } from "./boarding";
 import { applyCollisionDamage, buildShipCellHash, resolveShipCollisions } from "./collision";
-import { SIM, resetProjectileCounter } from "./config";
+import { SIM } from "./config";
+import { bootstrapEngine } from "./bootstrap";
+import { captureCheckpoint } from "./checkpoint";
+import type { EngineCheckpoint } from "@/schema/checkpoint";
+import { leadingSide } from "./outcome";
 import { updateCrew } from "./crew";
 import { refillHardwiredAmmo } from "./crew-haul";
 import { resourceStep } from "./resource-step";
@@ -27,15 +32,13 @@ import { claimHulls, collectDebris, isClaimed, summariseSalvage } from "./salvag
 import { resolveChainReactions } from "./chain-reaction";
 import { applyDamage, splitBreakApart } from "./damage";
 import { layMines, stepTechCooldowns, updateMines } from "./mines";
-import { fleetCentroid, moveShips } from "./movement";
+import { moveShips } from "./movement";
 import { launchDecoys, launchDrones, stepPhantoms } from "./phantoms";
 import { stepPulses } from "./pulse-step";
 import { hasAliveCommand, recomputeAggregates } from "./physics";
-import { toSimShip } from "./setup";
 import { electFocusTarget, pickTarget } from "./targeting";
 import { applyBlink, applyCommandAuras, stepOvercharge } from "./tech";
 import { shipDescriptor, snapshot } from "./snapshot";
-import type { EngineState } from "./state";
 import type { SimShip } from "./types";
 import { fireWeapons, updateProjectiles } from "./weapons";
 
@@ -50,23 +53,57 @@ export { crewState, snapshot } from "./snapshot";
  * the same inputs yield byte-identical frames on every run. `runBattle` wraps
  * this generator to build a replayable BattleResult.
  *
- * `descriptorSink`, when provided, is populated with each ship instance's static
- * descriptor (cell layout + outline) the first frame that instance appears,
- * keyed by instanceId. It is a side channel so a streaming consumer (the worker)
- * can forward freshly captured descriptors alongside each batch before the final
- * summary — which also carries the complete, sorted descriptor list — lands.
+ * `options.descriptorSink`, when provided, is populated with each instance's
+ * static descriptor (cell layout + outline) the first frame it appears, keyed by
+ * instanceId — a side channel so a streaming consumer (the worker) can forward
+ * freshly captured descriptors alongside each batch before the final summary
+ * (which also carries the complete, sorted descriptor list) lands.
+ *
+ * `options.resumeFrom`, when provided, restarts the battle from a captured
+ * {@link EngineCheckpoint} instead of from tick 0: `bootstrapEngine` restores the
+ * RNG, the projectile counter and the engine state, the occluders and static
+ * descriptors re-derive byte-identically (pure functions of `(anomaly, seed)` and
+ * the ship layout), and the loop re-enters at `checkpoint.tick + 1` WITHOUT
+ * re-yielding tick `checkpoint.tick`. A fresh run (no `resumeFrom`) runs exactly
+ * the prologue it always did, so its frames stay byte-for-byte reproducible.
+ *
+ * `options.checkpointEvery` / `options.onCheckpoint`, when both provided, emit a
+ * checkpoint at every tick where `tick % checkpointEvery === 0`, after the frame
+ * is yielded and the termination checks have run, so a resume reproduces the tail
+ * exactly. With either omitted the loop does no capture — the no-options path is
+ * zero-cost.
  */
+export interface SimulateBattleOptions {
+  /** Side channel populated with each instance's static descriptor on first
+   *  appearance, for a streaming consumer (the worker). */
+  descriptorSink?: Map<string, ShipDescriptor>;
+  /** Resume from this captured checkpoint instead of starting at tick 0. */
+  resumeFrom?: EngineCheckpoint;
+  /** Emit a checkpoint every this-many ticks (requires `onCheckpoint`). */
+  checkpointEvery?: number;
+  /** Receives each emitted checkpoint (requires `checkpointEvery`). */
+  onCheckpoint?: (checkpoint: EngineCheckpoint) => void;
+}
+
 export function* simulateBattle(
   inputs: BattleInputs,
-  descriptorSink?: Map<string, ShipDescriptor>,
+  options?: SimulateBattleOptions,
 ): Generator<BattleFrame, BattleSummary> {
-  const rng = mulberry32(inputs.seed >>> 0);
-  resetProjectileCounter();
-  const ships = inputs.ships.map((s) => toSimShip(s, rng));
+  const resumeFrom = options?.resumeFrom;
+  // Restore the RNG to its end-of-tick position on resume; seed a fresh
+  // generator at `seed >>> 0` on a cold start. The fresh path is byte-identical
+  // to the original `mulberry32(inputs.seed >>> 0)` call.
+  const rng =
+    resumeFrom === undefined
+      ? mulberry32(inputs.seed >>> 0)
+      : mulberry32(inputs.seed >>> 0, resumeFrom.rngState);
   // Static descriptors, captured the first frame each instance appears. Either
   // the caller's sink (streaming) or a private map (direct runs). Sorted into
-  // the summary at the end so two same-seed runs return the same order.
-  const descriptors = descriptorSink ?? new Map<string, ShipDescriptor>();
+  // the summary at the end so two same-seed runs return the same order. On
+  // resume they re-derive byte-identically from the restored ships the first
+  // resumed tick (a pure function of the ship layout), so the sink starts empty
+  // exactly as on a cold start.
+  const descriptors = options?.descriptorSink ?? new Map<string, ShipDescriptor>();
   const captureDescriptors = (live: readonly SimShip[]): void => {
     for (const s of live) {
       if (!descriptors.has(s.instanceId)) {
@@ -75,71 +112,17 @@ export function* simulateBattle(
     }
   };
 
-  // Every mutable quantity the loop reads and writes, gathered into one object.
-  // The per-field semantics are documented on the EngineState interface above;
-  // the inline notes here are kept where they explain a non-obvious invariant.
-  const state: EngineState = {
-    ships,
-    // Per-side ship lists and the id index are rebuilt each tick (top of the
-    // loop) so they pick up phantoms (drones/decoys) and break-away chunks added
-    // during a tick. Phantoms are full SimShips so enemies can target them; the
-    // victory check and focus election filter phantoms out explicitly.
-    attackers: ships.filter((s) => s.side === "attacker"),
-    defenders: ships.filter((s) => s.side === "defender"),
-    byId: new Map(ships.map((s) => [s.instanceId, s])),
-    // Initial deployment reference: each side's centroid at the moment of
-    // deployment, captured once before any ship moves. A ship with zero
-    // awareness (no live contact, no ghost) advances toward the OPPOSING side's
-    // deployment centroid so blind fleets close until something enters sensor
-    // range. This is legitimate "we know roughly where they deployed" intel, NOT
-    // live tracking — the reference never updates as enemies move, so it is not
-    // omniscience.
-    deployment: {
-      attacker: fleetCentroid(ships, "attacker"),
-      defender: fleetCentroid(ships, "defender"),
-    },
-    projectiles: [],
-    // Deployed mines live here for the whole run, advanced each tick like
-    // projectiles. Empty unless a mine-layer module lays into it, so a battle
-    // with no mine-layers keeps it empty and emits no `mines` snapshots.
-    mines: [],
-    // In-flight boarding pods live here for the whole run, advanced each tick
-    // like projectiles/mines. Empty unless a boarding module launches into it,
-    // so a battle with no boarding modules keeps it empty and emits no `pods`
-    // snapshots.
-    pods: [],
-    // Active-radar pulses (Phase 8) live here for the whole run, advanced each
-    // tick like projectiles/mines. Empty unless an active-mode sensor emits into
-    // it, so a battle with no active radar keeps it empty and emits no `pulses`
-    // snapshots.
-    pulses: [],
-    // Continuous EM emission log (Phase 9). Rebuilt each tick from every ship's
-    // baseline self-emission (plus active-sensor emissions), in (ship id, module
-    // array) order behind a monotonic per-battle counter so two same-seed runs
-    // produce byte-identical emission ids. The reception pass (the awareness
-    // phase) consumes this; the snapshot records it (omitted when empty). No rng,
-    // no clock — a pure function of ship state, mirroring pulseSeq.
-    emissions: [],
-    // Debris field (Phase 12). A destroyed ship leaves wreckage that keeps its
-    // centre-of-mass momentum and drifts frictionlessly thereafter, advanced
-    // each tick like projectiles/mines. Empty until the first ship dies, so a
-    // battle with no destruction keeps it empty and emits no `debris` snapshots.
-    debris: [],
-    // Deterministic per-battle id counters. Each advances in spawn order, with
-    // no rng and no clock, so two same-seed runs produce byte-identical ids.
-    chunkSeq: 0,
-    mineSeq: 0,
-    podSeq: 0,
-    phantomSeq: 0,
-    pulseSeq: 0,
-    emissionSeq: 0,
-    debrisSeq: 0,
-    // Number of post-initial frames yielded, matching the previous
-    // `frames.length - 1`: the tick-0 frame is excluded from the count.
-    ticks: 0,
-    winner: "draw",
-    resolved: false,
-  };
+  // Assemble the initial engine state: built fresh from the resolved ships on a
+  // cold start, or rebuilt from the checkpoint on resume (which also restores the
+  // projectile counter and the stalemate watch). The cold-start path resets the
+  // projectile counter and constructs the state byte-identically to the original
+  // inline prologue. `startTick` is 1 on a cold start (the tick after frame 0) or
+  // `checkpoint.tick + 1` on resume. `stalemate` is undefined on a cold start
+  // (the frame-0 prologue below creates it); restored on resume.
+  const bootstrap = bootstrapEngine(inputs, rng, resumeFrom);
+  const state = bootstrap.state;
+  const startTick = bootstrap.startTick;
+  let stalemate: StalemateWatch | undefined = bootstrap.stalemate;
 
   // Deterministic id minters. Each consumes one slot from a monotonic counter
   // on the EngineState, combining it with the spawning ship's id, the kind, and
@@ -162,25 +145,45 @@ export function* simulateBattle(
   // every snapshot. This keeps the awareness phase from touching the battle rng.
   const occluders = computeOccluders(inputs.anomaly, inputs.seed >>> 0);
 
-  // Frame 0: run the awareness phase once so the opening snapshot carries the
-  // same fog-of-war data every later frame does, and so each ship's `awareness`
-  // is populated before the first targeting pass below.
-  const frame0Awareness = computeAwareness(state.ships, state.byId, occluders, inputs.anomaly);
-  // Record the frame-0 EM emission log alongside the awareness it produced. The
-  // monotonic counter threads from its initial value through every later tick.
-  state.emissionSeq = rebuildEmissions(state.ships, state.emissions, 0, state.emissionSeq);
+  // Frame 0 + stalemate watch: the cold-start prologue only. On resume tick
+  // `checkpoint.tick` was already yielded by the original run and its stalemate
+  // watch was restored from the checkpoint, so neither runs again — re-yielding
+  // frame 0 or re-creating the watch would diverge from a fresh run's tail.
+  if (resumeFrom === undefined) {
+    // Frame 0: run the awareness phase once so the opening snapshot carries the
+    // same fog-of-war data every later frame does, and so each ship's `awareness`
+    // is populated before the first targeting pass below.
+    const frame0Awareness = computeAwareness(state.ships, state.byId, occluders, inputs.anomaly);
+    // Record the frame-0 EM emission log alongside the awareness it produced. The
+    // monotonic counter threads from its initial value through every later tick.
+    state.emissionSeq = rebuildEmissions(state.ships, state.emissions, 0, state.emissionSeq);
 
-  captureDescriptors(state.ships);
-  yield snapshot(0, state.ships, state.projectiles, frame0Awareness, state.mines, state.pods, state.pulses, state.emissions, state.debris);
+    captureDescriptors(state.ships);
+    yield snapshot(0, state.ships, state.projectiles, frame0Awareness, state.mines, state.pods, state.pulses, state.emissions, state.debris);
 
-  // No-progress stalemate watchdog — the termination guarantee for an uncapped
-  // battle (see ./stalemate). Created only when there is no explicit `maxTicks`:
-  // a focused test that passes a cap is terminated by that cap and runs the
-  // legacy fixed-length loop, byte-for-byte unchanged.
-  const stalemate =
-    inputs.maxTicks === undefined ? createStalemateWatch(state.ships) : undefined;
+    // No-progress stalemate watchdog (see ./stalemate) — the termination
+    // guarantee for an uncapped battle, created only when there is no explicit
+    // `maxTicks` (a focused test passing a cap runs the legacy fixed-length loop).
+    stalemate =
+      inputs.maxTicks === undefined ? createStalemateWatch(state.ships) : undefined;
+  }
 
-  for (let tick = 1; inputs.maxTicks === undefined || tick <= inputs.maxTicks; tick++) {
+  // Both `checkpointEvery` (a positive cadence) and `onCheckpoint` must be
+  // present to capture; with either omitted the loop does no capture at all
+  // (zero-cost no-options path). A single thunk closes over both so the loop body
+  // narrows once here rather than per-tick: undefined when not capturing.
+  const checkpointEvery = options?.checkpointEvery;
+  const onCheckpoint = options?.onCheckpoint;
+  const emitCheckpoint =
+    checkpointEvery !== undefined && checkpointEvery > 0 && onCheckpoint !== undefined
+      ? (tick: number): void => {
+          if (tick % checkpointEvery === 0) {
+            onCheckpoint(captureCheckpoint(state, rng, tick, stalemate));
+          }
+        }
+      : undefined;
+
+  for (let tick = startTick; inputs.maxTicks === undefined || tick <= inputs.maxTicks; tick++) {
     // 0. Awareness phase (sensors, comms, fog of war). Runs first so the
     //    targeting pass below reads each ship's freshly computed `awareness`.
     //    Pure function of ship state + occluders + anomaly; draws ZERO times
@@ -706,6 +709,17 @@ export function* simulateBattle(
       state.resolved = true;
       break;
     }
+
+    // 8. Checkpoint emission (resume support). Capture an end-of-tick checkpoint
+    //    on the requested cadence, AFTER the frame is yielded and all the
+    //    termination checks have run — so a checkpoint is only ever taken for a
+    //    tick the battle survived (a tick that ended the battle breaks above, and
+    //    the completed result subsumes any checkpoint). The capture reads the live
+    //    EngineState, the RNG position, and the stalemate watch, so resuming from
+    //    it reproduces the tail byte-identically. Skipped entirely unless both
+    //    `checkpointEvery` and `onCheckpoint` are set, so the no-options path is
+    //    zero-cost.
+    if (emitCheckpoint !== undefined) emitCheckpoint(tick);
   }
 
   // Hit an explicit `maxTicks` early-stop without a decisive end (focused tests
@@ -771,22 +785,4 @@ export function runBattle(inputs: BattleInputs): BattleResult {
     // no salvage carries no entry (and replays without it parse unchanged).
     ...(summary.salvage.length > 0 ? { salvage: summary.salvage } : {}),
   };
-}
-
-export function leadingSide(
-  attackers: readonly SimShip[],
-  defenders: readonly SimShip[],
-): BattleSide {
-  // Only real ships count toward the leading side — phantoms (drones/decoys)
-  // are transient and must not swing a timeout decision.
-  const total = (group: readonly SimShip[]) =>
-    group.reduce(
-      (sum, s) => (s.phantom === undefined ? sum + s.structure + s.shield : sum),
-      0,
-    );
-  const a = total(attackers);
-  const d = total(defenders);
-  if (a > d) return "attacker";
-  if (d > a) return "defender";
-  return "draw";
 }

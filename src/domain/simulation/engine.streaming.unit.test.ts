@@ -114,7 +114,7 @@ describe("simulateBattle generator", () => {
     // appear, so a sink passed to the generator must end up holding the same set
     // the final summary (and runBattle's result) carries.
     const sink = new Map<string, ShipDescriptor>();
-    const gen = simulateBattle(inputs, sink);
+    const gen = simulateBattle(inputs, { descriptorSink: sink });
     let step = gen.next();
     while (!step.done) {
       step = gen.next();

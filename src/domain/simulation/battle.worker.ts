@@ -21,7 +21,7 @@ self.onmessage = (event: MessageEvent<BattleInputs>) => {
   // last post so the main thread can reconstruct cell positions for the streamed
   // frames before the final result lands.
   const descriptorSink = new Map<string, ShipDescriptor>();
-  const it = simulateBattle(inputs, descriptorSink);
+  const it = simulateBattle(inputs, { descriptorSink });
 
   const allFrames: BattleFrame[] = [];
   let batch: BattleFrame[] = [];
