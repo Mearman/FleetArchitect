@@ -58,9 +58,41 @@ export const DEFAULT_CAMERA: Camera = {
 };
 
 /**
+ * How world coordinates map onto the screen plane, independent of scale/centre.
+ * `flat` is the top-down identity; `isometric` (added later) tilts the plane. The
+ * caller picks the mode; `makeTransform` composes it with scale + centre.
+ *
+ *  - `project`   maps a world-space delta (relative to the camera centre) to a
+ *    screen-space delta (before scale).
+ *  - `unproject` is its exact inverse, for screen -> world hit-testing.
+ *  - `depth`     is the back-to-front draw-order key for a world delta.
+ */
+export type ProjectionMode = "flat" | "isometric";
+
+export interface Projection {
+  mode: ProjectionMode;
+  project: (dx: number, dy: number) => { x: number; y: number };
+  unproject: (sx: number, sy: number) => { x: number; y: number };
+  depth: (dx: number, dy: number) => number;
+}
+
+/** Top-down identity projection: screen delta equals world delta, depth is y. */
+export const FLAT_PROJECTION: Projection = {
+  mode: "flat",
+  project: (dx, dy) => ({ x: dx, y: dy }),
+  unproject: (sx, sy) => ({ x: sx, y: sy }),
+  depth: (_dx, dy) => dy,
+};
+
+/**
  * The resolved world-to-display mapping for one draw. `scale` is display
  * px-per-world-unit; `centreX`/`centreY` is the world point mapped to the canvas
- * centre.
+ * centre; `projection` is the world->screen plane mapping.
+ *
+ * `project(wx, wy)` maps a world point to a screen point through the projection.
+ * `sx`/`sy` are the per-axis equivalents — valid only for an axis-separable
+ * projection (the flat one); isometric callers must use `project`, where screen-x
+ * depends on both world coords.
  */
 export interface Transform {
   scale: number;
@@ -68,6 +100,8 @@ export interface Transform {
   centreY: number;
   width: number;
   height: number;
+  projection: Projection;
+  project: (wx: number, wy: number) => { x: number; y: number };
   sx: (wx: number) => number;
   sy: (wy: number) => number;
 }
@@ -79,17 +113,23 @@ export function fitScale(width: number, height: number, bounds: Bounds): number 
   return Math.min((width - CAMERA_PAD * 2) / rangeX, (height - CAMERA_PAD * 2) / rangeY);
 }
 
-/** Build a Transform from an absolute scale and world centre. */
+/** Build a Transform from an absolute scale, world centre, and projection
+ *  (defaulting to the flat top-down mapping). */
 export function makeTransform(
   width: number,
   height: number,
   scale: number,
   centreX: number,
   centreY: number,
+  projection: Projection = FLAT_PROJECTION,
 ): Transform {
-  const sx = (wx: number) => width / 2 + (wx - centreX) * scale;
-  const sy = (wy: number) => height / 2 + (wy - centreY) * scale;
-  return { scale, centreX, centreY, width, height, sx, sy };
+  const project = (wx: number, wy: number) => {
+    const d = projection.project(wx - centreX, wy - centreY);
+    return { x: width / 2 + d.x * scale, y: height / 2 + d.y * scale };
+  };
+  const sx = (wx: number) => project(wx, centreY).x;
+  const sy = (wy: number) => project(centreX, wy).y;
+  return { scale, centreX, centreY, width, height, projection, project, sx, sy };
 }
 
 /** Centre of a bounds box. */
@@ -190,12 +230,11 @@ export function manualCameraFrom(t: Transform): Camera {
   };
 }
 
-/** Screen pixel -> world coordinate, the inverse of a Transform's sx/sy. */
+/** Screen pixel -> world coordinate, the exact inverse of a Transform's
+ *  projection (so it is correct for both flat and isometric). */
 export function screenToWorld(t: Transform, px: number, py: number): { x: number; y: number } {
-  return {
-    x: t.centreX + (px - t.width / 2) / t.scale,
-    y: t.centreY + (py - t.height / 2) / t.scale,
-  };
+  const d = t.projection.unproject((px - t.width / 2) / t.scale, (py - t.height / 2) / t.scale);
+  return { x: t.centreX + d.x, y: t.centreY + d.y };
 }
 
 /** Clamp a zoom value to the camera's allowed range. */

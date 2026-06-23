@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_CAMERA,
+  FLAT_PROJECTION,
   liveShipsBounds,
   makeTransform,
   manualCameraFrom,
   resolveViewTransform,
+  screenToWorld,
 } from "./battleCamera";
 import type { Bounds, Camera } from "./battleCamera";
 import type { BattleFrame } from "@/schema/battle";
@@ -106,6 +108,45 @@ describe("battleCamera", () => {
       const t = resolveViewTransform(800, 600, WIDE_BOUNDS, cam, frame, NO_DESCRIPTORS);
       expect(t.centreX).toBe(10);
       expect(t.centreY).toBe(20);
+    });
+  });
+
+  describe("projection seam", () => {
+    it("flat projection maps a world point identically through project and sx/sy", () => {
+      const t = makeTransform(800, 600, 5, 100, 200);
+      const cases: ReadonlyArray<readonly [number, number]> = [
+        [100, 200],
+        [140, 260],
+        [0, 0],
+      ];
+      for (const [wx, wy] of cases) {
+        const p = t.project(wx, wy);
+        expect(p.x).toBeCloseTo(t.sx(wx), 9);
+        expect(p.y).toBeCloseTo(t.sy(wy), 9);
+        // flat sx/sy are the plain affine map
+        expect(p.x).toBeCloseTo(800 / 2 + (wx - 100) * 5, 9);
+        expect(p.y).toBeCloseTo(600 / 2 + (wy - 200) * 5, 9);
+      }
+    });
+
+    it("screenToWorld is the exact inverse of project", () => {
+      const t = makeTransform(800, 600, 5, 100, 200);
+      const cases: ReadonlyArray<readonly [number, number]> = [
+        [123, 77],
+        [-40, 310],
+      ];
+      for (const [wx, wy] of cases) {
+        const p = t.project(wx, wy);
+        const back = screenToWorld(t, p.x, p.y);
+        expect(back.x).toBeCloseTo(wx, 6);
+        expect(back.y).toBeCloseTo(wy, 6);
+      }
+    });
+
+    it("FLAT_PROJECTION is the identity with depth = y", () => {
+      expect(FLAT_PROJECTION.project(3, 7)).toEqual({ x: 3, y: 7 });
+      expect(FLAT_PROJECTION.unproject(3, 7)).toEqual({ x: 3, y: 7 });
+      expect(FLAT_PROJECTION.depth(3, 7)).toBe(7);
     });
   });
 
