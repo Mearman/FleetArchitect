@@ -67,7 +67,7 @@ export function drawAnomaly(
     drawNebula(ctx, t, bounds);
   }
   if (hasAnomaly(anomalies, "asteroidField")) {
-    drawAsteroidField(ctx, t, anomalies, seed);
+    drawAsteroidField(ctx, t, seed);
   }
 }
 
@@ -176,12 +176,13 @@ function drawNebula(ctx: CanvasRenderingContext2D, t: Transform, bounds: Bounds)
 function drawAsteroidField(
   ctx: CanvasRenderingContext2D,
   t: Transform,
-  anomalies: readonly BattleAnomalyKind[],
   seed: number,
 ): void {
   ctx.save();
 
-  const discs = computeOccluders(anomalies, seed);
+  // Render only the asteroid discs. The black-hole disc (if a black hole is also
+  // active) is drawn by drawBlackHole, not as a rock here.
+  const discs = computeOccluders(["asteroidField"], seed);
   for (let i = 0; i < discs.length; i += 1) {
     const disc = discs[i];
     if (disc === undefined) continue;
