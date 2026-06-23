@@ -89,7 +89,7 @@ function buildSimShip(id: string, side: "attacker" | "defender"): SimShip {
   const combat: CombatShip = {
     instanceId: id,
     designId: `d-${id}`,
-    faction: "test",
+    faction: "Terran",
     side,
     stats: stats(),
     position: { x: 0, y: 0 },
