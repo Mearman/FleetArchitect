@@ -152,7 +152,7 @@ export class DirectBattleRunner implements BattleRunner {
       config: {
         attackerFleetId: inputs.attackerFleetId,
         defenderFleetId: inputs.defenderFleetId,
-        anomaly: inputs.anomaly,
+        anomalies: inputs.anomalies,
         seed: inputs.seed,
       },
       winner: summary.winner,
