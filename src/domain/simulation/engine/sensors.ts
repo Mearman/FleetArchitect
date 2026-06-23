@@ -5,7 +5,8 @@
 
 import { segmentBlocked } from "@/domain/occluders";
 import type { Disc } from "@/domain/occluders";
-import type { AwarenessSnapshot, BattleAnomaly } from "@/schema/battle";
+import type { AwarenessSnapshot, BattleAnomalyKind } from "@/schema/battle";
+import { hasAnomaly } from "@/domain/anomaly";
 import type { CommsEffect, SensorEffect } from "@/schema/module";
 
 import { SIM } from "./config";
@@ -89,9 +90,9 @@ export function effectiveSensorBearing(unit: SensorUnit): number {
 /** Effective range of a sensor unit after anomaly attenuation. In a nebula a
  *  non-immune sensor's range is scaled by `nebulaSensorFactor`; an immune one
  *  (active LIDAR / gravimetric) keeps its full range. */
-export function attenuatedSensorRange(unit: SensorUnit, anomaly: BattleAnomaly): number {
+export function attenuatedSensorRange(unit: SensorUnit, anomalies: readonly BattleAnomalyKind[]): number {
   const range = effectiveSensorRange(unit);
-  if (anomaly !== "nebula") return range;
+  if (!hasAnomaly(anomalies, "nebula")) return range;
   return unit.effect.nebulaImmune ? range : range * SIM.nebulaSensorFactor;
 }
 

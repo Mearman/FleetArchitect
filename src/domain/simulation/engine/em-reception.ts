@@ -26,7 +26,8 @@
  * pulse and awareness phases keep.
  */
 
-import type { BattleAnomaly } from "@/schema/battle";
+import type { BattleAnomalyKind } from "@/schema/battle";
+import { hasAnomaly } from "@/domain/anomaly";
 
 import { EM_HULL_AMBIENT_EMISSION, EM_RECEIVER_NOISE_FLOOR } from "./em-anchors";
 import { SIM, SPEED_OF_LIGHT_M_PER_TICK } from "./config";
@@ -115,7 +116,7 @@ function sensorGain(range: number): number {
 export function receptionShift(
   observer: SimShip,
   enemy: SimShip,
-  anomaly: BattleAnomaly,
+  anomalies: readonly BattleAnomalyKind[],
 ): number {
   // Doppler boosting/dimming from the radial relative velocity along the sight
   // line. relativeRadialBeta is positive when separating (redshift, D < 1).
@@ -132,7 +133,7 @@ export function receptionShift(
   // Gravitational redshift between the emitter's and receiver's potential wells
   // under a black hole at the origin. Newtonian potential Φ = -GM/r; the ratio
   // of the climb-out factors is the net frequency (and hence power) shift.
-  if (anomaly === "blackHole") {
+  if (hasAnomaly(anomalies, "blackHole")) {
     const gm = SIM.blackHoleStrength;
     const rEnemy = Math.hypot(enemy.x, enemy.y);
     const rObserver = Math.hypot(observer.x, observer.y);
@@ -157,19 +158,19 @@ export function receptionShift(
 export function emReceives(
   observer: SimShip,
   enemy: SimShip,
-  anomaly: BattleAnomaly,
+  anomalies: readonly BattleAnomalyKind[],
 ): boolean {
   const dx = enemy.x - observer.x;
   const dy = enemy.y - observer.y;
   const distSq = dx * dx + dy * dy;
   const dist = Math.sqrt(distSq);
-  const emission = continuousEmissionStrength(enemy) * receptionShift(observer, enemy, anomaly);
+  const emission = continuousEmissionStrength(enemy) * receptionShift(observer, enemy, anomalies);
 
   // Baseline sensor-free receiver: an omni eye at gain 1, reaching
   // `visualLosRadius` against a baseline emitter. A nebula dims the naked eye
   // too (it is never immune), so attenuate the baseline gain by the same factor
   // the visual radius would shrink — squared, since gain scales as range^2.
-  const visualFactor = anomaly === "nebula" ? SIM.nebulaSensorFactor : 1;
+  const visualFactor = hasAnomaly(anomalies, "nebula") ? SIM.nebulaSensorFactor : 1;
   const baselineGain = visualFactor * visualFactor;
   if (continuousContact(emission, dist, EM_RECEIVER_NOISE_FLOOR, baselineGain)) {
     return true;
@@ -179,7 +180,7 @@ export function emReceives(
   // covers the bearing. An omni sensor (arc >= PI) skips the angle test.
   const toEnemy = Math.atan2(dy, dx);
   for (const unit of sensorUnitsOf(observer)) {
-    const range = attenuatedSensorRange(unit, anomaly);
+    const range = attenuatedSensorRange(unit, anomalies);
     if (range <= 0) continue;
     const gain = sensorGain(range);
     if (!continuousContact(emission, dist, EM_RECEIVER_NOISE_FLOOR, gain)) continue;

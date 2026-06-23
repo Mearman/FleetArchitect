@@ -5,7 +5,7 @@
 
 import { segmentBlocked } from "@/domain/occluders";
 import type { Disc } from "@/domain/occluders";
-import type { AwarenessSnapshot, BattleAnomaly } from "@/schema/battle";
+import type { AwarenessSnapshot, BattleAnomalyKind } from "@/schema/battle";
 
 import { SIM, SPEED_OF_LIGHT_M_PER_TICK } from "./config";
 import { coverageShapes } from "./coverage";
@@ -26,7 +26,7 @@ export function computeAwareness(
   ships: SimShip[],
   byId: Map<string, SimShip>,
   occluders: readonly Disc[],
-  anomaly: BattleAnomaly,
+  anomalies: readonly BattleAnomalyKind[],
 ): AwarenessSnapshot {
   // Alive ships in instanceId order — the canonical order for every pass.
   const alive = [...ships]
@@ -62,7 +62,7 @@ export function computeAwareness(
       observer.side === "attacker" ? enemiesBySide.attacker : enemiesBySide.defender;
     for (const enemy of enemies) {
       if (segmentBlocked(observer.x, observer.y, enemy.x, enemy.y, occluders)) continue;
-      if (!emReceives(observer, enemy, anomaly)) continue;
+      if (!emReceives(observer, enemy, anomalies)) continue;
       // Relativistic aberration (Phase 10): a moving observer measures the
       // contact's bearing swept toward its own direction of travel, so the
       // REPORTED position is the aberrated apparent one, not the true position.

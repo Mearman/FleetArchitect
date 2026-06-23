@@ -108,13 +108,13 @@ export interface TranslationCommand {
  * ship's `rangeKeepingBand` order. No speed cap, no damping, no hand-tuned
  * thresholds.
  *
- * Deterministic: a pure function of (ship, target, orders, anomaly, deployment)
+ * Deterministic: a pure function of (ship, target, orders, anomalies, deployment)
  * — no RNG, no clock, no Map/Set iteration-order dependence.
  */
 export function computeTranslationCommand(
   ship: SimShip,
   target: SimShip | undefined,
-  anomaly: BattleInputs["anomaly"],
+  anomalies: BattleInputs["anomalies"],
   deployment: DeploymentReference,
   defaultRange: number,
 ): TranslationCommand {
@@ -156,7 +156,7 @@ export function computeTranslationCommand(
       enemyDeployment.x,
       enemyDeployment.y,
       Math.min(
-        anomalyAdjustedRange(ship.orders, ship.weapons, anomaly, stance, defaultRange),
+        anomalyAdjustedRange(ship.orders, ship.weapons, anomalies, stance, defaultRange),
         sightReach(ship),
       ),
     );
@@ -184,7 +184,7 @@ export function computeTranslationCommand(
   // this is what keeps a myopic ship fighting at the edge of its vision rather
   // than drifting out toward an unreachable stand-off.
   const want = Math.min(
-    anomalyAdjustedRange(ship.orders, ship.weapons, anomaly, stance, defaultRange),
+    anomalyAdjustedRange(ship.orders, ship.weapons, anomalies, stance, defaultRange),
     sightReach(ship),
   );
   return stopInTimeToward(ship, target.x, target.y, want);

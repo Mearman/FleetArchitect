@@ -176,7 +176,7 @@ export function inputs(
     ships,
     attackerFleetId: "fa",
     defenderFleetId: "fd",
-    anomaly: "none",
+    anomalies: [],
     seed,
     maxTicks,
   };

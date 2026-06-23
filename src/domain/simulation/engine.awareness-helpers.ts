@@ -1,5 +1,5 @@
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
-import type { BattleAnomaly } from "@/schema/battle";
+import type { BattleAnomalyKind } from "@/schema/battle";
 import type { CellEdges } from "@/schema/grid";
 import { defaultOrders } from "@/schema/fleet";
 import type {
@@ -207,14 +207,14 @@ export const SHORT_TICKS = 3;
 
 export function inputs(
   ships: CombatShip[],
-  anomaly: BattleAnomaly = "none",
+  anomalies: BattleAnomalyKind[] = [],
   maxTicks: number = SHORT_TICKS,
 ): BattleInputs {
   return {
     ships,
     attackerFleetId: "fa",
     defenderFleetId: "fd",
-    anomaly,
+    anomalies,
     seed: 7,
     maxTicks,
   };

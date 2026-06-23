@@ -21,6 +21,7 @@ import {
 } from "./physics";
 import { relativisticMomentumStep } from "./relativistic-momentum";
 import { angleDifference, angularAccelPerTick, blackHoleAvoidWeight, rotateLocal } from "./setup";
+import { hasAnomaly } from "@/domain/anomaly";
 import { computeTranslationCommand } from "./translation";
 import { afterburnerMultipliers } from "./tech";
 import type { SimShip } from "./types";
@@ -295,7 +296,7 @@ function gravityAcceleration(
 export function moveShips(
   ships: readonly SimShip[],
   byId: Map<string, SimShip>,
-  anomaly: BattleInputs["anomaly"],
+  anomalies: BattleInputs["anomalies"],
   deployment: DeploymentReference,
   defaultRange: number,
 ): void {
@@ -315,7 +316,7 @@ export function moveShips(
   // ranges is below the precision of every other force, so gravity is a feature
   // of the scenario and open-space combat stays exactly gravity-free.
   const gravityField =
-    anomaly === "blackHole" ? buildGravityField(ships) : undefined;
+    hasAnomaly(anomalies, "blackHole") ? buildGravityField(ships) : undefined;
   for (const ship of ships) {
     if (!ship.alive) continue;
     // Phantoms (drones/decoys) move in their own bespoke step, not here.
@@ -349,7 +350,7 @@ export function moveShips(
     // pull across a body of finite size scales as 1/r^3 ("spaghettification"),
     // so the closer you get the faster you are torn apart; inside the lethal
     // radius (the event-horizon proxy) destruction is instant.
-    if (anomaly === "blackHole") {
+    if (hasAnomaly(anomalies, "blackHole")) {
       const dist = Math.hypot(ship.x, ship.y);
       if (
         dist > 0 &&
@@ -384,7 +385,7 @@ export function moveShips(
     // controller should aim for, and whether to fire engines this tick.
     // Replaces the old desired-range/steering + reverse block; see its
     // docstring for the full decision table.
-    const cmd = computeTranslationCommand(ship, target, anomaly, deployment, defaultRange);
+    const cmd = computeTranslationCommand(ship, target, anomalies, deployment, defaultRange);
     let desiredFacing = cmd.desiredFacing;
     let shouldThrust = cmd.shouldThrust;
     const thrustMode = cmd.thrustMode;
@@ -463,7 +464,7 @@ export function moveShips(
     // in actively burns to escape rather than coasting to its death; clear of
     // the margin the weight is zero and this is a no-op, so non-black-hole and
     // open-space behaviour is untouched.
-    if (anomaly === "blackHole") {
+    if (hasAnomaly(anomalies, "blackHole")) {
       const distToHole = Math.hypot(ship.x, ship.y);
       const avoidWeight = blackHoleAvoidWeight(distToHole);
       if (avoidWeight > 0 && distToHole > 0) {
@@ -716,7 +717,7 @@ export function moveShips(
     // origin; its gravitational potential is Phi = -GM/r (softened at r_s).
     const speed = Math.hypot(ship.velX, ship.velY);
     let phi = 0;
-    if (anomaly === "blackHole") {
+    if (hasAnomaly(anomalies, "blackHole")) {
       const dist = Math.max(Math.hypot(ship.x, ship.y), SIM.blackHoleLethalRadius);
       phi = -SIM.blackHoleStrength / dist;
     }

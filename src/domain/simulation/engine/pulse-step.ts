@@ -32,7 +32,7 @@ import {
   type SensorUnit,
 } from "./sensors";
 import { signatureMultiplier } from "./stealth";
-import type { BattleAnomaly } from "@/schema/battle";
+import type { BattleAnomalyKind } from "@/schema/battle";
 
 /** The active-emission strength of a sensor unit. An authored `emitStrength`
  *  (watts) governs how far the ping reaches; a unit that declares an active mode
@@ -89,7 +89,7 @@ export function stepPulses(
   ships: readonly SimShip[],
   byId: ReadonlyMap<string, SimShip>,
   pulses: SimPulse[],
-  anomaly: BattleAnomaly,
+  anomalies: readonly BattleAnomalyKind[],
   tick: number,
   pulseSeq: number,
 ): number {
@@ -116,7 +116,7 @@ export function stepPulses(
   for (const ship of ordered) {
     for (const unit of sensorUnitsOf(ship)) {
       if (!emitsActively(unit)) continue;
-      const range = attenuatedSensorRange(unit, anomaly);
+      const range = attenuatedSensorRange(unit, anomalies);
       if (range <= 0) continue;
       const arc = effectiveSensorArc(unit);
       const bearing = effectiveSensorBearing(unit);

@@ -7,7 +7,8 @@ import { CELL_SIZE } from "@/domain/grid";
 import { ranged } from "@/domain/simulation/rng";
 import type { Rng } from "@/domain/simulation/rng";
 import { cellWorldPosition } from "@/domain/simulation/spatial-hash";
-import type { BattleAnomaly, BattleSide } from "@/schema/battle";
+import type { BattleAnomalyKind, BattleSide } from "@/schema/battle";
+import { hasAnomaly } from "@/domain/anomaly";
 import type { PointDefenseEffect, WeaponEffect } from "@/schema/module";
 import type { BattleInputs } from "../types";
 
@@ -136,7 +137,7 @@ export function fireWeapons(
   byId: Map<string, SimShip>,
   rng: Rng,
   tick: number,
-  anomaly: BattleAnomaly,
+  anomalies: readonly BattleAnomalyKind[],
 ): SimProjectile[] {
   const fired: SimProjectile[] = [];
   for (const ship of ships) {
@@ -211,7 +212,7 @@ export function fireWeapons(
         // Firing drops a cloak for `decloakTicks`: record the tick so the
         // stealth gate exposes a cloaked ship while the window is open.
         ship.lastFiredTick = tick;
-        fireOne(ship, weapon, m.turretAngle, m.x, m.y, target, rng, fired, ship.auraAccuracyBonus, anomaly);
+        fireOne(ship, weapon, m.turretAngle, m.x, m.y, target, rng, fired, ship.auraAccuracyBonus, anomalies);
       }
       continue;
     }
@@ -235,7 +236,7 @@ export function fireWeapons(
       // Legacy aggregated path reads facing off the weapon effect (default 0).
       // No per-module muzzle position, so the recoil lever arm is the ship's
       // origin (0, 0) — the legacy CoM.
-      fireOne(ship, weapon, weapon.facing ?? 0, 0, 0, target, rng, fired, ship.auraAccuracyBonus, anomaly);
+      fireOne(ship, weapon, weapon.facing ?? 0, 0, 0, target, rng, fired, ship.auraAccuracyBonus, anomalies);
     }
   }
   return fired;
@@ -259,7 +260,7 @@ export function fireOne(
   rng: () => number,
   fired: SimProjectile[],
   accuracyBonus: number,
-  anomaly: BattleAnomaly,
+  anomalies: readonly BattleAnomalyKind[],
 ): void {
   if (weapon.projectileSpeed <= 0) {
     // Hitscan: the beam strikes the target's edge nearest the shooter.
@@ -282,7 +283,7 @@ export function fireOne(
     // grazing the well lands off the target's near edge rather than dead-centre.
     // With no black hole the deflection is zero and the strike is unchanged.
     let strikeAngle = angle;
-    if (anomaly === "blackHole" && range > 0) {
+    if (hasAnomaly(anomalies, "blackHole") && range > 0) {
       // Impact parameter: perpendicular distance from the origin (the hole) to
       // the line from the firing ship through the target. |r_ship × dir|, with
       // dir the unit firing direction.
@@ -426,12 +427,12 @@ export function penetrationPath(
 export function updateProjectiles(
   projectiles: readonly SimProjectile[],
   byId: Map<string, SimShip>,
-  anomaly: BattleInputs["anomaly"],
+  anomalies: BattleInputs["anomalies"],
   rng: Rng,
 ): SimProjectile[] {
   const survivors: SimProjectile[] = [];
   if (projectiles.length === 0) return survivors;
-  const trackingFactor = anomaly === "nebula" ? SIM.nebulaTrackingFactor : 1;
+  const trackingFactor = hasAnomaly(anomalies, "nebula") ? SIM.nebulaTrackingFactor : 1;
   // Broad-phase over every alive ship's cells in world space. Projectile hits
   // query this for the frontmost occupied cell on the path instead of scanning
   // every ship. Built once per tick from the post-movement, post-collision
@@ -487,7 +488,7 @@ export function updateProjectiles(
     // projectile traverses the strong-field region in fewer ticks and
     // so accumulates less deflection — the "mass" of a projectile
     // (its speed) is what determines how much it bends.
-    if (anomaly === "blackHole") {
+    if (hasAnomaly(anomalies, "blackHole")) {
       const pDist = Math.hypot(p.x, p.y);
       if (pDist > 0) {
         const pEffectiveR = Math.max(pDist, SIM.blackHoleLethalRadius);
@@ -505,7 +506,7 @@ export function updateProjectiles(
     if (p.travelled > p.range || p.ttl <= 0) continue;
 
     // Asteroid fields randomly destroy in-flight ordnance.
-    if (anomaly === "asteroidField" && rng() < SIM.asteroidDeflectChance) continue;
+    if (hasAnomaly(anomalies, "asteroidField") && rng() < SIM.asteroidDeflectChance) continue;
 
     // Collision with an enemy ship. For modular ships the broad-phase finds
     // the frontmost occupied cell on the projectile's path and the hit strikes

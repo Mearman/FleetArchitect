@@ -8,6 +8,7 @@
 import { createId, nowIso } from "@/domain/id";
 import { mulberry32 } from "@/domain/simulation/rng";
 import { computeOccluders } from "@/domain/occluders";
+import { hasAnomaly } from "@/domain/anomaly";
 import type { BattleFrame, BattleResult, ShipDescriptor } from "@/schema/battle";
 import type { BattleInputs, BattleSummary } from "../types";
 import { STALEMATE_IDLE_TICKS, TICKS_PER_SECOND } from "../types";
@@ -144,7 +145,7 @@ export function* simulateBattle(
   // (drawing from a salted, separate rng inside computeOccluders, never the
   // battle rng) and reuse the same array for every tick's awareness phase and
   // every snapshot. This keeps the awareness phase from touching the battle rng.
-  const occluders = computeOccluders(inputs.anomaly, inputs.seed >>> 0);
+  const occluders = computeOccluders(inputs.anomalies, inputs.seed >>> 0);
 
   // Frame 0 + stalemate watch: the cold-start prologue only. On resume tick
   // `checkpoint.tick` was already yielded by the original run and its stalemate
@@ -154,7 +155,7 @@ export function* simulateBattle(
     // Frame 0: run the awareness phase once so the opening snapshot carries the
     // same fog-of-war data every later frame does, and so each ship's `awareness`
     // is populated before the first targeting pass below.
-    const frame0Awareness = computeAwareness(state.ships, state.byId, occluders, inputs.anomaly);
+    const frame0Awareness = computeAwareness(state.ships, state.byId, occluders, inputs.anomalies);
     // Record the frame-0 EM emission log alongside the awareness it produced. The
     // monotonic counter threads from its initial value through every later tick.
     state.emissionSeq = rebuildEmissions(state.ships, state.emissions, 0, state.emissionSeq);
@@ -207,7 +208,7 @@ export function* simulateBattle(
             r: d.radius,
           })),
         ];
-    const awareness = computeAwareness(state.ships, state.byId, dynamicOccluders, inputs.anomaly);
+    const awareness = computeAwareness(state.ships, state.byId, dynamicOccluders, inputs.anomalies);
     // 0a. Record the continuous EM emission log for this tick (Phase 9), behind
     //     the monotonic emission counter. The reception that built `awareness`
     //     above evaluated each enemy's emission strength per-pair; this log is
@@ -239,7 +240,7 @@ export function* simulateBattle(
     //     awareness (hence after computeAwareness, before targeting reads it).
     //     Opt-in: a no-op (array stays empty) for a battle with no active sensor,
     //     so byte output is unchanged for passive-only fleets.
-    state.pulseSeq = stepPulses(state.ships, state.byId, state.pulses, inputs.anomaly, tick, state.pulseSeq);
+    state.pulseSeq = stepPulses(state.ships, state.byId, state.pulses, inputs.anomalies, tick, state.pulseSeq);
 
     // 0c. AI interpreter (Phase 7 wiring). Evaluate each ship's stance + rules
     //     against the frame state and write the resulting hold-fire decision
@@ -288,7 +289,7 @@ export function* simulateBattle(
     }
 
     // 2. Movement + facing.
-    moveShips(state.ships, state.byId, inputs.anomaly, state.deployment, SIM.defaultRange);
+    moveShips(state.ships, state.byId, inputs.anomalies, state.deployment, SIM.defaultRange);
 
     // 2b. Ship-vs-ship collision at cell granularity. After movement, any two
     //     ships whose cells now overlap are pushed apart with an elastic
@@ -382,7 +383,7 @@ export function* simulateBattle(
     }
 
     // 3. Weapon firing (creates projectiles; hitscan applies damage at once).
-    state.projectiles = state.projectiles.concat(fireWeapons(state.ships, state.byId, rng, tick, inputs.anomaly));
+    state.projectiles = state.projectiles.concat(fireWeapons(state.ships, state.byId, rng, tick, inputs.anomalies));
 
     // 3b. PD cooldowns tick down so a battery that just fired can fire again
     //     the next tick. Tick here (before projectile resolution) so a PD
@@ -398,7 +399,7 @@ export function* simulateBattle(
     }
 
     // 4. Projectile travel, homing, asteroid deflection, and collision.
-    state.projectiles = updateProjectiles(state.projectiles, state.byId, inputs.anomaly, rng);
+    state.projectiles = updateProjectiles(state.projectiles, state.byId, inputs.anomalies, rng);
 
     // 4-mines. Mines (factions update). Arm down, then detonate any armed mine
     //     with an enemy in range against the nearest such enemy (via applyDamage,
@@ -616,7 +617,7 @@ export function* simulateBattle(
     }
 
     // 5. Shield regeneration.
-    const regenFactor = inputs.anomaly === "nebula" ? SIM.nebulaRegenFactor : 1;
+    const regenFactor = hasAnomaly(inputs.anomalies, "nebula") ? SIM.nebulaRegenFactor : 1;
     for (const ship of state.ships) {
       if (!ship.alive) continue;
       // Adaptive shields: count the ticks since the shield was last touched. A hit
@@ -765,7 +766,7 @@ export function runBattle(inputs: BattleInputs): BattleResult {
     config: {
       attackerFleetId: inputs.attackerFleetId,
       defenderFleetId: inputs.defenderFleetId,
-      anomaly: inputs.anomaly,
+      anomalies: inputs.anomalies,
       seed: inputs.seed,
     },
     winner: summary.winner,

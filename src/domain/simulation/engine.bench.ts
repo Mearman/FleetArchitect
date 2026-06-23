@@ -41,7 +41,7 @@ function snapshotFor(
     ],
     attackerFleetId,
     defenderFleetId,
-    anomaly: "none",
+    anomalies: [],
     seed,
     maxTicks,
   };

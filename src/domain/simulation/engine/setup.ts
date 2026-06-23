@@ -4,6 +4,7 @@
  */
 
 import { CELL_SIZE } from "@/domain/grid";
+import { hasAnomaly } from "@/domain/anomaly";
 import { DEFAULT_WEAPON_AMMO } from "@/schema/module";
 import type { WeaponEffect } from "@/schema/module";
 import type { Orders } from "@/schema/fleet";
@@ -87,7 +88,7 @@ export function desiredRange(
  * (halved projectile tracking) and an asteroid field (in-flight rounds
  * destroyed over time) a longer time-of-flight means fewer shots that land, so
  * ships should close to where their fire is effective; we scale the base
- * desired range down by the anomaly's factor. Black hole and "none" leave the
+ * desired range down by the anomaly's factor. Black hole leaves the
  * range untouched (the black hole is handled by avoidance steering, not by
  * range), so this is byte-identical to `desiredRange` for those cases.
  *
@@ -97,14 +98,15 @@ export function desiredRange(
 export function anomalyAdjustedRange(
   orders: Orders,
   weapons: readonly WeaponEffect[],
-  anomaly: BattleInputs["anomaly"],
+  anomalies: BattleInputs["anomalies"],
   stance: ShipStance,
   defaultRange: number,
 ): number {
   const base = desiredRange(orders, weapons, stance, defaultRange);
-  if (anomaly === "nebula") return base * SIM.anomalyRangeFactor.nebula;
-  if (anomaly === "asteroidField") return base * SIM.anomalyRangeFactor.asteroidField;
-  return base;
+  let adjusted = base;
+  if (hasAnomaly(anomalies, "nebula")) adjusted *= SIM.anomalyRangeFactor.nebula;
+  if (hasAnomaly(anomalies, "asteroidField")) adjusted *= SIM.anomalyRangeFactor.asteroidField;
+  return adjusted;
 }
 
 /**

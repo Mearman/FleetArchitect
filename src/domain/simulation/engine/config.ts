@@ -361,7 +361,7 @@ export const SIM = {
    *    ships fight noticeably closer.
    *  - An asteroid field destroys a fraction of in-flight rounds each tick, so
    *    a shorter flight time means fewer shots lost — a more modest pull-in.
-   * Each anomaly is exclusive, so these never compound.
+   * Anomalies combine, so these compound when more than one is active.
    *
    * Classification: authored catalogue content (tactical doctrine per anomaly;
    * Phase 9 derives these from the per-metre absorption / Poisson-loss models).
