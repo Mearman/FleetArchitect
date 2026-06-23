@@ -378,7 +378,8 @@ describe("captureCheckpoint / restoreCheckpoint", () => {
     expect(ship.wiringReach).toBeUndefined();
     expect(ship.aliveCells).toBeUndefined();
     expect(ship.resourceGraph).toBeUndefined();
-    expect(ship.breakApartFingerprint).toBeUndefined();
+    expect(ship.breakApartLastAliveCount).toBeUndefined();
+    expect(ship.aliveCount).toBeUndefined();
     // The per-tick awareness Map is rebuilt at the top of the resumed tick.
     expect(ship.awareness.size).toBe(0);
   });

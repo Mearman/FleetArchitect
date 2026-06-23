@@ -6,6 +6,11 @@ import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulati
 import { defaultOrders } from "@/schema/fleet";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
+import { splitBreakApart, splitBreakApartReference } from "@/domain/simulation/engine/damage";
+import { recomputeAggregates } from "@/domain/simulation/engine/physics";
+import { toSimShip } from "@/domain/simulation/engine/setup";
+import { mulberry32 } from "@/domain/simulation/rng";
+import type { SimShip } from "@/domain/simulation/engine/types";
 
 
 const OPEN_EDGES: CellEdges = {
@@ -279,5 +284,122 @@ describe("engine.breakaway", () => {
     const b = mk();
     expect(b.frames).toEqual(a.frames);
     expect(b.winner).toBe(a.winner);
+  });
+
+  /**
+   * Equivalence between the reference (oracle) and optimised (production)
+   * break-apart implementations. Both share the analysis core; the optimised
+   * path skips it when the alive-module count is unchanged since the last
+   * evaluation. The two must produce identical chunk output across:
+   *  (a) a connected topology (no death) — the reference runs the analysis
+   *      and finds one component (returns []); the optimised skips via the
+   *      alive-count marker (returns []); and
+   *  (b) a severed topology (bridge cell killed) — both run the analysis and
+   *      must return the same chunk set (same instanceIds, same module
+   *      slotIds per chunk, same survivor selection).
+   *
+   * The optimised path is driven through BOTH branches: the skip branch in
+   * (a) (by priming `breakApartLastAliveCount`), and the analyse branch in
+   * (b) (where the changed alive count forces analysis).
+   */
+  it("reference and optimised break-apart produce identical chunks across a topology-changing sequence", () => {
+    // Deterministic per-tick chunk id generator, matching the engine's
+    // convention: parentId + tick + counter. The exact id shape does not
+    // matter for the equivalence assertion as long as both implementations
+    // receive the same generator and produce the same chunk count.
+    let chunkCounter = 0;
+    const nextChunkId = (parentId: string, tick: number): string =>
+      `${parentId}-chunk-${tick}-${chunkCounter++}`;
+
+    // Build a fresh modular SimShip from the column layout: wU (row 0) and
+    // wD (row 2) are each edge-adjacent to the h1 bridge (row 1) but not to
+    // each other. Killing h1 severs wU from wD into two single-cell
+    // components.
+    const buildShip = (): SimShip => {
+      const sim = toSimShip(columnShip("d-eq", 80, 1_000_000), mulberry32(1));
+      recomputeAggregates(sim); // sets sim.aliveCount
+      return sim;
+    };
+
+    // --- State (a): connected topology, no module death. -------------------
+    // Reference: runs the full analysis, finds one component, returns [].
+    const shipRefA = structuredClone(buildShip());
+    const refChunksA = splitBreakApartReference(shipRefA, 1, nextChunkId);
+    expect(refChunksA, "reference returns no chunks on a connected topology").toEqual([]);
+
+    // Optimised: prime the marker so the alive-count compare succeeds and the
+    // analysis is skipped entirely (exercising the skip branch). Must match
+    // the reference's [].
+    const shipOptA = structuredClone(buildShip());
+    shipOptA.breakApartLastAliveCount = shipOptA.aliveCount;
+    const optChunksA = splitBreakApart(shipOptA, 1, nextChunkId);
+    expect(optChunksA, "optimised returns no chunks on a connected topology").toEqual([]);
+    // The skip must NOT have mutated the marker.
+    expect(shipOptA.breakApartLastAliveCount).toBe(shipOptA.aliveCount);
+
+    // Sanity: the unprimed optimised path (first-ever call) also returns []
+    // because the analysis finds one component.
+    const shipOptUnprimed = structuredClone(buildShip());
+    delete shipOptUnprimed.breakApartLastAliveCount;
+    expect(splitBreakApart(shipOptUnprimed, 1, nextChunkId)).toEqual([]);
+
+    // --- State (b): bridge cell killed, topology severed. -----------------
+    // Kill h1 on a fresh ship, then recompute aggregates so aliveCount
+    // reflects the death (this is exactly what the engine does between a
+    // damage phase and the break-apart step).
+    const killBridge = (ship: SimShip): void => {
+      const bridge = ship.modules?.find((m) => m.slotId === "h1");
+      if (bridge === undefined) throw new Error("bridge module h1 not found");
+      bridge.alive = false;
+      bridge.hp = 0;
+      bridge.surfaceHp = 0;
+      recomputeAggregates(ship);
+    };
+
+    // Reference: runs the analysis, returns the chunk set.
+    chunkCounter = 0;
+    const shipRefB = structuredClone(buildShip());
+    killBridge(shipRefB);
+    const refChunksB = splitBreakApartReference(shipRefB, 2, nextChunkId);
+
+    // Optimised: the alive count changed (3 -> 2) so the skip branch does NOT
+    // fire; the analysis runs. Use a fresh counter so the chunk ids match.
+    chunkCounter = 0;
+    const shipOptB = structuredClone(buildShip());
+    killBridge(shipOptB);
+    const optChunksB = splitBreakApart(shipOptB, 2, nextChunkId);
+
+    // Same chunk count.
+    expect(optChunksB.length, "both implementations produce the same chunk count").toBe(refChunksB.length);
+    // A real split occurred (the reference, which always analyses, found > 0).
+    expect(refChunksB.length, "the severed topology must actually split").toBeGreaterThan(0);
+
+    // Deep equivalence of each chunk: same instanceId, same alive-module
+    // slotIds (in the same order), same survivor identity. The survivor keeps
+    // the parent's instanceId on the original ship; chunks are the break-away
+    // fragments, so compare chunk-by-chunk.
+    const slotsOf = (ship: SimShip): string[] =>
+      (ship.modules ?? []).filter((m) => m.alive).map((m) => m.slotId);
+    for (let i = 0; i < refChunksB.length; i += 1) {
+      const ref = refChunksB[i];
+      const opt = optChunksB[i];
+      if (ref === undefined || opt === undefined) throw new Error("chunk index out of range");
+      expect(opt.instanceId, "chunk instanceId matches").toBe(ref.instanceId);
+      expect(slotsOf(opt), "chunk alive-module slotIds match").toEqual(slotsOf(ref));
+    }
+
+    // The survivor side (the original ship, post-split) must also match: same
+    // alive-module slotIds remain on the parent in both implementations.
+    expect(slotsOf(shipOptB), "survivor alive-module slotIds match").toEqual(slotsOf(shipRefB));
+
+    // Cross-check: re-running the optimised path on the post-split survivor
+    // (whose aliveCount is now stable) skips via the marker and returns [],
+    // matching the reference which analyses and finds one component.
+    chunkCounter = 0;
+    const optSkipAfterSplit = splitBreakApart(shipOptB, 3, nextChunkId);
+    chunkCounter = 0;
+    const refAfterSplit = splitBreakApartReference(shipRefB, 3, nextChunkId);
+    expect(optSkipAfterSplit, "post-split survivor does not re-split (optimised skip)").toEqual([]);
+    expect(refAfterSplit, "post-split survivor does not re-split (reference analysis)").toEqual([]);
   });
 });

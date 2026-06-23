@@ -14,9 +14,9 @@ import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
 
 /**
- * W5b: the O(C^2)-bounding guards (break-apart topology skip, chain-reaction
- * spatial pre-filter, bounded brownout cut) must be pure optimisations — the
- * engine produces byte-identical frames with each guard on or off.
+ * W5b: the O(C^2)-bounding guards (chain-reaction spatial pre-filter, bounded
+ * brownout cut) must be pure optimisations — the engine produces byte-identical
+ * frames with each guard on or off.
  *
  * Each guard is exercised by a targeted synthetic close-range fixture that
  * places ships within weapon range from tick one, ensuring the guard path is
@@ -25,8 +25,6 @@ import type { ShipStats } from "@/domain/stats";
  * end-to-end sanity check. Total wall time well under 60 s.
  *
  * Guard descriptions:
- *  - breakApartTopology: skip union-find when the alive-cell fingerprint is
- *    unchanged. Triggered when cells die and the fingerprint moves.
  *  - chainReactionSpatial: use a spatial pre-filter for blast targets instead
  *    of scanning every cell. Triggered when a volatile cell (magazine/reactor)
  *    is destroyed.
@@ -44,10 +42,6 @@ import type { ShipStats } from "@/domain/stats";
  *    A module at col = +1 (local (+1, 0)) is distance (radius − 1) from the
  *    impact; a module at col = 0 is distance radius. The col=+1 cell is
  *    therefore NEAREST the impact and is always struck first.
- *
- * The break-apart fixture uses a vertical I-beam (all col=0 but rows −1/0/+1)
- * so the bridge cell at row=0 is the nearest module (equidistant from the top
- * and bottom flanks), dies first, and severs the two flanks.
  */
 
 const OPEN: CellEdges = { n: "open", e: "open", s: "open", w: "open", doorStates: {} };
@@ -185,14 +179,12 @@ function frameHash(inputs: BattleInputs): string {
  *  off. Returns the naive hash for any further assertion by the caller. */
 function assertGuardIdempotence(inputs: BattleInputs): string {
   Object.assign(PERF_GUARDS, {
-    breakApartTopology: false,
     chainReactionSpatial: false,
     brownoutBounded: false,
   });
   const naive = frameHash(inputs);
 
   Object.assign(PERF_GUARDS, {
-    breakApartTopology: true,
     chainReactionSpatial: true,
     brownoutBounded: true,
   });
@@ -221,58 +213,6 @@ describe("W5b perf guards preserve frame output", () => {
   const original = { ...PERF_GUARDS };
   afterEach(() => {
     Object.assign(PERF_GUARDS, original);
-  });
-
-  // -------------------------------------------------------------------------
-  // Fixture A: breakApartTopology guard
-  //
-  // The defender is a vertical I-beam: a top cell, a bridge cell, and a bottom
-  // cell, all at col=0 but rows −1/0/+1. The bridge (row=0) is nearest the
-  // impact point (see geometry note above) and has the lowest HP. When the
-  // bridge dies the top and bottom cells are no longer 4-connected; break-apart
-  // fires and creates two chunks. The fingerprint changes the moment the bridge
-  // cell dies, so the topology guard fires on that tick.
-  //
-  // Module layout (local, facing=0 = right, no frame flip):
-  //   row=-1: col=0  ← top chunk (high HP)
-  //   row= 0: col=0  ← bridge   (low HP, dies first)
-  //   row=+1: col=0  ← bottom chunk (high HP)
-  //
-  // Beam impact in local space ≈ (−radius, 0); the bridge at (0, 0) is the
-  // single nearest cell (the top/bottom cells are at distance > bridge).
-  // -------------------------------------------------------------------------
-  it("breakApartTopology guard: frames are byte-identical when a cell dies and the ship breaks apart", () => {
-    // I-beam defender: centre bridge is the only link; it has deliberately low
-    // HP so a single beam hit kills it, severing top from bottom.
-    const defender = combatShip(
-      "def-break",
-      "defender",
-      [
-        moduleOf("dt", { kind: "hull" },  0, -1, 5_000, 5, true), // top (command, high HP)
-        moduleOf("db", { kind: "hull" },  0,  0,    40),           // bridge (low HP, dies first)
-        moduleOf("dk", { kind: "hull" },  0,  1, 5_000),           // bottom (high HP)
-      ],
-      { x: 80, y: 0 },
-      0,           // facing right = same orientation as local frame
-    );
-
-    const inputs = battleInputs([standardAttacker("atk-break"), defender]);
-    assertGuardIdempotence(inputs);
-
-    // Sanity: the bridge must die for the break-apart guard to have been
-    // exercised (else the fingerprint never changes and the guard is trivially
-    // always "no-op", not meaningfully exercised).
-    Object.assign(PERF_GUARDS, {
-      breakApartTopology: false,
-      chainReactionSpatial: false,
-      brownoutBounded: false,
-    });
-    const result = runBattle({ ...inputs, ships: structuredClone(inputs.ships) });
-    const bridgeDied = result.frames.some((f) => {
-      const ship = f.ships.find((s) => s.instanceId === "def-break");
-      return (ship?.cells ?? []).some((c) => c.slotId === "db" && !c.alive);
-    });
-    expect(bridgeDied, "the bridge cell must die for the break-apart guard to fire").toBe(true);
   });
 
   // -------------------------------------------------------------------------
@@ -314,7 +254,6 @@ describe("W5b perf guards preserve frame output", () => {
 
     // Sanity: the magazine must detonate within the run.
     Object.assign(PERF_GUARDS, {
-      breakApartTopology: false,
       chainReactionSpatial: false,
       brownoutBounded: false,
     });
@@ -387,7 +326,6 @@ describe("W5b perf guards preserve frame output", () => {
     // survived). The invariant we care about is frame identicality, already
     // verified above; this check merely confirms the battle ran at all.
     Object.assign(PERF_GUARDS, {
-      breakApartTopology: false,
       chainReactionSpatial: false,
       brownoutBounded: false,
     });

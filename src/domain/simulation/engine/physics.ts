@@ -127,11 +127,14 @@ export function recomputeAggregates(ship: SimShip): void {
     }
   }
 
-  // 2. Start every alive module powered; we'll disable the hungriest to
-  //    fit the budget. Reactors themselves draw nothing.
+  // 2. Start every alive module powered; we'll disable the hungriest to fit the
+  //    budget. Reactors draw nothing. Also refreshes `ship.aliveCount`.
+  let aliveCount = 0;
   for (const m of ship.modules) {
     m.powered = m.alive && m.effect.kind !== "power";
+    if (m.alive) aliveCount += 1;
   }
+  ship.aliveCount = aliveCount;
 
   // 3. Demand from powered consumers. If it exceeds supply, take the
   //    hungriest offline — weapons and PD first (PD is an active defence
@@ -144,15 +147,12 @@ export function recomputeAggregates(ship: SimShip): void {
 
   if (demand > supply) {
     if (PERF_GUARDS.brownoutBounded) {
-      // Bounded cut: cutting a module only ever lowers demand and never changes
-      // any other module's draw or powered state, so the sequence the naive loop
-      // produces — repeatedly removing the hungriest powered weapon/PD/shield —
-      // is exactly that candidate set taken in descending `powerDraw` order. We
-      // pre-sort the candidates once (a single O(C) pass plus one O(c log c)
-      // sort over only the cuttable modules) and walk them, instead of
-      // re-scanning every cell per cut. Array.prototype.sort is stable, so equal
-      // draws keep their array order — matching the naive loop's strict-`>`
-      // "first occurrence wins" tie-break exactly. Same victims, same order.
+      // Bounded cut: cutting a module only lowers demand, so the naive loop's
+      // sequence — repeatedly removing the hungriest powered weapon/PD/shield —
+      // is that candidate set in descending `powerDraw` order. Pre-sort the
+      // candidates once (O(C) + O(c log c)) and walk them, instead of
+      // re-scanning per cut. sort() is stable, so equal draws keep their array
+      // order — matching the naive loop's strict-`>` "first wins" tie-break.
       const candidates: SimModule[] = [];
       for (const m of ship.modules) {
         if (!m.powered) continue;

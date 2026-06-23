@@ -8,9 +8,13 @@
  * ship's combat state. Every DERIVED cache is deliberately absent — the crew
  * path cache (which holds the non-serialisable `UNREACHABLE` Symbol), the
  * per-tick awareness Map, the wiring-reach Set, the alive-cell index, the
- * transport graph, and the topology / break-apart fingerprints. They re-warm
- * byte-identically on first touch (the fixed-tie-break A* recomputes the same
- * paths; the fingerprints recompute the same hashes), so capturing them would
+ * transport graph, and the topology fingerprint and the break-apart
+ * alive-count markers (`breakApartLastAliveCount` / `aliveCount`). They
+ * re-warm byte-identically on first touch (the fixed-tie-break A* recomputes
+ * the same paths; the fingerprints recompute the same hashes; the alive count
+ * is recomputed by `recomputeAggregates` and the break-apart marker re-warms
+ * to `undefined`, so the first resumed pass analyses exactly as a fresh
+ * start would), so capturing them would
  * be redundant and, in the Symbol's case, impossible. The transient `awareness`
  * Map and the re-derived momentum (`px`/`py`) are likewise rebuilt at the top of
  * the resumed tick before anything reads them, so they are not captured.
@@ -186,10 +190,10 @@ const PhantomState = z.object({
 /**
  * Authoritative per-ship state (`SimShip`) minus every derived cache. The
  * non-serialisable cache fields — `pathCache`, `topologyFingerprint`,
- * `wiringReach`, `aliveCells`, `resourceGraph`, `breakApartFingerprint` — and
- * the transient `awareness` Map and re-derived `px`/`py` are NOT present: they
- * re-warm byte-identically on the first resumed tick. `lastFiredTick` is a plain
- * `z.number()` because it begins at `-Infinity`.
+ * `wiringReach`, `aliveCells`, `resourceGraph`, `breakApartLastAliveCount`,
+ * `aliveCount` — and the transient `awareness` Map and re-derived `px`/`py`
+ * are NOT present: they re-warm byte-identically on the first resumed tick.
+ * `lastFiredTick` is a plain `z.number()` because it begins at `-Infinity`.
  */
 const CheckpointShip = z.object({
   instanceId: z.string(),

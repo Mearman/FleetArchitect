@@ -12,9 +12,6 @@
  * them, so the default object is the single live configuration.
  */
 export interface PerfGuards {
-  /** Skip break-apart's union-find when the alive-cell topology is unchanged
-   *  since the last pass that found the ship whole. */
-  breakApartTopology: boolean;
   /** Use a spatial pre-filter for chain-reaction blast targets instead of
    *  sorting every alive cell on the ship per blast. */
   chainReactionSpatial: boolean;
@@ -26,7 +23,6 @@ export interface PerfGuards {
 /** The live guard configuration. Mutated only by the determinism A/B test, which
  *  restores it afterwards; production never touches it. */
 export const PERF_GUARDS: PerfGuards = {
-  breakApartTopology: true,
   chainReactionSpatial: true,
   brownoutBounded: true,
 };

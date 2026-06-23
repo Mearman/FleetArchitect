@@ -7,10 +7,8 @@
 import type { SimCrew } from "../types";
 
 import { computeChunkOutline } from "./chunk-outline";
-import { aliveCellFingerprint } from "./crew-pathfinding";
 import { defaultAiDecisions } from "./ai-step";
 import { SIM } from "./config";
-import { PERF_GUARDS } from "./perf-guards";
 import { resetCrewForFragment } from "./crew";
 import { comTangentialVelocity, localCentreOfMass, recomputeAggregates } from "./physics";
 import { angleDifference, normaliseAngle, worldToLocal } from "./setup";
@@ -318,33 +316,47 @@ export function nearestAliveModule(
  * for all purposes including graph connectivity. A non-modular ship (no
  * `modules` array) never splits: the legacy aggregated path stays whole.
  *
+ * Two parallel implementations share the analysis core (`analyseBreakApart`):
+ *  - `splitBreakApartReference`: the oracle. It always runs the full analysis,
+ *    the naive path used only to prove the optimisation is behaviour-preserving.
+ *  - `splitBreakApart`: the production path. It skips the analysis when the
+ *    ship's alive-module count is unchanged since the last evaluation.
+ *
+ * Byte-identical-frame reasoning for the production skip: the engine only ever
+ * flips a module's `alive` flag from true to false (verified: no path sets it
+ * back to true), so `aliveCount` is monotonically non-increasing within a
+ * ship's lifetime. Therefore `aliveCount` unchanged ⟺ no module died ⟺ the
+ * alive set is unchanged ⟺ the connectivity graph is unchanged ⟺ the full
+ * analysis also yields no split, and skipping it returns the same `[]` the
+ * analysis would have. When the count changed, the production path runs the
+ * identical analysis. On checkpoint resume the marker
+ * (`breakApartLastAliveCount`) is `undefined` (it is not captured — see
+ * `src/schema/checkpoint.ts`), so the first resumed tick fails the equality
+ * test and analyses; on an unchanged topology that analysis returns `[]`
+ * exactly as a skip would, so resumed frames are byte-identical to non-resumed
+ * ones.
+ *
  * The split happens at most once per ship per tick. After splitting, the
  * original ship's modules array is mutated so that every module belonging
  * to a non-primary component is marked `alive: false`. The chunk SimShips
  * carry their own copies of those modules (alive: true), re-derived
  * aggregates, and a fresh instanceId from `nextChunkId`.
- *
- * The function returns the list of new chunk ships to be added to the
- * simulation's ship list. Returns an empty array when no split happens.
  */
-export function splitBreakApart(
+
+/**
+ * The shared analysis core: the current post-guard logic verbatim, minus the
+ * topology-marker reads/writes (the marker is owned by the caller, not the
+ * analysis). Returns the new chunk ships (empty when no split happens); the
+ * caller decides whether to even call it. Mutates `ship` exactly as the
+ * original `splitBreakApart` did: migrated modules flip to dead, crew is
+ * repartitioned, and the survivor's momentum split is applied.
+ */
+function analyseBreakApart(
   ship: SimShip,
   currentTick: number,
   nextChunkId: (parentId: string, tick: number) => string,
 ): SimShip[] {
   if (ship.modules === undefined) return [];
-
-  // Topology guard: the connectivity verdict is a pure function of the alive-cell
-  // set. When that set has not changed since the last pass that found the ship
-  // whole (one connected component), it is still whole — the union-find rebuild
-  // would re-derive the same "no split" answer. Skipping it makes break-apart
-  // free on the vast majority of ticks (no cell death), where the fingerprint is
-  // unchanged. The fingerprint is the same hash `refreshPathCache` uses, so a
-  // single cell death (which already moves it) forces a fresh evaluation here.
-  const fingerprint = aliveCellFingerprint(ship);
-  if (PERF_GUARDS.breakApartTopology && ship.breakApartFingerprint === fingerprint) {
-    return [];
-  }
 
   const alive = ship.modules.filter((m) => m.alive);
   if (alive.length === 0) return [];
@@ -376,9 +388,7 @@ export function splitBreakApart(
     }
   }
   if (!hasGridAdjacency) {
-    // Not a grid: it never splits at this topology. Record the fingerprint so
-    // subsequent ticks skip straight past until a cell dies.
-    ship.breakApartFingerprint = fingerprint;
+    // Not a grid: it never splits at this topology.
     return [];
   }
 
@@ -437,9 +447,7 @@ export function splitBreakApart(
     else list.push(m);
   }
   if (components.size <= 1) {
-    // Connected: a single component, no split. Record the fingerprint so the
-    // guard above short-circuits until a cell dies and moves it.
-    ship.breakApartFingerprint = fingerprint;
+    // Connected: a single component, no split.
     return [];
   }
 
@@ -461,9 +469,7 @@ export function splitBreakApart(
     }
   }
   if (survivorRoot === undefined) {
-    // No survivor resolved (no split performed): the ship stays whole at this
-    // topology, so record the fingerprint to skip future no-op passes.
-    ship.breakApartFingerprint = fingerprint;
+    // No survivor resolved: no split performed.
     return [];
   }
 
@@ -547,6 +553,40 @@ export function splitBreakApart(
     parentVelY,
   );
   return chunks;
+}
+
+/**
+ * Reference (oracle) break-apart implementation: always runs the full analysis.
+ * Kept as the naive path so the determinism suite can prove the optimised
+ * production path (`splitBreakApart`) is behaviour-preserving. Does NOT read
+ * or write `breakApartLastAliveCount` — pure pass-through to `analyseBreakApart`.
+ */
+export function splitBreakApartReference(
+  ship: SimShip,
+  currentTick: number,
+  nextChunkId: (parentId: string, tick: number) => string,
+): SimShip[] {
+  return analyseBreakApart(ship, currentTick, nextChunkId);
+}
+
+/**
+ * Production break-apart implementation. Skips the O(C) union-find when the
+ * ship's alive-module count is unchanged since the last evaluation, which holds
+ * exactly when no module has died (the engine never sets `alive` back to true),
+ * which holds exactly when the alive set — and therefore the connectivity graph
+ * — is unchanged, in which case the full analysis also yields no split. On the
+ * first ever call `breakApartLastAliveCount` is `undefined`, so the equality
+ * test fails and the analysis runs — correct. See the header comment of this
+ * section for the full byte-identical-frame reasoning, including resume.
+ */
+export function splitBreakApart(
+  ship: SimShip,
+  currentTick: number,
+  nextChunkId: (parentId: string, tick: number) => string,
+): SimShip[] {
+  if (ship.aliveCount === ship.breakApartLastAliveCount) return [];
+  ship.breakApartLastAliveCount = ship.aliveCount;
+  return analyseBreakApart(ship, currentTick, nextChunkId);
 }
 
 /**

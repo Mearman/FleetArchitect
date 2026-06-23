@@ -424,20 +424,22 @@ export interface SimShip {
    */
   resourceGraph?: CachedTransportGraph;
   /**
-   * Alive-cell fingerprint at which break-apart connectivity was last evaluated
-   * and found to be a single connected component (no split). Break-apart's
-   * union-find is O(C) per pass but runs every tick; the vast majority of ticks
-   * see no cell death, so the topology — and therefore the connectivity verdict
-   * — is unchanged. When this matches the current `aliveCellFingerprint`, the
-   * ship was connected last time and no cell has died since, so it is still
-   * connected: the rebuild is skipped. Set only after a pass that produced no
-   * split; cleared (left stale) whenever a cell dies, since the fingerprint then
-   * moves and the guard forces a fresh evaluation. A split itself changes the
-   * alive set (migrated cells flip to dead), so the post-split fingerprint never
-   * spuriously matches a pre-split one. Pure internal bookkeeping; never
-   * snapshotted, so it changes no frame output.
+   * Current count of alive modules, recomputed each tick by
+   * `recomputeAggregates` (a free side effect of its module pass). A
+   * transient derived cache: not captured by the checkpoint (re-warms after
+   * resume), so it changes no frame output. Sufficient as a topology-change
+   * signal: the engine only flips `alive` true→false, so an unchanged count
+   * holds exactly when no module died and the connectivity graph is unchanged.
    */
-  breakApartFingerprint?: number;
+  aliveCount?: number;
+  /**
+   * The alive-module count at the last break-apart evaluation. Same derived
+   * category as `topologyFingerprint` — not captured by the checkpoint, so
+   * on resume it re-warms to `undefined` and the first pass analyses; on an
+   * unchanged topology that returns `[]` exactly as a skip would. When this
+   * equals `aliveCount`, break-apart returns `[]` without its union-find.
+   */
+  breakApartLastAliveCount?: number;
 }
 
 /**

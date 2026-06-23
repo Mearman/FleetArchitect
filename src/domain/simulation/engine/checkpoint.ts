@@ -43,8 +43,8 @@ import type {
 /**
  * Snapshot the authoritative serialisable subset of a live ship. Caches and
  * re-derived bookkeeping are omitted: `pathCache`, `topologyFingerprint`,
- * `wiringReach`, `aliveCells`, `resourceGraph`, `breakApartFingerprint`, the
- * transient `awareness`, and the re-derived `px`/`py`.
+ * `wiringReach`, `aliveCells`, `resourceGraph`, `breakApartLastAliveCount`,
+ * `aliveCount`, the transient `awareness`, and the re-derived `px`/`py`.
  */
 function snapshotShip(s: SimShip): CheckpointShip {
   const ship: CheckpointShip = {
@@ -291,10 +291,10 @@ function restoreModule(m: CheckpointModule): SimModule {
  * recomputed from the restored velocity and mass — the same value `toSimShip`
  * seeds and the integrator overwrites next tick. Every derived cache
  * (`pathCache`, `topologyFingerprint`, `wiringReach`, `aliveCells`,
- * `resourceGraph`, `breakApartFingerprint`) is left `undefined` and the
- * transient `awareness` Map empty; they re-warm byte-identically on first
- * touch. The return type is the runtime `SimShip`, so omitting any authoritative
- * field is a compile error.
+ * `resourceGraph`, `breakApartLastAliveCount`, `aliveCount`) is left
+ * `undefined` and the transient `awareness` Map empty; they re-warm
+ * byte-identically on first touch. The return type is the runtime `SimShip`,
+ * so omitting any authoritative field is a compile error.
  */
 function restoreShip(s: CheckpointShip): SimShip {
   const ship: SimShip = {
