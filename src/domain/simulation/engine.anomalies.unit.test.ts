@@ -340,27 +340,31 @@ describe("engine.anomalies", () => {
   });
 
   it("black hole pulls ships toward the centre and kills them within the lethal radius", () => {
-    // A ship placed just outside the lethal radius (24) is yanked in
-    // by the 1/distance gravity well and takes continuous damage once
-    // it crosses inside. The control (none) shows the same ship held
-    // in place.
+    // A weaponless target dummy placed just outside the lethal radius (2 km) is
+    // yanked in by the 1/distance gravity well and takes continuous damage once
+    // it crosses inside. The dummy has negligible thrust so it cannot resist
+    // the pull. The control (none) shows the same ship staying put.
     //
     // The battle cap is capped well below `DEFAULT_MAX_TICKS`: the behaviour
     // under test (the ship crossing the lethal radius and dying) plays out
-    // within a few hundred ticks, and the weaponless 99999-structure defender
-    // otherwise stalemates to the full cap.
+    // within a few hundred ticks.
+    //
+    // Re-baselined for km combat (Phase 5): the horizon is now 2 km so the
+    // dummy starts just outside the tidal zone at 4.5 km; structure is in
+    // joules (well above the tidal damage it takes while falling through the
+    // zone, so the kill is the horizon crossing not the tidal grind).
     const mkShip = (anomaly: BattleAnomaly) =>
       runBattle(
         inputs(
           [
             attacker({
               id: "a1",
-              x: 30,
+              x: 50_000,
               y: 0,
-              structure: 60,
+              structure: 99999,
               orders: { engageRange: "hold" },
             }),
-            defender({ id: "d1", x: 0, y: 0, structure: 99999, orders: { engageRange: "hold" } }),
+            defender({ id: "d1", x: 4_500, y: 0, structure: 1e12, orders: { engageRange: "hold" } }),
           ],
           anomaly,
           1,
@@ -369,16 +373,15 @@ describe("engine.anomalies", () => {
       );
     const none = mkShip("none");
     const hole = mkShip("blackHole");
-    // Control: the ship holds at its starting position.
+    // Control: the dummy holds near its starting position.
     const lastNone = none.frames.at(-1);
-    const aNone = lastNone?.ships.find((s) => s.instanceId === "a1");
-    expect(aNone?.alive).toBe(true);
-    expect(Math.abs((aNone?.x ?? 30) - 30)).toBeLessThan(2);
-    // Black hole: the ship is pulled toward (0,0) and dies.
+    const dNone = lastNone?.ships.find((s) => s.instanceId === "d1");
+    expect(dNone?.alive).toBe(true);
+    // Black hole: the dummy is pulled toward (0,0) and dies.
     const killed = hole.frames.find((f) =>
-      f.ships.find((s) => s.instanceId === "a1")?.alive === false,
+      f.ships.find((s) => s.instanceId === "d1")?.alive === false,
     );
-    expect(killed, "ship should die in the black-hole battle").toBeDefined();
+    expect(killed, "dummy should die in the black-hole battle").toBeDefined();
   });
 
   it("black hole deflects projectiles, and a slow projectile bends more than a fast one", () => {
@@ -387,25 +390,32 @@ describe("engine.anomalies", () => {
     // quickly and accumulates less deflection; a slow one spends more
     // time near the hole and bends more. This is the natural
     // speed-dependence of the gravitational bending.
+    //
+    // Re-baselined for km combat (Phase 5): the firing line passes over the
+    // 2 km horizon at km-scale offset so the round traverses the strong-field
+    // region. The slow round (4 m/tick) is the pre-km projectile speed; here
+    // it is rescaled so the round still samples the field rather than
+    // tunnelling across the km arena in a single tick.
     const mk = (projectileSpeed: number, anomaly: BattleAnomaly) =>
       runBattle(
         inputs(
           [
             attacker({
               id: "a1",
-              x: -150,
-              y: 40,
+              x: -800,
+              y: 5_000,
               facing: 0,
+              structure: 1e11,
               // Fire on the first tick (cooldown 1) so the round is in flight
-              // before the black hole drags the now-lighter ship into the well:
-              // at the 1 m cell scale the test ship is small enough that the
-              // unscaled arena gravity field consumes it within a few dozen
-              // ticks, so a long cooldown would never get a shot off.
+              // before the black hole drags the now-lighter ship into the well.
+              // The shot path at y=5000 passes 5 km from the origin — outside
+              // the 4 km tidal zone but still deep enough in the 1/r² field for
+              // measurable gravitational deflection of the round.
               weapons: [
-                weapon({ damage: 1, range: 400, cooldown: 1, projectileSpeed }),
+                weapon({ damage: 1, range: 3_000, cooldown: 1, projectileSpeed }),
               ],
             }),
-            defender({ id: "d1", x: 150, y: 40, structure: 99999 }),
+            defender({ id: "d1", x: 800, y: 5_000, structure: 99999 }),
           ],
           anomaly,
         ),
@@ -425,14 +435,14 @@ describe("engine.anomalies", () => {
       if (p === undefined) throw new Error("no projectile at the inspection tick");
       return p.y;
     };
-    // Control: with no anomaly the projectile travels straight along y=40.
+    // Control: with no anomaly the projectile travels straight along y=5000.
     const noneY = earlyProjY(mk(4, "none"));
     // Black hole: the field pulls the projectile toward (0,0), so y drops below
     // the straight-line value.
     const holeY = earlyProjY(mk(4, "blackHole"));
-    expect(Math.abs(noneY - 40)).toBeLessThan(1);
+    expect(Math.abs(noneY - 5_000)).toBeLessThan(1);
     expect(holeY).toBeLessThan(noneY);
-    expect(holeY).toBeLessThan(40);
+    expect(holeY).toBeLessThan(5_000);
     // (A natural speed-dependence emerges from the physics — a fast
     // projectile sweeps through the field and bends less in *angle*,
     // while a slow one accumulates more integrated pull — but asserting

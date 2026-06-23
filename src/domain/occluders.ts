@@ -54,20 +54,34 @@ const ASTEROID_OCCLUDER_COUNT = 24;
 const OCCLUDER_SALT = 0x9e3779b9;
 
 /**
- * Asteroid field bounding rectangle (world units). Rocks are scattered within
- * the central battle area, between the two fleet deployment lines at ±360 wu.
- * A margin keeps rocks from spawning directly on top of deploying ships.
+ * Asteroid field bounding rectangle (world units, metres). Rocks are scattered
+ * within the central battle area, between the two fleet deployment lines at
+ * km-scale separations. A margin keeps rocks from spawning directly on top of
+ * deploying ships.
+ *
+ * Re-grounded for km combat (Phase 5): the pre-km ±300 m rect was a tight
+ * cluster invisible against the km-scale deployment and weapon ranges. Scaled
+ * by the same factor as the black-hole horizon (2000/24 ≈ 83×) to ±25 km so
+ * the field spans a readable swath of the km arena — large enough to break
+ * line-of-sight across engagement ranges without filling the playfield.
  */
-const FIELD_X_MIN = -300;
-const FIELD_X_MAX = 300;
-const FIELD_Y_MIN = -300;
-const FIELD_Y_MAX = 300;
+const FIELD_X_MIN = -25_000;
+const FIELD_X_MAX = 25_000;
+const FIELD_Y_MIN = -25_000;
+const FIELD_Y_MAX = 25_000;
 
-/** Minimum radius of a generated asteroid disc, in world units. */
-const ASTEROID_MIN_R = 14;
+/**
+ * Minimum radius of a generated asteroid disc (world units, metres). Scaled
+ * from the pre-km 14 m by the km rescale factor (2000/24) so rocks are
+ * readable obstacles against km-scale ships and weapon paths.
+ */
+const ASTEROID_MIN_R = 1_200;
 
-/** Maximum radius of a generated asteroid disc, in world units. */
-const ASTEROID_MAX_R = 34;
+/**
+ * Maximum radius of a generated asteroid disc (world units, metres). Scaled
+ * from the pre-km 34 m by the km rescale factor (2000/24).
+ */
+const ASTEROID_MAX_R = 2_800;
 
 // ---------------------------------------------------------------------------
 // Internal RNG — mulberry32, identical algorithm to src/domain/simulation/rng.ts

@@ -342,15 +342,17 @@ describe("engine.awareness — faithful fog (no omniscience)", () => {
 
 describe("engine.awareness — occlusion", () => {
   it("a black-hole disc on the sight line blocks detection; an off-axis enemy is seen", () => {
-    // The black hole sits at the origin (radius 24). a1 at (-200,0) looking at
-    // d1 at (200,0) is blocked straight through the disc. d2 at (200,200) is
-    // seen — its sight line clears the disc.
+    // The black hole sits at the origin (radius 2 km). a1 at (-16 km,0) looking
+    // at d1 at (16 km,0) is blocked straight through the disc. d2 at
+    // (16 km,16 km) is seen — its sight line clears the disc.
+    // Re-baselined for km combat (Phase 5): the horizon is now 2 km so the
+    // ships sit well outside it at km-scale distances.
     const result = runBattle(
       inputs(
         [
-          ship("a1", "attacker", -200, 0, [...core(), moduleOf("se", sensor(600), 1, 0)]),
-          ship("d1", "defender", 200, 0, [...core(), moduleOf("se", sensor(600), 1, 0)]),
-          ship("d2", "defender", 200, 200, [...core(), moduleOf("se", sensor(600), 1, 0)]),
+          ship("a1", "attacker", -16_000, 0, [...core(), moduleOf("se", sensor(50_000), 1, 0)]),
+          ship("d1", "defender", 16_000, 0, [...core(), moduleOf("se", sensor(50_000), 1, 0)]),
+          ship("d2", "defender", 16_000, 16_000, [...core(), moduleOf("se", sensor(50_000), 1, 0)]),
         ],
         "blackHole",
       ),

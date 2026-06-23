@@ -170,15 +170,20 @@ describe("engine.anomaly-ai", () => {
     // single tick and so skimmed the tidal edge, but that snap was exactly the
     // unphysical behaviour the bang-bang Newtonian rework removed. Under
     // bang-bang steering the ship cannot redirect its full linear momentum
-    // before crossing the avoidance zone (72 units of lead-distance), so the
-    // closest-approach threshold is set to what the physics actually achieves:
-    // the aware ship stays measurably further out than the unaware one, rather
-    // than a specific geometric clearance. The thrust (54000 = 60 ×
-    // TICKS_PER_SECOND²) is high enough that the engine can act against gravity
-    // inside the avoidance zone: gravity is applied directly as an m/tick²
-    // acceleration (arena-physics), whereas engine force is divided by
-    // ACCEL_PER_TICK_FROM_SI (1/900), so a bare 60 would be 900× too weak to
-    // resist the well and no deflection would be possible.
+    // before crossing the avoidance zone, so the closest-approach threshold is
+    // set to what the physics actually achieves: the aware ship stays
+    // measurably further out than the unaware one, rather than a specific
+    // geometric clearance. The thrust (54000 = 60 × TICKS_PER_SECOND²) is high
+    // enough that the engine can act against gravity inside the avoidance zone:
+    // gravity is applied directly as an m/tick² acceleration (arena-physics),
+    // whereas engine force is divided by ACCEL_PER_TICK_FROM_SI (1/900), so a
+    // bare 60 would be 900× too weak to resist the well and no deflection would
+    // be possible.
+    //
+    // Re-baselined for km combat (Phase 5): the black-hole horizon is now 2 km
+    // and the tidal zone 4 km, so the crossing geometry is rescaled from the
+    // pre-km tens-of-metres positions to km positions. The attacker starts just
+    // outside the tidal zone and its target sits far on the opposite side.
     const mk = (anomaly: BattleAnomaly) =>
       runBattle(
         inputs(
@@ -186,19 +191,19 @@ describe("engine.anomaly-ai", () => {
             makeShip({
               id: "a1",
               side: "attacker",
-              x: 70,
+              x: 5_800,
               y: 0,
               facing: Math.PI,
               structure: 99999,
               thrust: 54000,
               turnRate: 0.1,
-              weapons: [weapon()],
+              weapons: [weapon({ range: 50_000 })],
               orders: { engageRange: "medium" },
             }),
             makeShip({
               id: "d1",
               side: "defender",
-              x: -600,
+              x: -50_000,
               y: 0,
               structure: 99999,
               thrust: 0.0001,
@@ -216,13 +221,13 @@ describe("engine.anomaly-ai", () => {
     const noneMin = minDistanceToOrigin(none, "a1");
     const holeMin = minDistanceToOrigin(hole, "a1");
 
-    // Control: the unaware ship cuts straight through the lethal zone.
-    expect(noneMin).toBeLessThan(24);
+    // Control: the unaware ship cuts straight through the lethal zone (2 km).
+    expect(noneMin).toBeLessThan(2_000);
     // Avoiding ship: the avoidance bias deflects the path, so the closest
     // approach is measurably wider than the unaware control. With bang-bang
     // Newtonian steering the ship cannot fully redirect its momentum in the
-    // 72-unit avoidance window, so we assert deflection (holeMin > noneMin)
-    // rather than a hard clearance threshold.
+    // avoidance window, so we assert deflection (holeMin > noneMin) rather than
+    // a hard clearance threshold.
     expect(holeMin).toBeGreaterThan(noneMin);
   });
 
@@ -231,6 +236,9 @@ describe("engine.anomaly-ai", () => {
     // anomaly the ship stays on the y=0 axis to its target. With the black
     // hole, avoidance pushes it off-axis (a non-trivial |y|) as it routes
     // around the centre.
+    //
+    // Re-baselined for km combat (Phase 5): crossing geometry rescaled to km
+    // positions matching the 2 km horizon / 4 km tidal zone.
     const mk = (anomaly: BattleAnomaly) =>
       runBattle(
         inputs(
@@ -238,19 +246,19 @@ describe("engine.anomaly-ai", () => {
             makeShip({
               id: "a1",
               side: "attacker",
-              x: 70,
+              x: 5_800,
               y: 0,
               facing: Math.PI,
               structure: 99999,
               thrust: 54000,
               turnRate: 0.1,
-              weapons: [weapon()],
+              weapons: [weapon({ range: 50_000 })],
               orders: { engageRange: "medium" },
             }),
             makeShip({
               id: "d1",
               side: "defender",
-              x: -600,
+              x: -50_000,
               y: 0,
               structure: 99999,
               thrust: 0.0001,
@@ -268,7 +276,10 @@ describe("engine.anomaly-ai", () => {
     const noneY = Math.abs(posAt(none, 20, "a1").y);
     const holeY = Math.abs(posAt(hole, 20, "a1").y);
     expect(noneY).toBeLessThan(1);
-    expect(holeY).toBeGreaterThan(10);
+    // The avoidance pushes the ship measurably off-axis (hundreds of metres of
+    // lateral deflection at the km scale) as it routes around the 4 km tidal
+    // zone.
+    expect(holeY).toBeGreaterThan(300);
   });
 
   it("nebula: ships close to a shorter engagement range than in open space", () => {
@@ -352,28 +363,30 @@ describe("engine.anomaly-ai", () => {
   });
 
   it("determinism: two black-hole runs with the same seed are byte-identical", () => {
+    // Re-baselined for km combat (Phase 5): ships start outside the 2 km
+    // horizon so the battle plays out rather than ending on tick 0.
     const build = () =>
       inputs(
         [
           makeShip({
             id: "a1",
             side: "attacker",
-            x: 60,
-            y: 30,
+            x: 6_000,
+            y: 3_000,
             facing: 0,
             thrust: 27000,
             turnRate: 0.06,
-            weapons: [weapon({ range: 400 })],
+            weapons: [weapon({ range: 33_000 })],
           }),
           makeShip({
             id: "d1",
             side: "defender",
-            x: -60,
-            y: -30,
+            x: -6_000,
+            y: -3_000,
             facing: Math.PI,
             thrust: 27000,
             turnRate: 0.06,
-            weapons: [weapon({ range: 400 })],
+            weapons: [weapon({ range: 33_000 })],
           }),
         ],
         "blackHole",

@@ -150,14 +150,16 @@ function blackHoleBattle(ships: CombatShip[], seed: number, maxTicks: number): B
 describe("engine N-body gravity determinism (N13)", () => {
   it("is byte-identical across two same-seed runs with 3 ships near the black hole", () => {
     // Distinct ids ("g-alpha" < "g-beta" < "g-gamma") and distinct positions
-    // near the well (well outside the lethal radius of 24 m). All three pull on
+    // near the well (well outside the lethal radius of 2 km). All three pull on
     // each other AND fall toward the hole, so the fixed-order summation is
     // genuinely exercised. Two attackers and a defender so the battle does not
     // end instantly on an empty side.
+    // Re-baselined for km combat (Phase 5): ships placed at km-scale distances
+    // outside the 2 km horizon.
     const ships = [
-      ship({ id: "g-alpha", side: "attacker", x: 200, y: 0 }),
-      ship({ id: "g-gamma", side: "attacker", x: 0, y: 200 }),
-      ship({ id: "g-beta", side: "defender", x: -200, y: 80 }),
+      ship({ id: "g-alpha", side: "attacker", x: 16_000, y: 0 }),
+      ship({ id: "g-gamma", side: "attacker", x: 0, y: 16_000 }),
+      ship({ id: "g-beta", side: "defender", x: -16_000, y: 6_400 }),
     ];
 
     // A few hundred ticks: enough falling under gravity to accumulate any

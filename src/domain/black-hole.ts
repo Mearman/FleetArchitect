@@ -18,14 +18,22 @@
  * The black hole's Schwarzschild radius (metres) — the radius of its event
  * horizon, `r_s`, taken literally as the lethal radius: a ship within `r_s`
  * has crossed the horizon and is destroyed. A physically meaningful
- * combat-scale length (a ship-length or two) rather than the sub-atomic figure
- * the real `r_s = 2·G·M / c^2` gives at the relativistic speed of light, because
- * the arena's gravitational sector propagates at the much slower arena signal
- * speed (see `engine/arena-physics.ts`), not at relativistic `c`. The engine
- * derives the well's `G·M` FROM this radius via the Schwarzschild relation
- * `G·M = r_s · c_arena^2 / 2`, so the horizon and the pull share one scale.
+ * combat-scale length in the km arena (a couple of kilometres — comparable to
+ * the ~5 km innate visual radius and the ~12-80 km weapon bands), rather than
+ * the sub-atomic figure the real `r_s = 2·G·M / c^2` gives at the relativistic
+ * speed of light, because the arena's gravitational sector propagates at the
+ * much slower arena signal speed (see `engine/arena-physics.ts`), not at
+ * relativistic `c`. The engine derives the well's `G·M` FROM this radius via
+ * the Schwarzschild relation `G·M = r_s · c_arena^2 / 2`, so the horizon and
+ * the pull share one scale.
+ *
+ * Re-grounded for km combat (Phase 5): the pre-km 24 m horizon was a
+ * ship-length speck invisible against the km-scale weapon ranges and visual
+ * radius. A ~2 km horizon makes the well a readable arena feature — a danger
+ * zone large enough to steer around at the km engagement scale while still
+ * dwarfed by the ~5 km visual radius and ~12 km minimum weapon range.
  */
-export const BLACK_HOLE_SCHWARZSCHILD_RADIUS_M = 24;
+export const BLACK_HOLE_SCHWARZSCHILD_RADIUS_M = 2_000;
 
 /**
  * Multiplier (dimensionless) taking the event-horizon radius out to the tidal

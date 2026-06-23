@@ -44,8 +44,10 @@ import { BLACK_HOLE_TIDAL_RADIUS_M } from "@/domain/black-hole";
 import { BASE_ACQUIRE_RANGE_M, VISUAL_LOS_RADIUS_M } from "./em-anchors";
 import {
   BLACK_HOLE_GM_ARENA,
+  BLACK_HOLE_LETHAL_DAMAGE_J,
   BLACK_HOLE_MASS_ARENA,
   BLACK_HOLE_SCHWARZSCHILD_RADIUS_M,
+  BLACK_HOLE_TIDAL_DAMAGE_SCALE,
   GRAVITY_CONSTANT_ARENA,
   NEBULA_EM_TRANSMITTANCE,
   NEBULA_SENSOR_TRANSMITTANCE,
@@ -226,37 +228,42 @@ export const SIM = {
    */
   blackHoleLethalRadius: BLACK_HOLE_SCHWARZSCHILD_RADIUS_M,
   /**
-   * Per-tick structural damage at the centre of the well. Authored catalogue
-   * content; re-derived as the real tidal-acceleration damage `2GM·r_body / R^3`
-   * × hull structural tolerance when the SI catalogue lands in Phase 14.
+   * Per-tick structural damage (joules) at the centre of the well — instant
+   * destruction for a ship that has crossed the event horizon. DERIVED from the
+   * tidal damage scale evaluated at the horizon and amplified to guarantee any
+   * ship's total structure is exceeded in a single tick; see
+   * {@link BLACK_HOLE_LETHAL_DAMAGE_J}.
    *
-   * Classification: authored catalogue content (Phase 14 re-derives from the
-   * real tidal field × hull structural tolerance).
+   * Classification: derived-by-formula (tidal damage at the horizon
+   * `2·GM·r_body·k_hull / r_s³` × guaranteed-kill multiplier; G·M traces to the
+   * Schwarzschild relation, k_hull to the specific destruction energy anchor).
    */
-  blackHoleLethalDamage: 12,
+  blackHoleLethalDamage: BLACK_HOLE_LETHAL_DAMAGE_J,
   /**
    * Outside the lethal radius but inside this zone, a ship takes damage
    * proportional to 1/r^3 — the leading-order tidal force across a body of
    * finite size ("spaghettification"). Read from the shared pure-domain leaf
    * {@link BLACK_HOLE_TIDAL_RADIUS_M} (`@/domain/black-hole`), itself a fixed
    * multiple of the event-horizon radius, so the engine, occluder module, and
-   * renderer share one black-hole geometry. Re-derived as the Roche-limit
-   * radius from the real tidal field vs hull structural tolerance when the SI
-   * catalogue lands in Phase 14.
+   * renderer share one black-hole geometry.
    *
-   * Classification: authored catalogue content (Phase 14 re-derives as the
-   * Roche limit from the real tidal field × hull structural tolerance).
+   * Classification: derived-by-formula (`BLACK_HOLE_TIDAL_RADIUS_M`, a fixed
+   * multiple of the Schwarzschild radius; the engine, occluder module, and
+   * renderer all read the same leaf).
    */
   blackHoleTidalRadius: BLACK_HOLE_TIDAL_RADIUS_M,
   /**
-   * Coefficient for the 1/r^3 tidal damage. Re-derived as `2GM · r_body ·
-   * k_hull` (real tidal acceleration × hull tolerance) when the SI catalogue
-   * lands in Phase 14. Authored catalogue content in the interim.
+   * Coefficient for the 1/r^3 tidal damage (joules × metres³). DERIVED as
+   * `2 · GM · r_body · k_hull` — the real tidal acceleration `2GM·r_body/R³`
+   * times the hull tolerance factor (specific destruction energy ×
+   * representative cell mass), so the per-tick damage `scale / R³` is in real
+   * joules against GJ-scale hulls. See {@link BLACK_HOLE_TIDAL_DAMAGE_SCALE}.
    *
-   * Classification: authored catalogue content (Phase 14 re-derives as
-   * `2GM · r_body · k_hull`).
+   * Classification: derived-by-formula (`2 · GM · r_body · k_hull`; GM traces
+   * to the Schwarzschild relation, r_body to a representative ship half-length,
+   * k_hull to the specific destruction energy × cell mass anchor).
    */
-  blackHoleTidalDamageScale: 200000,
+  blackHoleTidalDamageScale: BLACK_HOLE_TIDAL_DAMAGE_SCALE,
   /**
    * Nebula shield-regeneration attenuation. A nebula is a gas cloud whose
    * particles scatter and absorb electromagnetic energy; a ship's shield
