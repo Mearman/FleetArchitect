@@ -7,11 +7,23 @@
  * The optimisation replaces the per-call Map allocations (a `Map<SimModule,
  * SimModule>` parent table and a `Map<string, SimModule>` cell lookup, both
  * rebuilt every death-tick) with flat integer-indexed structures: a `number[]`
- * parent table indexed by position in `alive`, a `Set<string>` for the
- * full-module grid-adjacency guard, and a `Map<string, number>` mapping cell
+ * parent table indexed by position in `alive`, a `Set<number>` for the
+ * full-module grid-adjacency guard, and a `Map<number, number>` mapping cell
  * key to alive index. Object identity is replaced by alive-index identity,
  * which is a bijection within a single call (each alive module occupies
  * exactly one index).
+ *
+ * Numeric cell keys: cells are encoded as `col * K + row` where
+ * `K = rowSpan + 2` and `rowSpan = maxRow - minRow`. This is collision-free
+ * for all probes this function makes. Two cells (c1,r1),(c2,r2) collide iff
+ * `(c1-c2)*K = r2-r1`. Inserted (in-grid) cells have rows in `[minRow,
+ * maxRow]`; probed cells (±1 neighbours) have rows in `[minRow-1, maxRow+1]`
+ * (span `rowSpan+2`). The maximum row difference between an in-grid cell and
+ * any probe is `rowSpan+1 < K`, so an in-grid cell never collides with a
+ * probe of a differing column; same-column collisions imply same-row (same
+ * cell). The only collisions K permits are between two probes (rows
+ * `minRow-1` and `maxRow+1`, columns differing by 1) — neither is inserted,
+ * so `.has`/`.get` stay correct.
  *
  * Byte-identical-frame reasoning: connected components, the survivor, and the
  * chunks are graph-properties — independent of the union-find data structure
@@ -47,15 +59,29 @@ export function analyseBreakApartFast(
 
   // Grid-adjacency guard: at least one pair of cells (alive or dead) shares a
   // grid edge. Only `.has` is needed, so a Set replaces the Map reference.
-  const allCells = new Set<string>();
-  for (const m of ship.modules) allCells.add(`${m.col},${m.row}`);
+  // Fold the row-bounds pass into the same loop so the numeric cell-key K
+  // (which depends on rowSpan) is available without a second scan.
+  // Row bounds: needed to compute K before any cell can be encoded. A
+  // separate tight pass over rows is cheaper than encoding twice.
+  let minRow = Number.POSITIVE_INFINITY;
+  let maxRow = Number.NEGATIVE_INFINITY;
+  for (const m of ship.modules) {
+    if (m.row < minRow) minRow = m.row;
+    if (m.row > maxRow) maxRow = m.row;
+  }
+  // K = rowSpan + 2. See the collision-freeness argument in the header.
+  const rowSpan = maxRow - minRow;
+  const K = rowSpan + 2;
+  const encode = (col: number, row: number): number => col * K + row;
+  const allCells = new Set<number>();
+  for (const m of ship.modules) allCells.add(encode(m.col, m.row));
   let hasGridAdjacency = false;
   for (const m of ship.modules) {
     if (
-      allCells.has(`${m.col - 1},${m.row}`) ||
-      allCells.has(`${m.col + 1},${m.row}`) ||
-      allCells.has(`${m.col},${m.row - 1}`) ||
-      allCells.has(`${m.col},${m.row + 1}`)
+      allCells.has(encode(m.col - 1, m.row)) ||
+      allCells.has(encode(m.col + 1, m.row)) ||
+      allCells.has(encode(m.col, m.row - 1)) ||
+      allCells.has(encode(m.col, m.row + 1))
     ) {
       hasGridAdjacency = true;
       break;
@@ -86,12 +112,11 @@ export function analyseBreakApartFast(
 
   // Map each alive cell key to its alive index. Cells are unique per grid
   // position, so one index per (col, row).
-  const cellKey = (col: number, row: number): string => `${col},${row}`;
-  const byCell = new Map<string, number>();
+  const byCell = new Map<number, number>();
   for (let i = 0; i < n; i += 1) {
     const m = alive[i];
     if (m === undefined) continue;
-    byCell.set(cellKey(m.col, m.row), i);
+    byCell.set(encode(m.col, m.row), i);
   }
 
   // 4-connected adjacency: union each alive index with its alive
@@ -100,10 +125,10 @@ export function analyseBreakApartFast(
     const m = alive[i];
     if (m === undefined) continue;
     const neighbours = [
-      byCell.get(cellKey(m.col - 1, m.row)),
-      byCell.get(cellKey(m.col + 1, m.row)),
-      byCell.get(cellKey(m.col, m.row - 1)),
-      byCell.get(cellKey(m.col, m.row + 1)),
+      byCell.get(encode(m.col - 1, m.row)),
+      byCell.get(encode(m.col + 1, m.row)),
+      byCell.get(encode(m.col, m.row - 1)),
+      byCell.get(encode(m.col, m.row + 1)),
     ];
     for (const ni of neighbours) {
       if (ni !== undefined) union(i, ni);
@@ -175,14 +200,14 @@ export function analyseBreakApartFast(
   const parentVelX = ship.velX;
   const parentVelY = ship.velY;
 
-  const componentOfCell = new Map<string, SimModule[]>();
+  const componentOfCell = new Map<number, SimModule[]>();
   for (const list of components) {
-    for (const m of list) componentOfCell.set(cellKey(m.col, m.row), list);
+    for (const m of list) componentOfCell.set(encode(m.col, m.row), list);
   }
   const crewOfComponent = new Map<SimModule[], SimCrew[]>();
   const parentCrew = ship.crew ?? [];
   for (const c of parentCrew) {
-    const list = componentOfCell.get(cellKey(c.col, c.row));
+    const list = componentOfCell.get(encode(c.col, c.row));
     if (list === undefined) continue;
     const bucket = crewOfComponent.get(list);
     if (bucket === undefined) crewOfComponent.set(list, [c]);
