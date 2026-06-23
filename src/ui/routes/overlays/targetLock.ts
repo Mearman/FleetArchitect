@@ -36,9 +36,11 @@ export function drawTargetLock(c: OverlayCtx): void {
     const target = alive.get(ship.targetId);
     if (target === undefined) continue;
     ctx.strokeStyle = SIDE_COLOUR[ship.side];
+    const a = t.project(ship.x, ship.y);
+    const b = t.project(target.x, target.y);
     ctx.beginPath();
-    ctx.moveTo(t.sx(ship.x), t.sy(ship.y));
-    ctx.lineTo(t.sx(target.x), t.sy(target.y));
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
     ctx.stroke();
   }
   ctx.restore();

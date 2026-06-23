@@ -108,9 +108,11 @@ export function drawMovementTrail(c: OverlayCtx): void {
       // Linear fade: segment i=0 (newest) at TRAIL_ALPHA_MAX, last at ~0.
       const fade = 1 - i / segCount;
       ctx.globalAlpha = TRAIL_ALPHA_MAX * fade;
+      const a = t.project(from.x, from.y);
+      const b = t.project(toX, toY);
       ctx.beginPath();
-      ctx.moveTo(t.sx(from.x), t.sy(from.y));
-      ctx.lineTo(t.sx(toX), t.sy(toY));
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
       ctx.stroke();
       toX = from.x;
       toY = from.y;

@@ -64,8 +64,9 @@ export function drawAnomaly(
 }
 
 function drawBlackHole(ctx: CanvasRenderingContext2D, t: Transform): void {
-  const cx = t.sx(0);
-  const cy = t.sy(0);
+  // Centred at the world origin; project it so it sits correctly under iso. The
+  // rings/glow stay screen-circular (radial gradients cannot be cheaply tilted).
+  const { x: cx, y: cy } = t.project(0, 0);
   const lethalPx = BLACK_HOLE_LETHAL_RADIUS * t.scale;
   const tidalPx = BLACK_HOLE_TIDAL_RADIUS * t.scale;
 
@@ -112,10 +113,16 @@ function drawNebula(ctx: CanvasRenderingContext2D, t: Transform, bounds: Bounds)
 
   // Base purple tint across the whole battlefield, clipped to the world rect so
   // it does not bleed into the letterbox margins.
-  const x0 = t.sx(bounds.minX);
-  const y0 = t.sy(bounds.minY);
-  const x1 = t.sx(bounds.maxX);
-  const y1 = t.sy(bounds.maxY);
+  const nc = [
+    t.project(bounds.minX, bounds.minY),
+    t.project(bounds.maxX, bounds.minY),
+    t.project(bounds.minX, bounds.maxY),
+    t.project(bounds.maxX, bounds.maxY),
+  ];
+  const x0 = Math.min(...nc.map((p) => p.x));
+  const y0 = Math.min(...nc.map((p) => p.y));
+  const x1 = Math.max(...nc.map((p) => p.x));
+  const y1 = Math.max(...nc.map((p) => p.y));
   ctx.fillStyle = NEBULA_BASE_TINT;
   ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
 
@@ -127,8 +134,7 @@ function drawNebula(ctx: CanvasRenderingContext2D, t: Transform, bounds: Bounds)
     const wx = bounds.minX + hash01(i * 2 + 1) * rangeX;
     const wy = bounds.minY + hash01(i * 2 + 2) * rangeY;
     const radiusPx = (0.12 + hash01(i + 17) * 0.12) * Math.min(rangeX, rangeY) * t.scale;
-    const px = t.sx(wx);
-    const py = t.sy(wy);
+    const { x: px, y: py } = t.project(wx, wy);
     const blob = ctx.createRadialGradient(px, py, 0, px, py, radiusPx);
     blob.addColorStop(0, NEBULA_BLOB_START);
     blob.addColorStop(1, "rgba(200,60,220,0)");
@@ -156,8 +162,7 @@ function drawAsteroidField(ctx: CanvasRenderingContext2D, t: Transform, seed: nu
   for (let i = 0; i < discs.length; i += 1) {
     const disc = discs[i];
     if (disc === undefined) continue;
-    const px = t.sx(disc.x);
-    const py = t.sy(disc.y);
+    const { x: px, y: py } = t.project(disc.x, disc.y);
     // Radius in display pixels; floored so distant rocks remain visible.
     const rPx = Math.max(1.5, disc.r * t.scale);
     // Deterministic shade: use hash01 over the disc index so appearance is

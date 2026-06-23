@@ -46,8 +46,7 @@ function drawFocusRing(c: OverlayCtx): void {
     if (!inScope(ship)) continue;
     if (!ship.alive) continue;
 
-    const px = t.sx(ship.x);
-    const py = t.sy(ship.y);
+    const { x: px, y: py } = t.project(ship.x, ship.y);
 
     // Derive ring radius from the farthest cell distance (same logic as
     // BattleRoute's hullRadiusPx), falling back to a small fixed radius. The

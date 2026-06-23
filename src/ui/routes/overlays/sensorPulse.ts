@@ -1,4 +1,5 @@
 import type { OverlayCtx, OverlayDef } from "./types";
+import { appendWorldArc, pathWorldCircle } from "@/ui/routes/battleProject";
 
 /** Stroke width of an active-radar pulse ring, in display pixels. */
 const PULSE_STROKE_WIDTH = 1.5;
@@ -90,20 +91,22 @@ function drawSensorPulse(c: OverlayCtx): void {
         ctx.strokeStyle = side === "defender" ? PULSE_COLOUR_DEFENDER : PULSE_COLOUR_ATTACKER;
       }
 
-      const ox = t.sx(pulse.x);
-      const oy = t.sy(pulse.y);
-      const rPx = pulse.radius * t.scale;
-
-      ctx.beginPath();
       // arc >= PI means an omni sphere: draw a full circle. Otherwise draw the
-      // illuminated arc sector from bearing - arc to bearing + arc.
+      // illuminated arc from bearing - arc to bearing + arc (an open stroke, no
+      // centre radii). Both go through the projection so they tilt under iso.
       if (pulse.arc >= Math.PI) {
-        ctx.arc(ox, oy, rPx, 0, Math.PI * 2);
+        pathWorldCircle(ctx, t, pulse.x, pulse.y, pulse.radius);
       } else {
-        const start = pulse.bearing - pulse.arc;
-        const end = pulse.bearing + pulse.arc;
-        ctx.moveTo(ox + Math.cos(start) * rPx, oy + Math.sin(start) * rPx);
-        ctx.arc(ox, oy, rPx, start, end);
+        ctx.beginPath();
+        appendWorldArc(
+          ctx,
+          t,
+          pulse.x,
+          pulse.y,
+          pulse.radius,
+          pulse.bearing - pulse.arc,
+          pulse.bearing + pulse.arc,
+        );
       }
       ctx.stroke();
     }
@@ -120,8 +123,9 @@ function drawSensorPulse(c: OverlayCtx): void {
       const fadeFrac = 1 - age / EMISSION_FLASH_TICKS;
       ctx.globalAlpha = EMISSION_FLASH_ALPHA * fadeFrac;
       ctx.fillStyle = "#ffe0a0";
+      const ep = t.project(em.x, em.y);
       ctx.beginPath();
-      ctx.arc(t.sx(em.x), t.sy(em.y), EMISSION_FLASH_RADIUS, 0, Math.PI * 2);
+      ctx.arc(ep.x, ep.y, EMISSION_FLASH_RADIUS, 0, Math.PI * 2);
       ctx.fill();
     }
   }

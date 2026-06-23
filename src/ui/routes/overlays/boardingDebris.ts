@@ -37,8 +37,7 @@ function drawBoardingDebris(c: OverlayCtx): void {
   ctx.setLineDash([]);
 
   for (const d of frame.debris) {
-    const px = t.sx(d.x);
-    const py = t.sy(d.y);
+    const { x: px, y: py } = t.project(d.x, d.y);
     const rPx = Math.max(DEBRIS_MIN_PX, Math.min(DEBRIS_MAX_PX, d.radius * t.scale));
 
     // Draw as a rotated square (diamond) for a rough, rocky look.

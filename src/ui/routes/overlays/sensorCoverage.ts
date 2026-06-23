@@ -4,6 +4,7 @@ import {
   isSectorCoverage,
   sectorAngles,
 } from "@/ui/routes/battleFog";
+import { pathWorldCircle, pathWorldSector } from "@/ui/routes/battleProject";
 
 /** Stroke width of a sensor coverage outline, in display pixels. */
 const COVERAGE_STROKE_WIDTH = 1.5;
@@ -30,18 +31,11 @@ function drawSensorCoverage(c: OverlayCtx): void {
     ctx.strokeStyle = SIDE_COLOUR[cluster.side];
 
     for (const cov of cluster.coverage) {
-      const px = t.sx(cov.x);
-      const py = t.sy(cov.y);
-      const rPx = cov.r * t.scale;
-
-      ctx.beginPath();
       if (isSectorCoverage(cov)) {
         const { start, end } = sectorAngles(cov.bearing, cov.arc);
-        ctx.moveTo(px, py);
-        ctx.arc(px, py, rPx, start, end);
-        ctx.closePath();
+        pathWorldSector(ctx, t, cov.x, cov.y, cov.r, start, end);
       } else {
-        ctx.arc(px, py, rPx, 0, Math.PI * 2);
+        pathWorldCircle(ctx, t, cov.x, cov.y, cov.r);
       }
       ctx.stroke();
     }

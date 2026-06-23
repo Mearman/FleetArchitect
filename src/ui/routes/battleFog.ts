@@ -1,5 +1,6 @@
 import type { AwarenessSnapshot } from "@/schema/battle";
 import type { Bounds, Transform } from "./battleCamera";
+import { pathWorldCircle, pathWorldSector } from "./battleProject";
 
 // ---------------------------------------------------------------------------
 // Colour and style constants (named so magic numbers never appear inline)
@@ -219,10 +220,18 @@ export function drawFogAndAwareness(
   // branches — if awareness is present we render it as given.
   if (awareness === undefined) return;
 
-  const x0 = t.sx(bounds.minX);
-  const y0 = t.sy(bounds.minY);
-  const x1 = t.sx(bounds.maxX);
-  const y1 = t.sy(bounds.maxY);
+  // Screen AABB of the (possibly tilted) battle bounds — the bounding box of the
+  // four projected corners (collapses to the plain rect under the flat view).
+  const bc = [
+    t.project(bounds.minX, bounds.minY),
+    t.project(bounds.maxX, bounds.minY),
+    t.project(bounds.minX, bounds.maxY),
+    t.project(bounds.maxX, bounds.maxY),
+  ];
+  const x0 = Math.min(...bc.map((p) => p.x));
+  const y0 = Math.min(...bc.map((p) => p.y));
+  const x1 = Math.max(...bc.map((p) => p.x));
+  const y1 = Math.max(...bc.map((p) => p.y));
   const w = x1 - x0;
   const h = y1 - y0;
 
@@ -257,17 +266,11 @@ export function drawFogAndAwareness(
   ctx.globalAlpha = 1;
   for (const cluster of awareness.clusters) {
     for (const cov of cluster.coverage) {
-      const px = t.sx(cov.x);
-      const py = t.sy(cov.y);
-      const rPx = cov.r * t.scale;
-      ctx.beginPath();
       if (isSectorCoverage(cov)) {
         const { start, end } = sectorAngles(cov.bearing, cov.arc);
-        ctx.moveTo(px, py);
-        ctx.arc(px, py, rPx, start, end);
-        ctx.closePath();
+        pathWorldSector(ctx, t, cov.x, cov.y, cov.r, start, end);
       } else {
-        ctx.arc(px, py, rPx, 0, Math.PI * 2);
+        pathWorldCircle(ctx, t, cov.x, cov.y, cov.r);
       }
       ctx.fill();
     }
@@ -288,17 +291,11 @@ export function drawFogAndAwareness(
     ctx.lineWidth = CLUSTER_PERIMETER_WIDTH;
     ctx.setLineDash([]);
     for (const cov of cluster.coverage) {
-      const px = t.sx(cov.x);
-      const py = t.sy(cov.y);
-      const rPx = cov.r * t.scale;
-      ctx.beginPath();
       if (isSectorCoverage(cov)) {
         const { start, end } = sectorAngles(cov.bearing, cov.arc);
-        ctx.moveTo(px, py);
-        ctx.arc(px, py, rPx, start, end);
-        ctx.closePath();
+        pathWorldSector(ctx, t, cov.x, cov.y, cov.r, start, end);
       } else {
-        ctx.arc(px, py, rPx, 0, Math.PI * 2);
+        pathWorldCircle(ctx, t, cov.x, cov.y, cov.r);
       }
       ctx.stroke();
     }
@@ -340,8 +337,7 @@ export function drawFogAndAwareness(
   // -------------------------------------------------------------------------
   ctx.save();
   for (const ghost of awareness.ghosts) {
-    const px = t.sx(ghost.x);
-    const py = t.sy(ghost.y);
+    const { x: px, y: py } = t.project(ghost.x, ghost.y);
     // Fade linearly: full at GHOST_FADE_TICKS remaining, zero at 0.
     const fadeFraction = Math.min(1, ghost.ticksLeft / GHOST_FADE_TICKS);
     ctx.globalAlpha = fadeFraction * GHOST_MAX_ALPHA;

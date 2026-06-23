@@ -66,8 +66,9 @@ export function drawDamagePulse(c: OverlayCtx): void {
     // Brighten with magnitude: heavier hits push alpha above the baseline up
     // toward fully opaque.
     ctx.globalAlpha = Math.min(1, DAMAGE_ALPHA + delta * ALPHA_PER_HP);
+    const p = t.project(ship.x, ship.y);
     ctx.beginPath();
-    ctx.arc(t.sx(ship.x), t.sy(ship.y), radius, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
     ctx.stroke();
   }
   ctx.restore();

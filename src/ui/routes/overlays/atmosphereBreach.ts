@@ -1,4 +1,5 @@
 import type { OverlayCtx, OverlayDef } from "./types";
+import { pathWorldCircle } from "@/ui/routes/battleProject";
 
 /** Minimum number of breached cells before the haze is drawn. A single
  *  cracked cell in an otherwise intact hull is too subtle to warrant a
@@ -50,9 +51,6 @@ function drawAtmosphereBreach(c: OverlayCtx): void {
     const pos = shipPos.get(entry.shipId);
     if (pos === undefined) continue;
 
-    const px = t.sx(pos.x);
-    const py = t.sy(pos.y);
-
     // Derive the haze radius from the ship's hull extent. Use the farthest
     // cell from the ship centre (the hull radius in world units) when cell
     // layout is available; fall back to a fixed radius otherwise.
@@ -67,7 +65,7 @@ function drawAtmosphereBreach(c: OverlayCtx): void {
       if (maxDistSq > 0) hullRadiusWorld = Math.sqrt(maxDistSq);
     }
 
-    const hazePx = hullRadiusWorld * HAZE_RADIUS_FACTOR * t.scale;
+    const hazeWorld = hullRadiusWorld * HAZE_RADIUS_FACTOR;
 
     if (entry.breachedCells >= MIN_BREACHED_CELLS) {
       // Breach haze: red, severity proportional to fraction of cells breached
@@ -76,16 +74,14 @@ function drawAtmosphereBreach(c: OverlayCtx): void {
       const severity = 1 - entry.atmosphereLevel;
       ctx.globalAlpha = BREACH_HAZE_MAX_ALPHA * Math.max(0, Math.min(1, severity));
       ctx.fillStyle = "#ff3a3a";
-      ctx.beginPath();
-      ctx.arc(px, py, hazePx, 0, Math.PI * 2);
+      pathWorldCircle(ctx, t, pos.x, pos.y, hazeWorld);
       ctx.fill();
     } else if (entry.atmosphereLevel < THIN_ATMO_THRESHOLD) {
       // Thin atmosphere tint: blue, for a ship losing air slowly without a
       // direct breach reading (gradual leak rather than puncture).
       ctx.globalAlpha = THIN_ATMO_TINT_ALPHA * (1 - entry.atmosphereLevel / THIN_ATMO_THRESHOLD);
       ctx.fillStyle = "#5ab0ff";
-      ctx.beginPath();
-      ctx.arc(px, py, hazePx, 0, Math.PI * 2);
+      pathWorldCircle(ctx, t, pos.x, pos.y, hazeWorld);
       ctx.fill();
     }
   }
