@@ -430,6 +430,7 @@ export function updateProjectiles(
   rng: Rng,
 ): SimProjectile[] {
   const survivors: SimProjectile[] = [];
+  if (projectiles.length === 0) return survivors;
   const trackingFactor = anomaly === "nebula" ? SIM.nebulaTrackingFactor : 1;
   // Broad-phase over every alive ship's cells in world space. Projectile hits
   // query this for the frontmost occupied cell on the path instead of scanning
