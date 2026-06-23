@@ -1,5 +1,6 @@
 import { hullRadiusWorld } from "@/ui/cellLayout";
 import { PHOSPHOR_GREEN } from "@/ui/theme/tokens";
+import { pathWorldCircle } from "@/ui/routes/battleProject";
 import type { OverlayCtx, OverlayDef } from "./types";
 
 /** Stroke width of the focus ring on the followed ship, in display pixels. */
@@ -49,13 +50,9 @@ function drawFocusRing(c: OverlayCtx): void {
     const { x: px, y: py } = t.project(ship.x, ship.y);
 
     // Derive ring radius from the farthest cell distance (same logic as
-    // BattleRoute's hullRadiusPx), falling back to a small fixed radius. The
-    // cell extent comes from the ship's static descriptor.
-    let radiusPx = FALLBACK_RADIUS_PX;
+    // BattleRoute's side-outline ring), falling back to a small fixed radius.
+    // The cell extent comes from the ship's static descriptor.
     const hullRadius = hullRadiusWorld(descriptors.get(ship.instanceId));
-    if (hullRadius !== undefined) {
-      radiusPx = hullRadius * t.scale + 3;
-    }
 
     const isFollowed = ship.instanceId === followId;
     if (isFollowed) {
@@ -75,7 +72,13 @@ function drawFocusRing(c: OverlayCtx): void {
       ctx.setLineDash([...FAINT_RING_DASH]);
     }
     ctx.beginPath();
-    ctx.arc(px, py, radiusPx + 4, 0, Math.PI * 2);
+    if (hullRadius !== undefined) {
+      // hull + 3px cell gap + 4px ring offset; the pixel gaps mapped to world
+      // units so the ring tilts into an ellipse on the ship plane under iso.
+      pathWorldCircle(ctx, t, ship.x, ship.y, hullRadius + 7 / t.scale);
+    } else {
+      ctx.arc(px, py, FALLBACK_RADIUS_PX + 4, 0, Math.PI * 2);
+    }
     ctx.stroke();
   }
 

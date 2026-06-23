@@ -10,6 +10,7 @@ import { drawAnomaly } from "./battleAnomaly";
 import { drawBackdrop } from "./battleBackdrop";
 import { drawFogAndAwareness } from "./battleFog";
 import type { ShipScreenPositions } from "./battleFog";
+import { appendWorldArc, pathWorldCircle } from "./battleProject";
 import type { Bounds, Camera } from "./battleCamera";
 import { resolveViewTransform } from "./battleCamera";
 import {
@@ -204,15 +205,14 @@ export function useBattleCanvas({
           continue;
         }
 
-        // Shield bubble radius: encircle the hull, so a big ship's shield ring
-        // sits outside its cells rather than buried inside them. Derived from
-        // the farthest cell from the ship centre (display pixels), falling back
-        // to a small fixed ring for legacy ships with no cell data.
-        let hullRadiusPx = 11;
+        // Shield/outline ring radius: encircle the hull, so a big ship's rings
+        // sit outside its cells rather than buried inside them. Derived from the
+        // farthest cell from the ship centre. With a known hull extent the rings
+        // are world circles — so they tilt into ellipses on the ship plane under
+        // iso — with the small pixel gaps converted to world units (px / scale).
+        // Legacy ships with no cell data fall back to a fixed screen ring.
         const hullRadius = hullRadiusWorld(descriptor);
-        if (hullRadius !== undefined) {
-          hullRadiusPx = hullRadius * scale + 3;
-        }
+        const FALLBACK_RING_PX = 11;
 
         // Side outline ring (factions update): with hulls tinted by faction, a
         // thin ring in the side colour keeps attacker/defender legible at a
@@ -221,7 +221,12 @@ export function useBattleCanvas({
         ctx.lineWidth = 1.5;
         ctx.globalAlpha = 0.8;
         ctx.beginPath();
-        ctx.arc(px, py, hullRadiusPx + 2, 0, Math.PI * 2);
+        if (hullRadius !== undefined) {
+          // hull + 3px cell gap + 2px ring offset, the gaps mapped to world.
+          pathWorldCircle(ctx, t, s.x, s.y, hullRadius + 5 / scale);
+        } else {
+          ctx.arc(px, py, FALLBACK_RING_PX + 2, 0, Math.PI * 2);
+        }
         ctx.stroke();
         ctx.globalAlpha = 1;
 
@@ -232,7 +237,13 @@ export function useBattleCanvas({
             ctx.strokeStyle = "rgba(0,229,255,0.65)";
             ctx.lineWidth = 2;
             ctx.beginPath();
-            ctx.arc(px, py, hullRadiusPx, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac);
+            const a0 = -Math.PI / 2;
+            const a1 = a0 + Math.PI * 2 * frac;
+            if (hullRadius !== undefined) {
+              appendWorldArc(ctx, t, s.x, s.y, hullRadius + 3 / scale, a0, a1);
+            } else {
+              ctx.arc(px, py, FALLBACK_RING_PX, a0, a1);
+            }
             ctx.stroke();
           }
         }
