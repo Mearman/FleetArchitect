@@ -99,27 +99,106 @@ export interface ShipContact {
   relVy: number;
 }
 
-export function resolveShipCollisions(hash: SpatialHash<ShipCell>): ShipContact[] {
-  // Deepest contact per unordered ship pair.
-  const contacts = new Map<string, ShipContact>();
+/**
+ * The contact-generation boundary: given the cell hash, produce the per-pair
+ * deepest disc contact (before outline refine). Both implementations of
+ * ship-ship collision share this contract — a reference (oracle) per-cell swept
+ * scan and an optimised ship-pair broad-phase — and hand their output to the
+ * shared narrow-phase ({@link resolveCandidateContacts}), which refines by hull
+ * outline, applies the impulse, and returns the ordered contact list.
+ *
+ * The map is keyed by the unordered pair key (`pairKey`) and holds, for each
+ * pair, the deepest disc contact found (greatest `depth`). Both implementations
+ * must produce the same map for any given hash: the same set of pair keys, and
+ * for each the same `depth`, `px`, `py`, `nx`, `ny` (`relVx`/`relVy` are filled
+ * later by the narrow-phase). The optimised implementation is a strict superset
+ * at the candidate-pair level — it may visit extra pairs that the disc test
+ * then rejects — so its surviving contacts match the reference exactly.
+ */
+type CandidateContacts = Map<string, ShipContact>;
 
+/**
+ * Record a disc contact between two cells of ships `a` and `b` (a < b by
+ * instanceId), keeping the deepest per pair. Shared by both contact-generation
+ * implementations. `(wx, wy)` is a's cell centre; `(ox, oy)` is b's. The normal
+ * points from a's cell toward b's; when the two cells sit exactly on top of each
+ * other it falls back to the line between ship centres so the push is still
+ * well-defined. `relVx`/`relVy` are left at 0 — the narrow-phase fills them from
+ * the pre-impulse velocities just before resolution.
+ */
+function recordDeepest(
+  contacts: CandidateContacts,
+  a: SimShip,
+  b: SimShip,
+  wx: number,
+  wy: number,
+  ox: number,
+  oy: number,
+): void {
+  const dx = ox - wx;
+  const dy = oy - wy;
+  const distSq = dx * dx + dy * dy;
+  if (distSq >= CELL_CONTACT_DISTANCE * CELL_CONTACT_DISTANCE) return;
+  const dist = Math.sqrt(distSq);
+  const depth = CELL_CONTACT_DISTANCE - dist;
+  let nx: number;
+  let ny: number;
+  if (dist > 1e-9) {
+    nx = dx / dist;
+    ny = dy / dist;
+  } else {
+    const cdx = b.x - a.x;
+    const cdy = b.y - a.y;
+    const cdist = Math.hypot(cdx, cdy);
+    if (cdist > 1e-9) {
+      nx = cdx / cdist;
+      ny = cdy / cdist;
+    } else {
+      nx = 1;
+      ny = 0;
+    }
+  }
+  const key = pairKey(a, b);
+  const existing = contacts.get(key);
+  if (existing === undefined || depth > existing.depth) {
+    contacts.set(key, {
+      a,
+      b,
+      px: (wx + ox) / 2,
+      py: (wy + oy) / 2,
+      nx,
+      ny,
+      depth,
+      relVx: 0,
+      relVy: 0,
+    });
+  }
+}
+
+/**
+ * REFERENCE (oracle) contact generation: the original per-cell swept-segment
+ * scan. For every alive cell in the hash, query the buckets along the path it
+ * traced this tick — the segment from its pre-move position `(wx - velX, wy -
+ * velY)` to its current `(wx, wy)` — widened by the contact radius, and record
+ * the deepest disc contact per unordered ship pair.
+ *
+ * The sweep exists for anti-tunnelling: without it, two ships passing at a
+ * relative speed above CELL_SIZE per tick can have cell centres in non-adjacent
+ * buckets and the post-move nearest pair would be missed by a static disc query
+ * rooted at the post-move bucket alone. A segment query (rather than a disc
+ * widened by the whole displacement) keeps the cost linear in the displacement
+ * instead of quadratic. The actual contact depth is always computed on the
+ * POST-MOVE positions (`recordDeepest` reads `wx/wy` and `ox/oy`), so the sweep
+ * only widens the CANDIDATE set — the narrow-phase depth test is unchanged.
+ *
+ * This is O(total_cells) segment queries and allocates a `Set` per cell inside
+ * `candidatesAlongSegment`; the optimised broad-phase below avoids both for the
+ * common case where most ships never approach each other.
+ */
+export function generateCandidateContactsReference(hash: SpatialHash<ShipCell>): CandidateContacts {
+  const contacts: CandidateContacts = new Map();
   for (const entry of hash.entries()) {
     const { ship: a, wx, wy } = entry.payload;
-    // Swept anti-tunnelling: query the buckets along the path this cell traced
-    // THIS tick — the segment from its pre-move position `(wx - velX, wy -
-    // velY)` to its current `(wx, wy)` — widened by the contact radius. Without
-    // the sweep two ships passing at a relative speed above CELL_SIZE per tick
-    // can have cell centres in non-adjacent buckets and tunnel through each
-    // other. A segment query (rather than a disc widened by the whole
-    // displacement) keeps the cost linear in the displacement instead of
-    // quadratic: at relativistic speed the per-tick displacement spans tens of
-    // thousands of buckets, and a disc query would probe that span SQUARED of
-    // mostly-empty buckets, hanging the tick. A cell can only tunnel along the
-    // line it travelled, so walking that line is both sufficient and cheap.
-    // Querying with each ship's own displacement is enough: the unordered pair
-    // is resolved once (by instanceId tie-break), so it is found when iterating
-    // whichever of the two cells swept past the other. The static narrow-phase
-    // test below (unchanged) keeps the contact depth consistent.
     const x0 = wx - a.velX;
     const y0 = wy - a.velY;
     for (const other of hash.candidatesAlongSegment(x0, y0, wx, wy, CELL_CONTACT_DISTANCE)) {
@@ -127,60 +206,99 @@ export function resolveShipCollisions(hash: SpatialHash<ShipCell>): ShipContact[
       if (a === b) continue;
       // Resolve each unordered pair once: only consider a < b by instanceId.
       if (a.instanceId >= b.instanceId) continue;
-      const dx = other.wx - wx;
-      const dy = other.wy - wy;
-      const distSq = dx * dx + dy * dy;
-      if (distSq >= CELL_CONTACT_DISTANCE * CELL_CONTACT_DISTANCE) continue;
-      const dist = Math.sqrt(distSq);
-      const depth = CELL_CONTACT_DISTANCE - dist;
-      // Normal from a's cell toward b's cell. When two cells sit exactly on
-      // top of each other, fall back to the line between ship centres so the
-      // push is still well-defined.
-      let nx: number;
-      let ny: number;
-      if (dist > 1e-9) {
-        nx = dx / dist;
-        ny = dy / dist;
-      } else {
-        const cdx = b.x - a.x;
-        const cdy = b.y - a.y;
-        const cdist = Math.hypot(cdx, cdy);
-        if (cdist > 1e-9) {
-          nx = cdx / cdist;
-          ny = cdy / cdist;
-        } else {
-          nx = 1;
-          ny = 0;
+      recordDeepest(contacts, a, b, wx, wy, other.wx, other.wy);
+    }
+  }
+  return contacts;
+}
+
+/**
+ * OPTIMISED contact generation: a ship-pair broad-phase over bounding circles,
+ * then the per-cell deepest search only for the pairs that survive. Ships with
+ * no candidate partner contribute nothing, exactly as in the reference scan.
+ *
+ * Broad-phase. Each ship's alive cells provably lie within a bounding circle
+ * centred on the ship's position `(x, y)` of radius `ship.radius` (set by
+ * `gridRadius` as the farthest cell-centre distance plus half a cell, so the
+ * disc encloses every cell). Two ships can produce a disc contact only if some
+ * post-move cell of A lies within `CELL_CONTACT_DISTANCE` of some post-move
+ * cell of B; since cells lie inside their bounding discs, a necessary condition
+ * is `|B.pos − A.pos| ≤ r_a + r_b + CELL_CONTACT_DISTANCE`. That bound is a
+ * STRICT SUPERSET of the true contact relation — false negatives would drift
+ * frames (and there are none); false positives merely cost an extra per-pair
+ * cell scan that the depth test rejects. Velocities are not needed: the
+ * reference computes every contact depth on post-move positions, so tunnelling
+ * pairs (which the reference also rejects) carry through identically.
+ *
+ * Narrow-phase per pair. For each surviving pair, walk A's alive cells and query
+ * the hash with a static disc of radius `CELL_CONTACT_DISTANCE` — equivalent to
+ * the reference's swept segment when the cell's per-tick displacement stays
+ * below the contact distance, and a superset of the same cell set otherwise
+ * (duplicate candidates are harmless: `recordDeepest` keeps the deepest per
+ * pair). The static `candidates` query avoids the per-call `Set` allocation the
+ * segment query performs, which was a measurable share of the profile.
+ */
+export function generateCandidateContactsOptimised(hash: SpatialHash<ShipCell>): CandidateContacts {
+  // Collect each ship's alive cells and bounding info in a single pass over the
+  // hash. A ship appears in the hash iff it is modular and has at least one
+  // alive cell, so the derived set is exactly the ships that can contact.
+  const shipOrder: SimShip[] = [];
+  const shipCells = new Map<string, { wx: number; wy: number }[]>();
+  for (const entry of hash.entries()) {
+    const ship = entry.payload.ship;
+    let list = shipCells.get(ship.instanceId);
+    if (list === undefined) {
+      list = [];
+      shipCells.set(ship.instanceId, list);
+      shipOrder.push(ship);
+    }
+    list.push({ wx: entry.wx, wy: entry.wy });
+  }
+
+  const contacts: CandidateContacts = new Map();
+  for (let i = 0; i < shipOrder.length; i += 1) {
+    const a = shipOrder[i]!;
+    const aCells = shipCells.get(a.instanceId)!;
+    for (let j = i + 1; j < shipOrder.length; j += 1) {
+      const b = shipOrder[j]!;
+      // Unordered pair key tie-break: only consider a < b by instanceId.
+      if (a.instanceId >= b.instanceId) continue;
+      // Bounding-circle broad-phase: skip the pair unless the two discs,
+      // expanded for the contact distance, overlap. `ship.radius` is the grid
+      // bounding radius, which provably encloses every alive cell.
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const centreDistSq = dx * dx + dy * dy;
+      const reach = a.radius + b.radius + CELL_CONTACT_DISTANCE;
+      if (centreDistSq > reach * reach) continue;
+      // Narrow-phase: for each of A's cells, query the hash for B's nearby
+      // cells and record the deepest disc contact for the pair. The query
+      // returns entries from every ship (including A itself and unrelated
+      // ships); filter to B. Duplicates are harmless — recordDeepest keeps the
+      // maximum depth.
+      for (const cell of aCells) {
+        for (const other of hash.candidates(cell.wx, cell.wy, CELL_CONTACT_DISTANCE)) {
+          if (other.payload.ship !== b) continue;
+          recordDeepest(contacts, a, b, cell.wx, cell.wy, other.wx, other.wy);
         }
-      }
-      const key = `${a.instanceId}|${b.instanceId}`;
-      const existing = contacts.get(key);
-      if (existing === undefined || depth > existing.depth) {
-        contacts.set(key, {
-          a,
-          b,
-          px: (wx + other.wx) / 2,
-          py: (wy + other.wy) / 2,
-          nx,
-          ny,
-          depth,
-          // Filled in just before the impulse step, from the pre-impulse
-          // velocities (see the resolve loop below).
-          relVx: 0,
-          relVy: 0,
-        });
       }
     }
   }
+  return contacts;
+}
 
-  // Resolve in a stable order (by the unordered pair's instanceId key) so the
-  // sequence of impulses is deterministic regardless of hash iteration order,
-  // and return the same ordered list for the kinetic-damage step.
-  const candidates = [...contacts.values()].sort((x, y) =>
+/**
+ * Shared narrow-phase: refine each candidate by hull outline, apply the
+ * restitution impulse and positional separation, and return the ordered contact
+ * list for the kinetic-damage step. Candidates are sorted by pair key so the
+ * impulse sequence is deterministic regardless of map iteration order.
+ */
+function resolveCandidateContacts(candidates: CandidateContacts): ShipContact[] {
+  const ordered = [...candidates.values()].sort((x, y) =>
     pairKey(x.a, x.b) < pairKey(y.a, y.b) ? -1 : pairKey(x.a, x.b) > pairKey(y.a, y.b) ? 1 : 0,
   );
   const resolved: ShipContact[] = [];
-  for (const contact of candidates) {
+  for (const contact of ordered) {
     // Polygon narrow-phase: the disc-based broad-phase above pairs cells whose
     // centres lie within a cell of each other, which is a generous proxy for
     // the true hull boundaries. Refine each candidate against the two ships'
@@ -201,6 +319,28 @@ export function resolveShipCollisions(hash: SpatialHash<ShipCell>): ShipContact[
     resolved.push(refined);
   }
   return resolved;
+}
+
+/**
+ * Ship-vs-ship collision resolution (production path). Builds the per-pair
+ * candidate contacts via the OPTIMISED ship-pair broad-phase
+ * ({@link generateCandidateContactsOptimised}), then runs the shared
+ * narrow-phase (outline refine, impulse, positional separation). The reference
+ * implementation ({@link resolveShipCollisionsReference}) is kept as an oracle
+ * for the equivalence test.
+ */
+export function resolveShipCollisions(hash: SpatialHash<ShipCell>): ShipContact[] {
+  return resolveCandidateContacts(generateCandidateContactsOptimised(hash));
+}
+
+/**
+ * REFERENCE (oracle) ship-vs-ship collision resolution: the original per-cell
+ * swept-segment scan, kept as a first-class implementation the equivalence test
+ * compares against the optimised path. Not wired into production; production
+ * runs {@link resolveShipCollisions}.
+ */
+export function resolveShipCollisionsReference(hash: SpatialHash<ShipCell>): ShipContact[] {
+  return resolveCandidateContacts(generateCandidateContactsReference(hash));
 }
 
 /**
