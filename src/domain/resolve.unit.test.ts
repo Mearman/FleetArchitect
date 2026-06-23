@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { resolveFleetToCombatShips } from "@/domain/resolve";
 import { cellToLocal, deriveRadius } from "@/domain/grid";
+import { growArmourHull, padGrid } from "@/domain/hull-armour";
 import { catalog } from "@/data/catalog";
 import { nowIso } from "@/domain/id";
 import { defaultOrders } from "@/schema/fleet";
@@ -60,16 +61,20 @@ describe("resolveFleetToCombatShips (grid)", () => {
     expect(ship).toBeDefined();
     if (ship === undefined) return;
     const modules = ship.modules ?? [];
-    expect(modules).toHaveLength(2);
+    // The 2-cell design (pulse laser + reactor) is padded by 1 and grown:
+    // a 2×1 grid becomes 4×3 with 6 auto-derived armour cells, so 8 modules total.
+    expect(modules).toHaveLength(8);
 
-    const grid = design().grid;
+    // The grown grid is the reference for cell coordinates: padGrid shifts every
+    // authored cell by +1 on each axis, so the laser moves from (0,0) to (1,1).
+    const grownGrid = growArmourHull(padGrid(design().grid, 1));
     const laser = modules.find((m) => m.moduleId === "mod-pulse-laser");
     expect(laser).toBeDefined();
     if (laser === undefined) return;
-    expect(laser.col).toBe(0);
-    expect(laser.row).toBe(0);
-    expect(laser.x).toBeCloseTo(cellToLocal(0, 0, grid).x, 6);
-    expect(laser.y).toBeCloseTo(cellToLocal(0, 0, grid).y, 6);
+    expect(laser.col).toBe(1);
+    expect(laser.row).toBe(1);
+    expect(laser.x).toBeCloseTo(cellToLocal(1, 1, grownGrid).x, 6);
+    expect(laser.y).toBeCloseTo(cellToLocal(1, 1, grownGrid).y, 6);
     // A weapon's cell facing flows through to weaponFacing.
     expect(laser.weaponFacing).toBeCloseTo(Math.PI, 6);
   });

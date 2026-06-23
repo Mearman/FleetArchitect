@@ -279,7 +279,11 @@ export function analyseShipDesign(
   // changing the saved design.
   const grid = growArmourHull(padGrid(design.grid, 1));
   const faults: DesignFault[] = [];
-  const cellCount = occupiedCount(grid);
+  // Connectivity and cell-count validation operates on the AUTHORED design,
+  // not the grown grid. Growing armour can bridge gaps between disconnected
+  // authored cells, which would mask real design errors (a disconnected saved
+  // design is always an error regardless of how armour might span the gap).
+  const cellCount = occupiedCount(design.grid);
   const stats = emptyStats();
 
   let hasCommand = false;
@@ -364,7 +368,7 @@ export function analyseShipDesign(
 
   if (cellCount === 0) {
     faults.push({ kind: "empty", severity: "error" });
-  } else if (!isConnected4(grid)) {
+  } else if (!isConnected4(design.grid)) {
     faults.push({ kind: "disconnected", severity: "error" });
   }
   if (cellCount > 0 && !hasCommand) {
@@ -546,7 +550,7 @@ export function analyseShipDesign(
   // Disconnected grids have an undefined reachable graph, so checking paths
   // inside them would produce misleading results.
   // ---------------------------------------------------------------------------
-  if (cellCount > 0 && isConnected4(grid)) {
+  if (cellCount > 0 && isConnected4(design.grid)) {
     // Collect the grid-cell positions of every crew-quarters module (effect.kind
     // === "crew"). These are the sources from which crew walk to man stations.
     const quartersPositions: { col: number; row: number }[] = [];

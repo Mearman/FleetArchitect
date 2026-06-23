@@ -197,13 +197,17 @@ describe("analyseShipDesign", () => {
   });
 
   it("sums structure across substrate + surface layers per solid cell", () => {
-    // A single armor cell: substrate HP + armor HP.
+    // A single authored armour cell padded by 1 and grown: the original cell
+    // at (1,1) in the 3×3 padded grid gains 4 orthogonal armour neighbours,
+    // giving 5 armour cells total. Each cell contributes substrate HP + armour HP.
     const { stats } = analyseShipDesign(design(grid(["#"])), catalog());
     const substrate = catalog().substrateMaterial("Terran");
     const armor = catalog().armorMaterial("Terran");
     expect(substrate).toBeDefined();
     expect(armor).toBeDefined();
-    expect(stats.structure).toBe((substrate?.hp ?? 0) + (armor?.hp ?? 0));
+    const perCell = (substrate?.hp ?? 0) + (armor?.hp ?? 0);
+    // 1 original + 4 ortho-grown neighbours = 5 armour cells.
+    expect(stats.structure).toBe(5 * perCell);
   });
 
   // ---------------------------------------------------------------------------
