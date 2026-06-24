@@ -203,6 +203,40 @@ describe("engine.movement-modes", () => {
     expect(Math.abs(attackerAt(result, 60, "a1").y)).toBeLessThan(1);
   });
 
+  it("hold orders: station-keeps under its own continuous-fire recoil", () => {
+    // A hold-order ship firing a projectile weapon every tick recoils each
+    // shot. A ship told to hold should station-keep — brake that recoil with
+    // its engines — not coast and drift away from its post. The engine thrust
+    // (450 N) is sized so it can counter the recoil (projectileSpeed 0.5,
+    // mass 0.5: recoil ≈ 0.25/mass per tick, engine ≈ 0.5/mass per tick).
+    const result = runBattle(
+      inputs([
+        makeShip({
+          id: "a1",
+          side: "attacker",
+          x: 0,
+          y: 0,
+          facing: 0,
+          weapons: [
+            weapon({
+              weaponType: "cannon",
+              projectileSpeed: 0.5,
+              cooldown: 1,
+              range: 400,
+              damage: 1,
+            }),
+          ],
+          orders: { engageRange: "hold" },
+        }),
+        makeShip({ id: "d1", side: "defender", x: 200, y: 0, structure: 99999 }),
+      ]),
+    );
+    // Over the whole battle of continuous fire the hold ship should stay near
+    // its post (it station-keeps against its own recoil), not drift away.
+    const late = attackerAt(result, 119, "a1");
+    expect(Math.hypot(late.x, late.y)).toBeLessThan(5);
+  });
+
   it("retreating: a damaged attacker faces away and flees", () => {
     // The defender chips the attacker just past its retreat threshold but leaves
     // it alive, then we assert the attacker orients away and flees.

@@ -9,6 +9,7 @@
  */
 
 import { ACCEL_PER_TICK_FROM_SI, type BattleInputs } from "../types";
+import { CELL_SIZE } from "@/domain/grid";
 
 import { ARRIVAL_CLOSING_SPEED_MPS, SIM } from "./config";
 import { availableThrust, maxCommandableTorque } from "./physics";
@@ -165,7 +166,6 @@ export function computeTranslationCommand(
   // Target present.
   const dx = target.x - ship.x;
   const dy = target.y - ship.y;
-  const bearingToTarget = Math.atan2(dy, dx);
 
   if (isRetreating(ship)) return progradeAlong(Math.atan2(-dy, -dx));
   // Passive postures hold station and do not close: a `hold` stance (or the
@@ -175,7 +175,18 @@ export function computeTranslationCommand(
   // ship neither advances nor wastes fire. Every other stance runs the
   // stop-in-time range controller toward its stance-scaled desired range.
   if (ship.orders.engageRange === "hold" || stance === "hold") {
-    return holdFacing(bearingToTarget);
+    // Hold station against continuous perturbation (notably the ship's own gun
+    // recoil): face the target but actively damp velocity via the station-keeper
+    // at the CURRENT range (want = dist → rangeErr = 0 → only the
+    // velocity-damping term fires). The band is tight — hold within ONE cell of
+    // the post (bandWidth = CELL_SIZE) — so the damping is strong enough to null
+    // the recoil-induced velocity each tick rather than let it accumulate into a
+    // slow runaway. A holding ship keeps its post instead of coasting away under
+    // sustained fire.
+    const dist = Math.hypot(dx, dy);
+    const { aPro, aRet } = thrustAccel(ship);
+    const holdBand = dist > 0 ? CELL_SIZE / dist : 1;
+    return stationKeep(ship, dx, dy, dist, dist, holdBand, aPro, aRet);
   }
 
   // Cap the held range at what the ship can see (`sightReach`): a desired range
@@ -214,6 +225,23 @@ function progradeAlong(bearing: number): TranslationCommand {
   };
 }
 
+/** The ship's prograde and retrograde acceleration in m/tick². availableThrust
+ *  returns catalogue Newtons, so prograde/mass is an SI acceleration (m/s²);
+ *  ACCEL_PER_TICK_FROM_SI rescales it into the m/tick velocity clock the
+ *  controller's kinematics run in — matching the integrator's own rescale, so
+ *  the braking-distance look-ahead stays consistent with the velocity the ship
+ *  actually gains per tick (without it the controller over-estimates its
+ *  stopping power by 900× and never brakes). Shared by the stop-in-time
+ *  controller and the hold station-keeper. */
+function thrustAccel(ship: SimShip): { aPro: number; aRet: number } {
+  const mass = Math.max(ship.mass, 1);
+  const { prograde, retrograde } = availableThrust(ship);
+  return {
+    aPro: (prograde / mass) * ACCEL_PER_TICK_FROM_SI,
+    aRet: (retrograde / mass) * ACCEL_PER_TICK_FROM_SI,
+  };
+}
+
 /**
  * Flip-aware stop-in-time controller toward a destination point, holding range
  * `want` from it. The unified core for range-keeping (destination = target,
@@ -244,17 +272,7 @@ function stopInTimeToward(
   const dy = destY - ship.y;
   const dist = Math.hypot(dx, dy);
   const bearing = Math.atan2(dy, dx);
-  const mass = Math.max(ship.mass, 1);
-  const { prograde, retrograde } = availableThrust(ship);
-  // Controller accelerations in m/tick². availableThrust returns catalogue
-  // Newtons, so prograde/mass is an SI acceleration (m/s²); ACCEL_PER_TICK_FROM_SI
-  // rescales it into the m/tick velocity clock the controller's kinematics run
-  // in (vClose, vMax, dBrake are all m/tick · m/tick²). Matching the integrator's
-  // own rescale keeps the controller's braking-distance look-ahead consistent
-  // with the velocity the ship actually gains per tick — without it the
-  // controller over-estimates its stopping power by 900× and never brakes.
-  const aPro = (prograde / mass) * ACCEL_PER_TICK_FROM_SI;
-  const aRet = (retrograde / mass) * ACCEL_PER_TICK_FROM_SI;
+  const { aPro, aRet } = thrustAccel(ship);
   const vClose = dist > 0 ? (ship.velX * dx + ship.velY * dy) / dist : 0;
   const band = ship.orders.rangeKeepingBand;
   const tFlip = flipTime(ship);
