@@ -25,6 +25,17 @@ const THIN_ATMO_THRESHOLD = 0.5;
 const THIN_ATMO_TINT_ALPHA = 0.18;
 
 /**
+ * Held atmosphere summary per ship, keyed by instance id. The snapshot emits
+ * `frame.atmosphere` only every RESOURCE_EVERY ticks (the resource changes
+ * slowly), so on off-ticks this cache supplies the last-known summary and the
+ * overlay stays continuous. Updated each draw from whichever entries the frame
+ * carries; entries for dead/removed ships are pruned when the frame no longer
+ * lists them. Lives at module scope so it persists across rAF draws within a
+ * battle and is reset implicitly when a new battle's ship set displaces it.
+ */
+const heldAtmosphere = new Map<string, { breachedCells: number; atmosphereLevel: number }>();
+
+/**
  * Atmosphere/breach overlay: draws a semi-transparent red haze over ships
  * that have breached cells (rapid decompression), and a blue tint over ships
  * with thin atmosphere (slow venting or low reserves). Reads from
@@ -37,24 +48,39 @@ const THIN_ATMO_TINT_ALPHA = 0.18;
 function drawAtmosphereBreach(c: OverlayCtx): void {
   const { ctx, frame, t, descriptors } = c;
 
-  if (frame.atmosphere === undefined || frame.atmosphere.length === 0) return;
-
   // Index ship positions by instance id for O(1) lookup.
   const shipPos = new Map<string, { x: number; y: number }>();
   for (const s of frame.ships) {
     if (s.alive) shipPos.set(s.instanceId, { x: s.x, y: s.y });
   }
 
+  // The snapshot emits `frame.atmosphere` only every RESOURCE_EVERY ticks. When
+  // present, fold the fresh entries into the held cache; when absent, draw from
+  // the cache so the overlay stays continuous across off-ticks. Prune any held
+  // entry whose ship is no longer live (destroyed, or a new battle).
+  if (frame.atmosphere !== undefined && frame.atmosphere.length > 0) {
+    for (const entry of frame.atmosphere) {
+      heldAtmosphere.set(entry.shipId, {
+        breachedCells: entry.breachedCells,
+        atmosphereLevel: entry.atmosphereLevel,
+      });
+    }
+  }
+  for (const id of heldAtmosphere.keys()) {
+    if (!shipPos.has(id)) heldAtmosphere.delete(id);
+  }
+  if (heldAtmosphere.size === 0) return;
+
   ctx.save();
 
-  for (const entry of frame.atmosphere) {
-    const pos = shipPos.get(entry.shipId);
+  for (const [shipId, entry] of heldAtmosphere) {
+    const pos = shipPos.get(shipId);
     if (pos === undefined) continue;
 
     // Derive the haze radius from the ship's hull extent. Use the farthest
     // cell from the ship centre (the hull radius in world units) when cell
     // layout is available; fall back to a fixed radius otherwise.
-    const descriptor = descriptors.get(entry.shipId);
+    const descriptor = descriptors.get(shipId);
     let hullRadiusWorld = FALLBACK_HULL_RADIUS_WORLD;
     if (descriptor?.cells !== undefined && descriptor.cells.length > 0) {
       let maxDistSq = 0;

@@ -19,6 +19,21 @@ import type { Emission } from "./emissions";
 import type { SimPulse } from "./pulses";
 import type { SimMine, SimModule, SimPod, SimProjectile, SimShip } from "./types";
 
+/**
+ * The resource block (thermal/propellant/atmosphere/powerBuffer) changes slowly
+ * relative to per-tick motion: thermal diffuses, propellant depletes, atmosphere
+ * vents over many ticks. Emitting it on every tick bloats the heaviest frames.
+ * The snapshot emits the resource only every {@link RESOURCE_EVERY} ticks; on
+ * off-ticks the field is omitted entirely (the schema's `resource` is optional).
+ *
+ * This is a render-side cadence only. The engine's `resourceStep` still runs and
+ * advances the resource every tick and enforces overheat/flame-out per tick —
+ * only the SNAPSHOT's emission is subsampled. The renderer's resource overlays
+ * hold the last-known resource per ship (updated when the field is present,
+ * rendered from the held value on off-ticks) so the overlay stays continuous.
+ */
+const RESOURCE_EVERY = 6;
+
 export function snapshot(
   tick: number,
   ships: readonly SimShip[],
@@ -106,20 +121,26 @@ export function snapshot(
       // sits on the cell of the module at its (col, row); that module's x/y is
       // the cell's ship-local centre, plus the fractional render offset. Omitted
       // when the ship carries no crew so crewless replays stay byte-compatible.
-      // Resource state — emitted when the ship has run the resource step, so
-      // the renderer and analytics can read thermal, propellant, atmosphere and
-      // power-buffer values each tick. Absent on phantoms and legacy ships.
+      // Resource state — emitted when the ship has run the resource step AND
+      // we are on a resource-emission tick (tick % RESOURCE_EVERY === 0), so the
+      // renderer and analytics can read thermal, propellant, atmosphere and
+      // power-buffer values. On off-ticks the field is omitted: the resource
+      // changes slowly (diffusion/depletion/venting), and the renderer holds the
+      // last-known resource between emissions. Absent on phantoms and legacy
+      // ships. The engine computes the resource every tick regardless — this is
+      // a snapshot-emission cadence, not a sim change.
+      const resource = s.resource;
       const withResource =
-        s.resource !== undefined
+        resource !== undefined && tick % RESOURCE_EVERY === 0
           ? {
               ...withModules,
               resource: {
-                thermal: s.resource.thermal,
-                propellant: s.resource.propellant,
-                atmosphere: s.resource.atmosphere,
+                thermal: resource.thermal,
+                propellant: resource.propellant,
+                atmosphere: resource.atmosphere,
                 powerBuffer: {
-                  energy: s.resource.powerBuffer.energy,
-                  capacityJoules: s.resource.powerBuffer.capacityJoules,
+                  energy: resource.powerBuffer.energy,
+                  capacityJoules: resource.powerBuffer.capacityJoules,
                 },
               },
             }
@@ -261,7 +282,7 @@ export function snapshot(
     // frames for battles without life-support stay byte-identical to baseline.
     // `breachedCells` counts cells below the survivable gas-mass threshold;
     // `atmosphereLevel` is the mean normalised gas mass across all module cells.
-    ...atmosphereSnapshot(realShips),
+    ...atmosphereSnapshot(tick, realShips),
   };
 }
 
@@ -270,10 +291,18 @@ export function snapshot(
  * every real ship that runs the resource step. Returns an object spread that
  * includes `atmosphere` only when at least one ship has resource state,
  * so frames for battles without life-support stay byte-identical to baseline.
+ *
+ * Subsampled on the same {@link RESOURCE_EVERY} cadence as the per-ship
+ * `resource` block: the summary is derived from the same resource state, so
+ * emitting it on off-ticks would drift ahead of the (omitted) resource field
+ * and double the savings. The renderer's atmosphere overlay holds the
+ * last-known summary between emissions.
  */
 function atmosphereSnapshot(
+  tick: number,
   ships: readonly SimShip[],
 ): { atmosphere: { shipId: string; breachedCells: number; atmosphereLevel: number }[] } | object {
+  if (tick % RESOURCE_EVERY !== 0) return {};
   const survivableGasMass = STANDARD_CELL_GAS_MASS_KG * CREW_VACUUM_SURVIVABLE_FRACTION;
   const entries: { shipId: string; breachedCells: number; atmosphereLevel: number }[] = [];
   for (const s of ships) {
