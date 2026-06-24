@@ -55,12 +55,20 @@ self.onmessage = (event: MessageEvent<BattleWorkerRequest>) => {
   // (and always undefined on a fresh run with no resumeFrom, which never
   // captures — `onCheckpoint` is what arms the capture path).
   let latestCheckpoint: EngineCheckpoint | undefined;
+  // The generator advances `latestCheckpoint` every WORKER_CHECKPOINT_EVERY_TICKS
+  // ticks. This flag tracks whether the latest has not yet been forwarded, so a
+  // batch carries the checkpoint only when it is new — not on every post between
+  // cadence hits. Without it, the same large checkpoint would be re-cloned into
+  // every batch message and re-persisted to IndexedDB each time, even though it
+  // had not changed since the cadence last fired.
+  let checkpointDirty = false;
   const it = simulateBattle(inputs, {
     descriptorSink,
     resumeFrom,
     checkpointEvery: WORKER_CHECKPOINT_EVERY_TICKS,
     onCheckpoint: (cp) => {
       latestCheckpoint = cp;
+      checkpointDirty = true;
     },
   });
 
@@ -96,7 +104,14 @@ self.onmessage = (event: MessageEvent<BattleWorkerRequest>) => {
       computedTicks: lastFrame !== undefined ? lastFrame.tick : 0,
       descriptors: drainNewDescriptors(),
     };
-    if (latestCheckpoint !== undefined) message.checkpoint = latestCheckpoint;
+    // Forward the checkpoint only when it changed since the last post. The
+    // generator captures every WORKER_CHECKPOINT_EVERY_TICKS ticks; between hits
+    // the value is unchanged, so re-sending it would just re-clone the same
+    // large object (and re-persist it on the main thread) for no benefit.
+    if (checkpointDirty && latestCheckpoint !== undefined) {
+      message.checkpoint = latestCheckpoint;
+      checkpointDirty = false;
+    }
     self.postMessage(message);
   };
 
