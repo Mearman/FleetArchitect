@@ -595,11 +595,25 @@ export const BattleResult = z.object({
 });
 export type BattleResult = z.infer<typeof BattleResult>;
 
+/**
+ * A {@link BattleResult} minus its `frames`. The worker streams frames in
+ * batches during the run (each `{ kind: 'frames' }` message) and posts a
+ * summary as the final `{ kind: 'result' }` message; the main thread
+ * reassembles the full `BattleResult` by appending the accumulated streamed
+ * frames to the summary via {@link assembleResult}. Carrying the summary
+ * instead of the full result on the terminal message avoids re-sending the
+ * entire frame array — which was already streamed — so the end-of-battle
+ * handler no longer blocks the main thread re-cloning and deep-parsing
+ * hundreds of megabytes of frames.
+ */
+export type BattleResultSummary = Omit<BattleResult, "frames">;
+
 /** Worker→main streaming protocol for progressive battle playback. Discriminated
  * on 'kind': 'frames' delivers a batch of computed frames with the highest tick
- * index seen so far; 'result' delivers the final battle outcome. Validated at
- * the thread boundary just like BattleResult, ensuring type safety across the
- * worker channel. */
+ * index seen so far; 'result' delivers the final battle outcome as a summary
+ * (the full frames were already streamed in batches). Validated at the thread
+ * boundary just like BattleResult, ensuring type safety across the worker
+ * channel. */
 export const BattleStreamMessage = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("frames"),
@@ -625,7 +639,7 @@ export const BattleStreamMessage = z.discriminatedUnion("kind", [
   }),
   z.object({
     kind: z.literal("result"),
-    result: BattleResult,
+    summary: BattleResult.omit({ frames: true }),
   }),
 ]);
 export type BattleStreamMessage = z.infer<typeof BattleStreamMessage>;

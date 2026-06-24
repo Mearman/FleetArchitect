@@ -1,10 +1,10 @@
 import { createId, nowIso } from "@/domain/id";
 import { runBattle, simulateBattle } from "@/domain/simulation/engine";
 import type { BattleInputs } from "@/domain/simulation/types";
-import { BattleResult } from "@/schema/battle";
 import type {
   BattleFrame,
   BattleResult as BattleResultType,
+  BattleResultSummary,
   BattleStreamMessage,
   ShipDescriptor,
 } from "@/schema/battle";
@@ -28,6 +28,49 @@ function isBattleStreamMessage(value: unknown): value is BattleStreamMessage {
   if (typeof value !== "object" || value === null) return false;
   if (!("kind" in value)) return false;
   return value.kind === "frames" || value.kind === "result";
+}
+
+/**
+ * Cheap top-level shape guard for a {@link BattleResultSummary} arriving in the
+ * worker's terminal `result` message. Narrows `unknown` with `typeof` and `in`
+ * — no assertions, no deep parse — checking only the scalar header fields the
+ * reassembly reads. The worker is first-party and same-origin, and the frames
+ * that dominate the result's size were already streamed and accumulated
+ * separately, so deep-parsing the summary here would re-walk the whole
+ * (optional) `roster`/`descriptors`/`salvage` arrays for no boundary benefit;
+ * the envelope guard already narrowed the `kind`. Mirrors the
+ * envelope-guard philosophy from {@link isBattleStreamMessage} and the
+ * `isBattleResult` guard in `sim-cache-dexie.ts`.
+ */
+function isBattleResultSummary(value: unknown): value is BattleResultSummary {
+  if (typeof value !== "object" || value === null) return false;
+  if (!("id" in value) || typeof value.id !== "string") return false;
+  if (!("winner" in value) || typeof value.winner !== "string") return false;
+  if (!("ticks" in value) || typeof value.ticks !== "number") return false;
+  if (!("playedAt" in value) || typeof value.playedAt !== "string") return false;
+  if (!("config" in value) || typeof value.config !== "object" || value.config === null) return false;
+  return true;
+}
+
+/**
+ * Reassemble a full {@link BattleResultType} from a terminal
+ * {@link BattleResultSummary} and the frames accumulated from the worker's
+ * streamed `frames` batches. Pure and unit-testable: the assembled result's
+ * `frames` is exactly the passed-in array in tick order — byte-identical to
+ * what the worker produced, since the batches were appended in arrival order
+ * (which is tick order, the engine yields frames strictly ascending) and the
+ * summary carries no frames of its own.
+ *
+ * The inverse of the worker's terminal-message split: the worker streams
+ * frames in batches then posts a summary WITHOUT frames, and this stitches
+ * them back together on the main thread so the resolved result is
+ * indistinguishable from a fresh `runBattle` output.
+ */
+export function assembleResult(
+  summary: BattleResultSummary,
+  frames: readonly BattleFrame[],
+): BattleResultType {
+  return { ...summary, frames: [...frames] };
 }
 
 /**
@@ -249,6 +292,16 @@ export class WorkerBattleRunner implements BattleRunner {
 
       const worker = this.#createWorker();
 
+      // Accumulate the frames each `frames` batch delivers. The worker's
+      // terminal `result` message carries a summary WITHOUT frames (the frames
+      // were already streamed), so the full BattleResult is reassembled here
+      // from the accumulated batches plus the summary. Batches arrive in tick
+      // order (the engine yields frames strictly ascending and the worker
+      // posts them in yield order), so appending each batch preserves the
+      // timeline — byte-identical to what the worker's old terminal message
+      // carried when it re-sent the whole array.
+      const accumulatedFrames: BattleFrame[] = [];
+
       const cleanup = () => {
         worker.onmessage = null;
         worker.onerror = null;
@@ -269,8 +322,10 @@ export class WorkerBattleRunner implements BattleRunner {
         }
 
         if (event.data.kind === "frames") {
-          // Deliver the batch to the caller and keep the worker alive — more
-          // batches (or the final result) are still on the way.
+          // Accumulate this batch's frames for the terminal reassembly, deliver
+          // the batch to the caller, and keep the worker alive — more batches
+          // (or the final result) are still on the way.
+          for (const frame of event.data.frames) accumulatedFrames.push(frame);
           onFrames?.(event.data.frames, event.data.computedTicks, event.data.descriptors);
           // Forward the latest checkpoint (if the worker captured one with this
           // batch) so the resume decorator persists it. The checkpoint may be a
@@ -282,18 +337,20 @@ export class WorkerBattleRunner implements BattleRunner {
           return;
         }
 
-        // kind === "result": the simulation has finished — clean up and resolve.
-        // The envelope guard narrowed the message to the `result` variant but did
-        // NOT validate the embedded `BattleResult` (the guard checks only the
-        // discriminant), so parse the result once here. This runs only at the end
-        // of a run, not per batch, so it is not on the hot path.
-        const resultParsed = BattleResult.safeParse(event.data.result);
+        // kind === "result": the simulation has finished. The message carries a
+        // summary (no frames); reassemble the full BattleResult from the
+        // accumulated streamed frames. A cheap shape guard on the summary
+        // replaces the previous deep `BattleResult.safeParse`, which re-walked
+        // the whole frame array at end-of-battle and blocked the main thread
+        // for hundreds of milliseconds on large battles. The envelope guard
+        // already narrowed the `kind`; this guard catches gross corruption of
+        // the scalar header only.
         cleanup();
-        if (resultParsed.success) {
-          resolve(resultParsed.data);
-        } else {
-          reject(new Error(`Worker returned an invalid BattleResult: ${resultParsed.error.message}`));
+        if (!isBattleResultSummary(event.data.summary)) {
+          reject(new Error("Worker returned a result message with an invalid summary shape"));
+          return;
         }
+        resolve(assembleResult(event.data.summary, accumulatedFrames));
       };
 
       worker.onerror = (event: ErrorEvent) => {

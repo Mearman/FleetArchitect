@@ -3,6 +3,7 @@ import { simulateBattle } from "@/domain/simulation/engine";
 import type { BattleInputs } from "@/domain/simulation/types";
 import { STREAM_BATCH_INTERVAL_MS } from "@/domain/simulation/types";
 import type { BattleFrame, ShipDescriptor } from "@/schema/battle";
+import type { BattleResultSummary } from "@/schema/battle";
 import type { EngineCheckpoint } from "@/schema/checkpoint";
 
 /**
@@ -33,14 +34,18 @@ interface BattleWorkerRequest {
  * (structured-cloned across the thread boundary by `postMessage`), drives the
  * deterministic generator, and streams frame batches back as
  * `{ kind: 'frames' }` messages (each carrying the latest captured checkpoint,
- * if any) before posting a final `{ kind: 'result' }` with the assembled
- * `BattleResult`.
+ * if any) before posting a final `{ kind: 'result' }` carrying a
+ * {@link BattleResultSummary} — the full `BattleResult` MINUS its `frames`,
+ * which were already streamed in batches. The main thread reassembles the
+ * full result by appending the accumulated streamed frames to the summary.
  *
  * Streaming lets the main thread begin rendering replay frames while the
  * simulation is still running, rather than waiting for the whole battle to
  * finish before receiving any data. The forwarded checkpoints let the resume
  * decorator persist the latest in-progress state so an interrupted run resumes
- * from there.
+ * from there. Posting the summary without re-sending the frame array avoids a
+ * second structured clone of the (potentially hundreds-of-megabytes) frames
+ * at end-of-battle — the frames already crossed the boundary in batches.
  */
 self.onmessage = (event: MessageEvent<BattleWorkerRequest>) => {
   const { inputs, resumeFrom } = event.data;
@@ -72,7 +77,11 @@ self.onmessage = (event: MessageEvent<BattleWorkerRequest>) => {
     },
   });
 
-  const allFrames: BattleFrame[] = [];
+  // Frames are NOT accumulated for the result message: they were already
+  // streamed in batches, and re-sending the full array on the terminal
+  // message would re-clone the entire (potentially hundreds-of-MB) timeline.
+  // The main thread reassembles the full BattleResult from the accumulated
+  // streamed batches plus this summary.
   let batch: BattleFrame[] = [];
   let lastPostMs = performance.now();
   // Instance ids whose descriptor has already been streamed, so each batch only
@@ -118,7 +127,6 @@ self.onmessage = (event: MessageEvent<BattleWorkerRequest>) => {
   let next = it.next();
   while (!next.done) {
     const frame = next.value;
-    allFrames.push(frame);
     batch.push(frame);
 
     // Post a batch when enough wall-clock time has elapsed since the last one.
@@ -140,21 +148,34 @@ self.onmessage = (event: MessageEvent<BattleWorkerRequest>) => {
 
   const summary = next.value;
 
+  // Post the summary WITHOUT frames: the full frame array was already streamed
+  // in batches, and re-sending it here would re-clone the entire timeline and
+  // block the main thread on a deep parse. The main thread reassembles the
+  // full BattleResult by appending the accumulated streamed frames to this
+  // summary. `roster`, `descriptors`, and `salvage` mirror runBattle's
+  // assembly so the reassembled result is byte-identical to a fresh run.
+  const resultSummary: BattleResultSummary = {
+    id: createId("battle"),
+    config: {
+      attackerFleetId: inputs.attackerFleetId,
+      defenderFleetId: inputs.defenderFleetId,
+      anomalies: inputs.anomalies,
+      seed: inputs.seed,
+    },
+    winner: summary.winner,
+    ticks: summary.ticks,
+    playedAt: nowIso(),
+    roster: inputs.ships.map((s) => ({
+      instanceId: s.instanceId,
+      faction: s.faction,
+      side: s.side,
+    })),
+    descriptors: summary.descriptors,
+    ...(summary.salvage.length > 0 ? { salvage: summary.salvage } : {}),
+  };
+
   self.postMessage({
     kind: "result",
-    result: {
-      id: createId("battle"),
-      config: {
-        attackerFleetId: inputs.attackerFleetId,
-        defenderFleetId: inputs.defenderFleetId,
-        anomalies: inputs.anomalies,
-        seed: inputs.seed,
-      },
-      winner: summary.winner,
-      ticks: summary.ticks,
-      playedAt: nowIso(),
-      frames: allFrames,
-      descriptors: summary.descriptors,
-    },
+    summary: resultSummary,
   });
 };
