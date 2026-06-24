@@ -19,6 +19,8 @@ export interface PlaybackControlsProps {
   playing: boolean;
   speed: number;
   currentTick: number;
+  /** Fractional tick position (for smooth slider scrubbing — sub-tick interpolation). */
+  playbackTick: number;
   maxTick: number;
   /** Whether the final result has landed (controls the "..." suffix on the tick). */
   finished: boolean;
@@ -42,6 +44,7 @@ export function PlaybackControls({
   playing,
   speed,
   currentTick,
+  playbackTick,
   maxTick,
   finished,
   camera,
@@ -110,7 +113,7 @@ export function PlaybackControls({
           onChange={(val) => onSpeedChange(Number(val))}
         />
       </Group>
-      <Slider min={0} max={maxTick} value={currentTick} onChange={(val) => onSeek(val)} />
+      <Slider min={0} max={maxTick} value={playbackTick} step={0.1} onChange={(val) => onSeek(val)} />
     </Stack>
   );
 }

@@ -271,9 +271,10 @@ export function BattleRoute() {
    *  final tick count once the result has landed. */
   const maxTick = simulation.result !== null ? simulation.result.ticks : simulation.computedTicks;
 
-  const currentTick = hasFrames
-    ? Math.min(maxTick, Math.floor(playback.playbackTime * TICKS_PER_SECOND))
+  const playbackTick = hasFrames
+    ? Math.min(maxTick, playback.playbackTime * TICKS_PER_SECOND)
     : 0;
+  const currentTick = Math.floor(playbackTick);
 
   const fleetOptions = useMemo(
     () => (fleets ?? []).map((f) => ({ value: f.id, label: f.name })),
@@ -629,6 +630,7 @@ export function BattleRoute() {
               playing={playback.playing}
               speed={playback.speed}
               currentTick={currentTick}
+              playbackTick={playbackTick}
               maxTick={maxTick}
               finished={simulation.result !== null}
               camera={camera.camera}
