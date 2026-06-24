@@ -10,14 +10,19 @@ import { defaultAiDecisions } from "./ai-step";
 import { SIM } from "./config";
 import { isOperational } from "./crew";
 import { applyDamage } from "./damage";
+import { cellWorldPosition } from "@/domain/simulation/spatial-hash";
 import type { SimShip } from "./types";
 
-/** A fresh drone SimShip, launched from `owner` toward the fight. Deterministic:
- *  every field is a pure function of the effect + positions + id; no rng. */
+/** A fresh drone SimShip, launched from `owner` toward the fight. `spawnX/Y`
+ *  is the hangar module's world position — the drone appears at the bay door,
+ *  not the ship centre. Deterministic: every field is a pure function of the
+ *  effect + positions + id; no rng. */
 export function makeDrone(
   id: string,
   owner: SimShip,
   effect: HangarEffect,
+  spawnX: number,
+  spawnY: number,
 ): SimShip {
   const lifetime = effect.droneLifetime ?? SIM.droneDefaultLifetime;
   return {
@@ -25,8 +30,8 @@ export function makeDrone(
     faction: owner.faction,
     side: owner.side,
     classification: "fighter",
-    x: owner.x,
-    y: owner.y,
+    x: spawnX,
+    y: spawnY,
     facing: owner.facing,
     velX: 0,
     velY: 0,
@@ -86,11 +91,15 @@ export function makeDrone(
   };
 }
 
-/** A fresh decoy SimShip: a static, targetable hit-point pool that expires. */
+/** A fresh decoy SimShip: a static, targetable hit-point pool that expires.
+ *  `spawnX/Y` is the decoy launcher's world position; `offset` spreads the
+ *  salvo in a ring around it. */
 export function makeDecoy(
   id: string,
   owner: SimShip,
   effect: DecoyEffect,
+  spawnX: number,
+  spawnY: number,
   offset: { dx: number; dy: number },
 ): SimShip {
   return {
@@ -98,8 +107,8 @@ export function makeDecoy(
     faction: owner.faction,
     side: owner.side,
     classification: "fighter",
-    x: owner.x + offset.dx,
-    y: owner.y + offset.dy,
+    x: spawnX + offset.dx,
+    y: spawnY + offset.dy,
     facing: owner.facing,
     velX: 0,
     velY: 0,
@@ -181,7 +190,10 @@ export function launchDrones(
         s.phantom.ownerId === owner.instanceId,
     ).length;
     if (live >= effect.droneCount) continue; // wing at strength
-    ships.push(makeDrone(nextPhantomId(owner.instanceId, "drone", tick), owner, effect));
+    const cell = cellWorldPosition(owner.x, owner.y, owner.facing, m.x, m.y);
+    ships.push(
+      makeDrone(nextPhantomId(owner.instanceId, "drone", tick), owner, effect, cell.wx, cell.wy),
+    );
     m.techCooldown = effect.launchCooldown;
   }
 }
@@ -202,6 +214,7 @@ export function launchDecoys(
     if (m.effect.kind !== "decoy") continue;
     if (m.techCooldown > 0 || !isOperational(m)) continue;
     const effect = m.effect;
+    const cell = cellWorldPosition(owner.x, owner.y, owner.facing, m.x, m.y);
     for (let i = 0; i < effect.decoyCount; i += 1) {
       const angle = (i / effect.decoyCount) * Math.PI * 2;
       const r = SIM.decoyRadius * 2;
@@ -210,6 +223,8 @@ export function launchDecoys(
           nextPhantomId(owner.instanceId, "decoy", tick),
           owner,
           effect,
+          cell.wx,
+          cell.wy,
           { dx: Math.cos(angle) * r, dy: Math.sin(angle) * r },
         ),
       );

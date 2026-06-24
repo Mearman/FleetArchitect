@@ -8,6 +8,7 @@ import { isOperational } from "./crew";
 import { recomputeAggregates } from "./physics";
 import { worldToLocal } from "./setup";
 import { isDetectable } from "./stealth";
+import { cellWorldPosition } from "@/domain/simulation/spatial-hash";
 import type { SimPod, SimShip } from "./types";
 
 /**
@@ -55,12 +56,15 @@ export function launchPods(
       }
     }
     if (target === undefined) continue;
+    // Pods launch from the boarding module's cell (rotated into world by the
+    // ship's pose), not the ship centre.
+    const cell = cellWorldPosition(ship.x, ship.y, ship.facing, m.x, m.y);
     for (let i = 0; i < effect.podCount; i += 1) {
       pods.push({
         id: nextPodId(ship.instanceId, tick),
         side: ship.side,
-        x: ship.x,
-        y: ship.y,
+        x: cell.wx,
+        y: cell.wy,
         targetInstanceId: target.instanceId,
         troops: effect.troops,
       });

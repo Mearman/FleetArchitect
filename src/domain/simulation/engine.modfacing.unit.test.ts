@@ -48,6 +48,12 @@ const MUZZLE_OFFSET = CELL_SIZE / 2;
  *  speed 1) at the new scale. */
 const PROBE_SPEED = MUZZLE_OFFSET / 6;
 
+/** The weapon cell's ship-local position (mounted in `mountedAttacker`). The
+ *  muzzle spawns at THIS cell's world position plus a half-cell clearance in the
+ *  mount direction, so the assertions below check the projectile is offset from
+ *  the gun CELL (not the ship centre). */
+const WEAPON_CELL = { x: 12, y: 0 };
+
 function cannon(over: Partial<WeaponEffect> = {}): WeaponEffect {
   return {
     kind: "weapon",
@@ -114,7 +120,7 @@ function moduleOf(
  *  tests. The reactor doubles as the command module so the ship can fire. */
 function mountedAttacker(id: string, weaponFacing: number): CombatShip {
   const modules: ResolvedModule[] = [
-    moduleOf("w1", cannon(), 12, 0, 50, weaponFacing),
+    moduleOf("w1", cannon(), WEAPON_CELL.x, WEAPON_CELL.y, 50, weaponFacing),
     moduleOf("p1", { kind: "power", output: 40 }, 0, -12, 20, 0, true),
   ];
   const stats: ShipStats = {
@@ -226,13 +232,13 @@ describe("engine.per-module facing", () => {
     const first = firstProjectile(result);
     expect(first, "the attacker should have spawned at least one projectile").toBeDefined();
     if (first === undefined) return;
-    // Ship at (0, 0) facing 0 with weapon facing 0 — muzzle spawn is at
-    // (cos(0)*MUZZLE_OFFSET, sin(0)*MUZZLE_OFFSET) = (MUZZLE_OFFSET, 0); after
-    // one tick of drift toward the +x target the projectile is just beyond the
-    // muzzle on the +x axis. The defining property is that y is essentially 0
-    // (forward = along ship heading) and x sits past the muzzle offset.
-    expect(first.x).toBeGreaterThan(MUZZLE_OFFSET);
-    expect(Math.abs(first.y)).toBeLessThan(1e-6);
+    // Ship at (0, 0) facing 0, weapon facing 0 — the muzzle spawns half a cell
+    // forward of the gun cell (WEAPON_CELL.x + MUZZLE_OFFSET), so after one tick
+    // of drift toward the +x target the projectile is just beyond the cell on
+    // the +x axis. The defining property is y ≈ 0 (forward = along heading) and
+    // x sits forward of the gun cell.
+    expect(first.x).toBeGreaterThan(WEAPON_CELL.x);
+    expect(Math.abs(first.y - WEAPON_CELL.y)).toBeLessThan(1e-6);
   });
 
   it("a left-mounted weapon (facing +π/2) fires perpendicular to ship heading", () => {
@@ -240,14 +246,14 @@ describe("engine.per-module facing", () => {
     const first = firstProjectile(result);
     expect(first).toBeDefined();
     if (first === undefined) return;
-    // Ship facing 0, weapon facing +π/2 — muzzle spawn is at (0, MUZZLE_OFFSET).
-    // After one tick of drift toward (80, 0) the projectile has crept a small
-    // probe step along +x while keeping its +y muzzle position. The defining
-    // property is x ≈ 0 (below the muzzle offset) and y ≈ MUZZLE_OFFSET: the
-    // projectile spawned on the ship's +y side, even though the ship itself is
-    // pointing right at the target.
-    expect(first.x).toBeLessThan(MUZZLE_OFFSET);
-    expect(first.y).toBeGreaterThan(MUZZLE_OFFSET * 0.9);
+    // Ship facing 0, weapon facing +π/2 — the muzzle spawns half a cell to +y
+    // of the gun cell (WEAPON_CELL.y + MUZZLE_OFFSET). After one tick of drift
+    // toward (80, 0) the projectile has crept a small probe step along +x while
+    // keeping its +y muzzle offset. The defining property is that it spawned on
+    // the cell's +y side (y ≈ +MUZZLE_OFFSET) at the gun cell's x, not the ship
+    // centre — even though the ship points right at the target.
+    expect(first.y).toBeGreaterThan(WEAPON_CELL.y + MUZZLE_OFFSET * 0.9);
+    expect(first.x).toBeGreaterThan(WEAPON_CELL.x - MUZZLE_OFFSET);
   });
 
   it("a right-mounted weapon (facing -π/2) fires perpendicular to ship heading", () => {
@@ -255,11 +261,11 @@ describe("engine.per-module facing", () => {
     const first = firstProjectile(result);
     expect(first).toBeDefined();
     if (first === undefined) return;
-    // Mirror of the left case: muzzle spawn is at (0, -MUZZLE_OFFSET); after one
-    // tick of drift the projectile keeps its -y muzzle position with a small +x
-    // probe step. The projectile spawned on the ship's -y side.
-    expect(first.x).toBeLessThan(MUZZLE_OFFSET);
-    expect(first.y).toBeLessThan(-MUZZLE_OFFSET * 0.9);
+    // Mirror of the left case: the muzzle spawns half a cell to -y of the gun
+    // cell; after one tick of drift the projectile keeps its -y muzzle offset
+    // with a small +x probe step. The projectile spawned on the cell's -y side.
+    expect(first.y).toBeLessThan(WEAPON_CELL.y - MUZZLE_OFFSET * 0.9);
+    expect(first.x).toBeGreaterThan(WEAPON_CELL.x - MUZZLE_OFFSET);
   });
 
   it("a rear-mounted weapon (facing π) fires backward relative to ship heading", () => {
@@ -267,14 +273,15 @@ describe("engine.per-module facing", () => {
     const first = firstProjectile(result);
     expect(first).toBeDefined();
     if (first === undefined) return;
-    // Ship facing 0, weapon facing π — muzzle spawn is at (-MUZZLE_OFFSET, 0).
-    // After one tick of drift toward the +x target the projectile has crept a
-    // small probe step back toward the origin but is still on the -x side: it
-    // spawned behind the ship and is just starting its long flight to the +x
-    // target. It stays between -MUZZLE_OFFSET and 0.
-    expect(first.x).toBeLessThan(0);
-    expect(first.x).toBeGreaterThan(-MUZZLE_OFFSET);
-    expect(Math.abs(first.y)).toBeLessThan(1e-6);
+    // Ship facing 0, weapon facing π — the muzzle spawns half a cell BEHIND the
+    // gun cell (WEAPON_CELL.x - MUZZLE_OFFSET). After one tick of drift toward
+    // the +x target the projectile has crept a small probe step forward but is
+    // still behind the cell: it spawned off the cell's rear face and is just
+    // starting its long flight to the +x target. It stays between the cell and
+    // one cell behind it.
+    expect(first.x).toBeLessThan(WEAPON_CELL.x);
+    expect(first.x).toBeGreaterThan(WEAPON_CELL.x - MUZZLE_OFFSET * 2);
+    expect(Math.abs(first.y - WEAPON_CELL.y)).toBeLessThan(1e-6);
   });
 
   it("the muzzle direction rotates with ship facing (mount is ship-local)", () => {

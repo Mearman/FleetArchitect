@@ -12,7 +12,7 @@ import { hasAnomaly } from "@/domain/anomaly";
 import type { PointDefenseEffect, WeaponEffect } from "@/schema/module";
 import type { BattleInputs } from "../types";
 
-import { CELL_CONTACT_DISTANCE, buildShipCellHash } from "./collision";
+import { CELL_CONTACT_DISTANCE, buildShipCellHash, nearestCellAlongSegment } from "./collision";
 import { SIM, claimProjectileId } from "./config";
 import { beamDamageFactor, lensingDeflection } from "./optics";
 import { isCharged } from "./crew";
@@ -34,14 +34,23 @@ export function spawnProjectile(
   rng: () => number,
   accuracyBonus: number,
 ): SimProjectile {
-  const aimAngle = Math.atan2(target.y - owner.y, target.x - owner.x);
-  // The weapon's mount direction (ship-local) is added to the ship's world
-  // heading so a side-mounted weapon fires sideways regardless of where the
-  // ship is pointed. `aimAngle` keeps the projectile on-target (homing will
-  // take over from there if `tracking > 0`); the spread still perturbs the
-  // aim — a side-mounted weapon is just as accurate as a forward one,
-  // measured against its own muzzle direction.
+  // The weapon's mount direction (ship-local) added to the ship's world heading:
+  // an off-centre weapon's muzzle sits along this direction off the centreline.
   const mountAngle = owner.facing + weaponFacing;
+  // The muzzle is the firing cell's WORLD position — the gun cell on a modular
+  // ship (where the round actually originates), or the ship centre on the
+  // legacy aggregated path where the caller passes a (0, 0) local muzzle. A
+  // half-cell clearance along the mount direction then lifts it just clear of
+  // the hull. Rooted at the cell, not the ship centre, so the round leaves the
+  // gun that fired it rather than appearing deep inside the hull.
+  const muzzle = cellWorldPosition(owner.x, owner.y, owner.facing, muzzleLocalX, muzzleLocalY);
+  const muzzleX = muzzle.wx + Math.cos(mountAngle) * SIM.muzzleOffset;
+  const muzzleY = muzzle.wy + Math.sin(mountAngle) * SIM.muzzleOffset;
+  // Aim from the MUZZLE (the gun cell), not the ship centre. The round leaves
+  // the gun cell and must head toward the target from there; aiming from the
+  // centre would fire parallel to the centre-to-target line and miss by the
+  // cell's perpendicular offset (an off-centre gun firing past its target).
+  const aimAngle = Math.atan2(target.y - muzzleY, target.x - muzzleX);
   // Command-aura accuracy tightens the spread cone by its fraction (0 leaves it
   // untouched). The rng is still drawn whenever the weapon has any spread — same
   // stream length regardless of the buff — only the bound it scales by narrows, so
@@ -49,18 +58,36 @@ export function spawnProjectile(
   const aimedSpread = weapon.spread * (1 - accuracyBonus);
   const spread = weapon.spread > 0 ? ranged(rng, -aimedSpread, aimedSpread) : 0;
   const angle = aimAngle + spread;
-  const muzzleX = owner.x + Math.cos(mountAngle) * SIM.muzzleOffset;
-  const muzzleY = owner.y + Math.sin(mountAngle) * SIM.muzzleOffset;
   const ttl = Math.ceil((weapon.range + 40) / Math.max(weapon.projectileSpeed, 1));
-  const vx = Math.cos(angle) * weapon.projectileSpeed;
-  const vy = Math.sin(angle) * weapon.projectileSpeed;
-  // Recoil: the firing ship absorbs the projectile's momentum in equal and
-  // opposite measure. delta_v_ship = -m_p * v_p / M_ship; the angular kick
-  // is the lever arm (muzzle − CoM) cross the projectile's linear momentum,
-  // divided by the ship's moment of inertia. Applied before the projectile
-  // enters the world so the first tick of travel already reflects the
-  // ship's post-recoil velocity.
-  applyImpulse(owner, -weapon.projectileMass * vx, -weapon.projectileMass * vy, muzzleLocalX, muzzleLocalY);
+  // Lead aim: the round's GROUND velocity is set along the aim direction (toward
+  // the target), and the muzzle impulse is whatever cancels the firing ship's
+  // velocity to achieve that ground track. So a moving platform's round leads —
+  // it inherits the ship's momentum (and the recoil below returns it) yet
+  // actually flies toward the target — instead of inheriting the ship's lateral
+  // drift and missing by it. For a stationary ship this reduces to the plain
+  // muzzle velocity along the aim. Solve |k·n − ship_v| = muzzle_speed for the
+  // ground speed k along the aim direction n; the discriminant is non-negative
+  // whenever the muzzle speed can overcome the ship's perpendicular drift (the
+  // only case in which a hit is possible at all).
+  const nx = Math.cos(angle);
+  const ny = Math.sin(angle);
+  const svDotN = owner.velX * nx + owner.velY * ny;
+  const svPerpSq = owner.velX * owner.velX + owner.velY * owner.velY - svDotN * svDotN;
+  const disc = weapon.projectileSpeed * weapon.projectileSpeed - svPerpSq;
+  const k = svDotN + Math.sqrt(disc > 0 ? disc : 0);
+  const vx = nx * k;
+  const vy = ny * k;
+  // Muzzle impulse relative to the firing ship — the momentum the round carries
+  // away from the ship, returned to it as recoil.
+  const muzzleVx = vx - owner.velX;
+  const muzzleVy = vy - owner.velY;
+  // Recoil: the firing ship absorbs the projectile's momentum RELATIVE to itself
+  // (the muzzle impulse) in equal and opposite measure — delta_v_ship =
+  // -m_p * muzzleV / M_ship — so momentum is conserved across the shot (the ship
+  // loses m·muzzleV; the round departs with ground velocity k·n). The angular
+  // kick is the lever arm (muzzle − CoM) cross that linear momentum, divided by
+  // the ship's moment of inertia.
+  applyImpulse(owner, -weapon.projectileMass * muzzleVx, -weapon.projectileMass * muzzleVy, muzzleLocalX, muzzleLocalY);
   return {
     id: claimProjectileId(),
     x: muzzleX,
@@ -498,6 +525,10 @@ export function updateProjectiles(
       }
     }
 
+    // Capture the pre-move position: the projectile's per-tick travel is the
+    // segment (prevX, prevY) → (p.x, p.y), used for the swept collision below.
+    const prevX = p.x;
+    const prevY = p.y;
     p.x += p.vx;
     p.y += p.vy;
     p.travelled += Math.hypot(p.vx, p.vy);
@@ -508,19 +539,24 @@ export function updateProjectiles(
     // Asteroid fields randomly destroy in-flight ordnance.
     if (hasAnomaly(anomalies, "asteroidField") && rng() < SIM.asteroidDeflectChance) continue;
 
-    // Collision with an enemy ship. For modular ships the broad-phase finds
-    // the frontmost occupied cell on the projectile's path and the hit strikes
-    // THAT cell, with armour-piercing overflow carrying to the cell behind.
-    // Legacy aggregated ships have no cells in the hash, so they keep the
-    // centre-distance test against their radius.
+    // Collision with an enemy ship. The projectile's per-tick travel is a line
+    // segment; the swept test finds the frontmost occupied cell that segment
+    // passes within the cell contact distance of, so a fast round (which may
+    // inherit a high firing velocity) cannot tunnel through a target — it
+    // strikes the first cell its path crosses. Armour-piercing overflow then
+    // carries to the cell behind. Legacy aggregated ships have no cells in the
+    // hash, so they keep a swept centre-distance test against their radius.
     const enemySide = p.ownerSide === "attacker" ? "defender" : "attacker";
     const speed = Math.hypot(p.vx, p.vy);
     const dirX = speed > 1e-9 ? p.vx / speed : 1;
     const dirY = speed > 1e-9 ? p.vy / speed : 0;
 
-    // Modular ships: nearest enemy cell within the cell contact distance is
-    // the frontmost cell struck.
-    const cellHit = cellHash.nearestWithin(
+    // Modular ships: the frontmost enemy cell the swept segment passes within
+    // the cell contact distance of is the entry cell struck.
+    const cellHit = nearestCellAlongSegment(
+      cellHash,
+      prevX,
+      prevY,
       p.x,
       p.y,
       CELL_CONTACT_DISTANCE,
@@ -532,19 +568,28 @@ export function updateProjectiles(
     let hitWy = p.y;
     let path: readonly SimModule[] | undefined;
     if (cellHit !== undefined) {
-      hit = cellHit.payload.ship;
+      hit = cellHit.ship;
       hitWx = cellHit.wx;
       hitWy = cellHit.wy;
       path = penetrationPath(hit, hitWx, hitWy, dirX, dirY);
     } else {
-      // Legacy fallback: nearest living enemy ship without cells.
-      let bestDist = Infinity;
+      // Legacy fallback: a living enemy without cells whose body the swept
+      // segment passes within its radius (swept so a fast round cannot tunnel).
+      const segDx = p.x - prevX;
+      const segDy = p.y - prevY;
+      const segLenSq = segDx * segDx + segDy * segDy;
+      let bestDistSq = Infinity;
       for (const [, ship] of byId) {
         if (!ship.alive || ship.side !== enemySide) continue;
         if (ship.modules !== undefined) continue; // modular ships use the hash
-        const d = Math.hypot(ship.x - p.x, ship.y - p.y);
-        if (d < ship.radius && d < bestDist) {
-          bestDist = d;
+        let t = segLenSq > 0 ? ((ship.x - prevX) * segDx + (ship.y - prevY) * segDy) / segLenSq : 0;
+        if (t < 0) t = 0;
+        else if (t > 1) t = 1;
+        const cx = prevX + t * segDx;
+        const cy = prevY + t * segDy;
+        const dSq = (ship.x - cx) * (ship.x - cx) + (ship.y - cy) * (ship.y - cy);
+        if (dSq < ship.radius * ship.radius && dSq < bestDistSq) {
+          bestDistSq = dSq;
           hit = ship;
         }
       }
@@ -555,18 +600,19 @@ export function updateProjectiles(
       // directional shields see.
       const shotAngle = Math.atan2(p.vy, p.vx);
       applyDamage(hit, p.damage, p.shieldPiercing, p.armourPiercing, hitWx, hitWy, shotAngle, path);
-      // Hit impulse: the target absorbs the projectile's remaining momentum
-      // at the impact point. delta_v = +m_p * v_p / M_target; the lever arm
-      // is the impact point (in ship-local) relative to the CoM. Applied
-      // after damage so a kill shot still transfers momentum to the
-      // (now-dead) hulk, matching conservation. The impact point's local
-      // coordinates are derived by un-rotating the world hit position by
-      // the target's facing.
+      // Hit impulse: the target absorbs the projectile's momentum RELATIVE to
+      // itself at the impact point — delta_v = +m_p * (v_p − v_target) / M_target.
+      // A target moving with the projectile feels only the relative impact; the
+      // shared frame velocity does no work. The lever arm is the impact point
+      // (ship-local) relative to the CoM. Applied after damage so a kill shot
+      // still transfers momentum to the (now-dead) hulk, matching conservation.
+      // The impact point's local coordinates are derived by un-rotating the
+      // world hit position by the target's facing.
       const c = Math.cos(-hit.facing);
       const s = Math.sin(-hit.facing);
       const localX = (hitWx - hit.x) * c - (hitWy - hit.y) * s;
       const localY = (hitWx - hit.x) * s + (hitWy - hit.y) * c;
-      applyImpulse(hit, p.mass * p.vx, p.mass * p.vy, localX, localY);
+      applyImpulse(hit, p.mass * (p.vx - hit.velX), p.mass * (p.vy - hit.velY), localX, localY);
       continue;
     }
     survivors.push(p);

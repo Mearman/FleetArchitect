@@ -139,16 +139,16 @@ export const SIM = {
    */
   firingArc: 1.2,
   /**
-   * Distance (metres) forward of a ship's centre where projectiles spawn.
-   * Derived from the ship's hull geometry: a weapon fires from its muzzle,
-   * which sits one cell outboard of the ship's leading edge so the round
-   * clears the hull before any collision test. Half a cell (`CELL_SIZE / 2`)
-   * is the muzzle clearance for a weapon on the forward centreline — authored
-   * catalogue content representing the physical muzzle-to-centre distance, and
-   * it follows the cell scale automatically.
+   * Muzzle clearance (metres): how far in front of the firing cell a projectile
+   * spawns, along the weapon's mount direction, so the round clears the hull
+   * before any collision test. The round originates at the gun cell's world
+   * position plus this clearance (rooted at the cell, not the ship centre).
+   * Half a cell (`CELL_SIZE / 2`) — authored catalogue content representing the
+   * physical muzzle-to-cell-face distance; it follows the cell scale
+   * automatically.
    *
    * Classification: derived-by-formula (`CELL_SIZE / 2`); the anchor is
-   * authored catalogue content (muzzle-to-centre geometry).
+   * authored catalogue content (muzzle-to-cell clearance).
    */
   muzzleOffset: CELL_SIZE / 2,
   /**

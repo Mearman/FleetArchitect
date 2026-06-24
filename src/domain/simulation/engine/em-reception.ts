@@ -32,6 +32,7 @@ import { hasAnomaly } from "@/domain/anomaly";
 import { EM_HULL_AMBIENT_EMISSION, EM_RECEIVER_NOISE_FLOOR } from "./em-anchors";
 import { SIM, SPEED_OF_LIGHT_M_PER_TICK } from "./config";
 import { continuousContact, type Emission } from "./emissions";
+import { cellWorldPosition } from "@/domain/simulation/spatial-hash";
 import {
   dopplerFactor,
   gravitationalRedshift,
@@ -230,10 +231,15 @@ export function recordEmissions(
     if (sensor.mode !== "active" && sensor.mode !== "hybrid") continue;
     const emit = sensor.emitStrength;
     if (emit === undefined || emit <= 0) continue;
+    // The active-sensor emission originates at the sensor module's cell
+    // (rotated into world by the ship's pose), not the ship centre — the dish
+    // is the source of the ping. (The baseline hull emission above stays at the
+    // ship centre: it is a whole-hull ambient, not a module emission.)
+    const cell = cellWorldPosition(ship.x, ship.y, ship.facing, m.x, m.y);
     emissions.push({
       sourceId: ship.instanceId,
-      x: ship.x,
-      y: ship.y,
+      x: cell.wx,
+      y: cell.wy,
       strength: emit,
       t0: tick,
     });

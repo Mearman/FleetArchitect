@@ -45,6 +45,56 @@ export function buildShipCellHash(ships: readonly SimShip[]): SpatialHash<ShipCe
 }
 
 /**
+ * The frontmost occupied cell a segment passes within `radius` of, or
+ * undefined. The segment is the path a moving point (a projectile) swept this
+ * tick; a cell is struck when its world centre lies within `radius` of the
+ * segment, and the FRONTMOST — smallest projection along the travel direction,
+ * ties broken by nearest approach — is the entry cell. This is the swept
+ * anti-tunnelling collision: a projectile moving many cells per tick still
+ * strikes the first cell its path crosses, where a single point sample at the
+ * post-move position would step clean past it. Deterministic:
+ * `candidatesAlongSegment` is an order-stable superset and the distance and
+ * projection tests are pure, with ties resolved by first-found order.
+ */
+export function nearestCellAlongSegment(
+  hash: SpatialHash<ShipCell>,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  radius: number,
+  accept: (cell: ShipCell) => boolean,
+): ShipCell | undefined {
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  const segLenSq = dx * dx + dy * dy;
+  const radiusSq = radius * radius;
+  let best: ShipCell | undefined;
+  let bestProj = Infinity;
+  let bestDistSq = Infinity;
+  for (const entry of hash.candidatesAlongSegment(x0, y0, x1, y1, radius)) {
+    const cell = entry.payload;
+    if (!accept(cell)) continue;
+    // Projection of the cell centre onto the segment, clamped to [0,1] (the
+    // reachable span); the closest point on the segment to the cell.
+    let t = segLenSq > 0 ? ((cell.wx - x0) * dx + (cell.wy - y0) * dy) / segLenSq : 0;
+    if (t < 0) t = 0;
+    else if (t > 1) t = 1;
+    const px = x0 + t * dx;
+    const py = y0 + t * dy;
+    const dSq = (cell.wx - px) * (cell.wx - px) + (cell.wy - py) * (cell.wy - py);
+    if (dSq > radiusSq) continue;
+    // Frontmost: smallest projection (earliest reach); tie-break nearest approach.
+    if (t < bestProj || (t === bestProj && dSq < bestDistSq)) {
+      best = cell;
+      bestProj = t;
+      bestDistSq = dSq;
+    }
+  }
+  return best;
+}
+
+/**
  * Two cells overlap when their world-space centres are within one cell size of
  * each other — each cell is treated as a disc of radius `CELL_SIZE/2`, so the
  * discs intersect when the centre distance is below `CELL_SIZE`. The contact

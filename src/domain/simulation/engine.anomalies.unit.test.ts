@@ -79,7 +79,12 @@ function moduleOf(
     reactiveWindow: 0,
     surface: "deck",
     edges: OPEN_EDGES,
-    mass: 5,
+    // A realistic per-cell mass: a modular ship's mass is the SUM of its module
+    // masses (stats.mass is ignored for modular ships). At mass 5 a ship of a
+    // few cells (~25 t) is so light that its own continuous gun recoil
+    // accelerates it backward past muzzle speed, so under correct
+    // inherited-velocity ballistics its rounds can no longer reach the target.
+    mass: 50000,
     powerDraw: 0,
     crewRequired: 0,
     effect,

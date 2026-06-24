@@ -5,6 +5,7 @@
 
 import { isOperational } from "./crew";
 import { applyDamage } from "./damage";
+import { cellWorldPosition } from "@/domain/simulation/spatial-hash";
 import type { SimMine, SimShip } from "./types";
 
 /**
@@ -88,13 +89,16 @@ export function layMines(
     );
     if (hasLiveBatch) continue;
     const effect = m.effect;
+    // Mines emanate from the mine-layer module's cell (rotated into world by
+    // the ship's pose), with the deterministic batch ring spread around it.
+    const cell = cellWorldPosition(ship.x, ship.y, ship.facing, m.x, m.y);
     for (let i = 0; i < effect.mineCount; i++) {
       const { dx, dy } = mineBatchOffset(i, ringSpacing);
       mines.push({
         id: nextMineId(ship.instanceId, tick),
         side: ship.side,
-        x: ship.x + dx,
-        y: ship.y + dy,
+        x: cell.wx + dx,
+        y: cell.wy + dy,
         ownerInstanceId: ship.instanceId,
         ownerSlotId: m.slotId,
         armingLeft: effect.armingDelay,

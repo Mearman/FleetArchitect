@@ -16,6 +16,7 @@
 
 import type { Contact, SimShip } from "./types";
 import { SPEED_OF_LIGHT_M_PER_TICK } from "./config";
+import { cellWorldPosition } from "@/domain/simulation/spatial-hash";
 import {
   lightTravelTicks,
   pulseIlluminates,
@@ -120,12 +121,16 @@ export function stepPulses(
       if (range <= 0) continue;
       const arc = effectiveSensorArc(unit);
       const bearing = effectiveSensorBearing(unit);
+      // The pulse originates at the sensor module's cell (rotated into world by
+      // the ship's pose), not the ship centre — the radar dish is where the
+      // ping leaves the hull.
+      const cell = cellWorldPosition(ship.x, ship.y, ship.facing, unit.module.x, unit.module.y);
       nextId += 1;
       advanced.push({
         id: nextId,
         emitterId: ship.instanceId,
-        originX: ship.x,
-        originY: ship.y,
+        originX: cell.wx,
+        originY: cell.wy,
         radius: 0,
         bearing,
         arc,
