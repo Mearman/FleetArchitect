@@ -6,6 +6,7 @@ import {
   reachableFrom,
 } from "@/domain/grid";
 import { growArmourHull, padGrid } from "@/domain/hull-armour";
+import { cellCoverageFractions } from "@/domain/hull-outline";
 import { computeCompartments } from "@/domain/interior";
 import type { LayerMaterial } from "@/schema/armor";
 import type { GridCell, HardwireResource } from "@/schema/grid";
@@ -278,6 +279,10 @@ export function analyseShipDesign(
   // so mass, HP, and compartment counts all reflect the armoured hull without
   // changing the saved design.
   const grid = growArmourHull(padGrid(design.grid, 1));
+  // Fraction of each cell inside the bevelled hull outline: a cell the render
+  // crop truncates to a partial tile contributes proportional structure, so the
+  // designer's HP matches the per-cell HP resolveModules gives the engine.
+  const coverage = cellCoverageFractions(grid);
   const faults: DesignFault[] = [];
   // Connectivity and cell-count validation operates on the AUTHORED design,
   // not the grown grid. Growing armour can bridge gaps between disconnected
@@ -299,20 +304,23 @@ export function analyseShipDesign(
     if (cell.kind !== "solid") continue;
     const slotId = `cell-${col}-${row}`;
 
-    // Surface + substrate HP contribution. A cell with an unknown layer
-    // material reports a fault rather than silently contributing zero.
+    // Surface + substrate HP contribution, scaled by the cell's coverage: a
+    // tile the render crop truncates to a partial area carries proportional HP.
+    // A cell with an unknown layer material reports a fault rather than silently
+    // contributing zero.
+    const frac = coverage[row * grid.cols + col]!;
     const substrate = catalog.substrateMaterial(design.faction);
     if (substrate === undefined) {
       faults.push({ kind: "unknownLayerMaterial", severity: "error", col, row, layer: "substrate" });
     } else {
-      stats.structure += substrate.hp;
+      stats.structure += substrate.hp * frac;
     }
     if (cell.surface === "armor") {
       const armor = catalog.armorMaterial(design.faction);
       if (armor === undefined) {
         faults.push({ kind: "unknownLayerMaterial", severity: "error", col, row, layer: "armor" });
       } else {
-        stats.structure += armor.hp;
+        stats.structure += armor.hp * frac;
         stats.damageReduction = Math.max(stats.damageReduction, armor.damageReduction);
       }
     } else if (cell.surface === "deck") {
@@ -320,7 +328,7 @@ export function analyseShipDesign(
       if (deck === undefined) {
         faults.push({ kind: "unknownLayerMaterial", severity: "error", col, row, layer: "deck" });
       } else {
-        stats.structure += deck.hp;
+        stats.structure += deck.hp * frac;
       }
     }
 

@@ -8,6 +8,7 @@ import {
   type IPoint,
   type Shell,
 } from "@/domain/outline";
+import { CELL_SIZE, cellToLocal } from "@/domain/grid";
 
 /**
  * The bevelled hull outline used for *rendering* (collision/hitscan stays on the
@@ -416,4 +417,148 @@ export function computeHullOutline(grid: TileGrid): Vec2[][] {
     .map((seed) => bevelLoop(seed, built, isArmourCorner))
     .filter((loop) => loop.length >= 3)
     .map((loop) => toMetreLoop(loop, built.cols, built.rows));
+}
+
+// ---------------------------------------------------------------------------
+// Per-cell coverage: fraction of each cell inside the bevelled hull outline.
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether every 8-neighbour of (col, row) is a solid cell (and the cell is not
+ * on the grid border). Such a cell sits in the interior, nowhere near the hull
+ * boundary the bevel only ever cuts into, so it is fully inside the outline.
+ */
+function allNeighboursSolid(grid: TileGrid, col: number, row: number): boolean {
+  const { cols, rows } = grid;
+  for (let dy = -1; dy <= 1; dy += 1) {
+    for (let dx = -1; dx <= 1; dx += 1) {
+      if (dx === 0 && dy === 0) continue;
+      const nc = col + dx;
+      const nr = row + dy;
+      if (nc < 0 || nr < 0 || nc >= cols || nr >= rows) return false;
+      const cell = grid.cells[nr * cols + nc];
+      if (cell === undefined || cell.kind !== "solid") return false;
+    }
+  }
+  return true;
+}
+
+/** Clip a subject polygon against one half-plane, returning the inside portion.
+ *  Sutherland–Hodgman: the clip (the cell square) is convex, so the subject — a
+ *  hull outline loop, possibly non-convex — is handled correctly even where a
+ *  concavity splits it; the rejoined polygon's signed area is still the true
+ *  intersection area (the bridge edges cancel). */
+function clipHalfPlane(
+  subject: readonly Vec2[],
+  inside: (p: Vec2) => boolean,
+  crossing: (a: Vec2, b: Vec2) => Vec2,
+): Vec2[] {
+  if (subject.length === 0) return [];
+  const out: Vec2[] = [];
+  let prev = subject[subject.length - 1]!;
+  for (const cur of subject) {
+    const curIn = inside(cur);
+    if (curIn) {
+      if (!inside(prev)) out.push(crossing(prev, cur));
+      out.push(cur);
+    } else if (inside(prev)) {
+      out.push(crossing(prev, cur));
+    }
+    prev = cur;
+  }
+  return out;
+}
+
+/** Clip a polygon to the axis-aligned square [xmin,xmax]×[ymin,ymax]. `crossing`
+ *  is only invoked for a segment whose ends straddle the plane, so the divisor
+ *  is never zero (a segment parallel to the plane cannot straddle it). Every
+ *  vertex and crossing lands on integer/half-integer metres, so the area that
+ *  follows is exact under float arithmetic. */
+function clipToSquare(
+  subject: readonly Vec2[],
+  xmin: number,
+  xmax: number,
+  ymin: number,
+  ymax: number,
+): Vec2[] {
+  let p = clipHalfPlane(subject, (q) => q.x >= xmin, (a, b) => ({
+    x: xmin,
+    y: a.y + ((xmin - a.x) * (b.y - a.y)) / (b.x - a.x),
+  }));
+  p = clipHalfPlane(p, (q) => q.x <= xmax, (a, b) => ({
+    x: xmax,
+    y: a.y + ((xmax - a.x) * (b.y - a.y)) / (b.x - a.x),
+  }));
+  p = clipHalfPlane(p, (q) => q.y >= ymin, (a, b) => ({
+    y: ymin,
+    x: a.x + ((ymin - a.y) * (b.x - a.x)) / (b.y - a.y),
+  }));
+  p = clipHalfPlane(p, (q) => q.y <= ymax, (a, b) => ({
+    y: ymax,
+    x: a.x + ((ymax - a.y) * (b.x - a.x)) / (b.y - a.y),
+  }));
+  return p;
+}
+
+/** Twice the signed area of a polygon (positive for clockwise, the hull's outer
+ *  loop convention). */
+function signedArea2(poly: readonly Vec2[]): number {
+  let s = 0;
+  for (let i = 0, n = poly.length; i < n; i += 1) {
+    const a = poly[i]!;
+    const b = poly[(i + 1) % n]!;
+    s += a.x * b.y - b.x * a.y;
+  }
+  return s;
+}
+
+/**
+ * The fraction (0..1) of each cell's square that lies inside the bevelled hull
+ * outline — the same outline the render-time cell crop clips to. A cell cropped
+ * to (say) half its visible area is therefore given half its surface + substrate
+ * HP, so truncated armour tiles carry proportional HP rather than a full cell's.
+ *
+ * Interior cells (every 8-neighbour solid) short-circuit to 1: the bevel only
+ * cuts into boundary cells. Boundary cells are measured exactly by clipping each
+ * outline loop to the cell square (Sutherland–Hodgman) and taking the signed
+ * area — outer loops add, holes subtract — so a chamfered corner measures
+ * precisely 0.5. Deterministic, no RNG. Indexed by `row * cols + col`. Reused by
+ * `analyseShipDesign` (structure) and `resolveModules` (per-cell HP) so the
+ * designer's numbers match battle HP.
+ */
+export function cellCoverageFractions(grid: TileGrid): number[] {
+  const { cols, rows } = grid;
+  const loops = computeHullOutline(grid);
+  const half = CELL_SIZE / 2;
+  const cellArea = CELL_SIZE * CELL_SIZE;
+  const fractions = new Array<number>(cols * rows).fill(0);
+  for (let r = 0; r < rows; r += 1) {
+    for (let c = 0; c < cols; c += 1) {
+      const idx = r * cols + c;
+      const cell = grid.cells[idx];
+      if (cell === undefined || cell.kind !== "solid") continue;
+      if (allNeighboursSolid(grid, c, r)) {
+        fractions[idx] = 1;
+        continue;
+      }
+      const centre = cellToLocal(c, r, grid);
+      // Sum the signed area of each loop clipped to this cell: clockwise outer
+      // loops contribute positively, counter-clockwise holes subtract.
+      let area2 = 0;
+      for (const loop of loops) {
+        if (loop.length < 3) continue;
+        const clipped = clipToSquare(
+          loop,
+          centre.x - half,
+          centre.x + half,
+          centre.y - half,
+          centre.y + half,
+        );
+        if (clipped.length < 3) continue;
+        area2 += signedArea2(clipped);
+      }
+      fractions[idx] = area2 / 2 / cellArea;
+    }
+  }
+  return fractions;
 }

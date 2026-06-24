@@ -16,9 +16,10 @@ const WALL: CellEdges = { n: "wall", e: "wall", s: "wall", w: "wall", doorStates
 /**
  * Build a 3×3 grid with a single ARMOUR cell at the centre (1,1). Only armour
  * seeds growth, so after padGrid(1) + growArmourHull the four orthogonal
- * neighbours of (2,2) in the 5×5 padded grid become grown armour cells — 1
- * authored + 4 grown = 5 armour cells total. The 4 grown cells are produced by
- * the auto-grow, not present in the saved design.
+ * neighbours of (2,2) in the 5×5 padded grid become grown armour cells, and the
+ * four diagonal corners of that ring fill too — 1 authored + 4 ortho + 4 corners
+ * = 9 armour cells total. The 8 grown cells are produced by the auto-grow, not
+ * present in the saved design.
  */
 function singleCellDesign(): ShipDesign {
   const cells: GridCell[] = [
@@ -51,9 +52,10 @@ describe("hull-armour integration: analyseShipDesign includes auto-derived armou
 
     // After padGrid(1) + growArmourHull the grown grid is 5×5: the single
     // authored armour cell at (2,2) seeds armour on its 4 orthogonal neighbours
-    // — (1,2), (3,2), (2,1), (2,3) — for 5 armour cells total. Without growth the
-    // ship would be the one authored armour cell. Assert the grown total exceeds
-    // that single-cell HP (derived from the catalog, no magic number).
+    // — (1,2), (3,2), (2,1), (2,3) — and the 4 diagonal corners of that ring,
+    // for 9 armour cells total. Without growth the ship would be the one authored
+    // armour cell. Assert the grown total exceeds that single-cell HP (derived
+    // from the catalog, no magic number).
     const cat = catalog();
     const substrate = cat.substrateMaterial("Terran");
     const armor = cat.armorMaterial("Terran");
@@ -68,10 +70,10 @@ describe("hull-armour integration: analyseShipDesign includes auto-derived armou
     const design = singleCellDesign();
     const { stats } = analyseShipDesign(design, catalog());
 
-    // The single deck cell contributes substrate + deck mass (exact values
-    // depend on physics.ts anchors). Each of the 4 grown armour cells
-    // contributes substrate + armor mass. Assert the total mass exceeds the
-    // single-cell-only mass by at least 1 kg (armour is significantly heavier).
+    // The single authored armour cell and each of the 8 grown armour cells
+    // contribute substrate + armor mass (exact values depend on physics.ts
+    // anchors). Assert the total mass exceeds the single-cell-only mass by at
+    // least 1 kg (armour is significantly heavier).
     // We derive the bare-cell mass from the catalog directly so no magic number.
     const cat = catalog();
     const substrate = cat.substrateMaterial("Terran");
@@ -101,8 +103,10 @@ describe("hull-armour integration: analyseShipDesign includes auto-derived armou
     if (substrate === undefined || armor === undefined) {
       throw new Error("Terran layer materials missing from catalog");
     }
-    // 1 authored + 4 grown = 5 armour cells, each substrate + armor HP.
-    const expected = 5 * (substrate.hp + armor.hp);
+    // 9 armour cells (1 authored + 4 ortho + 4 corners), but the 4 corner cells
+    // are chamfered to half their visible area so they carry half HP: 5 full +
+    // 4 half = 7 cell-equivalents, each substrate + armor HP.
+    const expected = 7 * (substrate.hp + armor.hp);
     expect(stats.structure).toBe(expected);
   });
 

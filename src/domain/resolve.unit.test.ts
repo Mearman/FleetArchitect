@@ -87,14 +87,26 @@ describe("resolveFleetToCombatShips (grid)", () => {
   });
 
   it("resolves armor cells to a 'hull'-effect module carrying the armor layer material's mass + surface HP", () => {
+    // The armour cell sits at the centre of a 3x3 of deck so it is INTERIOR
+    // (every 8-neighbour solid): the bevel never clips it, so it carries the
+    // armour material's full HP — the clean expression of the material→HP map.
+    // (Boundary cells carry material HP scaled by their outline coverage, exercised
+    // by hull-outline / hull-armour integration tests.)
     const d: ShipDesign = {
       ...design(),
       grid: {
-        cols: 2,
-        rows: 1,
+        cols: 3,
+        rows: 3,
         cells: [
-          { kind: "solid", substrate: true, surface: "armor", edges: WALL },
+          { kind: "solid", substrate: true, surface: "deck", edges: OPEN },
+          { kind: "solid", substrate: true, surface: "deck", edges: OPEN },
           { kind: "solid", substrate: true, surface: "deck", edges: OPEN, equipment: { moduleId: "mod-reactor-fusion", facing: 0 } },
+          { kind: "solid", substrate: true, surface: "deck", edges: OPEN },
+          { kind: "solid", substrate: true, surface: "armor", edges: WALL },
+          { kind: "solid", substrate: true, surface: "deck", edges: OPEN },
+          { kind: "solid", substrate: true, surface: "deck", edges: OPEN },
+          { kind: "solid", substrate: true, surface: "deck", edges: OPEN },
+          { kind: "solid", substrate: true, surface: "deck", edges: OPEN },
         ],
         connections: [],
       },

@@ -1,6 +1,7 @@
 import { analyseShipDesign } from "@/domain/stats";
 import { CELL_SIZE, cellToLocal, deriveClassification, deriveRadius, footprint } from "@/domain/grid";
 import { computeOutline, extractShell } from "@/domain/outline";
+import { cellCoverageFractions } from "@/domain/hull-outline";
 import { growArmourHull, padGrid } from "@/domain/hull-armour";
 import type { Catalog } from "@/domain/catalog";
 import type {
@@ -357,6 +358,10 @@ export function resolveFleetToCombatShips(
  */
 function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] {
   const grid = design.grid;
+  // Fraction of each cell inside the bevelled hull outline: a cell the render
+  // crop truncates to a partial tile carries proportional HP, so a corner cut
+  // to half its area hits like half a plate. Mass stays whole (full inertia).
+  const coverage = cellCoverageFractions(grid);
   const out: ResolvedModule[] = [];
   for (const { col, row } of footprint(grid)) {
     const cell = grid.cells[row * grid.cols + col];
@@ -366,8 +371,9 @@ function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] 
 
     const substrate = catalog.substrateMaterial(design.faction);
     const surface = surfaceMaterialFor(cell.surface, catalog, design.faction);
-    const maxSurfaceHp = surface?.hp ?? 0;
-    const maxSubstrateHp = substrate?.hp ?? 0;
+    const frac = coverage[row * grid.cols + col]!;
+    const maxSurfaceHp = (surface?.hp ?? 0) * frac;
+    const maxSubstrateHp = (substrate?.hp ?? 0) * frac;
     const surfaceMass = surface?.mass ?? 0;
     const substrateMass = substrate?.mass ?? 0;
     // The cell's surface (armour) damage-reduction and reactive-armour fields,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { TileGrid } from "@/schema/grid";
 import { presetDesigns } from "@/data/presets";
-import { computeHullOutline } from "@/domain/hull-outline";
+import { cellCoverageFractions, computeHullOutline } from "@/domain/hull-outline";
 import { CELL_SIZE } from "@/domain/grid";
 import { pointInPolygon } from "@/domain/outline";
 
@@ -464,5 +464,33 @@ describe("computeHullOutline — excludes bare substrate", () => {
     };
     expect(strictlyInside(centreOf(3, 1))).toBe(false); // bare spur excluded
     expect(strictlyInside(centreOf(1, 1))).toBe(true); // armour body wrapped
+  });
+});
+
+describe("cellCoverageFractions — truncated tiles carry proportional coverage", () => {
+  it("a block's chamfered corners measure exactly 0.5; interior and edge cells 1", () => {
+    const grid = armourGrid(["###", "###", "###"]);
+    const f = cellCoverageFractions(grid);
+    const at = (c: number, r: number): number => f[r * grid.cols + c]!;
+    // Centre cell is interior (8 solid neighbours): fully covered, fast-path.
+    expect(at(1, 1)).toBe(1);
+    // Edge-mid cells sit on a straight side, unclipped: fully covered.
+    expect(at(0, 1)).toBe(1);
+    expect(at(1, 0)).toBe(1);
+    // Corner cells are chamfered to a half-area triangle: exactly 0.5.
+    expect(at(0, 0)).toBe(0.5);
+    expect(at(2, 0)).toBe(0.5);
+    expect(at(2, 2)).toBe(0.5);
+  });
+
+  it("is deterministic across calls", () => {
+    const grid = armourGrid(["###", "###", "###"]);
+    expect(cellCoverageFractions(grid)).toEqual(cellCoverageFractions(grid));
+  });
+
+  it("an empty cell has coverage 0", () => {
+    const grid = armourGrid([".#.", "###", ".#."]);
+    const f = cellCoverageFractions(grid);
+    expect(f[0]).toBe(0); // the empty corner (index 0)
   });
 });

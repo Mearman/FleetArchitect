@@ -5,11 +5,12 @@ import { growArmourHull, padGrid } from "@/domain/hull-armour";
 
 /**
  * Contract for the octilinear armour grow. Only ARMOUR seeds growth — the hull
- * adds armour on the four orthogonal sides of existing armour but leaves
- * diagonal corners empty (the cut-corner silhouette), grows nothing for a
- * deck-only ship, never armours an enclosed interior hole, never mutates its
- * input, and is deterministic. `padGrid` grows the canvas on every side so a
- * flush-to-border ship gains room to grow.
+ * adds armour on the four orthogonal sides of existing armour AND fills the
+ * diagonal corners (which the render-time bevel + cell crop turn into partial
+ * armour blocks, so the cut-corner silhouette is filled rather than gaping),
+ * grows nothing for a deck-only ship, never armours an enclosed interior hole,
+ * never mutates its input, and is deterministic. `padGrid` grows the canvas on
+ * every side so a flush-to-border ship gains room to grow.
  */
 
 const EMPTY: GridCell = { kind: "empty" };
@@ -63,7 +64,7 @@ function isEmpty(cell: GridCell | undefined): boolean {
 }
 
 describe("growArmourHull", () => {
-  it("armours the four orthogonal sides of a centred block, leaving diagonal corners empty", () => {
+  it("armours the four orthogonal sides and the diagonal corners of a centred block", () => {
     // 3x3 deck block centred in a 5x5 grid (1-cell empty border).
     const grid = gridFromAscii([
       ".....",
@@ -98,7 +99,9 @@ describe("growArmourHull", () => {
       expect(isArmour(at(out, c, r))).toBe(true);
     }
 
-    // The four diagonal corner cells of the border stay empty.
+    // The four diagonal corner cells of the border are grown into armour: the
+    // bevel chamfers each to a sqrt-2 facet and the cell crop clips it to a
+    // partial block, filling the cut-corner silhouette.
     const corners: ReadonlyArray<readonly [number, number]> = [
       [0, 0],
       [4, 0],
@@ -106,12 +109,13 @@ describe("growArmourHull", () => {
       [4, 4],
     ];
     for (const [c, r] of corners) {
-      expect(isEmpty(at(out, c, r))).toBe(true);
+      expect(isArmour(at(out, c, r))).toBe(true);
     }
 
-    // 9 armour seed cells (the 3x3 block) + 12 grown side cells = 21.
+    // 9 armour seed cells (the 3x3 block) + 12 grown side cells + 4 grown
+    // corners = 25.
     const armourCount = out.cells.filter((cell) => isArmour(cell)).length;
-    expect(armourCount).toBe(21);
+    expect(armourCount).toBe(25);
   });
 
   it("armour cells are solid armour with all edges walled", () => {
@@ -258,15 +262,15 @@ describe("padGrid", () => {
     expect(growArmourHull(tight).cells.filter((c) => isArmour(c)).length).toBe(1); // only itself
 
     // After padding by one, the armour sits at (1,1) of a 3x3 grid and grows a
-    // shell on all four orthogonal sides.
+    // shell on all four sides plus the diagonal corners.
     const padded = padGrid(tight, 1);
     const out = growArmourHull(padded);
     expect(isArmour(at(out, 1, 0))).toBe(true); // N
     expect(isArmour(at(out, 2, 1))).toBe(true); // E
     expect(isArmour(at(out, 1, 2))).toBe(true); // S
     expect(isArmour(at(out, 0, 1))).toBe(true); // W
-    // Diagonal corners stay empty.
-    expect(isEmpty(at(out, 0, 0))).toBe(true);
-    expect(isEmpty(at(out, 2, 2))).toBe(true);
+    // Diagonal corners are grown into armour (partial blocks after the bevel).
+    expect(isArmour(at(out, 0, 0))).toBe(true);
+    expect(isArmour(at(out, 2, 2))).toBe(true);
   });
 });

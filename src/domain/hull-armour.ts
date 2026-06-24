@@ -64,6 +64,34 @@ const ORTHO: ReadonlyArray<readonly [number, number]> = [
   [-1, 0],
 ];
 
+/** The four diagonal (NW/NE/SW/SE) neighbour offsets. */
+const DIAGONALS: ReadonlyArray<readonly [number, number]> = [
+  [-1, -1],
+  [1, -1],
+  [-1, 1],
+  [1, 1],
+];
+
+/**
+ * Whether (col, row) is the missing fourth cell of a 2x2 block whose other three
+ * cells are armour — i.e. a CONVEX corner of the ring. For some diagonal
+ * (dx, dy), both orthogonal flankers (col+dx, row) and (col, row+dy) and the
+ * opposite corner (col+dx, row+dy) are armour. A concave notch has only two of
+ * the four, so it is left alone (and stays bevel-smoothed).
+ */
+function isConvexCorner(grid: TileGrid, col: number, row: number): boolean {
+  for (const [dx, dy] of DIAGONALS) {
+    if (
+      isArmour(grid, col + dx, row + dy) &&
+      isArmour(grid, col + dx, row) &&
+      isArmour(grid, col, row + dy)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Return a NEW grid with `pad` empty cells added on every side, so a ship flush
  * to the original border gains room for the hull to grow. New dimensions are
@@ -148,14 +176,28 @@ function exteriorEmpties(grid: TileGrid): boolean[] {
  * Grow an octilinear armour hull around a ship's plating, returning a NEW grid
  * of the same dimensions with the candidate cells set to fresh armour.
  *
- * A candidate is an EXTERIOR empty cell (reachable from the border by a
- * 4-connected flood, so enclosed interior holes are left alone) that is
- * 4-connected-adjacent (N/E/S/W) to at least one ARMOUR cell. Only armour seeds
- * growth, so deck-only ships grow nothing — the shell extends the armour the
- * designer placed. Restricting to orthogonal adjacency naturally leaves diagonal
- * corner cells empty, giving the octilinear cut-corner silhouette; diagonal
- * corners are never filled. (Any solid cell — deck included — still BLOCKS the
- * exterior flood, so an enclosed empty stays interior regardless of surface.)
+ * Two passes:
+ *
+ *   1. ORTHOGONAL RING — an EXTERIOR empty cell (reachable from the border by a
+ *      4-connected flood, so enclosed interior holes are left alone) that is
+ *      4-connected-adjacent (N/E/S/W) to at least one ARMOUR cell. Seeds are
+ *      read from the INPUT grid, so this is a single one-cell ring, not
+ *      iterative growth. Only armour seeds growth, so deck-only ships grow
+ *      nothing — the shell extends the armour the designer placed.
+ *
+ *   2. DIAGONAL CORNERS — an exterior empty cell that is the missing fourth of a
+ *      2x2 block whose other three cells are armour (`isConvexCorner`): a convex
+ *      corner of the ring. Filling it lets the render-time bevel chamfer the
+ *      corner to a sqrt-2 facet and the cell crop clip it to a PARTIAL armour
+ *      block, so the cut-corner silhouette is filled instead of gaping. Concave
+ *      notches (only 2-of-4) stay empty and remain bevel-smoothed. Read against
+ *      the pass-1 grid (not the input) so a lone authored cell's ring gets its
+ *      corners too. Iterated to fixpoint; it does not cascade — filling a convex
+ *      corner creates no new 3-of-4 corner further out — but the loop makes that
+ *      a proof rather than an assumption.
+ *
+ * Any solid cell — deck included — still BLOCKS the exterior flood, so an
+ * enclosed empty stays interior regardless of surface.
  *
  * Does NOT resize. If the footprint touches the grid border there is simply no
  * room to grow there; callers that need a guaranteed border `padGrid` first.
@@ -163,11 +205,13 @@ function exteriorEmpties(grid: TileGrid): boolean[] {
  */
 export function growArmourHull(grid: TileGrid): TileGrid {
   const { cols, rows } = grid;
-  const exterior = exteriorEmpties(grid);
+
+  // Pass 1: orthogonal ring, seeded by the input grid's armour.
+  const ringExterior = exteriorEmpties(grid);
   const cells: GridCell[] = grid.cells.map((cell) => cell);
   for (let r = 0; r < rows; r += 1) {
     for (let c = 0; c < cols; c += 1) {
-      if (!exterior[r * cols + c]) continue;
+      if (!ringExterior[r * cols + c]) continue;
       let adjacent = false;
       for (const [dx, dy] of ORTHO) {
         if (isArmour(grid, c + dx, r + dy)) {
@@ -178,10 +222,31 @@ export function growArmourHull(grid: TileGrid): TileGrid {
       if (adjacent) cells[r * cols + c] = freshArmourCell();
     }
   }
+
+  // Pass 2: diagonal corners, iterated to fixpoint against the grown grid. Each
+  // iteration snapshots the current cells so reads are consistent within it.
+  let grown = cells;
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const snapshot: TileGrid = { cols, rows, cells: grown, connections: grid.connections };
+    const exterior = exteriorEmpties(snapshot);
+    const next = grown.slice();
+    for (let r = 0; r < rows; r += 1) {
+      for (let c = 0; c < cols; c += 1) {
+        if (!exterior[r * cols + c]) continue;
+        if (!isConvexCorner(snapshot, c, r)) continue;
+        next[r * cols + c] = freshArmourCell();
+        changed = true;
+      }
+    }
+    grown = next;
+  }
+
   return {
     cols,
     rows,
-    cells,
+    cells: grown,
     connections: grid.connections.map((cn) => ({
       from: { col: cn.from.col, row: cn.from.row },
       to: { col: cn.to.col, row: cn.to.row },
