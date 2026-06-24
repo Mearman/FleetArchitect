@@ -1,6 +1,7 @@
 import {
   Badge,
   Box,
+  Button,
   Center,
   Group,
   Loader,
@@ -12,16 +13,20 @@ import { notifications } from "@mantine/notifications";
 import {
   IconMaximize,
   IconMinus,
+  IconPlayerPause,
+  IconPlayerPlay,
+  IconPlayerStop,
   IconPlus,
   IconSwords,
 } from "@tabler/icons-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TICKS_PER_SECOND } from "@/domain/simulation/types";
 import { useFleets, useShipDesigns } from "@/ui/hooks/storage";
 import { normaliseAnomalies } from "@/schema/battle";
 import type { BattleAnomalyKind, BattleFrame } from "@/schema/battle";
 import type { DescriptorMap } from "@/ui/cellLayout";
 import { interpolateFrame } from "@/ui/interpolateFrame";
+import { usePreferences } from "@/ui/preferences/PreferencesContext";
 import { DEFAULT_CAMERA } from "./battleCamera";
 import type { Camera } from "./battleCamera";
 import { ANOMALY_LABEL } from "./battleConstants";
@@ -37,6 +42,7 @@ import { useBattleCanvas } from "./useBattleCanvas";
 import { useBattlePlayback } from "./useBattlePlayback";
 import { useBattleSimulation } from "./useBattleSimulation";
 import { useBattleUrlSync } from "./useBattleUrlSync";
+import type { SharedBattleMatchup } from "./useBattleUrlSync";
 import { AnnunciatorButton, AnnunciatorLamp } from "@/ui/components/Annunciator";
 import { panelScrews } from "@/ui/components/panel.css";
 import { screenPowerOn } from "@/ui/fx/CrtOverlay.css";
@@ -51,6 +57,24 @@ export function BattleRoute() {
   const [defenderId, setDefenderId] = useState<string | null>(null);
   const [anomalies, setAnomalies] = useState<BattleAnomalyKind[]>([]);
   const [seed, setSeed] = useState(1);
+
+  /**
+   * User preferences governing auto-start behaviour. Read once at the top of
+   * the route so both the URL-sync effect and the onFirstBatch/onComplete gates
+   * see the same persisted values on the first render.
+   */
+  const { preferences: prefs } = usePreferences();
+
+  /**
+   * A shared-battle matchup held for manual start when auto-start is off. The
+   * URL-sync effect populates this in lieu of firing `startBattle` itself; the
+   * idle-screen Start prompt drives `simulation.startBattle` from it and clears
+   * it so a subsequent local engage does not resurrect the held link.
+   */
+  const [heldMatchup, setHeldMatchup] = useState<SharedBattleMatchup | null>(null);
+  const onSharedBattleHeld = useCallback((m: SharedBattleMatchup) => {
+    setHeldMatchup(m);
+  }, []);
 
   /** Active tab within the controls panel. */
   const [controlsTab, setControlsTab] = useState<"layers" | "modules">("layers");
@@ -117,6 +141,8 @@ export function BattleRoute() {
     startBattle: (attacker, defender, chosenAnomalies, chosenSeed, allDesigns) => {
       void simulation.startBattle(attacker, defender, chosenAnomalies, chosenSeed, allDesigns);
     },
+    autoStart: prefs.autoStartComputationOnLoad,
+    onSharedBattleHeld,
   });
 
   /**
@@ -213,10 +239,33 @@ export function BattleRoute() {
       onFirstBatch: () => {
         playback.setPlaybackTime(0);
         camera.setCamera(DEFAULT_CAMERA);
-        playback.setPlaying(true);
+        // Only auto-start playback on the first batch when the user has it on
+        // AND wants it to trigger when the buffer is ready. The "onComplete"
+        // mode is handled by the completion effect below.
+        if (prefs.autoStartPlayback && prefs.playbackStartMode === "whenBuffered") {
+          playback.setPlaying(true);
+        }
       },
     };
-  }, [playback, camera]);
+  }, [playback, camera, prefs]);
+
+  /**
+   * Ref guarding the on-completion auto-start effect from re-firing when prefs
+   * change after a result has already landed. Holds the id of the result the
+   * effect last auto-started playback for; the effect bails when it matches the
+   * current result so a preference toggle does not restart a finished battle.
+   */
+  const autoStartedResultIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (simulation.result === null) return;
+    if (autoStartedResultIdRef.current === simulation.result.id) return;
+    autoStartedResultIdRef.current = simulation.result.id;
+    if (prefs.autoStartPlayback && prefs.playbackStartMode === "onComplete") {
+      playbackTimeRef.current = 0;
+      playback.setPlaybackTime(0);
+      playback.setPlaying(true);
+    }
+  }, [simulation.result, prefs, playback]);
 
   /** Authoritative max tick: the streamed leading edge while computing, the
    *  final tick count once the result has landed. */
@@ -245,6 +294,7 @@ export function BattleRoute() {
       return;
     }
     void simulation.startBattle(attacker, defender, normaliseAnomalies(anomalies), seed, designs);
+    setHeldMatchup(null);
   }
 
   /**
@@ -419,7 +469,30 @@ export function BattleRoute() {
                 <CrtScreen />
                 <div className={styles.glassGlare} aria-hidden="true" />
                 <Center h="100%">
-                  {simulation.computing ? (
+                  {heldMatchup !== null ? (
+                    <Stack align="center" gap="xs">
+                      <IconSwords size={40} color="var(--mantine-color-dimmed)" />
+                      <Text c="dimmed">
+                        Shared battle loaded: {heldMatchup.attacker.name} vs{" "}
+                        {heldMatchup.defender.name}
+                      </Text>
+                      <Button
+                        onClick={() => {
+                          const m = heldMatchup;
+                          setHeldMatchup(null);
+                          void simulation.startBattle(
+                            m.attacker,
+                            m.defender,
+                            m.anomalies,
+                            m.seed,
+                            m.designs,
+                          );
+                        }}
+                      >
+                        Start
+                      </Button>
+                    </Stack>
+                  ) : simulation.computing ? (
                     <Stack align="center" gap="xs">
                       <Loader />
                       <Text c="dimmed">Computing battle…</Text>
@@ -470,13 +543,59 @@ export function BattleRoute() {
                       Fog
                     </AnnunciatorLamp>
                   )}
-                  {simulation.result === null && simulation.computing && (
-                    <BattleStatusReadout
-                      buffering={playback.buffering}
-                      computedTicks={simulation.computedTicks}
-                    />
-                  )}
+                  {simulation.result === null &&
+                    (simulation.computing || simulation.paused) && (
+                      <BattleStatusReadout
+                        paused={simulation.paused}
+                        buffering={playback.buffering}
+                        computedTicks={simulation.computedTicks}
+                      />
+                    )}
                 </Group>
+
+                {/* Computation controls: pause/resume/stop the running battle
+                    computation. Shown only while a run is active (running) or
+                    held (paused); absent on idle and complete so a finished
+                    battle has a clean bezel. */}
+                {(simulation.computeStatus === "running" ||
+                  simulation.computeStatus === "paused") && (
+                  <Group className={bezelGroup} gap={6}>
+                    {simulation.computeStatus === "running" ? (
+                      <Tooltip label="Pause computation">
+                        <AnnunciatorButton
+                          icon={<IconPlayerPause size={14} />}
+                          aria-label="Pause computation"
+                          onClick={simulation.pauseComputation}
+                        >
+                          Pause
+                        </AnnunciatorButton>
+                      </Tooltip>
+                    ) : (
+                      <Tooltip label="Resume computation">
+                        <AnnunciatorButton
+                          tint="green"
+                          icon={<IconPlayerPlay size={14} />}
+                          aria-label="Resume computation"
+                          onClick={simulation.resumeComputation}
+                        >
+                          Resume
+                        </AnnunciatorButton>
+                      </Tooltip>
+                    )}
+                    <Tooltip label="Stop computation and playback">
+                      <AnnunciatorButton
+                        icon={<IconPlayerStop size={14} />}
+                        aria-label="Stop computation and playback"
+                        onClick={() => {
+                          simulation.pauseComputation();
+                          playback.setPlaying(false);
+                        }}
+                      >
+                        Stop
+                      </AnnunciatorButton>
+                    </Tooltip>
+                  </Group>
+                )}
 
                 <Group className={bezelGroup} gap={6}>
                   <Tooltip label="Zoom in">

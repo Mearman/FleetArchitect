@@ -10,6 +10,15 @@ import {
   encodeShareable,
 } from "@/sharing/data-url";
 
+/** Everything `startBattle` needs to (re)start a shared battle. */
+export interface SharedBattleMatchup {
+  attacker: Fleet;
+  defender: Fleet;
+  anomalies: BattleAnomalyKind[];
+  seed: number;
+  designs: ShipDesign[];
+}
+
 /** The designs referenced by either fleet, deduplicated by id. */
 function referencedDesigns(
   attacker: Fleet,
@@ -39,6 +48,8 @@ interface BattleUrlSyncParams {
     seed: number,
     designs: ShipDesign[],
   ) => void;
+  autoStart: boolean;
+  onSharedBattleHeld: (matchup: SharedBattleMatchup) => void;
 }
 
 /**
@@ -66,6 +77,8 @@ export function useBattleUrlSync({
   setAnomalies,
   setSeed,
   startBattle,
+  autoStart,
+  onSharedBattleHeld,
 }: BattleUrlSyncParams): void {
   const { payload } = useParams();
   const navigate = useNavigate();
@@ -107,13 +120,28 @@ export function useBattleUrlSync({
       shareable.value;
     setAnomalies(a);
     setSeed(s);
-    notifications.show({
-      title: "Replaying shared battle",
-      message: `${attacker.name} vs ${defender.name}.`,
-      color: "indigo",
-    });
-    startBattleRef.current(attacker, defender, a, s, shared);
-  }, [payload, setAnomalies, setSeed]);
+    if (autoStart) {
+      notifications.show({
+        title: "Replaying shared battle",
+        message: `${attacker.name} vs ${defender.name}.`,
+        color: "indigo",
+      });
+      startBattleRef.current(attacker, defender, a, s, shared);
+    } else {
+      notifications.show({
+        title: "Shared battle loaded",
+        message: `${attacker.name} vs ${defender.name} — press Start.`,
+        color: "indigo",
+      });
+      onSharedBattleHeld({
+        attacker,
+        defender,
+        anomalies: a,
+        seed: s,
+        designs: shared,
+      });
+    }
+  }, [payload, setAnomalies, setSeed, autoStart, onSharedBattleHeld]);
 
   // WRITE — mirror a complete local matchup into the URL.
   useEffect(() => {

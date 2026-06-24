@@ -1,7 +1,8 @@
-import { Button, Chip, Group, NativeSelect, NumberInput, Stack, Text, Tooltip } from "@mantine/core";
+import { Button, Chip, Group, NativeSelect, NumberInput, SegmentedControl, Stack, Switch, Text, Tooltip } from "@mantine/core";
 import { IconArrowsShuffle, IconRefresh, IconSwords } from "@tabler/icons-react";
 import { Link } from "react-router-dom";
 import { BattleAnomalyKind } from "@/schema/battle";
+import { usePreferences } from "@/ui/preferences/PreferencesContext";
 import { ANOMALY_LABEL } from "./battleConstants";
 
 /** Allowed anomaly kinds, as plain strings for Chip.Group narrowing. */
@@ -9,6 +10,15 @@ const ALLOWED_ANOMALY_KINDS = new Set<string>(BattleAnomalyKind.options);
 
 function isAnomalyKind(value: string): value is BattleAnomalyKind {
   return ALLOWED_ANOMALY_KINDS.has(value);
+}
+
+/** Valid `playbackStartMode` values, for SegmentedControl narrowing. */
+const PLAYBACK_START_MODES = new Set<string>(["whenBuffered", "onComplete"]);
+
+function isPlaybackStartMode(
+  value: string,
+): value is "whenBuffered" | "onComplete" {
+  return PLAYBACK_START_MODES.has(value);
 }
 
 /**
@@ -56,6 +66,8 @@ export function BattleSetupPanel({
   onEngage,
   onRandomBattle,
 }: BattleSetupPanelProps) {
+  const { preferences, setPreferences } = usePreferences();
+
   if (!hasFleets) {
     return (
       <Text size="sm" c="dimmed">
@@ -110,6 +122,58 @@ export function BattleSetupPanel({
             ))}
           </Group>
         </Chip.Group>
+      </Stack>
+
+      <Stack gap={6}>
+        <Text size="sm" fw={500}>
+          Auto-start
+        </Text>
+        <Switch
+          size="xs"
+          label="Auto-start computation when loading a shared battle"
+          checked={preferences.autoStartComputationOnLoad}
+          onChange={(e) =>
+            setPreferences({
+              ...preferences,
+              autoStartComputationOnLoad: e.currentTarget.checked,
+            })
+          }
+        />
+        <Switch
+          size="xs"
+          label="Auto-start playback"
+          checked={preferences.autoStartPlayback}
+          onChange={(e) =>
+            setPreferences({
+              ...preferences,
+              autoStartPlayback: e.currentTarget.checked,
+            })
+          }
+        />
+        <Group gap="xs" align="center">
+          <Tooltip label="When to begin auto-playback.">
+            <Text size="xs" c="dimmed">
+              Start mode
+            </Text>
+          </Tooltip>
+          <SegmentedControl
+            size="xs"
+            disabled={!preferences.autoStartPlayback}
+            value={preferences.playbackStartMode}
+            onChange={(value) => {
+              if (isPlaybackStartMode(value)) {
+                setPreferences({
+                  ...preferences,
+                  playbackStartMode: value,
+                });
+              }
+            }}
+            data={[
+              { label: "When buffered", value: "whenBuffered" },
+              { label: "On completion", value: "onComplete" },
+            ]}
+          />
+        </Group>
       </Stack>
 
       <Group align="flex-end">
