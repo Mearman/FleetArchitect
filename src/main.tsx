@@ -9,6 +9,7 @@ import { Notifications } from "@mantine/notifications";
 import { RouterProvider } from "react-router-dom";
 import { mantineTheme } from "@/ui/theme/mantineTheme";
 import { FxProvider } from "@/ui/fx/FxContext";
+import { PreferencesProvider } from "@/ui/preferences/PreferencesContext";
 import { router } from "@/ui/router";
 import { seedPresets } from "@/storage/seed";
 
@@ -32,10 +33,12 @@ void seedPresets()
     root.render(
       <StrictMode>
         <FxProvider>
-          <MantineProvider theme={mantineTheme} defaultColorScheme="dark">
-            <Notifications position="top-right" />
-            <RouterProvider router={router} />
-          </MantineProvider>
+          <PreferencesProvider>
+            <MantineProvider theme={mantineTheme} defaultColorScheme="dark">
+              <Notifications position="top-right" />
+              <RouterProvider router={router} />
+            </MantineProvider>
+          </PreferencesProvider>
         </FxProvider>
       </StrictMode>,
     );
