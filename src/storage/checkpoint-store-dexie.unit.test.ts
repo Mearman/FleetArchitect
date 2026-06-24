@@ -185,6 +185,32 @@ describe("DexieCheckpointStore", () => {
     expect(await db.checkpoints.count()).toBe(0);
   });
 
+  it("swallows a Dexie-WRAPPED DataCloneError (the real runtime shape) too", async () => {
+    // Dexie wraps the IDB DataCloneError as a DexieError whose `.name` is the
+    // wrapper's, not "DataCloneError" — so the raw-name stub above does not
+    // match the real failure. The signature survives in the message, which
+    // isUncloneable must detect. Caught by a real-browser run on the heaviest
+    // (~1731-tick) battle; the raw-name stub alone let the error propagate.
+    const store = new DexieCheckpointStore(db.checkpoints);
+    await store.put("k1", minimalCheckpoint(10), [frame(0)]);
+    expect(await db.checkpoints.get("k1")).toBeDefined();
+
+    const table = withPutStub(db.checkpoints, async () => {
+      const error = new Error(
+        "Failed to execute 'put' on 'IDBObjectStore': Data cannot be cloned, out of memory. DataCloneError: Failed to execute 'put' on 'IDBObjectStore': Data cannot be cloned, out of memory.",
+      );
+      error.name = "DexieError";
+      throw error;
+    });
+    const storeWithFailingPut = new DexieCheckpointStore(table);
+
+    await expect(
+      storeWithFailingPut.put("k1", minimalCheckpoint(20), [frame(0), frame(1)]),
+    ).resolves.toBeUndefined();
+    expect(await db.checkpoints.get("k1")).toBeUndefined();
+    expect(await db.checkpoints.count()).toBe(0);
+  });
+
   it("rethrows a non-capacity error from put unchanged", async () => {
     // A genuine Dexie error (not a capacity boundary) must propagate to the
     // resume decorator's notifier rather than being swallowed.
