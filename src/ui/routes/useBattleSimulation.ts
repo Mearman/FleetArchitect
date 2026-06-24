@@ -1,6 +1,7 @@
 import { notifications } from "@mantine/notifications";
 import { useEffect, useRef, useState } from "react";
 import { resolveFleetToCombatShips } from "@/domain/resolve";
+import { BattleAbortError } from "@/domain/simulation/runner";
 import { battleRunner } from "@/ui/battleRunner";
 import { catalog } from "@/data/catalog";
 import { normaliseAnomalies } from "@/schema/battle";
@@ -30,9 +31,9 @@ import { SIM_RATE_EMA_WEIGHT } from "./battleConstants";
  * - `resetForNewRun`: invoked at the top of every fresh run. Clears the
  *   playback-derived state the original reset inline (buffering state + ref,
  *   playing flag).
- * - `onFirstBatch`: invoked once, when the first streamed batch lands. Resets
- *   the playback clock to zero, snaps the camera to default, collapses the
- *   setup panel, and starts playback.
+ * - `onFirstBatch`: invoked once, when the first streamed batch of a FRESH run
+ *   lands. Resets the playback clock to zero, snaps the camera to default,
+ *   collapses the setup panel, and starts playback. Not fired on resume.
  *
  * Both are kept as callbacks so the simulation hook stays decoupled from
  * playback/camera/UI state while preserving the original side-effect ordering.
@@ -46,6 +47,18 @@ export interface UseBattleSimulationProps {
   descriptorsRef: React.RefObject<DescriptorMap>;
   resetForNewRun: () => void;
   onFirstBatch: () => void;
+}
+
+/** Lifecycle state of the computation. */
+export type ComputeStatus = "idle" | "running" | "paused" | "complete";
+
+/** Arguments captured at `startBattle` time so a resume can re-issue them. */
+interface BattleArgs {
+  attacker: Fleet;
+  defender: Fleet;
+  anomalies: BattleAnomalyKind[];
+  seed: number;
+  designs: ShipDesign[];
 }
 
 /**
@@ -118,7 +131,9 @@ export function useBattleSimulation({
 
   /**
    * AbortController for the in-flight run. Aborted when a new battle starts so a
-   * stale stream can never feed frames into the new run's accumulator.
+   * stale stream can never feed frames into the new run's accumulator, and when
+   * the run is paused so the worker is released while the persisted checkpoint
+   * survives for resume.
    */
   const runAbortRef = useRef<AbortController | null>(null);
 
@@ -163,8 +178,25 @@ export function useBattleSimulation({
   const [runningAnomalies, setRunningAnomalies] = useState<BattleAnomalyKind[]>([]);
   const activeAnomalies: BattleAnomalyKind[] = result?.config.anomalies ?? runningAnomalies;
 
-  /** Whether a run is in flight (drives the "Computing battle..." loader). */
-  const [computing, setComputing] = useState(false);
+  /**
+   * Explicit computation lifecycle. Drives the `computing` and `paused` derived
+   * flags so existing consumers keep working while new ones can distinguish a
+   * paused run (frames held, resume available) from a completed one. Status is
+   * the single source of truth: set to "running" when a run starts, "complete"
+   * on a successful resolve, "paused" by `pauseComputation`, and reset to
+   * "idle" on a fresh `startBattle` or a non-abort error. Aborts do not touch
+   * status here — the caller that aborted has already set the appropriate one.
+   */
+  const [computeStatus, setComputeStatus] = useState<ComputeStatus>("idle");
+  const computing = computeStatus === "running";
+  const paused = computeStatus === "paused";
+
+  /**
+   * The arguments used to start the most recent fresh run, captured so a paused
+   * run can be resumed by re-issuing the same inputs. Cleared implicitly by the
+   * next fresh run (overwritten before the run starts).
+   */
+  const lastBattleArgsRef = useRef<BattleArgs | null>(null);
 
   // Abort any in-flight run when the route unmounts so a stream can't keep
   // appending frames into a torn-down component. Cancel any pending rAF flush
@@ -185,19 +217,82 @@ export function useBattleSimulation({
    * caller passes fleet objects directly so both the manual and auto-rolled
    * code paths can drive the same pipeline without going through state.
    *
-   * The hook invokes `resetForNewRun` at the top of every fresh run (so sibling
-   * hooks clear their streaming-derived state) and `onFirstBatch` once, when
-   * the first streamed batch lands (so the route resets the playback clock,
-   * camera, setup panel, and starts playback) — preserving the original
-   * BattleRoute's inline side-effect ordering exactly.
+   * `startBattle` is a thin wrapper that captures the args (so a later resume
+   * can re-issue them identically) and delegates to {@link runCompute} with
+   * `fresh: true`. The previous inline body — accumulator resets, the streaming
+   * loop, the `onFirstBatch` gating — now lives in `runCompute`, which is also
+   * called with `fresh: false` by {@link resumeComputation}.
    */
-  async function startBattle(
+  function startBattle(
     attacker: Fleet,
     defender: Fleet,
     chosenAnomalies: BattleAnomalyKind[],
     chosenSeed: number,
     allDesigns: ShipDesign[],
   ): Promise<void> {
+    const args: BattleArgs = {
+      attacker,
+      defender,
+      anomalies: chosenAnomalies,
+      seed: chosenSeed,
+      designs: allDesigns,
+    };
+    lastBattleArgsRef.current = args;
+    return runCompute(args, { fresh: true });
+  }
+
+  /**
+   * Pause the in-flight run: abort it (releasing the worker), cancel any pending
+   * rAF flush, and flip status to "paused". Does NOT clear `framesRef` or any
+   * accumulator — the persisted checkpoint survives the abort because the resume
+   * decorator only deletes its checkpoint on successful completion, which is the
+   * whole basis for {@link resumeComputation}.
+   */
+  function pauseComputation(): void {
+    runAbortRef.current?.abort();
+    if (rafHandleRef.current !== null) {
+      cancelAnimationFrame(rafHandleRef.current);
+      rafHandleRef.current = null;
+    }
+    setComputeStatus("paused");
+  }
+
+  /**
+   * Resume a paused run by re-issuing the captured args with `fresh: false`.
+   * No-op unless the status is currently "paused" and args have been captured.
+   * Resume hits a cache miss (the prior run never completed) and the resume
+   * decorator finds the persisted checkpoint, so computation continues from
+   * roughly where it left off.
+   */
+  function resumeComputation(): void {
+    if (computeStatus === "paused" && lastBattleArgsRef.current !== null) {
+      void runCompute(lastBattleArgsRef.current, { fresh: false });
+    }
+  }
+
+  /**
+   * Internal compute driver shared by fresh starts and resumes. The `fresh`
+   * flag selects between the two paths:
+   *
+   * - `fresh: true` — the original `startBattle` behaviour, byte-identical:
+   *   reset every accumulator, invoke `resetForNewRun`, capture the deployment
+   *   frame and fire `onFirstBatch` on the first batch, set status "running".
+   * - `fresh: false` — resume: keep all accumulators and the playback clock,
+   *   do NOT invoke `resetForNewRun` or `onFirstBatch`, and MERGE streamed
+   *   frames instead of blindly appending (the resume re-emits the frames since
+   *   the last checkpoint, which are already held and byte-identical, so skip
+   *   any frame whose tick is below the current accumulator length).
+   *
+   * Both paths abort any prior in-flight controller, cancel the pending rAF, and
+   * install a fresh controller before setting status to "running".
+   */
+  async function runCompute(
+    args: BattleArgs,
+    opts: { fresh: boolean },
+  ): Promise<void> {
+    const { attacker, defender, anomalies: chosenAnomalies, seed: chosenSeed, designs: allDesigns } = args;
+    const fresh = opts.fresh;
+
     const designMap = new Map(allDesigns.map((d) => [d.id, d]));
     const attackers = resolveFleetToCombatShips(attacker, designMap, catalog(), "attacker");
     const defenders = resolveFleetToCombatShips(defender, designMap, catalog(), "defender");
@@ -211,14 +306,16 @@ export function useBattleSimulation({
     }
     // Compute off the main thread via the BattleRunner contract. Frames stream
     // in batch by batch through `onFrames`; playback starts on the first batch
-    // and runs along the streamed leading edge while later batches compute. The
-    // final `result` only lands when the run resolves — used for the winner
-    // badge, persistence, and the terminal stop-at-end.
+    // of a fresh run and runs along the streamed leading edge while later
+    // batches compute. The final `result` only lands when the run resolves —
+    // used for the winner badge, persistence, and the terminal stop-at-end.
 
     // Abort any run still in flight so its stale stream can't feed this one.
     runAbortRef.current?.abort();
     // Cancel any deferred rAF flush from the previous run and drop its pending
-    // batches so they cannot land in the fresh run's accumulator.
+    // batches so they cannot land in this run's accumulator. On a resume the
+    // prior run was already aborted by `pauseComputation`, but the rAF may
+    // still be queued.
     if (rafHandleRef.current !== null) {
       cancelAnimationFrame(rafHandleRef.current);
       rafHandleRef.current = null;
@@ -227,25 +324,33 @@ export function useBattleSimulation({
     const controller = new AbortController();
     runAbortRef.current = controller;
 
-    // Reset every streaming accumulator for the fresh run. The cross-hook
-    // resets (buffering, playing) are delegated to `resetForNewRun` so this
-    // hook does not own playback state.
-    resetForNewRun();
-    framesRef.current = [];
-    setFrameCount(0);
-    setDeploymentFrame(null);
-    setRawBounds(null);
-    setComputedTicks(0);
-    simTickRateRef.current = 0;
-    lastBatchRef.current = null;
-    setResult(null);
-    const freshDescriptors: Map<string, ShipDescriptor> = new Map();
-    descriptorsRef.current = freshDescriptors;
-    setDescriptors(freshDescriptors);
-    setRunningAnomalies(chosenAnomalies);
-    setComputing(true);
+    if (fresh) {
+      // Reset every streaming accumulator for the fresh run. The cross-hook
+      // resets (buffering, playing) are delegated to `resetForNewRun` so this
+      // hook does not own playback state.
+      resetForNewRun();
+      framesRef.current = [];
+      setFrameCount(0);
+      setDeploymentFrame(null);
+      setRawBounds(null);
+      setComputedTicks(0);
+      simTickRateRef.current = 0;
+      lastBatchRef.current = null;
+      setResult(null);
+      const freshDescriptors: Map<string, ShipDescriptor> = new Map();
+      descriptorsRef.current = freshDescriptors;
+      setDescriptors(freshDescriptors);
+      setRunningAnomalies(chosenAnomalies);
+      setComputeStatus("running");
+    } else {
+      // Resume: re-record the running anomalies (already set, but the result is
+      // still absent so keep them current against any UI that reads them) and
+      // flip to "running". Do NOT touch framesRef, descriptors, bounds, the
+      // playback clock, or `result` — those carry the paused state forward.
+      setComputeStatus("running");
+    }
 
-    let firstBatch = true;
+    let firstBatch = fresh;
 
     // Drains every batch stashed since the last flush, applying the descriptor
     // fold, EMA, deployment-frame capture, framesRef push, bounds expansion, and
@@ -265,6 +370,15 @@ export function useBattleSimulation({
 
       for (const batch of batches) {
         const { frames, streamedTicks, descriptors: batchDescriptors, arrivalMs } = batch;
+
+        // On a resume, drop any re-emitted frame whose tick is already in the
+        // accumulator. The resume re-emits the frames since the last checkpoint
+        // (the same ones already held and byte-identical), so skipping them by
+        // tick avoids duplicating the tail in the accumulator. On a fresh run
+        // the accumulator starts empty, so every frame passes through.
+        const heldLength = framesRef.current.length;
+        const newFrames = fresh ? frames : frames.filter((f) => f.tick >= heldLength);
+        if (newFrames.length === 0) continue;
 
         // Fold any newly-introduced ship descriptors into the live map so the
         // renderer can reconstruct cell positions for this batch's frames. A
@@ -296,13 +410,15 @@ export function useBattleSimulation({
         lastBatchRef.current = { timeMs: arrivalMs, ticks: streamedTicks };
 
         // Capture the very first streamed frame (the tick-0 deployment snapshot)
-        // before appending, so the HP-bar maxima can be taken from it.
-        const firstFrame = framesRef.current.length === 0 ? frames[0] : undefined;
+        // before appending, so the HP-bar maxima can be taken from it. On a
+        // resume `framesRef.current` is non-empty so this is undefined, leaving
+        // the existing deployment frame state untouched.
+        const firstFrame = framesRef.current.length === 0 ? newFrames[0] : undefined;
 
-        // Append the batch into the ref the rAF loop reads from. The runner
+        // Append the new frames into the ref the rAF loop reads from. The runner
         // hands us a readonly view; push each frame reference into the
         // accumulator.
-        for (const frame of frames) {
+        for (const frame of newFrames) {
           framesRef.current.push(frame);
         }
 
@@ -316,7 +432,7 @@ export function useBattleSimulation({
           let maxX = prev?.maxX ?? -Infinity;
           let minY = prev?.minY ?? Infinity;
           let maxY = prev?.maxY ?? -Infinity;
-          for (const frame of frames) {
+          for (const frame of newFrames) {
             for (const s of frame.ships) {
               if (s.x < minX) minX = s.x;
               if (s.x > maxX) maxX = s.x;
@@ -353,7 +469,9 @@ export function useBattleSimulation({
         if (firstBatch) {
           firstBatch = false;
           // Start playback from the top of the fresh battle and hand the stage
-          // the full width once the first frames are on screen.
+          // the full width once the first frames are on screen. Gated on
+          // `fresh` (via `firstBatch`'s initial value) so a resume never resets
+          // the playback clock or re-fires the setup-panel collapse.
           playbackTimeRef.current = 0;
           onFirstBatch();
         }
@@ -399,6 +517,7 @@ export function useBattleSimulation({
       // A superseded run that resolves anyway must not clobber the current one.
       if (controller.signal.aborted) return;
       setResult(battle);
+      setComputeStatus("complete");
       // Reconcile the descriptor map against the authoritative complete list on
       // the result, so any instance the stream did not surface (or a replay that
       // never streamed) is present for rendering.
@@ -409,13 +528,16 @@ export function useBattleSimulation({
         setDescriptors(complete);
       }
     } catch (error) {
+      // An abort is intentional (pause/stop/supersede), not a failure: the
+      // caller that aborted has already set the appropriate status ("paused" or
+      // the next run's "running"). Do not surface a toast or touch status.
+      if (error instanceof BattleAbortError) return;
+      setComputeStatus("idle");
       notifications.show({
         title: "Battle failed to compute",
         message: error instanceof Error ? error.message : "The simulation worker did not return a result.",
         color: "red",
       });
-    } finally {
-      if (runAbortRef.current === controller) setComputing(false);
     }
   }
 
@@ -427,7 +549,11 @@ export function useBattleSimulation({
     rawBounds,
     activeAnomalies,
     computing,
+    paused,
+    computeStatus,
     descriptors,
     startBattle,
+    pauseComputation,
+    resumeComputation,
   };
 }
