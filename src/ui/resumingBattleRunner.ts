@@ -11,6 +11,21 @@ import type { BattleFrame, BattleResult } from "@/schema/battle";
 import type { EngineCheckpoint } from "@/schema/checkpoint";
 
 /**
+ * Cap on the number of frames persisted in a resume checkpoint's `preFrames`.
+ * The resume store clones `preFrames` into IndexedDB; for a long battle the
+ * array grows until the structured clone exhausts memory (`DataCloneError`),
+ * which Dexie logs to the console even when the app catches it. Once `preFrames`
+ * exceeds this cap the persist is SKIPPED — a later interruption resumes from a
+ * fresh recompute instead. The resume feature is an optimisation, never a
+ * correctness path, so losing the checkpoint for long battles is acceptable.
+ *
+ * The value is a frame-weight-agnostic safety margin below the observed
+ * preFrames-OOM point for the heaviest preset pair (~500 frames in the IDB
+ * clone, on a ~1700-tick Drone-Swarm-vs-Nexus-Armada run).
+ */
+const MAX_CHECKPOINT_FRAMES = 256;
+
+/**
  * Surfaces a checkpoint persist / delete failure to the user. Injected so the
  * decorator stays unit-testable in node (no `@mantine/notifications` runtime);
  * the production wiring in `battleRunner.ts` passes the real notifications
@@ -101,6 +116,11 @@ export class ResumingBattleRunner implements BattleRunner {
       const preFrames = streamedFrames.filter(
         (frame) => frame.tick <= checkpoint.tick,
       );
+      // Skip the persist once preFrames is too large to clone without OOMing
+      // the IDB structured clone (Dexie logs the failed put to the console
+      // regardless of whether the app catches it). A later interruption resumes
+      // from a fresh recompute — the resume feature is an optimisation.
+      if (preFrames.length > MAX_CHECKPOINT_FRAMES) return;
       void this.store
         .put(key, checkpoint, preFrames)
         .catch((error: unknown) => {

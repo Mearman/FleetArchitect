@@ -322,4 +322,26 @@ describe("ResumingBattleRunner", () => {
     expect(seen).toHaveLength(1);
     expect(seen[0]?.ticks).toBe(1);
   });
+
+  it("skips the checkpoint persist once preFrames exceeds the clone-safe cap", async () => {
+    // Stream more frames than MAX_CHECKPOINT_FRAMES, then emit a checkpoint whose
+    // preFrames (every frame up to its tick) exceed the cap. The persist is
+    // skipped so the IDB structured clone of preFrames never OOMs — Dexie logs
+    // the failed put to the console even when the app catches it, so the only way
+    // to keep the console clean for a long battle is to not attempt the put.
+    const frames: BattleFrame[] = [];
+    for (let tick = 0; tick < 300; tick++) frames.push(frame(tick));
+    const full = resultWithFrames(frames, 299);
+    const { runner: inner } = fakeInner(full, {
+      fireFrames: { frames, ticks: 299, descriptors: [] },
+      fireCheckpoints: [checkpoint(299)],
+    });
+    const store = memoryStore();
+    const resuming = new ResumingBattleRunner(inner, store, vi.fn());
+
+    await resuming.run(inputs);
+
+    // preFrames (300) > the cap (256): the put was skipped, so nothing persisted.
+    expect(store.putCalls).toHaveLength(0);
+  });
 });
