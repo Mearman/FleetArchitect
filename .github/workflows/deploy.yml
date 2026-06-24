@@ -59,10 +59,11 @@ jobs:
 
   build-and-deploy:
     name: Build and deploy to Pages
-    # Runs after release so the release tag already exists on the deployed
-    # commit — the top-bar link then resolves to the release, falling back to
-    # the commit hash for non-release pushes.
-    needs: release
+    # Depends on quality only (not release): semantic-release fails when main is
+    # branch-protected (GITHUB_TOKEN can't push tags to main), and the site
+    # should deploy regardless. The top-bar link falls back to the commit hash
+    # when no release tag exists.
+    needs: quality
     runs-on: ubuntu-latest
     environment:
       name: github-pages
