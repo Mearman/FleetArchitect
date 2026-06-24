@@ -1,5 +1,4 @@
 import {
-  deriveMass,
   footprint,
   isConnected4,
   occupiedCount,
@@ -306,14 +305,17 @@ export function analyseShipDesign(
 
     // Surface + substrate HP contribution, scaled by the cell's coverage: a
     // tile the render crop truncates to a partial area carries proportional HP.
-    // A cell with an unknown layer material reports a fault rather than silently
+    // Layer mass is scaled the same way (equipment mass stays full). A cell
+    // with an unknown layer material reports a fault rather than silently
     // contributing zero.
     const frac = coverage[row * grid.cols + col]!;
+    let layerMass = 0;
     const substrate = catalog.substrateMaterial(design.faction);
     if (substrate === undefined) {
       faults.push({ kind: "unknownLayerMaterial", severity: "error", col, row, layer: "substrate" });
     } else {
       stats.structure += substrate.hp * frac;
+      layerMass += substrate.mass;
     }
     if (cell.surface === "armor") {
       const armor = catalog.armorMaterial(design.faction);
@@ -321,6 +323,7 @@ export function analyseShipDesign(
         faults.push({ kind: "unknownLayerMaterial", severity: "error", col, row, layer: "armor" });
       } else {
         stats.structure += armor.hp * frac;
+        layerMass += armor.mass;
         stats.damageReduction = Math.max(stats.damageReduction, armor.damageReduction);
       }
     } else if (cell.surface === "deck") {
@@ -329,8 +332,11 @@ export function analyseShipDesign(
         faults.push({ kind: "unknownLayerMaterial", severity: "error", col, row, layer: "deck" });
       } else {
         stats.structure += deck.hp * frac;
+        layerMass += deck.mass;
       }
     }
+    // Layer mass scales by coverage; equipment mass is added below (full).
+    stats.mass += layerMass * frac;
 
     if (cell.equipment !== undefined) {
       const moduleDef = catalog.module(cell.equipment.moduleId);
@@ -359,10 +365,12 @@ export function analyseShipDesign(
         }
       }
       applyModule(stats, moduleDef, slotId);
+      // Equipment mass is whole (a module is wholly present regardless of the
+      // cell clip), so it is NOT scaled by frac.
+      stats.mass += moduleDef.mass;
     }
   }
 
-  stats.mass = deriveMass(grid, (cell) => cellMass(cell, catalog, design.faction));
   stats.powerNet = stats.powerOutput - stats.powerDraw;
   stats.crewNet = stats.crewCapacity - stats.crewRequired;
 

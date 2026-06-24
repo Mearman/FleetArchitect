@@ -108,6 +108,10 @@ describe("hull-armour integration: analyseShipDesign includes auto-derived armou
     // 4 half = 7 cell-equivalents, each substrate + armor HP.
     const expected = 7 * (substrate.hp + armor.hp);
     expect(stats.structure).toBe(expected);
+    // Layer mass scales by coverage the same way (no equipment in this design):
+    // 7 cell-equivalents of substrate + armor mass.
+    const expectedMass = 7 * (substrate.mass + armor.mass);
+    expect(stats.mass).toBe(expectedMass);
   });
 
   it("is deterministic: two calls on the same design return identical structure", () => {

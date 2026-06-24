@@ -60,9 +60,9 @@ describe("preset-fleet frame determinism regression", () => {
   describe("smallest pair: Phase Lance vs Iron Wall", () => {
     const PINNED: Record<number, string> = {
       // regenerate after an intended frame change: run the test, paste the new hash.
-      1: "78362a386b6105c795058ba3c4e0760bd50f7328e25d61b3d9df31e05a7169f8",
-      7: "c96565f40af1415af699a946c823e2d22e6c665de912b00432953e7169a0d039",
-      99: "449cf26f83c973fc0ddaedc81779f2b882ff3fb6253605e0cdf3da6d78115678",
+      1: "f660859c47f0dfd71612d57f38ea111fca3e195f80e36bbfc1a3c0971611ba8c",
+      7: "2f8d5c0413e6414ae7489bc8163f95e0cfa5d693b6785f41c0c76d8f91995564",
+      99: "7b9054540b7c2592ab01bdf0f7e695535ce2b9c3433a8d3fd6aa863e7d304215",
     };
 
     for (const seed of SEEDS) {
@@ -76,9 +76,9 @@ describe("preset-fleet frame determinism regression", () => {
   describe("largest pair: Drone Swarm vs Nexus Armada", () => {
     const PINNED: Record<number, string> = {
       // regenerate after an intended frame change: run the test, paste the new hash.
-      1: "c11cf755b74d21e459938093e9fa9dd194a678552a41f889d734b967a3c719ad",
-      7: "9131a9a9a5971d8ef71c851e1af9e4822b0e5e7324111da3bd72aa51c9823dcb",
-      99: "e36529aee0526302692fdd3006330fd6fca37ec8f6f2645d934df76e09e2c0bb",
+      1: "ed6f5052a97906dea6775deb6cf7a1c551f4eb9f73c8ae1af4cb7537521ef8ff",
+      7: "56d4598f97f623a8a47a87a2d256557b100dd8d102ef499fb3be2cf58a39f570",
+      99: "189a4cb55717ae43f25b6c8bcdb39c1e3179a414ae2685bbd0d15e2336804fee",
     };
 
     for (const seed of SEEDS) {

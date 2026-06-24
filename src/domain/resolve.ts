@@ -268,7 +268,10 @@ export function resolveFleetToCombatShips(
       // Derive the grown design once per ship so stats, radius, and the main
       // loop all work from the same expanded grid.
       const grownDesign = { ...design, grid: growArmourHull(padGrid(design.grid, 1)) };
-      const { stats } = analyseShipDesign(grownDesign, catalog);
+      // Pass the raw design: analyseShipDesign grows once internally, so feeding
+      // it the grown grid would double-grow. resolveModules below takes the
+      // already-grown grid (single-grow on both paths).
+      const { stats } = analyseShipDesign(design, catalog);
       return {
         deployed,
         design,
@@ -359,8 +362,10 @@ export function resolveFleetToCombatShips(
 function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] {
   const grid = design.grid;
   // Fraction of each cell inside the bevelled hull outline: a cell the render
-  // crop truncates to a partial tile carries proportional HP, so a corner cut
-  // to half its area hits like half a plate. Mass stays whole (full inertia).
+  // crop truncates to a partial tile carries proportional HP and proportional
+  // layer mass, so a corner cut to half its area hits like half a plate and
+  // carries half the substrate + surface mass. Equipment (module) mass stays
+  // whole — a module is wholly present regardless of the cell clip.
   const coverage = cellCoverageFractions(grid);
   const out: ResolvedModule[] = [];
   for (const { col, row } of footprint(grid)) {
@@ -405,7 +410,7 @@ function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] 
         surfaceReduction,
         reactiveReduction,
         reactiveWindow,
-        mass: surfaceMass + substrateMass,
+        mass: (surfaceMass + substrateMass) * frac,
         powerDraw: 0,
         crewRequired: 0,
         effect: { kind: "hull" },
@@ -443,7 +448,7 @@ function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] 
         surfaceReduction,
         reactiveReduction,
         reactiveWindow,
-        mass: surfaceMass + substrateMass,
+        mass: (surfaceMass + substrateMass) * frac,
         powerDraw: 0,
         crewRequired: 0,
         effect: { kind: "hull" },
@@ -477,7 +482,7 @@ function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] 
       surfaceReduction,
       reactiveReduction,
       reactiveWindow,
-      mass: moduleDef.mass + surfaceMass + substrateMass,
+      mass: moduleDef.mass + (surfaceMass + substrateMass) * frac,
       powerDraw: moduleDef.powerDraw,
       crewRequired: moduleDef.crewRequired,
       // Deep-clone so engine mutations during a battle tick do not bleed back
