@@ -1,4 +1,6 @@
-# Run the full suite before pushing. pre-commit carries only the fast
-# history-shape guards (no merge commits on main, no squash merges) so commits
-# stay quick and atomic; the test gate lives here, run once per push.
-pnpm test
+# Fast pre-push gate: whole-project typecheck + lint. The full test suite runs
+# in CI — it is slow and the heavy SI guards flake under vitest's
+# file-parallelism, which made a `pnpm test` gate here unreliable. pre-commit
+# already lints staged files; this adds a whole-project typecheck so cross-file
+# type errors are caught before push.
+pnpm typecheck && pnpm lint
