@@ -200,8 +200,9 @@ export function useBattlePlayback({
   // legitimate reasons to reset `lastTimestamp` so the first dt after each
   // change is not inflated.
   // `playbackTimeRef`/`bufferingRef`/`framesRef`/`simTickRateRef` are stable
-  // route-level refs and so are not listed (they never change identity).
-  }, [hasFrames, playing, speed, drawFrame, result, computedTicks, statusOpen]);
+  // route-level refs (they never change identity); they are listed only to
+  // satisfy the exhaustive-deps lint, not because they ever retrigger the loop.
+  }, [hasFrames, playing, speed, drawFrame, result, computedTicks, statusOpen, bufferingRef, framesRef, playbackTimeRef, simTickRateRef]);
 
   // Redraw when the canvas is resized (canvasSize changes). The draw itself is
   // purely a side-effect of the current playbackTime; no clock advance needed.
@@ -213,7 +214,7 @@ export function useBattlePlayback({
     const frames = framesRef.current;
     const frame = interpolateFrame(frames, fractionalTick);
     drawFrame(frame, Math.floor(fractionalTick), frames);
-  }, [canvasSize, hasFrames, drawFrame]);
+  }, [canvasSize, hasFrames, drawFrame, framesRef, playbackTimeRef]);
 
   return {
     playbackTime,

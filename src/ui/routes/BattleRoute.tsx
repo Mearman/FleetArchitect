@@ -26,7 +26,7 @@ import { normaliseAnomalies } from "@/schema/battle";
 import type { BattleAnomalyKind, BattleFrame } from "@/schema/battle";
 import type { DescriptorMap } from "@/ui/cellLayout";
 import { interpolateFrame } from "@/ui/interpolateFrame";
-import { usePreferences } from "@/ui/preferences/PreferencesContext";
+import { usePreferences } from "@/ui/preferences/usePreferences";
 import { DEFAULT_CAMERA } from "./battleCamera";
 import type { Camera } from "./battleCamera";
 import { ANOMALY_LABEL } from "./battleConstants";

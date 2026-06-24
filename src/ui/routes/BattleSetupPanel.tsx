@@ -2,7 +2,7 @@ import { Button, Chip, Group, NativeSelect, NumberInput, SegmentedControl, Stack
 import { IconArrowsShuffle, IconRefresh, IconSwords } from "@tabler/icons-react";
 import { Link } from "react-router-dom";
 import { BattleAnomalyKind } from "@/schema/battle";
-import { usePreferences } from "@/ui/preferences/PreferencesContext";
+import { usePreferences } from "@/ui/preferences/usePreferences";
 import { ANOMALY_LABEL } from "./battleConstants";
 
 /** Allowed anomaly kinds, as plain strings for Chip.Group narrowing. */

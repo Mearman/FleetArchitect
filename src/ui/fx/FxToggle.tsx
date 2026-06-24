@@ -1,5 +1,6 @@
 import { SegmentedControl, Tooltip } from "@mantine/core";
-import { useFx, type FxLevel } from "./FxContext";
+import { useFx } from "./useFx";
+import { type FxLevel } from "./fx-internals";
 
 const OPTIONS: { value: FxLevel; label: string }[] = [
   { value: "off",     label: "OFF" },

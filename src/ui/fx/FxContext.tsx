@@ -1,39 +1,13 @@
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useState,
-  type ReactNode,
-} from "react";
+  FxContext,
+  STORAGE_KEY,
+  clampLevel,
+  readPref,
+  type FxLevel,
+} from "./fx-internals";
 
-export type FxLevel = "off" | "reduced" | "full";
-
-const STORAGE_KEY = "fa-fx";
-const DEFAULT_PREF: FxLevel = "full";
-
-function clampLevel(pref: FxLevel, reduceMotion: boolean): FxLevel {
-  if (!reduceMotion) return pref;
-  return pref === "full" ? "reduced" : pref;
-}
-
-function readPref(): FxLevel {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored === "off" || stored === "reduced" || stored === "full") return stored;
-  } catch {
-    // localStorage unavailable in strict private browsing
-  }
-  return DEFAULT_PREF;
-}
-
-interface FxContextValue {
-  level: FxLevel;
-  userPref: FxLevel;
-  setUserPref: (level: FxLevel) => void;
-}
-
-const FxContext = createContext<FxContextValue | undefined>(undefined);
+export type { FxLevel } from "./fx-internals";
 
 export function FxProvider({ children }: { children: ReactNode }) {
   const [userPref, setUserPrefState] = useState<FxLevel>(readPref);
@@ -72,12 +46,4 @@ export function FxProvider({ children }: { children: ReactNode }) {
       {children}
     </FxContext.Provider>
   );
-}
-
-export function useFx(): FxContextValue {
-  const ctx = useContext(FxContext);
-  if (ctx === undefined) {
-    throw new Error("useFx must be used inside FxProvider");
-  }
-  return ctx;
 }

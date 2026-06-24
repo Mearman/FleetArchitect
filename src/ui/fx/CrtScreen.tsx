@@ -1,4 +1,4 @@
-import { useFx } from "./FxContext";
+import { useFx } from "./useFx";
 import { overlay, vignette } from "./CrtOverlay.css";
 
 /**
