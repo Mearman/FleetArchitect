@@ -20,6 +20,7 @@ import {
   MODULE_COLOUR,
   PROJECTILE_COLOUR,
   SIDE_COLOUR,
+  BEAM_EMISSION_TICKS_UI,
 } from "./battleConstants";
 import { appearanceOf } from "@/ui/render/moduleAppearance";
 import { glyphPath2D } from "@/ui/render/moduleGlyphs";
@@ -645,6 +646,29 @@ export function useBattleCanvas({
         ctx.fillStyle =
           frac > 0.5 ? PHOSPHOR_GREEN : frac > 0.25 ? PHOSPHOR_AMBER : NEON_MAGENTA;
         ctx.fillRect(px - barW / 2, py + 10, barW * frac, 3);
+      }
+
+      // Energy-weapon beams (hitscan): drawn as lines from the firing gun
+      // cell to the strike point. A hitscan beam applies damage instantly and
+      // produces no projectile, so the engine carries an emission record for
+      // each beam that lingers a few ticks. The line fades by the ratio of
+      // the remaining emission ticks to the original emission duration, so a
+      // fresh beam is fully bright and an expiring one fades out.
+      if (frame.beams !== undefined) {
+        for (const beam of frame.beams) {
+          const colour = PROJECTILE_COLOUR[beam.kind];
+          if (colour === undefined) continue;
+          const from = t.project(beam.sourceX, beam.sourceY);
+          const to = t.project(beam.targetX, beam.targetY);
+          ctx.globalAlpha = Math.min(1, beam.emissionTicks / BEAM_EMISSION_TICKS_UI);
+          ctx.strokeStyle = colour;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(from.x, from.y);
+          ctx.lineTo(to.x, to.y);
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+        }
       }
 
       // Boarding pods: rendered as small block grids on top of ships. Each pod

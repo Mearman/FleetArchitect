@@ -161,7 +161,7 @@ export function* simulateBattle(
     state.emissionSeq = rebuildEmissions(state.ships, state.emissions, 0, state.emissionSeq);
 
     captureDescriptors(state.ships);
-    yield snapshot(0, state.ships, state.projectiles, frame0Awareness, state.mines, state.pods, state.pulses, state.emissions, state.debris);
+    yield snapshot(0, state.ships, state.projectiles, frame0Awareness, state.mines, state.pods, state.pulses, state.emissions, state.debris, state.beams);
 
     // No-progress stalemate watchdog (see ./stalemate) — the termination
     // guarantee for an uncapped battle, created only when there is no explicit
@@ -383,7 +383,22 @@ export function* simulateBattle(
     }
 
     // 3. Weapon firing (creates projectiles; hitscan applies damage at once).
-    state.projectiles = state.projectiles.concat(fireWeapons(state.ships, state.byId, rng, tick, inputs.anomalies));
+    state.projectiles = state.projectiles.concat(fireWeapons(state.ships, state.byId, rng, tick, inputs.anomalies, state.beams));
+
+    // 3-beams. Age the beam emissions (hitscan visuals) the fire step just
+    //     pushed and drop expired entries. Order-preserving so two same-seed
+    //     runs emit byte-identical beam arrays.
+    if (state.beams.length > 0) {
+      const survivors: typeof state.beams = [];
+      for (const beam of state.beams) {
+        const remaining = beam.emissionTicks - 1;
+        if (remaining > 0) {
+          beam.emissionTicks = remaining;
+          survivors.push(beam);
+        }
+      }
+      state.beams = survivors;
+    }
 
     // 3b. PD cooldowns tick down so a battery that just fired can fire again
     //     the next tick. Tick here (before projectile resolution) so a PD
@@ -676,7 +691,7 @@ export function* simulateBattle(
     // Capture descriptors for any instance that first appeared this tick
     // (break-away chunks, launched phantoms) before recording the frame.
     captureDescriptors(state.ships);
-    yield snapshot(tick, state.ships, state.projectiles, awareness, state.mines, state.pods, state.pulses, state.emissions, state.debris);
+    yield snapshot(tick, state.ships, state.projectiles, awareness, state.mines, state.pods, state.pulses, state.emissions, state.debris, state.beams);
     state.ticks += 1;
 
     // 6. Termination. Only real ships decide the battle — a side whose hulls
@@ -713,14 +728,12 @@ export function* simulateBattle(
     }
 
     // 8. Checkpoint emission (resume support). Capture an end-of-tick checkpoint
-    //    on the requested cadence, AFTER the frame is yielded and all the
-    //    termination checks have run — so a checkpoint is only ever taken for a
-    //    tick the battle survived (a tick that ended the battle breaks above, and
-    //    the completed result subsumes any checkpoint). The capture reads the live
-    //    EngineState, the RNG position, and the stalemate watch, so resuming from
-    //    it reproduces the tail byte-identically. Skipped entirely unless both
-    //    `checkpointEvery` and `onCheckpoint` are set, so the no-options path is
-    //    zero-cost.
+    //    on the requested cadence, AFTER the frame is yielded and the termination
+    //    checks have run — so a checkpoint is only ever taken for a tick the
+    //    battle survived. The capture reads the live EngineState, the RNG
+    //    position, and the stalemate watch, so resuming reproduces the tail
+    //    byte-identically. Skipped unless both `checkpointEvery` and
+    //    `onCheckpoint` are set, so the no-options path is zero-cost.
     if (emitCheckpoint !== undefined) emitCheckpoint(tick);
   }
 
@@ -734,8 +747,7 @@ export function* simulateBattle(
     winner: state.winner,
     ticks: state.ticks,
     descriptors: sortedDescriptors(descriptors),
-    // Per-ship salvage earned over the battle, in instanceId order. Empty for a
-    // battle with no destruction and no claimed hulls.
+    // Per-ship salvage earned over the battle, in instanceId order.
     salvage: summariseSalvage(state.ships),
   };
 }
@@ -780,11 +792,9 @@ export function runBattle(inputs: BattleInputs): BattleResult {
       faction: s.faction,
       side: s.side,
     })),
-    // Static per-ship cell layout + outline, emitted once so frames carry only
-    // dynamic cell state. The renderer derives cell world positions from these.
+    // Static per-ship cell layout + outline (renderer derives cell positions).
     descriptors: summary.descriptors,
-    // Per-ship salvage earned, omitted when nothing was salvaged so a battle with
-    // no salvage carries no entry (and replays without it parse unchanged).
+    // Per-ship salvage earned, omitted when nothing was salvaged.
     ...(summary.salvage.length > 0 ? { salvage: summary.salvage } : {}),
   };
 }

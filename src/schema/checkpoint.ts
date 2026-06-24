@@ -346,6 +346,19 @@ const CheckpointDebris = z.object({
   salvageable: z.boolean(),
 });
 
+/** A visible energy-weapon beam emission (`SimBeam`). Pure render state — the
+ *  beam already applied its damage at the moment of emission; the carried
+ *  object just lets the renderer draw the line for a few more ticks. */
+const CheckpointBeam = z.object({
+  sourceId: z.string(),
+  sourceX: z.number(),
+  sourceY: z.number(),
+  targetX: z.number(),
+  targetY: z.number(),
+  kind: WeaponType,
+  emissionTicks: z.number(),
+});
+
 /** Each side's deployment centroid (`DeploymentReference`). Captured rather than
  *  re-derived: by tick N the initial centroids are gone, so recomputing from
  *  moved ships would silently diverge blind-fleet steering. */
@@ -367,7 +380,7 @@ const StalemateWatch = z.object({
 /** The schema version. Bumped when the checkpoint shape changes so a stored
  *  checkpoint from an older shape is rejected at the storage boundary rather
  *  than silently mis-read. */
-export const CHECKPOINT_VERSION = 1;
+export const CHECKPOINT_VERSION = 2;
 
 /**
  * A complete engine checkpoint: everything needed to resume `simulateBattle`
@@ -406,6 +419,7 @@ export const EngineCheckpoint = z.object({
   pulses: z.array(CheckpointPulse),
   emissions: z.array(CheckpointEmission),
   debris: z.array(CheckpointDebris),
+  beams: z.array(CheckpointBeam),
 });
 export type EngineCheckpoint = z.infer<typeof EngineCheckpoint>;
 
@@ -426,3 +440,4 @@ export type CheckpointPod = z.infer<typeof CheckpointPod>;
 export type CheckpointPulse = z.infer<typeof CheckpointPulse>;
 export type CheckpointEmission = z.infer<typeof CheckpointEmission>;
 export type CheckpointDebris = z.infer<typeof CheckpointDebris>;
+export type CheckpointBeam = z.infer<typeof CheckpointBeam>;

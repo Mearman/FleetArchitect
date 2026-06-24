@@ -102,6 +102,12 @@ export function bootstrapEngine(
       // each tick like projectiles/mines. Empty until the first ship dies, so a
       // battle with no destruction keeps it empty and emits no `debris` snapshots.
       debris: [],
+      // Active energy-weapon beam emissions (hitscan visual events). A beam
+      // weapon applies damage instantly at the strike point; this array carries
+      // the just-fired beam lines so the renderer can draw them. Each beam
+      // lingers a few ticks then expires. Empty until a beam weapon fires, so a
+      // battle with no beam weapons keeps it empty and emits no `beams` snapshots.
+      beams: [],
       // Deterministic per-battle id counters. Each advances in spawn order, with
       // no rng and no clock, so two same-seed runs produce byte-identical ids.
       chunkSeq: 0,
@@ -136,6 +142,7 @@ export function bootstrapEngine(
     pulses: restored.pulses,
     emissions: restored.emissions,
     debris: restored.debris,
+    beams: restored.beams,
     chunkSeq: restored.chunkSeq,
     mineSeq: restored.mineSeq,
     podSeq: restored.podSeq,

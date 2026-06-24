@@ -14,6 +14,7 @@ import type {
   ShipDescriptor,
 } from "@/schema/battle";
 import type { EngineCheckpoint } from "@/schema/checkpoint";
+import { CHECKPOINT_VERSION } from "@/schema/checkpoint";
 import { ResumingBattleRunner } from "@/ui/resumingBattleRunner";
 
 /**
@@ -46,7 +47,7 @@ function frame(tick: number): BattleFrame {
 /** A checkpoint carrying just the tick (the decorator keys stitching off it). */
 function checkpoint(tick: number): EngineCheckpoint {
   return {
-    version: 1,
+    version: CHECKPOINT_VERSION,
     tick,
     rngState: 0,
     counters: {
@@ -68,6 +69,7 @@ function checkpoint(tick: number): EngineCheckpoint {
     pulses: [],
     emissions: [],
     debris: [],
+    beams: [],
   };
 }
 

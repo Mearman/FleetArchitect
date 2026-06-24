@@ -17,6 +17,7 @@ import { crewCellKey } from "./crew-pathfinding";
 import type { Debris } from "./debris";
 import type { Emission } from "./emissions";
 import type { SimPulse } from "./pulses";
+import type { SimBeam } from "./beams";
 import type { SimMine, SimModule, SimPod, SimProjectile, SimShip } from "./types";
 
 /**
@@ -44,6 +45,7 @@ export function snapshot(
   pulses: readonly SimPulse[],
   emissions: readonly Emission[],
   debris: readonly Debris[],
+  beams: readonly SimBeam[],
 ): BattleFrame {
   // Partition real ships from phantoms (drones/decoys) so phantoms never appear
   // in the `ships` array — they render from their own dedicated arrays instead.
@@ -262,6 +264,24 @@ export function snapshot(
     // `breachedCells` counts cells below the survivable gas-mass threshold;
     // `atmosphereLevel` is the mean normalised gas mass across all module cells.
     ...atmosphereSnapshot(tick, realShips),
+    // Active energy-weapon beam emissions (hitscan visuals). Omitted when empty
+    // so frames for battles without beam weapons — or ticks where no beam is
+    // still lingering — stay byte-identical to baseline. Each entry is the pure
+    // render state for one beam: source cell world position, strike point,
+    // weapon kind (for colour), and remaining emission ticks (for fade).
+    ...(beams.length > 0
+      ? {
+          beams: beams.map((b) => ({
+            sourceId: b.sourceId,
+            sourceX: b.sourceX,
+            sourceY: b.sourceY,
+            targetX: b.targetX,
+            targetY: b.targetY,
+            kind: b.kind,
+            emissionTicks: b.emissionTicks,
+          })),
+        }
+      : {}),
   };
 }
 

@@ -743,6 +743,13 @@ export const SIM = {
   doorBlastAttenuation: 0.5,
   /** Blast-energy fraction transmitting through an open door edge (near-free passage). Classification: authored catalogue content. */
   doorOpenBlastAttenuation: 0.92,
+  /** Number of ticks a hitscan beam emission stays visible for rendering. A
+   *  hitscan beam applies damage instantly and has no projectile, so without a
+   *  carried emission record the renderer has nothing to draw. Three ticks is
+   *  long enough to register at a normal replay speed without the line strobing
+   *  on every frame, and short enough that a fast-firing beam does not paint a
+   *  solid wall of overlapping lines. Classification: authored visual tuning. */
+  beamEmissionTicks: 3,
 };
 
 /** Closing speed (world-units per tick) below which the translation controller

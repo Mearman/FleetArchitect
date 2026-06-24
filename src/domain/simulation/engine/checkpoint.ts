@@ -216,6 +216,7 @@ export function captureCheckpoint(
     pulses: state.pulses,
     emissions: state.emissions,
     debris: state.debris,
+    beams: state.beams,
   };
   if (stalemate !== undefined) checkpoint.stalemate = stalemate;
   // Deep-clone the whole assembled structure once: it severs every alias to the
@@ -395,6 +396,7 @@ export interface RestoredEngine {
   pulses: EngineState["pulses"];
   emissions: EngineState["emissions"];
   debris: EngineState["debris"];
+  beams: EngineState["beams"];
   deployment: EngineState["deployment"];
   chunkSeq: number;
   mineSeq: number;
@@ -429,6 +431,7 @@ export function restoreCheckpoint(cp: EngineCheckpoint): RestoredEngine {
     pulses: clone.pulses,
     emissions: clone.emissions,
     debris: clone.debris,
+    beams: clone.beams,
     // Build the DeploymentReference with both keys present (value possibly
     // undefined for a side that deployed nothing): the schema models each side
     // as an optional KEY, the runtime as a required key with an optional VALUE.

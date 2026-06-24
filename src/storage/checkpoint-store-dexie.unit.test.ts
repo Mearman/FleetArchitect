@@ -4,7 +4,7 @@ import type { Table } from "dexie";
 import { FleetArchitectDatabase, _setDatabaseForTesting } from "@/storage/db";
 import type { CheckpointRecord } from "@/storage/db";
 import { DexieCheckpointStore } from "@/storage/checkpoint-store-dexie";
-import { EngineCheckpoint } from "@/schema/checkpoint";
+import { EngineCheckpoint, CHECKPOINT_VERSION } from "@/schema/checkpoint";
 import type { BattleFrame } from "@/schema/battle";
 
 let dbCounter = 0;
@@ -48,7 +48,7 @@ function withPutStub(
  */
 function minimalCheckpoint(tick: number): EngineCheckpoint {
   return EngineCheckpoint.parse({
-    version: 1,
+    version: CHECKPOINT_VERSION,
     tick,
     rngState: 12345,
     counters: {
@@ -70,6 +70,7 @@ function minimalCheckpoint(tick: number): EngineCheckpoint {
     pulses: [],
     emissions: [],
     debris: [],
+    beams: [],
   });
 }
 

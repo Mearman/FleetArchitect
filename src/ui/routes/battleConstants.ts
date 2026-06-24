@@ -24,6 +24,16 @@ export const PROJECTILE_COLOUR: Record<WeaponType, string> = {
 };
 
 /**
+ * The original emission duration (in ticks) of a hitscan beam, used by the
+ * renderer to fade the beam line over its lifetime. MUST agree with
+ * `SIM.beamEmissionTicks` in `src/domain/simulation/engine/config.ts` — that
+ * is the single source of truth for how long the engine carries a beam event.
+ * The frame's `BeamSnapshot.emissionTicks` is a countdown from this value, so
+ * the fade ratio is `emissionTicks / BEAM_EMISSION_TICKS_UI`.
+ */
+export const BEAM_EMISSION_TICKS_UI = 3;
+
+/**
  * Per-cell part colour, by kind, for the battle canvas — derived from the
  * shared {@link MODULE_APPEARANCE} table so the battle, the designer, and the
  * isometric views can never drift apart. Keyed over every {@link CellKind}, so

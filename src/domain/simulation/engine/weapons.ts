@@ -22,6 +22,7 @@ import { isRetreating } from "./movement";
 import { hasAliveCommand } from "./physics";
 import { angleDifference, slewTurret, steer } from "./setup";
 import { attackerEccmRestore, isDetectable, netTrackingReduction, targetEcm } from "./stealth";
+import type { SimBeam } from "./beams";
 import type { SimModule, SimProjectile, SimShip } from "./types";
 
 export function spawnProjectile(
@@ -165,6 +166,7 @@ export function fireWeapons(
   rng: Rng,
   tick: number,
   anomalies: readonly BattleAnomalyKind[],
+  beams: SimBeam[],
 ): SimProjectile[] {
   const fired: SimProjectile[] = [];
   for (const ship of ships) {
@@ -239,7 +241,7 @@ export function fireWeapons(
         // Firing drops a cloak for `decloakTicks`: record the tick so the
         // stealth gate exposes a cloaked ship while the window is open.
         ship.lastFiredTick = tick;
-        fireOne(ship, weapon, m.turretAngle, m.x, m.y, target, rng, fired, ship.auraAccuracyBonus, anomalies);
+        fireOne(ship, weapon, m.turretAngle, m.x, m.y, target, rng, fired, ship.auraAccuracyBonus, anomalies, beams);
       }
       continue;
     }
@@ -263,7 +265,7 @@ export function fireWeapons(
       // Legacy aggregated path reads facing off the weapon effect (default 0).
       // No per-module muzzle position, so the recoil lever arm is the ship's
       // origin (0, 0) — the legacy CoM.
-      fireOne(ship, weapon, weapon.facing ?? 0, 0, 0, target, rng, fired, ship.auraAccuracyBonus, anomalies);
+      fireOne(ship, weapon, weapon.facing ?? 0, 0, 0, target, rng, fired, ship.auraAccuracyBonus, anomalies, beams);
     }
   }
   return fired;
@@ -288,6 +290,7 @@ export function fireOne(
   fired: SimProjectile[],
   accuracyBonus: number,
   anomalies: readonly BattleAnomalyKind[],
+  beams: SimBeam[],
 ): void {
   if (weapon.projectileSpeed <= 0) {
     // Hitscan: the beam strikes the target's edge nearest the shooter.
@@ -348,6 +351,23 @@ export function fireOne(
       iy = target.y + dirY * target.radius;
     }
     applyDamage(target, damage, weapon.shieldPiercing, weapon.armourPiercing, ix, iy, strikeAngle);
+    // Emit a visible beam event so the renderer can draw the line. The source is
+    // the firing gun cell's WORLD position (rotated by the ship's heading), not
+    // the ship centre: a beam leaves the gun that fired it, so an off-centre
+    // turret's beam originates at the turret, not deep inside the hull. The
+    // target is the strike point on the target's hull. Damage is applied once
+    // above; this record is pure render state, carried for a few ticks while the
+    // line fades.
+    const source = cellWorldPosition(ship.x, ship.y, ship.facing, muzzleLocalX, muzzleLocalY);
+    beams.push({
+      sourceId: ship.instanceId,
+      sourceX: source.wx,
+      sourceY: source.wy,
+      targetX: ix,
+      targetY: iy,
+      kind: weapon.weaponType,
+      emissionTicks: SIM.beamEmissionTicks,
+    });
   } else {
     fired.push(
       spawnProjectile(ship, weapon, weaponFacing, muzzleLocalX, muzzleLocalY, target, rng, accuracyBonus),

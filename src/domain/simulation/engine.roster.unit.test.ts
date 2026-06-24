@@ -118,6 +118,7 @@ function stateWith(ships: SimShip[]): EngineState {
     pulses: [],
     emissions: [],
     debris: [],
+    beams: [],
     chunkSeq: 0,
     mineSeq: 0,
     podSeq: 0,

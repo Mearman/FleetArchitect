@@ -11,6 +11,7 @@
  */
 
 import type { BattleSide } from "@/schema/battle";
+import type { SimBeam } from "./beams";
 import type { Debris } from "./debris";
 import type { Emission } from "./emissions";
 import type { DeploymentReference } from "./movement";
@@ -26,8 +27,10 @@ import type { SimMine, SimPod, SimProjectile, SimShip } from "./types";
  *   rebuilt only when the `ships` array grows (see ./roster.ts).
  * - `deployment` — each side's centroid at the moment of deployment, captured
  *   once before any ship moves; blind fleets steer toward the opposing one.
- * - `projectiles` / `mines` / `pods` / `pulses` / `emissions` / `debris` —
- *   the in-flight entity fields, advanced each tick.
+ * - `projectiles` / `mines` / `pods` / `pulses` / `emissions` / `debris` /
+ *   `beams` — the in-flight entity fields, advanced each tick. `beams` holds
+ *   the energy-weapon beam emissions (hitscan visual events) that linger for
+ *   a few ticks so the renderer can draw them.
  * - the `*Seq` counters — monotonic per-battle id counters; a same-seed run
  *   produces the same ids because they advance in the same spawn order.
  * - `emissionSeq` — the monotonic EM-emission counter, threaded across ticks.
@@ -46,6 +49,10 @@ export interface EngineState {
   pulses: SimPulse[];
   emissions: Emission[];
   debris: Debris[];
+  /** Active energy-weapon beam emissions (hitscan visual events). Each beam
+   *  lingers for a few ticks so the renderer can draw it as a line. Damages at
+   *  the moment of emission; the carried objects are pure render state. */
+  beams: SimBeam[];
   chunkSeq: number;
   mineSeq: number;
   podSeq: number;

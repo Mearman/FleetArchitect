@@ -536,6 +536,34 @@ export const DebrisSnapshot = z.object({
 });
 export type DebrisSnapshot = z.infer<typeof DebrisSnapshot>;
 
+/**
+ * A visible energy-weapon beam emission at a tick. A hitscan beam weapon
+ * produces no projectile — it applies damage instantly — so without a carried
+ * emission record the renderer has nothing to draw. Each beam carries its
+ * source (the firing gun cell's world position), its strike point (the impact
+ * on the target's hull), and the weapon type for colour lookup. The emission
+ * persists for `emissionTicks` ticks (counted down by the engine), so the
+ * renderer draws the beam as a line that fades over a few ticks rather than
+ * disappearing in a single frame. Optional for backward compatibility with
+ * replays recorded before beams were emitted.
+ */
+export const BeamSnapshot = z.object({
+  /** Instance id of the ship that fired the beam. */
+  sourceId: EntityId,
+  /** World position of the firing gun cell at emission. */
+  sourceX: z.number(),
+  sourceY: z.number(),
+  /** World position of the beam's strike point on the target. */
+  targetX: z.number(),
+  targetY: z.number(),
+  /** Weapon type that produced the beam, for colour lookup. */
+  kind: WeaponType,
+  /** Ticks remaining before the emission expires. The renderer fades the line
+   *  by the ratio of this to the original emission duration. */
+  emissionTicks: z.number().int().min(0),
+});
+export type BeamSnapshot = z.infer<typeof BeamSnapshot>;
+
 /** A single frame of recorded battle state, for replay rendering. */
 export const BattleFrame = z.object({
   tick: z.number().int().min(0),
@@ -577,6 +605,11 @@ export const BattleFrame = z.object({
       atmosphereLevel: z.number().min(0).max(1),
     }),
   ).optional(),
+  /** Active energy-weapon beam emissions (hitscan visual events). Omitted when
+   *  empty so frames for battles without beam weapons — or ticks where no beam
+   *  fired — stay byte-identical to baseline. The renderer draws each entry as
+   *  a line from source to target, fading by the remaining emission ticks. */
+  beams: z.array(BeamSnapshot).optional(),
 });
 export type BattleFrame = z.infer<typeof BattleFrame>;
 
