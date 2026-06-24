@@ -164,36 +164,16 @@ export function useBattleCanvas({
       // Under-ship layer: focus ring, sensor coverage, movement trail.
       drawOverlays(UNDER_SHIP_IDS);
 
-      // Projectile motion streaks: a constant-length trail (one tick of travel)
-      // behind each round, so fast shots read as motion rather than stepping
-      // dots. The trail vector is the round's per-tick displacement between the
-      // bracketing frames (hi − lo), carried behind the interpolated position;
-      // a round present in only one bracketing frame (its birth or death edge)
-      // has no displacement to trail and falls back to a dot.
-      const loFrame = frames[tick];
-      const hiFrame = frames[tick + 1];
-      const prevPos = new Map<string, { x: number; y: number }>();
-      const nextPos = new Map<string, { x: number; y: number }>();
-      if (loFrame !== undefined) for (const q of loFrame.projectiles) prevPos.set(q.id, { x: q.x, y: q.y });
-      if (hiFrame !== undefined) for (const q of hiFrame.projectiles) nextPos.set(q.id, { x: q.x, y: q.y });
-      ctx.lineWidth = 2;
+      // Projectiles (kinetic rounds: cannon, missile, torpedo). Drawn as dots
+      // at their interpolated position; interpolateFrame glides them smoothly
+      // between ticks so they don't snap. Energy weapons (beams) are hitscan
+      // and rendered separately — as emission-duration lines, not dots.
       for (const p of frame.projectiles) {
         const colour = PROJECTILE_COLOUR[p.kind];
         if (colour === undefined) continue;
         const pp = t.project(p.x, p.y);
-        const lo = prevPos.get(p.id);
-        const hi = nextPos.get(p.id);
-        if (lo !== undefined && hi !== undefined) {
-          const tail = t.project(p.x - (hi.x - lo.x), p.y - (hi.y - lo.y));
-          ctx.strokeStyle = colour;
-          ctx.beginPath();
-          ctx.moveTo(tail.x, tail.y);
-          ctx.lineTo(pp.x, pp.y);
-          ctx.stroke();
-        } else {
-          ctx.fillStyle = colour;
-          ctx.fillRect(pp.x - 1, pp.y - 1, 2.5, 2.5);
-        }
+        ctx.fillStyle = colour;
+        ctx.fillRect(pp.x - 1, pp.y - 1, 2.5, 2.5);
       }
 
       // The projection's pure 2x2 delta map (its basis vectors): the screen
