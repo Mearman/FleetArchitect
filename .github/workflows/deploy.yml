@@ -28,7 +28,12 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
-      - run: pnpm test
+      # Serial: the heavy SI-scale battles (lethality guards, preset-pair
+      # determinism) contend under vitest's default file-parallelism and time
+      # out, flaking the gate. The determinism test tolerates cross-architecture
+      # floating-point differences (its pins are platform-specific) by falling
+      # back to a within-platform byte-identical check.
+      - run: pnpm test --no-file-parallelism
 
   release:
     name: Release
