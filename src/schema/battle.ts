@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { EntityId, IsoTimestamp } from "./primitives";
 import { WeaponType } from "./module";
-import { DoorState, SurfaceKind } from "./grid";
+import { SurfaceKind } from "./grid";
 import { EngineCheckpoint } from "./checkpoint";
 
 /** A side in a battle. `draw` is only a battle outcome, never a ship's side. */
@@ -93,56 +93,81 @@ export const CellKind = z.enum([
 export type CellKind = z.infer<typeof CellKind>;
 
 /**
- * One cell's DYNAMIC state at a single tick. Carries only what changes
- * tick-to-tick; the cell's static layout (kind, ship-local offset, max HP,
+ * One cell's DYNAMIC state at a single tick, carried as a set of NAMED TYPED
+ * ARRAYS index-matched to the static {@link ShipCellLayout} (both s.modules
+ * order): for a ship with N modules, `cellHp[i]` / `cellAlive[i]` etc. describe
+ * the i-th cell. The cell's static layout (kind, ship-local offset, max HP,
  * surface kind) lives once-per-battle in {@link ShipCellLayout}, keyed by the
- * same `slotId`. The renderer reconstructs each cell's world position from the
- * ship pose and the static offset, so it is no longer serialised every frame.
+ * same index. The renderer reconstructs each cell's world position from the
+ * ship pose and the static offset, so it is not serialised every frame.
  *
- * The per-tick CellState is INDEX-MATCHED to the static ShipCellLayout: both
- * are emitted in s.modules order, so CellState[i] corresponds to
- * ShipCellLayout.cells[i]. The slotId is therefore REDUNDANT on the dynamic
- * state (it would repeat the static layout's slotId every frame); the static
- * layout carries it once per battle. slotId is retained here as optional for
- * backward compatibility with older replays.
+ * The heavy per-cell fields are FLATTENED to typed arrays and transferred
+ * zero-copy across the worker boundary (postMessage `transfer` list), eliminating
+ * the structured-clone cost that was the source of Chrome's `[Violation]
+ * 'message' handler` warnings on the heaviest frames. Float64Array holds the
+ * same IEEE-754 doubles the engine uses — no Float32 rounding, no determinism
+ * risk. The engine itself is unchanged; only the snapshot's serialisation
+ * changed from JS objects to flat typed arrays.
+ *
+ * Field presence:
+ *  - `cellHp` (Float64Array) and `cellAlive` (Uint8Array, 0/1) are ALWAYS
+ *    present (every cell has hp and an alive flag).
+ *  - The remaining arrays are OPTIONAL: present only when at least one cell on
+ *    the ship carries that field. Sentinel values fill the cells without it:
+ *    NaN for `cellTurretAngle`/`cellCharge`; -1 for `cellAmmo`; 0 (meaning
+ *    "no door on this edge") for the door arrays.
+ *  - The door state is flattened to four Uint8Array per direction
+ *    (cellDoorN/E/S/W), present only when the ship has at least one door.
+ *    Each value is 0 = no door, 1 = open, 2 = closed.
  */
-export const CellState = z.object({
-  /** Stable per-cell id, the key into the static {@link ShipCellLayout}.
-   *  REDUNDANT on the dynamic state (it is index-matched to the static layout);
-   *  kept optional for backward compatibility with older replays. */
-  slotId: EntityId.optional(),
-  /** Current HP of the surface layer (armour or deck). Zero for bare cells.
-   *  Optional for backward compatibility. */
-  surfaceHp: z.number().optional(),
-  hp: z.number(),
-  alive: z.boolean(),
-  /** Live door states for a module that has at least one door edge, keyed by
-   *  direction. Absent on modules with no doors so older replays stay
-   *  byte-identical. Optional for backward compatibility. */
-  doorStates: z
-    .object({
-      n: DoorState.optional(),
-      e: DoorState.optional(),
-      s: DoorState.optional(),
-      w: DoorState.optional(),
-    })
-    .optional(),
-  /**
-   * For weapon modules with a turret: the live barrel angle in radians,
-   * ship-local — the direction the turret has slewed to this tick. The renderer
-   * draws the barrel along `ship.facing + turretAngle` so a turret visibly
-   * tracks its target. Absent on fixed mounts and non-weapon modules.
-   * Optional for backward compatibility with older replays.
-   */
-  turretAngle: z.number().optional(),
-  /** Whether this module is manned by crew. Optional for backward compatibility. */
-  manned: z.boolean().optional(),
-  /** Ammo remaining in a weapon module. Optional, complements WeaponEffect.ammo. */
-  ammo: z.number().int().min(0).optional(),
-  /** Charge level or progress for applicable modules. Optional for backward compatibility. */
-  charge: z.number().optional(),
+export interface CellStateArrays {
+  /** Current substrate/structure HP of each cell. Always present. */
+  cellHp: Float64Array<ArrayBuffer>;
+  /** Alive flag per cell (0/1). Always present. */
+  cellAlive: Uint8Array<ArrayBuffer>;
+  /** Current surface-layer HP per cell. Always present (0 for bare cells). */
+  cellSurfaceHp: Float64Array<ArrayBuffer>;
+  /** Live turret barrel angle (radians, ship-local) per cell. Present when the
+   *  ship has at least one turreted weapon; NaN for non-turret cells. */
+  cellTurretAngle?: Float64Array<ArrayBuffer>;
+  /** Manning flag per cell (0/1). Present when the ship has crewed modules. */
+  cellManned?: Uint8Array<ArrayBuffer>;
+  /** Ammo remaining per cell. Present when the ship has ammo weapons; -1 for
+   *  cells without. */
+  cellAmmo?: Int32Array<ArrayBuffer>;
+  /** Charge level per cell. Present when the ship has chargeable modules; NaN
+   *  for cells without. */
+  cellCharge?: Float64Array<ArrayBuffer>;
+  /** Per-edge door state, north edge (0=none, 1=open, 2=closed). Present when
+   *  the ship has at least one door. */
+  cellDoorN?: Uint8Array<ArrayBuffer>;
+  /** Per-edge door state, east edge. Present when the ship has doors. */
+  cellDoorE?: Uint8Array<ArrayBuffer>;
+  /** Per-edge door state, south edge. Present when the ship has doors. */
+  cellDoorS?: Uint8Array<ArrayBuffer>;
+  /** Per-edge door state, west edge. Present when the ship has doors. */
+  cellDoorW?: Uint8Array<ArrayBuffer>;
+}
+
+/** Zod schema for the per-cell typed-array state. Uses z.instanceof to validate
+ *  the typed-array classes at the thread boundary. */
+const float64ArraySchema = z.instanceof(Float64Array);
+const uint8ArraySchema = z.instanceof(Uint8Array);
+const int32ArraySchema = z.instanceof(Int32Array);
+
+export const CellStateArraysSchema = z.object({
+  cellHp: float64ArraySchema,
+  cellAlive: uint8ArraySchema,
+  cellSurfaceHp: float64ArraySchema,
+  cellTurretAngle: float64ArraySchema.optional(),
+  cellManned: uint8ArraySchema.optional(),
+  cellAmmo: int32ArraySchema.optional(),
+  cellCharge: float64ArraySchema.optional(),
+  cellDoorN: uint8ArraySchema.optional(),
+  cellDoorE: uint8ArraySchema.optional(),
+  cellDoorS: uint8ArraySchema.optional(),
+  cellDoorW: uint8ArraySchema.optional(),
 });
-export type CellState = z.infer<typeof CellState>;
 
 /** One ship's state at a single tick of a recorded battle. */
 export const ShipSnapshot = z.object({
@@ -161,17 +186,19 @@ export const ShipSnapshot = z.object({
   shield: z.number(),
   alive: z.boolean(),
   /**
-   * Per-cell DYNAMIC state, present when the ship runs the per-module damage
-   * model. INDEX-MATCHED to the once-per-battle {@link ShipCellLayout} (carried
-   * on {@link ShipDescriptor}, in the same s.modules order): cells[i]
-   * corresponds to ShipCellLayout.cells[i], so the renderer joins them by index
-   * rather than by slotId. The static layout holds the cell's kind, ship-local
-   * offset, max HP and surface, so the renderer derives each cell's world
-   * position from the ship pose plus its static offset rather than
-   * re-serialising it every frame. Optional for backward compatibility with
-   * older replays.
+   * Per-cell DYNAMIC state as NAMED TYPED ARRAYS, present when the ship runs
+   * the per-module damage model. INDEX-MATCHED to the once-per-battle
+   * {@link ShipCellLayout} (carried on {@link ShipDescriptor}, in the same
+   * s.modules order): cellHp[i] corresponds to ShipCellLayout.cells[i], so the
+   * renderer joins them by index rather than by slotId. The static layout holds
+   * the cell's kind, ship-local offset, max HP and surface, so the renderer
+   * derives each cell's world position from the ship pose plus its static
+   * offset rather than re-serialising it every frame. The typed arrays are
+   * transferred zero-copy across the worker boundary (postMessage `transfer`
+   * list), eliminating the structured-clone cost. Optional for backward
+   * compatibility with older replays.
    */
-  cells: z.array(CellState).optional(),
+  cells: CellStateArraysSchema.optional(),
   /** Crew members aboard this ship. Optional for backward compatibility with
    *  older replays that predate crew. */
   crew: z.array(CrewSnapshot).optional(),
@@ -208,12 +235,13 @@ export const ShipSnapshot = z.object({
    */
   resource: z
     .object({
-      /** Thermal field: temperature (K) for each module cell. */
-      thermal: z.array(z.number()),
+      /** Thermal field: temperature (K) for each module cell, as a typed array
+       *  transferred zero-copy across the worker boundary. */
+      thermal: float64ArraySchema,
       /** Propellant field: fuel mass (kg) for each module cell. */
-      propellant: z.array(z.number()),
+      propellant: float64ArraySchema,
       /** Atmosphere field: gas mass (kg) for each module cell. */
-      atmosphere: z.array(z.number()),
+      atmosphere: float64ArraySchema,
       /** Ship-wide power capacitor state. */
       powerBuffer: z.object({
         energy: z.number().min(0),

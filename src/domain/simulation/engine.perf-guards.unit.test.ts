@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
+import { cellAliveAt } from "@/domain/simulation/test-cell-helpers";
 import { PERF_GUARDS } from "@/domain/simulation/engine/perf-guards";
 import { CELL_SIZE } from "@/domain/grid";
 import { resolveFleetToCombatShips } from "@/domain/resolve";
@@ -290,7 +291,7 @@ describe("W5b perf guards preserve frame output", () => {
     const dmIdx = layout?.findIndex((c) => c.slotId === "dm");
     const magDied = dmIdx !== undefined && dmIdx >= 0 && result.frames.some((f) => {
       const ship = f.ships.find((s) => s.instanceId === "def-chain");
-      return ship?.cells?.[dmIdx]?.alive === false;
+      return cellAliveAt(ship?.cells, dmIdx) === false;
     });
     expect(magDied, "the magazine must be destroyed for the chain-reaction guard to fire").toBe(true);
   });

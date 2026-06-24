@@ -12,15 +12,19 @@
  */
 
 import { CELL_SIZE } from "@/domain/grid";
-import type {
-  CellState,
-  ShipCellLayout,
-  ShipDescriptor,
-  ShipSnapshot,
-} from "@/schema/battle";
+import type { CellStateArrays, ShipCellLayout, ShipDescriptor, ShipSnapshot } from "@/schema/battle";
 
 /** A lookup from ship instance id to its static descriptor. */
 export type DescriptorMap = ReadonlyMap<string, ShipDescriptor>;
+
+/** The live door states for one cell, keyed by direction. Absent edges have no
+ *  door. Reconstructed from the four door typed arrays by renderCells. */
+export interface RenderDoorStates {
+  n?: "open" | "closed";
+  e?: "open" | "closed";
+  s?: "open" | "closed";
+  w?: "open" | "closed";
+}
 
 /**
  * A cell ready to draw: its static layout (offset, kind, max HP, surface, turret
@@ -45,22 +49,25 @@ export interface RenderCell {
   manned: boolean | undefined;
   ammo: number | undefined;
   charge: number | undefined;
-  doorStates: CellState["doorStates"];
+  doorStates: RenderDoorStates | undefined;
 }
 
 /**
- * Merge a ship's slim per-tick cell states with its static layout, in the
+ * Merge a ship's per-tick typed-array cell state with its static layout, in the
  * descriptor's cell order. Returns undefined when the ship has no descriptor
  * cells or no per-tick cell state (a legacy aggregated ship, or a phantom),
  * signalling the caller to fall back to its non-cell rendering path.
  *
- * The dynamic cells and the static layout are both emitted in s.modules order,
- * so they are INDEX-MATCHED: CellState[i] corresponds to ShipCellLayout.cells[i].
- * This walks the two arrays in lockstep by index (no slotId-keyed lookup). The
- * shorter of the two arrays bounds the walk; a longer layout is for cells that
- * have no live state this frame, and a longer dynamic array (only possible on
- * legacy replays that carried slotId redundantly) is matched cell-for-cell up to
- * the layout length.
+ * The typed arrays and the static layout are both emitted in s.modules order,
+ * so they are INDEX-MATCHED: cellHp[i] corresponds to ShipCellLayout.cells[i].
+ * This walks them in lockstep by index (no slotId-keyed lookup). The shorter of
+ * the array length and the layout length bounds the walk.
+ *
+ * Reads each typed array positionally, resolving sentinel values back to the
+ * optional-field semantics downstream consumers expect: NaN in turretAngle /
+ * charge becomes `undefined`; -1 in ammo becomes `undefined`; door Uint8Array
+ * values (0=none, 1=open, 2=closed) are reconstructed into a RenderDoorStates
+ * object.
  */
 export function renderCells(
   ship: ShipSnapshot,
@@ -70,12 +77,15 @@ export function renderCells(
   const layout = descriptor?.cells;
   if (cells === undefined || layout === undefined) return undefined;
 
-  const n = Math.min(cells.length, layout.length);
+  const n = Math.min(cells.cellHp.length, layout.length);
   const merged: RenderCell[] = [];
   for (let i = 0; i < n; i += 1) {
     const l = layout[i];
-    const state = cells[i];
-    if (l === undefined || state === undefined) continue;
+    if (l === undefined) continue;
+    const turretAngle = cells.cellTurretAngle?.[i];
+    const mannedRaw = cells.cellManned?.[i];
+    const ammoRaw = cells.cellAmmo?.[i];
+    const charge = cells.cellCharge?.[i];
     merged.push({
       slotId: l.slotId,
       ox: l.ox,
@@ -85,17 +95,39 @@ export function renderCells(
       surface: l.surface,
       maxSurfaceHp: l.maxSurfaceHp,
       hasTurret: l.hasTurret === true,
-      hp: state.hp,
-      alive: state.alive,
-      surfaceHp: state.surfaceHp,
-      turretAngle: state.turretAngle,
-      manned: state.manned,
-      ammo: state.ammo,
-      charge: state.charge,
-      doorStates: state.doorStates,
+      hp: cells.cellHp[i] ?? 0,
+      alive: (cells.cellAlive[i] ?? 0) !== 0,
+      surfaceHp: cells.cellSurfaceHp[i],
+      turretAngle: turretAngle !== undefined && Number.isNaN(turretAngle) ? undefined : turretAngle,
+      manned: mannedRaw === undefined ? undefined : mannedRaw !== 0,
+      ammo: ammoRaw === undefined || ammoRaw < 0 ? undefined : ammoRaw,
+      charge: charge !== undefined && Number.isNaN(charge) ? undefined : charge,
+      doorStates: readDoorStates(cells, i),
     });
   }
   return merged;
+}
+
+/**
+ * Reconstruct the per-cell door-states object from the four door typed arrays
+ * at index `i`. Returns undefined when the ship carries no door arrays.
+ */
+function readDoorStates(cells: CellStateArrays, i: number): RenderDoorStates | undefined {
+  const n = cells.cellDoorN;
+  if (n === undefined) return undefined;
+  const e = cells.cellDoorE;
+  const s = cells.cellDoorS;
+  const w = cells.cellDoorW;
+  const result: RenderDoorStates = {};
+  const nv = n[i];
+  if (nv !== undefined && nv !== 0) result.n = nv === 1 ? "open" : "closed";
+  const ev = e?.[i];
+  if (ev !== undefined && ev !== 0) result.e = ev === 1 ? "open" : "closed";
+  const sv = s?.[i];
+  if (sv !== undefined && sv !== 0) result.s = sv === 1 ? "open" : "closed";
+  const wv = w?.[i];
+  if (wv !== undefined && wv !== 0) result.w = wv === 1 ? "open" : "closed";
+  return result;
 }
 
 /**

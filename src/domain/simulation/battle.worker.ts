@@ -1,10 +1,81 @@
+/// <reference lib="webworker" />
 import { createId, nowIso } from "@/domain/id";
 import { simulateBattle } from "@/domain/simulation/engine";
 import type { BattleInputs } from "@/domain/simulation/types";
 import { STREAM_BATCH_INTERVAL_MS } from "@/domain/simulation/types";
-import type { BattleFrame, ShipDescriptor } from "@/schema/battle";
+import type { BattleFrame, CellStateArrays, ShipDescriptor, ShipSnapshot } from "@/schema/battle";
 import type { BattleResultSummary } from "@/schema/battle";
 import type { EngineCheckpoint } from "@/schema/checkpoint";
+
+/**
+ * Walk every frame's ship cells and resource block, collecting the underlying
+ * {@link ArrayBuffer} of each typed array so {@link postBatch} can hand them to
+ * `postMessage` as the TRANSFER LIST. Transferred buffers cross the thread
+ * boundary zero-copy — the source is detached and the receiver takes ownership
+ * — which eliminates the structured-clone cost that was the source of the
+ * `[Violation] 'message' handler` warnings on the heaviest frames.
+ *
+ * Every typed-array field on {@link CellStateArrays} (always-present and
+ * optional) and the three resource typed arrays are collected. The resource
+ * `powerBuffer` stays a plain object (two scalars) and is cloned cheaply.
+ * De-duplicates by buffer identity so a buffer shared between two typed-array
+ * views is transferred once (postMessage throws on duplicate transfers).
+ */
+function collectTransferables(frames: readonly BattleFrame[]): Transferable[] {
+  const seen = new Set<ArrayBuffer>();
+  const out: Transferable[] = [];
+  const pushBuffer = (buf: ArrayBuffer): void => {
+    if (seen.has(buf)) return;
+    seen.add(buf);
+    out.push(buf);
+  };
+  const pushTyped = (arr: Float64Array | Uint8Array | Int32Array | undefined): void => {
+    if (arr === undefined) return;
+    // Typed arrays allocated by the snapshot are always backed by a plain
+    // ArrayBuffer (never a SharedArrayBuffer). Narrow at runtime so the value
+    // satisfies Transferable's ArrayBuffer member without a type assertion.
+    if (arr.buffer instanceof ArrayBuffer) pushBuffer(arr.buffer);
+  };
+  for (const frame of frames) {
+    for (const ship of frame.ships) {
+      collectShipTransferables(ship, pushTyped);
+    }
+  }
+  return out;
+}
+
+/** Collect the typed-array buffers from one ship's cells and resource block. */
+function collectShipTransferables(
+  ship: ShipSnapshot,
+  pushTyped: (arr: Float64Array | Uint8Array | Int32Array | undefined) => void,
+): void {
+  const cells = ship.cells;
+  if (cells !== undefined) collectCellTransferables(cells, pushTyped);
+  const resource = ship.resource;
+  if (resource !== undefined) {
+    pushTyped(resource.thermal);
+    pushTyped(resource.propellant);
+    pushTyped(resource.atmosphere);
+  }
+}
+
+/** Push every typed-array buffer on a CellStateArrays object. */
+function collectCellTransferables(
+  cells: CellStateArrays,
+  pushTyped: (arr: Float64Array | Uint8Array | Int32Array | undefined) => void,
+): void {
+  pushTyped(cells.cellHp);
+  pushTyped(cells.cellAlive);
+  pushTyped(cells.cellSurfaceHp);
+  pushTyped(cells.cellTurretAngle);
+  pushTyped(cells.cellManned);
+  pushTyped(cells.cellAmmo);
+  pushTyped(cells.cellCharge);
+  pushTyped(cells.cellDoorN);
+  pushTyped(cells.cellDoorE);
+  pushTyped(cells.cellDoorS);
+  pushTyped(cells.cellDoorW);
+}
 
 /**
  * The checkpoint capture cadence inside the worker: one checkpoint every
@@ -121,7 +192,15 @@ self.onmessage = (event: MessageEvent<BattleWorkerRequest>) => {
       message.checkpoint = latestCheckpoint;
       checkpointDirty = false;
     }
-    self.postMessage(message);
+    // Collect every typed-array buffer across all frames and ships in the
+    // batch as the postMessage TRANSFER LIST. Transferred buffers cross the
+    // thread boundary zero-copy (the source ArrayBuffer is detached and the
+    // receiver takes ownership), eliminating the structured-clone cost that
+    // was the source of the `[Violation] 'message' handler` warnings on the
+    // heaviest frames. The typed arrays arrive on the main thread already
+    // populated and typed; the receiver reads them positionally.
+    const transferList: Transferable[] = collectTransferables(frames);
+    self.postMessage(message, transferList);
   };
 
   let next = it.next();

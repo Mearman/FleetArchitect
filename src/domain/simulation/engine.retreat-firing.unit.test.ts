@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
+import { sumCellHp } from "@/domain/simulation/test-cell-helpers";
 import type { CombatShip, BattleInputs } from "@/domain/simulation/types";
 import { defaultOrders } from "@/schema/fleet";
 import type { ShipClassification } from "@/schema/armor";
@@ -136,12 +137,12 @@ describe("engine.retreat-firing", () => {
     // everything is undamaged, so that IS the max).
     const f0 = result.frames[0];
     const a0 = f0?.ships.find((s) => s.instanceId === "a1");
-    const initialHp = (a0?.structure ?? 0) + (a0?.cells ?? []).reduce((sum, m) => sum + (m.hp ?? 0), 0);
+    const initialHp = (a0?.structure ?? 0) + sumCellHp(a0?.cells);
     let retreatTick: number | undefined;
     for (const frame of result.frames) {
       const ship = frame.ships.find((s) => s.instanceId === "a1");
       if (ship?.alive !== true) continue;
-      const hp = (ship.structure ?? 0) + (ship.cells ?? []).reduce((sum, m) => sum + (m.hp ?? 0), 0);
+      const hp = ship.structure + sumCellHp(ship.cells);
       if (initialHp > 0 && hp / initialHp < 0.5) {
         retreatTick = frame.tick;
         break;

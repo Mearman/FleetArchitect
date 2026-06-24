@@ -1,6 +1,7 @@
 import type { CellEdges } from "@/schema/grid";
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
+import { countAlive, hasDeadCell } from "@/domain/simulation/test-cell-helpers";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
 import { defaultOrders } from "@/schema/fleet";
@@ -189,13 +190,13 @@ describe("engine.per-module-damage", () => {
     const degrading = result.frames.find(
       (f) =>
         f.ships.find((s) => s.instanceId === "d1")?.alive === true &&
-        (f.ships.find((s) => s.instanceId === "d1")?.cells ?? []).some((m) => !m.alive),
+        hasDeadCell(f.ships.find((s) => s.instanceId === "d1")?.cells),
     );
     expect(degrading, "a module should be destroyed before the ship dies").toBeDefined();
     if (degrading === undefined) return;
     const defender = degrading.ships.find((s) => s.instanceId === "d1");
     expect(defender?.alive).toBe(true);
-    expect(defender?.cells?.some((m) => !m.alive)).toBe(true);
+    expect(hasDeadCell(defender?.cells)).toBe(true);
   });
 
   it("the snapshot carries per-module hp and alive state", () => {
@@ -204,10 +205,12 @@ describe("engine.per-module-damage", () => {
     if (first === undefined) throw new Error("no frames");
     const defender = first.ships.find((s) => s.instanceId === "d1");
     expect(defender?.cells).toBeDefined();
-    expect(defender?.cells?.length).toBe(4);
-    // At deployment every module is intact.
-    expect(defender?.cells?.every((m) => m.alive && m.hp === m.hp)).toBe(true);
-    expect(defender?.cells?.every((m) => m.hp > 0)).toBe(true);
+    expect(defender?.cells?.cellHp.length).toBe(4);
+    // At deployment every module is intact and full HP.
+    expect(countAlive(defender?.cells)).toBe(4);
+    for (let i = 0; i < (defender?.cells?.cellHp.length ?? 0); i += 1) {
+      expect(defender?.cells?.cellHp[i]).toBeGreaterThan(0);
+    }
   });
 
   it("is deterministic for modular ships", () => {
@@ -226,16 +229,14 @@ describe("engine.per-module-damage", () => {
     expect(defenderCells).toBeDefined();
     if (defenderCells === undefined) return;
 
-    // The per-tick cell state carries dynamic fields only — never the static
-    // layout (kind, offset, max HP, surface) that the descriptor now owns.
-    for (const cell of defenderCells) {
-      expect(cell).not.toHaveProperty("kind");
-      expect(cell).not.toHaveProperty("x");
-      expect(cell).not.toHaveProperty("y");
-      expect(cell).not.toHaveProperty("maxHp");
-      expect(cell).not.toHaveProperty("surface");
-      expect(cell).not.toHaveProperty("maxSurfaceHp");
-    }
+    // The per-tick cell state is flat typed arrays carrying dynamic state only
+    // — never the static layout (kind, offset, max HP, surface) that the
+    // descriptor now owns.
+    expect(defenderCells.cellHp).toBeInstanceOf(Float64Array);
+    expect(defenderCells.cellAlive).toBeInstanceOf(Uint8Array);
+    expect(defenderCells).not.toHaveProperty("kind");
+    expect(defenderCells).not.toHaveProperty("x");
+    expect(defenderCells).not.toHaveProperty("maxHp");
     // The per-frame ship snapshot no longer carries the outline either.
     expect(first.ships.find((s) => s.instanceId === "d1")).not.toHaveProperty("outline");
 
@@ -244,10 +245,7 @@ describe("engine.per-module-damage", () => {
     // arrays are the same length and the dynamic state carries no slotId.
     const descriptor = result.descriptors?.find((d) => d.instanceId === "d1");
     expect(descriptor).toBeDefined();
-    expect(descriptor?.cells?.length).toBe(defenderCells.length);
-    for (const cell of defenderCells) {
-      expect(cell).not.toHaveProperty("slotId");
-    }
+    expect(descriptor?.cells?.length).toBe(defenderCells.cellHp.length);
     for (const layout of descriptor?.cells ?? []) {
       expect(typeof layout.kind).toBe("string");
       expect(typeof layout.ox).toBe("number");

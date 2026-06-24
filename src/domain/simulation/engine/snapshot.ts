@@ -8,7 +8,7 @@
  */
 
 import { CELL_SIZE } from "@/domain/grid";
-import type { AwarenessSnapshot, BattleFrame, ShipDescriptor } from "@/schema/battle";
+import type { AwarenessSnapshot, BattleFrame, CellStateArrays, ShipDescriptor } from "@/schema/battle";
 import { CREW_HP } from "./config";
 import { STANDARD_CELL_GAS_MASS_KG, CREW_VACUUM_SURVIVABLE_FRACTION } from "./lifesupport";
 import type { SimCrew } from "../types";
@@ -81,41 +81,20 @@ export function snapshot(
       };
       if (s.brokeOff === true) s.brokeOff = false;
       if (s.modules === undefined) return base;
-      // Per-cell DYNAMIC state only. The static layout (kind, ship-local offset,
-      // surface kind, max HP, turret presence) lives once per battle in the
-      // ship descriptor (see `shipDescriptor` below), keyed by slotId. The
-      // dynamic cells below are emitted in s.modules order, which is the SAME
-      // order as the static descriptor's cells, so CellState[i] corresponds to
-      // ShipCellLayout.cells[i] — the renderer joins them by INDEX rather than
-      // carrying a redundant slotId on every cell of every frame.
+      // Per-cell DYNAMIC state as NAMED TYPED ARRAYS. The static layout (kind,
+      // ship-local offset, surface kind, max HP, turret presence) lives once
+      // per battle in the ship descriptor (see `shipDescriptor` below), keyed
+      // by index. The dynamic arrays below are emitted in s.modules order,
+      // which is the SAME order as the static descriptor's cells, so
+      // cellHp[i] corresponds to ShipCellLayout.cells[i] — the renderer joins
+      // them by INDEX. The typed arrays are transferred zero-copy across the
+      // worker boundary (the worker collects every .buffer into the postMessage
+      // transfer list), eliminating the structured-clone cost that was the
+      // source of the `[Violation] 'message' handler` warnings on the heaviest
+      // frames. Float64Array holds the same IEEE-754 doubles the engine uses.
       const withModules = {
         ...base,
-        cells: s.modules.map((m) => ({
-          surfaceHp: m.surfaceHp,
-          hp: m.hp,
-          alive: m.alive,
-          // Emit the live barrel angle for turrets so the renderer can draw
-          // the barrel tracking the target. Omitted on fixed mounts and
-          // non-weapon cells (their barrel always points along the mount
-          // facing) to keep legacy replays byte-compatible.
-          ...(m.turretTurnRate > 0 ? { turretAngle: m.turretAngle } : {}),
-          // Manning state — only emitted for stations that need crew, so
-          // crewless cells stay byte-identical to pre-crew replays.
-          ...(m.crewRequired > 0 ? { manned: m.manned } : {}),
-          // Remaining rounds — only for weapons with a finite local magazine
-          // (an ammoCapacity); unlimited weapons and non-weapons omit it.
-          ...(m.effect.kind === "weapon" && m.effect.ammoCapacity !== undefined
-            ? { ammo: m.ammo }
-            : {}),
-          // Local charge buffer — only for power-drawing modules; draw-free
-          // cells omit it so simple designs stay byte-compatible.
-          ...(m.powerDraw > 0 ? { charge: m.charge } : {}),
-          // Door states — only emitted when the module has at least one door
-          // edge, so ships without doors stay byte-identical to pre-door replays.
-          ...(Object.keys(m.edges.doorStates).length > 0
-            ? { doorStates: m.edges.doorStates }
-            : {}),
-        })),
+        cells: buildCellArrays(s.modules),
       };
       // Crew positions and state, in ship-local coordinates. Each crew member
       // sits on the cell of the module at its (col, row); that module's x/y is
@@ -135,9 +114,9 @@ export function snapshot(
           ? {
               ...withModules,
               resource: {
-                thermal: resource.thermal,
-                propellant: resource.propellant,
-                atmosphere: resource.atmosphere,
+                thermal: Float64Array.from(resource.thermal),
+                propellant: Float64Array.from(resource.propellant),
+                atmosphere: Float64Array.from(resource.atmosphere),
                 powerBuffer: {
                   energy: resource.powerBuffer.energy,
                   capacityJoules: resource.powerBuffer.capacityJoules,
@@ -284,6 +263,101 @@ export function snapshot(
     // `atmosphereLevel` is the mean normalised gas mass across all module cells.
     ...atmosphereSnapshot(tick, realShips),
   };
+}
+
+/**
+ * Build the per-cell DYNAMIC state as NAMED TYPED ARRAYS from the ship's live
+ * modules. The arrays are INDEX-MATCHED to the static {@link ShipCellLayout}
+ * (both s.modules order). One pass decides which optional fields are present
+ * (at least one module carries the field); a second pass allocates and fills.
+ *
+ * Always-present arrays: `cellHp` (Float64Array), `cellAlive` (Uint8Array 0/1).
+ * Optional arrays (allocated only when at least one module has the field):
+ *  - `cellSurfaceHp` (Float64Array) — 0 for bare cells.
+ *  - `cellTurretAngle` (Float64Array) — NaN for non-turret cells.
+ *  - `cellManned` (Uint8Array 0/1) — only for crewed modules.
+ *  - `cellAmmo` (Int32Array) — -1 for cells without ammo.
+ *  - `cellCharge` (Float64Array) — NaN for cells without charge.
+ *  - `cellDoorN/E/S/W` (Uint8Array) — 0=no door, 1=open, 2=closed. Allocated
+ *    only when the ship has at least one door.
+ */
+function buildCellArrays(modules: readonly SimModule[]): CellStateArrays {
+  const n = modules.length;
+  const cellHp = new Float64Array(n);
+  const cellAlive = new Uint8Array(n);
+  // surfaceHp is always present: every SimModule carries a surfaceHp number
+  // (0 for bare cells), and the original snapshot emitted it unconditionally.
+  const cellSurfaceHp = new Float64Array(n);
+
+  // First pass: detect which optional fields are present on at least one module.
+  let hasTurret = false;
+  let hasManned = false;
+  let hasAmmo = false;
+  let hasCharge = false;
+  let hasDoors = false;
+  for (let i = 0; i < n; i += 1) {
+    const m = modules[i];
+    if (m === undefined) continue;
+    if (m.turretTurnRate > 0) hasTurret = true;
+    if (m.crewRequired > 0) hasManned = true;
+    if (m.effect.kind === "weapon" && m.effect.ammoCapacity !== undefined) hasAmmo = true;
+    if (m.powerDraw > 0) hasCharge = true;
+    if (Object.keys(m.edges.doorStates).length > 0) hasDoors = true;
+  }
+
+  // Allocate the optional arrays (filled with sentinels by default).
+  const cellTurretAngle = hasTurret ? new Float64Array(n) : undefined;
+  if (cellTurretAngle !== undefined) cellTurretAngle.fill(NaN);
+  const cellManned = hasManned ? new Uint8Array(n) : undefined;
+  const cellAmmo = hasAmmo ? new Int32Array(n) : undefined;
+  if (cellAmmo !== undefined) cellAmmo.fill(-1);
+  const cellCharge = hasCharge ? new Float64Array(n) : undefined;
+  if (cellCharge !== undefined) cellCharge.fill(NaN);
+  const cellDoorN = hasDoors ? new Uint8Array(n) : undefined;
+  const cellDoorE = hasDoors ? new Uint8Array(n) : undefined;
+  const cellDoorS = hasDoors ? new Uint8Array(n) : undefined;
+  const cellDoorW = hasDoors ? new Uint8Array(n) : undefined;
+
+  // Second pass: write each module's values into its index slot.
+  for (let i = 0; i < n; i += 1) {
+    const m = modules[i];
+    if (m === undefined) continue;
+    cellHp[i] = m.hp;
+    cellAlive[i] = m.alive ? 1 : 0;
+    cellSurfaceHp[i] = m.surfaceHp;
+    if (cellTurretAngle !== undefined && m.turretTurnRate > 0) {
+      cellTurretAngle[i] = m.turretAngle;
+    }
+    if (cellManned !== undefined && m.crewRequired > 0) {
+      cellManned[i] = m.manned ? 1 : 0;
+    }
+    if (cellAmmo !== undefined && m.effect.kind === "weapon" && m.effect.ammoCapacity !== undefined) {
+      cellAmmo[i] = m.ammo;
+    }
+    if (cellCharge !== undefined && m.powerDraw > 0) {
+      cellCharge[i] = m.charge;
+    }
+    if (cellDoorN !== undefined && cellDoorE !== undefined && cellDoorS !== undefined && cellDoorW !== undefined) {
+      const ds = m.edges.doorStates;
+      if (ds.n !== undefined) cellDoorN[i] = ds.n === "open" ? 1 : 2;
+      if (ds.e !== undefined) cellDoorE[i] = ds.e === "open" ? 1 : 2;
+      if (ds.s !== undefined) cellDoorS[i] = ds.s === "open" ? 1 : 2;
+      if (ds.w !== undefined) cellDoorW[i] = ds.w === "open" ? 1 : 2;
+    }
+  }
+
+  const result: CellStateArrays = { cellHp, cellAlive, cellSurfaceHp };
+  if (cellTurretAngle !== undefined) result.cellTurretAngle = cellTurretAngle;
+  if (cellManned !== undefined) result.cellManned = cellManned;
+  if (cellAmmo !== undefined) result.cellAmmo = cellAmmo;
+  if (cellCharge !== undefined) result.cellCharge = cellCharge;
+  if (cellDoorN !== undefined) {
+    result.cellDoorN = cellDoorN;
+    result.cellDoorE = cellDoorE;
+    result.cellDoorS = cellDoorS;
+    result.cellDoorW = cellDoorW;
+  }
+  return result;
 }
 
 /**

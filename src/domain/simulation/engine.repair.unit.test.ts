@@ -1,6 +1,7 @@
 import type { CellEdges } from "@/schema/grid";
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
+import { cellHpAt } from "@/domain/simulation/test-cell-helpers";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
 import { defaultOrders } from "@/schema/fleet";
@@ -222,7 +223,7 @@ function v1HpAt(
   const ship = frame.ships.find((s) => s.instanceId === instanceId);
   const idx = cellIndexOf(result, instanceId, "v1");
   if (idx === undefined) return undefined;
-  return ship?.cells?.[idx]?.hp;
+  return cellHpAt(ship?.cells, idx);
 }
 
 describe("engine.per-module repair", () => {
@@ -263,10 +264,11 @@ describe("engine.per-module repair", () => {
     if (v1Idx === undefined || v1MaxHp === undefined) throw new Error("no v1");
     // Walk the frames and assert v1 never exceeds its max HP.
     for (const frame of result.frames) {
-      const v1 = frame.ships.find((s) => s.instanceId === "d1")?.cells?.[v1Idx];
-      expect(v1).toBeDefined();
-      if (v1 === undefined) continue;
-      expect(v1.hp, "v1 hp must never exceed maxHp").toBeLessThanOrEqual(v1MaxHp);
+      const cells = frame.ships.find((s) => s.instanceId === "d1")?.cells;
+      const hp = cellHpAt(cells, v1Idx);
+      expect(hp).toBeDefined();
+      if (hp === undefined) continue;
+      expect(hp, "v1 hp must never exceed maxHp").toBeLessThanOrEqual(v1MaxHp);
     }
   });
 
@@ -277,14 +279,15 @@ describe("engine.per-module repair", () => {
     const v1Idx = cellIndexOf(baseline, "d1", "v1");
     if (v1Idx === undefined) throw new Error("no v1");
     // v1's hp should never increase past its previous frame (no healer).
-    let prev = baseline.frames[0]?.ships.find((s) => s.instanceId === "d1")?.cells?.[v1Idx]?.hp;
+    let prev = cellHpAt(baseline.frames[0]?.ships.find((s) => s.instanceId === "d1")?.cells, v1Idx);
     expect(prev).toBeDefined();
     for (const frame of baseline.frames) {
-      const v1 = frame.ships.find((s) => s.instanceId === "d1")?.cells?.[v1Idx];
-      if (v1 === undefined || prev === undefined) continue;
+      const cells = frame.ships.find((s) => s.instanceId === "d1")?.cells;
+      const hp = cellHpAt(cells, v1Idx);
+      if (hp === undefined || prev === undefined) continue;
       // Either the same (no hit) or lower (a hit landed), never higher.
-      expect(v1.hp, `v1 should never heal without a repair bay`).toBeLessThanOrEqual(prev);
-      prev = v1.hp;
+      expect(hp, `v1 should never heal without a repair bay`).toBeLessThanOrEqual(prev);
+      prev = hp;
     }
   });
 

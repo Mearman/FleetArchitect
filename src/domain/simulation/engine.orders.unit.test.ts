@@ -1,6 +1,8 @@
 import type { CellEdges } from "@/schema/grid";
+import type { CellStateArrays } from "@/schema/battle";
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
+import { sumCellHp } from "@/domain/simulation/test-cell-helpers";
 import type { CombatShip, BattleInputs, ResolvedModule } from "@/domain/simulation/types";
 import { defaultOrders } from "@/schema/fleet";
 import type { ShipClassification } from "@/schema/armor";
@@ -283,12 +285,9 @@ function totalDamageDealt(
   return initHp - minHp;
 }
 
-/** Structure + shield + sum of alive cell HP. */
-function totalHp(s: { structure: number; shield: number; cells?: { hp: number }[] }): number {
-  let moduleHp = 0;
-  if (s.cells !== undefined) {
-    for (const m of s.cells) moduleHp += m.hp;
-  }
+/** Structure + shield + sum of cell HP. Reads the typed-array cell state. */
+function totalHp(s: { structure: number; shield: number; cells?: CellStateArrays }): number {
+  const moduleHp = sumCellHp(s.cells);
   return s.structure + s.shield + moduleHp;
 }
 

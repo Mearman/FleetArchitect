@@ -205,8 +205,8 @@ function lastTurretAngle(
   let last: number | undefined;
   for (const frame of result.frames) {
     const ship = frame.ships.find((s) => s.instanceId === "a1");
-    const weapon = ship?.cells?.[w1Idx];
-    if (weapon?.turretAngle !== undefined) last = weapon.turretAngle;
+    const angle = ship?.cells?.cellTurretAngle?.[w1Idx];
+    if (angle !== undefined && !Number.isNaN(angle)) last = angle;
   }
   return last;
 }
@@ -296,7 +296,8 @@ describe("engine.turrets", () => {
     for (const frame of result.frames) {
       if (frame.projectiles.length === 0) continue;
       const ship = frame.ships.find((s) => s.instanceId === "a1");
-      firedAngle = ship?.cells?.[w1Idx]?.turretAngle;
+      const angle = ship?.cells?.cellTurretAngle?.[w1Idx];
+      firedAngle = angle !== undefined && !Number.isNaN(angle) ? angle : undefined;
       break;
     }
     expect(firedAngle, "the turret should have fired at some point").toBeDefined();

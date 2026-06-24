@@ -1,6 +1,7 @@
 import type { CellEdges } from "@/schema/grid";
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
+import { sumCellHp } from "@/domain/simulation/test-cell-helpers";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
 import { defaultOrders } from "@/schema/fleet";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
@@ -210,8 +211,8 @@ function tookDamage(result: ReturnType<typeof runBattle>, id: string): boolean {
   const end = last.ships.find((sh) => sh.instanceId === id);
   if (start === undefined || end === undefined) throw new Error(`ship ${id} missing`);
   if (!end.alive) return true;
-  const startHp = (start.cells ?? []).reduce((sum, m) => sum + m.hp, 0);
-  const endHp = (end.cells ?? []).reduce((sum, m) => sum + m.hp, 0);
+  const startHp = sumCellHp(start.cells);
+  const endHp = sumCellHp(end.cells);
   return endHp < startHp || end.structure < start.structure;
 }
 
@@ -224,11 +225,9 @@ function totalDamage(result: ReturnType<typeof runBattle>, id: string): number {
   const start = first.ships.find((sh) => sh.instanceId === id);
   const end = last.ships.find((sh) => sh.instanceId === id);
   if (start === undefined || end === undefined) throw new Error(`ship ${id} missing`);
-  const startHp =
-    (start.cells ?? []).reduce((sum, m) => sum + m.hp, 0) + start.structure;
+  const startHp = sumCellHp(start.cells) + start.structure;
   if (!end.alive) return startHp;
-  const endHp =
-    (end.cells ?? []).reduce((sum, m) => sum + m.hp, 0) + end.structure;
+  const endHp = sumCellHp(end.cells) + end.structure;
   return startHp - endHp;
 }
 

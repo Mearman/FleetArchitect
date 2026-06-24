@@ -13,6 +13,26 @@ import { mulberry32 } from "@/domain/simulation/rng";
 import type { SimShip } from "@/domain/simulation/engine/types";
 
 
+/** Count set (non-zero) entries in a Uint8Array alive-flags array. */
+function countAliveFlags(alive: Uint8Array | undefined): number {
+  if (alive === undefined) return 0;
+  let count = 0;
+  for (let i = 0; i < alive.length; i += 1) {
+    if (alive[i] !== 0) count += 1;
+  }
+  return count;
+}
+
+/** The index of the first non-zero (alive) entry, or -1 if none. */
+function findAliveIndex(alive: Uint8Array | undefined): number {
+  if (alive === undefined) return -1;
+  for (let i = 0; i < alive.length; i += 1) {
+    if (alive[i] !== 0) return i;
+  }
+  return -1;
+}
+
+
 const OPEN_EDGES: CellEdges = {
   n: "open",
   e: "open",
@@ -232,14 +252,13 @@ describe("engine.breakaway", () => {
     // The chunk is alive and carries exactly one alive weapon — it kept
     // the weapon module from one end of the severed column.
     expect(chunk.alive).toBe(true);
-    const aliveChunkModules = chunk.cells?.filter((m) => m.alive) ?? [];
-    expect(aliveChunkModules.length).toBe(1);
+    const aliveCount = countAliveFlags(chunk.cells?.cellAlive);
+    expect(aliveCount).toBe(1);
     // Cell kind is static, read from the chunk's descriptor. The dynamic cells
     // are INDEX-MATCHED to the layout, so find the alive cell's index in the
     // layout and read its kind there.
     const chunkLayout = result.descriptors?.find((d) => d.instanceId === chunk.instanceId)?.cells;
-    const chunkCells = chunk.cells ?? [];
-    const aliveIdx = chunkCells.findIndex((m) => m.alive);
+    const aliveIdx = findAliveIndex(chunk.cells?.cellAlive);
     const aliveKind = aliveIdx >= 0 ? chunkLayout?.[aliveIdx]?.kind : undefined;
     expect(aliveKind).toBe("weapon");
 

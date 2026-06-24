@@ -230,10 +230,20 @@ function inputs(ships: CombatShip[], anomalies: BattleAnomalyKind[], seed = 1, m
  *  zero events in either battle. */
 function cellsDestroyed(result: ReturnType<typeof runBattle>, targetId: string): number {
   const first = result.frames[0]?.ships.find((s) => s.instanceId === targetId);
-  const initialAlive = first?.cells?.filter((m) => m.alive).length ?? 0;
+  const initialAlive = countAlive(first?.cells?.cellAlive);
   const last = result.frames.at(-1)?.ships.find((s) => s.instanceId === targetId);
-  const finalAlive = last?.cells?.filter((m) => m.alive).length ?? 0;
+  const finalAlive = countAlive(last?.cells?.cellAlive);
   return initialAlive - finalAlive;
+}
+
+/** Count set bits in a Uint8Array alive flags (0/1 per cell). */
+function countAlive(alive: Uint8Array | undefined): number {
+  if (alive === undefined) return 0;
+  let count = 0;
+  for (let i = 0; i < alive.length; i += 1) {
+    if (alive[i] !== 0) count += 1;
+  }
+  return count;
 }
 
 function shieldAt(result: ReturnType<typeof runBattle>, tick: number, id: string): number {

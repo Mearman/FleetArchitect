@@ -450,10 +450,13 @@ describe("engine.crew — snapshot", () => {
     // index in the descriptor then read cells[index].
     const layout = result.descriptors?.find((d) => d.instanceId === "a1")?.cells;
     const w1Idx = layout?.findIndex((c) => c.slotId === "w1");
-    const weapon = w1Idx !== undefined && w1Idx >= 0 ? ship?.cells?.[w1Idx] : undefined;
-    expect(weapon?.manned, "a crewed weapon emits its manned flag").toBe(false);
-    expect(weapon?.ammo, "a finite-magazine weapon emits its ammo").toBe(0);
-    expect(weapon?.charge, "a power-drawing weapon emits its charge").toBeGreaterThan(0);
+    const cells = ship?.cells;
+    const manned = w1Idx !== undefined && w1Idx >= 0 ? cells?.cellManned?.[w1Idx] : undefined;
+    const ammo = w1Idx !== undefined && w1Idx >= 0 ? cells?.cellAmmo?.[w1Idx] : undefined;
+    const charge = w1Idx !== undefined && w1Idx >= 0 ? cells?.cellCharge?.[w1Idx] : undefined;
+    expect(manned, "a crewed weapon emits its manned flag").toBe(0);
+    expect(ammo, "a finite-magazine weapon emits its ammo").toBe(0);
+    expect(charge, "a power-drawing weapon emits its charge").toBeGreaterThan(0);
   });
 });
 

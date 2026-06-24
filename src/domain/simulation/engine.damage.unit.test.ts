@@ -3,6 +3,7 @@ import { CELL_SIZE } from "@/domain/grid";
 import { runBattle } from "@/domain/simulation/engine";
 import { applyCollisionDamage } from "@/domain/simulation/engine/collision";
 import type { ShipContact } from "@/domain/simulation/engine/collision";
+import { sumCellHp } from "@/domain/simulation/test-cell-helpers";
 import { resolveChainReactions } from "@/domain/simulation/engine/chain-reaction";
 import { applyDamage } from "@/domain/simulation/engine/damage";
 import { stepTechCooldowns } from "@/domain/simulation/engine/mines";
@@ -410,7 +411,7 @@ describe("engine.damage — kinetic collision damage", () => {
 
     const totalModuleHp = (frame: (typeof result.frames)[number], id: string): number => {
       const ship = frame.ships.find((s) => s.instanceId === id);
-      return (ship?.cells ?? []).reduce((sum, m) => sum + m.hp, 0);
+      return sumCellHp(ship?.cells);
     };
     const first = result.frames[0];
     const last = result.frames.at(-1);
@@ -562,8 +563,13 @@ describe("engine.damage — determinism", () => {
     }
     const breached = a.frames.some((f) => {
       const t = f.ships.find((s) => s.instanceId === "tgt");
-      const cells = t?.cells ?? [];
-      return cells.some((m, i) => volatileIdx.has(i) && !m.alive);
+      const cells = t?.cells;
+      if (cells === undefined) return false;
+      const alive = cells.cellAlive;
+      for (let i = 0; i < alive.length; i += 1) {
+        if (volatileIdx.has(i) && alive[i] === 0) return true;
+      }
+      return false;
     });
     expect(breached, "a reactor or magazine should breach during the battle").toBe(true);
   });

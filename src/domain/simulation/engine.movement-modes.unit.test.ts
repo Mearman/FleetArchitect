@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import type { CombatShip, BattleInputs } from "@/domain/simulation/types";
+import { sumCellHp } from "@/domain/simulation/test-cell-helpers";
 import type { WeaponEffect } from "@/schema/module";
 import { modularShip, targetDummy } from "./engine.factions-tech-helpers";
 
@@ -253,12 +254,12 @@ describe("engine.movement-modes", () => {
     // undamaged, so that IS the max).
     const f0 = result.frames[0];
     const a0 = f0?.ships.find((s) => s.instanceId === "a1");
-    const initialHp = (a0?.structure ?? 0) + (a0?.cells ?? []).reduce((sum, m) => sum + (m.hp ?? 0), 0);
+    const initialHp = (a0?.structure ?? 0) + sumCellHp(a0?.cells);
     let retreatTick: number | undefined;
     for (const frame of result.frames) {
       const ship = frame.ships.find((s) => s.instanceId === "a1");
       if (ship?.alive !== true) continue;
-      const hp = (ship.structure ?? 0) + (ship.cells ?? []).reduce((sum, m) => sum + (m.hp ?? 0), 0);
+      const hp = ship.structure + sumCellHp(ship.cells);
       if (initialHp > 0 && hp / initialHp < retreatThreshold) {
         retreatTick = frame.tick;
         break;

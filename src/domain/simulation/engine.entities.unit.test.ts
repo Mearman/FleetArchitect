@@ -1,6 +1,7 @@
 import type { CellEdges } from "@/schema/grid";
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
+import { sumCellHp } from "@/domain/simulation/test-cell-helpers";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
 import { defaultOrders } from "@/schema/fleet";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
@@ -178,11 +179,9 @@ function totalDamage(result: ReturnType<typeof runBattle>, id: string): number {
   const start = first.ships.find((sh) => sh.instanceId === id);
   const end = last.ships.find((sh) => sh.instanceId === id);
   if (start === undefined || end === undefined) throw new Error(`ship ${id} missing`);
-  const startHp =
-    (start.cells ?? []).reduce((sum, m) => sum + m.hp, 0) + start.structure;
+  const startHp = sumCellHp(start.cells) + start.structure;
   if (!end.alive) return startHp;
-  const endHp =
-    (end.cells ?? []).reduce((sum, m) => sum + m.hp, 0) + end.structure;
+  const endHp = sumCellHp(end.cells) + end.structure;
   return startHp - endHp;
 }
 
@@ -198,10 +197,11 @@ function aliveFunctionalModules(result: ReturnType<typeof runBattle>, id: string
   const cells = end.cells;
   if (cells === undefined || layout === undefined) return 0;
   let count = 0;
-  for (let i = 0; i < cells.length && i < layout.length; i += 1) {
-    const c = cells[i];
+  const alive = cells.cellAlive;
+  const n = Math.min(alive.length, layout.length);
+  for (let i = 0; i < n; i += 1) {
     const l = layout[i];
-    if (c !== undefined && l !== undefined && c.alive && l.kind !== "hull") count += 1;
+    if (l !== undefined && alive[i] !== 0 && l.kind !== "hull") count += 1;
   }
   return count;
 }

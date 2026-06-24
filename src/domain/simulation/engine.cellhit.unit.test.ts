@@ -181,13 +181,9 @@ function inputs(ships: CombatShip[]): BattleInputs {
   };
 }
 
-interface FModule {
-  hp: number;
-  alive: boolean;
-}
 interface FShip {
   instanceId: string;
-  cells?: FModule[];
+  cells?: { cellHp: Float64Array; cellAlive: Uint8Array };
 }
 
 /** Map each slotId to its index in the defender's static descriptor layout.
@@ -203,7 +199,7 @@ function slotIndex(result: { descriptors?: { instanceId: string; cells?: { slotI
 /** The recorded HP of a cell on the defender at a given frame, or undefined. */
 function cellHp(frame: { ships: FShip[] }, idx: number): number | undefined {
   const d = frame.ships.find((s) => s.instanceId === "d1");
-  return d?.cells?.[idx]?.hp;
+  return d?.cells?.cellHp[idx];
 }
 
 /** The first frame in which the named cell's HP has dropped below its max. */

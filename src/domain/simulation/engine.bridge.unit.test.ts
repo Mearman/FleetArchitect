@@ -212,7 +212,7 @@ describe("engine.bridge-command", () => {
     const attacker = result.frames[0]?.ships.find((s) => s.instanceId === "a1");
     const layout = result.descriptors?.find((d) => d.instanceId === "a1")?.cells;
     const c1Idx = layout?.findIndex((c) => c.slotId === "c1");
-    const bridge = c1Idx !== undefined && c1Idx >= 0 ? attacker?.cells?.[c1Idx] : undefined;
-    expect(bridge?.hp).toBe(0);
+    const bridgeHp = c1Idx !== undefined && c1Idx >= 0 ? attacker?.cells?.cellHp[c1Idx] : undefined;
+    expect(bridgeHp).toBe(0);
   });
 });

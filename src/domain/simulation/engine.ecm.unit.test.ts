@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
+import { sumCellHp } from "@/domain/simulation/test-cell-helpers";
 import { defaultOrders } from "@/schema/fleet";
 import type { CellEdges } from "@/schema/grid";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
@@ -229,9 +230,9 @@ function damageTaken(result: ReturnType<typeof runBattle>): number {
   const start = first.ships.find((s) => s.instanceId === "prey");
   const end = last.ships.find((s) => s.instanceId === "prey");
   if (start === undefined || end === undefined) throw new Error("prey missing");
-  const startHp = (start.cells ?? []).reduce((sum, m) => sum + m.hp, 0) + start.structure;
+  const startHp = sumCellHp(start.cells) + start.structure;
   if (!end.alive) return startHp;
-  const endHp = (end.cells ?? []).reduce((sum, m) => sum + m.hp, 0) + end.structure;
+  const endHp = sumCellHp(end.cells) + end.structure;
   return startHp - endHp;
 }
 
