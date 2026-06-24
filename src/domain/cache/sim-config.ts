@@ -1,8 +1,9 @@
 /**
- * Canonical snapshot of every non-input data determinant the battle engine reads
- * at sim-time. The deterministic result cache (Part 1 of the cache plan) keys on
- * the resolved battle inputs PLUS this snapshot, so that a change to any tunable
- * the engine consumes flips the cache key and a stale result is never served.
+ * Canonical snapshot of every non-input DATA determinant the battle engine
+ * reads at sim-time. The deterministic result cache (Part 1 of the cache plan)
+ * keys on the resolved battle inputs PLUS this snapshot, so that a change to
+ * any tunable the engine consumes flips the cache key and a stale result is
+ * never served.
  *
  * Two distinct sources of output change exist for a pure, deterministic engine:
  *
@@ -12,8 +13,11 @@
  *     them directly: change one and the key changes, no manual intervention.
  *  2. **The engine algorithm itself** — pure code the data hash cannot observe.
  *     A change here (a reordered accumulation, a new force term) alters output
- *     with the data unchanged, so it needs a manual bump of
- *     {@link ENGINE_ALGORITHM_VERSION}.
+ *     with the data unchanged, so it is captured by the REFACTOR-STABLE
+ *     algorithm signature in `algorithm-signature.ts`, a SHA-256 of the six
+ *     canonical preset-determinism frame hashes. The signature is ASYNC (it
+ *     hashes via `crypto.subtle`), so it cannot live in this synchronous
+ *     snapshot; the cache-key caller passes it to `deriveCacheKey` separately.
  *
  * This module reads the existing engine exports and bundles them; it does NOT
  * refactor the engine to thread a parameter. The engine keeps importing `SIM`
@@ -39,19 +43,6 @@ import {
   STALEMATE_IDLE_TICKS,
   TICKS_PER_SECOND,
 } from "@/domain/simulation/types";
-
-/**
- * Manual version tag for pure-code output changes the data hash cannot see.
- *
- * The cache key is a content hash of {@link getSimConfig}'s serialisable data
- * plus this integer. When a change to engine CODE (not data) alters battle
- * output — a reordered floating-point accumulation, a new force term, a changed
- * integration step — bump this by one so previously cached results, computed by
- * the old algorithm, are no longer served. Data-driven changes (editing a
- * `SIM.*` value or an anchor) do NOT need a bump: they already flow into the
- * hash through {@link getSimConfig}.
- */
-export const ENGINE_ALGORITHM_VERSION = 1;
 
 /**
  * The standalone sim-time constants the engine consumes alongside `SIM`. Every
@@ -81,15 +72,15 @@ export interface SimConstants {
 }
 
 /**
- * The canonical determinant snapshot: the `SIM` feel constants, the standalone
- * sim-time anchors, and the algorithm version. `sim` is typed as the engine's
- * own `SIM` object so a new tunable added to `SIM` flows in automatically; the
- * completeness test guards that every `SIM.*` key survives into the snapshot.
+ * The canonical DATA determinant snapshot: the `SIM` feel constants and the
+ * standalone sim-time anchors. `sim` is typed as the engine's own `SIM` object
+ * so a new tunable added to `SIM` flows in automatically; the completeness test
+ * guards that every `SIM.*` key survives into the snapshot. The algorithm
+ * signature is NOT here — it is async and passed to `deriveCacheKey` separately.
  */
 export interface SimConfig {
   readonly sim: typeof SIM;
   readonly constants: SimConstants;
-  readonly algorithmVersion: number;
 }
 
 /**
@@ -115,6 +106,5 @@ export function getSimConfig(): SimConfig {
       ACCEL_PER_TICK_FROM_SI,
       STALEMATE_IDLE_TICKS,
     },
-    algorithmVersion: ENGINE_ALGORITHM_VERSION,
   };
 }

@@ -1,9 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { engineAlgorithmSignature } from "@/domain/cache/algorithm-signature";
 import { deriveCacheKey } from "@/domain/cache/key";
-import {
-  ENGINE_ALGORITHM_VERSION,
-  getSimConfig,
-} from "@/domain/cache/sim-config";
+import { getSimConfig } from "@/domain/cache/sim-config";
 import type { CheckpointStore } from "@/domain/cache/checkpoint-store";
 import type {
   BattleRunOptions,
@@ -179,7 +177,7 @@ function persistFailingStore(failure: Error): CheckpointStore {
 }
 
 async function key(): Promise<string> {
-  return deriveCacheKey(inputs, getSimConfig(), ENGINE_ALGORITHM_VERSION);
+  return deriveCacheKey(inputs, getSimConfig(), await engineAlgorithmSignature());
 }
 
 describe("ResumingBattleRunner", () => {

@@ -4,6 +4,7 @@ import { runBattle } from "@/domain/simulation/engine";
 import { resolveFleetToCombatShips } from "@/domain/resolve";
 import { catalog } from "@/data/catalog";
 import { presetDesigns, presetFleets } from "@/data/presets";
+import { PINNED_FRAME_HASHES } from "@/domain/cache/algorithm-signature";
 import type { BattleInputs } from "@/domain/simulation/types";
 
 /**
@@ -18,7 +19,11 @@ import type { BattleInputs } from "@/domain/simulation/types";
  *    Armada (preset-fleet-nexus-armada, 8 ships) — 19 ships total, the two
  *    heaviest fleets in the preset catalogue.
  *
- * regenerate after an intended frame change: run the test, paste the new hash.
+ * The pinned hashes live in `@/domain/cache/algorithm-signature`, where they
+ * are the single source of truth for BOTH this regression test and the
+ * refactor-stable algorithm signature that keys the deterministic result cache.
+ * regenerate after an intended frame change: update PINNED_FRAME_HASHES in the
+ * shared module; both this test and the cache key follow automatically.
  */
 
 /** Run a battle and return a SHA-256 digest of the serialised frame stream. */
@@ -58,11 +63,13 @@ const SEEDS: number[] = [1, 7, 99];
 
 describe("preset-fleet frame determinism regression", () => {
   describe("smallest pair: Phase Lance vs Iron Wall", () => {
+    // PINNED_FRAME_HASHES is the shared single source of truth: the cache key's
+    // algorithm term hashes its canonical serialisation, so any pinned-hash
+    // update also flips every cache key automatically.
     const PINNED: Record<number, string> = {
-      // regenerate after an intended frame change: run the test, paste the new hash.
-      1: "f660859c47f0dfd71612d57f38ea111fca3e195f80e36bbfc1a3c0971611ba8c",
-      7: "2f8d5c0413e6414ae7489bc8163f95e0cfa5d693b6785f41c0c76d8f91995564",
-      99: "7b9054540b7c2592ab01bdf0f7e695535ce2b9c3433a8d3fd6aa863e7d304215",
+      1: PINNED_FRAME_HASHES[0],
+      7: PINNED_FRAME_HASHES[1],
+      99: PINNED_FRAME_HASHES[2],
     };
 
     for (const seed of SEEDS) {
@@ -75,10 +82,9 @@ describe("preset-fleet frame determinism regression", () => {
 
   describe("largest pair: Drone Swarm vs Nexus Armada", () => {
     const PINNED: Record<number, string> = {
-      // regenerate after an intended frame change: run the test, paste the new hash.
-      1: "ed6f5052a97906dea6775deb6cf7a1c551f4eb9f73c8ae1af4cb7537521ef8ff",
-      7: "56d4598f97f623a8a47a87a2d256557b100dd8d102ef499fb3be2cf58a39f570",
-      99: "189a4cb55717ae43f25b6c8bcdb39c1e3179a414ae2685bbd0d15e2336804fee",
+      1: PINNED_FRAME_HASHES[3],
+      7: PINNED_FRAME_HASHES[4],
+      99: PINNED_FRAME_HASHES[5],
     };
 
     for (const seed of SEEDS) {

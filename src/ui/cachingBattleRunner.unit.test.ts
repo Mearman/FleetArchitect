@@ -1,10 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
+import { engineAlgorithmSignature } from "@/domain/cache/algorithm-signature";
 import { MemorySimCache } from "@/domain/cache/memory-cache";
 import { deriveCacheKey } from "@/domain/cache/key";
-import {
-  ENGINE_ALGORITHM_VERSION,
-  getSimConfig,
-} from "@/domain/cache/sim-config";
+import { getSimConfig } from "@/domain/cache/sim-config";
 import type { SimCache } from "@/domain/cache/contract";
 import type {
   BattleRunOptions,
@@ -61,7 +59,7 @@ function stubInner(value: BattleResult): {
 }
 
 async function key(): Promise<string> {
-  return deriveCacheKey(inputs, getSimConfig(), ENGINE_ALGORITHM_VERSION);
+  return deriveCacheKey(inputs, getSimConfig(), await engineAlgorithmSignature());
 }
 
 const notify = vi.fn<(error: Error) => void>();

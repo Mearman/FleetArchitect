@@ -72,21 +72,47 @@ describe("DexieSimCache", () => {
     expect(record?.lastAccess).toBeGreaterThan(0);
   });
 
-  it("treats a schema-invalid stored record as a miss and evicts it", async () => {
+  it("treats a grossly corrupt stored record as a miss and evicts it", async () => {
     const cache = new DexieSimCache(db.simCache);
-    // Store a record whose `result` violates the schema (ticks must be >= 0),
-    // simulating stored-shape drift. Written via the raw table so the broken
-    // shape lands in IndexedDB directly.
-    await db.simCache.put({
-      key: "broken",
-      result: sampleResult("ok", { ticks: -1 }),
-      bytes: 10,
-      lastAccess: Date.now(),
+    // Store a record whose `result` fails the cheap top-level shape guard: the
+    // `frames` field is not an array, simulating a truncated write or gross
+    // corruption. Written via the raw IDB object store (opening a fresh
+    // connection to the same fake-indexeddb database) so the broken object lands
+    // in IndexedDB directly, bypassing Dexie's typed `put` which would resist a
+    // malformed shape. The inputs + SimConfig + signature cover every
+    // determinant, so the only path to a malformed row is corruption; the guard
+    // catches and evicts it.
+    // Force Dexie to open its connection so backendDB() is non-null, then grab
+    // the underlying IDBDatabase to write a malformed record directly to the
+    // object store, bypassing Dexie's typed `put` which would resist a
+    // non-BattleResult shape.
+    await db.open();
+    const idb = db.backendDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = idb.transaction("simCache", "readwrite");
+      tx.objectStore("simCache").put({
+        key: "broken",
+        result: { id: "ok", winner: "attacker", ticks: 5, frames: "not-an-array" },
+        bytes: 10,
+        lastAccess: Date.now(),
+      });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
     });
 
-    // The record fails BattleResult.safeParse, so it is a miss and is evicted.
+    // The record fails the shape guard, so it is a miss and is evicted.
     expect(await cache.get("broken")).toBeUndefined();
     expect(await cache.has("broken")).toBe(false);
+  });
+
+  it("returns a valid stored result without a deep parse", async () => {
+    const cache = new DexieSimCache(db.simCache);
+    const stored = sampleResult("ok", { ticks: 7 });
+    await cache.set("k", stored);
+    // The cheap shape guard narrows record.result to BattleResult and returns it
+    // as-is; no deep Zod parse runs on the read path.
+    const got = await cache.get("k");
+    expect(got).toEqual(stored);
   });
 
   it("bumps lastAccess on a hit for LRU recency", async () => {

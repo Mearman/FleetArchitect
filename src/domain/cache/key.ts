@@ -4,8 +4,9 @@
  * `runBattle` is a pure function of its data determinants: the resolved
  * `CombatShip[]` (which already bakes in every catalogue stat), the anomaly set,
  * the seed, the effective `maxTicks`, the `SimConfig` snapshot (see
- * `sim-config.ts`), and the integer algorithm version for pure-code changes the
- * data hash cannot observe. The key is a SHA-256 of a canonical JSON encoding of
+ * `sim-config.ts`), and the refactor-stable algorithm signature for pure-code
+ * changes the data hash cannot observe (see `algorithm-signature.ts`). The key
+ * is a SHA-256 of a canonical JSON encoding of
  * exactly those determinants — nothing else. Battle METADATA
  * (`attackerFleetId`, `defenderFleetId`, the result `id`, `playedAt`) is
  * deliberately excluded: it never affects the simulation, so two matchups that
@@ -88,14 +89,19 @@ function toHex(bytes: Uint8Array): string {
  * the simulation determinants: the resolved ships, anomaly set, seed, effective
  * `maxTicks` (a missing `maxTicks` is the same battle as an explicit
  * {@link DEFAULT_MAX_TICKS}, so they collapse to one key), the `SimConfig`
- * snapshot, and the algorithm version. Fleet ids and result metadata are
+ * snapshot, and the algorithm signature. Fleet ids and result metadata are
  * excluded. Hashing is via the Web Crypto `crypto.subtle.digest('SHA-256')`,
  * available in browsers, workers, and the Node test environment alike.
+ *
+ * The `algorithmSignature` is the refactor-stable string from
+ * `algorithm-signature.ts` — the SHA-256 of the six pinned preset-determinism
+ * frame hashes. The caller computes it (it is async) and passes it in here as
+ * a term of the determinant set.
  */
 export async function deriveCacheKey(
   inputs: BattleInputs,
   simConfig: SimConfig,
-  algoVersion: number,
+  algorithmSignature: string,
 ): Promise<string> {
   const determinants = {
     ships: inputs.ships,
@@ -103,7 +109,7 @@ export async function deriveCacheKey(
     seed: inputs.seed,
     maxTicks: inputs.maxTicks ?? DEFAULT_MAX_TICKS,
     sim: simConfig,
-    v: algoVersion,
+    sig: algorithmSignature,
   };
   const json = canonicalize(determinants);
   const digest = await crypto.subtle.digest(

@@ -1,5 +1,5 @@
 import type { Table } from "dexie";
-import { BattleResult } from "@/schema/battle";
+import type { BattleResult } from "@/schema/battle";
 import type { SimCache } from "@/domain/cache/contract";
 import type { SimCacheRecord } from "@/storage/db";
 
@@ -47,6 +47,26 @@ function estimateBytes(result: BattleResult): number {
 }
 
 /**
+ * Cheap top-level shape guard for a stored {@link BattleResult}. Narrows
+ * `unknown` with `typeof` and `in` — no assertions, no deep parse — checking
+ * only the four top-level fields the cache consumer reads. The inputs +
+ * `SimConfig` + `engineAlgorithmSignature` cover every simulation determinant,
+ * so an entry written under a key is only ever read back when the algorithm and
+ * schema match exactly; a stale-shape row is never reached because algorithm or
+ * schema drift flips the key. The guard therefore only catches GROSS corruption
+ * (a truncated write, a schema break the key could not observe), evicting the
+ * row and treating it as a miss rather than serving a malformed result.
+ */
+function isBattleResult(value: unknown): value is BattleResult {
+  if (typeof value !== "object" || value === null) return false;
+  if (!("id" in value) || typeof value.id !== "string") return false;
+  if (!("winner" in value) || typeof value.winner !== "string") return false;
+  if (!("ticks" in value) || typeof value.ticks !== "number") return false;
+  if (!("frames" in value) || !Array.isArray(value.frames)) return false;
+  return true;
+}
+
+/**
  * Whether a thrown value is a storage quota-exceeded error. IndexedDB surfaces
  * an exhausted quota as a `DOMException` named `QuotaExceededError`; Dexie
  * propagates it (or wraps it in an error whose `name` is preserved). Narrow
@@ -82,17 +102,18 @@ export class DexieSimCache implements SimCache {
   async get(key: string): Promise<BattleResult | undefined> {
     const record = await this.table.get(key);
     if (record === undefined) return undefined;
-    const parsed = BattleResult.safeParse(record.result);
-    if (!parsed.success) {
-      // Shape drift: the stored result no longer matches the schema. Treat it as
-      // a miss and evict the stale row so it is not re-read on every lookup.
+    // Cheap shape guard only: the inputs + SimConfig + engineAlgorithmSignature
+    // cover every determinant, so a stale-shape entry is never read (algorithm
+    // or schema drift flips the key). This guard only catches gross corruption
+    // (a truncated write) — evict the row and miss.
+    if (!isBattleResult(record.result)) {
       await this.table.delete(key);
       return undefined;
     }
     // Bump recency for LRU. Fire-and-forget: do not delay or fail the read on a
     // recency-bookkeeping error — the result is already resolved.
     void this.table.update(key, { lastAccess: Date.now() });
-    return parsed.data;
+    return record.result;
   }
 
   async set(key: string, value: BattleResult): Promise<void> {

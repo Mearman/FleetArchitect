@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { canonicalize, deriveCacheKey } from "@/domain/cache/key";
-import {
-  ENGINE_ALGORITHM_VERSION,
-  getSimConfig,
-} from "@/domain/cache/sim-config";
+import { getSimConfig } from "@/domain/cache/sim-config";
 import type { SimConfig } from "@/domain/cache/sim-config";
 import type { BattleInputs, CombatShip } from "@/domain/simulation/types";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
@@ -64,7 +61,7 @@ function baseInputs(): BattleInputs {
 }
 
 const SIM_CONFIG: SimConfig = getSimConfig();
-const ALGO = ENGINE_ALGORITHM_VERSION;
+const SIG = "deadbeef";
 
 describe("canonicalize", () => {
   it("is independent of object key insertion order", () => {
@@ -103,8 +100,8 @@ describe("deriveCacheKey", () => {
       defenderFleetId: inputsA.defenderFleetId,
       attackerFleetId: inputsA.attackerFleetId,
     };
-    const keyA = await deriveCacheKey(inputsA, SIM_CONFIG, ALGO);
-    const keyB = await deriveCacheKey(reordered, SIM_CONFIG, ALGO);
+    const keyA = await deriveCacheKey(inputsA, SIM_CONFIG, SIG);
+    const keyB = await deriveCacheKey(reordered, SIM_CONFIG, SIG);
     expect(keyA).toBe(keyB);
   });
 
@@ -114,8 +111,8 @@ describe("deriveCacheKey", () => {
       ...baseInputs(),
       maxTicks: DEFAULT_MAX_TICKS,
     };
-    const keyOmitted = await deriveCacheKey(omitted, SIM_CONFIG, ALGO);
-    const keyExplicit = await deriveCacheKey(explicit, SIM_CONFIG, ALGO);
+    const keyOmitted = await deriveCacheKey(omitted, SIM_CONFIG, SIG);
+    const keyExplicit = await deriveCacheKey(explicit, SIM_CONFIG, SIG);
     expect(keyOmitted).toBe(keyExplicit);
   });
 
@@ -126,8 +123,8 @@ describe("deriveCacheKey", () => {
       attackerFleetId: "totally-different-attacker",
       defenderFleetId: "totally-different-defender",
     };
-    const keyBase = await deriveCacheKey(base, SIM_CONFIG, ALGO);
-    const keyRelabelled = await deriveCacheKey(relabelled, SIM_CONFIG, ALGO);
+    const keyBase = await deriveCacheKey(base, SIM_CONFIG, SIG);
+    const keyRelabelled = await deriveCacheKey(relabelled, SIM_CONFIG, SIG);
     expect(keyBase).toBe(keyRelabelled);
   });
 
@@ -137,24 +134,24 @@ describe("deriveCacheKey", () => {
       ...base,
       ships: [ship("a", 999), ship("b")],
     };
-    const keyBase = await deriveCacheKey(base, SIM_CONFIG, ALGO);
-    const keyMutated = await deriveCacheKey(mutated, SIM_CONFIG, ALGO);
+    const keyBase = await deriveCacheKey(base, SIM_CONFIG, SIG);
+    const keyMutated = await deriveCacheKey(mutated, SIM_CONFIG, SIG);
     expect(keyBase).not.toBe(keyMutated);
   });
 
   it("changes the key when the seed changes", async () => {
     const base = baseInputs();
     const reseeded: BattleInputs = { ...base, seed: base.seed + 1 };
-    const keyBase = await deriveCacheKey(base, SIM_CONFIG, ALGO);
-    const keyReseeded = await deriveCacheKey(reseeded, SIM_CONFIG, ALGO);
+    const keyBase = await deriveCacheKey(base, SIM_CONFIG, SIG);
+    const keyReseeded = await deriveCacheKey(reseeded, SIM_CONFIG, SIG);
     expect(keyBase).not.toBe(keyReseeded);
   });
 
   it("changes the key when the anomalies changes", async () => {
     const base = baseInputs();
     const withAnomaly: BattleInputs = { ...base, anomalies: ["blackHole"] };
-    const keyBase = await deriveCacheKey(base, SIM_CONFIG, ALGO);
-    const keyAnomaly = await deriveCacheKey(withAnomaly, SIM_CONFIG, ALGO);
+    const keyBase = await deriveCacheKey(base, SIM_CONFIG, SIG);
+    const keyAnomaly = await deriveCacheKey(withAnomaly, SIM_CONFIG, SIG);
     expect(keyBase).not.toBe(keyAnomaly);
   });
 
@@ -169,8 +166,8 @@ describe("deriveCacheKey", () => {
       ...baseInputs(),
       anomalies: normaliseAnomalies(["nebula", "asteroidField", "blackHole"]),
     };
-    const keyA = await deriveCacheKey(orderA, SIM_CONFIG, ALGO);
-    const keyB = await deriveCacheKey(orderB, SIM_CONFIG, ALGO);
+    const keyA = await deriveCacheKey(orderA, SIM_CONFIG, SIG);
+    const keyB = await deriveCacheKey(orderB, SIM_CONFIG, SIG);
     expect(keyA).toBe(keyB);
   });
 
@@ -183,34 +180,34 @@ describe("deriveCacheKey", () => {
         GRAVITY_CONSTANT_ARENA: SIM_CONFIG.constants.GRAVITY_CONSTANT_ARENA + 1,
       },
     };
-    const keyBase = await deriveCacheKey(base, SIM_CONFIG, ALGO);
-    const keyTweaked = await deriveCacheKey(base, tweaked, ALGO);
+    const keyBase = await deriveCacheKey(base, SIM_CONFIG, SIG);
+    const keyTweaked = await deriveCacheKey(base, tweaked, SIG);
     expect(keyBase).not.toBe(keyTweaked);
   });
 
-  it("changes the key when the algorithm version changes", async () => {
+  it("changes the key when the algorithm signature changes", async () => {
     const base = baseInputs();
-    const keyBase = await deriveCacheKey(base, SIM_CONFIG, ALGO);
-    const keyBumped = await deriveCacheKey(base, SIM_CONFIG, ALGO + 1);
+    const keyBase = await deriveCacheKey(base, SIM_CONFIG, SIG);
+    const keyBumped = await deriveCacheKey(base, SIM_CONFIG, "feedface");
     expect(keyBase).not.toBe(keyBumped);
   });
 
   it("throws when a determinant contains NaN or Infinity", async () => {
     const nanInputs: BattleInputs = { ...baseInputs(), seed: Number.NaN };
-    await expect(deriveCacheKey(nanInputs, SIM_CONFIG, ALGO)).rejects.toThrow(
+    await expect(deriveCacheKey(nanInputs, SIM_CONFIG, SIG)).rejects.toThrow(
       /NaN/,
     );
     const infInputs: BattleInputs = {
       ...baseInputs(),
       seed: Number.POSITIVE_INFINITY,
     };
-    await expect(deriveCacheKey(infInputs, SIM_CONFIG, ALGO)).rejects.toThrow(
+    await expect(deriveCacheKey(infInputs, SIM_CONFIG, SIG)).rejects.toThrow(
       /Infinity/,
     );
   });
 
   it("produces a 64-char lower-case hex SHA-256 digest", async () => {
-    const key = await deriveCacheKey(baseInputs(), SIM_CONFIG, ALGO);
+    const key = await deriveCacheKey(baseInputs(), SIM_CONFIG, SIG);
     expect(key).toMatch(/^[0-9a-f]{64}$/);
   });
 });

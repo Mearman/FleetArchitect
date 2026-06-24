@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  ENGINE_ALGORITHM_VERSION,
-  getSimConfig,
-} from "@/domain/cache/sim-config";
+import { getSimConfig } from "@/domain/cache/sim-config";
 import {
   ARRIVAL_CLOSING_SPEED_MPS,
   CREW_HP,
@@ -70,11 +67,6 @@ describe("getSimConfig — determinant completeness", () => {
     for (const value of Object.values(constants)) {
       expect(Number.isFinite(value)).toBe(true);
     }
-  });
-
-  it("carries the manual algorithm version", () => {
-    expect(getSimConfig().algorithmVersion).toBe(ENGINE_ALGORITHM_VERSION);
-    expect(Number.isInteger(ENGINE_ALGORITHM_VERSION)).toBe(true);
   });
 
   it("is a pure snapshot — two calls produce equal values", () => {
