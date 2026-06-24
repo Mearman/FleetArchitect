@@ -207,9 +207,12 @@ describe("engine.bridge-command", () => {
     if (final === undefined) return;
     // No shot ever landed: the dummy is undamaged.
     expect(final.structure).toBe(9_999_999);
-    // And the attacker's command module is destroyed at deployment (0 hp).
+    // And the attacker's command module is destroyed at deployment (0 hp). The
+    // dynamic cells are INDEX-MATCHED to the static layout, so find c1's index.
     const attacker = result.frames[0]?.ships.find((s) => s.instanceId === "a1");
-    const bridge = attacker?.cells?.find((m) => m.slotId === "c1");
+    const layout = result.descriptors?.find((d) => d.instanceId === "a1")?.cells;
+    const c1Idx = layout?.findIndex((c) => c.slotId === "c1");
+    const bridge = c1Idx !== undefined && c1Idx >= 0 ? attacker?.cells?.[c1Idx] : undefined;
     expect(bridge?.hp).toBe(0);
   });
 });

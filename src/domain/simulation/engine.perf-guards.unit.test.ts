@@ -283,9 +283,14 @@ describe("W5b perf guards preserve frame output", () => {
       brownoutBounded: false,
     });
     const result = runBattle({ ...inputs, ships: structuredClone(inputs.ships) });
-    const magDied = result.frames.some((f) => {
+    // The dynamic cells are INDEX-MATCHED to the static layout, so find the
+    // magazine's index by its slotId in the descriptor then read the cell at
+    // that index.
+    const layout = result.descriptors?.find((d) => d.instanceId === "def-chain")?.cells;
+    const dmIdx = layout?.findIndex((c) => c.slotId === "dm");
+    const magDied = dmIdx !== undefined && dmIdx >= 0 && result.frames.some((f) => {
       const ship = f.ships.find((s) => s.instanceId === "def-chain");
-      return (ship?.cells ?? []).some((c) => c.slotId === "dm" && !c.alive);
+      return ship?.cells?.[dmIdx]?.alive === false;
     });
     expect(magDied, "the magazine must be destroyed for the chain-reaction guard to fire").toBe(true);
   });

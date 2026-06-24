@@ -196,6 +196,20 @@ function inputs(ships: CombatShip[]): BattleInputs {
   };
 }
 
+/** The index of `slotId` in the descriptor layout for `instanceId`. The
+ *  per-tick cells are INDEX-MATCHED to the layout (both s.modules order), so
+ *  the dynamic cell at this index is the one for that slot. */
+function cellIndexOf(
+  result: ReturnType<typeof runBattle>,
+  instanceId: string,
+  slotId: string,
+): number | undefined {
+  const cells = result.descriptors?.find((d) => d.instanceId === instanceId)?.cells;
+  if (cells === undefined) return undefined;
+  const idx = cells.findIndex((c) => c.slotId === slotId);
+  return idx === -1 ? undefined : idx;
+}
+
 /** The `v1` module's hp at a given tick. The repair bay should keep it
  *  above what a no-repair baseline would show. */
 function v1HpAt(
@@ -206,7 +220,9 @@ function v1HpAt(
   const frame = result.frames[tick];
   if (frame === undefined) return undefined;
   const ship = frame.ships.find((s) => s.instanceId === instanceId);
-  return ship?.cells?.find((m) => m.slotId === "v1")?.hp;
+  const idx = cellIndexOf(result, instanceId, "v1");
+  if (idx === undefined) return undefined;
+  return ship?.cells?.[idx]?.hp;
 }
 
 describe("engine.per-module repair", () => {
@@ -243,11 +259,13 @@ describe("engine.per-module repair", () => {
       ?.find((d) => d.instanceId === "d1")
       ?.cells?.find((c) => c.slotId === "v1")?.maxHp;
     expect(v1MaxHp).toBeDefined();
+    const v1Idx = cellIndexOf(result, "d1", "v1");
+    if (v1Idx === undefined || v1MaxHp === undefined) throw new Error("no v1");
     // Walk the frames and assert v1 never exceeds its max HP.
     for (const frame of result.frames) {
-      const v1 = frame.ships.find((s) => s.instanceId === "d1")?.cells?.find((m) => m.slotId === "v1");
+      const v1 = frame.ships.find((s) => s.instanceId === "d1")?.cells?.[v1Idx];
       expect(v1).toBeDefined();
-      if (v1 === undefined || v1MaxHp === undefined) continue;
+      if (v1 === undefined) continue;
       expect(v1.hp, "v1 hp must never exceed maxHp").toBeLessThanOrEqual(v1MaxHp);
     }
   });
@@ -256,11 +274,13 @@ describe("engine.per-module repair", () => {
     // The baseline already covers "no repair"; the explicit 0-rate slot
     // exercises the inert-repair-module branch.
     const baseline = runBattle(inputs([hammerShip("a1", 0), modularDefender("d1", 80, 0)]));
+    const v1Idx = cellIndexOf(baseline, "d1", "v1");
+    if (v1Idx === undefined) throw new Error("no v1");
     // v1's hp should never increase past its previous frame (no healer).
-    let prev = baseline.frames[0]?.ships.find((s) => s.instanceId === "d1")?.cells?.find((m) => m.slotId === "v1")?.hp;
+    let prev = baseline.frames[0]?.ships.find((s) => s.instanceId === "d1")?.cells?.[v1Idx]?.hp;
     expect(prev).toBeDefined();
     for (const frame of baseline.frames) {
-      const v1 = frame.ships.find((s) => s.instanceId === "d1")?.cells?.find((m) => m.slotId === "v1");
+      const v1 = frame.ships.find((s) => s.instanceId === "d1")?.cells?.[v1Idx];
       if (v1 === undefined || prev === undefined) continue;
       // Either the same (no hit) or lower (a hit landed), never higher.
       expect(v1.hp, `v1 should never heal without a repair bay`).toBeLessThanOrEqual(prev);

@@ -185,15 +185,27 @@ function firstProjectile(
   return undefined;
 }
 
+/** The index of `slotId` in the attacker's descriptor layout. The per-tick
+ *  cells are INDEX-MATCHED to the layout, so the cell for that slot is
+ *  cells[indexOf(slotId)]. */
+function attackerCellIndex(result: ReturnType<typeof runBattle>, slotId: string): number | undefined {
+  const layout = result.descriptors?.find((d) => d.instanceId === "a1")?.cells;
+  if (layout === undefined) return undefined;
+  const idx = layout.findIndex((c) => c.slotId === slotId);
+  return idx === -1 ? undefined : idx;
+}
+
 /** The live turret angle of the attacker's weapon module on the last frame
  *  it is reported (turret modules emit `turretAngle`; fixed mounts don't). */
 function lastTurretAngle(
   result: ReturnType<typeof runBattle>,
 ): number | undefined {
+  const w1Idx = attackerCellIndex(result, "w1");
+  if (w1Idx === undefined) return undefined;
   let last: number | undefined;
   for (const frame of result.frames) {
     const ship = frame.ships.find((s) => s.instanceId === "a1");
-    const weapon = ship?.cells?.find((m) => m.slotId === "w1");
+    const weapon = ship?.cells?.[w1Idx];
     if (weapon?.turretAngle !== undefined) last = weapon.turretAngle;
   }
   return last;
@@ -278,11 +290,13 @@ describe("engine.turrets", () => {
     // through the side of its mount while still slewing.
     const slow = cannon({ turretArc: Math.PI, turretTurnRate: 0.02, cooldown: 0, range: 1000 });
     const result = runBattle(inputs([weaponShip("a1", slow), targetAt("d1", 0, 80)]));
+    const w1Idx = attackerCellIndex(result, "w1");
+    if (w1Idx === undefined) throw new Error("no w1");
     let firedAngle: number | undefined;
     for (const frame of result.frames) {
       if (frame.projectiles.length === 0) continue;
       const ship = frame.ships.find((s) => s.instanceId === "a1");
-      firedAngle = ship?.cells?.find((m) => m.slotId === "w1")?.turretAngle;
+      firedAngle = ship?.cells?.[w1Idx]?.turretAngle;
       break;
     }
     expect(firedAngle, "the turret should have fired at some point").toBeDefined();

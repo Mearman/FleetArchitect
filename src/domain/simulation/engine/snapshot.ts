@@ -68,11 +68,14 @@ export function snapshot(
       if (s.modules === undefined) return base;
       // Per-cell DYNAMIC state only. The static layout (kind, ship-local offset,
       // surface kind, max HP, turret presence) lives once per battle in the
-      // ship descriptor (see `shipDescriptor` below), keyed by the same slotId.
+      // ship descriptor (see `shipDescriptor` below), keyed by slotId. The
+      // dynamic cells below are emitted in s.modules order, which is the SAME
+      // order as the static descriptor's cells, so CellState[i] corresponds to
+      // ShipCellLayout.cells[i] — the renderer joins them by INDEX rather than
+      // carrying a redundant slotId on every cell of every frame.
       const withModules = {
         ...base,
         cells: s.modules.map((m) => ({
-          slotId: m.slotId,
           surfaceHp: m.surfaceHp,
           hp: m.hp,
           alive: m.alive,

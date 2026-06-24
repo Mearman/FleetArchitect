@@ -187,16 +187,23 @@ function totalDamage(result: ReturnType<typeof runBattle>, id: string): number {
 }
 
 /** Count alive functional (non-hull) modules on a ship in the final frame. The
- *  cell kind is static, read from the battle's descriptors. */
+ *  cell kind is static, read from the battle's descriptors; the dynamic cells
+ *  are INDEX-MATCHED to the layout, so walk them in lockstep by index. */
 function aliveFunctionalModules(result: ReturnType<typeof runBattle>, id: string): number {
   const last = result.frames[result.frames.length - 1];
   if (last === undefined) throw new Error("no frames");
   const end = last.ships.find((sh) => sh.instanceId === id);
   if (end === undefined) throw new Error(`ship ${id} missing`);
-  const kindBySlot = new Map<string, string>();
   const layout = result.descriptors?.find((d) => d.instanceId === id)?.cells;
-  for (const c of layout ?? []) kindBySlot.set(c.slotId, c.kind);
-  return (end.cells ?? []).filter((m) => m.alive && kindBySlot.get(m.slotId) !== "hull").length;
+  const cells = end.cells;
+  if (cells === undefined || layout === undefined) return 0;
+  let count = 0;
+  for (let i = 0; i < cells.length && i < layout.length; i += 1) {
+    const c = cells[i];
+    const l = layout[i];
+    if (c !== undefined && l !== undefined && c.alive && l.kind !== "hull") count += 1;
+  }
+  return count;
 }
 
 /** Any mine snapshot across the whole battle. */

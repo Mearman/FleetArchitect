@@ -234,10 +234,13 @@ describe("engine.breakaway", () => {
     expect(chunk.alive).toBe(true);
     const aliveChunkModules = chunk.cells?.filter((m) => m.alive) ?? [];
     expect(aliveChunkModules.length).toBe(1);
-    // Cell kind is static, read from the chunk's descriptor by slot id.
+    // Cell kind is static, read from the chunk's descriptor. The dynamic cells
+    // are INDEX-MATCHED to the layout, so find the alive cell's index in the
+    // layout and read its kind there.
     const chunkLayout = result.descriptors?.find((d) => d.instanceId === chunk.instanceId)?.cells;
-    const aliveSlot = aliveChunkModules[0]?.slotId;
-    const aliveKind = chunkLayout?.find((c) => c.slotId === aliveSlot)?.kind;
+    const chunkCells = chunk.cells ?? [];
+    const aliveIdx = chunkCells.findIndex((m) => m.alive);
+    const aliveKind = aliveIdx >= 0 ? chunkLayout?.[aliveIdx]?.kind : undefined;
     expect(aliveKind).toBe("weapon");
 
     // The split is permanent: subsequent frames keep the chunk alive.

@@ -239,14 +239,14 @@ describe("engine.per-module-damage", () => {
     // The per-frame ship snapshot no longer carries the outline either.
     expect(first.ships.find((s) => s.instanceId === "d1")).not.toHaveProperty("outline");
 
-    // The static layout for every cell is present once in the descriptor, keyed
-    // by the same slot ids the per-tick cells use.
+    // The static layout for every cell is present once in the descriptor. The
+    // per-tick cells are INDEX-MATCHED to it (both s.modules order), so the
+    // arrays are the same length and the dynamic state carries no slotId.
     const descriptor = result.descriptors?.find((d) => d.instanceId === "d1");
     expect(descriptor).toBeDefined();
     expect(descriptor?.cells?.length).toBe(defenderCells.length);
-    const layoutSlots = new Set((descriptor?.cells ?? []).map((c) => c.slotId));
     for (const cell of defenderCells) {
-      expect(layoutSlots.has(cell.slotId)).toBe(true);
+      expect(cell).not.toHaveProperty("slotId");
     }
     for (const layout of descriptor?.cells ?? []) {
       expect(typeof layout.kind).toBe("string");

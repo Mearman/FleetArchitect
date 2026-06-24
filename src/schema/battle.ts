@@ -98,10 +98,19 @@ export type CellKind = z.infer<typeof CellKind>;
  * surface kind) lives once-per-battle in {@link ShipCellLayout}, keyed by the
  * same `slotId`. The renderer reconstructs each cell's world position from the
  * ship pose and the static offset, so it is no longer serialised every frame.
+ *
+ * The per-tick CellState is INDEX-MATCHED to the static ShipCellLayout: both
+ * are emitted in s.modules order, so CellState[i] corresponds to
+ * ShipCellLayout.cells[i]. The slotId is therefore REDUNDANT on the dynamic
+ * state (it would repeat the static layout's slotId every frame); the static
+ * layout carries it once per battle. slotId is retained here as optional for
+ * backward compatibility with older replays.
  */
 export const CellState = z.object({
-  /** Stable per-cell id, the key into the static {@link ShipCellLayout}. */
-  slotId: EntityId,
+  /** Stable per-cell id, the key into the static {@link ShipCellLayout}.
+   *  REDUNDANT on the dynamic state (it is index-matched to the static layout);
+   *  kept optional for backward compatibility with older replays. */
+  slotId: EntityId.optional(),
   /** Current HP of the surface layer (armour or deck). Zero for bare cells.
    *  Optional for backward compatibility. */
   surfaceHp: z.number().optional(),
@@ -153,12 +162,14 @@ export const ShipSnapshot = z.object({
   alive: z.boolean(),
   /**
    * Per-cell DYNAMIC state, present when the ship runs the per-module damage
-   * model. Each entry is keyed by `slotId` into the once-per-battle
-   * {@link ShipCellLayout} (carried on {@link ShipDescriptor}) which holds the
-   * static layout — kind, ship-local offset, max HP, surface — so the renderer
-   * derives each cell's world position from the ship pose plus its static
-   * offset rather than re-serialising it every frame. Optional for backward
-   * compatibility with older replays.
+   * model. INDEX-MATCHED to the once-per-battle {@link ShipCellLayout} (carried
+   * on {@link ShipDescriptor}, in the same s.modules order): cells[i]
+   * corresponds to ShipCellLayout.cells[i], so the renderer joins them by index
+   * rather than by slotId. The static layout holds the cell's kind, ship-local
+   * offset, max HP and surface, so the renderer derives each cell's world
+   * position from the ship pose plus its static offset rather than
+   * re-serialising it every frame. Optional for backward compatibility with
+   * older replays.
    */
   cells: z.array(CellState).optional(),
   /** Crew members aboard this ship. Optional for backward compatibility with

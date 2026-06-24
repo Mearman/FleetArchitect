@@ -446,7 +446,11 @@ describe("engine.crew — snapshot", () => {
     ];
     const result = runBattle(inputs([shooterShip("a1", 0, modules), toughTarget("d1", 40)]));
     const ship = result.frames[0]!.ships.find((s) => s.instanceId === "a1");
-    const weapon = ship?.cells?.find((m) => m.slotId === "w1");
+    // The dynamic cells are INDEX-MATCHED to the static layout, so find w1's
+    // index in the descriptor then read cells[index].
+    const layout = result.descriptors?.find((d) => d.instanceId === "a1")?.cells;
+    const w1Idx = layout?.findIndex((c) => c.slotId === "w1");
+    const weapon = w1Idx !== undefined && w1Idx >= 0 ? ship?.cells?.[w1Idx] : undefined;
     expect(weapon?.manned, "a crewed weapon emits its manned flag").toBe(false);
     expect(weapon?.ammo, "a finite-magazine weapon emits its ammo").toBe(0);
     expect(weapon?.charge, "a power-drawing weapon emits its charge").toBeGreaterThan(0);

@@ -297,14 +297,16 @@ function moduleAt(
   shipId: string,
   slotId: string,
 ): { hp: number; maxHp: number } | undefined {
-  const last = result.frames.at(-1);
-  const cell = last?.ships.find((s) => s.instanceId === shipId)?.cells?.find((m) => m.slotId === slotId);
-  if (cell === undefined) return undefined;
-  const layout = result.descriptors
-    ?.find((d) => d.instanceId === shipId)
-    ?.cells?.find((c) => c.slotId === slotId);
+  const layout = result.descriptors?.find((d) => d.instanceId === shipId)?.cells;
   if (layout === undefined) return undefined;
-  return { hp: cell.hp, maxHp: layout.maxHp };
+  const idx = layout.findIndex((c) => c.slotId === slotId);
+  if (idx < 0) return undefined;
+  const cellSlot = layout[idx];
+  if (cellSlot === undefined) return undefined;
+  const last = result.frames.at(-1);
+  const cell = last?.ships.find((s) => s.instanceId === shipId)?.cells?.[idx];
+  if (cell === undefined) return undefined;
+  return { hp: cell.hp, maxHp: cellSlot.maxHp };
 }
 
 describe("engine.directional-shield", () => {

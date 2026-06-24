@@ -182,7 +182,6 @@ function inputs(ships: CombatShip[]): BattleInputs {
 }
 
 interface FModule {
-  slotId: string;
   hp: number;
   alive: boolean;
 }
@@ -191,22 +190,32 @@ interface FShip {
   cells?: FModule[];
 }
 
+/** Map each slotId to its index in the defender's static descriptor layout.
+ *  The per-tick cells are INDEX-MATCHED to the layout, so the cell for a given
+ *  slotId is cells[indexOf(slotId)]. */
+function slotIndex(result: { descriptors?: { instanceId: string; cells?: { slotId: string }[] }[] }, slotId: string): number | undefined {
+  const layout = result.descriptors?.find((d) => d.instanceId === "d1")?.cells;
+  if (layout === undefined) return undefined;
+  const idx = layout.findIndex((c) => c.slotId === slotId);
+  return idx === -1 ? undefined : idx;
+}
+
 /** The recorded HP of a cell on the defender at a given frame, or undefined. */
-function cellHp(frame: { ships: FShip[] }, slotId: string): number | undefined {
+function cellHp(frame: { ships: FShip[] }, idx: number): number | undefined {
   const d = frame.ships.find((s) => s.instanceId === "d1");
-  return d?.cells?.find((m) => m.slotId === slotId)?.hp;
+  return d?.cells?.[idx]?.hp;
 }
 
 /** The first frame in which the named cell's HP has dropped below its max. */
 function firstDamageFrame(
   frames: { ships: FShip[] }[],
-  slotId: string,
+  idx: number,
   maxHp: number,
 ): number {
   for (let i = 0; i < frames.length; i++) {
     const f = frames[i];
     if (f === undefined) continue;
-    const hp = cellHp(f, slotId);
+    const hp = cellHp(f, idx);
     if (hp !== undefined && hp < maxHp) return i;
   }
   return -1;
@@ -220,13 +229,16 @@ describe("engine.cellhit — frontmost cell", () => {
     const result = runBattle(
       inputs([shooter(cannon({ damage: 20, cooldown: 1000 })), defenderColumn(DEFENDER_DISTANCE, [100, 100])]),
     );
-    const frontHit = firstDamageFrame(result.frames, "cell0", 100);
+    const frontIdx = slotIndex(result, "cell0");
+    const backIdx = slotIndex(result, "cell1");
+    if (frontIdx === undefined || backIdx === undefined) throw new Error("no cell index");
+    const frontHit = firstDamageFrame(result.frames, frontIdx, 100);
     expect(frontHit, "the front cell must take the hit").toBeGreaterThan(0);
     const last = result.frames.at(-1);
     if (last === undefined) throw new Error("no frames");
     // The front cell lost HP; the back cell behind it is untouched.
-    expect(cellHp(last, "cell0") ?? 100, "front cell damaged").toBeLessThan(100);
-    expect(cellHp(last, "cell1") ?? 0, "back cell shadowed by the front").toBe(100);
+    expect(cellHp(last, frontIdx) ?? 100, "front cell damaged").toBeLessThan(100);
+    expect(cellHp(last, backIdx) ?? 0, "back cell shadowed by the front").toBe(100);
   });
 });
 
@@ -242,14 +254,17 @@ describe("engine.cellhit — penetration", () => {
     const result = runBattle(
       inputs([shooter(cannon({ damage: 20, cooldown: 1 })), defenderColumn(DEFENDER_DISTANCE, [5, 100])]),
     );
-    const penetrationIdx = firstDamageFrame(result.frames, "cell1", 100);
+    const frontIdx = slotIndex(result, "cell0");
+    const backIdx = slotIndex(result, "cell1");
+    if (frontIdx === undefined || backIdx === undefined) throw new Error("no cell index");
+    const penetrationIdx = firstDamageFrame(result.frames, backIdx, 100);
     expect(penetrationIdx, "the rear cell must eventually be penetrated").toBeGreaterThan(0);
     const f = result.frames[penetrationIdx];
     if (f === undefined) throw new Error("no penetration frame");
     // Front cell destroyed by the round that penetrated.
-    expect(cellHp(f, "cell0") ?? 1, "front cell destroyed before overflow").toBe(0);
+    expect(cellHp(f, frontIdx) ?? 1, "front cell destroyed before overflow").toBe(0);
     // The cell behind took exactly the 15 overflow on this first penetration.
-    expect(cellHp(f, "cell1") ?? 100, "overflow penetrated to the cell behind").toBeCloseTo(
+    expect(cellHp(f, backIdx) ?? 100, "overflow penetrated to the cell behind").toBeCloseTo(
       85,
       5,
     );
@@ -262,15 +277,18 @@ describe("engine.cellhit — penetration", () => {
     const result = runBattle(
       inputs([shooter(cannon({ damage: 8, cooldown: 1 })), defenderColumn(DEFENDER_DISTANCE, [10, 100])]),
     );
+    const frontIdx = slotIndex(result, "cell0");
+    const backIdx = slotIndex(result, "cell1");
+    if (frontIdx === undefined || backIdx === undefined) throw new Error("no cell index");
     const frontGone = (() => {
       for (let i = 0; i < result.frames.length; i++) {
         const f = result.frames[i];
         if (f === undefined) continue;
-        if ((cellHp(f, "cell0") ?? 10) <= 0) return i;
+        if ((cellHp(f, frontIdx) ?? 10) <= 0) return i;
       }
       return Infinity;
     })();
-    const backTouched = firstDamageFrame(result.frames, "cell1", 100);
+    const backTouched = firstDamageFrame(result.frames, backIdx, 100);
     expect(frontGone, "front cell must be destroyed at some point").toBeLessThan(Infinity);
     if (backTouched >= 0) {
       expect(

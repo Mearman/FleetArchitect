@@ -1,12 +1,12 @@
 /**
  * Render-time reconstruction of ship cells from the slim per-tick snapshot plus
  * the once-per-battle static descriptor. The battle frames carry only DYNAMIC
- * cell state (hp, alive, doorStates, manned, ammo, charge, turretAngle), keyed
- * by `slotId`; the cell's static layout (kind, ship-local offset, max HP,
- * surface) lives once on the {@link ShipDescriptor}. This module joins the two so
- * the renderer can draw each cell at its world position — derived from the ship
- * pose and the static offset — without the layout being re-serialised every
- * frame.
+ * cell state (hp, alive, doorStates, manned, ammo, charge, turretAngle),
+ * INDEX-MATCHED to the static layout (both s.modules order); the cell's static
+ * layout (kind, ship-local offset, max HP, surface) lives once on the
+ * {@link ShipDescriptor}, keyed by `slotId`. This module joins the two so the
+ * renderer can draw each cell at its world position — derived from the ship pose
+ * and the static offset — without the layout being re-serialised every frame.
  *
  * Pure: every function returns fresh values and never mutates its inputs.
  */
@@ -54,9 +54,13 @@ export interface RenderCell {
  * cells or no per-tick cell state (a legacy aggregated ship, or a phantom),
  * signalling the caller to fall back to its non-cell rendering path.
  *
- * A dynamic state with no matching static layout slot is skipped (it cannot be
- * positioned); a static slot with no dynamic state this frame is skipped (it is
- * not part of the live hull this tick).
+ * The dynamic cells and the static layout are both emitted in s.modules order,
+ * so they are INDEX-MATCHED: CellState[i] corresponds to ShipCellLayout.cells[i].
+ * This walks the two arrays in lockstep by index (no slotId-keyed lookup). The
+ * shorter of the two arrays bounds the walk; a longer layout is for cells that
+ * have no live state this frame, and a longer dynamic array (only possible on
+ * legacy replays that carried slotId redundantly) is matched cell-for-cell up to
+ * the layout length.
  */
 export function renderCells(
   ship: ShipSnapshot,
@@ -66,13 +70,12 @@ export function renderCells(
   const layout = descriptor?.cells;
   if (cells === undefined || layout === undefined) return undefined;
 
-  const stateBySlot = new Map<string, CellState>();
-  for (const c of cells) stateBySlot.set(c.slotId, c);
-
+  const n = Math.min(cells.length, layout.length);
   const merged: RenderCell[] = [];
-  for (const l of layout) {
-    const state = stateBySlot.get(l.slotId);
-    if (state === undefined) continue;
+  for (let i = 0; i < n; i += 1) {
+    const l = layout[i];
+    const state = cells[i];
+    if (l === undefined || state === undefined) continue;
     merged.push({
       slotId: l.slotId,
       ox: l.ox,

@@ -551,14 +551,19 @@ describe("engine.damage — determinism", () => {
     expect(b.frames).toEqual(a.frames);
     expect(b.winner).toBe(a.winner);
     // Sanity: a volatile cell really did breach and chain at some point — a
-    // frame exists where the target lost a volatile module.
-    const volatileSlots = new Set<string>();
-    for (const c of a.descriptors?.find((d) => d.instanceId === "tgt")?.cells ?? []) {
-      if (c.kind === "power" || c.kind === "magazine") volatileSlots.add(c.slotId);
+    // frame exists where the target lost a volatile module. The dynamic cells
+    // are INDEX-MATCHED to the static layout, so mark the volatile indices once
+    // and check the cell at each index.
+    const layout = a.descriptors?.find((d) => d.instanceId === "tgt")?.cells ?? [];
+    const volatileIdx = new Set<number>();
+    for (let i = 0; i < layout.length; i += 1) {
+      const c = layout[i];
+      if (c !== undefined && (c.kind === "power" || c.kind === "magazine")) volatileIdx.add(i);
     }
     const breached = a.frames.some((f) => {
       const t = f.ships.find((s) => s.instanceId === "tgt");
-      return (t?.cells ?? []).some((m) => volatileSlots.has(m.slotId) && !m.alive);
+      const cells = t?.cells ?? [];
+      return cells.some((m, i) => volatileIdx.has(i) && !m.alive);
     });
     expect(breached, "a reactor or magazine should breach during the battle").toBe(true);
   });
