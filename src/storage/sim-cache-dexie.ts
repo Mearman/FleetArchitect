@@ -2,6 +2,7 @@ import type { Table } from "dexie";
 import type { BattleResult } from "@/schema/battle";
 import type { SimCache } from "@/domain/cache/contract";
 import type { SimCacheRecord } from "@/storage/db";
+import { isQuotaExceeded, isUncloneable } from "@/storage/idb-errors";
 
 /**
  * The in-browser durable tier of the deterministic result cache: an IndexedDB
@@ -64,32 +65,6 @@ function isBattleResult(value: unknown): value is BattleResult {
   if (!("ticks" in value) || typeof value.ticks !== "number") return false;
   if (!("frames" in value) || !Array.isArray(value.frames)) return false;
   return true;
-}
-
-/**
- * Whether a thrown value is a storage quota-exceeded error. IndexedDB surfaces
- * an exhausted quota as a `DOMException` named `QuotaExceededError`; Dexie
- * propagates it (or wraps it in an error whose `name` is preserved). Narrow
- * `unknown` with `in` and `typeof` — no assertions.
- */
-function isQuotaExceeded(error: unknown): boolean {
-  if (typeof error !== "object" || error === null) return false;
-  if (!("name" in error)) return false;
-  return error.name === "QuotaExceededError";
-}
-
-/**
- * Whether a thrown value signals that the BattleResult is too large for the
- * durable tier to handle. Two failure modes are both capacity boundaries, not
- * bugs: a `DataCloneError` from `table.put` (the structured clone of a
- * multi-hundred-MB result exhausts memory) and a `RangeError` from
- * `estimateBytes` (`JSON.stringify` of the same result exceeds the string
- * length limit). Narrow `unknown` with `in` and `typeof` — no assertions.
- */
-function isUncloneable(error: unknown): boolean {
-  if (typeof error !== "object" || error === null) return false;
-  if (!("name" in error)) return false;
-  return error.name === "DataCloneError" || error.name === "RangeError";
 }
 
 export class DexieSimCache implements SimCache {

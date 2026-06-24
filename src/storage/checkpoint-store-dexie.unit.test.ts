@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import fakeIndexedDB, { IDBKeyRange } from "fake-indexeddb";
+import type { Table } from "dexie";
 import { FleetArchitectDatabase, _setDatabaseForTesting } from "@/storage/db";
+import type { CheckpointRecord } from "@/storage/db";
 import { DexieCheckpointStore } from "@/storage/checkpoint-store-dexie";
 import { EngineCheckpoint } from "@/schema/checkpoint";
 import type { BattleFrame } from "@/schema/battle";
@@ -16,6 +18,26 @@ function freshDatabase(): FleetArchitectDatabase {
   });
   _setDatabaseForTesting(db);
   return db;
+}
+
+/**
+ * Wrap a Dexie table so every property access forwards to the underlying table
+ * except `put`, which is replaced by the supplied stub. Used to simulate the
+ * capacity-boundary error a long-battle checkpoint triggers in the browser
+ * (DataCloneError on the structured clone of `preFrames`) without having to
+ * build such a record. The Proxy keeps the full `Table` structural type so no
+ * assertion is needed at the call site.
+ */
+function withPutStub(
+  table: Table<CheckpointRecord, string>,
+  put: (record: CheckpointRecord) => Promise<void>,
+): Table<CheckpointRecord, string> {
+  return new Proxy(table, {
+    get(target, prop, receiver) {
+      if (prop === "put") return put;
+      return Reflect.get(target, prop, receiver);
+    },
+  });
 }
 
 /**
@@ -133,5 +155,48 @@ describe("DexieCheckpointStore", () => {
     // it is a miss and the stale row is evicted.
     expect(await store.get("broken")).toBeUndefined();
     expect(await db.checkpoints.get("broken")).toBeUndefined();
+  });
+
+  it("swallows a DataCloneError from put as a capacity boundary and clears the stale row", async () => {
+    // On a long battle `preFrames` grows until `table.put` OOMs the structured
+    // clone with DataCloneError. That is a capacity boundary, not a bug — the
+    // resume feature is an optimisation, never a correctness path. The put is
+    // swallowed (no throw) and any pre-existing row for the key is cleared so a
+    // later resume does not read a partial/old checkpoint.
+    const store = new DexieCheckpointStore(db.checkpoints);
+    // Seed an existing row for the same key to prove the stale row is cleared.
+    await store.put("k1", minimalCheckpoint(10), [frame(0)]);
+    expect(await db.checkpoints.get("k1")).toBeDefined();
+
+    const table = withPutStub(db.checkpoints, async () => {
+      const error = new Error("structured clone OOM");
+      error.name = "DataCloneError";
+      throw error;
+    });
+    const storeWithFailingPut = new DexieCheckpointStore(table);
+
+    // The put must not throw.
+    await expect(
+      storeWithFailingPut.put("k1", minimalCheckpoint(20), [frame(0), frame(1)]),
+    ).resolves.toBeUndefined();
+
+    // No row survives: the stale row was cleared and the new one never landed.
+    expect(await db.checkpoints.get("k1")).toBeUndefined();
+    expect(await db.checkpoints.count()).toBe(0);
+  });
+
+  it("rethrows a non-capacity error from put unchanged", async () => {
+    // A genuine Dexie error (not a capacity boundary) must propagate to the
+    // resume decorator's notifier rather than being swallowed.
+    const table = withPutStub(db.checkpoints, async () => {
+      const error = new Error("a real IDB failure");
+      error.name = "UnknownError";
+      throw error;
+    });
+    const storeWithFailingPut = new DexieCheckpointStore(table);
+
+    await expect(
+      storeWithFailingPut.put("k1", minimalCheckpoint(20), [frame(0)]),
+    ).rejects.toThrow("a real IDB failure");
   });
 });
