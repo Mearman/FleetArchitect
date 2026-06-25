@@ -13,6 +13,7 @@ import {
   MISSILE_RANGE_M,
   MODULE_POWER_DRAW_W,
   MUZZLE_VELOCITY_M_PER_S,
+  ORDNANCE_BURN_TIME_S,
   PROJECTILE_MASS_KG,
   RCS_TORQUE_N_M,
   REACTION_WHEEL_TORQUE_N_M,
@@ -25,6 +26,7 @@ import {
   kineticRangeM,
   projectileSpeedMPerTick,
 } from "../combat-scale";
+import { poweredMotorBurnTicks, poweredMotorThrustMPerS2 } from "../ordnance-motor";
 import {
   SENSOR_OMNI_ARC,
   SENSOR_DIRECTIONAL_ARC,
@@ -90,6 +92,30 @@ const TORPEDO_MASS_KG = PROJECTILE_MASS_KG.driver;
 /** Torpedo cruise velocity (m/s) — DERIVED as a fraction of a mass-driver
  *  muzzle velocity: a heavy torpedo is the slowest round in flight. */
 const TORPEDO_CRUISE_MS = MUZZLE_VELOCITY_M_PER_S.driver / 8;
+/**
+ * Terran missile finite-burn motor — DERIVED from the same ordnance anchors
+ * `range` uses (`ORDNANCE_BURN_TIME_S`). A missile is powered+guided: it
+ * launches slow and accelerates to cruise over its burn. Thrust is the
+ * spawn→cruise gap over the burn time (`poweredMotorThrustMPerS2`); `burnTicks`
+ * is the burn in ticks (`poweredMotorBurnTicks`). For a Terran missile
+ * (cruise 2000 m/s, 40 s burn): thrust = 0.6 × 2000 / 40 = 30 m/s², burn
+ * 1200 ticks.
+ */
+const MISSILE_THRUST_M_PER_S2 = poweredMotorThrustMPerS2(
+  MISSILE_CRUISE_MS,
+  ORDNANCE_BURN_TIME_S.missile,
+);
+const MISSILE_BURN_TICKS = poweredMotorBurnTicks(ORDNANCE_BURN_TIME_S.missile);
+/**
+ * Terran torpedo finite-burn motor — the heavy short-burn band. For a Terran
+ * torpedo (cruise 1250 m/s, 8 s burn): thrust = 0.6 × 1250 / 8 ≈ 93.75 m/s²,
+ * burn 240 ticks.
+ */
+const TORPEDO_THRUST_M_PER_S2 = poweredMotorThrustMPerS2(
+  TORPEDO_CRUISE_MS,
+  ORDNANCE_BURN_TIME_S.torpedo,
+);
+const TORPEDO_BURN_TICKS = poweredMotorBurnTicks(ORDNANCE_BURN_TIME_S.torpedo);
 /** Terran plasma-torpedo warhead yield (J) — authored catalogue content: a
  *  capital-grade matter-plasma warhead, ~GJ, the heaviest single Terran hit. */
 const TORPEDO_WARHEAD_J = 1.5e9;
@@ -164,6 +190,10 @@ export const terranModules: ModuleDefinition[] = [
       shieldPiercing: 0.35,
       armourPiercing: 0.5,
       spread: 0.02,
+      // Ballistic slug: unpowered and unguided. It still has `tracking > 0`
+      // because the turret slews, but the projectile itself flies straight.
+      powered: false,
+      guided: false,
       // A 90° (±π/2) turret that slews briskly to bear on its target.
       turretArc: Math.PI / 2,
       turretTurnRate: 0.08,
@@ -196,6 +226,12 @@ export const terranModules: ModuleDefinition[] = [
       shieldPiercing: 0.15,
       armourPiercing: 0.3,
       spread: 0.4,
+      // Powered guided ordnance: a slow launch accelerated to cruise over the
+      // motor burn, then a homing coast.
+      powered: true,
+      guided: true,
+      thrust: MISSILE_THRUST_M_PER_S2,
+      burnTicks: MISSILE_BURN_TICKS,
       // A full 360° launcher (±π) that slews slowly.
       turretArc: Math.PI,
       turretTurnRate: 0.05,
@@ -228,6 +264,11 @@ export const terranModules: ModuleDefinition[] = [
       shieldPiercing: 0.45,
       armourPiercing: 0.4,
       spread: 0.05,
+      // Powered guided ordnance: a heavy short-burn motor sprinting to cruise.
+      powered: true,
+      guided: true,
+      thrust: TORPEDO_THRUST_M_PER_S2,
+      burnTicks: TORPEDO_BURN_TICKS,
       /** Torpedoes need finite ammo resupply. */
       ammoCapacity: 90,
     },

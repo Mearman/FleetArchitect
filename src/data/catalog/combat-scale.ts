@@ -271,7 +271,7 @@ export const TORPEDO_RANGE_M = ordnanceRangeM(
   ORDNANCE_CRUISE_DELTA_V_M_PER_S.torpedo,
   ORDNANCE_BURN_TIME_S.torpedo,
 );
-
+// Finite-burn motor derivation lives in `./ordnance-motor` (extracted for the cap).
 /**
  * Convert a reload / thermal-recovery interval authored in SI seconds into the
  * integer cooldown ticks the engine counts down between shots:

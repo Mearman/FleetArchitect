@@ -162,6 +162,9 @@ export const crystallineModules: ModuleDefinition[] = [
       shieldPiercing: 0.4,
       armourPiercing: 0.15,
       spread: 0.03,
+      // Ballistic shard: unpowered and unguided.
+      powered: false,
+      guided: false,
     },
   },
   // --- Defence: adaptive shields (their signature), thin crystal plate ---

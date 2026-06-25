@@ -100,6 +100,9 @@ export const syntheticModules: ModuleDefinition[] = [
       shieldPiercing: 0.15,
       armourPiercing: 0.3,
       spread: 0.01,
+      // Ballistic slug: unpowered and unguided.
+      powered: false,
+      guided: false,
       ammoCapacity: 220,
     },
   },
@@ -128,6 +131,9 @@ export const syntheticModules: ModuleDefinition[] = [
       spread: 0.005,
       turretArc: Math.PI / 2,
       turretTurnRate: 0.07,
+      // Ballistic slug: unpowered and unguided.
+      powered: false,
+      guided: false,
       ammoCapacity: 120,
     },
   },

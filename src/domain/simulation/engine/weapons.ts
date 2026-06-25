@@ -15,6 +15,8 @@ import type { BattleInputs } from "../types";
 import { CELL_CONTACT_DISTANCE, buildShipCellHash, nearestCellAlongSegment } from "./collision";
 import { SIM, GAS_DRAG_CROSS_SECTION_PROJECTILE_M2, claimProjectileId } from "./config";
 import { TICKS_PER_SECOND } from "../types";
+import { POWERED_SPAWN_FRACTION_OF_CRUISE } from "@/data/catalog/ordnance-motor";
+import { ACCEL_PER_TICK_FROM_SI } from "../types";
 import { beamDamageFactor, lensingDeflection } from "./optics";
 import { isCharged } from "./crew";
 import { applyDamage } from "./damage";
@@ -77,7 +79,22 @@ export function spawnProjectile(
   const ny = Math.sin(angle);
   const svDotN = owner.velX * nx + owner.velY * ny;
   const svPerpSq = owner.velX * owner.velX + owner.velY * owner.velY - svDotN * svDotN;
-  const disc = weapon.projectileSpeed * weapon.projectileSpeed - svPerpSq;
+  // A powered guided round spawns at a FRACTION of its rated cruise velocity
+  // (a slow launch) and accelerates to cruise over its burn. The fraction is
+  // shared with the catalogue's thrust derivation
+  // (POWERED_SPAWN_FRACTION_OF_CRUISE) so the motor's total impulse exactly
+  // closes the spawn→cruise gap. An unpowered round (or one whose effect omits
+  // `powered`) spawns at full cruise as before. Recoil uses the actual launch
+  // velocity, so a slow launch kicks the firing ship less — consistent with the
+  // lower muzzle momentum. The optional schema fields are resolved to concrete
+  // values here (the one engine boundary) so the SimProjectile carries required
+  // booleans for its per-tick motor step.
+  const isPowered = weapon.powered === true;
+  const isGuided = weapon.guided === true;
+  const launchSpeed = isPowered
+    ? weapon.projectileSpeed * POWERED_SPAWN_FRACTION_OF_CRUISE
+    : weapon.projectileSpeed;
+  const disc = launchSpeed * launchSpeed - svPerpSq;
   const k = svDotN + Math.sqrt(disc > 0 ? disc : 0);
   const vx = nx * k;
   const vy = ny * k;
@@ -118,6 +135,16 @@ export function spawnProjectile(
     ownerId: owner.instanceId,
     ownerSide: owner.side,
     targetId: target.instanceId,
+    // Powered×guided taxonomy (finite-burn motors). The optional effect fields
+    // are resolved to concrete values here (absent → unpowered/unguided, the
+    // default for beams, cannon slugs, and plasma bolts). `burnTicks` is the
+    // mutable fuel counter (decremented each burning tick); the others are
+    // fixed for the projectile's life. An unpowered round carries zero thrust
+    // and zero fuel so the motor step is a no-op for it.
+    powered: isPowered,
+    guided: isGuided,
+    thrust: isPowered ? weapon.thrust ?? 0 : 0,
+    burnTicks: isPowered ? weapon.burnTicks ?? 0 : 0,
   };
 }
 
@@ -502,8 +529,37 @@ export function updateProjectiles(
       if (tryPointDefenseIntercept(p, byId, rng)) continue;
     }
 
-    // Homing: steer velocity toward the (living) target's current position.
-    if (p.tracking > 0) {
+    // Finite-burn motor: a powered projectile with fuel remaining accelerates
+    // along its current velocity heading by `thrust` (SI m·s⁻² scaled to
+    // per-tick² via ACCEL_PER_TICK_FROM_SI, exactly like ship thrust), then
+    // burns one tick of fuel. After burnout (`burnTicks` reaches 0) it coasts
+    // ballistically. The acceleration is along the heading (the unit velocity
+    // vector) so a guided round that has just steered accelerates in its new
+    // direction; an unguided powered round holds a straight boost. Applied
+    // BEFORE homing so the steer (for a guided round) acts on the boosted
+    // velocity, and before drag so the plume's drag and the motor's thrust
+    // settle in the same tick. A round whose velocity is zero (rare: brought
+    // to a halt by drag) falls back to accelerating along +x so the motor is
+    // never a no-op on a round with fuel.
+    if (p.powered && p.burnTicks > 0) {
+      const speed = Math.hypot(p.vx, p.vy);
+      const dvPerTick = p.thrust * ACCEL_PER_TICK_FROM_SI;
+      if (speed > 1e-9) {
+        p.vx += (p.vx / speed) * dvPerTick;
+        p.vy += (p.vy / speed) * dvPerTick;
+      } else {
+        p.vx += dvPerTick;
+      }
+      p.burnTicks -= 1;
+    }
+
+    // Homing: a guided projectile steers its velocity toward the (living)
+    // target's current position (the existing `steer` path, preserving speed
+    // magnitude). An unguided projectile holds its heading. The `guided` flag
+    // formalises the old ad-hoc `tracking > 0` path; a guided round with
+    // tracking 0 still homes but never corrects (steer rate 0 → holds heading),
+    // so the two flags compose cleanly.
+    if (p.guided && p.tracking > 0) {
       const target = byId.get(p.targetId);
       if (target !== undefined && target.alive) {
         // ECM lock-break: a guided round homing onto a ship with operational ECM

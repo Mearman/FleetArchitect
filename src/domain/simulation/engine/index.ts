@@ -685,10 +685,10 @@ export function* simulateBattle(
       }
     }
 
-    // 5c. Arena medium: per-tick sources (exhaust, debris, wakes, anomalies) from
-    //     this tick's state, then diffuse and decay.
-    state.medium = stepArenaMediumFromState(state.medium, state.ships, state.debris,
-      state.projectiles.map((p) => ({ x: p.x, y: p.y })), inputs.anomalies, state.asteroidDiscs);
+    // 5c. Arena medium: per-tick sources (exhaust, debris, wakes, anomalies),
+    //     then diffuse and decay. Burning powered projectiles inject their plume.
+    const pMedium = state.projectiles.map((p) => ({ x: p.x, y: p.y, powered: p.powered, burnTicks: p.burnTicks, thrust: p.thrust, mass: p.mass }));
+    state.medium = stepArenaMediumFromState(state.medium, state.ships, state.debris, pMedium, inputs.anomalies, state.asteroidDiscs);
     // Capture descriptors for new instances (break-away chunks, launched phantoms).
     captureDescriptors(state.ships);
     yield snapshot(tick, state.ships, state.projectiles, awareness, state.mines, state.pods, state.pulses, state.emissions, state.debris, state.beams, state.medium);

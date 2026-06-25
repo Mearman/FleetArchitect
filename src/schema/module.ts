@@ -52,6 +52,47 @@ export const WeaponEffect = z.object({
   shieldPiercing: zeroToOne,
   armourPiercing: zeroToOne,
   spread: z.number().min(0),
+  /**
+   * Powered×guided taxonomy. The old `WeaponType` enum conflated two independent
+   * axes: whether a round has a motor (powered) and whether it steers toward its
+   * target (guided). The engine now reads these two booleans directly.
+   *
+   *  - `powered` — the projectile thrusts during its burn (`burnTicks`), then
+   *    coasts ballistically. An unpowered round (cannon slug, plasma bolt) has
+   *    no motor; its `thrust`/`burnTicks` stay 0 and it flies as before.
+   *  - `guided` — the projectile homes on its `targetId` (the existing `steer`
+   *    path, preserving speed magnitude). An unguided round holds its heading.
+   *
+   * The two are independent: a missile is powered+guided, a torpedo is
+   * powered+guided (shorter burn), a cannon slug is unpowered+unguided, a plasma
+   * bolt is unpowered+unguided (but self-luminous, handled renderer-side). All
+   * four are OPTIONAL on the effect: their absence models a weapon that has no
+   * motor / no steering (a beam has no projectile at all; a test scaffold need
+   * not declare them). The engine resolves them once at spawn
+   * (`spawnProjectile` reads `powered === true`) onto concrete fields on the
+   * {@link SimProjectile}, which carries required booleans for its per-tick
+   * motor step.
+   */
+  powered: z.boolean().optional(),
+  guided: z.boolean().optional(),
+  /**
+   * Motor thrust in SI m·s⁻² (acceleration along the heading while burning).
+   * Authored in SI and scaled to per-tick at use via `ACCEL_PER_TICK_FROM_SI`,
+   * exactly like ship thrust, so a catalogue force in m/s² is dimensionally
+   * consistent. Zero / absent for an unpowered round; irrelevant for a beam.
+   * Derived for missiles/torpedoes from the spawn→cruise velocity gap over the
+   * burn time (`poweredMotorThrustMPerS2`), so the motor's total impulse
+   * exactly closes the slow-launch gap.
+   */
+  thrust: z.number().min(0).optional(),
+  /**
+   * Rated motor fuel duration in ticks. On the {@link WeaponEffect} this is the
+   * weapon's capacity; the spawned {@link SimProjectile} carries a MUTABLE copy
+   * that the engine decrements each burning tick. Zero / absent for an
+   * unpowered round. Derived for missiles/torpedoes from `poweredMotorBurnTicks`
+   * (`burnSeconds × TICKS_PER_SECOND`).
+   */
+  burnTicks: z.number().int().min(0).optional(),
   /** Finite magazine; consumes 1 per shot and cannot fire at 0. */
   ammo: z.number().int().min(0).optional(),
   /** Local magazine size (int >= 0) that a crew ammo-run tops the weapon up to.

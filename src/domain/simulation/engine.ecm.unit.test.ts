@@ -66,6 +66,11 @@ function missile(over: Partial<WeaponEffect> = {}): WeaponEffect {
     armourPiercing: 0,
     spread: 0,
     facing: 0,
+    // A missile homing fixture: guided (the homing path the ECM/ECCM maths is
+    // under test for) but unpowered, so the test's dynamics are unchanged by the
+    // finite-burn motor (no slow launch, no acceleration phase).
+    guided: true,
+    powered: false,
     ...over,
   };
 }

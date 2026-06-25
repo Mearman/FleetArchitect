@@ -46,6 +46,10 @@ export function beam(over: Partial<WeaponEffect> = {}): WeaponEffect {
     armourPiercing: 0,
     spread: 0,
     facing: 0,
+    powered: false,
+    guided: false,
+    thrust: 0,
+    burnTicks: 0,
     ...over,
   };
 }

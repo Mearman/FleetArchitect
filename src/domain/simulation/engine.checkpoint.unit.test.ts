@@ -200,6 +200,10 @@ function makeState(): { state: EngineState; rng: ReturnType<typeof mulberry32> }
     ownerId: "a1",
     ownerSide: "attacker",
     targetId: "d1",
+    powered: false,
+    guided: false,
+    thrust: 0,
+    burnTicks: 0,
   };
   const mine: SimMine = {
     id: "a1#mine#3#1",

@@ -34,6 +34,26 @@ import type { SimShip } from "./types";
 import type { Debris } from "./debris";
 
 /**
+ * A projectile's contribution to the medium, extracted from {@link SimProjectile}
+ * at the call site so this leaf module does not import the engine's mutable
+ * projectile type. `powered && burnTicks > 0` means the motor is firing this
+ * tick and the round injects an exhaust plume (mass + heat) at its position,
+ * using the same SI coupling as ship engine exhaust scaled by the motor's
+ * thrust force (`thrust × mass`). Every projectile — burning or not — also
+ * deposits a tiny wake coupling along its path.
+ */
+export interface ProjectileMediumEntry {
+  x: number;
+  y: number;
+  powered: boolean;
+  burnTicks: number;
+  /** Motor thrust in SI m·s⁻². Deposits exhaust scaled by `thrust × mass`. */
+  thrust: number;
+  /** Round mass (kg), used to turn acceleration into a force for the plume. */
+  mass: number;
+}
+
+/**
  * Build the arena medium field and its ISM-seeded initial state.
  *
  * The grid spans the deployment bounding box (every ship's centre ± its
@@ -302,7 +322,7 @@ export function computeArenaMediumSources(
   liveRho: readonly number[],
   ships: readonly SimShip[],
   debris: readonly Debris[],
-  projectilePositions: ReadonlyArray<{ x: number; y: number }>,
+  projectiles: ReadonlyArray<ProjectileMediumEntry>,
   anomalies: readonly BattleAnomalyKind[],
   asteroidDiscs: ReadonlyArray<{ x: number; y: number; r: number }>,
 ): MediumSources {
@@ -372,20 +392,37 @@ export function computeArenaMediumSources(
     rho[idx] = (rho[idx] ?? 0) + (d.mass ?? 0) * DEBRIS_SHED_FRACTION_PER_TICK;
   }
 
-  // --- Projectile wake: a fast round displaces and heats a thin column of the
-  // medium along its per-tick path. Couple a tiny fraction into the cell the
-  // round currently occupies. The wake coupling is intentionally tiny: at ISM
-  // density the medium is a near-vacuum and the wake is negligible; in dense
-  // plume/nebula gas it becomes a visible streak. ---
-  for (const pos of projectilePositions) {
+  // --- Projectile wake + burning-motor plume: every round displaces and heats
+  // a thin column of the medium along its per-tick path (a tiny wake coupling
+  // into the cell the round occupies). A POWERED round with fuel remaining
+  // ALSO injects an exhaust plume — the marquee visual of a missile's motor —
+  // using the same SI coupling as ship engine exhaust (mass-flow from
+  // `F = thrust·mass` over `MEDIUM_EXHAUST_VELOCITY_M_PER_S`, and a thermal
+  // fraction of the jet power) so the plume tapers to nothing at burnout. The
+  // iteration is in projectile array (creation) order for determinism. ---
+  for (const pos of projectiles) {
     const idx = mediumCellIndex(
       field,
       Math.floor(pos.x / field.config.pitchM + field.config.widthM / 2),
       Math.floor(pos.y / field.config.pitchM + field.config.heightM / 2),
     );
     if (idx === null) continue;
+    // Wake (every round): a tiny displacement + heating along the path.
     rho[idx] = (rho[idx] ?? 0) + PROJECTILE_WAKE_RHO_COUPLING;
     eps[idx] = (eps[idx] ?? 0) + PROJECTILE_WAKE_EPS_COUPLING;
+    // Burning-motor plume (powered rounds with fuel). The motor force is
+    // `F = thrust · mass` (thrust is an acceleration in m·s⁻²); the mass-flow
+    // and jet-power derivations are identical to the ship-exhaust path above,
+    // so a missile plume and a thruster plume of the same force read identically.
+    if (pos.powered && pos.burnTicks > 0 && pos.thrust > 0) {
+      const forceN = pos.thrust * Math.max(pos.mass, 1e-6);
+      const massBurnedKg = (forceN / MEDIUM_EXHAUST_VELOCITY_M_PER_S) * MEDIUM_DT_S;
+      const mainDepositKg = massBurnedKg * EXHAUST_RHO_COUPLING;
+      const jetPowerW = 0.5 * forceN * MEDIUM_EXHAUST_VELOCITY_M_PER_S;
+      const epsDepositJ = jetPowerW * THERMAL_EPS_COUPLING_FRACTION * MEDIUM_DT_S;
+      rho[idx] = (rho[idx] ?? 0) + mainDepositKg;
+      eps[idx] = (eps[idx] ?? 0) + epsDepositJ;
+    }
   }
 
   // --- Nebula anomaly: fill every cell toward a dense target, proportional to
@@ -463,7 +500,7 @@ export function stepArenaMediumFromState(
   medium: { field: MediumField; state: MediumState },
   ships: readonly SimShip[],
   debris: readonly Debris[],
-  projectilePositions: ReadonlyArray<{ x: number; y: number }>,
+  projectiles: ReadonlyArray<ProjectileMediumEntry>,
   anomalies: readonly BattleAnomalyKind[],
   asteroidDiscs: ReadonlyArray<{ x: number; y: number; r: number }>,
 ): { field: MediumField; state: MediumState } {
@@ -474,7 +511,7 @@ export function stepArenaMediumFromState(
       medium.state.rho,
       ships,
       debris,
-      projectilePositions,
+      projectiles,
       anomalies,
       asteroidDiscs,
     ),

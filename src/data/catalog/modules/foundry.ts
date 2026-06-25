@@ -8,6 +8,7 @@ import {
   FUSION_REACTOR_OUTPUT_W,
   MODULE_POWER_DRAW_W,
   MUZZLE_VELOCITY_M_PER_S,
+  ORDNANCE_BURN_TIME_S,
   PROJECTILE_MASS_KG,
   TORPEDO_RANGE_M,
   cooldownTicks,
@@ -15,6 +16,7 @@ import {
   kineticRangeM,
   projectileSpeedMPerTick,
 } from "../combat-scale";
+import { poweredMotorBurnTicks, poweredMotorThrustMPerS2 } from "../ordnance-motor";
 
 // ---------------------------------------------------------------------------
 // Weapon damage, range, cooldown and projectile speed are DERIVED from the
@@ -58,6 +60,16 @@ const TORPEDO_CRUISE_MS = MUZZLE_VELOCITY_M_PER_S.driver / 8;
 /** Foundry torpedo warhead yield (J) — authored catalogue content: a heavy
  *  armour-cracking warhead, ~GJ. */
 const TORPEDO_WARHEAD_J = 1.2e9;
+/**
+ * Foundry torpedo finite-burn motor — DERIVED from `ORDNANCE_BURN_TIME_S.torpedo`
+ * (the short heavy-burn band). For a Foundry torpedo (cruise 1250 m/s, 8 s
+ * burn): thrust ≈ 93.75 m/s², burn 240 ticks.
+ */
+const TORPEDO_THRUST_M_PER_S2 = poweredMotorThrustMPerS2(
+  TORPEDO_CRUISE_MS,
+  ORDNANCE_BURN_TIME_S.torpedo,
+);
+const TORPEDO_BURN_TICKS = poweredMotorBurnTicks(ORDNANCE_BURN_TIME_S.torpedo);
 
   // ---------------------------------------------------------------------------
   // Foundry Combine modules — furnace-forged war machines. The Foundry forgoes
@@ -111,6 +123,9 @@ export const foundryModules: ModuleDefinition[] = [
       shieldPiercing: 0.1,
       armourPiercing: 0.4,
       spread: 0.04,
+      // Ballistic slug: unpowered and unguided.
+      powered: false,
+      guided: false,
       ammoCapacity: 200,
     },
   },
@@ -139,6 +154,9 @@ export const foundryModules: ModuleDefinition[] = [
       spread: 0.03,
       turretArc: Math.PI / 3,
       turretTurnRate: 0.04,
+      // Ballistic slug: unpowered and unguided.
+      powered: false,
+      guided: false,
       ammoCapacity: 120,
     },
   },
@@ -167,6 +185,10 @@ export const foundryModules: ModuleDefinition[] = [
       shieldPiercing: 0.2,
       armourPiercing: 0.7,
       spread: 0.06,
+      // Self-luminous hot bolt: unpowered and unguided. Its glow is a renderer
+      // effect on the hot bolt, not a motor plume.
+      powered: false,
+      guided: false,
       ammoCapacity: 40,
     },
   },
@@ -193,6 +215,11 @@ export const foundryModules: ModuleDefinition[] = [
       shieldPiercing: 0.25,
       armourPiercing: 0.65,
       spread: 0.05,
+      // Powered guided ordnance: a heavy short-burn motor sprinting to cruise.
+      powered: true,
+      guided: true,
+      thrust: TORPEDO_THRUST_M_PER_S2,
+      burnTicks: TORPEDO_BURN_TICKS,
       ammoCapacity: 30,
     },
   },

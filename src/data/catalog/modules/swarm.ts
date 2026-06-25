@@ -12,6 +12,7 @@ import {
   MISSILE_RANGE_M,
   MODULE_POWER_DRAW_W,
   MUZZLE_VELOCITY_M_PER_S,
+  ORDNANCE_BURN_TIME_S,
   PROJECTILE_MASS_KG,
   RCS_TORQUE_N_M,
   REACTION_WHEEL_TORQUE_N_M,
@@ -21,6 +22,7 @@ import {
   kineticRangeM,
   projectileSpeedMPerTick,
 } from "../combat-scale";
+import { poweredMotorBurnTicks, poweredMotorThrustMPerS2 } from "../ordnance-motor";
 import {
   SENSOR_OMNI_ARC,
   SENSOR_DIRECTIONAL_ARC,
@@ -71,6 +73,17 @@ const STING_CRUISE_MS = MUZZLE_VELOCITY_M_PER_S.autocannon / 2;
  *  bio-electric charge, sized below a frigate missile so the Swarm trades raw
  *  per-hit yield for fast refire and tracking. */
 const STING_WARHEAD_J = 6e7;
+/**
+ * Swarm neural-sting finite-burn motor — DERIVED from the missile burn-time
+ * band. A bio-electric tendril is powered+guided: it launches slow and
+ * accelerates to cruise over its burn. For a neural-sting (cruise 2000 m/s,
+ * 40 s burn): thrust 30 m/s², burn 1200 ticks.
+ */
+const STING_THRUST_M_PER_S2 = poweredMotorThrustMPerS2(
+  STING_CRUISE_MS,
+  ORDNANCE_BURN_TIME_S.missile,
+);
+const STING_BURN_TICKS = poweredMotorBurnTicks(ORDNANCE_BURN_TIME_S.missile);
 
 /** Acid-sprayer capacitor/gland recharge interval (s) — thermal recovery of the
  *  bio-chemical reservoir between sprays. */
@@ -119,6 +132,9 @@ export const swarmModules: ModuleDefinition[] = [
       shieldPiercing: 0.15,
       armourPiercing: 0,
       spread: 0.12,
+      // Ballistic spore burst: unpowered and unguided.
+      powered: false,
+      guided: false,
     },
   },
   {
@@ -170,6 +186,11 @@ export const swarmModules: ModuleDefinition[] = [
       shieldPiercing: 0.1,
       armourPiercing: 0.2,
       spread: 0.05,
+      // Powered guided bio-electric tendril: launches slow, accelerates to cruise.
+      powered: true,
+      guided: true,
+      thrust: STING_THRUST_M_PER_S2,
+      burnTicks: STING_BURN_TICKS,
     },
   },
   // --- Defence: bio-regen instead of shields ---

@@ -283,6 +283,14 @@ const CheckpointProjectile = z.object({
   ownerId: z.string(),
   ownerSide: CombatantSide,
   targetId: z.string(),
+  // Powered×guided taxonomy (finite-burn motors). `burnTicks` is the live fuel
+  // counter (mutable, decremented each burning tick); the others are fixed for
+  // the projectile's life. Persisted so a resumed battle continues a mid-burn
+  // projectile from the correct remaining fuel rather than re-lighting it.
+  powered: z.boolean(),
+  guided: z.boolean(),
+  thrust: z.number(),
+  burnTicks: z.number().int(),
 });
 
 /** A deployed proximity mine (`SimMine`). */

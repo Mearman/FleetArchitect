@@ -8,6 +8,7 @@ import {
   MISSILE_RANGE_M,
   MODULE_POWER_DRAW_W,
   MUZZLE_VELOCITY_M_PER_S,
+  ORDNANCE_BURN_TIME_S,
   PROJECTILE_MASS_KG,
   SHIELD_CAPACITY_J,
   SHIELD_RECHARGE_W,
@@ -16,6 +17,7 @@ import {
   kineticRangeM,
   projectileSpeedMPerTick,
 } from "../combat-scale";
+import { poweredMotorBurnTicks, poweredMotorThrustMPerS2 } from "../ordnance-motor";
 
 // ---------------------------------------------------------------------------
 // Weapon damage, range, projectile speed and cooldown are DERIVED from the
@@ -54,6 +56,21 @@ const SWARM_MISSILE_CRUISE_MS = MUZZLE_VELOCITY_M_PER_S.autocannon / 2;
 /** Corsair swarm-missile warhead yield (J) — authored catalogue content: a
  *  light saturation warhead, lowest per-hit yield, fired in volleys. */
 const SWARM_MISSILE_WARHEAD_J = 8e7;
+/**
+ * Corsair missile finite-burn motors — DERIVED from the missile burn-time band.
+ * A raider missile (cruise 2000 m/s, 40 s burn): thrust 30 m/s², burn 1200 ticks.
+ * A swarm missile (cruise 2000 m/s, 40 s burn): thrust 30 m/s², burn 1200 ticks.
+ */
+const RAIDER_MISSILE_THRUST_M_PER_S2 = poweredMotorThrustMPerS2(
+  RAIDER_MISSILE_CRUISE_MS,
+  ORDNANCE_BURN_TIME_S.missile,
+);
+const RAIDER_MISSILE_BURN_TICKS = poweredMotorBurnTicks(ORDNANCE_BURN_TIME_S.missile);
+const SWARM_MISSILE_THRUST_M_PER_S2 = poweredMotorThrustMPerS2(
+  SWARM_MISSILE_CRUISE_MS,
+  ORDNANCE_BURN_TIME_S.missile,
+);
+const SWARM_MISSILE_BURN_TICKS = poweredMotorBurnTicks(ORDNANCE_BURN_TIME_S.missile);
 
 /** Raider-missile rack reload interval (s) — one rail cycles every ~2.3 s. */
 const RAIDER_MISSILE_COOLDOWN = cooldownTicks(70 / 30);
@@ -104,6 +121,10 @@ export const corsairModules: ModuleDefinition[] = [
       spread: 0.2,
       turretArc: Math.PI / 2,
       turretTurnRate: 0.07,
+      powered: true,
+      guided: true,
+      thrust: RAIDER_MISSILE_THRUST_M_PER_S2,
+      burnTicks: RAIDER_MISSILE_BURN_TICKS,
       ammoCapacity: 60,
     },
   },
@@ -132,6 +153,10 @@ export const corsairModules: ModuleDefinition[] = [
       spread: 0.6,
       turretArc: Math.PI / 2,
       turretTurnRate: 0.08,
+      powered: true,
+      guided: true,
+      thrust: SWARM_MISSILE_THRUST_M_PER_S2,
+      burnTicks: SWARM_MISSILE_BURN_TICKS,
       ammoCapacity: 80,
     },
   },
@@ -158,6 +183,9 @@ export const corsairModules: ModuleDefinition[] = [
       shieldPiercing: 0.15,
       armourPiercing: 0.25,
       spread: 0.05,
+      // Ballistic slug: unpowered and unguided.
+      powered: false,
+      guided: false,
     },
   },
   // --- Defence: thin scrap armour, a scrambler, a light shield ---
