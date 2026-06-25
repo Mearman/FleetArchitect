@@ -1,3 +1,10 @@
+## [1.19.3](https://github.com/Mearman/FleetArchitect/compare/v1.19.2...v1.19.3) (2026-06-25)
+
+
+### Bug Fixes
+
+* **ui:** stars visible at full zoom-out — cheap integer star hash ([e92743c](https://github.com/Mearman/FleetArchitect/commit/e92743cc770764803f3befb7e64031e90754c58f))
+
 ## [1.19.2](https://github.com/Mearman/FleetArchitect/compare/v1.19.1...v1.19.2) (2026-06-25)
 
 
