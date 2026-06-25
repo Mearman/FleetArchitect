@@ -1,3 +1,10 @@
+## [1.19.1](https://github.com/Mearman/FleetArchitect/compare/v1.19.0...v1.19.1) (2026-06-25)
+
+
+### Bug Fixes
+
+* **ui:** stable starfield — fixed lattice, no re-grid on zoom ([d8a6aac](https://github.com/Mearman/FleetArchitect/commit/d8a6aacce83ecc43e516a94fbcebe1f7663ae5ef))
+
 # [1.19.0](https://github.com/Mearman/FleetArchitect/compare/v1.18.0...v1.19.0) (2026-06-25)
 
 
