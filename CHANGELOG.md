@@ -1,3 +1,10 @@
+## [1.17.1](https://github.com/Mearman/FleetArchitect/compare/v1.17.0...v1.17.1) (2026-06-25)
+
+
+### Bug Fixes
+
+* **ui:** dedupe overlays, fix fog solid-circle bug, default off ([bc12e4e](https://github.com/Mearman/FleetArchitect/commit/bc12e4e566f85a992fce85215ce2a81a51acac4b))
+
 # [1.17.0](https://github.com/Mearman/FleetArchitect/compare/v1.16.0...v1.17.0) (2026-06-25)
 
 
