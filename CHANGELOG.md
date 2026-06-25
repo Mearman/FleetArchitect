@@ -1,3 +1,10 @@
+## [1.17.2](https://github.com/Mearman/FleetArchitect/compare/v1.17.1...v1.17.2) (2026-06-25)
+
+
+### Bug Fixes
+
+* **ui:** drop fog shroud fill that obscured the starfield ([e4d24e9](https://github.com/Mearman/FleetArchitect/commit/e4d24e9b5fbf14a16e47a24b0dcfc0ec7251b6f2))
+
 ## [1.17.1](https://github.com/Mearman/FleetArchitect/compare/v1.17.0...v1.17.1) (2026-06-25)
 
 
