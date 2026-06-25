@@ -2,9 +2,9 @@ import type { WeaponType } from "@/schema/module";
 import {
   INTENSITY_DRAW_THRESHOLD,
   fxGainFor,
-  getMediumField,
   paletteSample,
   readFxLevel,
+  resolveMediumField,
   sampleMediumIntensity,
 } from "./mediumShared";
 import type { OverlayCtx, OverlayDef } from "./types";
@@ -22,7 +22,7 @@ import type { OverlayCtx, OverlayDef } from "./types";
 // ε. The result reads as a sharp exhaust streak / projectile plume while
 // staying medium-gated — denser, more excited medium produces brighter streaks,
 // exactly like the cell-glow overlay. Both overlays share the palette, FX
-// gating, field cache, and brightness mapping via `./mediumShared`, so the two
+// gating, field resolution, and brightness mapping via `./mediumShared`, so the two
 // views never drift apart.
 //
 // Two streak kinds:
@@ -114,7 +114,7 @@ const PLUME_GAIN_BY_KIND: Record<WeaponType, number> = {
  * produce no visible streak — the trails are medium-gated, like the cell glow.
  */
 function drawMediumTrails(c: OverlayCtx): void {
-  const { ctx, frame } = c;
+  const { ctx } = c;
 
   // FX level: `off` → nothing. `reduced` → dimmer gain (applied inside the
   // intensity sample, shared with mediumGlow).
@@ -122,9 +122,9 @@ function drawMediumTrails(c: OverlayCtx): void {
   if (fx === "off") return;
   const fxGain = fxGainFor(fx);
 
-  // Shared cache: updated on emission ticks, held across off-ticks so the
-  // streak stays continuous between subsamples.
-  const field = getMediumField(frame);
+  // Resolve the field for this tick from the frame history: the most recent
+  // emission at-or-before the current tick (deterministic, scrub-safe).
+  const field = resolveMediumField(c.frames, c.tick);
   if (field === undefined) return; // no medium has ever been seen
 
   ctx.save();
@@ -201,7 +201,7 @@ function strokeTaperedStreak(
 function drawExhaustTrails(
   c: OverlayCtx,
   // `field`/`fxGain` are passed in (rather than re-resolved) so both streak
-  // kinds share one FX read and one field-cache lookup per draw.
+  // kinds share one FX read and one field-resolution lookup per draw.
   field: Parameters<typeof sampleMediumIntensity>[0],
   fxGain: number,
 ): void {

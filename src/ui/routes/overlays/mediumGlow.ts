@@ -3,10 +3,10 @@ import {
   INTENSITY_DRAW_THRESHOLD,
   RHO_REF_KG,
   fxGainFor,
-  getMediumField,
   paletteSample,
   projectCellCentre,
   readFxLevel,
+  resolveMediumField,
 } from "./mediumShared";
 import type { OverlayCtx, OverlayDef } from "./types";
 
@@ -18,7 +18,7 @@ import type { OverlayCtx, OverlayDef } from "./types";
 // excited cell, additively blended so overlapping cells stack into a smooth
 // ionised haze. It is the coarse complement to `mediumTrails.ts`, which draws
 // the sharp analytic per-entity streaks. Both overlays share their palette, FX
-// gating, field cache, and brightness mapping via `./mediumShared`, so the two
+// gating, field resolution, and brightness mapping via `./mediumShared`, so the two
 // views stay visually consistent (denser medium = brighter, identically, in
 // both). Drawn beneath the ship layer so hull silhouettes sit on top of the
 // glow.
@@ -30,22 +30,23 @@ import type { OverlayCtx, OverlayDef } from "./types";
 
 /**
  * Medium-field glow: additive ionisation glow beneath the ship layer. Reads the
- * last-known `{ rho, eps, widthM, heightM, pitchM }` field (shared cache); for
+ * `{ rho, eps, widthM, heightM, pitchM }` field resolved for the current tick; for
  * each cell whose ε-driven intensity clears a small threshold, paints a
  * hot-palette disc with `globalCompositeOperation = "lighter"` so overlapping
  * glows stack and brighten. Denser ρ amplifies the glow (nebula-amplification);
  * ε ≈ 0 cells are skipped (undisturbed space stays dark).
  */
 function drawMediumGlow(c: OverlayCtx): void {
-  const { ctx, frame, t } = c;
+  const { ctx, t } = c;
 
   // FX level: `off` → nothing. `reduced` → dimmer gain.
   const fx = readFxLevel();
   if (fx === "off") return;
   const fxGain = fxGainFor(fx);
 
-  // Update the shared cache on emission ticks; draw from it on off-ticks.
-  const field = getMediumField(frame);
+  // Resolve the field for this tick from the frame history: the most recent
+  // emission at-or-before the current tick (deterministic, scrub-safe).
+  const field = resolveMediumField(c.frames, c.tick);
   if (field === undefined) return; // no medium has ever been seen
 
   const { rho, eps, widthM, heightM, pitchM } = field;

@@ -32,7 +32,7 @@ import type { Transform } from "../battleCamera";
 //                          streamers) whose brightness is sampled from the same
 //                          field, so the two overlays stay visually consistent.
 //
-// Keeping the palette, the FX-level reader, the field cache, and the
+// Keeping the palette, the FX-level reader, the field resolution, and the
 // brightness mapping here means both overlays draw from one definition of
 // "how bright is this cell" — denser medium = brighter, identically, in both.
 
@@ -240,37 +240,50 @@ export function paletteSample(t: number): [number, number, number] {
 }
 
 // ---------------------------------------------------------------------------
-// Last-known field cache
+// Tick-based field resolution (pure, deterministic, scrub-safe)
 // ---------------------------------------------------------------------------
+//
+// The engine emits `frame.medium` only every `RESOURCE_EVERY` ticks (the medium
+// diffuses slowly, so per-tick snapshots would bloat the frame for no render-
+// side gain — mirrors the per-ship resource block); the ticks between emissions
+// carry no `medium`. The field to show at any tick is therefore "the snapshot of
+// the most recent emission tick AT OR BEFORE this tick", and that is a PURE
+// FUNCTION OF THE TICK — not of which frames the renderer happened to draw.
+//
+// A previous design held the last-seen field in a module-scoped cache updated
+// on emission ticks. That is order-dependent and broke under timeline scrubbing:
+// scrub values are fractional, so `interpolateFrame` returns a synthetic frame
+// that strips `medium`, the cache never updated, and the glow froze on whatever
+// emission tick forward playback last visited (backward scrub painted future
+// medium, forward scrub painted stale medium). Resolving from the frame history
+// by tick instead has no state to go stale, so it is correct in both scrub
+// directions and across battles.
 
 /**
- * The most recent medium snapshot seen, held at module scope so every medium
- * overlay stays continuous across off-ticks. `frame.medium` is emitted only
- * every `RESOURCE_EVERY` ticks (the medium diffuses slowly, so subsampling
- * bloats no render-side gain — mirrors the per-ship resource block). On an
- * emission tick the cache is replaced; on an off-tick (`frame.medium ===
- * undefined`) overlays draw from this cache. Shared by `mediumGlow` and
- * `mediumTrails` so both read the same field on a given draw. Mirrors the
- * resource-overlay pattern (`heldAtmosphere` in `atmosphereBreach.ts`).
+ * Resolve the medium field for a given tick from the discrete frame history:
+ * the snapshot of the most recent emission tick AT OR BEFORE `tick`. Pure
+ * function of `(frames, tick)` — deterministic, so forward and backward scrub to
+ * the same tick return the identical field object, regardless of playback order.
  *
- * Lives at module scope: persists across rAF draws within a battle and is
- * displaced implicitly when a new battle emits its own (different grid shape)
- * field. Typed `MediumSnapshot | undefined` so "never seen" is a clean
- * early-return rather than a sentinel.
- */
-let heldMedium: MediumSnapshot | undefined;
-
-/**
- * Return the last-known medium field, updating the cache on emission ticks.
- * On an off-tick (`frame.medium === undefined`) the previously cached field is
- * returned. Returns `undefined` when no medium has ever been seen (e.g. a
- * battle in a vacuum anomaly, or a replay recorded before the medium existed).
+ * The scan starts at `tick` and walks backward; because tick 0 always carries a
+ * field (0 is an emission tick) it terminates within `RESOURCE_EVERY - 1` steps.
+ * Returns `undefined` only when no frame in range has a field (a vacuum-anomaly
+ * battle, or a replay recorded before the medium existed) — a clean early-return
+ * rather than a sentinel.
  *
- * Whichever medium overlay draws first in a frame updates the cache for the
- * other — both then read the identical field, so the ambient glow and the
- * analytic trails always agree.
+ * Both medium overlays call this independently with the same `(frames, tick)`,
+ * so they always read the identical field and stay visually consistent without
+ * sharing mutable state.
  */
-export function getMediumField(frame: BattleFrame): MediumSnapshot | undefined {
-  if (frame.medium !== undefined) heldMedium = frame.medium;
-  return heldMedium;
+export function resolveMediumField(
+  frames: readonly BattleFrame[],
+  tick: number,
+): MediumSnapshot | undefined {
+  const start = Math.min(Math.max(0, Math.floor(tick)), frames.length - 1);
+  for (let i = start; i >= 0; i -= 1) {
+    const f = frames[i];
+    if (f === undefined) continue;
+    if (f.medium !== undefined) return f.medium;
+  }
+  return undefined;
 }
