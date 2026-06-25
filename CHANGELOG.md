@@ -1,3 +1,11 @@
+# [1.19.0](https://github.com/Mearman/FleetArchitect/compare/v1.18.0...v1.19.0) (2026-06-25)
+
+
+### Features
+
+* **sim:** light-lag for sustained medium-cell radiation ([6944337](https://github.com/Mearman/FleetArchitect/commit/69443372c954c6f8b37e82b335ad87654154abf8))
+* **ui:** analytic per-entity medium trails (exhaust/plume streaks) ([3ff7c99](https://github.com/Mearman/FleetArchitect/commit/3ff7c9905495ea6d04f72ca71b76c6281ff5b4f4))
+
 # [1.18.0](https://github.com/Mearman/FleetArchitect/compare/v1.17.2...v1.18.0) (2026-06-25)
 
 
