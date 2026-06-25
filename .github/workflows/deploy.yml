@@ -38,12 +38,6 @@ jobs:
   release:
     name: Release
     needs: quality
-    # semantic-release pushes tags + HEAD to main, which branch protection
-    # (required PR review) blocks for the GITHUB_TOKEN. The deploy no longer
-    # depends on this job; tolerate its failure so the CI run stays green.
-    # To enable real releases: provide a PAT secret and set it as GITHUB_TOKEN
-    # for this job (admins bypass branch protection with enforce_admins: false).
-    continue-on-error: true
     runs-on: ubuntu-latest
     permissions:
       contents: write
