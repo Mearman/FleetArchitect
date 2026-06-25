@@ -6,6 +6,7 @@ import { damagePulse } from "./damagePulse";
 import { sensorPulse } from "./sensorPulse";
 import { atmosphereBreach } from "./atmosphereBreach";
 import { boardingDebris } from "./boardingDebris";
+import { mediumGlow } from "./mediumGlow";
 
 export type { OverlayCtx, OverlayDef, OverlayScope } from "./types";
 
@@ -24,10 +25,12 @@ export const OVERLAYS: readonly OverlayDef[] = [
   damagePulse,
   sensorPulse,
   boardingDebris,
+  mediumGlow,
 ];
 
 /** Overlay ids drawn beneath the ship layer (before the ship loop). */
 export const UNDER_SHIP_IDS: ReadonlySet<string> = new Set([
+  mediumGlow.id,
   focusRing.id,
   atmosphereBreach.id,
   movementTrail.id,
