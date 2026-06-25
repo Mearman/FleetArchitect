@@ -1,0 +1,772 @@
+/**
+ * Arena-scale medium field: a pure, deterministic two-substrate transport
+ * solver carrying density (ρ) and excitation (ε) across the battlefield.
+ *
+ * The field is the physical substrate from which weapon trails, exhaust wakes,
+ * ionisation flashes, and sensor signatures will later EMERGE — its job is to
+ * be honest SI physics on a coarse arenacale grid, not to render anything. It
+ * mirrors the ship-local `transport-field.ts` primitive (the
+ * advection–diffusion–reaction equation on a finite-volume FTCS scheme) but
+ * carries TWO coupled substances over a regular rectangular arena lattice with
+ * a configurable pitch `P` (metres per cell), rather than one substance over
+ * an arbitrary ship cell graph.
+ *
+ * ## Substances
+ *
+ *  - **Density ρ** — matter, in **kilograms per cell**. Each cell represents a
+ *    slab of thickness `MEDIUM_SLAB_DEPTH_M` (1 m) across its `P × P` face, so
+ *    a cell at the baseline interstellar-medium density holds
+ *    `ρ_ISM · P² · MEDIUM_SLAB_DEPTH_M` kg. ρ advects down its own gradient
+ *    (high → low), diffuses (Fick), and bleeds to vacuum at the arena edge.
+ *  - **Excitation ε** — deposited energy, in **joules per cell**. ε diffuses,
+ *    decays exponentially toward zero (radiative cooling / recombination), and
+ *    radiates away at the arena edge. Per-cell injection later feeds in beam
+ *    strikes, muzzle flashes, exhaust heat.
+ *
+ * Both substances are non-negative.
+ *
+ * ## Scheme and stability
+ *
+ * Explicit forward-time, centred-space (FTCS) finite volume on a 2D
+ * 4-connected (N/E/S/W) rectangular lattice of pitch `P`. Stability of the
+ * explicit diffusion step requires `D·dt/P² ≤ 1/2` per face; the per-cell
+ * bound (the scheme sums flux over all of a cell's faces in one step) is
+ * `GRID_FACE_NEIGHBOURS_MEDIUM · D · dt / P² ≤ margin`, where
+ * `GRID_FACE_NEIGHBOURS_MEDIUM = 4`. Upwind advection is stable when
+ * `GRID_FACE_NEIGHBOURS_MEDIUM · u_max · dt / P ≤ margin`.
+ *
+ * The stepper sub-steps the integrator with a FIXED count derived from each
+ * substance's `D` and `u_max` ceilings — never the instantaneous values.
+ * Sizing from a momentarily small velocity / gradient would under-resolve the
+ * stiff `u = K·∇ρ` relaxation: explicit Euler then amplifies the perturbation
+ * every tick until a cell goes negative and the non-negativity clamp invents
+ * mass, compounding into a runaway (Infinity → NaN). This is the same lesson
+ * documented at length in `transport-field.ts`'s atmosphere closure — the
+ * fixed sub-step count from the ceiling is the cure.
+ *
+ * ## Determinism
+ *
+ * The stepper is pure: input arrays are not mutated, iteration order is fixed
+ * (row-major cell sweep, N/E/S/W face order), and there is no `Math.random`,
+ * `Date`, or nondeterministic dispatch. Two calls with identical inputs
+ * produce bit-identical outputs.
+ *
+ * Use-deferred: the field is honestly simulated in real SI units but is NOT
+ * wired into the tick loop. Wiring (thrusters → ρ source, beams → ε source,
+ * signature readout) is a later pass on top of this honest model.
+ */
+
+// ============================================================================
+// SI anchors and tunables
+// ============================================================================
+
+/**
+ * Simulation tick rate, ticks per second. Matches the rest of the engine
+ * (`transport-field.ts`, `simulation/types.ts`); the medium field's per-tick
+ * `dt` is `1 / TICKS_PER_SECOND` seconds before stability sub-stepping.
+ *
+ * Classification: unit-spec-rate-epsilon (the engine's fixed tick rate).
+ */
+export const TICKS_PER_SECOND = 30;
+
+/** Per-tick time step, seconds. The integrator further sub-steps if the
+ *  explicit-scheme stability bound requires it.
+ *
+ *  Classification: derived-by-formula (`1 / TICKS_PER_SECOND`). */
+export const MEDIUM_DT_S = 1 / TICKS_PER_SECOND;
+
+/**
+ * Slab depth (metres) represented by one medium cell — the thickness of the
+ * P × P face over which density is integrated. The arena medium is a thin
+ * shell rather than a fully 3D volume (the battlefield is wide and long but
+ * the gameplay-relevant medium — trails, exhaust plumes, ionisation — is a
+ * layer a few metres deep). One metre keeps ρ in honest `kg per P×P×1m` slab
+ * units and lets density read directly as a path density along that slab.
+ *
+ * Classification: unit-spec-rate-epsilon (a chosen slab thickness).
+ */
+export const MEDIUM_SLAB_DEPTH_M = 1;
+
+/**
+ * Default arena medium grid pitch, metres per cell. The battlefield is
+ * open-ended: fleets deploy at `±edgeInset` in `resolve.ts`, where the inset
+ * is the smaller of "just outside weapon range" (catalogue weapon reach runs
+ * ~12–80 km), a kinematic closing budget, and a mutual-sight cap (innate
+ * naked-eye sight is ~5 km, `VISUAL_LOS_REFERENCE_M`). A representative
+ * engagement therefore spans a few km (a myopic, close-in fleet) to several
+ * tens of km (a sensor-equipped long-range fleet).
+ *
+ * 500 m per cell lands a typical ~20 km × 20 km battlefield on a 40 × 40
+ * lattice (~1600 cells) and an extended ~50 km × 50 km one on 100 × 100
+ * (~10 000 cells, the upper tractable bound). Callers can override via
+ * {@link MediumFieldConfig.pitchM}; the field never assumes a fixed arena
+ * extent.
+ *
+ * Classification: unit-spec-rate-epsilon (a chosen grid resolution for the
+ * arena medium; not physics-derived).
+ */
+export const MEDIUM_PITCH_M_DEFAULT = 500;
+
+/**
+ * Interstellar medium baseline density, kg·m⁻³. The real ISM is faint but
+ * non-zero: the warm ionised phase that dominates the Milky Way's volume sits
+ * around `~10⁻²⁸` kg·m⁻³ (roughly 0.1 atoms · cm⁻³, typical of the local
+ * bubble's warm interstellar gas). This is the floor the medium relaxes back
+ * to once battles, exhaust, and trails have dissipated — the battlefield is
+ * never a perfect vacuum.
+ *
+ * Source: Draine, *Physics of the Interstellar and Intergalactic Medium*
+ * (Princeton, 2011), ch. 1, table of phase-averaged ISM properties — the warm
+ * ionised medium (WIM) number density `n_H ≈ 0.1 cm⁻³`, mass per H atom
+ * `~1.67e-27 kg`, giving `~1.7e-28 kg·m⁻³`. Rounded to 1.5e-28.
+ *
+ * Classification: real physical constant (a documented ISM density figure).
+ */
+export const ISM_DENSITY_KG_PER_M3 = 1.5e-28;
+
+/**
+ * Diffusion coefficient for the arena medium, m²·s⁻¹. Turbulent mixing in a
+ * dilute, weakly-coupled plasma is dominated by bulk Reynolds stress and
+ * plasma instability, not molecular diffusion; the effective coefficient is
+ * many orders of magnitude above the molecular value. We take
+ * `~1.0e4 m²·s⁻¹` — analogous to strong atmospheric eddy diffusivity scaled
+ * to the low-density, high-Mach regime of an exhaust plume spreading through
+ * the ISM. This is the slow equalisation that flattens density and energy
+ * gradients left behind by moving ships and weapon events.
+ *
+ * Classification: authored catalogue content (a turbulent-mixing eddy
+ * diffusivity for the dilute arena medium; Phase 14 may refine from a real
+ * Reynolds-stress model).
+ */
+export const D_MEDIUM_M2_PER_S = 1.0e4;
+
+/**
+ * Density-gradient bulk-flow ceiling, m·s⁻¹. ρ advects down its own gradient
+ * with a velocity proportional to the local `−∇ρ`, clamped to ±this value —
+ * the parallel of `transport-field.ts`'s atmosphere pressure-gradient closure
+ * (`u = c_s · Δp / p_cabin`, clamped to the sound speed). For the dilute
+ * arena medium the analog of the sound speed is the Alfvén / thermal speed of
+ * the ISM plasma, of order `~10 km·s⁻¹` in the warm ionised phase. We take
+ * 10 000 m·s⁻¹.
+ *
+ * Sizing the sub-step count from this ceiling (not the instantaneous velocity)
+ * is what keeps the stiff `u = K·∇ρ` relaxation stable — see the module
+ * header. The constant is also the linear closure coefficient: a cell pair
+ * with a unit-gradient density step (1 kg·m⁻³ across one pitch) drives flow
+ * at `MEDIUM_MAX_VELOCITY_M_PER_S · (Δρ · P / MEDIUM_DENSITY_GRAD_REF)`,
+ * clamped.
+ *
+ * Classification: real physical constant order-of-magnitude (thermal speed of
+ * the warm ionised ISM, the analog of the sound speed for the density
+ * pressure-gradient closure).
+ */
+export const MEDIUM_MAX_VELOCITY_M_PER_S = 10_000;
+
+/**
+ * Density-gradient reference (kg·m⁻³) at which the bulk-flow closure saturates
+ * at its ceiling. The linear closure
+ * `u = MEDIUM_MAX_VELOCITY_M_PER_S · (ρ_from − ρ_to) / MEDIUM_DENSITY_GRAD_REF`
+ * clamps to ±`MEDIUM_MAX_VELOCITY_M_PER_S`. Sized at the ISM baseline so a
+ * cell pair straddling baseline-vs-vacuum (the largest step the medium itself
+ * ever presents away from a battle event) drives a near-saturated flow, while
+ * a dense exhaust plume (many orders above the ISM) saturates fully — the
+ * bulk-flow regime where advection dominates over the slow Fickian diffusion.
+ *
+ * Classification: derived-by-formula (`ISM_DENSITY_KG_PER_M3`).
+ */
+export const MEDIUM_DENSITY_GRAD_REF_KG_PER_M3 = ISM_DENSITY_KG_PER_M3;
+
+/**
+ * Boundary sink velocity, m·s⁻¹. ρ at the arena edge bleeds into vacuum at
+ * this outflow speed — the same physical picture as the atmosphere substance's
+ * vent flux (`dm/dt = ρ · A · v_e`), here applied to every perimeter cell's
+ * outward face. Set to the density-gradient ceiling so an edge cell vents at
+ * the medium's natural exhaust rate.
+ *
+ * Classification: derived-by-formula (`MEDIUM_MAX_VELOCITY_M_PER_S`).
+ */
+export const MEDIUM_BOUNDARY_VENT_VELOCITY_M_PER_S = MEDIUM_MAX_VELOCITY_M_PER_S;
+
+/**
+ * Excitation (ε) decay timescale, seconds. ε decays exponentially toward zero
+ * as `dε/dt = −ε / τ`, modelling the combined recombination and radiative
+ * cooling that drains deposited energy out of an ionised trail or flash. Five
+ * seconds is the order of an ionised plasma channel recombining after the
+ * depositing event passes — long enough that a beam strike's ε lingers as a
+ * visible trail over multiple ticks, short enough that a battlefield's
+ * signature fades to quiescence between engagements rather than accumulating
+ * forever.
+ *
+ * Classification: authored catalogue content (a plasma recombination /
+ * radiative-cooling timescale for the dilute arena medium).
+ */
+export const EXCITATION_DECAY_TIMESCALE_S = 5;
+
+/**
+ * Boundary radiative cooling rate for ε, as a fraction of the cell's energy
+ * per second lost across each outward perimeter face. The arena edge is open
+ * to cold vacuum, so deposited energy radiates away faster there than the bulk
+ * volumetric decay. Set so an edge cell loses its ε over roughly one decay
+ * timescale via its outward face — matching the volumetric rate.
+ *
+ * Classification: derived-by-formula (`1 / EXCITATION_DECAY_TIMESCALE_S`).
+ */
+export const MEDIUM_BOUNDARY_EPS_LOSS_PER_S = 1 / EXCITATION_DECAY_TIMESCALE_S;
+
+// ============================================================================
+// Stability bounds (mirroring transport-field.ts's reasoning)
+// ============================================================================
+
+/**
+ * FTCS stability margin for the explicit diffusion step: stable when
+ * `D·dt/P² ≤ 0.5` per face. We run at 0.4 to stay clear of the neutral
+ * stability boundary — a documented numerical choice, not a physical constant.
+ *
+ * Classification: unit-spec-rate-epsilon.
+ */
+export const MEDIUM_DIFFUSION_CFL_MARGIN = 0.4;
+
+/**
+ * CFL stability margin for the explicit upwind advection step: stable when
+ * `|u|·dt/P ≤ 1`. We run at 0.5 — the same rate/epsilon category as
+ * `MEDIUM_DIFFUSION_CFL_MARGIN`.
+ *
+ * Classification: unit-spec-rate-epsilon.
+ */
+export const MEDIUM_ADVECTION_CFL_MARGIN = 0.5;
+
+/**
+ * Maximum number of faces a single medium cell can carry on the rectangular
+ * 4-connected lattice: an interior cell has N, E, S, W neighbours. Both
+ * stability bounds are PER CELL, not per face: the explicit scheme sums the
+ * flux over every face of a cell in one step, so the relevant Courant / FTCS
+ * number is the SUM of the per-face contributions. The worst case is all four
+ * faces carrying flux in the destabilising sense at once — bounding only one
+ * face lets that summed flux reach four times the per-face limit, drive a cell
+ * negative, and trigger the non-negativity floor clamp to fabricate mass
+ * every sub-step, compounding into a runaway. Folding the coordination number
+ * into the sub-step count makes the per-cell bound hold by construction. The
+ * same reasoning as `transport-field.ts`'s `GRID_FACE_NEIGHBOURS`, restated
+ * here so this module is self-contained.
+ */
+export const GRID_FACE_NEIGHBOURS_MEDIUM = 4;
+
+/**
+ * Number of explicit sub-steps needed to keep the diffusion coefficient `D`
+ * inside the FTCS bound over one tick at pitch `P`. Returns at least 1 (a
+ * non-diffusive substance needs no sub-stepping). The per-cell bound sums the
+ * diffusive flux across all of a cell's faces, so the worst-case stability
+ * condition is `GRID_FACE_NEIGHBOURS_MEDIUM · D · (dt/n) / P² ≤ margin`,
+ * giving `n ≥ GRID_FACE_NEIGHBOURS_MEDIUM · D · dt / (margin · P²)`.
+ */
+export function mediumDiffusionSubSteps(
+  coefficient: number,
+  pitchM: number,
+): number {
+  if (coefficient <= 0) return 1;
+  const dx2 = pitchM * pitchM;
+  const n =
+    (GRID_FACE_NEIGHBOURS_MEDIUM * coefficient * MEDIUM_DT_S) /
+    (MEDIUM_DIFFUSION_CFL_MARGIN * dx2);
+  return Math.max(1, Math.ceil(n));
+}
+
+/**
+ * Number of explicit sub-steps needed to keep the upwind advection step inside
+ * its CFL bound at pitch `P`, given the maximum advection velocity. The bound
+ * is per cell: a cell's net outflow is the sum over its faces, so the worst
+ * case (every face expelling at the maximum velocity) is
+ * `GRID_FACE_NEIGHBOURS_MEDIUM · |u_max| · (dt/n) / P ≤ margin`, giving
+ * `n ≥ GRID_FACE_NEIGHBOURS_MEDIUM · |u_max| · dt / (margin · P)`. Sizing from
+ * `u_max` (the ceiling), not the instantaneous velocity, holds for every
+ * field state — see the module header.
+ */
+export function mediumAdvectionSubSteps(
+  maxVelocity: number,
+  pitchM: number,
+): number {
+  if (maxVelocity <= 0) return 1;
+  const n =
+    (GRID_FACE_NEIGHBOURS_MEDIUM * maxVelocity * MEDIUM_DT_S) /
+    (MEDIUM_ADVECTION_CFL_MARGIN * pitchM);
+  return Math.max(1, Math.ceil(n));
+}
+
+// ============================================================================
+// Public API
+// ============================================================================
+
+/**
+ * Per-cell source terms injected into the medium over one tick. Both arrays
+ * are length `widthM * heightM` (cell-major, row by row), aligned with the ρ
+ * and ε field arrays. A positive value adds; a negative value removes. Units:
+ * `rhoSource` is kg·s⁻¹ per cell (a thruster plume or debris deposit), and
+ * `epsSource` is J·s⁻¹ per cell (a beam strike or muzzle flash). The stepper
+ * applies `source · dt` and clamps the cell to non-negative afterwards.
+ */
+export interface MediumSources {
+  /** Per-cell density source, kg·s⁻¹. Default zero everywhere. */
+  readonly rho: readonly number[];
+  /** Per-cell excitation source, J·s⁻¹. Default zero everywhere. */
+  readonly eps: readonly number[];
+}
+
+/** A field state: the two substance arrays, length `width * height`. */
+export interface MediumState {
+  /** Density ρ, kg per cell (length `widthM * heightM`). */
+  readonly rho: readonly number[];
+  /** Excitation ε, J per cell (length `widthM * heightM`). */
+  readonly eps: readonly number[];
+}
+
+/**
+ * Static configuration of the medium field: the grid shape, the SI
+ * coefficients, and the stability margins. Built once per battle and reused
+ * for every tick; the {@link stepMediumField} stepper reads the grid geometry
+ * (the cell count, the pre-built per-cell neighbour index, and the boundary
+ * cell set) from here so the per-tick work is O(cells), not O(cells · faces).
+ *
+ * Defaults are the documented SI anchors; every field carries a derivation
+ * comment naming its anchor.
+ */
+export interface MediumFieldConfig {
+  /** Grid width, in cells. */
+  readonly widthM: number;
+  /** Grid height, in cells. */
+  readonly heightM: number;
+  /** Cell pitch, metres. Defaults to {@link MEDIUM_PITCH_M_DEFAULT}. */
+  readonly pitchM: number;
+  /** Density diffusion coefficient, m²·s⁻¹. Defaults to
+   *  {@link D_MEDIUM_M2_PER_S}. */
+  readonly rhoDiffusionM2PerS: number;
+  /** Density bulk-flow velocity ceiling, m·s⁻¹. Defaults to
+   *  {@link MEDIUM_MAX_VELOCITY_M_PER_S}. */
+  readonly rhoMaxVelocityMPerS: number;
+  /** Excitation diffusion coefficient, m²·s⁻¹. Defaults to
+   *  {@link D_MEDIUM_M2_PER_S}. */
+  readonly epsDiffusionM2PerS: number;
+  /** Excitation decay timescale, seconds. Defaults to
+   *  {@link EXCITATION_DECAY_TIMESCALE_S}. */
+  readonly epsDecayTimescaleS: number;
+  /** Boundary ρ vent velocity, m·s⁻¹. Defaults to
+   *  {@link MEDIUM_BOUNDARY_VENT_VELOCITY_M_PER_S}. */
+  readonly boundaryVentVelocityMPerS: number;
+  /** Boundary ε loss rate (fraction per second per outward face). Defaults to
+   *  {@link MEDIUM_BOUNDARY_EPS_LOSS_PER_S}. */
+  readonly boundaryEpsLossPerS: number;
+}
+
+/**
+ * Built medium field: the {@link MediumFieldConfig} plus the pre-computed grid
+ * connectivity. Construct once via {@link buildMediumField}; pass to
+ * {@link stepMediumField} every tick.
+ */
+export interface MediumField {
+  /** The resolved field configuration. */
+  readonly config: ResolvedMediumFieldConfig;
+  /** Total cell count (`widthM * heightM`). */
+  readonly cellCount: number;
+  /** Pre-built per-cell neighbour index: `neighbours[cell]` lists the cell
+   *  indices of the N/E/S/W neighbours present (interior cells get up to 4;
+   *  edge/corner cells get fewer). Length `cellCount`, fixed deterministic
+   *  order (N, E, S, W). */
+  readonly neighbours: readonly (readonly number[])[];
+  /** Pre-built per-cell outward face count (how many of the 4 directions open
+   *  to vacuum rather than to a neighbour). Length `cellCount`. */
+  readonly boundaryFaceCount: readonly number[];
+}
+
+/** A {@link MediumFieldConfig} with every field resolved to a concrete value
+ *  (defaults filled in). */
+export interface ResolvedMediumFieldConfig {
+  readonly widthM: number;
+  readonly heightM: number;
+  readonly pitchM: number;
+  readonly rhoDiffusionM2PerS: number;
+  readonly rhoMaxVelocityMPerS: number;
+  readonly epsDiffusionM2PerS: number;
+  readonly epsDecayTimescaleS: number;
+  readonly boundaryVentVelocityMPerS: number;
+  readonly boundaryEpsLossPerS: number;
+}
+
+/** Result of advancing the medium field by one tick. */
+export interface MediumStepResult {
+  /** The post-tick density field. Length `cellCount`. */
+  readonly rho: number[];
+  /** The post-tick excitation field. Length `cellCount`. */
+  readonly eps: number[];
+}
+
+/**
+ * Build a medium field from a (possibly partial) configuration. Fills in the
+ * SI defaults and pre-computes the per-cell neighbour index and boundary face
+ * counts. Pure: same inputs always produce the same field.
+ */
+export function buildMediumField(
+  config: MediumFieldConfig,
+): MediumField {
+  const resolved: ResolvedMediumFieldConfig = {
+    widthM: config.widthM,
+    heightM: config.heightM,
+    pitchM: config.pitchM,
+    rhoDiffusionM2PerS: config.rhoDiffusionM2PerS,
+    rhoMaxVelocityMPerS: config.rhoMaxVelocityMPerS,
+    epsDiffusionM2PerS: config.epsDiffusionM2PerS,
+    epsDecayTimescaleS: config.epsDecayTimescaleS,
+    boundaryVentVelocityMPerS: config.boundaryVentVelocityMPerS,
+    boundaryEpsLossPerS: config.boundaryEpsLossPerS,
+  };
+  const cellCount = resolved.widthM * resolved.heightM;
+  // Per-cell neighbours in fixed N, E, S, W order. A missing direction (edge
+  // or corner cell) is omitted from the list.
+  const neighbours: number[][] = Array.from({ length: cellCount }, () => []);
+  const boundaryFaceCount: number[] = new Array<number>(cellCount).fill(0);
+  for (let row = 0; row < resolved.heightM; row += 1) {
+    for (let col = 0; col < resolved.widthM; col += 1) {
+      const cell = row * resolved.widthM + col;
+      const list = neighbours[cell];
+      if (list === undefined) continue;
+      // Count the directions that open to vacuum (no neighbour) rather than
+      // to an interior cell. A cell on the top row has its North face on the
+      // perimeter, etc.; a corner cell has two perimeter faces.
+      let boundaryFaces = 0;
+      // North neighbour (row - 1).
+      if (row > 0) {
+        list.push((row - 1) * resolved.widthM + col);
+      } else {
+        boundaryFaces += 1;
+      }
+      // East neighbour (col + 1).
+      if (col + 1 < resolved.widthM) {
+        list.push(row * resolved.widthM + (col + 1));
+      } else {
+        boundaryFaces += 1;
+      }
+      // South neighbour (row + 1).
+      if (row + 1 < resolved.heightM) {
+        list.push((row + 1) * resolved.widthM + col);
+      } else {
+        boundaryFaces += 1;
+      }
+      // West neighbour (col - 1).
+      if (col > 0) {
+        list.push(row * resolved.widthM + (col - 1));
+      } else {
+        boundaryFaces += 1;
+      }
+      boundaryFaceCount[cell] = boundaryFaces;
+    }
+  }
+  return {
+    config: resolved,
+    cellCount,
+    neighbours,
+    boundaryFaceCount,
+  };
+}
+
+/**
+ * Build a zeroed {@link MediumState} for the field (all cells at zero density
+ * and excitation). Use as a starting point and inject sources, or use
+ * {@link mediumStateFromDensity} to seed the field at a uniform baseline.
+ */
+export function zeroMediumState(field: MediumField): MediumState {
+  return {
+    rho: new Array<number>(field.cellCount).fill(0),
+    eps: new Array<number>(field.cellCount).fill(0),
+  };
+}
+
+/**
+ * Build a {@link MediumState} with ρ seeded at a uniform density across every
+ * cell (kg per cell = `densityKgPerM3 · pitchM² · MEDIUM_SLAB_DEPTH_M`) and ε
+ * at zero. Convenience for initialising the medium at the ISM baseline.
+ */
+export function mediumStateFromDensity(
+  field: MediumField,
+  densityKgPerM3: number,
+): MediumState {
+  const kgPerCell =
+    densityKgPerM3 * field.config.pitchM * field.config.pitchM * MEDIUM_SLAB_DEPTH_M;
+  return {
+    rho: new Array<number>(field.cellCount).fill(kgPerCell),
+    eps: new Array<number>(field.cellCount).fill(0),
+  };
+}
+
+/** Build a zeroed {@link MediumSources} (no injection anywhere). */
+export function zeroMediumSources(field: MediumField): MediumSources {
+  return {
+    rho: new Array<number>(field.cellCount).fill(0),
+    eps: new Array<number>(field.cellCount).fill(0),
+  };
+}
+
+// ============================================================================
+// Internal helpers
+// ============================================================================
+
+/**
+ * Bulk-flow velocity across one cell-to-neighbour face, m·s⁻¹, positive along
+ * the outward normal (from `cell` toward `neighbour`). The closure is the
+ * density-gradient flow: a cell holding more ρ than its neighbour pushes mass
+ * outward; the linear coefficient is `MEDIUM_MAX_VELOCITY_M_PER_S /
+ * MEDIUM_DENSITY_GRAD_REF_KG_PER_M3` per kg·m⁻³ of density step, clamped to
+ * ±`MEDIUM_MAX_VELOCITY_M_PER_S`. The closure is computed from the intensive
+ * density (`ρ_mass / cellVolume`, kg·m⁻³), so the per-cell-mass step
+ * coefficient is `vMax · (ρ_from − ρ_to) / (gradRef · cellVolume)` — i.e. the
+ * cell-volume rescaling happens here, before the velocity is returned, so the
+ * stepper can apply the per-face advection formula `u · φ / pitch` directly in
+ * extensive (kg) units.
+ *
+ * Returns zero when the inputs are degenerate (zero pitch or slab depth) —
+ * those never occur in a real field but keep the closure total.
+ */
+function densityGradientVelocity(
+  rhoFrom: number,
+  rhoTo: number,
+  pitchM: number,
+  slabDepthM: number,
+  vMax: number,
+  gradRefKgPerM3: number,
+): number {
+  if (pitchM <= 0 || slabDepthM <= 0 || gradRefKgPerM3 <= 0) return 0;
+  const cellVolumeM3 = pitchM * pitchM * slabDepthM;
+  const densityFrom = rhoFrom / cellVolumeM3;
+  const densityTo = rhoTo / cellVolumeM3;
+  // Linear closure: u = vMax · (ρ_from − ρ_to) / gradRef, clamped.
+  const u = (vMax * (densityFrom - densityTo)) / gradRefKgPerM3;
+  if (u > vMax) return vMax;
+  if (u < -vMax) return -vMax;
+  return u;
+}
+
+/**
+ * Volumetric ε decay rate (J·s⁻¹ per cell) for the exponential cooling
+ * `dε/dt = −ε / τ`. Applied as a reaction source in the same sub-step loop as
+ * diffusion, so the explicit-scheme sub-step count covers it (the decay's
+ * stability bound `dt/τ ≤ 1` is looser than the diffusion bound at the
+ * documented timescale).
+ */
+function excitationDecayRate(eps: number, tauS: number): number {
+  if (tauS <= 0) return 0;
+  return -eps / tauS;
+}
+
+/**
+ * Boundary ρ outflow rate (kg·s⁻¹) for a perimeter cell with `boundaryFaces`
+ * outward faces opening to vacuum. The cell vents at the medium's exhaust
+ * velocity: per face the outflow is `density · faceArea · v_e`, where
+ * `density = ρ / cellVolume`, `faceArea = pitch · slabDepth`, and
+ * `cellVolume = pitch² · slabDepth`. Those cancel to give `ρ · v_e / pitch`
+ * per face — the slab depth drops out (both the flux through a face and the
+ * cell's capacity scale with it). Total across `boundaryFaces` faces:
+ * `ρ · v_e · boundaryFaces / pitch`. The stepper applies `rate · dt` and
+ * clamps the cell to non-negative.
+ */
+function densityBoundaryRate(
+  rho: number,
+  boundaryFaces: number,
+  pitchM: number,
+  ventVelocity: number,
+): number {
+  if (boundaryFaces <= 0 || ventVelocity <= 0) return 0;
+  if (rho <= 0) return 0;
+  if (pitchM <= 0) return 0;
+  return (rho * ventVelocity * boundaryFaces) / pitchM;
+}
+
+/**
+ * Boundary ε outflow rate (J·s⁻¹) for a perimeter cell. Each outward face
+ * loses `boundaryEpsLossPerS` of the cell's energy per second — the open edge
+ * radiates faster than the bulk volumetric decay. The total rate across
+ * `boundaryFaces` faces is `eps · boundaryEpsLossPerS · boundaryFaces`. The
+ * stepper applies `rate · dt` and clamps the cell to non-negative.
+ */
+function excitationBoundaryRate(
+  eps: number,
+  boundaryFaces: number,
+  boundaryEpsLossPerS: number,
+): number {
+  if (boundaryFaces <= 0 || boundaryEpsLossPerS <= 0) return 0;
+  if (eps <= 0) return 0;
+  return eps * boundaryEpsLossPerS * boundaryFaces;
+}
+
+// ============================================================================
+// Stepper
+// ============================================================================
+
+/**
+ * Advance the medium field by one tick. Pure: returns new ρ and ε arrays, the
+ * input arrays are not mutated, and identical inputs always produce identical
+ * outputs.
+ *
+ * The integrator sub-steps with a FIXED count derived from the ρ diffusivity
+ * and the ρ velocity ceiling (ρ is the stiffer substance — it advects); ε is
+ * advanced in lock-step inside the same loop, with its own (smaller) diffusion
+ * sub-step requirement folded into the same count when it would otherwise
+ * need more. See the module header for the stability reasoning.
+ *
+ * Each sub-step:
+ *   1. Computes the per-cell ρ advection (upwind), ρ diffusion (FTCS), ρ
+ *      boundary sink, and ρ source.
+ *   2. Computes the per-cell ε diffusion, ε volumetric decay, ε boundary
+ *      sink, and ε source.
+ *   3. Applies the change, clamping both substances to non-negative.
+ *
+ * Iteration order is row-major (cell index ascending), and the per-cell face
+ * order is N, E, S, W — both fixed for floating-point determinism.
+ */
+export function stepMediumField(
+  field: MediumField,
+  state: MediumState,
+  sources: MediumSources,
+): MediumStepResult {
+  const { config, cellCount, neighbours, boundaryFaceCount } = field;
+  const pitch = config.pitchM;
+  const slabDepth = MEDIUM_SLAB_DEPTH_M;
+  // ρ is the stiffer substance: it advects at up to `rhoMaxVelocityMPerS`
+  // (much larger per-cell effect than ε diffusion at the same D), so its
+  // sub-step count governs. We still floor at ε's diffusion requirement in
+  // case a caller tunes ε to a much higher D.
+  const rhoSubSteps = Math.max(
+    mediumDiffusionSubSteps(config.rhoDiffusionM2PerS, pitch),
+    mediumAdvectionSubSteps(config.rhoMaxVelocityMPerS, pitch),
+  );
+  const epsSubSteps = mediumDiffusionSubSteps(config.epsDiffusionM2PerS, pitch);
+  const subSteps = Math.max(rhoSubSteps, epsSubSteps);
+  const dt = MEDIUM_DT_S / subSteps;
+
+  // Work on mutable copies so the input is untouched (deterministic, pure).
+  let rho = state.rho.slice();
+  let eps = state.eps.slice();
+
+  for (let step = 0; step < subSteps; step += 1) {
+    const rhoNext = rho.slice();
+    const epsNext = eps.slice();
+    for (let cell = 0; cell < cellCount; cell += 1) {
+      const rhoHere = rho[cell] ?? 0;
+      const epsHere = eps[cell] ?? 0;
+      const cellNeighbours = neighbours[cell] ?? [];
+      const bFaces = boundaryFaceCount[cell] ?? 0;
+
+      // Per-cell finite-volume coefficients for a uniform-volume regular grid.
+      // Cell volume `V = pitch² · slabDepth`; face area `A = pitch · slabDepth`;
+      // centring distance `d = pitch`. The finite-volume flux rate per cell is
+      //   diffusion:  (D · A / d) / V = D / pitch²          (per face)
+      //   advection:  (u · A) / V       = u / pitch          (per face)
+      //   boundary:   density · A · v_e = (ρ/V) · A · v_e = ρ · v_e / pitch (per face)
+      // Both diffusion and advection coefficients are independent of slab depth
+      // — it cancels because both the face flux and the cell capacity scale
+      // with it. See the module header for the derivation.
+      const invPitch2 = pitch > 0 ? 1 / (pitch * pitch) : 0;
+      const invPitch = pitch > 0 ? 1 / pitch : 0;
+
+      // --- ρ advection + diffusion across each neighbour face ---
+      let rhoAdv = 0;
+      let rhoDif = 0;
+      const D = config.rhoDiffusionM2PerS;
+      const vMax = config.rhoMaxVelocityMPerS;
+      const gradRef = MEDIUM_DENSITY_GRAD_REF_KG_PER_M3;
+      for (const neighbour of cellNeighbours) {
+        const rhoThere = rho[neighbour] ?? 0;
+        // Diffusive flux (FTCS) into this cell:
+        //   dφ/dt = (D · A / d) · (c_to − c_from)
+        // where c = φ/V is the intensive concentration; with V constant across
+        // the grid this is (D / pitch²) · (φ_to − φ_from) per face. Sign:
+        // positive into `cell` when the neighbour holds more φ.
+        if (D !== 0) {
+          rhoDif += D * invPitch2 * (rhoThere - rhoHere);
+        }
+        // Advective flux (upwind) into this cell:
+        //   dφ/dt = −Σ u · A · c_upwind
+        // with c = φ/V and A = pitch · slabDepth: per face `−u · φ_upwind / pitch`.
+        if (vMax > 0) {
+          const u = densityGradientVelocity(
+            rhoHere,
+            rhoThere,
+            pitch,
+            slabDepth,
+            vMax,
+            gradRef,
+          );
+          if (u > 0) {
+            // Flow leaves cell toward neighbour: cell loses `u · ρ_from / pitch`.
+            rhoAdv -= u * invPitch * rhoHere;
+          } else if (u < 0) {
+            // Flow enters cell from neighbour: cell gains `|u| · ρ_to / pitch`.
+            rhoAdv -= u * invPitch * rhoThere;
+          }
+        }
+      }
+      // --- ρ boundary sink (perimeter cells vent to vacuum) ---
+      const rhoBnd = densityBoundaryRate(
+        rhoHere,
+        bFaces,
+        pitch,
+        config.boundaryVentVelocityMPerS,
+      );
+      // --- ρ source ---
+      const rhoSrc = (sources.rho[cell] ?? 0) * dt;
+
+      // Apply ρ change, clamp non-negative.
+      const dRho = (rhoAdv + rhoDif - rhoBnd) * dt + rhoSrc;
+      let rhoNew = rhoHere + dRho;
+      if (rhoNew < 0) rhoNew = 0;
+      rhoNext[cell] = rhoNew;
+
+      // --- ε diffusion across each neighbour face (same FTCS form) ---
+      let epsDif = 0;
+      const Deps = config.epsDiffusionM2PerS;
+      for (const neighbour of cellNeighbours) {
+        const epsThere = eps[neighbour] ?? 0;
+        if (Deps !== 0) {
+          epsDif += Deps * invPitch2 * (epsThere - epsHere);
+        }
+      }
+      // --- ε volumetric decay ---
+      const epsDecay = excitationDecayRate(epsHere, config.epsDecayTimescaleS);
+      // --- ε boundary sink ---
+      const epsBnd = excitationBoundaryRate(
+        epsHere,
+        bFaces,
+        config.boundaryEpsLossPerS,
+      );
+      // --- ε source ---
+      const epsSrc = (sources.eps[cell] ?? 0) * dt;
+
+      // Apply ε change, clamp non-negative.
+      const dEps = (epsDif + epsDecay - epsBnd) * dt + epsSrc;
+      let epsNew = epsHere + dEps;
+      if (epsNew < 0) epsNew = 0;
+      epsNext[cell] = epsNew;
+    }
+    rho = rhoNext;
+    eps = epsNext;
+  }
+
+  return { rho, eps };
+}
+
+/**
+ * Sum the density across the field (kg). Useful for conservation assertions:
+ * in a closed field (no sources, no boundary sink) the total is invariant
+ * under pure advection + diffusion.
+ */
+export function totalDensity(rho: readonly number[]): number {
+  let sum = 0;
+  for (let i = 0; i < rho.length; i += 1) sum += rho[i] ?? 0;
+  return sum;
+}
+
+/**
+ * Sum the excitation across the field (joules). Useful for the decay
+ * assertion: ε monotonically decreases toward zero in a source-free field.
+ */
+export function totalExcitation(eps: readonly number[]): number {
+  let sum = 0;
+  for (let i = 0; i < eps.length; i += 1) sum += eps[i] ?? 0;
+  return sum;
+}
