@@ -14,6 +14,7 @@ import type { BattleSide } from "@/schema/battle";
 import type { SimBeam } from "./beams";
 import type { Debris } from "./debris";
 import type { Emission } from "./emissions";
+import type { MediumField, MediumState } from "./medium-field";
 import type { DeploymentReference } from "./movement";
 import type { SimPulse } from "./pulses";
 import type { SimMine, SimPod, SimProjectile, SimShip } from "./types";
@@ -53,6 +54,19 @@ export interface EngineState {
    *  lingers for a few ticks so the renderer can draw it as a line. Damages at
    *  the moment of emission; the carried objects are pure render state. */
   beams: SimBeam[];
+  /**
+   * Arena medium field (the density + excitation substrate). The `field` is the
+   * resolved {@link MediumField} (built once from the arena bounds; grid
+   * connectivity fixed for the battle); the `state` is the current ρ + ε
+   * arrays, replaced with a fresh `MediumState` each tick by `stepMediumField`.
+   * Carried across ticks so the field integrates from its own prior state rather
+   * than re-seeding each tick; captured and restored on checkpoint so resume
+   * reproduces the tail byte-identically. Stepped with ZERO sources in this
+   * pass — thrusters, debris, and beam strikes feed in later phases — so battle
+   * outcomes (ships, projectiles, hits) are byte-for-byte unchanged relative to
+   * the pre-medium engine.
+   */
+  medium: { field: MediumField; state: MediumState };
   chunkSeq: number;
   mineSeq: number;
   podSeq: number;

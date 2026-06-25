@@ -564,6 +564,40 @@ export const BeamSnapshot = z.object({
 });
 export type BeamSnapshot = z.infer<typeof BeamSnapshot>;
 
+/**
+ * Arena medium field snapshot for one tick: the density (ρ, kg per cell) and
+ * excitation (ε, J per cell) arrays from the pure medium-field solver, plus the
+ * grid shape (cell counts and pitch in metres) the renderer needs to map a cell
+ * index back to a world position. Both arrays are `Float64Array`, length
+ * `widthM * heightM`, row-major; transferred zero-copy across the worker
+ * boundary (the worker collects every `.buffer` into the postMessage transfer
+ * list, alongside the cell and resource buffers).
+ *
+ * Optional on {@link BattleFrame}: omitted on off-ticks of the snapshot
+ * subsample cadence (mirrors the per-ship `resource` block) and on replays
+ * recorded before the medium field was wired in. The renderer's medium overlay
+ * holds the last-known field between emissions, so the overlay stays continuous.
+ *
+ * Cell-to-world mapping: cell `(col, row)` (where `cell = row * widthM + col`)
+ * covers the rectangle `[col · pitchM, (col+1) · pitchM) × [row · pitchM,
+ * (row+1) · pitchM)` offset from the arena centre (the origin), so the grid is
+ * centred on `(widthM · pitchM / 2, heightM · pitchM / 2)` and ships deploy
+ * about the origin as `resolve.ts` places them.
+ */
+export const MediumSnapshot = z.object({
+  /** Density ρ per cell (kg). Length `widthM * heightM`. */
+  rho: float64ArraySchema,
+  /** Excitation ε per cell (J). Length `widthM * heightM`. */
+  eps: float64ArraySchema,
+  /** Grid width in cells. */
+  widthM: z.number().int().min(1),
+  /** Grid height in cells. */
+  heightM: z.number().int().min(1),
+  /** Cell pitch in metres (one cell spans `pitchM × pitchM` on the arena). */
+  pitchM: z.number().min(0),
+});
+export type MediumSnapshot = z.infer<typeof MediumSnapshot>;
+
 /** A single frame of recorded battle state, for replay rendering. */
 export const BattleFrame = z.object({
   tick: z.number().int().min(0),
@@ -610,6 +644,15 @@ export const BattleFrame = z.object({
    *  fired — stay byte-identical to baseline. The renderer draws each entry as
    *  a line from source to target, fading by the remaining emission ticks. */
   beams: z.array(BeamSnapshot).optional(),
+  /**
+   * Arena medium field this tick (the density + excitation substrate the
+   * weapon-trail / exhaust-wake / ionisation-flash effects will later emerge
+   * from). Subsampled on the same cadence as the per-ship `resource` block: the
+   * medium diffuses over many ticks, so emitting it every tick bloats the
+   * heaviest frames for no render-side gain. Omitted on off-ticks and on replays
+   * recorded before the medium was wired in, so older frames stay byte-identical.
+   */
+  medium: MediumSnapshot.optional(),
 });
 export type BattleFrame = z.infer<typeof BattleFrame>;
 

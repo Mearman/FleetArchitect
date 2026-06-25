@@ -10,6 +10,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { mulberry32 } from "@/domain/simulation/rng";
+import { buildArenaMedium } from "@/domain/simulation/engine/medium-setup";
 import { toSimShip } from "@/domain/simulation/engine/setup";
 import {
   refreshRosterIncremental,
@@ -119,6 +120,7 @@ function stateWith(ships: SimShip[]): EngineState {
     emissions: [],
     debris: [],
     beams: [],
+    medium: buildArenaMedium(ships),
     chunkSeq: 0,
     mineSeq: 0,
     podSeq: 0,

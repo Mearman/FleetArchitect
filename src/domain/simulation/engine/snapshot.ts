@@ -8,9 +8,10 @@
  */
 
 import { CELL_SIZE } from "@/domain/grid";
-import type { AwarenessSnapshot, BattleFrame, CellStateArrays, ShipDescriptor } from "@/schema/battle";
+import type { AwarenessSnapshot, BattleFrame, CellStateArrays, MediumSnapshot, ShipDescriptor } from "@/schema/battle";
 import { CREW_HP } from "./config";
 import { STANDARD_CELL_GAS_MASS_KG, CREW_VACUUM_SURVIVABLE_FRACTION } from "./lifesupport";
+import type { MediumField, MediumState } from "./medium-field";
 import type { SimCrew } from "../types";
 
 import { crewCellKey } from "./crew-pathfinding";
@@ -46,6 +47,7 @@ export function snapshot(
   emissions: readonly Emission[],
   debris: readonly Debris[],
   beams: readonly SimBeam[],
+  medium: { field: MediumField; state: MediumState },
 ): BattleFrame {
   // Partition real ships from phantoms (drones/decoys) so phantoms never appear
   // in the `ships` array — they render from their own dedicated arrays instead.
@@ -282,6 +284,37 @@ export function snapshot(
           })),
         }
       : {}),
+    // Arena medium field (ρ + ε). Subsampled on the same RESOURCE_EVERY cadence
+    // as the per-ship resource block: the medium diffuses / decays over many
+    // ticks, and emitting two Float64Arrays (length widthM·heightM) every tick
+    // bloats the heaviest frames for no render-side gain — the medium overlay
+    // holds the last-known field between emissions exactly as the resource
+    // overlay does. The engine steps the medium every tick regardless; this is
+    // a snapshot-emission cadence, not a sim change. Tick 0 is always emitted
+    // (RESOURCE_EVERY divides 0) so the opening frame carries the ISM baseline.
+    ...(tick % RESOURCE_EVERY === 0 ? { medium: mediumSnapshot(medium) } : {}),
+  };
+}
+
+/**
+ * Build the {@link MediumSnapshot} for one tick: fresh Float64Array copies of
+ * the ρ and ε state (so the snapshot does not alias the live arrays the engine
+ * mutates in place next tick), plus the grid shape. The typed arrays are
+ * transferred zero-copy across the worker boundary — `collectTransferables`
+ * walks every frame's `medium.rho` / `medium.eps` and pushes the underlying
+ * buffer into the postMessage transfer list, alongside the cell and resource
+ * buffers.
+ */
+function mediumSnapshot(medium: {
+  field: MediumField;
+  state: MediumState;
+}): MediumSnapshot {
+  return {
+    rho: Float64Array.from(medium.state.rho),
+    eps: Float64Array.from(medium.state.eps),
+    widthM: medium.field.config.widthM,
+    heightM: medium.field.config.heightM,
+    pitchM: medium.field.config.pitchM,
   };
 }
 

@@ -11,6 +11,10 @@ import {
   restoreCheckpoint,
 } from "@/domain/simulation/engine/checkpoint";
 import { toSimShip } from "@/domain/simulation/engine/setup";
+import {
+  buildArenaMedium,
+  restoreArenaMedium,
+} from "@/domain/simulation/engine/medium-setup";
 import { createStalemateWatch } from "@/domain/simulation/engine/stalemate";
 import { fleetCentroid } from "@/domain/simulation/engine/movement";
 import type { EngineState } from "@/domain/simulation/engine/state";
@@ -258,6 +262,7 @@ function makeState(): { state: EngineState; rng: ReturnType<typeof mulberry32> }
     emissions: [emission],
     debris: [debris],
     beams: [],
+    medium: buildArenaMedium(ships),
     chunkSeq: 1,
     mineSeq: 1,
     podSeq: 1,
@@ -346,6 +351,7 @@ describe("captureCheckpoint / restoreCheckpoint", () => {
       emissions: restored.emissions,
       debris: restored.debris,
       beams: restored.beams,
+      medium: restoreArenaMedium(restored.medium, restored.ships),
       chunkSeq: restored.chunkSeq,
       mineSeq: restored.mineSeq,
       podSeq: restored.podSeq,

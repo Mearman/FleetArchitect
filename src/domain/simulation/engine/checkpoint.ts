@@ -217,6 +217,26 @@ export function captureCheckpoint(
     emissions: state.emissions,
     debris: state.debris,
     beams: state.beams,
+    // Medium field: capture the resolved config scalars (the grid connectivity
+    // re-derives from width/height on resume) and a COPY of the live state
+    // arrays, so the checkpoint is independent of the continuing battle's
+    // in-place medium mutation.
+    medium: {
+      widthM: state.medium.field.config.widthM,
+      heightM: state.medium.field.config.heightM,
+      pitchM: state.medium.field.config.pitchM,
+      rhoDiffusionM2PerS: state.medium.field.config.rhoDiffusionM2PerS,
+      rhoMaxVelocityMPerS: state.medium.field.config.rhoMaxVelocityMPerS,
+      epsDiffusionM2PerS: state.medium.field.config.epsDiffusionM2PerS,
+      epsDecayTimescaleS: state.medium.field.config.epsDecayTimescaleS,
+      boundaryVentVelocityMPerS: state.medium.field.config.boundaryVentVelocityMPerS,
+      boundaryEpsLossPerS: state.medium.field.config.boundaryEpsLossPerS,
+      // The final structuredClone severs the alias to the live arrays; the
+      // spreads satisfy the schema's mutable `number[]` (the live state arrays
+      // are `readonly number[]`).
+      rho: [...state.medium.state.rho],
+      eps: [...state.medium.state.eps],
+    },
   };
   if (stalemate !== undefined) checkpoint.stalemate = stalemate;
   // Deep-clone the whole assembled structure once: it severs every alias to the
@@ -398,6 +418,10 @@ export interface RestoredEngine {
   debris: EngineState["debris"];
   beams: EngineState["beams"];
   deployment: EngineState["deployment"];
+  /** The captured medium field config + state arrays, or undefined on a
+   *  pre-medium checkpoint. The caller rebuilds the {@link MediumField} grid
+   *  connectivity from the config scalars. */
+  medium: EngineCheckpoint["medium"];
   chunkSeq: number;
   mineSeq: number;
   podSeq: number;
@@ -432,6 +456,7 @@ export function restoreCheckpoint(cp: EngineCheckpoint): RestoredEngine {
     emissions: clone.emissions,
     debris: clone.debris,
     beams: clone.beams,
+    medium: clone.medium,
     // Build the DeploymentReference with both keys present (value possibly
     // undefined for a side that deployed nothing): the schema models each side
     // as an optional KEY, the runtime as a required key with an optional VALUE.

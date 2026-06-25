@@ -16,6 +16,7 @@ import type { EngineCheckpoint } from "@/schema/checkpoint";
 import type { BattleInputs } from "../types";
 import { restoreCheckpoint } from "./checkpoint";
 import { resetProjectileCounter, setProjectileCounter } from "./config";
+import { buildArenaMedium, restoreArenaMedium } from "./medium-setup";
 import { fleetCentroid } from "./movement";
 import { toSimShip } from "./setup";
 import type { Rng } from "@/domain/simulation/rng";
@@ -108,6 +109,11 @@ export function bootstrapEngine(
       // lingers a few ticks then expires. Empty until a beam weapon fires, so a
       // battle with no beam weapons keeps it empty and emits no `beams` snapshots.
       beams: [],
+      // Arena medium field: built once from the deployment bounding box and
+      // seeded at the ISM baseline. Stepped each tick with zero sources (this
+      // pass), so it relaxes from the baseline without touching ship / weapon
+      // state — battle outcomes stay byte-for-byte unchanged.
+      medium: buildArenaMedium(ships),
       // Deterministic per-battle id counters. Each advances in spawn order, with
       // no rng and no clock, so two same-seed runs produce byte-identical ids.
       chunkSeq: 0,
@@ -130,6 +136,12 @@ export function bootstrapEngine(
   // counters, deployment and stalemate watch from the checkpoint.
   setProjectileCounter(resumeFrom.counters.projectile);
   const restored = restoreCheckpoint(resumeFrom);
+  // Rebuild the medium field from the captured scalars (the grid connectivity is
+  // a pure function of `widthM`/`heightM`, so it re-derives byte-identically)
+  // and reattach the restored state arrays. Absent on pre-medium checkpoints; in
+  // that case rebuild from the restored ships at the ISM baseline — there is no
+  // prior mid-battle state to reconstruct because the original run had no medium.
+  const medium = restoreArenaMedium(restored.medium, restored.ships);
   const state: EngineState = {
     ships: restored.ships,
     attackers: restored.ships.filter((s) => s.side === "attacker"),
@@ -143,6 +155,7 @@ export function bootstrapEngine(
     emissions: restored.emissions,
     debris: restored.debris,
     beams: restored.beams,
+    medium,
     chunkSeq: restored.chunkSeq,
     mineSeq: restored.mineSeq,
     podSeq: restored.podSeq,

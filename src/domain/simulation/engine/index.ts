@@ -25,6 +25,7 @@ import { bootstrapEngine } from "./bootstrap";
 import { captureCheckpoint } from "./checkpoint";
 import type { EngineCheckpoint } from "@/schema/checkpoint";
 import { leadingSide } from "./outcome";
+import { stepArenaMedium } from "./medium-setup";
 import { updateCrew } from "./crew";
 import { refillHardwiredAmmo } from "./crew-haul";
 import { resourceStep } from "./resource-step";
@@ -115,12 +116,9 @@ export function* simulateBattle(
   };
 
   // Assemble the initial engine state: built fresh from the resolved ships on a
-  // cold start, or rebuilt from the checkpoint on resume (which also restores the
-  // projectile counter and the stalemate watch). The cold-start path resets the
-  // projectile counter and constructs the state byte-identically to the original
-  // inline prologue. `startTick` is 1 on a cold start (the tick after frame 0) or
-  // `checkpoint.tick + 1` on resume. `stalemate` is undefined on a cold start
-  // (the frame-0 prologue below creates it); restored on resume.
+  // cold start, or rebuilt from the checkpoint on resume. `startTick` is 1 on a
+  // cold start or `checkpoint.tick + 1` on resume; `stalemate` is undefined on
+  // a cold start (the frame-0 prologue below creates it) and restored on resume.
   const bootstrap = bootstrapEngine(inputs, rng, resumeFrom);
   const state = bootstrap.state;
   const startTick = bootstrap.startTick;
@@ -147,10 +145,9 @@ export function* simulateBattle(
   // every snapshot. This keeps the awareness phase from touching the battle rng.
   const occluders = computeOccluders(inputs.anomalies, inputs.seed >>> 0);
 
-  // Frame 0 + stalemate watch: the cold-start prologue only. On resume tick
-  // `checkpoint.tick` was already yielded by the original run and its stalemate
-  // watch was restored from the checkpoint, so neither runs again — re-yielding
-  // frame 0 or re-creating the watch would diverge from a fresh run's tail.
+  // Frame 0 + stalemate watch: the cold-start prologue only. On resume neither
+  // runs again (frame 0 was yielded, the watch restored) — re-running would
+  // diverge from a fresh run's tail.
   if (resumeFrom === undefined) {
     // Frame 0: run the awareness phase once so the opening snapshot carries the
     // same fog-of-war data every later frame does, and so each ship's `awareness`
@@ -161,7 +158,7 @@ export function* simulateBattle(
     state.emissionSeq = rebuildEmissions(state.ships, state.emissions, 0, state.emissionSeq);
 
     captureDescriptors(state.ships);
-    yield snapshot(0, state.ships, state.projectiles, frame0Awareness, state.mines, state.pods, state.pulses, state.emissions, state.debris, state.beams);
+    yield snapshot(0, state.ships, state.projectiles, frame0Awareness, state.mines, state.pods, state.pulses, state.emissions, state.debris, state.beams, state.medium);
 
     // No-progress stalemate watchdog (see ./stalemate) — the termination
     // guarantee for an uncapped battle, created only when there is no explicit
@@ -688,10 +685,13 @@ export function* simulateBattle(
       }
     }
 
+    // 5c. Arena medium field step (zero sources this pass); see `stepArenaMedium`.
+    state.medium = stepArenaMedium(state.medium);
+
     // Capture descriptors for any instance that first appeared this tick
     // (break-away chunks, launched phantoms) before recording the frame.
     captureDescriptors(state.ships);
-    yield snapshot(tick, state.ships, state.projectiles, awareness, state.mines, state.pods, state.pulses, state.emissions, state.debris, state.beams);
+    yield snapshot(tick, state.ships, state.projectiles, awareness, state.mines, state.pods, state.pulses, state.emissions, state.debris, state.beams, state.medium);
     state.ticks += 1;
 
     // 6. Termination. Only real ships decide the battle — a side whose hulls

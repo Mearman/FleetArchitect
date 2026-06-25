@@ -420,6 +420,29 @@ export const EngineCheckpoint = z.object({
   emissions: z.array(CheckpointEmission),
   debris: z.array(CheckpointDebris),
   beams: z.array(CheckpointBeam),
+  /**
+   * Arena medium field at the checkpoint tick: the resolved {@link
+   * MediumFieldConfig} scalars and the live density (ρ) and excitation (ε)
+   * state arrays. The grid connectivity (`neighbours`, `boundaryFaceCount`) is a
+   * pure function of `(widthM, heightM)`, so it is NOT captured —
+   * `buildMediumField` rebuilds it byte-identically on resume. Optional: absent
+   * on checkpoints recorded before the medium field was wired in.
+   */
+  medium: z
+    .object({
+      widthM: z.number().int().min(1),
+      heightM: z.number().int().min(1),
+      pitchM: z.number().min(0),
+      rhoDiffusionM2PerS: z.number(),
+      rhoMaxVelocityMPerS: z.number(),
+      epsDiffusionM2PerS: z.number(),
+      epsDecayTimescaleS: z.number(),
+      boundaryVentVelocityMPerS: z.number(),
+      boundaryEpsLossPerS: z.number(),
+      rho: z.array(z.number()),
+      eps: z.array(z.number()),
+    })
+    .optional(),
 });
 export type EngineCheckpoint = z.infer<typeof EngineCheckpoint>;
 

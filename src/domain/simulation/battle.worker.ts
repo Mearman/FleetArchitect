@@ -40,6 +40,11 @@ function collectTransferables(frames: readonly BattleFrame[]): Transferable[] {
     for (const ship of frame.ships) {
       collectShipTransferables(ship, pushTyped);
     }
+    const medium = frame.medium;
+    if (medium !== undefined) {
+      pushTyped(medium.rho);
+      pushTyped(medium.eps);
+    }
   }
   return out;
 }
