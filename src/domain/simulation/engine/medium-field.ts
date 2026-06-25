@@ -109,20 +109,28 @@ export const MEDIUM_PITCH_M_DEFAULT = 500;
 
 /**
  * Interstellar medium baseline density, kg·m⁻³. The real ISM is faint but
- * non-zero: the warm ionised phase that dominates the Milky Way's volume sits
- * around `~10⁻²⁸` kg·m⁻³ (roughly 0.1 atoms · cm⁻³, typical of the local
- * bubble's warm interstellar gas). This is the floor the medium relaxes back
- * to once battles, exhaust, and trails have dissipated — the battlefield is
- * never a perfect vacuum.
+ * non-zero: the warm ionised medium (WIM) that dominates the Milky Way's volume
+ * has number density `n_H ≈ 0.1 cm⁻³` (Draine 2011, ch. 1). Converting to a mass
+ * density: `0.1 cm⁻³ = 1e5 m⁻³`; at `m_H ≈ 1.67e-27 kg` that is
+ * `≈ 1.7e-22 kg·m⁻³`. This is the floor the medium relaxes back to once battles,
+ * exhaust, and trails have dissipated — the battlefield is never a perfect
+ * vacuum.
+ *
+ * Honest visibility note: at this realistic density the ambient ISM is far too
+ * thin to ionise visibly on its own. The "faint always-on trail" character comes
+ * from LOCALLY dense or excited material — exhaust plumes and beam-deposited
+ * energy sit many orders of magnitude above the ISM floor and are what actually
+ * glow — together with a renderer brightness mapping whose low end is sensitive
+ * enough to read the ISM floor as a faint haze. The dynamic-range tuning lives
+ * in the renderer, not in this pure substrate; the constant here is the honest
+ * physical baseline.
  *
  * Source: Draine, *Physics of the Interstellar and Intergalactic Medium*
- * (Princeton, 2011), ch. 1, table of phase-averaged ISM properties — the warm
- * ionised medium (WIM) number density `n_H ≈ 0.1 cm⁻³`, mass per H atom
- * `~1.67e-27 kg`, giving `~1.7e-28 kg·m⁻³`. Rounded to 1.5e-28.
+ * (Princeton, 2011), ch. 1, WIM phase properties (`n_H ≈ 0.1 cm⁻³`).
  *
  * Classification: real physical constant (a documented ISM density figure).
  */
-export const ISM_DENSITY_KG_PER_M3 = 1.5e-28;
+export const ISM_DENSITY_KG_PER_M3 = 1.7e-22;
 
 /**
  * Diffusion coefficient for the arena medium, m²·s⁻¹. Turbulent mixing in a

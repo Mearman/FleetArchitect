@@ -119,7 +119,8 @@ describe("engine.medium-field", () => {
     });
 
     it("uses real ISM density as the faint-but-non-zero baseline", () => {
-      // Documented ISM WIM density: ~1.5e-28 kg/m³.
+      // Documented ISM WIM density: n_H ≈ 0.1 cm⁻³ = 1e5 m⁻³; × m_H (1.67e-27 kg)
+      // ≈ 1.7e-22 kg/m³.
       expect(ISM_DENSITY_KG_PER_M3).toBeGreaterThan(0);
       expect(ISM_DENSITY_KG_PER_M3).toBeLessThan(1e-20);
     });
