@@ -1,3 +1,10 @@
+## [1.19.4](https://github.com/Mearman/FleetArchitect/compare/v1.19.3...v1.19.4) (2026-06-25)
+
+
+### Bug Fixes
+
+* **ui:** relative star fade — stars visible at full zoom-out ([82e46cb](https://github.com/Mearman/FleetArchitect/commit/82e46cb5059cef858747af4d4997342c78651f15))
+
 ## [1.19.3](https://github.com/Mearman/FleetArchitect/compare/v1.19.2...v1.19.3) (2026-06-25)
 
 
