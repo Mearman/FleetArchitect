@@ -1,21 +1,11 @@
 import type { AwarenessSnapshot } from "@/schema/battle";
 import { CELL_SIZE } from "@/domain/grid";
-import type { Bounds, Transform } from "./battleCamera";
+import type { Transform } from "./battleCamera";
 import { pathWorldCircle, pathWorldSector } from "./battleProject";
 
 // ---------------------------------------------------------------------------
 // Colour and style constants (named so magic numbers never appear inline)
 // ---------------------------------------------------------------------------
-
-/**
- * Opacity of the fog layer before coverage discs are cut out of it.
- * 0 = transparent (no fog), 1 = fully opaque black. 0.45 gives a clearly
- * visible shroud without making uncovered space illegible.
- */
-const FOG_ALPHA = 0.45;
-
-/** Fill colour of the fog shroud. Warm void tint matching BASE_VOID. */
-const FOG_COLOUR = "rgba(10,12,8,1)";
 
 /**
  * Maximum hue-jitter applied to a cluster's side colour to distinguish clusters
@@ -215,81 +205,14 @@ export function drawFogAndAwareness(
   ctx: CanvasRenderingContext2D,
   awareness: AwarenessSnapshot | undefined,
   t: Transform,
-  bounds: Bounds,
   shipPos: ShipScreenPositions,
 ): void {
   // Single guard: absent awareness → nothing to draw. No further defensive
   // branches — if awareness is present we render it as given.
   if (awareness === undefined) return;
 
-  // Screen AABB of the (possibly tilted) battle bounds — the bounding box of the
-  // four projected corners (collapses to the plain rect under the flat view).
-  const bc = [
-    t.project(bounds.minX, bounds.minY),
-    t.project(bounds.maxX, bounds.minY),
-    t.project(bounds.minX, bounds.maxY),
-    t.project(bounds.maxX, bounds.maxY),
-  ];
-  const x0 = Math.min(...bc.map((p) => p.x));
-  const y0 = Math.min(...bc.map((p) => p.y));
-  const x1 = Math.max(...bc.map((p) => p.x));
-  const y1 = Math.max(...bc.map((p) => p.y));
-  const w = x1 - x0;
-  const h = y1 - y0;
-
   // -------------------------------------------------------------------------
-  // 1+2. Fog shroud with coverage cutouts
-  // -------------------------------------------------------------------------
-  // Guard: only paint the shroud when there is at least one coverage shape to
-  // cut out of it. Without this guard, a frame whose coverage shapes project
-  // outside the viewport (e.g. iso projection at wide zooms) leaves the solid
-  // fill intact but punches no visible hole — the user perceives a solid dark
-  // rect.
-  const hasCoverage = awareness.clusters.some((c) => c.coverage.length > 0);
-  if (!hasCoverage) return;
-
-  // We draw into an isolated layer (ctx.save with globalCompositeOperation) so
-  // the "destination-out" cutout only erases our own fog layer, not the ships
-  // and anomaly drawn underneath.
-  ctx.save();
-
-  // Draw fog into a temporary compositing layer by setting globalAlpha, then
-  // use a clipping rectangle to keep the effect inside the battle bounds.
-  ctx.beginPath();
-  ctx.rect(x0, y0, w, h);
-  ctx.clip();
-
-  // Fog fill.
-  ctx.globalAlpha = FOG_ALPHA;
-  ctx.fillStyle = FOG_COLOUR;
-  ctx.fillRect(x0, y0, w, h);
-
-  // Cut coverage shapes out of the fog so covered space reads as clear.
-  // "destination-out" makes new draws erase existing pixels proportional to
-  // their alpha; a fully-opaque shape punches a clean hole.
-  //
-  // A directional coverage element (bearing + arc present) is cut as a SECTOR:
-  // a wedge from the centre out to radius r, swept from bearing-arc to
-  // bearing+arc. Elements without bearing/arc are cut as full circles (innate
-  // visual circle or omni sensor).
-  ctx.globalCompositeOperation = "destination-out";
-  ctx.globalAlpha = 1;
-  for (const cluster of awareness.clusters) {
-    for (const cov of cluster.coverage) {
-      if (isSectorCoverage(cov)) {
-        const { start, end } = sectorAngles(cov.bearing, cov.arc);
-        pathWorldSector(ctx, t, cov.x, cov.y, cov.r, start, end);
-      } else {
-        pathWorldCircle(ctx, t, cov.x, cov.y, cov.r);
-      }
-      ctx.fill();
-    }
-  }
-
-  ctx.restore(); // restores compositeOperation and clipping
-
-  // -------------------------------------------------------------------------
-  // 3. Cluster perimeter strokes
+  // Cluster perimeter strokes
   // -------------------------------------------------------------------------
   // Stroke each coverage shape with a side+cluster-specific colour. A sector
   // outline consists of the two radii (centre to the arc endpoints) plus the

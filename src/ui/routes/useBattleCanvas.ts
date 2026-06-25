@@ -131,7 +131,7 @@ export function useBattleCanvas({
           }
         }
         const shipPos: ShipScreenPositions = shipScreenPos;
-        drawFogAndAwareness(ctx, frame.awareness, t, bounds, shipPos);
+        drawFogAndAwareness(ctx, frame.awareness, t, shipPos);
       }
 
       // Battle overlays: dispatched by layer relative to the ship loop. Each
