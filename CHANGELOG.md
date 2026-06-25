@@ -1,3 +1,16 @@
+# [1.17.0](https://github.com/Mearman/FleetArchitect/compare/v1.16.0...v1.17.0) (2026-06-25)
+
+
+### Bug Fixes
+
+* **sim:** correct ISM WIM baseline density (arithmetic error) ([03b60df](https://github.com/Mearman/FleetArchitect/commit/03b60df127c9edefcd48d06ff9c4cd22abdf45ee))
+
+
+### Features
+
+* **sim:** metres-based closest zoom limit for the battle camera ([6cc7947](https://github.com/Mearman/FleetArchitect/commit/6cc7947e68209df5059f645cb921e2f81dea7bbf))
+* **sim:** pure arena medium-field solver (density + excitation) ([04559be](https://github.com/Mearman/FleetArchitect/commit/04559be394ecb6ea9c3b6befb61e97deefcebb2d))
+
 # [1.16.0](https://github.com/Mearman/FleetArchitect/compare/v1.15.0...v1.16.0) (2026-06-25)
 
 
