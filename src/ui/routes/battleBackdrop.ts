@@ -14,8 +14,10 @@ const GRID_WORLD_SPACING = 100;
 const STAR_CELL_WORLD = 70;
 
 /** Caps so a zoomed-far-out view does not iterate a huge lattice: the grid stops
- *  drawing past this many lines per axis, and the starfield lattice is coarsened
- *  (cell size doubled) until it fits this many cells. */
+ *  drawing past this many lines per axis, and the starfield samples a coarser
+ *  SUBLATTICE (a stride) until the DRAWN count fits under this — the lattice
+ *  itself stays fixed (70 m), so stars never reposition on zoom; only the
+ *  density thins at extreme zoom-out. */
 const GRID_LINE_CAP = 240;
 const STAR_CELL_CAP = 2400;
 
@@ -110,35 +112,41 @@ export function drawBackdrop(
     ctx.restore();
   }
 
-  // 3. Starfield on a fixed world lattice covering the visible rect. One star
-  //    per cell at a hashed offset; coarsened when a zoomed-out view would span
-  //    too many cells. Fixed in world space, so buffering never moves a star.
-  let cell = STAR_CELL_WORLD;
-  let sx0 = Math.floor(left / cell);
-  let sx1 = Math.ceil(right / cell);
-  let sy0 = Math.floor(top / cell);
-  let sy1 = Math.ceil(bottom / cell);
-  while ((sx1 - sx0 + 1) * (sy1 - sy0 + 1) > STAR_CELL_CAP) {
-    cell *= 2;
-    sx0 = Math.floor(left / cell);
-    sx1 = Math.ceil(right / cell);
-    sy0 = Math.floor(top / cell);
-    sy1 = Math.ceil(bottom / cell);
-  }
+  // 3. Starfield on a FIXED world lattice covering the visible rect. One star
+  //    per 70 m cell at a hashed offset, so the pattern is pinned to world
+  //    space — it never reshuffles on zoom (buffering never moves a star
+  //    either). When a zoomed-out view would span more than STAR_CELL_CAP cells
+  //    a coarser SUBLATTICE is sampled (a stride) rather than doubling the
+  //    cell: doubling re-grids the lattice and makes every star jump to a new
+  //    position, whereas a stride keeps each drawn star at its fixed lattice
+  //    position. Stars thus never move on zoom; only the density thins, and
+  //    only at extreme zoom-out.
+  const cell = STAR_CELL_WORLD;
+  const sx0 = Math.floor(left / cell);
+  const sx1 = Math.ceil(right / cell);
+  const sy0 = Math.floor(top / cell);
+  const sy1 = Math.ceil(bottom / cell);
+  // Stride so the DRAWN star count stays under the cap: stride² ≤ cellCount/cap.
+  const cellCount = (sx1 - sx0 + 1) * (sy1 - sy0 + 1);
+  let stride = 1;
+  while (cellCount > STAR_CELL_CAP * stride * stride) stride *= 2;
+  // Visit only the stride sublattice (multiples of `stride`), starting at the
+  // first multiple in range — a stable sublattice that does not shift with the
+  // viewport, so panning/zooming never repositions a drawn star.
+  const startX = Math.ceil(sx0 / stride) * stride;
+  const startY = Math.ceil(sy0 / stride) * stride;
   ctx.save();
   ctx.fillStyle = "rgba(201,212,196,1)";
-  for (let ix = sx0; ix <= sx1; ix += 1) {
-    for (let iy = sy0; iy <= sy1; iy += 1) {
+  for (let ix = startX; ix <= sx1; ix += stride) {
+    for (let iy = startY; iy <= sy1; iy += stride) {
       const wx = (ix + cellHash(ix, iy, 0)) * cell;
       const wy = (iy + cellHash(ix, iy, 1)) * cell;
       const sp = t.project(wx, wy);
-      const px = sp.x;
-      const py = sp.y;
-      if (px < 0 || px > width || py < 0 || py > height) continue;
+      if (sp.x < 0 || sp.x > width || sp.y < 0 || sp.y > height) continue;
       ctx.globalAlpha = 0.3 + cellHash(ix, iy, 2) * 0.6;
       const radius = 0.8 + cellHash(ix, iy, 3) * 0.7;
       ctx.beginPath();
-      ctx.arc(px, py, radius, 0, Math.PI * 2);
+      ctx.arc(sp.x, sp.y, radius, 0, Math.PI * 2);
       ctx.fill();
     }
   }
