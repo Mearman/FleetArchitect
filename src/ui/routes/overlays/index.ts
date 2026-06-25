@@ -7,6 +7,7 @@ import { sensorPulse } from "./sensorPulse";
 import { atmosphereBreach } from "./atmosphereBreach";
 import { boardingDebris } from "./boardingDebris";
 import { mediumGlow } from "./mediumGlow";
+import { mediumTrails } from "./mediumTrails";
 
 export type { OverlayCtx, OverlayDef, OverlayScope } from "./types";
 
@@ -26,11 +27,17 @@ export const OVERLAYS: readonly OverlayDef[] = [
   sensorPulse,
   boardingDebris,
   mediumGlow,
+  mediumTrails,
 ];
 
-/** Overlay ids drawn beneath the ship layer (before the ship loop). */
+/** Overlay ids drawn beneath the ship layer (before the ship loop).
+ *  `mediumTrails` is registered beneath the ships so each exhaust/plume streak
+ *  sits under its hull — the ship reads as the streak's source, with the bright
+ *  end emerging from the engine position. It is ordered after `mediumGlow` so
+ *  the fine streaks paint over the broad ambient haze (streaks on top of glow). */
 export const UNDER_SHIP_IDS: ReadonlySet<string> = new Set([
   mediumGlow.id,
+  mediumTrails.id,
   focusRing.id,
   atmosphereBreach.id,
   movementTrail.id,
