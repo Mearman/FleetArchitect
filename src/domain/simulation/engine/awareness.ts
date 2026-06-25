@@ -25,20 +25,22 @@ import type { Contact, GhostContact, SimShip } from "./types";
  * on stable ids.
  *
  * Medium-cell radiation (battlefield-medium phase 4): when `medium` and `tick`
- * are supplied, a discrete, light-lagged reception pass runs after the
+ * are supplied, a continuous inverse-square reception pass runs after the
  * continuous ship-ship pass. Each excited-cell emission is tested against every
- * observer's baseline receiver and sensor cones via `formsContact` (the
- * expanding-light-sphere predicate), so a sensor detects a distant burn where
- * the source WAS, delayed by light-time. The contacts it forms are TRANSIENT —
- * recorded in the snapshot's `contacts` so the renderer/AI can show the EM
- * event, but kept OUT of the ship-targeting `directContacts` set and ghost
- * memory. A medium contact's `enemyId` is the cell's synthetic id
- * (`medium#<col>_<row>`, never a real ship), so targeting's `visibleEnemyViews`
- * (which resolves `enemyId` against the real-ship map) simply skips it —
- * detecting a muzzle flash does not give a weapons lock on a hull that is not
- * there. That is the honest physics: the radiation is detectable, the hull is
- * not. Iteration is observer (instanceId) outer, emission (row-major) inner,
- * for deterministic contact order.
+ * observer's baseline receiver and sensor cones via `continuousContact` (the
+ * steady-state inverse-square predicate a hull's ambient emission uses — NOT
+ * the discrete light-sphere `formsContact` path, which only ever fired when the
+ * observer sat inside the emitting cell). A sensor thus sees a sustained burn
+ * at any range where its radiated strength clears the floor. The contacts it
+ * forms are TRANSIENT — recorded in the snapshot's `contacts` so the
+ * renderer/AI can show the EM event, but kept OUT of the ship-targeting
+ * `directContacts` set and ghost memory. A medium contact's `enemyId` is the
+ * cell's synthetic id (`medium#<col>_<row>`, never a real ship), so targeting's
+ * `visibleEnemyViews` (which resolves `enemyId` against the real-ship map)
+ * simply skips it — detecting a burn does not give a weapons lock on a hull
+ * that is not there. That is the honest physics: the radiation is detectable,
+ * the hull is not. Iteration is observer (instanceId) outer, emission
+ * (row-major) inner, for deterministic contact order.
  */
 export function computeAwareness(
   ships: SimShip[],
@@ -174,15 +176,16 @@ export function computeAwareness(
   // A ship that died is not in `alive`; its ghosts/awareness are irrelevant
   // (it never targets again) and its stale awareness map is harmless.
 
-  // (g) Discrete, light-lagged medium-cell reception (battlefield-medium phase 4).
-  //     Each excited-cell emission is tested against every observer's baseline
-  //     receiver and sensor cones via `formsContact`. A contact that forms is
-  //     TRANSIENT: recorded for the snapshot but kept out of the targeting
-  //     `directContacts`/ghost path (a medium contact's synthetic enemyId never
-  //     resolves to a real ship, so targeting skips it — detecting a burn does
-  //     not lock a hull). Observer order is instanceId, emission order is the
-  //     row-major order `collectMediumEmissions` produced, so two same-seed runs
-  //     emit byte-identical contact rows. An occluder on the sight line blocks
+  // (g) Continuous inverse-square medium-cell reception (battlefield-medium
+  //     phase 4). Each excited-cell emission is tested against every observer's
+  //     baseline receiver and sensor cones via `continuousContact` (the steady-
+  //     state path). A contact that forms is TRANSIENT: recorded for the
+  //     snapshot but kept out of the targeting `directContacts`/ghost path (a
+  //     medium contact's synthetic enemyId never resolves to a real ship, so
+  //     targeting skips it — detecting a burn does not lock a hull). Observer
+  //     order is instanceId, emission order is the row-major order
+  //     `collectMediumEmissions` produced, so two same-seed runs emit
+  //     byte-identical contact rows. An occluder on the sight line blocks
   //     reception regardless of strength, exactly as for continuous ship-ship
   //     reception. Skipped entirely when no medium emissions are supplied.
   const mediumContacts = collectMediumContacts(
@@ -197,14 +200,14 @@ export function computeAwareness(
 }
 
 /**
- * The discrete, light-lagged medium-cell reception pass. For each observer (in
- * instanceId order) test each medium-cell emission (in row-major order) via
- * {@link mediumReceives} — which routes through `formsContact`, the expanding-
- * light-sphere predicate — and collect a transient contact for every detection.
- * An occluder on the observer→cell segment blocks reception. Returns contacts
- * sorted by (observerId, enemyId) for a deterministic snapshot order; an empty
- * array when no medium was supplied, the tick is absent, or no emission formed a
- * contact.
+ * The continuous inverse-square medium-cell reception pass. For each observer
+ * (in instanceId order) test each medium-cell emission (in row-major order) via
+ * {@link mediumReceives} — which routes through `continuousContact`, the
+ * steady-state inverse-square predicate a hull's ambient emission uses — and
+ * collect a transient contact for every detection. An occluder on the
+ * observer→cell segment blocks reception. Returns contacts sorted by
+ * (observerId, enemyId) for a deterministic snapshot order; an empty array when
+ * no medium was supplied, the tick is absent, or no emission formed a contact.
  *
  * These contacts carry the cell's synthetic `medium#<col>_<row>` enemyId and the
  * cell's world position as the contact fix. They are NOT added to the observers'
@@ -233,10 +236,10 @@ function collectMediumContacts(
         // The synthetic cell id; never matches a real ship instanceId, so
         // targeting's visibleEnemyViews skips it (no hull to lock).
         enemyId: emission.sourceId,
-        // The fix is light-lagged: it is the cell's position at the emission's
-        // birth tick, not where any source has since moved (a cell is stationary
-        // anyway). `formsContact` only fires on the tick the light sphere
-        // arrives, so this is genuinely where the radiation was emitted.
+        // The fix is the cell's world position (a cell is stationary, so there
+        // is no light-lag positional offset to apply). The continuous path
+        // detects the cell while it stays excited, at the range its radiated
+        // strength clears the observer's floor.
         x: emission.x,
         y: emission.y,
         // A radiating cell has no facing; record a neutral 0 so the snapshot

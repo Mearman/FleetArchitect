@@ -31,7 +31,7 @@ import { hasAnomaly } from "@/domain/anomaly";
 
 import { EM_HULL_AMBIENT_EMISSION, EM_RECEIVER_NOISE_FLOOR } from "./em-anchors";
 import { SIM, SPEED_OF_LIGHT_M_PER_TICK } from "./config";
-import { continuousContact, formsContact, type Emission } from "./emissions";
+import { continuousContact, type Emission } from "./emissions";
 import {
   appendMediumEmissionsToSnapshot,
   collectMediumEmissions,
@@ -199,40 +199,49 @@ export function emReceives(
 }
 
 /**
- * Whether `observer` receives a discrete medium-cell emission this tick through
- * the LIGHT-LAGGED `formsContact` path — the discrete, expanding-light-sphere
- * reception that an active-radar ping or a weapon discharge flows through (NOT
- * the un-lagged `continuousContact` a hull's steady self-emission collapses to).
- * A medium cell radiates as it cools, so its radiation is a transient EM event
- * born at tick `emission.t0`: the receiver registers it ONLY on the tick the
- * light sphere sweeps across it, delayed by light-time. A sensor thus detects a
- * distant burn where the source WAS, not where it is now.
+ * Whether `observer` receives a medium cell's CONTINUOUS radiation this tick
+ * through the inverse-square `continuousContact` path — the SAME steady-state
+ * reception a ship's hull-ambient self-emission flows through (NOT the discrete,
+ * light-lagged `formsContact` path a single radar ping flows through). An
+ * excited medium cell is a SUSTAINED source for the ticks it stays excited: it
+ * sheds `ε/τ` watts every tick, so a new light sphere is born every tick and one
+ * is always arriving at the observer. The light-lag therefore collapses to a
+ * steady state exactly as it does for a hull, and the detection decision is the
+ * inverse-square received strength against the observer's noise floor. A sensor
+ * thus sees a sustained burn at any range where the cell's radiated strength
+ * clears the floor — there is no per-event sphere-crossing to gate it (the
+ * earlier discrete-path routing was the phase-4 bug: it only ever fired when the
+ * observer sat inside the emitting cell).
  *
  * The receiver model mirrors {@link emReceives}: the baseline sensor-free eye
  * (gain 1, attenuated by a nebula) plus any sensor cone whose gain pulls the
  * emission above the noise floor and whose arc covers the bearing. The only
- * difference is the predicate — `formsContact` (light-lagged) instead of
- * `continuousContact` (steady-state). Relativistic Doppler / gravitational
- * redshift are NOT applied here: a medium cell has no velocity of its own (it
- * is a stationary grid volume), so the only shift would come from the
- * observer's motion, which the light-lag already encodes honestly. Returns the
- * effective receiver gain that formed the contact (so the caller can record
- * which sensor made the detection), or `undefined` when no receiver formed one.
+ * difference is that the strength is the cell's continuous radiated strength
+ * (`emission.strength`, already computed by `mediumCellEmissionStrength`)
+ * rather than the enemy ship's `continuousEmissionStrength`. Relativistic
+ * Doppler / gravitational redshift are NOT applied: a medium cell has no
+ * velocity of its own (it is a stationary grid volume). Returns the effective
+ * receiver gain that formed the contact (so the caller can record which sensor
+ * made the detection), or `undefined` when no receiver formed one. The `tick`
+ * argument is retained for the deterministic call-site signature but is not
+ * used (continuous reception is un-lagged).
  */
 export function mediumReceives(
   observer: SimShip,
   emission: Emission,
-  tick: number,
+  _tick: number,
   anomalies: readonly BattleAnomalyKind[],
 ): number | undefined {
   const dx = emission.x - observer.x;
   const dy = emission.y - observer.y;
+  const dist = Math.hypot(dx, dy);
+  const strength = emission.strength;
 
   // Baseline sensor-free receiver: an omni eye at gain 1, attenuated by a nebula
   // exactly as in `emReceives` (the naked eye is never immune to a nebula).
   const visualFactor = hasAnomaly(anomalies, "nebula") ? SIM.nebulaSensorFactor : 1;
   const baselineGain = visualFactor * visualFactor;
-  if (formsContactBaseline(emission, observer, tick, baselineGain)) {
+  if (continuousContact(strength, dist, EM_RECEIVER_NOISE_FLOOR, baselineGain)) {
     return baselineGain;
   }
 
@@ -243,41 +252,15 @@ export function mediumReceives(
     const range = attenuatedSensorRange(unit, anomalies);
     if (range <= 0) continue;
     const gain = sensorGain(range);
-    // `formsContact` gates on the light sphere crossing the receiver this tick
-    // AND the inverse-square received strength clearing the threshold. A sensor
-    // cone further constrains: the bearing to the cell must fall in its arc.
-    if (!formsContactAtGain(emission, observer, tick, gain)) continue;
+    // `continuousContact` gates on the inverse-square received strength
+    // clearing the threshold; a sensor cone further constrains the bearing.
+    if (!continuousContact(strength, dist, EM_RECEIVER_NOISE_FLOOR, gain)) continue;
     const arc = effectiveSensorArc(unit);
     if (arc >= Math.PI) return gain;
     const bearing = effectiveSensorBearing(unit);
     if (Math.abs(angleDifference(bearing, toCell)) <= arc) return gain;
   }
   return undefined;
-}
-
-/** `formsContact` against the baseline receiver (sensitivity = noise floor). The
- *  discrete, light-lagged predicate: the emission's expanding light sphere must
- *  cross the receiver this tick AND the inverse-square received strength must
- *  clear `sensitivity / gain`. Inline the receiver so `formsContact`'s `Receiver`
- *  shape is not leaked to the caller. */
-function formsContactAtGain(
-  emission: Emission,
-  observer: SimShip,
-  tick: number,
-  gain: number,
-): boolean {
-  return formsContact(emission, { x: observer.x, y: observer.y, sensitivity: EM_RECEIVER_NOISE_FLOOR, gain }, tick);
-}
-
-/** Baseline-receiver specialisation of {@link formsContactAtGain} for clarity at
- *  the call site (the baseline gain already folds in the nebula attenuation). */
-function formsContactBaseline(
-  emission: Emission,
-  observer: SimShip,
-  tick: number,
-  gain: number,
-): boolean {
-  return formsContactAtGain(emission, observer, tick, gain);
 }
 
 /**
