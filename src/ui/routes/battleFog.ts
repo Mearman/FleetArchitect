@@ -240,6 +240,14 @@ export function drawFogAndAwareness(
   // -------------------------------------------------------------------------
   // 1+2. Fog shroud with coverage cutouts
   // -------------------------------------------------------------------------
+  // Guard: only paint the shroud when there is at least one coverage shape to
+  // cut out of it. Without this guard, a frame whose coverage shapes project
+  // outside the viewport (e.g. iso projection at wide zooms) leaves the solid
+  // fill intact but punches no visible hole — the user perceives a solid dark
+  // rect.
+  const hasCoverage = awareness.clusters.some((c) => c.coverage.length > 0);
+  if (!hasCoverage) return;
+
   // We draw into an isolated layer (ctx.save with globalCompositeOperation) so
   // the "destination-out" cutout only erases our own fog layer, not the ships
   // and anomaly drawn underneath.

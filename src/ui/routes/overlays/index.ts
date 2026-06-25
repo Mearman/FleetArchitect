@@ -1,7 +1,6 @@
 import type { OverlayDef } from "./types";
 import { targetLock } from "./targetLock";
 import { focusRing } from "./focusRing";
-import { sensorCoverage } from "./sensorCoverage";
 import { movementTrail } from "./movementTrail";
 import { damagePulse } from "./damagePulse";
 import { sensorPulse } from "./sensorPulse";
@@ -12,14 +11,13 @@ export type { OverlayCtx, OverlayDef, OverlayScope } from "./types";
 
 /**
  * Registry of all battle overlays, in a stable display order. Under-ship
- * overlays (focus ring, sensor coverage, movement trail, atmosphere/breach) are
- * drawn before the ship loop; over-ship overlays (target lock, damage pulse,
- * sensor pulses, boarding/debris) after it. BattleRoute partitions this list by
+ * overlays (focus ring, movement trail, atmosphere/breach) are drawn
+ * before the ship loop; over-ship overlays (target lock, damage pulse,
+ * sensor pulse, boarding/debris) after it. BattleRoute partitions this list by
  * id to decide layering — see UNDER_SHIP_IDS below.
  */
 export const OVERLAYS: readonly OverlayDef[] = [
   focusRing,
-  sensorCoverage,
   atmosphereBreach,
   movementTrail,
   targetLock,
@@ -31,7 +29,6 @@ export const OVERLAYS: readonly OverlayDef[] = [
 /** Overlay ids drawn beneath the ship layer (before the ship loop). */
 export const UNDER_SHIP_IDS: ReadonlySet<string> = new Set([
   focusRing.id,
-  sensorCoverage.id,
   atmosphereBreach.id,
   movementTrail.id,
 ]);

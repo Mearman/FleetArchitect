@@ -79,8 +79,8 @@ export function BattleRoute() {
   /** Active tab within the controls panel. */
   const [controlsTab, setControlsTab] = useState<"layers" | "modules">("layers");
 
-  /** Whether the fog-of-war / awareness overlay is shown (default: on). */
-  const [showFog, setShowFog] = useState(true);
+  /** Whether the fog-of-war / awareness overlay is shown (default: off). */
+  const [showFog, setShowFog] = useState(false);
   /**
    * Per-overlay on/scope state, seeded from each OverlayDef's defaults. The
    * draw loop reads this each rAF to decide which overlays to dispatch and
