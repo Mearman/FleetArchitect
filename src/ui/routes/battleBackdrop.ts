@@ -27,10 +27,14 @@ const STAR_CELL_MAX_ITER = 2_000_000;
  *  star draws iff its visibility hash passes a threshold) so the drawn count
  *  stays under this — uniform thinning, no regular grid, stars never move. */
 const STAR_CELL_CAP = 2400;
-/** Fade band (in 0..1 hash units) over which a star's alpha ramps as the
- *  density threshold sweeps across its visibility hash on zoom — so stars fade
- *  in/out organically (a smoothstep) instead of popping at the threshold. */
-const STAR_FADE = 0.15;
+/** Fraction of the visible visibility-hash range over which a star's alpha
+ *  ramps (smoothstep) as the density threshold sweeps across it on zoom — stars
+ *  fade in/out organically instead of popping. RELATIVE to the density (not an
+ *  absolute band): the brightest stars (hash well below the threshold) stay
+ *  full-brightness at ANY zoom, and only the threshold-near fraction fades. An
+ *  absolute band crushed every star to near-zero alpha at low density (full
+ *  zoom-out), hiding the field. */
+const STAR_FADE_FRAC = 0.3;
 
 /** Deterministic unit float for lattice cell (ix, iy), variant k. A cheap
  *  integer bit-mixing hash (avalanche finaliser, no trig) rather than the
@@ -160,7 +164,10 @@ export function drawBackdrop(
         // density threshold sweeps across its fixed visibility hash — stars fade
         // in on zoom-in and out on zoom-out instead of popping at the threshold.
         const visHash = cellHash(ix, iy, 4);
-        let fade = (density - visHash) / STAR_FADE;
+        // Relative fade band (a fraction of the density range): the brightest
+        // stars stay full at any zoom; only the threshold-near fraction fades.
+        const fadeRange = density * STAR_FADE_FRAC;
+        let fade = fadeRange > 0 ? (density - visHash) / fadeRange : 1;
         if (fade <= 0) continue;
         if (fade > 1) fade = 1;
         const fadeMul = fade * fade * (3 - 2 * fade);
