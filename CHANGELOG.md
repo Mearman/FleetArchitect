@@ -1,3 +1,21 @@
+# [1.18.0](https://github.com/Mearman/FleetArchitect/compare/v1.17.2...v1.18.0) (2026-06-25)
+
+
+### Bug Fixes
+
+* **sim:** exhaust deposits excitation only (no self-drag feedback) ([c0adb7b](https://github.com/Mearman/FleetArchitect/commit/c0adb7b60d68bafb28ba03e5964341465095b9b4)), closes [hi#thrust](https://github.com/hi/issues/thrust)
+* **sim:** make medium-field radiation detectable (continuousContact + calibrated coupling) ([ae77c3e](https://github.com/Mearman/FleetArchitect/commit/ae77c3ef28fc22d5c9c63ed6df3c84ee5acfc1c4))
+
+
+### Features
+
+* **sim:** emergent sensor signatures from medium-field excitation ([de09db2](https://github.com/Mearman/FleetArchitect/commit/de09db2f36c696552e1415f5440ffdf07c3deef5)), closes [hi#excitation](https://github.com/hi/issues/excitation)
+* **sim:** medium-field sources + gas drag (density-coupled physics) ([73cf340](https://github.com/Mearman/FleetArchitect/commit/73cf340fae768a352b5941585a8f1a6d7da0d50e))
+* **sim:** powered×guided projectile taxonomy with finite-burn motors ([a9e2cd8](https://github.com/Mearman/FleetArchitect/commit/a9e2cd82d08cadd62d62a2bdaac4c339e5411598))
+* **sim:** sensor dazzle — receiver saturation from intense EM ([df2f2ed](https://github.com/Mearman/FleetArchitect/commit/df2f2eda22ebda2e2f29be48bc7c330cd093fb6b)), closes [hi#emission](https://github.com/hi/issues/emission)
+* **sim:** wire arena medium field into tick loop and frames ([5ae619a](https://github.com/Mearman/FleetArchitect/commit/5ae619a6a563d84ccab5bd8550774c05ad4c3de4))
+* **ui:** medium-field glow overlay (emergent trails/plumes/ionisation) ([6a92e24](https://github.com/Mearman/FleetArchitect/commit/6a92e2476fe6829f8463005cedc669edbe8a0fd9))
+
 ## [1.17.2](https://github.com/Mearman/FleetArchitect/compare/v1.17.1...v1.17.2) (2026-06-25)
 
 
