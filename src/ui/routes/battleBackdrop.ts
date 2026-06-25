@@ -1,4 +1,3 @@
-import { hash01 } from "./battleAnomaly";
 import type { Transform } from "./battleCamera";
 import { screenToWorld } from "./battleCamera";
 import { BASE_PANEL, BASE_VOID } from "@/ui/theme/tokens";
@@ -18,10 +17,12 @@ const STAR_CELL_WORLD = 70;
  *  many DRAWN stars (STAR_CELL_CAP) or this many iterated cells
  *  (STAR_CELL_MAX_ITER). */
 const GRID_LINE_CAP = 240;
-/** Maximum starfield cells to iterate per frame. Past this — an extreme
- *  zoom-out where the 70 m lattice would be sub-pixel noise — the starfield is
- *  not drawn, bounding the per-cell hash cost. */
-const STAR_CELL_MAX_ITER = 100_000;
+/** Maximum starfield cells to iterate per frame. Past this the starfield is
+ *  not drawn, bounding the per-cell hash cost. Set high (2 M ≈ a 140 km view at
+ *  70 m pitch) because the hash is now a cheap integer mix, not a sin — so the
+ *  realistic full zoom-out (the camera's 0.25× framing floor ≈ a few hundred
+ *  thousand cells) iterates in ~1 ms and the stars stay visible at any zoom. */
+const STAR_CELL_MAX_ITER = 2_000_000;
 /** Maximum stars DRAWN per frame. The fixed lattice is density-thinned (each
  *  star draws iff its visibility hash passes a threshold) so the drawn count
  *  stays under this — uniform thinning, no regular grid, stars never move. */
@@ -31,9 +32,18 @@ const STAR_CELL_CAP = 2400;
  *  in/out organically (a smoothstep) instead of popping at the threshold. */
 const STAR_FADE = 0.15;
 
-/** Deterministic unit float for lattice cell (ix, iy), variant k. */
+/** Deterministic unit float for lattice cell (ix, iy), variant k. A cheap
+ *  integer bit-mixing hash (avalanche finaliser, no trig) rather than the
+ *  sin-based `hash01`: the starfield iterates this per visible cell, and a
+ *  sin-free hash lets a large zoomed-out view (hundreds of thousands of cells)
+ *  iterate in ~1 ms so stars stay on screen at any zoom. Same (ix, iy, k) →
+ *  same value, so each star is still pinned to a fixed world position. */
 function cellHash(ix: number, iy: number, k: number): number {
-  return hash01((ix * 73856093) ^ (iy * 19349663) ^ (k * 83492791));
+  let h = Math.imul(ix | 0, 73856093) ^ Math.imul(iy | 0, 19349663) ^ Math.imul(k | 0, 83492791);
+  h = Math.imul(h ^ (h >>> 16), 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
 }
 
 /**
