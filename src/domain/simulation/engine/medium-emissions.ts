@@ -51,7 +51,7 @@
 import { EXCITATION_DECAY_TIMESCALE_S } from "./medium-field";
 import { EM_HULL_AMBIENT_EMISSION } from "./em-anchors";
 import type { Emission } from "./emissions";
-import type { MediumField, MediumState } from "./medium-field";
+import type { ArenaMedium } from "./medium-setup";
 
 /**
  * Minimum cell excitation (joules) that radiates enough to be worth emitting as
@@ -196,23 +196,29 @@ export function mediumCellSourceId(col: number, row: number): string {
  * `((col + 0.5 - widthM / 2) · pitch, (row + 0.5 - heightM / 2) · pitch)`) and
  * carries the cell's continuous radiated strength ({@link
  * mediumCellEmissionStrength}) for the reception pass. The emission's `t0` is
- * the current tick; it is NOT used as a light-sphere birth tick — the reception
- * pass routes sustained cell radiation through `continuousContact` (the
- * inverse-square steady-state path a hull's ambient emission uses), which
- * ignores `t0`. See the module header for why sustained sources take the
- * continuous path rather than the discrete, light-lagged `formsContact` path.
+ * the cell's BIRTH tick — the tick the cell first crossed the emission
+ * threshold this burn (`medium.birthTicks[cell]`), maintained by
+ * {@link stepArenaMedium} — which the sustained-radiation light-lag gate in
+ * {@link mediumReceives} reads to delay a distant receiver's first detection
+ * until the light has crossed the gap (`tick >= t0 + ceil(dist / c)`). A cell
+ * that has been radiating for many ticks carries an old `t0`, so the gate long
+ * since admitted its reception and detection continues at the steady inverse-
+ * square strength; a just-ignited cell carries a fresh `t0`, so a distant
+ * receiver sees nothing until the light arrives. See the module header for
+ * why sustained sources still route through the continuous inverse-square path
+ * (the steady-state strength) rather than the discrete, light-lagged
+ * `formsContact` path — the STARTUP light-lag is a gate on top of the
+ * continuous path, not a reversion to broken discrete spheres.
  *
  * Cells below {@link MEDIUM_EPS_EMISSION_THRESHOLD_J} are skipped (their
  * radiated power is negligible at any sensible range). Pure: no RNG, no
  * mutation, fixed row-major order — two same-seed runs produce byte-identical
  * emission sets.
  */
-export function collectMediumEmissions(
-  medium: { field: MediumField; state: MediumState },
-  tick: number,
-): Emission[] {
+export function collectMediumEmissions(medium: ArenaMedium): Emission[] {
   const { widthM, heightM, pitchM } = medium.field.config;
   const eps = medium.state.eps;
+  const birthTicks = medium.birthTicks;
   const out: Emission[] = [];
   // Row-major scan: row 0..heightM-1 outer, col 0..widthM-1 inner. The flat
   // cell index is `row * widthM + col`, so a single row-major pass over the ε
@@ -229,7 +235,13 @@ export function collectMediumEmissions(
         x: cellX,
         y: cellY,
         strength: mediumCellEmissionStrength(epsHere),
-        t0: tick,
+        // The sustained burn's birth tick — when this cell first crossed the
+        // emission threshold this burn. The light-lag gate reads this to
+        // suppress distant reception until the light has crossed the gap. A
+        // cell that has been burning for many ticks carries an old t0 and the
+        // gate stays open; a just-ignited cell carries a fresh t0 and the gate
+        // holds reception off until the light arrives.
+        t0: birthTicks[idx] ?? -1,
       });
     }
   }

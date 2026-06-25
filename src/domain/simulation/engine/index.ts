@@ -685,10 +685,10 @@ export function* simulateBattle(
       }
     }
 
-    // 5c. Arena medium: per-tick sources (exhaust, debris, wakes, anomalies),
-    //     then diffuse and decay. Burning powered projectiles inject their plume.
+    // 5c. Arena medium: per-tick sources, then diffuse and decay. `tick` seeds
+    //     the per-cell birthTicks the sustained-radiation startup light-lag gates.
     const pMedium = state.projectiles.map((p) => ({ x: p.x, y: p.y, powered: p.powered, burnTicks: p.burnTicks, thrust: p.thrust, mass: p.mass }));
-    state.medium = stepArenaMediumFromState(state.medium, state.ships, state.debris, pMedium, inputs.anomalies, state.asteroidDiscs);
+    state.medium = stepArenaMediumFromState(state.medium, state.ships, state.debris, pMedium, inputs.anomalies, state.asteroidDiscs, tick);
     // Capture descriptors for new instances (break-away chunks, launched phantoms).
     captureDescriptors(state.ships);
     yield snapshot(tick, state.ships, state.projectiles, awareness, state.mines, state.pods, state.pulses, state.emissions, state.debris, state.beams, state.medium);

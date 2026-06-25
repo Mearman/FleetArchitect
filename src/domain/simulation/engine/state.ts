@@ -14,7 +14,7 @@ import type { BattleSide } from "@/schema/battle";
 import type { SimBeam } from "./beams";
 import type { Debris } from "./debris";
 import type { Emission } from "./emissions";
-import type { MediumField, MediumState } from "./medium-field";
+import type { ArenaMedium } from "./medium-setup";
 import type { DeploymentReference } from "./movement";
 import type { SimPulse } from "./pulses";
 import type { SimMine, SimPod, SimProjectile, SimShip } from "./types";
@@ -58,14 +58,17 @@ export interface EngineState {
    * Arena medium field (the density + excitation substrate). The `field` is the
    * resolved {@link MediumField} (built once from the arena bounds; grid
    * connectivity fixed for the battle); the `state` is the current ρ + ε
-   * arrays, replaced with a fresh `MediumState` each tick by `stepMediumField`.
-   * Carried across ticks so the field integrates from its own prior state rather
-   * than re-seeding each tick; captured and restored on checkpoint so resume
-   * reproduces the tail byte-identically. Sources (thruster exhaust, ablating
-   * debris, projectile wakes, nebula + asteroid anomaly fills) are computed each
-   * tick in `index.ts:5c` and injected before the field diffuses and decays.
+   * arrays, replaced with a fresh `MediumState` each tick by `stepMediumField`;
+   * the `birthTicks` array tracks when each cell first crossed the sustained-
+   * emission threshold this burn and is what the medium reception light-lag
+   * gate reads. Carried across ticks so the field integrates from its own prior
+   * state rather than re-seeding each tick; captured and restored on checkpoint
+   * so resume reproduces the tail byte-identically. Sources (thruster exhaust,
+   * ablating debris, projectile wakes, nebula + asteroid anomaly fills) are
+   * computed each tick in `index.ts:5c` and injected before the field diffuses
+   * and decays.
    */
-  medium: { field: MediumField; state: MediumState };
+  medium: ArenaMedium;
   /**
    * Static asteroid-disc field for the `asteroidField` anomaly, computed once at
    * bootstrap as a pure function of `(anomalies, seed)` and reused every tick.

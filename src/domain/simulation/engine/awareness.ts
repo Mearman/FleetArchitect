@@ -17,7 +17,7 @@ import {
 } from "./em-reception";
 import { SATURATION_DECAY_FACTOR } from "./em-anchors";
 import { collectMediumEmissions } from "./medium-emissions";
-import type { MediumField, MediumState } from "./medium-field";
+import type { ArenaMedium } from "./medium-setup";
 import { aberratedContactPosition } from "./optics-aberration";
 import type { CommsLink, CommsUnit } from "./sensors";
 import { aimDishes, commsUnitOperable, commsUnitsOf, contactThreat, linkForms } from "./sensors";
@@ -53,7 +53,7 @@ export function computeAwareness(
   byId: Map<string, SimShip>,
   occluders: readonly Disc[],
   anomalies: readonly BattleAnomalyKind[],
-  medium?: { field: MediumField; state: MediumState },
+  medium?: ArenaMedium,
   tick?: number,
 ): AwarenessSnapshot {
   // Alive ships in instanceId order — the canonical order for every pass.
@@ -262,14 +262,14 @@ export function computeAwareness(
  */
 function collectMediumContacts(
   alive: readonly SimShip[],
-  medium: { field: MediumField; state: MediumState } | undefined,
+  medium: ArenaMedium | undefined,
   tick: number | undefined,
   occluders: readonly Disc[],
   anomalies: readonly BattleAnomalyKind[],
   dazzleAccum: Map<string, number>,
 ): Contact[] {
   if (medium === undefined || tick === undefined) return [];
-  const mediumEmissions = collectMediumEmissions(medium, tick);
+  const mediumEmissions = collectMediumEmissions(medium);
   if (mediumEmissions.length === 0) return [];
   const out: Contact[] = [];
   for (const observer of alive) {

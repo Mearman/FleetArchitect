@@ -26,12 +26,44 @@ import {
   stepMediumField,
 } from "./medium-field";
 import type { MediumField, MediumState, MediumSources } from "./medium-field";
+import { MEDIUM_EPS_EMISSION_THRESHOLD_J } from "./medium-emissions";
 import type { EngineCheckpoint } from "@/schema/checkpoint";
 import { cellWorldPosition } from "@/domain/simulation/spatial-hash";
 import type { BattleAnomalyKind } from "@/schema/battle";
 import { hasAnomaly } from "@/domain/anomaly";
 import type { SimShip } from "./types";
 import type { Debris } from "./debris";
+
+/**
+ * The live arena medium carried on the {@link EngineState}: the static
+ * {@link MediumField} (grid geometry built once from the deployment bounding
+ * box), the live {@link MediumState} (ρ + ε arrays, replaced each tick by
+ * {@link stepArenaMedium}), and the per-cell radiation `birthTicks` array that
+ * tracks WHEN each cell first crossed the sustained-emission threshold this
+ * "burn". The birth tick is what the medium reception light-lag gates on: a
+ * distant receiver sees a just-ignited burn only after its light-time
+ * (`ceil(dist / c)`) has elapsed, so a sensor sees a distant burn where/when
+ * the light actually arrives rather than the instant it ignites.
+ *
+ * `birthTicks[cell]` is the tick the cell crossed
+ * {@link MEDIUM_EPS_EMISSION_THRESHOLD_J} from below (its "ignition" tick),
+ * preserved while the cell stays above the threshold and reset to -1 the tick
+ * it falls back below. The medium stepper is a pure physics solver and does
+ * not maintain this array — {@link stepArenaMedium} updates it after each
+ * physics step by comparing the pre- and post-step ε against the threshold.
+ * Captured and restored on checkpoint so resume preserves the light-cone
+ * (without it, every radiating cell would look freshly ignited on resume and
+ * distant receivers would lose their steady-burn contacts for one light-time).
+ */
+export interface ArenaMedium {
+  /** Static grid geometry (rebuilt byte-identically from width × height). */
+  readonly field: MediumField;
+  /** Live ρ + ε state, replaced with a fresh MediumState each tick. */
+  readonly state: MediumState;
+  /** Per-cell sustained-radiation birth tick (the tick each cell first crossed
+   *  the emission threshold this burn); -1 when the cell is not radiating. */
+  readonly birthTicks: readonly number[];
+}
 
 /**
  * A projectile's contribution to the medium, extracted from {@link SimProjectile}
@@ -70,10 +102,7 @@ export interface ProjectileMediumEntry {
  * coefficients are the documented anchors from `medium-field.ts`; the field
  * config does not fill defaults, so every coefficient is supplied explicitly.
  */
-export function buildArenaMedium(ships: readonly SimShip[]): {
-  field: MediumField;
-  state: MediumState;
-} {
+export function buildArenaMedium(ships: readonly SimShip[]): ArenaMedium {
   // Deployment bounding box: every ship's centre ± its broad-phase radius. The
   // radius is the grid bounding radius (farthest cell centre plus half a cell),
   // so the box encloses the whole footprint. A degenerate fleet (no ships, or
@@ -125,7 +154,11 @@ export function buildArenaMedium(ships: readonly SimShip[]): {
   // baseline density is a real WIM figure (see medium-field.ts); at this
   // density the ambient medium is the floor the field relaxes back to.
   const state = mediumStateFromDensity(field, ISM_DENSITY_KG_PER_M3);
-  return { field, state };
+  // birthTicks: every cell starts dark (no radiating burn), so the light-lag
+  // gate suppresses reception until a cell first crosses the emission
+  // threshold inside `stepArenaMedium`.
+  const birthTicks = new Array<number>(field.cellCount).fill(-1);
+  return { field, state, birthTicks };
 }
 
 /**
@@ -136,14 +169,18 @@ export function buildArenaMedium(ships: readonly SimShip[]): {
  * When `captured` is present the grid connectivity is re-derived from
  * `(widthM, heightM)` via {@link buildMediumField} (a pure function of the cell
  * counts, so byte-identical to the original) and the live ρ/ε arrays are
- * reattached. When `captured` is absent (a pre-medium checkpoint) the field is
- * rebuilt from the restored ships at the ISM baseline — there is no prior
- * mid-battle state to reconstruct because the original run had no medium.
+ * reattached, alongside the per-cell `birthTicks` array so the light-lag gate
+ * continues to treat ongoing burns as ongoing (not as freshly ignited on
+ * resume — which would lose distant receivers their steady-burn contacts for
+ * one light-time). When `captured` is absent (a pre-medium checkpoint) the
+ * field is rebuilt from the restored ships at the ISM baseline with every cell
+ * dark — there is no prior mid-battle state to reconstruct because the
+ * original run had no medium.
  */
 export function restoreArenaMedium(
   captured: EngineCheckpoint["medium"],
   ships: readonly SimShip[],
-): { field: MediumField; state: MediumState } {
+): ArenaMedium {
   if (captured === undefined) return buildArenaMedium(ships);
   const field = buildMediumField({
     widthM: captured.widthM,
@@ -159,6 +196,7 @@ export function restoreArenaMedium(
   return {
     field,
     state: { rho: captured.rho, eps: captured.eps },
+    birthTicks: [...captured.birthTick],
   };
 }
 
@@ -477,19 +515,39 @@ export function computeArenaMediumSources(
  * beam state, so battle outcomes stay byte-for-byte unchanged and only the
  * `medium` snapshot field is added.
  *
+ * After the physics step the per-cell `birthTicks` array is updated against
+ * {@link MEDIUM_EPS_EMISSION_THRESHOLD_J}: a cell that crossed the threshold
+ * from below this tick (ignited) records `tick` as its birth tick; a cell that
+ * fell back below the threshold (extinguished) resets to -1; a sustained cell
+ * carries its existing birth tick forward. This is the bookkeeping the
+ * sustained-radiation light-lag gates on — a distant receiver sees a just-
+ * ignited burn only after `ceil(dist / c)` ticks have elapsed, so the gate
+ * needs the tick each burn began, not the per-tick ε value (which is the same
+ * over the whole burn).
+ *
  * Determinism: the stepper is iterated in fixed row-major cell order with fixed
  * N/E/S/W face order (`medium-field.ts`), draws no rng, and depends only on its
  * own prior state plus the supplied sources. Source iteration is likewise fixed
  * (ships, debris, and projectile positions in their array orders; asteroid discs
  * in seed order), so two same-seed runs produce byte-identical medium arrays.
+ * The birthTick update walks the same row-major order with the same threshold
+ * comparison, so the `birthTicks` array is byte-identical across runs too.
  */
 export function stepArenaMedium(
-  medium: { field: MediumField; state: MediumState },
+  medium: ArenaMedium,
   sources: MediumSources,
-): { field: MediumField; state: MediumState } {
+  tick: number,
+): ArenaMedium {
+  const stepped = stepMediumField(medium.field, medium.state, sources);
   return {
     field: medium.field,
-    state: stepMediumField(medium.field, medium.state, sources),
+    state: stepped,
+    birthTicks: updateMediumBirthTicks(
+      medium.state.eps,
+      stepped.eps,
+      medium.birthTicks,
+      tick,
+    ),
   };
 }
 
@@ -498,16 +556,19 @@ export function stepArenaMedium(
  * Collapses the per-tick source computation (thruster exhaust, ablating debris,
  * projectile wakes, nebula + asteroid anomaly fills) plus the field step into a
  * single call so the tick loop stays slim. Pure: returns a new medium state,
- * inputs untouched.
+ * inputs untouched. The `tick` is the tick this step advances to (the index of
+ * the post-step state); it seeds the per-cell birth-tick bookkeeping that the
+ * sustained-radiation light-lag gates on.
  */
 export function stepArenaMediumFromState(
-  medium: { field: MediumField; state: MediumState },
+  medium: ArenaMedium,
   ships: readonly SimShip[],
   debris: readonly Debris[],
   projectiles: ReadonlyArray<ProjectileMediumEntry>,
   anomalies: readonly BattleAnomalyKind[],
   asteroidDiscs: ReadonlyArray<{ x: number; y: number; r: number }>,
-): { field: MediumField; state: MediumState } {
+  tick: number,
+): ArenaMedium {
   return stepArenaMedium(
     medium,
     computeArenaMediumSources(
@@ -519,5 +580,49 @@ export function stepArenaMediumFromState(
       anomalies,
       asteroidDiscs,
     ),
+    tick,
   );
+}
+
+/**
+ * Build the next per-cell `birthTicks` array from the pre- and post-step ε,
+ * against the sustained-emission threshold. Pure cell-wise transition:
+ *  - ignited this tick (`old ≤ threshold < new`): the cell's burn begins on
+ *    `tick`, so the light-lag gate will admit reception on ticks
+ *    `tick + ceil(dist / c)` and onward.
+ *  - extinguished this tick (`old > threshold ≥ new`): reset to -1; the cell
+ *    stops radiating and reception ceases regardless of the gate.
+ *  - sustained (`old > threshold ∧ new > threshold`): carry the prior birth
+ *    tick forward so a long-burning cell stays steadily visible (its light
+ *    arrived long ago).
+ *  - still dark (`old ≤ threshold ∧ new ≤ threshold`): stays -1.
+ *
+ * Returns a FRESH array; the inputs are not mutated. Row-major cell scan; no
+ * RNG; deterministic.
+ */
+function updateMediumBirthTicks(
+  epsBefore: readonly number[],
+  epsAfter: readonly number[],
+  birthTicksBefore: readonly number[],
+  tick: number,
+): number[] {
+  const n = epsAfter.length;
+  const out = new Array<number>(n);
+  for (let i = 0; i < n; i += 1) {
+    const before = epsBefore[i] ?? 0;
+    const after = epsAfter[i] ?? 0;
+    const wasRadiating = before > MEDIUM_EPS_EMISSION_THRESHOLD_J;
+    const isRadiating = after > MEDIUM_EPS_EMISSION_THRESHOLD_J;
+    if (isRadiating && !wasRadiating) {
+      // Ignited this tick — the burn starts now.
+      out[i] = tick;
+    } else if (isRadiating && wasRadiating) {
+      // Sustained — carry the prior birth tick (the burn's start).
+      out[i] = birthTicksBefore[i] ?? tick;
+    } else {
+      // Extinguished or still dark — no radiating burn this tick.
+      out[i] = -1;
+    }
+  }
+  return out;
 }

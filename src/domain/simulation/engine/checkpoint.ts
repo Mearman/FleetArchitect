@@ -220,8 +220,12 @@ export function captureCheckpoint(
     beams: state.beams,
     // Medium field: capture the resolved config scalars (the grid connectivity
     // re-derives from width/height on resume) and a COPY of the live state
-    // arrays, so the checkpoint is independent of the continuing battle's
-    // in-place medium mutation.
+    // arrays plus the per-cell `birthTicks` array, so the checkpoint is
+    // independent of the continuing battle's in-place medium mutation. The
+    // birthTick array is captured because it is accumulated state the
+    // sustained-radiation light-lag gate reads — without it resume would treat
+    // every radiating cell as freshly ignited and lose distant receivers their
+    // steady-burn contacts for one light-time.
     medium: {
       widthM: state.medium.field.config.widthM,
       heightM: state.medium.field.config.heightM,
@@ -237,6 +241,7 @@ export function captureCheckpoint(
       // are `readonly number[]`).
       rho: [...state.medium.state.rho],
       eps: [...state.medium.state.eps],
+      birthTick: [...state.medium.birthTicks],
     },
   };
   if (stalemate !== undefined) checkpoint.stalemate = stalemate;

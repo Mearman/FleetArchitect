@@ -40,7 +40,7 @@ import {
   appendMediumEmissionsToSnapshot,
   collectMediumEmissions,
 } from "./medium-emissions";
-import type { MediumField, MediumState } from "./medium-field";
+import type { ArenaMedium } from "./medium-setup";
 import { cellWorldPosition } from "@/domain/simulation/spatial-hash";
 import {
   dopplerFactor,
@@ -300,14 +300,31 @@ export function emReceives(
  * reception a ship's hull-ambient self-emission flows through (NOT the discrete,
  * light-lagged `formsContact` path a single radar ping flows through). An
  * excited medium cell is a SUSTAINED source for the ticks it stays excited: it
- * sheds `ε/τ` watts every tick, so a new light sphere is born every tick and one
- * is always arriving at the observer. The light-lag therefore collapses to a
- * steady state exactly as it does for a hull, and the detection decision is the
- * inverse-square received strength against the observer's noise floor. A sensor
- * thus sees a sustained burn at any range where the cell's radiated strength
- * clears the floor — there is no per-event sphere-crossing to gate it (the
- * earlier discrete-path routing was the phase-4 bug: it only ever fired when the
- * observer sat inside the emitting cell).
+ * sheds `ε/τ` watts every tick, so a new light sphere is born every tick and —
+ * once the burn has been under way for longer than the source-receiver light-
+ * time — one is always arriving at the observer. The light-lag therefore
+ * collapses to a STEADY STATE for a long-burning cell exactly as it does for a
+ * hull, and the detection decision is the inverse-square received strength
+ * against the observer's noise floor. A sensor thus sees a sustained burn at
+ * any range where the cell's radiated strength clears the floor — there is no
+ * per-event sphere-crossing to gate it (the earlier discrete-path routing was
+ * the phase-4 bug: it only ever fired when the observer sat inside the emitting
+ * cell).
+ *
+ * STARTUP light-lag. The steady-state argument only holds once light from the
+ * burn has actually had time to cross the gap; a JUST-IGNITED burn is not yet
+ * visible at a distance. This function applies that startup gate: the
+ * sustained-radiation reception is admitted ONLY on ticks where
+ * `tick >= emission.t0 + ceil(dist / SPEED_OF_LIGHT_M_PER_TICK)` — i.e. after
+ * the light emitted at the burn's birth tick (`emission.t0`, the cell's
+ * `birthTick` carried by {@link collectMediumEmissions}) has crossed the
+ * source-receiver gap. Before that first light arrives, no contact (the burn
+ * is not yet visible at the observer); after it, the steady inverse-square
+ * strength applies for as long as the cell stays excited (the birth tick is
+ * preserved while the cell stays above the emission threshold, so the gate
+ * stays open and detection continues). This is honest c-fidelity for sustained
+ * sources: a just-ignited burn is seen late by a distant receiver; a long-
+ * burning one is seen steadily, offset by its light-time.
  *
  * The receiver model mirrors {@link emReceives}: the baseline sensor-free eye
  * (gain 1, attenuated by a nebula) plus any sensor cone whose gain pulls the
@@ -318,20 +335,32 @@ export function emReceives(
  * Doppler / gravitational redshift are NOT applied: a medium cell has no
  * velocity of its own (it is a stationary grid volume). Returns the effective
  * receiver gain that formed the contact (so the caller can record which sensor
- * made the detection), or `undefined` when no receiver formed one. The `tick`
- * argument is retained for the deterministic call-site signature but is not
- * used (continuous reception is un-lagged).
+ * made the detection), or `undefined` when no receiver formed one.
  */
 export function mediumReceives(
   observer: SimShip,
   emission: Emission,
-  _tick: number,
+  tick: number,
   anomalies: readonly BattleAnomalyKind[],
 ): number | undefined {
   const dx = emission.x - observer.x;
   const dy = emission.y - observer.y;
   const dist = Math.hypot(dx, dy);
   const strength = emission.strength;
+
+  // STARTUP light-lag: a just-ignited burn is not yet visible at a distance.
+  // The cell's birth tick (`emission.t0`) is when the cell first crossed the
+  // emission threshold; the light from that tick reaches the observer after
+  // `ceil(dist / c)` ticks. Before that window opens, no contact — even if the
+  // inverse-square strength would clear the floor. After it, detection
+  // continues at the steady inverse-square strength for as long as the cell
+  // stays radiating. A cell that ignited long ago (small `t0`) cleared this
+  // gate many ticks ago; a fresh ignition (large `t0`) is held off until its
+  // light arrives. `t0 === -1` is the never-radiating sentinel (the cell is
+  // below the emission threshold this tick); no contact in that case either.
+  if (emission.t0 < 0) return undefined;
+  const lightTicks = Math.ceil(dist / SPEED_OF_LIGHT_M_PER_TICK);
+  if (tick < emission.t0 + lightTicks) return undefined;
 
   // Baseline sensor-free receiver: an omni eye at gain 1, attenuated by a nebula
   // exactly as in `emReceives` (the naked eye is never immune to a nebula).
@@ -441,7 +470,7 @@ export function rebuildEmissions(
   emissions: Emission[],
   tick: number,
   seq: number,
-  medium?: { field: MediumField; state: MediumState },
+  medium?: ArenaMedium,
 ): number {
   emissions.length = 0;
   let next = seq;
@@ -454,7 +483,7 @@ export function rebuildEmissions(
   if (medium !== undefined) {
     // Collect, cap, and append for the snapshot. The reception pass collects its
     // own uncapped copy; this only records what the renderer sees.
-    const mediumEmissions = collectMediumEmissions(medium, tick);
+    const mediumEmissions = collectMediumEmissions(medium);
     next = appendMediumEmissionsToSnapshot(mediumEmissions, emissions, next);
   }
   return next;

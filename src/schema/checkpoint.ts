@@ -434,11 +434,16 @@ export const EngineCheckpoint = z.object({
   beams: z.array(CheckpointBeam),
   /**
    * Arena medium field at the checkpoint tick: the resolved {@link
-   * MediumFieldConfig} scalars and the live density (ρ) and excitation (ε)
-   * state arrays. The grid connectivity (`neighbours`, `boundaryFaceCount`) is a
-   * pure function of `(widthM, heightM)`, so it is NOT captured —
-   * `buildMediumField` rebuilds it byte-identically on resume. Optional: absent
-   * on checkpoints recorded before the medium field was wired in.
+   * MediumFieldConfig} scalars, the live density (ρ) and excitation (ε) state
+   * arrays, and the per-cell `birthTick` array that tracks when each cell first
+   * crossed the sustained-emission threshold this burn. The grid connectivity
+   * (`neighbours`, `boundaryFaceCount`) is a pure function of
+   * `(widthM, heightM)`, so it is NOT captured — `buildMediumField` rebuilds it
+   * byte-identically on resume. The `birthTick` array IS captured because it is
+   * accumulated state, not re-derivable: without it, every radiating cell would
+   * look freshly ignited on resume and distant receivers would lose their
+   * steady-burn contacts for one light-time. Optional: absent on checkpoints
+   * recorded before the medium field was wired in.
    */
   medium: z
     .object({
@@ -453,6 +458,7 @@ export const EngineCheckpoint = z.object({
       boundaryEpsLossPerS: z.number(),
       rho: z.array(z.number()),
       eps: z.array(z.number()),
+      birthTick: z.array(z.number()),
     })
     .optional(),
 });
