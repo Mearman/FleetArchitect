@@ -175,13 +175,17 @@ export function restoreArenaMedium(
 export const MEDIUM_EXHAUST_VELOCITY_M_PER_S = 320 * 9.80665;
 
 /**
- * Fraction of a burning engine's per-tick expelled mass that deposits as local
- * density in the medium grid; the remainder is assumed to blow out past the near
- * cell before mixing. A half-mass coupling is a representative authored value
- * for how much of a supersonic exhaust plume's entrained mass lingers in the
- * near-nozzle cell versus streaming downstream.
+ * Fraction of a burning engine's expelled mass that deposits as local density in
+ * the medium grid. ZERO: a rocket's exhaust expands to a trace in vacuum (it
+ * rarefies far faster than the coarse grid diffuses it), so it does NOT pool as
+ * mass at the nozzle. The plume's visible signature is its EXCITATION
+ * ({@link THERMAL_EPS_COUPLING_FRACTION} → ε, the glowing ionised channel), not
+ * its density. Setting this to zero also closes a self-drag feedback: a dense ρ
+ * deposit at the ship's own cell would brake it in its own exhaust. Drag still
+ * acts on the AMBIENT medium (ISM, nebula, debris clouds) — just not on a ship's
+ * self-deposited plume.
  */
-export const EXHAUST_RHO_COUPLING = 0.5;
+export const EXHAUST_RHO_COUPLING = 0;
 
 /**
  * Fraction of a burning engine's jet power that converts to thermal /

@@ -611,9 +611,15 @@ export function updateProjectiles(
     // density the decrement is below float64 epsilon and the term is numerically
     // zero; in dense plume/nebula gas it measurably slows the round. Only applied
     // when a medium field is present (always true once wired in) and ρ > 0.
-    const rhoHere = medium !== undefined ? sampleLocalRhoKgPerM3(medium, p.x, p.y) : 0;
+    // Sample density AHEAD of the round (one cell along its velocity): drag is
+    // resistance from the medium the round flies INTO, and sampling ahead avoids
+    // a self-drag feedback where the round's own exhaust/wake deposit would brake
+    // it. A near-stationary round samples its current cell.
+    const aheadSpeedP = Math.hypot(p.vx, p.vy);
+    const aheadP = (medium !== undefined && aheadSpeedP > 1e-6) ? medium.field.config.pitchM / aheadSpeedP : 0;
+    const rhoHere = medium !== undefined ? sampleLocalRhoKgPerM3(medium, p.x + p.vx * aheadP, p.y + p.vy * aheadP) : 0;
     if (rhoHere > 0) {
-      const speedTick = Math.hypot(p.vx, p.vy);
+      const speedTick = aheadSpeedP;
       if (speedTick > 0) {
         const speedMs = speedTick * TICKS_PER_SECOND;
         const dvTick =

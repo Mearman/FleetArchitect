@@ -386,9 +386,17 @@ export function moveShips(
     // and the term is numerically zero; in dense plume/nebula gas it measurably
     // slows the ship. Only applied when ρ > 0.
     if (medium !== undefined) {
-      const rhoHere = sampleLocalRhoKgPerM3(medium, ship.x, ship.y);
+      // Sample density AHEAD of the ship (one cell along its velocity): drag is
+      // resistance from the medium the ship flies INTO, and sampling ahead
+      // breaks a self-drag feedback where a ship's own freshly-deposited exhaust
+      // plume (laid down at its trailing nozzle each tick) would otherwise brake
+      // it. A near-stationary ship samples its current cell (pure ISM until it
+      // has moved and deposited exhaust behind it).
+      const aheadSpeed = Math.hypot(ship.velX, ship.velY);
+      const ahead = aheadSpeed > 1e-6 ? medium.field.config.pitchM / aheadSpeed : 0;
+      const rhoHere = sampleLocalRhoKgPerM3(medium, ship.x + ship.velX * ahead, ship.y + ship.velY * ahead);
       if (rhoHere > 0) {
-        const speedTick = Math.hypot(ship.velX, ship.velY);
+        const speedTick = aheadSpeed;
         if (speedTick > 0) {
           const speedMs = speedTick * TICKS_PER_SECOND;
           const dvTick =
