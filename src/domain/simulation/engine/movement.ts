@@ -9,8 +9,11 @@
 import type { ShipStance } from "@/schema/ai";
 
 import { ACCEL_PER_TICK_FROM_SI, type BattleInputs } from "../types";
+import type { MediumField, MediumState } from "./medium-field";
+import { sampleLocalRhoKgPerM3 } from "./medium-setup";
 
-import { GRAVITY_CONSTANT_ARENA, SIM, THRUST_ALIGNMENT_RAD } from "./config";
+import { GRAVITY_CONSTANT_ARENA, GAS_DRAG_CROSS_SECTION_SHIP_M2, SIM, THRUST_ALIGNMENT_RAD } from "./config";
+import { TICKS_PER_SECOND } from "../types";
 import { combinedDilation } from "./proper-time";
 import {
   availableThrust,
@@ -299,6 +302,7 @@ export function moveShips(
   anomalies: BattleInputs["anomalies"],
   deployment: DeploymentReference,
   defaultRange: number,
+  medium?: { field: MediumField; state: MediumState },
 ): void {
   // Pre-compute fleet centroids once per tick so formation-keeping blends
   // each ship's desired heading toward a stable reference point, not one
@@ -374,6 +378,34 @@ export function moveShips(
     }
 
     if (!ship.alive) continue;
+
+    // Gas drag: decelerate in the local medium density. Quadratic drag
+    // `F = −C_d · ρ · |v| · v` applied as a velocity decrement after gravity and
+    // before the translation controller computes thrust, so the controller sees
+    // the dragged velocity. At ISM density the decrement is below float64 epsilon
+    // and the term is numerically zero; in dense plume/nebula gas it measurably
+    // slows the ship. Only applied when ρ > 0.
+    if (medium !== undefined) {
+      const rhoHere = sampleLocalRhoKgPerM3(medium, ship.x, ship.y);
+      if (rhoHere > 0) {
+        const speedTick = Math.hypot(ship.velX, ship.velY);
+        if (speedTick > 0) {
+          const speedMs = speedTick * TICKS_PER_SECOND;
+          const dvTick =
+            GAS_DRAG_CROSS_SECTION_SHIP_M2 * rhoHere * speedMs * speedMs /
+            (Math.max(ship.mass, 1) * TICKS_PER_SECOND * TICKS_PER_SECOND);
+          if (dvTick >= speedTick) {
+            ship.velX = 0;
+            ship.velY = 0;
+          } else {
+            const f = 1 - dvTick / speedTick;
+            ship.velX *= f;
+            ship.velY *= f;
+          }
+        }
+      }
+    }
+
     // Reset the per-tick engine throttle; set below only when engines actually
     // fire. A ship that coasts, holds station, or only turns this tick keeps it
     // at 0 and so burns no propellant in the resource step.

@@ -13,7 +13,8 @@ import type { PointDefenseEffect, WeaponEffect } from "@/schema/module";
 import type { BattleInputs } from "../types";
 
 import { CELL_CONTACT_DISTANCE, buildShipCellHash, nearestCellAlongSegment } from "./collision";
-import { SIM, claimProjectileId } from "./config";
+import { SIM, GAS_DRAG_CROSS_SECTION_PROJECTILE_M2, claimProjectileId } from "./config";
+import { TICKS_PER_SECOND } from "../types";
 import { beamDamageFactor, lensingDeflection } from "./optics";
 import { isCharged } from "./crew";
 import { applyDamage } from "./damage";
@@ -24,6 +25,8 @@ import { angleDifference, slewTurret, steer } from "./setup";
 import { attackerEccmRestore, isDetectable, netTrackingReduction, targetEcm } from "./stealth";
 import type { SimBeam } from "./beams";
 import type { SimModule, SimProjectile, SimShip } from "./types";
+import type { MediumField, MediumState } from "./medium-field";
+import { sampleLocalRhoKgPerM3 } from "./medium-setup";
 
 export function spawnProjectile(
   owner: SimShip,
@@ -476,6 +479,7 @@ export function updateProjectiles(
   byId: Map<string, SimShip>,
   anomalies: BattleInputs["anomalies"],
   rng: Rng,
+  medium?: { field: MediumField; state: MediumState },
 ): SimProjectile[] {
   const survivors: SimProjectile[] = [];
   if (projectiles.length === 0) return survivors;
@@ -542,6 +546,31 @@ export function updateProjectiles(
         const pAccelMag = SIM.blackHoleStrength / (pEffectiveR * pEffectiveR);
         p.vx += (-p.x / pDist) * pAccelMag;
         p.vy += (-p.y / pDist) * pAccelMag;
+      }
+    }
+
+    // Gas drag: decelerate in the local medium density. Quadratic drag
+    // `F = −C_d · ρ · |v| · v` applied as a velocity decrement before position
+    // integration, so a round traverses less ground through dense gas. At ISM
+    // density the decrement is below float64 epsilon and the term is numerically
+    // zero; in dense plume/nebula gas it measurably slows the round. Only applied
+    // when a medium field is present (always true once wired in) and ρ > 0.
+    const rhoHere = medium !== undefined ? sampleLocalRhoKgPerM3(medium, p.x, p.y) : 0;
+    if (rhoHere > 0) {
+      const speedTick = Math.hypot(p.vx, p.vy);
+      if (speedTick > 0) {
+        const speedMs = speedTick * TICKS_PER_SECOND;
+        const dvTick =
+          GAS_DRAG_CROSS_SECTION_PROJECTILE_M2 * rhoHere * speedMs * speedMs /
+          (Math.max(p.mass, 1e-6) * TICKS_PER_SECOND * TICKS_PER_SECOND);
+        if (dvTick >= speedTick) {
+          p.vx = 0;
+          p.vy = 0;
+        } else {
+          const f = 1 - dvTick / speedTick;
+          p.vx *= f;
+          p.vy *= f;
+        }
       }
     }
 

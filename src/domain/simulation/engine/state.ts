@@ -61,12 +61,19 @@ export interface EngineState {
    * arrays, replaced with a fresh `MediumState` each tick by `stepMediumField`.
    * Carried across ticks so the field integrates from its own prior state rather
    * than re-seeding each tick; captured and restored on checkpoint so resume
-   * reproduces the tail byte-identically. Stepped with ZERO sources in this
-   * pass — thrusters, debris, and beam strikes feed in later phases — so battle
-   * outcomes (ships, projectiles, hits) are byte-for-byte unchanged relative to
-   * the pre-medium engine.
+   * reproduces the tail byte-identically. Sources (thruster exhaust, ablating
+   * debris, projectile wakes, nebula + asteroid anomaly fills) are computed each
+   * tick in `index.ts:5c` and injected before the field diffuses and decays.
    */
   medium: { field: MediumField; state: MediumState };
+  /**
+   * Static asteroid-disc field for the `asteroidField` anomaly, computed once at
+   * bootstrap as a pure function of `(anomalies, seed)` and reused every tick.
+   * Drives both the awareness/occlusion dynamic-occluder rebuild and the
+   * medium's particulate source, so the two read the identical disc set. Empty
+   * outside an asteroid-field battle.
+   */
+  asteroidDiscs: ReadonlyArray<{ x: number; y: number; r: number }>;
   chunkSeq: number;
   mineSeq: number;
   podSeq: number;

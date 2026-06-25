@@ -14,6 +14,8 @@
 
 import type { EngineCheckpoint } from "@/schema/checkpoint";
 import type { BattleInputs } from "../types";
+import { computeOccluders } from "@/domain/occluders";
+import { hasAnomaly } from "@/domain/anomaly";
 import { restoreCheckpoint } from "./checkpoint";
 import { resetProjectileCounter, setProjectileCounter } from "./config";
 import { buildArenaMedium, restoreArenaMedium } from "./medium-setup";
@@ -110,10 +112,17 @@ export function bootstrapEngine(
       // battle with no beam weapons keeps it empty and emits no `beams` snapshots.
       beams: [],
       // Arena medium field: built once from the deployment bounding box and
-      // seeded at the ISM baseline. Stepped each tick with zero sources (this
-      // pass), so it relaxes from the baseline without touching ship / weapon
-      // state — battle outcomes stay byte-for-byte unchanged.
+      // seeded at the ISM baseline. Stepped each tick with per-tick sources
+      // (thruster exhaust, debris, projectile wakes, nebula + asteroid anomaly
+      // fills) computed in index.ts:5c.
       medium: buildArenaMedium(ships),
+      // Static asteroid-disc field: the same discs the awareness/occlusion phase
+      // reads, cached once here so the medium's particulate source and the
+      // occlusion query share an identical, deterministic disc set. Empty
+      // outside an asteroid-field battle.
+      asteroidDiscs: hasAnomaly(inputs.anomalies, "asteroidField")
+        ? computeOccluders(inputs.anomalies, inputs.seed >>> 0)
+        : [],
       // Deterministic per-battle id counters. Each advances in spawn order, with
       // no rng and no clock, so two same-seed runs produce byte-identical ids.
       chunkSeq: 0,
@@ -156,6 +165,12 @@ export function bootstrapEngine(
     debris: restored.debris,
     beams: restored.beams,
     medium,
+    // Asteroid discs are a pure function of (anomalies, seed); the seed is
+    // captured on the checkpoint, so recompute them identically rather than
+    // storing the array. Empty outside an asteroid-field battle.
+    asteroidDiscs: hasAnomaly(inputs.anomalies, "asteroidField")
+      ? computeOccluders(inputs.anomalies, inputs.seed >>> 0)
+      : [],
     chunkSeq: restored.chunkSeq,
     mineSeq: restored.mineSeq,
     podSeq: restored.podSeq,

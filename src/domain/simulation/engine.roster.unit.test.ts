@@ -131,6 +131,7 @@ function stateWith(ships: SimShip[]): EngineState {
     ticks: 0,
     winner: "draw",
     resolved: false,
+    asteroidDiscs: [],
   };
 }
 

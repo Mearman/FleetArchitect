@@ -752,6 +752,17 @@ export const SIM = {
   beamEmissionTicks: 3,
 };
 
+// Gas-drag coefficients (kept outside `SIM` to stay under the line cap): a body
+// in the local medium density decelerates by
+//     dv_tick = −C_d · ρ_local · |v|² / (mass · TICKS_PER_SECOND²) · v̂
+// At ISM density (~1.7e-22 kg/m³) the term is below float64 epsilon, so default
+// battles stay byte-identically drag-free; in dense gas it decelerates measurably.
+// Classification: authored catalogue content (ISM drag tuned to numerically zero).
+/** Gas-drag reference cross-sectional area for ships, m². */
+export const GAS_DRAG_CROSS_SECTION_SHIP_M2 = 1.0;
+/** Gas-drag reference cross-sectional area for projectiles, m² (~10 cm round). */
+export const GAS_DRAG_CROSS_SECTION_PROJECTILE_M2 = 0.01;
+
 /** Closing speed (world-units per tick) below which the translation controller
  *  considers the ship "arrived" on its desired bearing and stops fine-tuning.
  *  DERIVED from a real arrival tolerance at the m/s → m/tick boundary

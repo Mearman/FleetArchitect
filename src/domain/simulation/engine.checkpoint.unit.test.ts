@@ -273,6 +273,7 @@ function makeState(): { state: EngineState; rng: ReturnType<typeof mulberry32> }
     ticks: 3,
     winner: "draw",
     resolved: false,
+    asteroidDiscs: [],
   };
   // Advance the projectile counter so capture records a non-zero value.
   setProjectileCounter(1);
@@ -362,6 +363,7 @@ describe("captureCheckpoint / restoreCheckpoint", () => {
       ticks: restored.ticks,
       winner: "draw",
       resolved: false,
+      asteroidDiscs: [],
     };
     const second = captureCheckpoint(reState, resumedRng, restored.tick, restored.stalemate);
 

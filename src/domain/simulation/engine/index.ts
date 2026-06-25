@@ -25,7 +25,7 @@ import { bootstrapEngine } from "./bootstrap";
 import { captureCheckpoint } from "./checkpoint";
 import type { EngineCheckpoint } from "@/schema/checkpoint";
 import { leadingSide } from "./outcome";
-import { stepArenaMedium } from "./medium-setup";
+import { stepArenaMediumFromState } from "./medium-setup";
 import { updateCrew } from "./crew";
 import { refillHardwiredAmmo } from "./crew-haul";
 import { resourceStep } from "./resource-step";
@@ -286,7 +286,7 @@ export function* simulateBattle(
     }
 
     // 2. Movement + facing.
-    moveShips(state.ships, state.byId, inputs.anomalies, state.deployment, SIM.defaultRange);
+    moveShips(state.ships, state.byId, inputs.anomalies, state.deployment, SIM.defaultRange, state.medium);
 
     // 2b. Ship-vs-ship collision at cell granularity. After movement, any two
     //     ships whose cells now overlap are pushed apart with an elastic
@@ -411,7 +411,7 @@ export function* simulateBattle(
     }
 
     // 4. Projectile travel, homing, asteroid deflection, and collision.
-    state.projectiles = updateProjectiles(state.projectiles, state.byId, inputs.anomalies, rng);
+    state.projectiles = updateProjectiles(state.projectiles, state.byId, inputs.anomalies, rng, state.medium);
 
     // 4-mines. Mines (factions update). Arm down, then detonate any armed mine
     //     with an enemy in range against the nearest such enemy (via applyDamage,
@@ -685,11 +685,11 @@ export function* simulateBattle(
       }
     }
 
-    // 5c. Arena medium field step (zero sources this pass); see `stepArenaMedium`.
-    state.medium = stepArenaMedium(state.medium);
-
-    // Capture descriptors for any instance that first appeared this tick
-    // (break-away chunks, launched phantoms) before recording the frame.
+    // 5c. Arena medium: per-tick sources (exhaust, debris, wakes, anomalies) from
+    //     this tick's state, then diffuse and decay.
+    state.medium = stepArenaMediumFromState(state.medium, state.ships, state.debris,
+      state.projectiles.map((p) => ({ x: p.x, y: p.y })), inputs.anomalies, state.asteroidDiscs);
+    // Capture descriptors for new instances (break-away chunks, launched phantoms).
     captureDescriptors(state.ships);
     yield snapshot(tick, state.ships, state.projectiles, awareness, state.mines, state.pods, state.pulses, state.emissions, state.debris, state.beams, state.medium);
     state.ticks += 1;
