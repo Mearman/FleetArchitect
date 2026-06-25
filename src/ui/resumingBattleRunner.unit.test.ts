@@ -221,8 +221,9 @@ describe("ResumingBattleRunner", () => {
     // The full result stitches preFrames ++ tail.
     expect(out.frames).toEqual([...preFrames, ...tail]);
     expect(out.frames.map((f) => f.tick)).toEqual([0, 1, 2, 3]);
-    // Completion deletes the checkpoint (subsumed by the complete result).
-    expect(await store.get(k)).toBeUndefined();
+    // The checkpoint persists after completion (kept as a durable fallback
+    // for reload — the result cache may not store large results).
+    expect(await store.get(k)).toBeDefined();
   });
 
   it("during a fresh run persists each captured checkpoint with its preceding frames", async () => {
@@ -239,8 +240,7 @@ describe("ResumingBattleRunner", () => {
     await resuming.run(inputs);
 
     const k = await key();
-    // The persist is fire-and-forget and the completion-delete fires after, so
-    // observe the recorded `put` calls rather than the store's final state.
+    // The persist is fire-and-forget; observe the recorded `put` calls.
     expect(store.putCalls.length).toBeGreaterThanOrEqual(2);
     // The latest put for this key carries the highest-tick checkpoint.
     const lastPut = store.putCalls[store.putCalls.length - 1];
@@ -248,8 +248,6 @@ describe("ResumingBattleRunner", () => {
     expect(lastPut?.checkpoint.tick).toBe(3);
     // preFrames are the frames with tick <= checkpoint.tick.
     expect(lastPut?.preFrames.map((f) => f.tick)).toEqual([0, 1, 2, 3]);
-    // The completion-delete fired (the complete result subsumes the checkpoint).
-    expect(store.deleteCalls).toContain(k);
   });
 
   it("a persist failure surfaces via the notifier but does not block the result", async () => {
@@ -271,34 +269,6 @@ describe("ResumingBattleRunner", () => {
     await Promise.resolve();
     expect(onFail).toHaveBeenCalled();
     expect(onFail.mock.calls[0]?.[0].message).toBe("persist failed");
-  });
-
-  it("a delete failure surfaces via the notifier but does not block the result", async () => {
-    // A store whose get returns a checkpoint (triggering the resume path) but
-    // whose delete rejects: the stitch succeeds, the result returns, and the
-    // delete failure surfaces.
-    const cp = checkpoint(1);
-    const preFrames = [frame(0), frame(1)];
-    const k = await key();
-    const base = memoryStore();
-    await base.put(k, cp, preFrames);
-    const store: CheckpointStore = {
-      get: base.get.bind(base),
-      put: base.put.bind(base),
-      delete: () => Promise.reject(new Error("delete failed")),
-    };
-    const innerResult = resultWithFrames([frame(2)], 2);
-    const { runner: inner } = fakeInner(innerResult);
-    const onFail = vi.fn<(error: Error) => void>();
-    const resuming = new ResumingBattleRunner(inner, store, onFail);
-
-    const out = await resuming.run(inputs);
-    // Await the fire-and-forget delete catch.
-    await Promise.resolve();
-
-    expect(out.frames.map((f) => f.tick)).toEqual([0, 1, 2]);
-    expect(onFail).toHaveBeenCalled();
-    expect(onFail.mock.calls[0]?.[0].message).toBe("delete failed");
   });
 
   it("forwards the caller's onFrames callback alongside its own accumulation", async () => {
@@ -326,24 +296,22 @@ describe("ResumingBattleRunner", () => {
   });
 
   it("skips the checkpoint persist once preFrames exceeds the clone-safe cap", async () => {
-    // Stream more frames than MAX_CHECKPOINT_FRAMES, then emit a checkpoint whose
-    // preFrames (every frame up to its tick) exceed the cap. The persist is
-    // skipped so the IDB structured clone of preFrames never OOMs — Dexie logs
-    // the failed put to the console even when the app catches it, so the only way
-    // to keep the console clean for a long battle is to not attempt the put.
+    // Stream more frames than MAX_CHECKPOINT_FRAMES (2000), then emit a
+    // checkpoint whose preFrames exceed the cap. The persist is skipped so the
+    // IDB structured clone of preFrames never OOMs.
     const frames: BattleFrame[] = [];
-    for (let tick = 0; tick < 300; tick++) frames.push(frame(tick));
-    const full = resultWithFrames(frames, 299);
+    for (let tick = 0; tick < 2100; tick++) frames.push(frame(tick));
+    const full = resultWithFrames(frames, 2099);
     const { runner: inner } = fakeInner(full, {
-      fireFrames: { frames, ticks: 299, descriptors: [] },
-      fireCheckpoints: [checkpoint(299)],
+      fireFrames: { frames, ticks: 2099, descriptors: [] },
+      fireCheckpoints: [checkpoint(2099)],
     });
     const store = memoryStore();
     const resuming = new ResumingBattleRunner(inner, store, vi.fn());
 
     await resuming.run(inputs);
 
-    // preFrames (300) > the cap (256): the put was skipped, so nothing persisted.
+    // preFrames (2100) > the cap (2000): the put was skipped.
     expect(store.putCalls).toHaveLength(0);
   });
 });

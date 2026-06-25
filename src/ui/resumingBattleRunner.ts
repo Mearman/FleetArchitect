@@ -19,11 +19,13 @@ import type { EngineCheckpoint } from "@/schema/checkpoint";
  * fresh recompute instead. The resume feature is an optimisation, never a
  * correctness path, so losing the checkpoint for long battles is acceptable.
  *
- * The value is a frame-weight-agnostic safety margin below the observed
- * preFrames-OOM point for the heaviest preset pair (~500 frames in the IDB
- * clone, on a ~1700-tick Drone-Swarm-vs-Nexus-Armada run).
+ * The value accounts for the binary-frame format (typed arrays): each frame's
+ * cell data is contiguous buffers (Float64Array/Uint8Array), far more compact
+ * for structured clone than the old per-cell objects. At ~35 KB/frame for the
+ * heaviest preset pair (19 ships), 2000 frames is ~70 MB — well within the
+ * browser's structured-clone budget, and covers most preset battles fully.
  */
-const MAX_CHECKPOINT_FRAMES = 256;
+const MAX_CHECKPOINT_FRAMES = 2000;
 
 /**
  * Surfaces a checkpoint persist / delete failure to the user. Injected so the
@@ -146,16 +148,14 @@ export class ResumingBattleRunner implements BattleRunner {
       ? { ...innerResult, frames: [...found.preFrames, ...innerResult.frames] }
       : innerResult;
 
-    // The complete result subsumes the in-progress checkpoint (the outer
-    // CachingBattleRunner caches the full result). Delete it so the next run
-    // of this matchup is a result-cache hit, not a resume. A delete failure
-    // surfaces and does not block returning the result.
-    void this.store.delete(key).catch((error: unknown) => {
-      this.notifyCheckpointFailure(
-        error instanceof Error ? error : new Error(String(error)),
-      );
-    });
-
+    // Keep the checkpoint after completion. The result cache (DexieSimCache)
+    // may silently skip the durable write for large results (isUncloneable),
+    // so this checkpoint is the only durable state that survives a reload. On
+    // a reload the CachingBattleRunner checks the result cache first (misses
+    // if the write was skipped), then this resume decorator finds the
+    // checkpoint and resumes from here — a partial recompute, not from
+    // scratch. The checkpoint is overwritten on the next run of the same
+    // matchup, so it never accumulates.
     return fullResult;
   }
 }
