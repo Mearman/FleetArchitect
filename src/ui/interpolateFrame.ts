@@ -178,7 +178,10 @@ export function interpolateFrame(frames: readonly BattleFrame[], t: number): Bat
 
   // Projectiles: interpolate x/y by id so fast-moving shots glide smoothly
   // at all playback speeds (especially slow-mo where snapping is most visible).
-  // Projectiles present in only one frame are carried through verbatim.
+  // Projectiles present only in the lo frame (about to expire) are carried
+  // through verbatim. Projectiles present only in the hi frame (newly spawned
+  // this tick) are NOT shown until the next interval — a round should not
+  // appear before its birth tick.
   const hiProjMap = new Map<string, ProjectileSnapshot>();
   for (const p of hi.projectiles) {
     hiProjMap.set(p.id, p);
@@ -194,9 +197,6 @@ export function interpolateFrame(frames: readonly BattleFrame[], t: number): Bat
       kind: loP.kind,
     };
   });
-  for (const hiP of hiProjMap.values()) {
-    projectiles.push(hiP);
-  }
 
   // Awareness and the tick number come from the nearest frame so that discrete
   // events (sensor contacts) are never smeared across the interval.
