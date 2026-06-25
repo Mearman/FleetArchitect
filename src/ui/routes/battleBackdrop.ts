@@ -13,13 +13,23 @@ const GRID_WORLD_SPACING = 100;
  *  bounds grew during buffering. */
 const STAR_CELL_WORLD = 70;
 
-/** Caps so a zoomed-far-out view does not iterate a huge lattice: the grid stops
- *  drawing past this many lines per axis, and the starfield samples a coarser
- *  SUBLATTICE (a stride) until the DRAWN count fits under this — the lattice
- *  itself stays fixed (70 m), so stars never reposition on zoom; only the
- *  density thins at extreme zoom-out. */
+/** Caps so a zoomed-far-out view does not iterate a huge lattice. The grid
+ *  stops drawing past this many lines per axis; the starfield stops past this
+ *  many DRAWN stars (STAR_CELL_CAP) or this many iterated cells
+ *  (STAR_CELL_MAX_ITER). */
 const GRID_LINE_CAP = 240;
+/** Maximum starfield cells to iterate per frame. Past this — an extreme
+ *  zoom-out where the 70 m lattice would be sub-pixel noise — the starfield is
+ *  not drawn, bounding the per-cell hash cost. */
+const STAR_CELL_MAX_ITER = 100_000;
+/** Maximum stars DRAWN per frame. The fixed lattice is density-thinned (each
+ *  star draws iff its visibility hash passes a threshold) so the drawn count
+ *  stays under this — uniform thinning, no regular grid, stars never move. */
 const STAR_CELL_CAP = 2400;
+/** Fade band (in 0..1 hash units) over which a star's alpha ramps as the
+ *  density threshold sweeps across its visibility hash on zoom — so stars fade
+ *  in/out organically (a smoothstep) instead of popping at the threshold. */
+const STAR_FADE = 0.15;
 
 /** Deterministic unit float for lattice cell (ix, iy), variant k. */
 function cellHash(ix: number, iy: number, k: number): number {
@@ -113,43 +123,49 @@ export function drawBackdrop(
   }
 
   // 3. Starfield on a FIXED world lattice covering the visible rect. One star
-  //    per 70 m cell at a hashed offset, so the pattern is pinned to world
-  //    space — it never reshuffles on zoom (buffering never moves a star
-  //    either). When a zoomed-out view would span more than STAR_CELL_CAP cells
-  //    a coarser SUBLATTICE is sampled (a stride) rather than doubling the
-  //    cell: doubling re-grids the lattice and makes every star jump to a new
-  //    position, whereas a stride keeps each drawn star at its fixed lattice
-  //    position. Stars thus never move on zoom; only the density thins, and
-  //    only at extreme zoom-out.
+  //    per 70 m cell at a hashed offset, pinned to world space — it never
+  //    reshuffles on zoom (and buffering never moves a star). To cap the drawn
+  //    count when zoomed out the lattice is DENSITY-THINNED: each star draws
+  //    iff its fixed visibility hash passes a density threshold, so the visible
+  //    subset is a uniform random sample — NOT a regular sublattice, so no grid
+  //    pattern emerges — and each drawn star stays at its fixed lattice position
+  //    (stars never move on zoom; only the fraction drawn changes). Past an
+  //    extreme zoom-out the starfield is skipped (sub-pixel noise + it bounds
+  //    the per-cell hash iteration).
   const cell = STAR_CELL_WORLD;
   const sx0 = Math.floor(left / cell);
   const sx1 = Math.ceil(right / cell);
   const sy0 = Math.floor(top / cell);
   const sy1 = Math.ceil(bottom / cell);
-  // Stride so the DRAWN star count stays under the cap: stride² ≤ cellCount/cap.
   const cellCount = (sx1 - sx0 + 1) * (sy1 - sy0 + 1);
-  let stride = 1;
-  while (cellCount > STAR_CELL_CAP * stride * stride) stride *= 2;
-  // Visit only the stride sublattice (multiples of `stride`), starting at the
-  // first multiple in range — a stable sublattice that does not shift with the
-  // viewport, so panning/zooming never repositions a drawn star.
-  const startX = Math.ceil(sx0 / stride) * stride;
-  const startY = Math.ceil(sy0 / stride) * stride;
-  ctx.save();
-  ctx.fillStyle = "rgba(201,212,196,1)";
-  for (let ix = startX; ix <= sx1; ix += stride) {
-    for (let iy = startY; iy <= sy1; iy += stride) {
-      const wx = (ix + cellHash(ix, iy, 0)) * cell;
-      const wy = (iy + cellHash(ix, iy, 1)) * cell;
-      const sp = t.project(wx, wy);
-      if (sp.x < 0 || sp.x > width || sp.y < 0 || sp.y > height) continue;
-      ctx.globalAlpha = 0.3 + cellHash(ix, iy, 2) * 0.6;
-      const radius = 0.8 + cellHash(ix, iy, 3) * 0.7;
-      ctx.beginPath();
-      ctx.arc(sp.x, sp.y, radius, 0, Math.PI * 2);
-      ctx.fill();
+  if (cellCount <= STAR_CELL_MAX_ITER) {
+    // Draw a cell's star iff its visibility hash passes the density — a uniform
+    // random thinning whose drawn count is ≈ cellCount × density ≤ STAR_CELL_CAP.
+    const density = Math.min(1, STAR_CELL_CAP / cellCount);
+    ctx.save();
+    ctx.fillStyle = "rgba(201,212,196,1)";
+    for (let ix = sx0; ix <= sx1; ix += 1) {
+      for (let iy = sy0; iy <= sy1; iy += 1) {
+        // Organic fade: a star's alpha ramps (smoothstep) as the zoom-dependent
+        // density threshold sweeps across its fixed visibility hash — stars fade
+        // in on zoom-in and out on zoom-out instead of popping at the threshold.
+        const visHash = cellHash(ix, iy, 4);
+        let fade = (density - visHash) / STAR_FADE;
+        if (fade <= 0) continue;
+        if (fade > 1) fade = 1;
+        const fadeMul = fade * fade * (3 - 2 * fade);
+        const wx = (ix + cellHash(ix, iy, 0)) * cell;
+        const wy = (iy + cellHash(ix, iy, 1)) * cell;
+        const sp = t.project(wx, wy);
+        if (sp.x < 0 || sp.x > width || sp.y < 0 || sp.y > height) continue;
+        ctx.globalAlpha = (0.3 + cellHash(ix, iy, 2) * 0.6) * fadeMul;
+        const radius = 0.8 + cellHash(ix, iy, 3) * 0.7;
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
+    ctx.globalAlpha = 1;
+    ctx.restore();
   }
-  ctx.globalAlpha = 1;
-  ctx.restore();
 }
