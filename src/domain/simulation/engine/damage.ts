@@ -748,6 +748,10 @@ export function makeChunkShip(
     // A fragment inherits the parent's last-fired tick, so a chunk that breaks
     // off a ship that just fired carries the same open decloak window.
     lastFiredTick: parent.lastFiredTick,
+    // A fragment inherits the parent's current sensor saturation, so a chunk
+    // that breaks off a freshly-flash-blinded ship stays blinded on its own
+    // receiver (battlefield-medium phase 5).
+    sensorSaturation: parent.sensorSaturation,
   };
   // Force a clean recompute so chunk aggregates match its own modules.
   // This derives the chunk's own ship-local centre of mass (comX/comY).

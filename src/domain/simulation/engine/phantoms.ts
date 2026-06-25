@@ -80,6 +80,7 @@ export function makeDrone(
     ghosts: [],
     awareness: new Map(),
     lastFiredTick: Number.NEGATIVE_INFINITY,
+    sensorSaturation: 0,
     phantom: {
       kind: "drone",
       ownerId: owner.instanceId,
@@ -155,6 +156,7 @@ export function makeDecoy(
     ghosts: [],
     awareness: new Map(),
     lastFiredTick: Number.NEGATIVE_INFINITY,
+    sensorSaturation: 0,
     phantom: {
       kind: "decoy",
       ownerId: owner.instanceId,

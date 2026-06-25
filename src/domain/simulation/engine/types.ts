@@ -367,6 +367,22 @@ export interface SimShip {
    * the targeting block can read it. Keyed by enemyId for stable lookup.
    */
   awareness: Map<string, Contact>;
+  /**
+   * Sensor saturation (battlefield-medium phase 5): how blinded this ship's
+   * receiver currently is, on a [0, ∞) scale where 0 is fully recovered. An
+   * intense incident emission above the dazzle threshold boosts this
+   * ({@link dazzleBoost}); it then multiplies the receiver's effective noise
+   * floor by `(1 + sensorSaturation)` ({@link effectiveReceiverFloor}), so a
+   * saturated sensor loses its weaker contacts until it recovers. Decayed once
+   * per tick at the top of the awareness phase by {@link SATURATION_DECAY_FACTOR}
+   * (timescale {@link SATURATION_RECOVERY_TICKS}), and the per-tick boost from
+   * the observer's received emissions is added AFTER the reception pass, so a
+   * flash on tick T raises the floor on ticks T+1 onward. Source-agnostic: any
+   * strong received emission (hull, pulse, medium-cell) dazzles. Initialised to
+   * 0 in `toSimShip`/phantom/chunk; carried across ticks and captured by the
+   * checkpoint so resume preserves the blinded state.
+   */
+  sensorSaturation: number;
    /**
    * Stealth detectability (factions update). The most recent tick on which this
    * ship fired any weapon, used by the cloak rule: a cloaked ship drops its

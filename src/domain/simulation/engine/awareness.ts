@@ -9,7 +9,13 @@ import type { AwarenessSnapshot, BattleAnomalyKind } from "@/schema/battle";
 
 import { SIM, SPEED_OF_LIGHT_M_PER_TICK } from "./config";
 import { coverageShapes } from "./coverage";
-import { emReceives, mediumReceives } from "./em-reception";
+import {
+  hullDazzleContribution,
+  mediumDazzleContribution,
+  mediumReceives,
+  emReceives,
+} from "./em-reception";
+import { SATURATION_DECAY_FACTOR } from "./em-anchors";
 import { collectMediumEmissions } from "./medium-emissions";
 import type { MediumField, MediumState } from "./medium-field";
 import { aberratedContactPosition } from "./optics-aberration";
@@ -55,6 +61,23 @@ export function computeAwareness(
     .filter((s) => s.alive)
     .sort((p, q) => (p.instanceId < q.instanceId ? -1 : p.instanceId > q.instanceId ? 1 : 0));
 
+  // (a) Decay every alive ship's carried sensor saturation ONCE, before any
+  //     floor is read this tick (battlefield-medium phase 5 dazzle). The
+  //     saturation accumulated during tick T-1's reception pass is what raises
+  //     the floor on THIS tick; decaying it here applies the recovery timescale
+  //     ({@link SATURATION_DECAY_FACTOR}) uniformly. Order-independent (each
+  //     ship decays from its own carried value), but done in the canonical
+  //     instanceId order for consistency with the rest of the phase.
+  for (const ship of alive) {
+    ship.sensorSaturation *= SATURATION_DECAY_FACTOR;
+  }
+  // Per-observer dazzle accumulator: the total boost this tick's received
+  // emissions contribute, added to the (already-decayed) saturation AFTER the
+  // reception passes so it raises the floor on subsequent ticks. Built in
+  // instanceId (observer) order, then emission order inside — deterministic.
+  const dazzleAccum = new Map<string, number>();
+  for (const ship of alive) dazzleAccum.set(ship.instanceId, 0);
+
   // (b) Per-ship direct detection. directContacts[observerId] = Contact[].
   //
   // Direct enemy iteration in instanceId order (the `alive` set is already
@@ -84,6 +107,17 @@ export function computeAwareness(
       observer.side === "attacker" ? enemiesBySide.attacker : enemiesBySide.defender;
     for (const enemy of enemies) {
       if (segmentBlocked(observer.x, observer.y, enemy.x, enemy.y, occluders)) continue;
+      // Sensor dazzle (phase 5): a strong emission raises the observer's
+      // saturation for subsequent ticks, whatever its origin. Accumulated even
+      // when the enemy does not form a contact this tick (the raised floor or
+      // the sensor arc may suppress the fix while the EM power still arrives).
+      const accum = dazzleAccum.get(observer.instanceId);
+      if (accum !== undefined) {
+        dazzleAccum.set(
+          observer.instanceId,
+          accum + hullDazzleContribution(observer, enemy, anomalies),
+        );
+      }
       if (!emReceives(observer, enemy, anomalies)) continue;
       // Relativistic aberration (Phase 10): a moving observer measures the
       // contact's bearing swept toward its own direction of travel, so the
@@ -194,7 +228,18 @@ export function computeAwareness(
     tick,
     occluders,
     anomalies,
+    dazzleAccum,
   );
+
+  // (h) Write the per-observer dazzle boost back into the carried saturation
+  //     AFTER both reception passes (battlefield-medium phase 5). The floor this
+  //     tick already used the decayed saturation; the boost accumulated from
+  //     this tick's strong emissions raises the floor on subsequent ticks. Done
+  //     in instanceId order so two same-seed runs reach byte-identical state.
+  for (const ship of alive) {
+    const boost = dazzleAccum.get(ship.instanceId) ?? 0;
+    ship.sensorSaturation += boost;
+  }
 
   return buildAwarenessSnapshot(alive, liveByShip, occluders, links, mediumContacts);
 }
@@ -221,6 +266,7 @@ function collectMediumContacts(
   tick: number | undefined,
   occluders: readonly Disc[],
   anomalies: readonly BattleAnomalyKind[],
+  dazzleAccum: Map<string, number>,
 ): Contact[] {
   if (medium === undefined || tick === undefined) return [];
   const mediumEmissions = collectMediumEmissions(medium, tick);
@@ -231,6 +277,17 @@ function collectMediumContacts(
       // An occluder between the observer and the radiating cell blocks the
       // light path, exactly as it blocks continuous ship-ship reception.
       if (segmentBlocked(observer.x, observer.y, emission.x, emission.y, occluders)) continue;
+      // Sensor dazzle (phase 5): a bright medium-cell emission raises the
+      // observer's saturation for subsequent ticks, source-agnostic. The
+      // caller passes a mutable accumulator the main loop owns; this pass
+      // only ever ADDS to entries the main loop already seeded.
+      const accum = dazzleAccum.get(observer.instanceId);
+      if (accum !== undefined) {
+        dazzleAccum.set(
+          observer.instanceId,
+          accum + mediumDazzleContribution(observer, emission),
+        );
+      }
       if (mediumReceives(observer, emission, tick, anomalies) === undefined) continue;
       out.push({
         // The synthetic cell id; never matches a real ship instanceId, so

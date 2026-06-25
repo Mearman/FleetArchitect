@@ -258,6 +258,10 @@ const CheckpointShip = z.object({
   brokeOff: z.boolean().optional(),
   ghosts: z.array(GhostContact),
   lastFiredTick: ExtendedNumber,
+  // Receiver saturation (battlefield-medium phase 5 dazzle). Carried state —
+  // the floor a resumed battle reads must match the floor the pre-pause tick
+  // would have read, so the blinded period survives an interrupt/resume.
+  sensorSaturation: z.number(),
   phantom: PhantomState.optional(),
   resource: ResourceState.optional(),
 });

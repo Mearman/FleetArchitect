@@ -95,6 +95,7 @@ function snapshotShip(s: SimShip): CheckpointShip {
     salvageMass: s.salvageMass,
     ghosts: s.ghosts,
     lastFiredTick: s.lastFiredTick,
+    sensorSaturation: s.sensorSaturation,
   };
   if (s.outline !== undefined) ship.outline = s.outline;
   if (s.target !== undefined) ship.target = s.target;
@@ -377,6 +378,7 @@ function restoreShip(s: CheckpointShip): SimShip {
     ghosts: s.ghosts,
     awareness: new Map(),
     lastFiredTick: s.lastFiredTick,
+    sensorSaturation: s.sensorSaturation,
   };
   if (s.outline !== undefined) ship.outline = s.outline;
   if (s.claimedBy !== undefined) ship.claimedBy = s.claimedBy;

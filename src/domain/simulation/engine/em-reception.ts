@@ -29,7 +29,11 @@
 import type { BattleAnomalyKind } from "@/schema/battle";
 import { hasAnomaly } from "@/domain/anomaly";
 
-import { EM_HULL_AMBIENT_EMISSION, EM_RECEIVER_NOISE_FLOOR } from "./em-anchors";
+import {
+  DAZZLE_THRESHOLD_MULT,
+  EM_HULL_AMBIENT_EMISSION,
+  EM_RECEIVER_NOISE_FLOOR,
+} from "./em-anchors";
 import { SIM, SPEED_OF_LIGHT_M_PER_TICK } from "./config";
 import { continuousContact, type Emission } from "./emissions";
 import {
@@ -82,6 +86,97 @@ export function continuousEmissionStrength(ship: SimShip): number {
     }
   }
   return strength;
+}
+
+/**
+ * The effective detection noise floor for `observer` this tick, raised by its
+ * current sensor saturation (battlefield-medium phase 5). A blinded receiver
+ * is less sensitive — its floor multiplies by `(1 + sensorSaturation)` — so
+ * weaker contacts (those received just above the baseline floor) fall below it
+ * and are lost while the receiver stays saturated. The saturation is decayed
+ * once at the top of the awareness phase (see {@link SATURATION_DECAY_FACTOR}),
+ * so this reads the carried-and-decayed value; every reception decision the
+ * observer makes this tick — hull ambient, medium-cell radiation — sees the
+ * SAME raised floor, so a flash blinds uniformly across all contact kinds.
+ */
+export function effectiveReceiverFloor(observer: SimShip): number {
+  return EM_RECEIVER_NOISE_FLOOR * (1 + observer.sensorSaturation);
+}
+
+/**
+ * The dazzle boost an emission of inverse-square received strength
+ * `receivedStrength` (in floor units, i.e. as a multiple of
+ * {@link EM_RECEIVER_NOISE_FLOOR}) contributes to the observer's sensor
+ * saturation. Source-agnostic — any emission the observer receives (hull,
+ * pulse, or medium-cell radiation) routes here. Returns 0 below the dazzle
+ * threshold (so an ordinary detected contact, received at a few times the
+ * floor, does NOT dazzle); above it the boost grows as
+ * `ln(receivedStrength / threshold)`, a smooth, scale-invariant, unbounded-above
+ * measure of how brightly the receiver is lit up. The natural log keeps a
+ * single bright flash bounded (a 1000×-over-threshold flash boosts by ~ln(1000)
+ * ≈ 6.9, not 1000) while letting an arbitrarily bright bloom dazzle arbitrarily
+ * hard. The caller accumulates the per-tick boost across all the observer's
+ * received emissions and adds it to the carried (decayed) saturation AFTER the
+ * reception pass, so it raises the floor on subsequent ticks.
+ *
+ * Calibration worked example. A baseline hull emission (~3.14e8) received at
+ * 500 m gives `3.14e8 / (4π · 500²) ≈ 100×` the floor — just over the 50×
+ * threshold, so a baseline hull dazzles only at point-blank range (intended: a
+ * close pass blinds). A hull running an active emitter 1000× the baseline
+ * (~3.14e11) received at 4 km gives `~1560×` the floor: a boost of
+ * `ln(1560/50) ≈ 3.4`, lifting the floor to ×4.4 next tick — comfortably above
+ * a typical hull-ambient contact (received at a few × the floor) and dropping
+ * it. As the emitter moves away the received strength falls below the threshold
+ * and the saturation decays with {@link SATURATION_DECAY_FACTOR}, recovering
+ * the contact a few ticks later.
+ */
+export function dazzleBoost(receivedStrengthFloorMult: number): number {
+  if (receivedStrengthFloorMult <= DAZZLE_THRESHOLD_MULT) return 0;
+  return Math.log(receivedStrengthFloorMult / DAZZLE_THRESHOLD_MULT);
+}
+
+/**
+ * The dazzle boost an enemy's continuous emission contributes to `observer`'s
+ * sensor saturation this tick (battlefield-medium phase 5). The received
+ * strength is the enemy's continuous emission (shifted by relativistic Doppler
+ * + gravitational redshift, exactly as {@link emReceives} shifts it) attenuated
+ * by the inverse square of the separation, expressed as a multiple of the
+ * baseline noise floor. Source-agnostic: the caller invokes this for every
+ * non-occluded enemy regardless of whether it formed a contact, so a bright
+ * emitter dazzles even when the observer's raised floor (or arc) keeps it from
+ * registering as a fix. Returns 0 below the dazzle threshold. Deterministic
+ * (no rng); the caller accumulates over enemies in instanceId order.
+ */
+export function hullDazzleContribution(
+  observer: SimShip,
+  enemy: SimShip,
+  anomalies: readonly BattleAnomalyKind[],
+): number {
+  const dx = enemy.x - observer.x;
+  const dy = enemy.y - observer.y;
+  const distSq = dx * dx + dy * dy;
+  const dist = Math.sqrt(distSq);
+  const emission = continuousEmissionStrength(enemy) * receptionShift(observer, enemy, anomalies);
+  const received = dist <= 0 ? emission : emission / (4 * Math.PI * distSq);
+  return dazzleBoost(received / EM_RECEIVER_NOISE_FLOOR);
+}
+
+/**
+ * The dazzle boost a medium-cell emission contributes to `observer`'s sensor
+ * saturation this tick (battlefield-medium phase 5). Mirrors
+ * {@link hullDazzleContribution} but for a medium-cell's continuous radiated
+ * strength (no relativistic shift — a cell has no velocity of its own, exactly
+ * as in {@link mediumReceives}). Source-agnostic. Returns 0 below the dazzle
+ * threshold. Deterministic; the caller accumulates over emissions in row-major
+ * order.
+ */
+export function mediumDazzleContribution(observer: SimShip, emission: Emission): number {
+  const dx = emission.x - observer.x;
+  const dy = emission.y - observer.y;
+  const distSq = dx * dx + dy * dy;
+  const received =
+    distSq <= 0 ? emission.strength : emission.strength / (4 * Math.PI * distSq);
+  return dazzleBoost(received / EM_RECEIVER_NOISE_FLOOR);
 }
 
 /**
@@ -178,7 +273,8 @@ export function emReceives(
   // the visual radius would shrink — squared, since gain scales as range^2.
   const visualFactor = hasAnomaly(anomalies, "nebula") ? SIM.nebulaSensorFactor : 1;
   const baselineGain = visualFactor * visualFactor;
-  if (continuousContact(emission, dist, EM_RECEIVER_NOISE_FLOOR, baselineGain)) {
+  const floor = effectiveReceiverFloor(observer);
+  if (continuousContact(emission, dist, floor, baselineGain)) {
     return true;
   }
 
@@ -189,7 +285,7 @@ export function emReceives(
     const range = attenuatedSensorRange(unit, anomalies);
     if (range <= 0) continue;
     const gain = sensorGain(range);
-    if (!continuousContact(emission, dist, EM_RECEIVER_NOISE_FLOOR, gain)) continue;
+    if (!continuousContact(emission, dist, floor, gain)) continue;
     const arc = effectiveSensorArc(unit);
     if (arc >= Math.PI) return true;
     const bearing = effectiveSensorBearing(unit);
@@ -241,7 +337,8 @@ export function mediumReceives(
   // exactly as in `emReceives` (the naked eye is never immune to a nebula).
   const visualFactor = hasAnomaly(anomalies, "nebula") ? SIM.nebulaSensorFactor : 1;
   const baselineGain = visualFactor * visualFactor;
-  if (continuousContact(strength, dist, EM_RECEIVER_NOISE_FLOOR, baselineGain)) {
+  const floor = effectiveReceiverFloor(observer);
+  if (continuousContact(strength, dist, floor, baselineGain)) {
     return baselineGain;
   }
 
@@ -254,7 +351,7 @@ export function mediumReceives(
     const gain = sensorGain(range);
     // `continuousContact` gates on the inverse-square received strength
     // clearing the threshold; a sensor cone further constrains the bearing.
-    if (!continuousContact(strength, dist, EM_RECEIVER_NOISE_FLOOR, gain)) continue;
+    if (!continuousContact(strength, dist, floor, gain)) continue;
     const arc = effectiveSensorArc(unit);
     if (arc >= Math.PI) return gain;
     const bearing = effectiveSensorBearing(unit);

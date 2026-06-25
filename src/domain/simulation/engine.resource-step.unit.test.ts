@@ -139,6 +139,7 @@ function shipWith(over: Partial<SimShip> = {}): SimShip {
     ghosts: [],
     awareness: new Map(),
     lastFiredTick: Number.NEGATIVE_INFINITY,
+    sensorSaturation: 0,
     modules,
     crew: [],
     ...over,

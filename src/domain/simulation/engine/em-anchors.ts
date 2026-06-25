@@ -103,3 +103,48 @@ const EM_ACQUIRE_REFERENCE_EMISSION =
 export const BASE_ACQUIRE_RANGE_M = Math.sqrt(
   (EM_ACQUIRE_REFERENCE_EMISSION * 1) / (4 * Math.PI * EM_RECEIVER_NOISE_FLOOR),
 );
+
+/**
+ * Sensor dazzle (battlefield-medium phase 5). An intense INCIDENT emission
+ * saturates the receiver, raising its effective noise floor for a recovery
+ * period so a sensor blinded by a nearby bright source (a beam discharge, a
+ * missile bloom, a point-blank muzzle flash, or a close high-emission hull)
+ * temporarily loses its weaker contacts. This is a property of the RECEIVER,
+ * source-agnostic: any sufficiently strong received emission dazzles, whatever
+ * its origin (hull, pulse, or medium-cell radiation).
+ *
+ * The dazzle threshold is expressed as a multiple of the received strength
+ * over the {@link EM_RECEIVER_NOISE_FLOOR}: an emission whose inverse-square
+ * received power at the observer EXCEEDS this dazzles. Set so a baseline hull
+ * at the visual radius (received = floor) does NOT dazzle, and only genuinely
+ * bright events do. A baseline quiescent hull clears the threshold only inside
+ * `VISUAL_LOS_REFERENCE_M / sqrt(DAZZLE_THRESHOLD_MULT)` ≈ 500 m (point-blank);
+ * an active emitter or a weapons bloom — orders of magnitude brighter — dazzles
+ * out to several kilometres, which is the intended flash-blinding / area-denial
+ * scale. See {@link dazzleBoost} for the closed-form boost derivation.
+ */
+export const DAZZLE_THRESHOLD_MULT = 50;
+
+/**
+ * The recovery timescale (ticks) for sensor saturation. The carried
+ * `sensorSaturation` decays multiplicatively each tick by
+ * `exp(-1 / SATURATION_RECOVERY_TICKS)`, so a single flash that lifts the
+ * saturation to S decays to S/2 after `SATURATION_RECOVERY_TICKS · ln(2)`
+ * ticks (≈ 2.8 ticks at the 4-tick timescale below). Four ticks gives a
+ * recovery window of a few ticks — long enough to drop contacts for a
+ * meaningful beat after a flash, short enough that a one-shot dazzle is not a
+ * permanent kill. A SUSTAINED bright source (a close high-emission hull) drives
+ * the saturation toward a non-zero steady state `boost / (1 - decayFactor)`,
+ * giving lasting EM area-denial while it stays close.
+ */
+export const SATURATION_RECOVERY_TICKS = 4;
+
+/**
+ * The per-tick multiplicative decay factor for sensor saturation, derived from
+ * the recovery timescale: `exp(-1 / SATURATION_RECOVERY_TICKS)`. Applied to
+ * every alive ship's `sensorSaturation` at the top of the awareness phase,
+ * BEFORE the floor is read this tick, so a flash on tick T raises the floor on
+ * ticks T+1, T+2, ... as the saturation decays. Pure function of the timescale;
+ * computed once at module load.
+ */
+export const SATURATION_DECAY_FACTOR = Math.exp(-1 / SATURATION_RECOVERY_TICKS);

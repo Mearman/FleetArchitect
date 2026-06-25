@@ -291,6 +291,9 @@ export function toSimShip(ship: CombatShip, rng: Rng): SimShip {
     // Never fired yet: a cloaked ship begins fully cloaked, and no decloak
     // window is open. Read only by the cloak detectability rule.
     lastFiredTick: Number.NEGATIVE_INFINITY,
+    // Receiver starts fully recovered; the awareness phase decays and boosts
+    // this each tick (battlefield-medium phase 5 dazzle).
+    sensorSaturation: 0,
   };
 
   // Per-module path: build SimModule[] from the resolved modules and let

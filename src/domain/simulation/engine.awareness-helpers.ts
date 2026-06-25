@@ -176,7 +176,15 @@ export function ship(
   x: number,
   y: number,
   modules: ResolvedModule[],
-  opts: { cost?: number; facing?: number; orders?: Partial<typeof defaultOrders> } = {},
+  opts: {
+    cost?: number;
+    facing?: number;
+    orders?: Partial<typeof defaultOrders>;
+    /** Optional initial velocity (world units/tick); defaults to a stationary
+     *  start. Lets a fixture fly a bright source past an observer to exercise
+     *  dazzle recovery over time. */
+    velocity?: { x: number; y: number };
+  } = {},
 ): CombatShip {
   return {
     instanceId: id,
@@ -186,6 +194,7 @@ export function ship(
     stats: statsFor(100_000, opts.cost ?? 100),
     position: { x, y },
     facing: opts.facing ?? (side === "attacker" ? 0 : Math.PI),
+    ...(opts.velocity !== undefined ? { velocity: opts.velocity } : {}),
     orders: { ...defaultOrders, engageRange: "hold", ...opts.orders },
     crewPriority: "combat",
     shipStance: "balanced",
