@@ -1,3 +1,10 @@
+## [1.19.2](https://github.com/Mearman/FleetArchitect/compare/v1.19.1...v1.19.2) (2026-06-25)
+
+
+### Bug Fixes
+
+* **ui:** starfield density-thinning with organic fade — no grid, no pop ([3281d21](https://github.com/Mearman/FleetArchitect/commit/3281d21ad2ee79157a1e6a91d4359241bcf4431b))
+
 ## [1.19.1](https://github.com/Mearman/FleetArchitect/compare/v1.19.0...v1.19.1) (2026-06-25)
 
 
