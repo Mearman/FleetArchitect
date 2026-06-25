@@ -152,10 +152,10 @@ export function* simulateBattle(
     // Frame 0: run the awareness phase once so the opening snapshot carries the
     // same fog-of-war data every later frame does, and so each ship's `awareness`
     // is populated before the first targeting pass below.
-    const frame0Awareness = computeAwareness(state.ships, state.byId, occluders, inputs.anomalies);
+    const frame0Awareness = computeAwareness(state.ships, state.byId, occluders, inputs.anomalies, state.medium, 0);
     // Record the frame-0 EM emission log alongside the awareness it produced. The
     // monotonic counter threads from its initial value through every later tick.
-    state.emissionSeq = rebuildEmissions(state.ships, state.emissions, 0, state.emissionSeq);
+    state.emissionSeq = rebuildEmissions(state.ships, state.emissions, 0, state.emissionSeq, state.medium);
 
     captureDescriptors(state.ships);
     yield snapshot(0, state.ships, state.projectiles, frame0Awareness, state.mines, state.pods, state.pulses, state.emissions, state.debris, state.beams, state.medium);
@@ -205,7 +205,7 @@ export function* simulateBattle(
             r: d.radius,
           })),
         ];
-    const awareness = computeAwareness(state.ships, state.byId, dynamicOccluders, inputs.anomalies);
+    const awareness = computeAwareness(state.ships, state.byId, dynamicOccluders, inputs.anomalies, state.medium, tick);
     // 0a. Record the continuous EM emission log for this tick (Phase 9), behind
     //     the monotonic emission counter. The reception that built `awareness`
     //     above evaluated each enemy's emission strength per-pair; this log is
@@ -213,7 +213,7 @@ export function* simulateBattle(
     //     from scratch each tick (a continuous emission reflects the current
     //     positions), so the array is freshly populated, never appended across
     //     ticks.
-    state.emissionSeq = rebuildEmissions(state.ships, state.emissions, tick, state.emissionSeq);
+    state.emissionSeq = rebuildEmissions(state.ships, state.emissions, tick, state.emissionSeq, state.medium);
     // 0. Refresh the per-side ship lists and id index from the live `ships`
     //    array so they include phantoms (drones/decoys) and break-away chunks
     //    added on a previous tick. Incremental: membership only grows and ships

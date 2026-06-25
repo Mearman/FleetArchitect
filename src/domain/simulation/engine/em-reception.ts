@@ -31,7 +31,12 @@ import { hasAnomaly } from "@/domain/anomaly";
 
 import { EM_HULL_AMBIENT_EMISSION, EM_RECEIVER_NOISE_FLOOR } from "./em-anchors";
 import { SIM, SPEED_OF_LIGHT_M_PER_TICK } from "./config";
-import { continuousContact, type Emission } from "./emissions";
+import { continuousContact, formsContact, type Emission } from "./emissions";
+import {
+  appendMediumEmissionsToSnapshot,
+  collectMediumEmissions,
+} from "./medium-emissions";
+import type { MediumField, MediumState } from "./medium-field";
 import { cellWorldPosition } from "@/domain/simulation/spatial-hash";
 import {
   dopplerFactor,
@@ -194,6 +199,88 @@ export function emReceives(
 }
 
 /**
+ * Whether `observer` receives a discrete medium-cell emission this tick through
+ * the LIGHT-LAGGED `formsContact` path — the discrete, expanding-light-sphere
+ * reception that an active-radar ping or a weapon discharge flows through (NOT
+ * the un-lagged `continuousContact` a hull's steady self-emission collapses to).
+ * A medium cell radiates as it cools, so its radiation is a transient EM event
+ * born at tick `emission.t0`: the receiver registers it ONLY on the tick the
+ * light sphere sweeps across it, delayed by light-time. A sensor thus detects a
+ * distant burn where the source WAS, not where it is now.
+ *
+ * The receiver model mirrors {@link emReceives}: the baseline sensor-free eye
+ * (gain 1, attenuated by a nebula) plus any sensor cone whose gain pulls the
+ * emission above the noise floor and whose arc covers the bearing. The only
+ * difference is the predicate — `formsContact` (light-lagged) instead of
+ * `continuousContact` (steady-state). Relativistic Doppler / gravitational
+ * redshift are NOT applied here: a medium cell has no velocity of its own (it
+ * is a stationary grid volume), so the only shift would come from the
+ * observer's motion, which the light-lag already encodes honestly. Returns the
+ * effective receiver gain that formed the contact (so the caller can record
+ * which sensor made the detection), or `undefined` when no receiver formed one.
+ */
+export function mediumReceives(
+  observer: SimShip,
+  emission: Emission,
+  tick: number,
+  anomalies: readonly BattleAnomalyKind[],
+): number | undefined {
+  const dx = emission.x - observer.x;
+  const dy = emission.y - observer.y;
+
+  // Baseline sensor-free receiver: an omni eye at gain 1, attenuated by a nebula
+  // exactly as in `emReceives` (the naked eye is never immune to a nebula).
+  const visualFactor = hasAnomaly(anomalies, "nebula") ? SIM.nebulaSensorFactor : 1;
+  const baselineGain = visualFactor * visualFactor;
+  if (formsContactBaseline(emission, observer, tick, baselineGain)) {
+    return baselineGain;
+  }
+
+  // Any sensor cone whose gain pulls the emission above the floor AND whose arc
+  // covers the bearing. An omni sensor (arc >= PI) skips the angle test.
+  const toCell = Math.atan2(dy, dx);
+  for (const unit of sensorUnitsOf(observer)) {
+    const range = attenuatedSensorRange(unit, anomalies);
+    if (range <= 0) continue;
+    const gain = sensorGain(range);
+    // `formsContact` gates on the light sphere crossing the receiver this tick
+    // AND the inverse-square received strength clearing the threshold. A sensor
+    // cone further constrains: the bearing to the cell must fall in its arc.
+    if (!formsContactAtGain(emission, observer, tick, gain)) continue;
+    const arc = effectiveSensorArc(unit);
+    if (arc >= Math.PI) return gain;
+    const bearing = effectiveSensorBearing(unit);
+    if (Math.abs(angleDifference(bearing, toCell)) <= arc) return gain;
+  }
+  return undefined;
+}
+
+/** `formsContact` against the baseline receiver (sensitivity = noise floor). The
+ *  discrete, light-lagged predicate: the emission's expanding light sphere must
+ *  cross the receiver this tick AND the inverse-square received strength must
+ *  clear `sensitivity / gain`. Inline the receiver so `formsContact`'s `Receiver`
+ *  shape is not leaked to the caller. */
+function formsContactAtGain(
+  emission: Emission,
+  observer: SimShip,
+  tick: number,
+  gain: number,
+): boolean {
+  return formsContact(emission, { x: observer.x, y: observer.y, sensitivity: EM_RECEIVER_NOISE_FLOOR, gain }, tick);
+}
+
+/** Baseline-receiver specialisation of {@link formsContactAtGain} for clarity at
+ *  the call site (the baseline gain already folds in the nebula attenuation). */
+function formsContactBaseline(
+  emission: Emission,
+  observer: SimShip,
+  tick: number,
+  gain: number,
+): boolean {
+  return formsContactAtGain(emission, observer, tick, gain);
+}
+
+/**
  * Append this ship's continuous-emission events to the per-battle emission log,
  * in deterministic (ship already chosen by caller, then module array) order
  * behind the monotonic `seq` counter. Returns the next sequence value. The log
@@ -251,21 +338,30 @@ export function recordEmissions(
 /**
  * Rebuild the per-tick continuous EM emission log in place: clear the array,
  * then append every alive ship's emissions (via `recordEmissions`) in
- * lexicographic instanceId order behind the monotonic `seq` counter. Returns the
- * next sequence value. A continuous self-emission reflects the current tick's
- * positions, so the log is rebuilt from scratch each tick rather than
- * accumulated; the counter still advances monotonically across the whole battle,
- * mirroring `pulseSeq`, so two same-seed runs produce identical totals.
+ * lexicographic instanceId order behind the monotonic `seq` counter, then
+ * append the medium-cell emissions (radiating ε cells) for the snapshot, capped.
+ * Returns the next sequence value. A continuous self-emission reflects the
+ * current tick's positions, so the log is rebuilt from scratch each tick rather
+ * than accumulated; the counter still advances monotonically across the whole
+ * battle, mirroring `pulseSeq`, so two same-seed runs produce identical totals.
  *
  * Phantoms (drones/decoys) are excluded — they are detected via the normal ship
  * path and carry no sensor modules, so logging a baseline emission for them
  * would just bloat the snapshot without changing any reception decision.
+ *
+ * Medium-cell emissions (battlefield-medium phase 4) are collected from
+ * `medium` (when supplied) via {@link collectMediumEmissions} and appended AFTER
+ * the ship emissions, capped to {@link MEDIUM_EMISSION_SNAPSHOT_CAP} so the
+ * snapshot cannot bloat. The UNcapped set is what the reception pass in
+ * `computeAwareness` consumes (it collects its own copy); this function only
+ * shapes what the snapshot RECORDS. Omit `medium` for a pre-medium caller.
  */
 export function rebuildEmissions(
   ships: readonly SimShip[],
   emissions: Emission[],
   tick: number,
   seq: number,
+  medium?: { field: MediumField; state: MediumState },
 ): number {
   emissions.length = 0;
   let next = seq;
@@ -274,6 +370,12 @@ export function rebuildEmissions(
     .sort((a, b) => (a.instanceId < b.instanceId ? -1 : a.instanceId > b.instanceId ? 1 : 0));
   for (const ship of ordered) {
     next = recordEmissions(ship, emissions, tick, next);
+  }
+  if (medium !== undefined) {
+    // Collect, cap, and append for the snapshot. The reception pass collects its
+    // own uncapped copy; this only records what the renderer sees.
+    const mediumEmissions = collectMediumEmissions(medium, tick);
+    next = appendMediumEmissionsToSnapshot(mediumEmissions, emissions, next);
   }
   return next;
 }

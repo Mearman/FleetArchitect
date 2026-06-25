@@ -9,7 +9,9 @@ import type { AwarenessSnapshot, BattleAnomalyKind } from "@/schema/battle";
 
 import { SIM, SPEED_OF_LIGHT_M_PER_TICK } from "./config";
 import { coverageShapes } from "./coverage";
-import { emReceives } from "./em-reception";
+import { emReceives, mediumReceives } from "./em-reception";
+import { collectMediumEmissions } from "./medium-emissions";
+import type { MediumField, MediumState } from "./medium-field";
 import { aberratedContactPosition } from "./optics-aberration";
 import type { CommsLink, CommsUnit } from "./sensors";
 import { aimDishes, commsUnitOperable, commsUnitsOf, contactThreat, linkForms } from "./sensors";
@@ -21,12 +23,30 @@ import type { Contact, GhostContact, SimShip } from "./types";
  * dish's `dishAngle` in place, then returns the snapshot. See the phase header
  * for the determinism contract: zero rng draws, fixed iteration order, all ties
  * on stable ids.
+ *
+ * Medium-cell radiation (battlefield-medium phase 4): when `medium` and `tick`
+ * are supplied, a discrete, light-lagged reception pass runs after the
+ * continuous ship-ship pass. Each excited-cell emission is tested against every
+ * observer's baseline receiver and sensor cones via `formsContact` (the
+ * expanding-light-sphere predicate), so a sensor detects a distant burn where
+ * the source WAS, delayed by light-time. The contacts it forms are TRANSIENT —
+ * recorded in the snapshot's `contacts` so the renderer/AI can show the EM
+ * event, but kept OUT of the ship-targeting `directContacts` set and ghost
+ * memory. A medium contact's `enemyId` is the cell's synthetic id
+ * (`medium#<col>_<row>`, never a real ship), so targeting's `visibleEnemyViews`
+ * (which resolves `enemyId` against the real-ship map) simply skips it —
+ * detecting a muzzle flash does not give a weapons lock on a hull that is not
+ * there. That is the honest physics: the radiation is detectable, the hull is
+ * not. Iteration is observer (instanceId) outer, emission (row-major) inner,
+ * for deterministic contact order.
  */
 export function computeAwareness(
   ships: SimShip[],
   byId: Map<string, SimShip>,
   occluders: readonly Disc[],
   anomalies: readonly BattleAnomalyKind[],
+  medium?: { field: MediumField; state: MediumState },
+  tick?: number,
 ): AwarenessSnapshot {
   // Alive ships in instanceId order — the canonical order for every pass.
   const alive = [...ships]
@@ -154,7 +174,87 @@ export function computeAwareness(
   // A ship that died is not in `alive`; its ghosts/awareness are irrelevant
   // (it never targets again) and its stale awareness map is harmless.
 
-  return buildAwarenessSnapshot(alive, liveByShip, occluders, links);
+  // (g) Discrete, light-lagged medium-cell reception (battlefield-medium phase 4).
+  //     Each excited-cell emission is tested against every observer's baseline
+  //     receiver and sensor cones via `formsContact`. A contact that forms is
+  //     TRANSIENT: recorded for the snapshot but kept out of the targeting
+  //     `directContacts`/ghost path (a medium contact's synthetic enemyId never
+  //     resolves to a real ship, so targeting skips it — detecting a burn does
+  //     not lock a hull). Observer order is instanceId, emission order is the
+  //     row-major order `collectMediumEmissions` produced, so two same-seed runs
+  //     emit byte-identical contact rows. An occluder on the sight line blocks
+  //     reception regardless of strength, exactly as for continuous ship-ship
+  //     reception. Skipped entirely when no medium emissions are supplied.
+  const mediumContacts = collectMediumContacts(
+    alive,
+    medium,
+    tick,
+    occluders,
+    anomalies,
+  );
+
+  return buildAwarenessSnapshot(alive, liveByShip, occluders, links, mediumContacts);
+}
+
+/**
+ * The discrete, light-lagged medium-cell reception pass. For each observer (in
+ * instanceId order) test each medium-cell emission (in row-major order) via
+ * {@link mediumReceives} — which routes through `formsContact`, the expanding-
+ * light-sphere predicate — and collect a transient contact for every detection.
+ * An occluder on the observer→cell segment blocks reception. Returns contacts
+ * sorted by (observerId, enemyId) for a deterministic snapshot order; an empty
+ * array when no medium was supplied, the tick is absent, or no emission formed a
+ * contact.
+ *
+ * These contacts carry the cell's synthetic `medium#<col>_<row>` enemyId and the
+ * cell's world position as the contact fix. They are NOT added to the observers'
+ * `directContacts` or ghost memory — only to the snapshot — so targeting (which
+ * resolves enemyId against the real-ship map) and ghost refresh (which drops
+ * contacts whose enemyId is absent) are undisturbed.
+ */
+function collectMediumContacts(
+  alive: readonly SimShip[],
+  medium: { field: MediumField; state: MediumState } | undefined,
+  tick: number | undefined,
+  occluders: readonly Disc[],
+  anomalies: readonly BattleAnomalyKind[],
+): Contact[] {
+  if (medium === undefined || tick === undefined) return [];
+  const mediumEmissions = collectMediumEmissions(medium, tick);
+  if (mediumEmissions.length === 0) return [];
+  const out: Contact[] = [];
+  for (const observer of alive) {
+    for (const emission of mediumEmissions) {
+      // An occluder between the observer and the radiating cell blocks the
+      // light path, exactly as it blocks continuous ship-ship reception.
+      if (segmentBlocked(observer.x, observer.y, emission.x, emission.y, occluders)) continue;
+      if (mediumReceives(observer, emission, tick, anomalies) === undefined) continue;
+      out.push({
+        // The synthetic cell id; never matches a real ship instanceId, so
+        // targeting's visibleEnemyViews skips it (no hull to lock).
+        enemyId: emission.sourceId,
+        // The fix is light-lagged: it is the cell's position at the emission's
+        // birth tick, not where any source has since moved (a cell is stationary
+        // anyway). `formsContact` only fires on the tick the light sphere
+        // arrives, so this is genuinely where the radiation was emitted.
+        x: emission.x,
+        y: emission.y,
+        // A radiating cell has no facing; record a neutral 0 so the snapshot
+        // shape stays uniform with ship contacts.
+        facing: 0,
+        // Threat is distance-dominated; with no underlying ship cost, the score
+        // is just `-dist` (nearer cells score higher), which keeps snapshot row
+        // ordering by distance consistent with ship contacts.
+        threat: -Math.hypot(emission.x - observer.x, emission.y - observer.y),
+        origin: observer.instanceId,
+      });
+    }
+  }
+  out.sort((p, q) => {
+    if (p.origin !== q.origin) return p.origin < q.origin ? -1 : 1;
+    return p.enemyId < q.enemyId ? -1 : p.enemyId > q.enemyId ? 1 : 0;
+  });
+  return out;
 }
 
 /**
@@ -366,12 +466,16 @@ export function refreshGhostsAndAwareness(
 }
 
 /** Build the deterministic AwarenessSnapshot from the settled per-ship state.
- *  Every array is sorted by its canonical key. */
+ *  Every array is sorted by its canonical key. The optional `mediumContacts`
+ *  carry transient, light-lagged detections of radiating medium cells (phase 4);
+ *  they are appended to the snapshot's `contacts` (so the renderer/AI can show
+ *  the EM event) with the observer's side resolved from the live set. */
 export function buildAwarenessSnapshot(
   alive: readonly SimShip[],
   liveByShip: ReadonlyMap<string, Map<string, Contact>>,
   occluders: readonly Disc[],
   links: readonly CommsLink[],
+  mediumContacts: readonly Contact[] = [],
 ): AwarenessSnapshot {
   // Occluders: emit verbatim (computeOccluders already returns a fixed order).
   const snapOccluders = occluders.map((d) => ({ x: d.x, y: d.y, r: d.r }));
@@ -404,8 +508,12 @@ export function buildAwarenessSnapshot(
   // Contacts (live fixes only) + ghosts (surviving memories) per observer.
   const contacts: AwarenessSnapshot["contacts"] = [];
   const ghosts: AwarenessSnapshot["ghosts"] = [];
+  // Observer → side lookup, so the transient medium contacts below can carry
+  // their observer's side without a second pass over the live set.
+  const sideByObserver = new Map<string, "attacker" | "defender">();
   for (const ship of alive) {
     const live = liveByShip.get(ship.instanceId) ?? new Map();
+    sideByObserver.set(ship.instanceId, ship.side);
     for (const [enemyId, c] of live) {
       contacts.push({
         side: ship.side,
@@ -425,6 +533,23 @@ export function buildAwarenessSnapshot(
         ticksLeft: g.ticksLeft,
       });
     }
+  }
+  // Transient medium-cell contacts (phase 4): light-lagged detections of
+  // radiating cells. Appended after the ship-ship contacts; a single sort by
+  // (side, observerId, enemyId) folds them into canonical row order alongside
+  // the ship contacts. An observer that died this tick is absent from
+  // `sideByObserver`, so its medium contacts (if any were collected before death
+  // — they cannot be, `collectMediumContacts` iterates only `alive`) are dropped.
+  for (const c of mediumContacts) {
+    const side = sideByObserver.get(c.origin);
+    if (side === undefined) continue;
+    contacts.push({
+      side,
+      observerId: c.origin,
+      enemyId: c.enemyId,
+      x: c.x,
+      y: c.y,
+    });
   }
   contacts.sort(awarenessRowOrder);
   ghosts.sort(awarenessRowOrder);
