@@ -6,9 +6,15 @@ import { hullRadiusWorld } from "@/ui/cellLayout";
 /** Inner-edge padding (display px) kept around the battle at fit zoom (zoom = 1). */
 export const CAMERA_PAD = 40;
 
-/** Camera clamp: how far in/out the wheel can zoom relative to the auto-fit scale. */
-export const ZOOM_MIN = 0.25;
-export const ZOOM_MAX = 12;
+/**
+ * Camera clamp limits. The close end is an absolute physical granularity — the
+ * closest view the camera ever shows, regardless of the battle's spread — so a
+ * 1 m cell tops out at `MAX_PX_PER_M` display pixels. The far end has no
+ * meaningful physical limit (space is big), so it stays relative to the
+ * break-out baseline: `ZOOM_OUT_FLOOR` of the framed view.
+ */
+export const MAX_PX_PER_M = 32;
+export const ZOOM_OUT_FLOOR = 0.25;
 
 export interface Bounds {
   minX: number;
@@ -29,13 +35,14 @@ export interface Bounds {
  * The manual fields are absolute, not relative to a whole-battle fit — that
  * matters because in a spread-out battle (e.g. ships flung wide by a black
  * hole) the live-ships view is a much tighter scale than the whole-battle fit,
- * far beyond what a fit-multiplier in `[ZOOM_MIN, ZOOM_MAX]` could express:
+ * far beyond what a fit-multiplier could express:
  *  - `baseScale` is the display px-per-world-unit captured at the moment of
  *    breaking out (the auto-fit scale then), so the manual view picks up exactly
  *    where the auto-fit left off.
  *  - `zoom` multiplies `baseScale` (1 at break-out — the readout reads 100%
- *    there); the wheel and +/- clamp it to `[ZOOM_MIN, ZOOM_MAX]` of the break-
- *    out baseline.
+ *    there); the wheel and +/- clamp it so `baseScale * zoom` stays within an
+ *    absolute close limit (`MAX_PX_PER_M`) and a relative far floor
+ *    (`ZOOM_OUT_FLOOR` of the break-out baseline).
  *  - `centreX`/`centreY` are the world point at the canvas centre.
  *  - `followId` pins the centre to a ship's live position each frame.
  *  - `projection` is the world-to-screen plane mapping: "flat" top-down or
@@ -202,7 +209,7 @@ export function liveShipsBounds(
 }
 
 /** Pad a live-ships box with the framing margin. */
-function padLiveBounds(b: Bounds): Bounds {
+export function padLiveBounds(b: Bounds): Bounds {
   const padX = (b.maxX - b.minX) * LIVE_FIT_MARGIN_FRACTION + CELL_SIZE * LIVE_FIT_MARGIN_CELLS;
   const padY = (b.maxY - b.minY) * LIVE_FIT_MARGIN_FRACTION + CELL_SIZE * LIVE_FIT_MARGIN_CELLS;
   return {
@@ -234,7 +241,11 @@ export function resolveViewTransform(
     const live = liveShipsBounds(frame, descriptors);
     const box = live !== null ? padLiveBounds(live) : staticBounds;
     const c = boundsCentre(box);
-    return makeTransform(width, height, fitScale(width, height, box), c.x, c.y, projection);
+    // Cap auto-fit at the absolute close limit so a lone surviving ship does not
+    // over-zoom past MAX_PX_PER_M (which would also make break-out jump on the
+    // first scroll). The close limit is metres-based, not relative to this frame.
+    const fit = Math.min(fitScale(width, height, box), MAX_PX_PER_M);
+    return makeTransform(width, height, fit, c.x, c.y, projection);
   }
   const followPos =
     camera.followId !== null
@@ -273,9 +284,17 @@ export function screenToWorld(t: Transform, px: number, py: number): { x: number
   return { x: t.centreX + d.x, y: t.centreY + d.y };
 }
 
-/** Clamp a zoom value to the camera's allowed range. */
-export function clampZoom(zoom: number): number {
-  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom));
+/**
+ * Clamp a zoom multiplier so the absolute display scale (`baseScale * zoom`)
+ * stays in range. The close limit is absolute — `MAX_PX_PER_M`, a fixed physical
+ * granularity independent of the break-out baseline. The far limit is relative
+ * to the baseline (space has no meaningful far limit), so the floor scales with
+ * `baseScale`. Returns the clamped multiplier (`clampedScale / baseScale`).
+ */
+export function clampZoom(zoom: number, baseScale: number): number {
+  const scale = baseScale * zoom;
+  const minScale = baseScale * ZOOM_OUT_FLOOR;
+  return Math.min(MAX_PX_PER_M, Math.max(minScale, scale)) / baseScale;
 }
 
 /**

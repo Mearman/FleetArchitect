@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  clampZoom,
   DEFAULT_CAMERA,
+  fitScale,
   FLAT_PROJECTION,
   ISO_PROJECTION,
   liveShipsBounds,
   makeTransform,
   manualCameraFrom,
+  MAX_PX_PER_M,
+  padLiveBounds,
   resolveViewTransform,
   screenToWorld,
 } from "./battleCamera";
@@ -111,6 +115,16 @@ describe("battleCamera", () => {
       const t = resolveViewTransform(800, 600, WIDE_BOUNDS, cam, frame, NO_DESCRIPTORS);
       expect(t.centreX).toBe(10);
       expect(t.centreY).toBe(20);
+    });
+
+    it("auto-fit caps at the metres-based close limit for a tight cluster", () => {
+      const frame = frameWith([{ id: "a", x: 0, y: 0, alive: true }]);
+      const live = liveShipsBounds(frame, NO_DESCRIPTORS);
+      expect(live).not.toBeNull();
+      // The uncapped fit would push well past MAX_PX_PER_M for a lone ship.
+      expect(fitScale(1920, 1080, padLiveBounds(live!))).toBeGreaterThan(MAX_PX_PER_M);
+      const t = resolveViewTransform(1920, 1080, WIDE_BOUNDS, DEFAULT_CAMERA, frame, NO_DESCRIPTORS);
+      expect(t.scale).toBe(MAX_PX_PER_M);
     });
   });
 
@@ -232,6 +246,23 @@ describe("battleCamera", () => {
       expect(t1.scale).toBe(t0.scale);
       expect(t1.centreX).toBe(t0.centreX);
       expect(t1.centreY).toBe(t0.centreY);
+    });
+  });
+
+  describe("clampZoom", () => {
+    it("clamps the absolute scale to the metres-based close limit", () => {
+      // baseScale 10 * zoom 5 = 50 px/m, above MAX_PX_PER_M (32) -> 32, i.e. zoom 3.2.
+      expect(clampZoom(5, 10)).toBeCloseTo(3.2, 6);
+    });
+
+    it("clamps to the relative far floor when zooming out", () => {
+      // baseScale 10 * zoom 0.1 = 1 px/m, below the floor (10 * 0.25 = 2.5) -> 2.5, i.e. zoom 0.25.
+      expect(clampZoom(0.1, 10)).toBeCloseTo(0.25, 6);
+    });
+
+    it("passes the zoom through when the absolute scale is in range", () => {
+      // baseScale 4 * zoom 2 = 8 px/m, within [1, 32] -> unchanged zoom 2.
+      expect(clampZoom(2, 4)).toBe(2);
     });
   });
 });

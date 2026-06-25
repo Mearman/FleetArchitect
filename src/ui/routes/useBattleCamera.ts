@@ -179,7 +179,7 @@ export function useBattleCamera({
         // zoom = 1) rather than snapping to the whole-battle scale.
         const base = cam.autoFit ? manualCameraFrom(resolved.t) : cam;
         const factor = Math.exp(-e.deltaY * 0.0015);
-        const nextZoom = clampZoom(base.zoom * factor);
+        const nextZoom = clampZoom(base.zoom * factor, base.baseScale);
         if (nextZoom === base.zoom && !cam.autoFit) return cam;
         // While following, keep the ship centred (zoom toward it, not the
         // cursor). Otherwise zoom toward the cursor: keep the world point under
@@ -298,7 +298,7 @@ export function useBattleCamera({
         const base = cam.autoFit && resolved !== undefined
           ? manualCameraFrom(resolved.t)
           : cam;
-        const nextZoom = clampZoom(base.zoom * factor);
+        const nextZoom = clampZoom(base.zoom * factor, base.baseScale);
         if (nextZoom === base.zoom && !cam.autoFit) return cam;
         return { ...base, autoFit: false, zoom: nextZoom };
       });
@@ -318,6 +318,5 @@ export function useBattleCamera({
     resetCamera,
     restoreAutoFit,
     zoomBy,
-    clampZoom,
   };
 }
