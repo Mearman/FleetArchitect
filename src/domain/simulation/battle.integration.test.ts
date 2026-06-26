@@ -5,6 +5,7 @@ import { catalog } from "@/data/catalog";
 import { createId, nowIso } from "@/domain/id";
 import { defaultOrders } from "@/schema/fleet";
 import type { Fleet } from "@/schema/fleet";
+import { flatFormation } from "@/schema/formation";
 import type { CellEdges, GridCell } from "@/schema/grid";
 import type { ShipDesign } from "@/schema/ship";
 
@@ -56,7 +57,7 @@ function fleet(id: string, designId: string): Fleet {
     id,
     name: id,
     faction: "Terran",
-    ships: [
+    formation: flatFormation([
       {
         designId,
         position: { x: -300, y: -80 },
@@ -69,7 +70,7 @@ function fleet(id: string, designId: string): Fleet {
         facing: 0,
         orders: { ...defaultOrders },
       },
-    ],
+    ]),
     createdAt: nowIso(),
     updatedAt: nowIso(),
     source: "user",

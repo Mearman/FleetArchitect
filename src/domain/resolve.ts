@@ -10,6 +10,7 @@ import type {
   ResolvedModule,
 } from "@/domain/simulation/types";
 import type { Fleet } from "@/schema/fleet";
+import { flattenShipLeaves } from "@/schema/formation";
 import type { CellEdges, GridCell, SurfaceKind } from "@/schema/grid";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipDesign } from "@/schema/ship";
@@ -260,8 +261,12 @@ export function resolveFleetToCombatShips(
 ): CombatShip[] {
   // Resolve every deployable design first, carrying its radius and weapon
   // effects so the column can be spaced by actual ship size and the edge
-  // inset derived from the fleet's longest weapon reach.
-  const resolved = fleet.ships
+  // inset derived from the fleet's longest weapon reach. The formation tree is
+  // flattened in pre-order DFS — for a flat root of ship leaves (no layout) this
+  // is exactly the legacy `fleet.ships` order, so the column and every
+  // instanceId are byte-identical to the pre-formation resolve.
+  const deployedShips = flattenShipLeaves(fleet.formation);
+  const resolved = deployedShips
     .map((deployed) => {
       const design = designs.get(deployed.designId);
       if (design === undefined) return undefined;

@@ -6,6 +6,7 @@ import { catalog } from "@/data/catalog";
 import { nowIso } from "@/domain/id";
 import { defaultOrders } from "@/schema/fleet";
 import type { Fleet } from "@/schema/fleet";
+import { flatFormation } from "@/schema/formation";
 import type { CellEdges, TileGrid } from "@/schema/grid";
 import type { ShipDesign } from "@/schema/ship";
 
@@ -44,9 +45,9 @@ function fleet(): Fleet {
     id: "f-1",
     name: "F",
     faction: "Terran",
-    ships: [
+    formation: flatFormation([
       { designId: "d-1", position: { x: -100, y: 20 }, facing: 0, orders: { ...defaultOrders } },
-    ],
+    ]),
     createdAt: nowIso(),
     updatedAt: nowIso(),
     source: "user",

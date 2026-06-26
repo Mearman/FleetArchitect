@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { notifications } from "@mantine/notifications";
 import type { Fleet } from "@/schema/fleet";
+import { flattenShipLeaves } from "@/schema/formation";
 import type { ShipDesign } from "@/schema/ship";
 import type { BattleAnomalyKind } from "@/schema/battle";
 import {
@@ -26,7 +27,10 @@ function referencedDesigns(
   designs: readonly ShipDesign[],
 ): ShipDesign[] {
   const ids = new Set<string>();
-  for (const ship of [...attacker.ships, ...defender.ships]) {
+  for (const ship of [
+    ...flattenShipLeaves(attacker.formation),
+    ...flattenShipLeaves(defender.formation),
+  ]) {
     ids.add(ship.designId);
   }
   return designs.filter((d) => ids.has(d.id));

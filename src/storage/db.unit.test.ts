@@ -25,6 +25,7 @@ import {
 import { createId, nowIso } from "@/domain/id";
 import { defaultOrders } from "@/schema/fleet";
 import type { Fleet } from "@/schema/fleet";
+import { flatFormation } from "@/schema/formation";
 import type { ShipDesign } from "@/schema/ship";
 
 // ---------------------------------------------------------------------------
@@ -87,14 +88,14 @@ function sampleFleet(designId: string, overrides?: Partial<Fleet>): Fleet {
     id: createId("fleet"),
     name: "Test Fleet",
     faction: "Terran",
-    ships: [
+    formation: flatFormation([
       {
         designId,
         position: { x: 0, y: 0 },
         facing: 0,
         orders: { ...defaultOrders },
       },
-    ],
+    ]),
     createdAt: nowIso(),
     updatedAt: nowIso(),
     source: "user",

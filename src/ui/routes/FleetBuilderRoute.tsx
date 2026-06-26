@@ -35,6 +35,7 @@ import {
   defaultOrders,
 } from "@/schema/fleet";
 import type { Fleet, FleetShip, Orders } from "@/schema/fleet";
+import { flatFormation, flattenShipLeaves } from "@/schema/formation";
 import type { ShipDesign } from "@/schema/ship";
 import { panelLabel } from "@/ui/components/panel.css";
 import { hardwareKey } from "@/ui/theme/controls.css";
@@ -184,7 +185,7 @@ export function FleetBuilderRoute() {
       id: working.id ?? createId("fleet"),
       name: working.name.trim() || "Untitled Fleet",
       faction: working.faction.trim() || "Unaligned",
-      ships: working.rows.map(toFleetShip),
+      formation: flatFormation(working.rows.map(toFleetShip)),
       createdAt: working.createdAt ?? now,
       updatedAt: now,
       source: "user",
@@ -215,7 +216,10 @@ export function FleetBuilderRoute() {
       createdAt: fleet.createdAt,
       name: fleet.name,
       faction: fleet.faction,
-      rows: fleet.ships.map((ship) => ({ ...ship, rowId: createId("row") })),
+      rows: flattenShipLeaves(fleet.formation).map((ship) => ({
+        ...ship,
+        rowId: createId("row"),
+      })),
     });
   }
 
@@ -368,7 +372,7 @@ export function FleetBuilderRoute() {
                       id: working.id ?? "draft",
                       name: working.name || "Untitled",
                       faction: working.faction || "Unaligned",
-                      ships: working.rows.map(toFleetShip),
+                      formation: flatFormation(working.rows.map(toFleetShip)),
                       createdAt: working.createdAt ?? nowIso(),
                       updatedAt: nowIso(),
                       source: "user",

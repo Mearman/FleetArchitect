@@ -2,6 +2,7 @@ import Dexie, { type DexieOptions, type Table } from "dexie";
 import type { BattleFrame, BattleResult } from "@/schema/battle";
 import type { EngineCheckpoint } from "@/schema/checkpoint";
 import type { Fleet } from "@/schema/fleet";
+import { parseFleetRecord } from "@/schema/fleet-normalise";
 import { z } from "zod";
 import { ShipDesign, DesignSource } from "@/schema/ship";
 import { EntityId } from "@/schema/primitives";
@@ -153,21 +154,6 @@ export function _setDatabaseForTesting(instance: FleetArchitectDatabase): void {
  */
 export { FleetArchitectDatabase };
 
-function makeRepository<T extends { id: string }>(
-  table: Table<T, string>,
-): Repository<T> {
-  return {
-    list: () => table.toArray(),
-    get: (id) => table.get(id),
-    save: async (entity) => {
-      await table.put(entity);
-    },
-    remove: async (id) => {
-      await table.delete(id);
-    },
-  };
-}
-
 /**
  * Repository over ship designs. Designs are stored in the compacted
  * serialisation shape (solid cells may omit all-open `edges`) and reparsed
@@ -192,11 +178,33 @@ function makeShipRepository(
   };
 }
 
+/**
+ * Repository over fleets. Each record is parsed through {@link parseFleetRecord}
+ * on read so a legacy `ships[]` record (written before the formation overhaul)
+ * is lifted to the formation-tree shape and validated, and every consumer sees a
+ * current-shape Fleet. Mirrors the ship repository's parse-on-read contract.
+ */
+function makeFleetRepository(table: Table<Fleet, string>): Repository<Fleet> {
+  return {
+    list: async () => (await table.toArray()).map(parseFleetRecord),
+    get: async (id) => {
+      const record = await table.get(id);
+      return record === undefined ? undefined : parseFleetRecord(record);
+    },
+    save: async (entity) => {
+      await table.put(entity);
+    },
+    remove: async (id) => {
+      await table.delete(id);
+    },
+  };
+}
+
 export function createStorage(): Storage {
   const instance = database();
   return {
     ships: makeShipRepository(instance.ships),
-    fleets: makeRepository(instance.fleets),
+    fleets: makeFleetRepository(instance.fleets),
   };
 }
 
@@ -378,14 +386,16 @@ export async function saveFleet(fleet: Fleet): Promise<void> {
  * Load a fleet by id. Returns undefined if not found.
  */
 export async function loadFleet(id: string): Promise<Fleet | undefined> {
-  return database().fleets.get(id);
+  const record = await database().fleets.get(id);
+  return record === undefined ? undefined : parseFleetRecord(record);
 }
 
 /**
  * List all fleets.
  */
 export async function listFleets(): Promise<Fleet[]> {
-  return database().fleets.toArray();
+  const records = await database().fleets.toArray();
+  return records.map(parseFleetRecord);
 }
 
 /**
@@ -400,10 +410,11 @@ export async function deleteFleet(id: string): Promise<void> {
  * and revision to 1, and saves the copy. Returns the new record.
  */
 export async function copyFleet(id: string): Promise<Fleet> {
-  const original = await database().fleets.get(id);
-  if (original === undefined) {
+  const stored = await database().fleets.get(id);
+  if (stored === undefined) {
     throw new Error(`Fleet not found: ${id}`);
   }
+  const original = parseFleetRecord(stored);
   const copy: Fleet = {
     ...original,
     id: createId("fleet"),
@@ -467,7 +478,9 @@ export async function listFleetRevisions(id: string): Promise<Fleet[]> {
     .fleet_revisions.where("id")
     .equals(id)
     .toArray();
-  return revisions.sort((a, b) => b.revision - a.revision);
+  return revisions
+    .map(parseFleetRecord)
+    .sort((a, b) => b.revision - a.revision);
 }
 
 /**
@@ -479,14 +492,15 @@ export async function restoreFleetRevision(
   id: string,
   revision: number,
 ): Promise<Fleet> {
-  const snapshot = await database().fleet_revisions.get([id, revision]);
-  if (snapshot === undefined) {
+  const snapshotRecord = await database().fleet_revisions.get([id, revision]);
+  if (snapshotRecord === undefined) {
     throw new Error(`No revision ${revision} found for fleet ${id}`);
   }
+  const snapshot = parseFleetRecord(snapshotRecord);
   await saveFleet({ ...snapshot, updatedAt: nowIso() });
   const restored = await database().fleets.get(id);
   if (restored === undefined) {
     throw new Error(`Fleet ${id} not found after restore`);
   }
-  return restored;
+  return parseFleetRecord(restored);
 }

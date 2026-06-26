@@ -7,6 +7,7 @@ import { Fleet, FleetShip, Orders, defaultOrders } from "@/schema/fleet";
 import { ShipDesign } from "@/schema/ship";
 import type { TileGrid } from "@/schema/grid";
 import { BattleAnomalyKind } from "@/schema/battle";
+import { flatFormation, flattenShipLeaves } from "@/schema/formation";
 import { decodeGrid, encodeGrid } from "@/sharing/grid-codec";
 
 /**
@@ -240,7 +241,10 @@ function compactFleet(
   return {
     n: fleet.name,
     f: fleet.faction,
-    s: fleet.ships.map((ship) => {
+    // Flatten the formation tree to its ship leaves; the compact wire form is a
+    // flat ship list (a flat root formation round-trips losslessly), so the
+    // shared payload stays small and a v3 URL decodes unchanged.
+    s: flattenShipLeaves(fleet.formation).map((ship) => {
       const index = designIndexById?.get(ship.designId);
       const designRef = index ?? ship.designId;
       return {
@@ -270,7 +274,9 @@ function rebuildFleet(entry: CompactFleet): Fleet {
     id: `f-${entry.n}`,
     name: entry.n,
     faction: entry.f,
-    ships: entry.s.map(rebuildFleetShip),
+    // Rebuild the flat ship list into a flat root formation (the deployment
+    // column), matching the flattened encode above so a share round-trips.
+    formation: flatFormation(entry.s.map(rebuildFleetShip)),
     createdAt: SYNTHETIC_TIMESTAMP,
     updatedAt: SYNTHETIC_TIMESTAMP,
     source: SYNTHETIC_SOURCE,

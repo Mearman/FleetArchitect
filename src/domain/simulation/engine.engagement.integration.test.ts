@@ -6,6 +6,7 @@ import { catalog } from "@/data/catalog";
 import { createId, nowIso } from "@/domain/id";
 import { defaultOrders } from "@/schema/fleet";
 import type { Fleet } from "@/schema/fleet";
+import { flatFormation } from "@/schema/formation";
 import type { CellEdges, GridCell } from "@/schema/grid";
 import type { ShipDesign } from "@/schema/ship";
 
@@ -61,14 +62,16 @@ function fleetOf(id: string, designId: string, x: number, ys: readonly number[])
     id,
     name: id,
     faction: "Terran",
-    ships: ys.map((y) => ({
-      designId,
-      position: { x, y },
-      facing: 0,
-      // Aggressive, short-range orders so the fleets commit to a point-blank
-      // brawl rather than kiting at range — the engagement we want to assert.
-      orders: { ...defaultOrders, engageRange: "short", stance: "aggressive" },
-    })),
+    formation: flatFormation(
+      ys.map((y) => ({
+        designId,
+        position: { x, y },
+        facing: 0,
+        // Aggressive, short-range orders so the fleets commit to a point-blank
+        // brawl rather than kiting at range — the engagement we want to assert.
+        orders: { ...defaultOrders, engageRange: "short", stance: "aggressive" },
+      })),
+    ),
     createdAt: nowIso(),
     updatedAt: nowIso(),
     source: "user",

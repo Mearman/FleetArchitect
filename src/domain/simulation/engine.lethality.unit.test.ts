@@ -4,6 +4,7 @@ import { runBattle } from "@/domain/simulation/engine";
 import { catalog } from "@/data/catalog";
 import { presetDesigns, presetFleets } from "@/data/presets";
 import { Fleet, defaultOrders } from "@/schema/fleet";
+import { flatFormation } from "@/schema/formation";
 import type { BattleInputs } from "@/domain/simulation/types";
 import type { BattleResult } from "@/schema/battle";
 
@@ -202,16 +203,18 @@ describe("engine.lethality — fast uncapped terminal-state guard", () => {
       id,
       name: id,
       faction,
-      ships: designIds.map((designId, i) => ({
-        designId,
-        position: { x: baseX, y: (i - (designIds.length - 1) / 2) * 40 },
-        facing,
-        orders: {
-          ...defaultOrders,
-          stance: "aggressive",
-          engageRange: "short",
-        },
-      })),
+      formation: flatFormation(
+        designIds.map((designId, i) => ({
+          designId,
+          position: { x: baseX, y: (i - (designIds.length - 1) / 2) * 40 },
+          facing,
+          orders: {
+            ...defaultOrders,
+            stance: "aggressive",
+            engageRange: "short",
+          },
+        })),
+      ),
       createdAt: "2025-01-01T00:00:00.000Z",
       updatedAt: "2025-01-01T00:00:00.000Z",
       source: "user",

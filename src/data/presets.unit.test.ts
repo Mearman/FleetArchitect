@@ -10,6 +10,7 @@ import { presetDesigns, presetFleets } from "@/data/presets";
 import type { ShipClassification } from "@/schema/armor";
 import type { SolidCell } from "@/schema/grid";
 import type { Fleet } from "@/schema/fleet";
+import { flattenShipLeaves } from "@/schema/formation";
 import type { CombatShip } from "@/domain/simulation/types";
 
 describe("bundled presets", () => {
@@ -29,7 +30,7 @@ describe("bundled presets", () => {
 
   it("gives every preset fleet at least one weapon-bearing ship", () => {
     for (const fleet of presetFleets) {
-      const armed = fleet.ships.some((ship) => {
+      const armed = flattenShipLeaves(fleet.formation).some((ship) => {
         const design = presetDesigns.find((d) => d.id === ship.designId);
         if (design === undefined) return false;
         return analyseShipDesign(design, catalog()).stats.weapons.length > 0;
@@ -46,7 +47,10 @@ describe("bundled presets", () => {
     };
 
     for (const fleet of presetFleets) {
-      const total = fleet.ships.reduce((sum, ship) => sum + costOf(ship.designId), 0);
+      const total = flattenShipLeaves(fleet.formation).reduce(
+        (sum, ship) => sum + costOf(ship.designId),
+        0,
+      );
       expect(total, `${fleet.name} exceeds the budget`).toBeLessThanOrEqual(DEFAULT_FLEET_BUDGET);
     }
   });
@@ -54,7 +58,7 @@ describe("bundled presets", () => {
   it("references only preset designs in every fleet ship", () => {
     const designIds = new Set(presetDesigns.map((d) => d.id));
     for (const fleet of presetFleets) {
-      for (const ship of fleet.ships) {
+      for (const ship of flattenShipLeaves(fleet.formation)) {
         expect(designIds.has(ship.designId), `${fleet.name} references ${ship.designId}`).toBe(true);
       }
     }

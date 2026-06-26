@@ -120,3 +120,40 @@ export const Formation: z.ZodType<Formation> = z.lazy(() =>
     children: z.array(FormationNode),
   }),
 );
+
+/**
+ * A flat root formation: one whose direct children are ship leaves laid out as
+ * the legacy deployment column (no `layout`). This is the shape a lifted legacy
+ * fleet resolves to, the shape the fleet builder authors, and the byte-identical
+ * column path through the resolver. `id: "root"` is the conventional label for a
+ * fleet's top formation (formation ids drive nothing until the doctrine pass).
+ */
+export function flatFormation(ships: readonly FleetShip[]): Formation {
+  return {
+    id: "root",
+    doctrine: { base: {}, rules: [] },
+    children: ships.map((ship) => ({ kind: "ship", ship })),
+  };
+}
+
+/**
+ * Collect every ship leaf of a formation tree in pre-order DFS. The resolver
+ * lays these out as the deployment column in this order, so for a flat root
+ * formation the result is exactly the legacy `Fleet.ships` array order. The
+ * fleet builder also uses it to populate its flat roster from a loaded fleet.
+ * `template` nodes are not expanded here — they are inlined into the tree before
+ * resolve (see `expandTemplates`), so an unexpanded template node is skipped.
+ */
+export function flattenShipLeaves(formation: Formation): FleetShip[] {
+  const out: FleetShip[] = [];
+  const walk = (node: FormationNode): void => {
+    if (node.kind === "ship") {
+      out.push(node.ship);
+    } else if (node.kind === "formation") {
+      for (const child of node.formation.children) walk(child);
+    }
+    // kind === "template": expanded before resolve; nothing to collect here.
+  };
+  for (const child of formation.children) walk(child);
+  return out;
+}

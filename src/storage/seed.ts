@@ -81,8 +81,14 @@ import {
  * Version 15: OutlineMode is removed — the hull is always traced octilinearly,
  * so the grid's `shape` field is dropped. A legacy `shape` on older records is
  * ignored on parse; this bump reseeds so preset records no longer carry it.
+ *
+ * Version 16: formations — a fleet is now a formation tree (`formation`), not a
+ * flat `ships[]` array. Every preset fleet is re-authored as a flat root
+ * formation (ship leaves, no layout), which resolves to the same deployment
+ * column, so a reseeded fleet fights identically. This bump replaces the prior
+ * `ships[]`-shaped preset records with the formation-shaped ones.
  */
-const PRESETS_VERSION = 15;
+const PRESETS_VERSION = 16;
 const VERSION_KEY = "presetsVersion";
 
 /**

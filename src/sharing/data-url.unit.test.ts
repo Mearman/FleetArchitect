@@ -10,6 +10,7 @@ import {
 import { createId, nowIso } from "@/domain/id";
 import { defaultOrders } from "@/schema/fleet";
 import type { Fleet } from "@/schema/fleet";
+import { flatFormation, flattenShipLeaves } from "@/schema/formation";
 import type { ShipDesign } from "@/schema/ship";
 import { presetDesigns, presetFleets } from "@/data/presets";
 import { resolveFleetToCombatShips } from "@/domain/resolve";
@@ -64,7 +65,7 @@ describe("sharing round-trip (replay-relevant data)", () => {
       id: createId("fleet"),
       name: "Strike Wing",
       faction: "Terran",
-      ships: [
+      formation: flatFormation([
         {
           designId: "preset-ship-gunship",
           position: { x: 10, y: 20 },
@@ -76,12 +77,13 @@ describe("sharing round-trip (replay-relevant data)", () => {
             retreatThreshold: 0.4,
           },
         },
-      ],
+      ]),
       createdAt: nowIso(),
       updatedAt: nowIso(),
       source: "user",
       revision: 1,
     };
+    const originalShips = flattenShipLeaves(fleet.formation);
     const encoded = encodeShareable({ kind: "fleet", value: fleet });
     const decoded = decodeShareable(encoded);
     if (decoded.kind !== "fleet") {
@@ -89,14 +91,15 @@ describe("sharing round-trip (replay-relevant data)", () => {
     }
     expect(decoded.value.name).toBe(fleet.name);
     expect(decoded.value.faction).toBe(fleet.faction);
-    expect(decoded.value.ships).toHaveLength(1);
-    const ship = decoded.value.ships[0];
+    const decodedShips = flattenShipLeaves(decoded.value.formation);
+    expect(decodedShips).toHaveLength(1);
+    const ship = decodedShips[0];
     if (ship === undefined) throw new Error("expected a fleet ship");
     // A standalone fleet share keeps the original design id string.
     expect(ship.designId).toBe("preset-ship-gunship");
     expect(ship.position).toEqual({ x: 10, y: 20 });
     expect(ship.facing).toBe(1.25);
-    expect(ship.orders).toEqual(fleet.ships[0]?.orders);
+    expect(ship.orders).toEqual(originalShips[0]?.orders);
   });
 
   it("round-trips a whole battle's grids, factions, composition, orders, anomalies and seed", () => {
@@ -105,14 +108,14 @@ describe("sharing round-trip (replay-relevant data)", () => {
       id: createId("fleet"),
       name,
       faction: "Terran",
-      ships: [
+      formation: flatFormation([
         {
           designId: design.id,
           position: { x: -100, y: 0 },
           facing: 0,
           orders: { ...defaultOrders, engageRange: "long" },
         },
-      ],
+      ]),
       createdAt: nowIso(),
       updatedAt: nowIso(),
       source: "user",
@@ -140,9 +143,15 @@ describe("sharing round-trip (replay-relevant data)", () => {
     expect(value.defender.faction).toBe("Terran");
     // The single design is remapped to index 0 -> synthesised id "d0", and
     // every fleet ship's designId rewritten to match.
-    expect(value.attacker.ships[0]?.designId).toBe(value.designs[0]?.id);
-    expect(value.defender.ships[0]?.designId).toBe(value.designs[0]?.id);
-    expect(value.attacker.ships[0]?.orders.engageRange).toBe("long");
+    expect(flattenShipLeaves(value.attacker.formation)[0]?.designId).toBe(
+      value.designs[0]?.id,
+    );
+    expect(flattenShipLeaves(value.defender.formation)[0]?.designId).toBe(
+      value.designs[0]?.id,
+    );
+    expect(flattenShipLeaves(value.attacker.formation)[0]?.orders.engageRange).toBe(
+      "long",
+    );
   });
 
   it("rejects an older share version with ShareDecodeError", () => {
@@ -172,7 +181,10 @@ function presetBattle(): BattleShare {
   // Arena encodes (see useBattleUrlSync's referencedDesigns). Encoding the whole
   // 25-design preset library here would be unrepresentative of a real share.
   const referenced = new Set(
-    [...attacker.ships, ...defender.ships].map((s) => s.designId),
+    [
+      ...flattenShipLeaves(attacker.formation),
+      ...flattenShipLeaves(defender.formation),
+    ].map((s) => s.designId),
   );
   return {
     attacker,
@@ -193,10 +205,23 @@ function presetBattle(): BattleShare {
  */
 function smallBattle(): BattleShare {
   const full = presetBattle();
-  const attacker = { ...full.attacker, ships: full.attacker.ships.slice(0, 1) };
-  const defender = { ...full.defender, ships: full.defender.ships.slice(0, 1) };
+  const attacker = {
+    ...full.attacker,
+    formation: flatFormation(
+      flattenShipLeaves(full.attacker.formation).slice(0, 1),
+    ),
+  };
+  const defender = {
+    ...full.defender,
+    formation: flatFormation(
+      flattenShipLeaves(full.defender.formation).slice(0, 1),
+    ),
+  };
   const refIds = new Set(
-    [...attacker.ships, ...defender.ships].map((s) => s.designId),
+    [
+      ...flattenShipLeaves(attacker.formation),
+      ...flattenShipLeaves(defender.formation),
+    ].map((s) => s.designId),
   );
   return {
     ...full,

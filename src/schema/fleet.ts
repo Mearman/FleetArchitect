@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { EntityId, Vec2, IsoTimestamp } from "./primitives";
+import { Formation } from "./formation";
 
 /** Doctrine controlling how a ship behaves once battle begins (no twitch). */
 export const EngagementStance = z.enum([
@@ -109,8 +110,15 @@ export const FleetSource = z.enum(["preset", "user"]);
 export type FleetSource = z.infer<typeof FleetSource>;
 
 /**
- * A fleet: a named set of deployed ships. The unit of persistence and sharing
- * for force composition, and the input to a battle.
+ * A fleet: a named formation tree of deployed ships. The unit of persistence
+ * and sharing for force composition, and the input to a battle.
+ *
+ * A fleet is a single root {@link Formation} whose children are ship leaves (the
+ * atomic unit — a lone ship needs no wrapping asset), nested sub-formations, or
+ * references to a reusable formation template (expanded inline before resolve).
+ * A flat root of ship leaves with no `layout` resolves to the legacy deployment
+ * column byte-identically, so a fleet lifted from the former flat `ships[]` form
+ * fights exactly as before.
  *
  * `source` and `revision` are additive (`.default()`-ed) so existing fleets
  * parse unchanged. They mirror {@link ShipDesign}'s provenance fields: preset
@@ -121,7 +129,12 @@ export const Fleet = z.object({
   id: EntityId,
   name: z.string().min(1),
   faction: z.string().min(1),
-  ships: z.array(FleetShip).min(1),
+  // `Formation` is a live binding resolved through the fleet.ts ↔ formation.ts
+  // import cycle; wrap it in z.lazy so the reference is read at parse time
+  // (after both modules have finished initialising), not at schema-construction
+  // time when the binding is still undefined. Mirrors the deferred `FleetShip`
+  // reference inside formation.ts's own z.lazy.
+  formation: z.lazy(() => Formation),
   createdAt: IsoTimestamp,
   updatedAt: IsoTimestamp,
   /** Whether this record is a bundled preset or a player-authored fleet. */
