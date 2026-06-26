@@ -12,8 +12,15 @@ interface PinchZoomOptions {
   max: number;
   /** Current zoomed cell pitch in px (the nominal pitch times the zoom). */
   cellPx: number;
-  /** Built-content box in cell units: centre (half-cell precision) and extent. */
-  content: { centreCol: number; centreRow: number; cols: number; rows: number };
+  /** The board grid's dimensions. The board is pinned to its own centre, which
+   *  is stable across paints (only a zoom/viewport re-fit changes grid dims), so
+   *  editing the ship never slides it out from under the cursor. The fit effect
+   *  keeps the built content centred in the grid, so the ship stays visually
+   *  centred too. */
+  grid: { cols: number; rows: number };
+  /** Built-content extent in cell units — bounds panning so the ship's edge can
+   *  reach the viewport centre. */
+  contentExtent: { cols: number; rows: number };
 }
 
 /**
@@ -26,7 +33,7 @@ interface PinchZoomOptions {
  *
  * The viewport clips rather than scrolls: the caller sizes the grid to cover the
  * viewport at the current cell pitch, and this hook returns `boardTx`/`boardTy`,
- * a transform that pins the content centre to the viewport centre plus the pan
+ * a transform that pins the board centre to the viewport centre plus the pan
  * offset. Pan is clamped so the content edge — plus the hull overhang and a
  * square of margin — can reach the viewport centre but no further. It is all
  * computed each render from the measured viewport, so it never lags or wobbles
@@ -41,7 +48,8 @@ export function usePinchZoom({
   min,
   max,
   cellPx,
-  content,
+  grid,
+  contentExtent,
 }: PinchZoomOptions): {
   ref: (node: HTMLDivElement | null) => void;
   width: number;
@@ -78,8 +86,8 @@ export function usePinchZoom({
   // Pan limit: bring the content edge (+ hull overhang + a square of margin) to
   // the viewport centre. Independent of viewport size. Mirrored to a ref so the
   // wheel listener clamps against the live limit without re-attaching on zoom.
-  const panLimitX = (content.cols / 2 + PAN_MARGIN_CELLS) * cellPx;
-  const panLimitY = (content.rows / 2 + PAN_MARGIN_CELLS) * cellPx;
+  const panLimitX = (contentExtent.cols / 2 + PAN_MARGIN_CELLS) * cellPx;
+  const panLimitY = (contentExtent.rows / 2 + PAN_MARGIN_CELLS) * cellPx;
   const panLimitRef = useRef({ x: 0, y: 0 });
   useEffect(() => {
     panLimitRef.current = { x: panLimitX, y: panLimitY };
@@ -121,10 +129,18 @@ export function usePinchZoom({
   // zoom-out shrinks the limit) and position the board.
   const clampedPanX = Math.max(-panLimitX, Math.min(panLimitX, pan.x));
   const clampedPanY = Math.max(-panLimitY, Math.min(panLimitY, pan.y));
+  // Pin the board's own centre (grid.cols/2, grid.rows/2) to the viewport centre
+  // plus the pan offset. Keying off the grid centre — not the live content centre
+  // — means a paint that extends the bounding box no longer slides the board; the
+  // fit effect already keeps the content centred in the grid, so the ship stays put.
   const boardTx =
-    size.width > 0 ? size.width / 2 - content.centreCol * cellPx + clampedPanX : 0;
+    size.width > 0
+      ? size.width / 2 - (grid.cols / 2) * cellPx + clampedPanX
+      : 0;
   const boardTy =
-    size.height > 0 ? size.height / 2 - content.centreRow * cellPx + clampedPanY : 0;
+    size.height > 0
+      ? size.height / 2 - (grid.rows / 2) * cellPx + clampedPanY
+      : 0;
 
   return {
     ref: attach,

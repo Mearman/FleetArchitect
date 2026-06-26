@@ -52,7 +52,7 @@ import {
   saveShipDesign,
 } from "@/storage/db";
 import type { ShipDesign } from "@/schema/ship";
-import type { CellEquipment } from "@/schema/grid";
+import type { CellEquipment, TileGrid } from "@/schema/grid";
 import {
   type Brush,
   type WorkingDesign,
@@ -136,7 +136,8 @@ export function ShipDesignerRoute() {
     min: ZOOM_MIN,
     max: ZOOM_MAX,
     cellPx,
-    content: contentBox(working.grid),
+    grid: { cols: working.grid.cols, rows: working.grid.rows },
+    contentExtent: contentBox(working.grid),
   });
   // Auto-size the grid to fill the viewport (no manual cols/rows): fit it to as
   // many cells as cover the viewport at the current zoomed cell pitch (ceil, so
@@ -330,25 +331,36 @@ export function ShipDesignerRoute() {
     notifications.show({ message: "Design deleted", color: "gray" });
   }
 
+  /** Re-fit a grid to fill the current viewport at the zoomed cell pitch, centred.
+   *  No-op until the viewport has been measured. Shared by `load` and `newDesign` so
+   *  both land a viewport-filling grid instead of showing at the design's own size. */
+  function fitToViewport(grid: TileGrid): TileGrid {
+    if (viewportW <= 0 || viewportH <= 0) return grid;
+    return fitGridCentered(
+      grid,
+      Math.max(1, Math.ceil(viewportW / cellPx) + FIT_PAD_CELLS),
+      Math.max(1, Math.ceil(viewportH / cellPx) + FIT_PAD_CELLS),
+    ).grid;
+  }
+
+  /** Start a fresh blank design, fitted to the viewport like a loaded one. */
+  function newDesign() {
+    const blank = blankDesign();
+    setWorking({ ...blank, grid: fitToViewport(blank.grid) });
+    setSelected(null);
+    resetPan();
+  }
+
   /** Load a design into the working state, preserving its provenance. The grid
    *  is re-fit to the current viewport (centred) so a loaded design fills the
    *  canvas like a new one, instead of showing at its saved size. */
   function load(design: ShipDesign) {
-    const loadCellPx = CELL_PITCH_PX * zoom;
-    const grid =
-      viewportW > 0 && viewportH > 0
-        ? fitGridCentered(
-            design.grid,
-            Math.max(1, Math.ceil(viewportW / loadCellPx) + FIT_PAD_CELLS),
-            Math.max(1, Math.ceil(viewportH / loadCellPx) + FIT_PAD_CELLS),
-          ).grid
-        : design.grid;
     setWorking({
       id: design.id,
       createdAt: design.createdAt,
       name: design.name,
       faction: design.faction,
-      grid,
+      grid: fitToViewport(design.grid),
       source: design.source,
       shipStance: design.shipStance,
       crewPriority: design.crewPriority,
@@ -431,7 +443,7 @@ export function ShipDesignerRoute() {
 
   // The grid auto-sizes to cover the viewport at the zoomed cell pitch (see the
   // fit effect above), so the inner wrapper is exactly the grid's pixel width.
-  // `boardTx`/`boardTy` (from usePinchZoom) centre the content and apply the pan.
+  // `boardTx`/`boardTy` (from usePinchZoom) centre the board and apply the pan.
   const innerWidthPx = displayGrid.cols * cellPx;
 
   // Delete action rendered per-card in the ShipBrowser (user designs only).
@@ -462,8 +474,7 @@ export function ShipDesignerRoute() {
         variant="default"
         leftSection={<IconPlus size={14} />}
         onClick={() => {
-          setWorking(blankDesign());
-          resetPan();
+          newDesign();
         }}
         fullWidth
       >
@@ -610,13 +621,7 @@ export function ShipDesignerRoute() {
           <div
             ref={attachGridViewport}
             className={zoomViewport}
-            style={{
-              touchAction: "none",
-              // Grid-line layers track the cell pitch and the board's transform;
-              // the screen gradient (last layer) fills the viewport.
-              backgroundSize: `${cellPx}px ${cellPx}px, ${cellPx}px ${cellPx}px, 100% 100%`,
-              backgroundPosition: `${boardTx}px ${boardTy}px, ${boardTx}px ${boardTy}px, 0 0`,
-            }}
+            style={{ touchAction: "none" }}
           >
             <div
               className={zoomInner}
@@ -628,6 +633,7 @@ export function ShipDesignerRoute() {
                 breached={breached}
                 showAirtightness={showAirtightness}
                 view={view}
+                cellPx={cellPx}
                 onPaint={paint}
                 onEdge={paintEdge}
               />

@@ -20,6 +20,7 @@ import {
   facingTick,
   gridBoard,
   gridCell as gridCellClass,
+  gridOverlay,
   gridSelection,
 } from "./ShipDesignerRoute.css";
 
@@ -67,6 +68,7 @@ export function GridBoard({
   breached,
   showAirtightness,
   view,
+  cellPx,
   onPaint,
   onEdge,
 }: {
@@ -78,6 +80,9 @@ export function GridBoard({
   showAirtightness: boolean;
   /** Flat top-down ("2d") or isometric 2.5D ("iso") rendering + hit-testing. */
   view: "2d" | "iso";
+  /** Current zoomed cell pitch in px — sizes the grid-line overlay so its lines
+   *  track the cell boundaries at every zoom. */
+  cellPx: number;
   /** Paint the whole cell at (col, row). Called for a cell-body click. */
   onPaint: (col: number, row: number) => void;
   /** Paint the edge of the cell at (col, row) on the given side. Called for an
@@ -247,6 +252,19 @@ export function GridBoard({
           </clipPath>
         </svg>
       ) : null}
+      {/* Grid-line overlay: fills the board area and carries the same iso
+          transform as the board (centred origin), so the cell boundary lines
+          tilt with the cells in 2.5D. Not hull-clipped — the clipPath lives on
+          the board — so empty cells still show the grid. Earlier sibling of the
+          board (both positioned) so opaque built cells paint over it. */}
+      <div
+        className={gridOverlay}
+        style={{
+          backgroundSize: `${cellPx}px ${cellPx}px`,
+          transform: view === "iso" ? ISO_TRANSFORM : undefined,
+          transformOrigin: "center",
+        }}
+      />
       <div
         ref={boardRef}
         className={gridBoard}

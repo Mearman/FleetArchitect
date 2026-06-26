@@ -116,10 +116,25 @@ export const designerCentre = style({
   },
 });
 
-/** Colour of the grid cell boundary lines. Drawn on the (fixed) viewport — not
- *  the moving board — so the lines always fill to the canvas edge as the board
- *  pans, with the pattern's size/offset synced to the board's transform. */
+/** Colour of the grid cell boundary lines. Drawn on the grid overlay that tilts
+ *  with the board, so the lines stay aligned with the cells in both flat 2D and
+ *  isometric 2.5D (the overlay carries the same transform as the board). */
 export const GRID_LINE = "rgba(28,38,32,0.55)";
+
+/**
+ * Grid-line overlay. Sits inside the board wrapper, fills the board area, and
+ * carries the same iso transform as the board (applied inline) so the cell
+ * boundary lines tilt with the cells in 2.5D. Not hull-clipped (the clipPath
+ * lives on the board itself), so the grid still shows where empty cells can be
+ * painted. `backgroundSize` is set inline to track the zoomed cell pitch.
+ */
+export const gridOverlay = style({
+  position: "absolute",
+  inset: 0,
+  pointerEvents: "none",
+  backgroundImage: `linear-gradient(to right, ${GRID_LINE} 0 1px, transparent 1px), linear-gradient(to bottom, ${GRID_LINE} 0 1px, transparent 1px)`,
+  backgroundRepeat: "repeat, repeat",
+});
 
 /**
  * The grid canvas: a CSS grid whose tracks position the (sparse) built cells.
@@ -320,11 +335,11 @@ export const zoomViewport = style({
   // keep the content centred, so the overhang is simply clipped — no scrolling.
   overflow: "hidden",
   borderRadius: 0,
-  // Grid lines (per-cell, two layers) over the recessed screen gradient. The
-  // line layers' size and offset are set inline to track the board's cell pitch
-  // and pan transform, so they stay aligned with the cells and fill to the edge.
-  backgroundImage: `linear-gradient(to right, ${GRID_LINE} 0 1px, transparent 1px), linear-gradient(to bottom, ${GRID_LINE} 0 1px, transparent 1px), linear-gradient(180deg, ${vars.material.surfaceBottom} 0%, ${vars.color.base} 100%)`,
-  backgroundRepeat: "repeat, repeat, no-repeat",
+  // Recessed screen gradient only. The per-cell grid lines live on the grid
+  // overlay inside the board wrapper (see `gridOverlay`), so they tilt with the
+  // cells in 2.5D; this element stays a flat backdrop filling the viewport.
+  backgroundImage: `linear-gradient(180deg, ${vars.material.surfaceBottom} 0%, ${vars.color.base} 100%)`,
+  backgroundRepeat: "no-repeat",
   boxShadow: [
     `inset 2px 2px 8px ${vars.material.bevelShadowDeep}`,
     `inset -1px -1px 4px rgba(0,0,0,0.5)`,
