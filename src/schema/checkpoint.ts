@@ -379,7 +379,7 @@ const CheckpointParticle = z.object({
   y: z.number(),
   vx: z.number(),
   vy: z.number(),
-  energy: z.number(),
+  intensity: z.number(),
   age: z.number(),
 });
 

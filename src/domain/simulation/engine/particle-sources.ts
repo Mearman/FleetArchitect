@@ -15,6 +15,7 @@ import type { SimProjectile, SimShip } from "./types";
 import {
   gatherParticles,
   stepExhaustParticles,
+  MAX_LIVE_PARTICLES,
   type ExhaustParticle,
   type ParticleBeamSource,
   type ParticleImpactSource,
@@ -24,16 +25,9 @@ import {
 } from "./exhaust-particles";
 
 /**
- * Impact-burst energy proxy at a beam strike point, W. A beam dumps energy at
- * its target; `SimBeam` carries no energy, so a constant proxy tuned for a clear
- * strike-point flash.
- */
-const BEAM_IMPACT_ENERGY_W = 1e6;
-
-/**
  * Build the tick's {@link ParticleSources} from ships, beams, and projectiles:
  *  - thrusters: every firing engine module (throttle > 0), nozzle world
- *    position + exhaust direction + jet power;
+ *    position + exhaust direction + throttle;
  *  - beams: every active beam's channel (source → target);
  *  - projectiles: every in-flight round's wake sample;
  *  - impacts: a burst at every active beam's strike point (the target).
@@ -54,7 +48,6 @@ export function extractParticleSources(
       if (!m.alive) continue;
       const thrust = m.effect.kind === "engine" ? m.effect.thrust : 0;
       if (!(thrust > 0)) continue;
-      const forceN = thrust * ship.engineThrottle;
       const { wx, wy } = cellWorldPosition(ship.x, ship.y, ship.facing, m.x, m.y);
       const exhaustAngle = ship.facing + (m.facing ?? 0) + Math.PI;
       thrusters.push({
@@ -64,7 +57,6 @@ export function extractParticleSources(
         dirY: Math.sin(exhaustAngle),
         exhaustSpeed: MEDIUM_EXHAUST_VELOCITY_M_PER_S,
         throttle: ship.engineThrottle,
-        jetPower: 0.5 * forceN * MEDIUM_EXHAUST_VELOCITY_M_PER_S,
       });
     }
   }
@@ -86,7 +78,6 @@ export function extractParticleSources(
   const impacts: ParticleImpactSource[] = beams.map((b) => ({
     x: b.targetX,
     y: b.targetY,
-    energy: BEAM_IMPACT_ENERGY_W,
   }));
 
   return { thrusters, beams: beamChannels, projectiles: wakes, impacts };
@@ -104,7 +95,11 @@ export function stepPlume(
   beams: readonly SimBeam[],
   projectiles: readonly SimProjectile[],
 ): ExhaustParticle[] {
-  return stepExhaustParticles(particles, MEDIUM_DT_S).concat(
+  const out = stepExhaustParticles(particles, MEDIUM_DT_S).concat(
     gatherParticles(extractParticleSources(ships, beams, projectiles), MEDIUM_DT_S),
   );
+  // Bound the live set so a long weapon-heavy battle cannot exhaust the heap
+  // (the snapshot stores the live set per subsampled frame). Drop the oldest
+  // parcels — the dim cooling tails — keeping the bright fresh heads.
+  return out.length > MAX_LIVE_PARTICLES ? out.slice(-MAX_LIVE_PARTICLES) : out;
 }

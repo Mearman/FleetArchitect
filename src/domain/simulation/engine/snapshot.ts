@@ -286,18 +286,21 @@ export function snapshot(
           })),
         }
       : {}),
-    // Exhaust/plume particles — the live glow. Emitted every tick (not
-    // subsampled: they are the visible transferred material, and they change
-    // every tick as they move and cool). Omitted when none are live so frames
-    // without particle sources stay byte-identical to baseline.
-    ...(particles.length > 0
+    // Exhaust/plume particles — the live glow. Subsampled on the same
+    // RESOURCE_EVERY cadence as the medium field: a long battle carries every
+    // tick's live set, and emitting it every tick (thousands of frames × the live
+    // count) exhausts the heap. The renderer holds the most recent emission
+    // between subsamples (as the medium overlay does), so the glow stays
+    // continuous. Tick 0 is always emitted (RESOURCE_EVERY divides 0). Omitted
+    // when none are live so particle-free frames stay byte-identical to baseline.
+    ...(tick % RESOURCE_EVERY === 0 && particles.length > 0
       ? {
           particles: particles.map((p) => ({
             x: p.x,
             y: p.y,
             vx: p.vx,
             vy: p.vy,
-            energy: p.energy,
+            intensity: p.intensity,
             age: p.age,
           })),
         }

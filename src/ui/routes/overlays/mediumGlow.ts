@@ -165,7 +165,7 @@ function drawMediumGlow(c: OverlayCtx): void {
 export const mediumGlow: OverlayDef = {
   id: "medium-glow",
   label: "Medium glow (plumes / ionisation)",
-  defaultOn: true,
+  defaultOn: false,
   defaultScope: "all",
   draw: drawMediumGlow,
 };

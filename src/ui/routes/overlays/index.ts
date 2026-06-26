@@ -8,6 +8,7 @@ import { atmosphereBreach } from "./atmosphereBreach";
 import { boardingDebris } from "./boardingDebris";
 import { mediumGlow } from "./mediumGlow";
 import { mediumTrails } from "./mediumTrails";
+import { particleGlow } from "./particleGlow";
 
 export type { OverlayCtx, OverlayDef, OverlayScope } from "./types";
 
@@ -28,6 +29,7 @@ export const OVERLAYS: readonly OverlayDef[] = [
   boardingDebris,
   mediumGlow,
   mediumTrails,
+  particleGlow,
 ];
 
 /** Overlay ids drawn beneath the ship layer (before the ship loop).
@@ -38,6 +40,7 @@ export const OVERLAYS: readonly OverlayDef[] = [
 export const UNDER_SHIP_IDS: ReadonlySet<string> = new Set([
   mediumGlow.id,
   mediumTrails.id,
+  particleGlow.id,
   focusRing.id,
   atmosphereBreach.id,
   movementTrail.id,
