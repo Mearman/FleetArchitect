@@ -18,7 +18,6 @@ import {
   mediumAdvectionSubSteps,
   mediumDiffusionSubSteps,
   mediumStateFromDensity,
-  stepMediumField,
   totalDensity,
   totalExcitation,
   zeroMediumSources,
@@ -28,6 +27,7 @@ import {
   type MediumSources,
   type MediumState,
 } from "@/domain/simulation/engine/medium-field";
+import { stepMediumField } from "@/domain/simulation/engine/medium-stepper";
 
 /**
  * The arena-scale medium field.
@@ -60,6 +60,9 @@ function defaultField(
     epsDecayTimescaleS: EXCITATION_DECAY_TIMESCALE_S,
     boundaryVentVelocityMPerS: MEDIUM_BOUNDARY_VENT_VELOCITY_M_PER_S,
     boundaryEpsLossPerS: MEDIUM_BOUNDARY_EPS_LOSS_PER_S,
+    momentumDiffusionM2PerS: 0,
+    momentumDragPerS: 0,
+    velocityMaxMPerS: 0,
     ...overrides,
   });
 }
@@ -76,7 +79,12 @@ function deltaState(
   const epsArr = state.eps.slice();
   rhoArr[cell] = rho;
   epsArr[cell] = eps;
-  return { rho: rhoArr, eps: epsArr };
+  return {
+    rho: rhoArr,
+    eps: epsArr,
+    mx: new Array(state.rho.length).fill(0),
+    my: new Array(state.rho.length).fill(0),
+  };
 }
 
 describe("engine.medium-field", () => {
@@ -168,6 +176,9 @@ describe("engine.medium-field", () => {
         epsDecayTimescaleS: EXCITATION_DECAY_TIMESCALE_S,
         boundaryVentVelocityMPerS: 0, // disable boundary sink
         boundaryEpsLossPerS: 0,
+        momentumDiffusionM2PerS: 0,
+        momentumDragPerS: 0,
+        velocityMaxMPerS: 0,
       });
       const state = deltaState(field, 0, 1.0, 0);
       const result = stepMediumField(field, state, zeroMediumSources(field));
@@ -192,12 +203,15 @@ describe("engine.medium-field", () => {
         epsDecayTimescaleS: EXCITATION_DECAY_TIMESCALE_S,
         boundaryVentVelocityMPerS: 0, // boundary sink OFF
         boundaryEpsLossPerS: 0,
+        momentumDiffusionM2PerS: 0,
+        momentumDragPerS: 0,
+        velocityMaxMPerS: 0,
       });
       const state = deltaState(field, 0, 1.0, 0);
       const initial = totalDensity(state.rho);
       let rho = state.rho;
       for (let tick = 0; tick < 30; tick += 1) {
-        const result = stepMediumField(field, { rho, eps: new Array(3).fill(0) }, zeroMediumSources(field));
+        const result = stepMediumField(field, { rho, eps: new Array(3).fill(0), mx: new Array(3).fill(0), my: new Array(3).fill(0) }, zeroMediumSources(field));
         // Mass conserved every tick (no source, no boundary).
         expect(totalDensity(result.rho)).toBeCloseTo(initial, 9);
         // Stays finite.
@@ -218,7 +232,7 @@ describe("engine.medium-field", () => {
       for (let tick = 0; tick < 1000; tick += 1) {
         const result = stepMediumField(
           field,
-          { rho, eps },
+          { rho, eps, mx: new Array(49).fill(0), my: new Array(49).fill(0) },
           zeroMediumSources(field),
         );
         for (let i = 0; i < result.rho.length; i += 1) {
@@ -256,7 +270,7 @@ describe("engine.medium-field", () => {
       let rho = state.rho;
       let eps = state.eps;
       for (let tick = 0; tick < 100; tick += 1) {
-        const result = stepMediumField(field, { rho, eps }, zeroMediumSources(field));
+        const result = stepMediumField(field, { rho, eps, mx: new Array(25).fill(0), my: new Array(25).fill(0) }, zeroMediumSources(field));
         rho = result.rho;
         eps = result.eps;
       }
@@ -280,12 +294,14 @@ describe("engine.medium-field", () => {
       const state: MediumState = {
         rho: new Array(25).fill(0),
         eps: new Array(25).fill(1e6),
+        mx: new Array(25).fill(0),
+        my: new Array(25).fill(0),
       };
       let eps = state.eps;
       let rho = state.rho;
       const initial = totalExcitation(eps);
       for (let tick = 0; tick < 200; tick += 1) {
-        const result = stepMediumField(field, { rho, eps }, zeroMediumSources(field));
+        const result = stepMediumField(field, { rho, eps, mx: new Array(25).fill(0), my: new Array(25).fill(0) }, zeroMediumSources(field));
         eps = result.eps;
         rho = result.rho;
       }
@@ -341,7 +357,7 @@ describe("engine.medium-field", () => {
       let rhoA = state.rho;
       let epsA = state.eps;
       for (let tick = 0; tick < 50; tick += 1) {
-        const r = stepMediumField(field, { rho: rhoA, eps: epsA }, sources);
+        const r = stepMediumField(field, { rho: rhoA, eps: epsA, mx: new Array(36).fill(0), my: new Array(36).fill(0) }, sources);
         rhoA = r.rho;
         epsA = r.eps;
       }
@@ -349,7 +365,7 @@ describe("engine.medium-field", () => {
       let rhoB = state.rho;
       let epsB = state.eps;
       for (let tick = 0; tick < 50; tick += 1) {
-        const r = stepMediumField(field, { rho: rhoB, eps: epsB }, sources);
+        const r = stepMediumField(field, { rho: rhoB, eps: epsB, mx: new Array(36).fill(0), my: new Array(36).fill(0) }, sources);
         rhoB = r.rho;
         epsB = r.eps;
       }
@@ -371,11 +387,16 @@ describe("engine.medium-field", () => {
         epsDecayTimescaleS: EXCITATION_DECAY_TIMESCALE_S,
         boundaryVentVelocityMPerS: 0,
         boundaryEpsLossPerS: 0,
+        momentumDiffusionM2PerS: 0,
+        momentumDragPerS: 0,
+        velocityMaxMPerS: 0,
       });
       const state = zeroMediumState(field);
       const sources: MediumSources = {
         rho: [10, 0, 0], // 10 kg/s into cell 0
         eps: [0, 0, 0],
+        mxSrc: [0, 0, 0],
+        mySrc: [0, 0, 0],
       };
       const result = stepMediumField(field, state, sources);
       // Cell 0 grew by source · dt = 10 · (1/30) = 0.333... kg.
@@ -398,11 +419,16 @@ describe("engine.medium-field", () => {
         epsDecayTimescaleS: EXCITATION_DECAY_TIMESCALE_S,
         boundaryVentVelocityMPerS: 0,
         boundaryEpsLossPerS: 0,
+        momentumDiffusionM2PerS: 0,
+        momentumDragPerS: 0,
+        velocityMaxMPerS: 0,
       });
       const state = zeroMediumState(field);
       const sourceOn: MediumSources = {
         rho: [0, 0, 0],
         eps: [100, 0, 0], // 100 J/s into cell 0
+        mxSrc: [0, 0, 0],
+        mySrc: [0, 0, 0],
       };
       const step1 = stepMediumField(field, state, sourceOn);
       // Cell 0 ε grew by source · dt; with no transport and a single sub-step
@@ -418,7 +444,7 @@ describe("engine.medium-field", () => {
       let rho = step1.rho;
       let prev = step1.eps[0] ?? 0;
       for (let tick = 0; tick < 30; tick += 1) {
-        const r = stepMediumField(field, { rho, eps }, sourceOff);
+        const r = stepMediumField(field, { rho, eps, mx: new Array(3).fill(0), my: new Array(3).fill(0) }, sourceOff);
         expect(r.eps[0] ?? 0).toBeLessThanOrEqual(prev);
         prev = r.eps[0] ?? 0;
         eps = r.eps;
@@ -429,6 +455,63 @@ describe("engine.medium-field", () => {
       // proves decay happened (well below 1.0) without over-constraining.
       expect(eps[0] ?? 0).toBeLessThan(injected * 0.9);
       expect(eps[0] ?? 0).toBeGreaterThan(injected * 0.5);
+    });
+  });
+
+  describe("velocity-driven transport", () => {
+    it("advects density downstream when the medium carries momentum", () => {
+      // ρ in cell 1 with +x momentum: velocity = mx/ρ = 100 m/s East.
+      // Diffusion, gradient bulk-flow, and drag all disabled — the ONLY
+      // transport is velocity-driven advection. After stepping, ρ must
+      // have moved downstream (East, toward cell 2).
+      const field = buildMediumField({
+        widthM: 3,
+        heightM: 1,
+        pitchM: MEDIUM_PITCH_M_DEFAULT,
+        rhoDiffusionM2PerS: 0,
+        rhoMaxVelocityMPerS: 0,
+        epsDiffusionM2PerS: 0,
+        epsDecayTimescaleS: EXCITATION_DECAY_TIMESCALE_S,
+        boundaryVentVelocityMPerS: 0,
+        boundaryEpsLossPerS: 0,
+        momentumDiffusionM2PerS: 0,
+        momentumDragPerS: 0,
+        velocityMaxMPerS: MEDIUM_MAX_VELOCITY_M_PER_S,
+      });
+      const result = stepMediumField(
+        field,
+        { rho: [0, 1, 0], eps: [0, 0, 0], mx: [0, 100, 0], my: [0, 0, 0] },
+        zeroMediumSources(field),
+      );
+      // Cell 1 lost ρ (it streamed downstream).
+      expect(result.rho[1]).toBeLessThan(1);
+      // Cell 2 (East, downstream) gained ρ.
+      expect(result.rho[2]).toBeGreaterThan(0);
+    });
+
+    it("conserves total mass under velocity-driven advection", () => {
+      // In a closed field (no sources, no boundary sink) velocity-driven
+      // advection must conserve total ρ — the face-average velocity is
+      // symmetric so outflow from one cell equals inflow to its neighbour.
+      const field = buildMediumField({
+        widthM: 3,
+        heightM: 1,
+        pitchM: MEDIUM_PITCH_M_DEFAULT,
+        rhoDiffusionM2PerS: 0,
+        rhoMaxVelocityMPerS: 0,
+        epsDiffusionM2PerS: 0,
+        epsDecayTimescaleS: EXCITATION_DECAY_TIMESCALE_S,
+        boundaryVentVelocityMPerS: 0,
+        boundaryEpsLossPerS: 0,
+        momentumDiffusionM2PerS: 0,
+        momentumDragPerS: 0,
+        velocityMaxMPerS: MEDIUM_MAX_VELOCITY_M_PER_S,
+      });
+      const initial = { rho: [0, 10, 0], eps: [0, 0, 0], mx: [0, 500, 0], my: [0, 0, 0] };
+      const result = stepMediumField(field, initial, zeroMediumSources(field));
+      const totalBefore = initial.rho.reduce((a, b) => a + b, 0);
+      const totalAfter = result.rho.reduce((a, b) => a + b, 0);
+      expect(totalAfter).toBeCloseTo(totalBefore, 6);
     });
   });
 
@@ -460,6 +543,9 @@ describe("engine.medium-field", () => {
         epsDecayTimescaleS: EXCITATION_DECAY_TIMESCALE_S,
         boundaryVentVelocityMPerS: 0, // no boundary sink
         boundaryEpsLossPerS: 0,
+        momentumDiffusionM2PerS: 0,
+        momentumDragPerS: 0,
+        velocityMaxMPerS: 0,
       });
       const state = mediumStateFromDensity(field, ISM_DENSITY_KG_PER_M3);
       const result = stepMediumField(field, state, zeroMediumSources(field));

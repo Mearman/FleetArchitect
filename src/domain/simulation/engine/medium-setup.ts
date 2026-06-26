@@ -21,10 +21,12 @@ import {
   MEDIUM_DT_S,
   MEDIUM_MAX_VELOCITY_M_PER_S,
   MEDIUM_PITCH_M_DEFAULT,
+  MOMENTUM_DRAG_PER_S,
+  VELOCITY_MAX_M_PER_S,
   buildMediumField,
   mediumStateFromDensity,
-  stepMediumField,
 } from "./medium-field";
+import { stepMediumField } from "./medium-stepper";
 import type { MediumField, MediumState, MediumSources } from "./medium-field";
 import { MEDIUM_EPS_EMISSION_THRESHOLD_J } from "./medium-emissions";
 import type { EngineCheckpoint } from "@/schema/checkpoint";
@@ -149,6 +151,9 @@ export function buildArenaMedium(ships: readonly SimShip[]): ArenaMedium {
     epsDecayTimescaleS: EXCITATION_DECAY_TIMESCALE_S,
     boundaryVentVelocityMPerS: MEDIUM_BOUNDARY_VENT_VELOCITY_M_PER_S,
     boundaryEpsLossPerS: MEDIUM_BOUNDARY_EPS_LOSS_PER_S,
+    momentumDiffusionM2PerS: D_MEDIUM_M2_PER_S,
+    momentumDragPerS: MOMENTUM_DRAG_PER_S,
+    velocityMaxMPerS: VELOCITY_MAX_M_PER_S,
   });
   // Seed ρ at the ISM baseline (uniform across every cell); ε at zero. The
   // baseline density is a real WIM figure (see medium-field.ts); at this
@@ -192,10 +197,13 @@ export function restoreArenaMedium(
     epsDecayTimescaleS: captured.epsDecayTimescaleS,
     boundaryVentVelocityMPerS: captured.boundaryVentVelocityMPerS,
     boundaryEpsLossPerS: captured.boundaryEpsLossPerS,
+    momentumDiffusionM2PerS: D_MEDIUM_M2_PER_S,
+    momentumDragPerS: MOMENTUM_DRAG_PER_S,
+    velocityMaxMPerS: VELOCITY_MAX_M_PER_S,
   });
   return {
     field,
-    state: { rho: captured.rho, eps: captured.eps },
+    state: { rho: captured.rho, eps: captured.eps, mx: new Array<number>(captured.rho.length).fill(0), my: new Array<number>(captured.rho.length).fill(0) },
     birthTicks: [...captured.birthTick],
   };
 }
@@ -371,6 +379,8 @@ export function computeArenaMediumSources(
   const cellCount = field.cellCount;
   const rho = new Array<number>(cellCount).fill(0);
   const eps = new Array<number>(cellCount).fill(0);
+  const mxSrc = new Array<number>(cellCount).fill(0);
+  const mySrc = new Array<number>(cellCount).fill(0);
 
   // --- Thruster exhaust: every engine/afterburner cell that is firing this tick
   // deposits a fraction of its expelled propellant mass as local density, and a
@@ -504,7 +514,7 @@ export function computeArenaMediumSources(
     }
   }
 
-  return { rho, eps };
+  return { rho, eps, mxSrc, mySrc };
 }
 
 /**
