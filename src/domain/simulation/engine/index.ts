@@ -26,6 +26,8 @@ import { captureCheckpoint } from "./checkpoint";
 import type { EngineCheckpoint } from "@/schema/checkpoint";
 import { leadingSide } from "./outcome";
 import { stepArenaMediumFromState } from "./medium-setup";
+import { ageBeams } from "./beams";
+import { stepPlume } from "./particle-sources";
 import { updateCrew } from "./crew";
 import { refillHardwiredAmmo } from "./crew-haul";
 import { resourceStep } from "./resource-step";
@@ -158,7 +160,7 @@ export function* simulateBattle(
     state.emissionSeq = rebuildEmissions(state.ships, state.emissions, 0, state.emissionSeq, state.medium);
 
     captureDescriptors(state.ships);
-    yield snapshot(0, state.ships, state.projectiles, frame0Awareness, state.mines, state.pods, state.pulses, state.emissions, state.debris, state.beams, state.medium);
+    yield snapshot(0, state.ships, state.projectiles, frame0Awareness, state.mines, state.pods, state.pulses, state.emissions, state.debris, state.beams, state.particles, state.medium);
 
     // No-progress stalemate watchdog (see ./stalemate) — the termination
     // guarantee for an uncapped battle, created only when there is no explicit
@@ -382,20 +384,9 @@ export function* simulateBattle(
     // 3. Weapon firing (creates projectiles; hitscan applies damage at once).
     state.projectiles = state.projectiles.concat(fireWeapons(state.ships, state.byId, rng, tick, inputs.anomalies, state.beams));
 
-    // 3-beams. Age the beam emissions (hitscan visuals) the fire step just
-    //     pushed and drop expired entries. Order-preserving so two same-seed
-    //     runs emit byte-identical beam arrays.
-    if (state.beams.length > 0) {
-      const survivors: typeof state.beams = [];
-      for (const beam of state.beams) {
-        const remaining = beam.emissionTicks - 1;
-        if (remaining > 0) {
-          beam.emissionTicks = remaining;
-          survivors.push(beam);
-        }
-      }
-      state.beams = survivors;
-    }
+    // 3-beams. Age the beam emissions the fire step just pushed and drop expired
+    //     entries (order-preserving; byte-identical across same-seed runs).
+    state.beams = ageBeams(state.beams);
 
     // 3b. PD cooldowns tick down so a battery that just fired can fire again
     //     the next tick. Tick here (before projectile resolution) so a PD
@@ -689,9 +680,12 @@ export function* simulateBattle(
     //     the per-cell birthTicks the sustained-radiation startup light-lag gates.
     const pMedium = state.projectiles.map((p) => ({ x: p.x, y: p.y, powered: p.powered, burnTicks: p.burnTicks, thrust: p.thrust, mass: p.mass }));
     state.medium = stepArenaMediumFromState(state.medium, state.ships, state.debris, pMedium, inputs.anomalies, state.asteroidDiscs, tick);
+    // 5d. Exhaust/plume particles: step the live plume (transport + cool + cull)
+    //     and gather this tick's emissions — no RNG, deterministic.
+    state.particles = stepPlume(state.particles, state.ships, state.beams, state.projectiles);
     // Capture descriptors for new instances (break-away chunks, launched phantoms).
     captureDescriptors(state.ships);
-    yield snapshot(tick, state.ships, state.projectiles, awareness, state.mines, state.pods, state.pulses, state.emissions, state.debris, state.beams, state.medium);
+    yield snapshot(tick, state.ships, state.projectiles, awareness, state.mines, state.pods, state.pulses, state.emissions, state.debris, state.beams, state.particles, state.medium);
     state.ticks += 1;
 
     // 6. Termination. Only real ships decide the battle — a side whose hulls

@@ -34,3 +34,22 @@ export interface SimBeam {
   /** Ticks remaining before the emission expires (renderer fades the line). */
   emissionTicks: number;
 }
+
+/**
+ * Age every beam's emission by one tick, dropping expired entries. Mutates each
+ * survivor's `emissionTicks` in place and returns the survivors in input order,
+ * so two same-seed runs emit byte-identical beam arrays. Empty input returns an
+ * empty array without allocating, keeping the common no-beam tick cheap.
+ */
+export function ageBeams(beams: readonly SimBeam[]): SimBeam[] {
+  if (beams.length === 0) return [];
+  const survivors: SimBeam[] = [];
+  for (const beam of beams) {
+    const remaining = beam.emissionTicks - 1;
+    if (remaining > 0) {
+      beam.emissionTicks = remaining;
+      survivors.push(beam);
+    }
+  }
+  return survivors;
+}

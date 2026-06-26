@@ -371,6 +371,18 @@ const CheckpointBeam = z.object({
   emissionTicks: z.number(),
 });
 
+/** One live exhaust/plume particle (engine exhaust, beam channel, projectile
+ *  wake, impact ejecta) — captured so a resumed battle's plume continues from
+ *  the live set rather than re-emerging from zero. */
+const CheckpointParticle = z.object({
+  x: z.number(),
+  y: z.number(),
+  vx: z.number(),
+  vy: z.number(),
+  energy: z.number(),
+  age: z.number(),
+});
+
 /** Each side's deployment centroid (`DeploymentReference`). Captured rather than
  *  re-derived: by tick N the initial centroids are gone, so recomputing from
  *  moved ships would silently diverge blind-fleet steering. */
@@ -432,6 +444,7 @@ export const EngineCheckpoint = z.object({
   emissions: z.array(CheckpointEmission),
   debris: z.array(CheckpointDebris),
   beams: z.array(CheckpointBeam),
+  particles: z.array(CheckpointParticle).optional(),
   /**
    * Arena medium field at the checkpoint tick: the resolved {@link
    * MediumFieldConfig} scalars, the live density (ρ) and excitation (ε) state

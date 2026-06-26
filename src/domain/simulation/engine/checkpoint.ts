@@ -218,6 +218,7 @@ export function captureCheckpoint(
     emissions: state.emissions,
     debris: state.debris,
     beams: state.beams,
+    particles: state.particles,
     // Medium field: capture the resolved config scalars (the grid connectivity
     // re-derives from width/height on resume) and a COPY of the live state
     // arrays plus the per-cell `birthTicks` array, so the checkpoint is
@@ -424,6 +425,7 @@ export interface RestoredEngine {
   emissions: EngineState["emissions"];
   debris: EngineState["debris"];
   beams: EngineState["beams"];
+  particles: EngineState["particles"];
   deployment: EngineState["deployment"];
   /** The captured medium field config + state arrays, or undefined on a
    *  pre-medium checkpoint. The caller rebuilds the {@link MediumField} grid
@@ -463,6 +465,7 @@ export function restoreCheckpoint(cp: EngineCheckpoint): RestoredEngine {
     emissions: clone.emissions,
     debris: clone.debris,
     beams: clone.beams,
+    particles: clone.particles ?? [],
     medium: clone.medium,
     // Build the DeploymentReference with both keys present (value possibly
     // undefined for a side that deployed nothing): the schema models each side

@@ -14,6 +14,7 @@ import type { BattleSide } from "@/schema/battle";
 import type { SimBeam } from "./beams";
 import type { Debris } from "./debris";
 import type { Emission } from "./emissions";
+import type { ExhaustParticle } from "./exhaust-particles";
 import type { ArenaMedium } from "./medium-setup";
 import type { DeploymentReference } from "./movement";
 import type { SimPulse } from "./pulses";
@@ -54,6 +55,14 @@ export interface EngineState {
    *  lingers for a few ticks so the renderer can draw it as a line. Damages at
    *  the moment of emission; the carried objects are pure render state. */
   beams: SimBeam[];
+  /**
+   * Live exhaust/plume particles — the actual transferred material radiating as
+   * it moves and cools (engine exhaust, beam channels, projectile wakes, impact
+   * ejecta). Gathered each tick from the four weapon sources (fixed order, no
+   * RNG), then stepped + culled by lifetime. Carried across ticks so a plume
+   * integrates from its own prior state; captured and restored on checkpoint.
+   */
+  particles: ExhaustParticle[];
   /**
    * Arena medium field (the density + excitation substrate). The `field` is the
    * resolved {@link MediumField} (built once from the arena bounds; grid

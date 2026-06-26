@@ -111,6 +111,9 @@ export function bootstrapEngine(
       // lingers a few ticks then expires. Empty until a beam weapon fires, so a
       // battle with no beam weapons keeps it empty and emits no `beams` snapshots.
       beams: [],
+      // Exhaust/plume particles. Empty until a weapon source emits; gathered +
+      // stepped each tick. A battle with no firing weapons keeps it empty.
+      particles: [],
       // Arena medium field: built once from the deployment bounding box and
       // seeded at the ISM baseline. Stepped each tick with per-tick sources
       // (thruster exhaust, debris, projectile wakes, nebula + asteroid anomaly
@@ -164,6 +167,7 @@ export function bootstrapEngine(
     emissions: restored.emissions,
     debris: restored.debris,
     beams: restored.beams,
+    particles: restored.particles,
     medium,
     // Asteroid discs are a pure function of (anomalies, seed); the seed is
     // captured on the checkpoint, so recompute them identically rather than

@@ -598,6 +598,28 @@ export const MediumSnapshot = z.object({
 });
 export type MediumSnapshot = z.infer<typeof MediumSnapshot>;
 
+/**
+ * One exhaust/plume particle this tick: a parcel of hot, fast material a firing
+ * weapon threw into space — engine exhaust, a beam's ionised channel, a
+ * projectile wake, or impact ejecta. The renderer draws each as a glowing blob
+ * sized and coloured by `energy` (bright when fresh, dim as it cools). Unlike
+ * the medium field these are emitted EVERY tick (they are the live glow, not a
+ * slowly-diffusing substrate). Optional on {@link BattleFrame}: omitted when no
+ * particles are live so frames without particle sources stay byte-identical to
+ * baseline.
+ */
+export const ParticleSnapshot = z.object({
+  x: z.number(),
+  y: z.number(),
+  vx: z.number(),
+  vy: z.number(),
+  /** Radiated energy; the renderer maps this to brightness. Fades as it cools. */
+  energy: z.number().min(0),
+  /** Seconds since emission; the lifetime cull signal. */
+  age: z.number().min(0),
+});
+export type ParticleSnapshot = z.infer<typeof ParticleSnapshot>;
+
 /** A single frame of recorded battle state, for replay rendering. */
 export const BattleFrame = z.object({
   tick: z.number().int().min(0),
@@ -653,6 +675,14 @@ export const BattleFrame = z.object({
    * recorded before the medium was wired in, so older frames stay byte-identical.
    */
   medium: MediumSnapshot.optional(),
+  /**
+   * Live exhaust/plume particles this tick — engine exhaust, beam channels,
+   * projectile wakes, impact ejecta: the actual transferred material radiating
+   * as it moves and cools. Emitted every tick (not subsampled). Omitted when
+   * none are live so frames without particle sources stay byte-identical to
+   * baseline.
+   */
+  particles: z.array(ParticleSnapshot).optional(),
 });
 export type BattleFrame = z.infer<typeof BattleFrame>;
 

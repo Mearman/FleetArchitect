@@ -19,6 +19,7 @@ import type { Debris } from "./debris";
 import type { Emission } from "./emissions";
 import type { SimPulse } from "./pulses";
 import type { SimBeam } from "./beams";
+import type { ExhaustParticle } from "./exhaust-particles";
 import type { SimMine, SimModule, SimPod, SimProjectile, SimShip } from "./types";
 
 /**
@@ -47,6 +48,7 @@ export function snapshot(
   emissions: readonly Emission[],
   debris: readonly Debris[],
   beams: readonly SimBeam[],
+  particles: readonly ExhaustParticle[],
   medium: { field: MediumField; state: MediumState },
 ): BattleFrame {
   // Partition real ships from phantoms (drones/decoys) so phantoms never appear
@@ -281,6 +283,22 @@ export function snapshot(
             targetY: b.targetY,
             kind: b.kind,
             emissionTicks: b.emissionTicks,
+          })),
+        }
+      : {}),
+    // Exhaust/plume particles — the live glow. Emitted every tick (not
+    // subsampled: they are the visible transferred material, and they change
+    // every tick as they move and cool). Omitted when none are live so frames
+    // without particle sources stay byte-identical to baseline.
+    ...(particles.length > 0
+      ? {
+          particles: particles.map((p) => ({
+            x: p.x,
+            y: p.y,
+            vx: p.vx,
+            vy: p.vy,
+            energy: p.energy,
+            age: p.age,
           })),
         }
       : {}),

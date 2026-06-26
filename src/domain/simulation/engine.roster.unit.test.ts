@@ -120,6 +120,7 @@ function stateWith(ships: SimShip[]): EngineState {
     emissions: [],
     debris: [],
     beams: [],
+    particles: [],
     medium: buildArenaMedium(ships),
     chunkSeq: 0,
     mineSeq: 0,
