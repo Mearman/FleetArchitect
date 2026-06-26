@@ -1,3 +1,18 @@
+# [1.20.0](https://github.com/Mearman/FleetArchitect/compare/v1.19.5...v1.20.0) (2026-06-26)
+
+
+### Features
+
+* **schema:** add unified doctrine and formation-tree vocabulary ([1079b19](https://github.com/Mearman/FleetArchitect/commit/1079b19a68a0ea72eda8e884b5bda088da626f64))
+* **schema:** migrate Fleet from flat ships[] to a formation tree ([56d0149](https://github.com/Mearman/FleetArchitect/commit/56d01499f573f2bfd0dd792a290687c85baf6d6f))
+* **schema:** thread formation identity onto combat and replay types ([4842310](https://github.com/Mearman/FleetArchitect/commit/4842310c11dade2da11b5c422b665a377896c5f7))
+* **sim:** beam, projectile-wake, and impact-burst particle emitters ([3a06b38](https://github.com/Mearman/FleetArchitect/commit/3a06b389aedb62d5dfadda699c54b52621ec9fd7))
+* **sim:** exhaust-particle collection lifecycle (step + cull by lifetime) ([d77b3ef](https://github.com/Mearman/FleetArchitect/commit/d77b3ef41283c057b986c6706d4439f95031020a))
+* **sim:** exhaust-particle model — transported, emitted, cooling material ([1e5760f](https://github.com/Mearman/FleetArchitect/commit/1e5760f55b81ef37de4f929116a920fef17f7f8f))
+* **sim:** gatherParticles — collect one tick's emissions from all sources ([824eece](https://github.com/Mearman/FleetArchitect/commit/824eece0ef38d4df5b7fd05b577468a08f960e6a))
+* **sim:** wire exhaust particles into the engine, frames, and checkpoint ([d626c18](https://github.com/Mearman/FleetArchitect/commit/d626c1873f2dbb880a1b33efd48b38bc6f0fdae0))
+* **ui:** render the weapon-source particle glow + bound its memory ([daa81cd](https://github.com/Mearman/FleetArchitect/commit/daa81cdd491ace8872b50ea11903487a603bfcc5))
+
 ## [1.19.5](https://github.com/Mearman/FleetArchitect/compare/v1.19.4...v1.19.5) (2026-06-26)
 
 
