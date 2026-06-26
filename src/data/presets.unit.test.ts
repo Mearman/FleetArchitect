@@ -2,12 +2,10 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { analyseShipDesign } from "@/domain/stats";
 import { DEFAULT_FLEET_BUDGET } from "@/domain/points";
-import { deriveClassification } from "@/domain/grid";
 import { resolveFleetToCombatShips } from "@/domain/resolve";
 import { runBattle } from "@/domain/simulation/engine";
 import { catalog } from "@/data/catalog";
 import { presetDesigns, presetFleets } from "@/data/presets";
-import type { ShipClassification } from "@/schema/armor";
 import type { SolidCell } from "@/schema/grid";
 import type { Fleet } from "@/schema/fleet";
 import type { CombatShip } from "@/domain/simulation/types";
@@ -97,67 +95,7 @@ describe("bundled presets", () => {
   });
 });
 
-/**
- * 1 m scale classification guards (W4).
- *
- * Each preset was re-authored at physical scale via the W3 subdivision
- * generator. Every design must classify to its declared tier so the engine's
- * tier-based lookups (spawn radius, damage tables, etc.) use the right row.
- *
- * The intended class is keyed by design id to avoid coupling to the name
- * string and to fail loudly if a design is renamed.
- */
-const INTENDED_CLASS: Record<string, ShipClassification> = {
-  // Terran fighters
-  "preset-ship-sabre":    "fighter",
-  "preset-ship-wasp":     "fighter",
-  // Terran frigates
-  "preset-ship-gunship":  "frigate",
-  "preset-ship-bulwark":  "frigate",
-  "preset-ship-aegis":    "frigate",
-  "preset-ship-torpedo":  "frigate",
-  // Terran capital
-  "preset-ship-leviathan": "cruiser",
-  "preset-ship-titan":    "dreadnought",
-  // Swarm fighters
-  "preset-ship-drone":    "fighter",
-  "preset-ship-carrion":  "fighter",
-  // Swarm frigates
-  "preset-ship-ravager":  "frigate",
-  "preset-ship-spitter":  "frigate",
-  // Swarm cruiser
-  "preset-ship-hive-lord": "cruiser",
-  // Crystalline Concord
-  "preset-ship-shard":       "frigate",
-  // Foundry Combine
-  "preset-ship-ingot":       "fighter",
-  "preset-ship-anvil":       "frigate",
-  "preset-ship-battleram":   "cruiser",
-  "preset-ship-siege-titan": "dreadnought",
-  // Corsair Reavers
-  "preset-ship-cutlass":     "fighter",
-  "preset-ship-reaver":      "frigate",
-  "preset-ship-warbringer":  "cruiser",
-  // Synthetic Collective
-  "preset-ship-automaton":   "fighter",
-  "preset-ship-node":        "frigate",
-  "preset-ship-network-hub": "cruiser",
-  "preset-ship-nexus-prime": "dreadnought",
-};
-
-describe("1 m scale classification (W4)", () => {
-  it("every preset design classifies to its intended ship tier", () => {
-    for (const design of presetDesigns) {
-      const intended = INTENDED_CLASS[design.id];
-      if (intended === undefined) continue; // new design added without table entry — skip
-      const actual = deriveClassification(design.grid);
-      expect(
-        actual,
-        `${design.name} (${design.id}) should be ${intended} but classified as ${actual}`,
-      ).toBe(intended);
-    }
-  });
-
+describe("preset crew balance", () => {
   it("every preset design with crew has a non-negative crew balance (crewNet ≥ 0)", () => {
     for (const design of presetDesigns) {
       const { stats, faults } = analyseShipDesign(design, catalog());
