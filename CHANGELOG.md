@@ -1,3 +1,16 @@
+# [1.21.0](https://github.com/Mearman/FleetArchitect/compare/v1.20.0...v1.21.0) (2026-06-26)
+
+
+### Features
+
+* **catalog:** capability-derived module mass + broadened anchor menu ([4e1cfda](https://github.com/Mearman/FleetArchitect/commit/4e1cfda7f293ca86517336edb5d7b2fa27afd2a5))
+* **schema:** add engage range, retreat axis, and target reference ([0daeca1](https://github.com/Mearman/FleetArchitect/commit/0daeca13434978045ff74162bb97bb32b696ac64))
+* **schema:** populate unified doctrine at every parse boundary ([5998884](https://github.com/Mearman/FleetArchitect/commit/59988844597966aeaf09a79ae4d3fbc91b85fc28))
+* **sim:** phase 2 — exhaust deposits conserved mass + momentum into the medium ([72d6827](https://github.com/Mearman/FleetArchitect/commit/72d6827bb34a5408a30efcbf902afb60564fd722))
+* **sim:** phase 3 — body-drag wakes in the medium ([109051c](https://github.com/Mearman/FleetArchitect/commit/109051cfd12783a6fcbe91bd519b952f49cebe78))
+* **sim:** split medium ε into sensor-ε (stable) and visual-ε (streams) ([92746f1](https://github.com/Mearman/FleetArchitect/commit/92746f19a6a02c0693b2ea941d0e9167cf98e71e))
+* **sim:** velocity substrate for the medium field (momentum + advection) ([2a949e1](https://github.com/Mearman/FleetArchitect/commit/2a949e18d3b8b3f7ebe86b5c2ff5815a0d6259f0))
+
 # [1.20.0](https://github.com/Mearman/FleetArchitect/compare/v1.19.5...v1.20.0) (2026-06-26)
 
 
