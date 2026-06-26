@@ -240,6 +240,14 @@ export const EXHAUST_RHO_COUPLING = 1e-14;
  */
 export const THERMAL_EPS_COUPLING_FRACTION = 0.02;
 
+/** Drag coefficient for a body moving through the arena medium. A blunt body in
+ *  a dilute plasma: Cd ~ 0.5. Authored representative value. */
+export const BODY_DRAG_COEFFICIENT = 0.5;
+
+/** Fraction of a body's dissipated drag power that thermalises into excitation
+ *  (ε) in the medium — a glowing wake in dense regions. Authored. */
+export const WAKE_EPS_COUPLING = 0.1;
+
 /**
  * Fraction of a debris fragment's mass it sheds into the medium per tick as it
  * tumbles and ablates. A thousandth of the fragment mass per tick is a slow
@@ -514,6 +522,34 @@ export function computeArenaMediumSources(
         }
       }
     }
+  }
+
+  // --- Body drag → wake: a ship moving through the medium displaces it. The
+  //     drag reaction deposits momentum (a wake behind the body) and the
+  //     dissipated KE becomes heat (ε — a glowing wake in dense medium). In
+  //     thin ISM this is negligible; in a nebula a fast ship leaves a faint
+  //     disturbance trail. ---
+  for (const ship of ships) {
+    if (!ship.alive) continue;
+    const speedTick = Math.hypot(ship.velX, ship.velY);
+    if (speedTick < 0.5) continue;
+    const speedMps = speedTick / MEDIUM_DT_S;
+    const idx = mediumCellIndex(
+      field,
+      Math.floor(ship.x / field.config.pitchM + field.config.widthM / 2),
+      Math.floor(ship.y / field.config.pitchM + field.config.heightM / 2),
+    );
+    if (idx === null) continue;
+    const rhoHere = liveRho[idx] ?? 0;
+    if (rhoHere <= 0) continue;
+    const density = rhoHere / (field.config.pitchM * field.config.pitchM);
+    const dragForce = 0.5 * density * speedMps * speedMps * BODY_DRAG_COEFFICIENT * (2 * ship.radius);
+    if (dragForce <= 0) continue;
+    const dirX = ship.velX / speedTick;
+    const dirY = ship.velY / speedTick;
+    mxSrc[idx] = (mxSrc[idx] ?? 0) + dragForce * dirX;
+    mySrc[idx] = (mySrc[idx] ?? 0) + dragForce * dirY;
+    eps[idx] = (eps[idx] ?? 0) + dragForce * speedMps * WAKE_EPS_COUPLING;
   }
 
   return { rho, eps, mxSrc, mySrc };
