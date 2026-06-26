@@ -301,6 +301,11 @@ export const ShipDescriptor = z.object({
   cells: z.array(ShipCellLayout).optional(),
   /** The chamfered hull outline, present for modular ships with armour cells. */
   outline: ShipOutline.optional(),
+  /** Formation this ship was deployed in (formation overhaul); absent on
+   *  pre-formation battles. Static per battle — lives here, not per tick. */
+  formationId: EntityId.optional(),
+  /** The formation's authored role label ("carrier", "vanguard"), if any. */
+  role: z.string().optional(),
 });
 export type ShipDescriptor = z.infer<typeof ShipDescriptor>;
 
@@ -693,6 +698,9 @@ export const ShipRosterEntry = z.object({
   instanceId: EntityId,
   faction: z.string().min(1),
   side: z.enum(["attacker", "defender"]),
+  /** Formation this ship was deployed in; absent on pre-formation battles. */
+  formationId: EntityId.optional(),
+  role: z.string().optional(),
 });
 export type ShipRosterEntry = z.infer<typeof ShipRosterEntry>;
 

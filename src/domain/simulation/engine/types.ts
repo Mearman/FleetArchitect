@@ -97,6 +97,14 @@ export interface SimShip {
   faction: string;
   side: "attacker" | "defender";
   classification: ShipClassification;
+  /** Formation identity (formation overhaul). Optional/transitional: set in
+   *  `toSimShip` and captured by the checkpoint once the engine consumes
+   *  formation doctrine; absent on legacy fleets, so existing behaviour is
+   *  byte-identical. The doctrine pass aggregates over the chain and resolves
+   *  role references off these fields. */
+  formationId?: string;
+  formationChain?: string[];
+  role?: string;
   x: number;
   y: number;
   facing: number;

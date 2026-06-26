@@ -72,6 +72,28 @@ export interface CombatShip {
    * these (once carried onto SimShip) to feed sinks directly from their source.
    */
   hardwires?: ResolvedHardwire[];
+  /**
+   * The leaf formation this ship was deployed in (formation overhaul). Optional
+   * and conditionally spread by the resolver: absent on a legacy flat fleet
+   * (which lifts to a root column formation but, having no doctrine, need not
+   * carry formation data), present when the fleet uses formations or doctrine.
+   * Outcome-affecting — doctrine predicates key on it — so it is part of the
+   * resolved ship and thus the battle cache key; a fleet that changes its
+   * formation structure correctly busts the cache. See {@link formationChain}
+   * for the full root→leaf ancestry the engine aggregates over.
+   */
+  formationId?: string;
+  /**
+   * The formation ids from the root formation down to this ship's leaf
+   * (inclusive). The engine builds per-formation aggregates (centroid, strength,
+   * engagement) over every id in every ship's chain, so a doctrine condition
+   * can reference a formation at any level of the tree. Outcome-affecting.
+   */
+  formationChain?: string[];
+  /** The authored role label of this ship's leaf formation, if any ("carrier",
+   *  "vanguard"). Doctrine references formations by role; this is how a ship
+   *  advertises its formation's role to friend and foe. Outcome-affecting. */
+  role?: string;
 }
 
 /**
