@@ -1,5 +1,4 @@
 import type { BattleFrame, MediumSnapshot } from "@/schema/battle";
-import type { Transform } from "../battleCamera";
 
 // ---------------------------------------------------------------------------
 // Arena medium field: shared renderer helpers (used by every medium overlay)
@@ -53,27 +52,12 @@ import type { Transform } from "../battleCamera";
 // convention. `worldToCellIndex` below is that inverse.
 
 /**
- * Project the world-space centre of cell (col, row) to a screen point via the
- * overlay's world-to-screen transform. Pure; no allocations beyond the return.
- */
-export function projectCellCentre(
-  t: Transform,
-  col: number,
-  row: number,
-  widthM: number,
-  heightM: number,
-  pitchM: number,
-): { x: number; y: number } {
-  const wx = (col + 0.5 - widthM / 2) * pitchM;
-  const wy = (row + 0.5 - heightM / 2) * pitchM;
-  return t.project(wx, wy);
-}
-
-/**
  * Compute the flat cell index for a world point, or -1 if it falls outside the
- * grid. The inverse of {@link projectCellCentre}: mirrors the engine's
- * `worldToMediumCell` convention (`col = floor(wx / pitchM + widthM / 2)`),
- * re-derived UI-side because the renderer cannot import the engine.
+ * grid. Mirrors the engine's `worldToMediumCell` convention
+ * (`col = floor(wx / pitchM + widthM / 2)`), re-derived UI-side because the
+ * renderer cannot import the engine. Used to sample the medium field at a world
+ * point (the analytic trails in `mediumTrails.ts`); the ambient glow in
+ * `mediumGlow.ts` rasterises the whole field instead, so it does not call this.
  */
 export function worldToCellIndex(
   field: MediumSnapshot,

@@ -4,36 +4,81 @@ import {
   RHO_REF_KG,
   fxGainFor,
   paletteSample,
-  projectCellCentre,
   readFxLevel,
   resolveMediumField,
 } from "./mediumShared";
 import type { OverlayCtx, OverlayDef } from "./types";
 
 // ---------------------------------------------------------------------------
-// Arena medium field: broad ambient ionisation / plume glow (coarse cell view)
+// Arena medium field: broad ambient ionisation / plume glow (smooth field)
 // ---------------------------------------------------------------------------
 //
-// This overlay paints the BROAD ambient field: one soft radial-gradient blob per
-// excited cell, additively blended so overlapping cells stack into a smooth
-// ionised haze. It is the coarse complement to `mediumTrails.ts`, which draws
-// the sharp analytic per-entity streaks. Both overlays share their palette, FX
-// gating, field resolution, and brightness mapping via `./mediumShared`, so the two
-// views stay visually consistent (denser medium = brighter, identically, in
-// both). Drawn beneath the ship layer so hull silhouettes sit on top of the
-// glow.
+// Paints the BROAD ambient field as a smooth, continuous ionised haze: the ε
+// field (with the ρ amplifier) is rasterised into a cell-resolution offscreen
+// buffer — one texel per cell — then blitted scaled-to-world with image
+// smoothing and additive blending. Bilinear interpolation between cell samples
+// turns the lattice into a continuous glow, so it reads as ionised gas rather
+// than a grid of discrete discs (the artifact a per-cell radial-gradient
+// approach produced, since every bright core sat on a fixed lattice point). It
+// is the coarse complement to `mediumTrails.ts`, which draws the sharp analytic
+// per-entity streaks. Both overlays share their palette, FX gating, field
+// resolution, and brightness mapping via `./mediumShared`, so the two views
+// stay visually consistent (denser medium = brighter, identically, in both).
+// Drawn beneath the ship layer so hull silhouettes sit on top of the glow.
 //
 // The physical model, the cell <-> world mapping, the brightness formula, and
 // the tuning rationale for the named constants are all documented in
 // `./mediumShared.ts` (the single source of truth shared by both medium
 // overlays). Refer there for why ε drives, ρ amplifies, and the magnitudes.
 
+// ---------------------------------------------------------------------------
+// Cell-resolution glow buffer (cached rendering resource)
+// ---------------------------------------------------------------------------
+//
+// One texel per medium cell. Refreshed every draw with putImageData (a raw
+// pixel write that ignores transform and composite), then blitted with a single
+// smoothed, additive drawImage. Cached at module scope — a rendering resource
+// like the ship sprite cache — and recreated only when the grid dimensions
+// change between battles (the medium lattice shape is constant within a battle).
+
+/** Cached offscreen glow buffer plus its writable pixels, keyed by grid size. */
+let glowBuffer:
+  | { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D; imageData: ImageData }
+  | undefined;
+
+/** Key (widthM x heightM) of the currently cached buffer, "" when none. */
+let glowBufferKey = "";
+
 /**
- * Medium-field glow: additive ionisation glow beneath the ship layer. Reads the
- * `{ rho, eps, widthM, heightM, pitchM }` field resolved for the current tick; for
- * each cell whose ε-driven intensity clears a small threshold, paints a
- * hot-palette disc with `globalCompositeOperation = "lighter"` so overlapping
- * glows stack and brighten. Denser ρ amplifies the glow (nebula-amplification);
+ * Return the glow buffer for the given grid, (re)creating it when the grid
+ * dimensions change. Returns undefined only if a 2D context cannot be obtained
+ * (never in a browser), in which case the overlay draws nothing this frame.
+ */
+function ensureGlowBuffer(
+  widthM: number,
+  heightM: number,
+):
+  | { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D; imageData: ImageData }
+  | undefined {
+  const key = `${widthM}x${heightM}`;
+  if (glowBuffer !== undefined && key === glowBufferKey) return glowBuffer;
+  const canvas = document.createElement("canvas");
+  canvas.width = widthM;
+  canvas.height = heightM;
+  const ctx = canvas.getContext("2d");
+  if (ctx === null) return undefined;
+  glowBuffer = { canvas, ctx, imageData: ctx.createImageData(widthM, heightM) };
+  glowBufferKey = key;
+  return glowBuffer;
+}
+
+/**
+ * Medium-field glow: additive ionisation glow beneath the ship layer. For each
+ * cell whose ε-driven, ρ-amplified intensity clears a small threshold, the
+ * buffer texel is coloured by the hot palette at an alpha equal to its
+ * intensity; the buffer is then blitted smoothed and additively over the
+ * backdrop, so bright regions stack into a continuous ionised haze rather than
+ * a grid of circles. Denser ρ amplifies the glow (nebula-amplification);
  * ε ≈ 0 cells are skipped (undisturbed space stays dark).
  */
 function drawMediumGlow(c: OverlayCtx): void {
@@ -52,57 +97,66 @@ function drawMediumGlow(c: OverlayCtx): void {
   const { rho, eps, widthM, heightM, pitchM } = field;
   const cellCount = widthM * heightM;
   if (rho.length < cellCount || eps.length < cellCount) return;
+  const buf = ensureGlowBuffer(widthM, heightM);
+  if (buf === undefined) return;
 
-  // Cell screen extent: pitch in world units, scaled by the transform. Derive
-  // from projecting two horizontally-adjacent cell centres so the size tracks
-  // the projection (and stays correct under iso tilt).
-  const a = projectCellCentre(t, 0, 0, widthM, heightM, pitchM);
-  const b = projectCellCentre(t, 1, 0, widthM, heightM, pitchM);
-  const cellPx = Math.hypot(b.x - a.x, b.y - a.y);
-  if (cellPx < 1) return; // grid is sub-pixel — nothing useful to paint
-  // Glow radius: a little larger than the cell so adjacent cells overlap and
-  // the additive blend produces a smooth field rather than a checkerboard.
-  const glowPx = cellPx * 0.9;
+  // Rasterise: one texel per cell. Straight alpha = intensity; the additive
+  // ("lighter") blit contributes colour × intensity per cell, and the smoothing
+  // spreads each sample into a continuous field.
+  const data = buf.imageData.data;
+  for (let i = 0; i < cellCount; i += 1) {
+    const epsHere = eps[i];
+    const p = i * 4;
+    if (epsHere === undefined || epsHere <= 0) {
+      data[p] = 0;
+      data[p + 1] = 0;
+      data[p + 2] = 0;
+      data[p + 3] = 0;
+      continue;
+    }
+    const rhoHere = rho[i] ?? 0;
+    // ε-driven, ρ-amplified brightness, clamped to [0, 1].
+    const intensity = Math.max(
+      0,
+      Math.min(1, epsHere * EPS_GAIN_J_INV * fxGain * (1 + rhoHere / RHO_REF_KG)),
+    );
+    if (intensity < INTENSITY_DRAW_THRESHOLD) {
+      data[p] = 0;
+      data[p + 1] = 0;
+      data[p + 2] = 0;
+      data[p + 3] = 0;
+      continue;
+    }
+    const [r, g, b] = paletteSample(intensity);
+    data[p] = r;
+    data[p + 1] = g;
+    data[p + 2] = b;
+    data[p + 3] = Math.round(intensity * 255);
+  }
+  buf.ctx.putImageData(buf.imageData, 0, 0);
+
+  // Blit the buffer aligned to the grid's world rectangle. The view transform
+  // is affine (flat or isometric), so three projected corners fix the mapping;
+  // ctx.transform composes with the DPR scale already on the context, so the
+  // buffer lands in the same CSS-pixel space as the rest of the frame. The grid
+  // is centred on the world origin (see the cell<->world docs in mediumShared).
+  const p0 = t.project((-widthM / 2) * pitchM, (-heightM / 2) * pitchM);
+  const px = t.project((widthM / 2) * pitchM, (-heightM / 2) * pitchM);
+  const py = t.project((-widthM / 2) * pitchM, (heightM / 2) * pitchM);
 
   ctx.save();
-  ctx.globalCompositeOperation = "lighter";
-
-  for (let row = 0; row < heightM; row += 1) {
-    for (let col = 0; col < widthM; col += 1) {
-      const i = row * widthM + col;
-      const epsHere = eps[i];
-      if (epsHere === undefined || epsHere <= 0) continue; // nothing deposited
-
-      const rhoHere = rho[i] ?? 0;
-      // ε-driven, ρ-amplified brightness, clamped to [0, 1].
-      const intensity = Math.max(
-        0,
-        Math.min(
-          1,
-          epsHere * EPS_GAIN_J_INV * fxGain * (1 + rhoHere / RHO_REF_KG),
-        ),
-      );
-      if (intensity < INTENSITY_DRAW_THRESHOLD) continue;
-
-      const p = projectCellCentre(t, col, row, widthM, heightM, pitchM);
-      const [r, g, bl] = paletteSample(intensity);
-
-      // Radial gradient: bright core fading to transparent at the glow radius,
-      // coloured by the hot palette. Alpha scales with intensity so faint cells
-      // read as a wash and bright cells as a solid core.
-      const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, glowPx);
-      const alphaCore = Math.min(1, intensity * 1.1);
-      const alphaEdge = intensity * 0.35;
-      grad.addColorStop(0, `rgba(${r | 0},${g | 0},${bl | 0},${alphaCore})`);
-      grad.addColorStop(0.5, `rgba(${r | 0},${g | 0},${bl | 0},${alphaEdge})`);
-      grad.addColorStop(1, `rgba(${r | 0},${g | 0},${bl | 0},0)`);
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, glowPx, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.globalCompositeOperation = "lighter"; // additive: glow brightens space
+  ctx.transform(
+    (px.x - p0.x) / widthM,
+    (px.y - p0.y) / widthM,
+    (py.x - p0.x) / heightM,
+    (py.y - p0.y) / heightM,
+    p0.x,
+    p0.y,
+  );
+  ctx.drawImage(buf.canvas, 0, 0);
   ctx.restore();
 }
 
