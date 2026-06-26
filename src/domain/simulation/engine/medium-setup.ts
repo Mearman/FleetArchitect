@@ -203,7 +203,7 @@ export function restoreArenaMedium(
   });
   return {
     field,
-    state: { rho: captured.rho, eps: captured.eps, mx: new Array<number>(captured.rho.length).fill(0), my: new Array<number>(captured.rho.length).fill(0) },
+    state: { rho: captured.rho, eps: captured.eps, epsVis: captured.epsVis ?? new Array<number>(captured.rho.length).fill(0), mx: new Array<number>(captured.rho.length).fill(0), my: new Array<number>(captured.rho.length).fill(0) },
     birthTicks: [...captured.birthTick],
   };
 }
@@ -385,6 +385,7 @@ export function computeArenaMediumSources(
   const cellCount = field.cellCount;
   const rho = new Array<number>(cellCount).fill(0);
   const eps = new Array<number>(cellCount).fill(0);
+  const epsVisSrc = new Array<number>(cellCount).fill(0);
   const mxSrc = new Array<number>(cellCount).fill(0);
   const mySrc = new Array<number>(cellCount).fill(0);
 
@@ -422,6 +423,7 @@ export function computeArenaMediumSources(
       // preserves the existing battle behaviour.
       if (mainIdx !== null) {
         eps[mainIdx] = (eps[mainIdx] ?? 0) + epsDepositJ;
+        epsVisSrc[mainIdx] = (epsVisSrc[mainIdx] ?? 0) + epsDepositJ;
       }
       // Conserved mass (ρ) + backward momentum one cell DOWNSTREAM (not at the
       // nozzle) so the ship never sits in its own exhaust mass (no self-drag).
@@ -435,6 +437,7 @@ export function computeArenaMediumSources(
       if (downstreamIdx !== null && downstreamIdx !== mainIdx) {
         rho[downstreamIdx] = (rho[downstreamIdx] ?? 0) + mainDepositKg;
         eps[downstreamIdx] = (eps[downstreamIdx] ?? 0) + epsDepositJ * 0.25;
+        epsVisSrc[downstreamIdx] = (epsVisSrc[downstreamIdx] ?? 0) + epsDepositJ * 0.25;
         mxSrc[downstreamIdx] = (mxSrc[downstreamIdx] ?? 0) + mainDepositKg * MEDIUM_EXHAUST_VELOCITY_M_PER_S * exDx;
         mySrc[downstreamIdx] = (mySrc[downstreamIdx] ?? 0) + mainDepositKg * MEDIUM_EXHAUST_VELOCITY_M_PER_S * exDy;
       }
@@ -549,10 +552,10 @@ export function computeArenaMediumSources(
     const dirY = ship.velY / speedTick;
     mxSrc[idx] = (mxSrc[idx] ?? 0) + dragForce * dirX;
     mySrc[idx] = (mySrc[idx] ?? 0) + dragForce * dirY;
-    eps[idx] = (eps[idx] ?? 0) + dragForce * speedMps * WAKE_EPS_COUPLING;
+    epsVisSrc[idx] = (epsVisSrc[idx] ?? 0) + dragForce * speedMps * WAKE_EPS_COUPLING;
   }
 
-  return { rho, eps, mxSrc, mySrc };
+  return { rho, eps, epsVisSrc, mxSrc, mySrc };
 }
 
 /**

@@ -471,6 +471,7 @@ export const EngineCheckpoint = z.object({
       boundaryEpsLossPerS: z.number(),
       rho: z.array(z.number()),
       eps: z.array(z.number()),
+      epsVis: z.array(z.number()).optional(),
       birthTick: z.array(z.number()),
     })
     .optional(),

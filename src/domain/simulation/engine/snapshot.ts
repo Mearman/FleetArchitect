@@ -333,6 +333,7 @@ function mediumSnapshot(medium: {
   return {
     rho: Float64Array.from(medium.state.rho),
     eps: Float64Array.from(medium.state.eps),
+    epsVis: Float64Array.from(medium.state.epsVis),
     widthM: medium.field.config.widthM,
     heightM: medium.field.config.heightM,
     pitchM: medium.field.config.pitchM,

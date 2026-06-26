@@ -242,6 +242,7 @@ export function captureCheckpoint(
       // are `readonly number[]`).
       rho: [...state.medium.state.rho],
       eps: [...state.medium.state.eps],
+      epsVis: [...state.medium.state.epsVis],
       birthTick: [...state.medium.birthTicks],
     },
   };

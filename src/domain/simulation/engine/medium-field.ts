@@ -344,14 +344,22 @@ export interface MediumSources {
   readonly mxSrc: readonly number[];
   /** Per-cell y-momentum source (South+), kg·m·s⁻² per cell. Default zero. */
   readonly mySrc: readonly number[];
+  /** Per-cell visual-excitation source, J·s⁻¹. Same deposits as eps but this
+   *  field is velocity-advected (streams). The renderer reads epsVis. */
+  readonly epsVisSrc: readonly number[];
 }
 
-/** A field state: the four substance arrays, length `width * height`. */
+/** A field state: the five substance arrays, length `width * height`. */
 export interface MediumState {
   /** Density ρ, kg per cell (length `widthM * heightM`). */
   readonly rho: readonly number[];
-  /** Excitation ε, J per cell (length `widthM * heightM`). */
+  /** Excitation ε, J per cell (length `widthM * heightM`). Sensor-stable
+   *  (no velocity advection) — the AI reads this for targeting. */
   readonly eps: readonly number[];
+  /** Visual excitation εVis, J per cell. Same physics as ε (diffusion, decay,
+   *  source) but ALSO velocity-advected (streams). The renderer reads this; the
+   *  sensor system reads `eps`. This decouples visual glow from AI signatures. */
+  readonly epsVis: readonly number[];
   /** Momentum x (East+), kg·m·s⁻¹ per cell. Velocity u_x = mx / ρ. */
   readonly mx: readonly number[];
   /** Momentum y (South+), kg·m·s⁻¹ per cell. Velocity u_y = my / ρ. */
@@ -448,6 +456,8 @@ export interface MediumStepResult {
   readonly rho: number[];
   /** The post-tick excitation field. Length `cellCount`. */
   readonly eps: number[];
+  /** The post-tick visual-excitation field (velocity-advected). Length `cellCount`. */
+  readonly epsVis: number[];
   /** The post-tick x-momentum field. Length `cellCount`. */
   readonly mx: number[];
   /** The post-tick y-momentum field. Length `cellCount`. */
@@ -534,6 +544,7 @@ export function zeroMediumState(field: MediumField): MediumState {
   return {
     rho: new Array<number>(field.cellCount).fill(0),
     eps: new Array<number>(field.cellCount).fill(0),
+    epsVis: new Array<number>(field.cellCount).fill(0),
     mx: new Array<number>(field.cellCount).fill(0),
     my: new Array<number>(field.cellCount).fill(0),
   };
@@ -553,6 +564,7 @@ export function mediumStateFromDensity(
   return {
     rho: new Array<number>(field.cellCount).fill(kgPerCell),
     eps: new Array<number>(field.cellCount).fill(0),
+    epsVis: new Array<number>(field.cellCount).fill(0),
     mx: new Array<number>(field.cellCount).fill(0),
     my: new Array<number>(field.cellCount).fill(0),
   };
@@ -563,6 +575,7 @@ export function zeroMediumSources(field: MediumField): MediumSources {
   return {
     rho: new Array<number>(field.cellCount).fill(0),
     eps: new Array<number>(field.cellCount).fill(0),
+    epsVisSrc: new Array<number>(field.cellCount).fill(0),
     mxSrc: new Array<number>(field.cellCount).fill(0),
     mySrc: new Array<number>(field.cellCount).fill(0),
   };

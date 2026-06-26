@@ -133,7 +133,7 @@ export function sampleMediumIntensity(
 ): number {
   const idx = worldToCellIndex(field, wx, wy);
   if (idx < 0) return 0;
-  const eps = field.eps[idx];
+  const eps = (field.epsVis ?? field.eps)[idx];
   if (eps === undefined || eps <= 0) return 0; // nothing deposited → dark
   const rho = field.rho[idx] ?? 0;
   return Math.max(

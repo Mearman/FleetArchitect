@@ -94,9 +94,12 @@ function drawMediumGlow(c: OverlayCtx): void {
   const field = resolveMediumField(c.frames, c.tick);
   if (field === undefined) return; // no medium has ever been seen
 
-  const { rho, eps, widthM, heightM, pitchM } = field;
+  const { rho, eps, epsVis, widthM, heightM, pitchM } = field;
+  // Prefer epsVis (velocity-advected, streams) for the glow; fall back to eps
+  // for old snapshots that don't carry epsVis.
+  const glowEps = epsVis ?? eps;
   const cellCount = widthM * heightM;
-  if (rho.length < cellCount || eps.length < cellCount) return;
+  if (rho.length < cellCount || glowEps.length < cellCount) return;
   const buf = ensureGlowBuffer(widthM, heightM);
   if (buf === undefined) return;
 
@@ -105,7 +108,7 @@ function drawMediumGlow(c: OverlayCtx): void {
   // spreads each sample into a continuous field.
   const data = buf.imageData.data;
   for (let i = 0; i < cellCount; i += 1) {
-    const epsHere = eps[i];
+    const epsHere = glowEps[i];
     const p = i * 4;
     if (epsHere === undefined || epsHere <= 0) {
       data[p] = 0;

@@ -8,7 +8,6 @@ import { EngineCheckpoint } from "./checkpoint";
 export const BattleSide = z.enum(["attacker", "defender", "draw"]);
 export type BattleSide = z.infer<typeof BattleSide>;
 
-
 /** Crew member state at a single tick of a recorded battle. */
 export const CrewSnapshot = z.object({
   id: EntityId,
@@ -594,6 +593,9 @@ export const MediumSnapshot = z.object({
   rho: float64ArraySchema,
   /** Excitation ε per cell (J). Length `widthM * heightM`. */
   eps: float64ArraySchema,
+  /** Visual excitation εVis per cell (velocity-advected for streaming glow).
+   *  Optional for backward compat with pre-epsVis snapshots. */
+  epsVis: float64ArraySchema.optional(),
   /** Grid width in cells. */
   widthM: z.number().int().min(1),
   /** Grid height in cells. */

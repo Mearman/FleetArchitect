@@ -71,17 +71,20 @@ export function stepMediumField(
   // Work on mutable copies so the input is untouched (deterministic, pure).
   let rho = state.rho.slice();
   let eps = state.eps.slice();
+  let epsVis = state.epsVis.slice();
   let mx = state.mx.slice();
   let my = state.my.slice();
 
   for (let step = 0; step < subSteps; step += 1) {
     const rhoNext = rho.slice();
     const epsNext = eps.slice();
+    const epsVisNext = epsVis.slice();
     const mxNext = mx.slice();
     const myNext = my.slice();
     for (let cell = 0; cell < cellCount; cell += 1) {
       const rhoHere = rho[cell] ?? 0;
       const epsHere = eps[cell] ?? 0;
+      const epsVisHere = epsVis[cell] ?? 0;
       const mxHere = mx[cell] ?? 0;
       const myHere = my[cell] ?? 0;
       const cellNeighbours = neighbours[cell] ?? [];
@@ -122,6 +125,8 @@ export function stepMediumField(
       let rhoDif = 0;     // ρ diffusion
       let rhoAdvVel = 0;  // ρ velocity-driven advection
       let epsDif = 0;
+      let epsVisDif = 0;
+      let epsVisAdvVel = 0;
       let mxDif = 0;
       let mxAdvVel = 0;
       let myDif = 0;
@@ -130,12 +135,14 @@ export function stepMediumField(
       for (const neighbour of cellNeighbours) {
         const rhoThere = rho[neighbour] ?? 0;
         const epsThere = eps[neighbour] ?? 0;
+        const epsVisThere = epsVis[neighbour] ?? 0;
         const mxThere = mx[neighbour] ?? 0;
         const myThere = my[neighbour] ?? 0;
 
         // Diffusive flux (FTCS): (D / pitch²) · (φ_to − φ_from) per face.
         if (D !== 0) rhoDif += D * invPitch2 * (rhoThere - rhoHere);
         if (Deps !== 0) epsDif += Deps * invPitch2 * (epsThere - epsHere);
+        if (Deps !== 0) epsVisDif += Deps * invPitch2 * (epsVisThere - epsVisHere);
         if (Dmom !== 0) {
           mxDif += Dmom * invPitch2 * (mxThere - mxHere);
           myDif += Dmom * invPitch2 * (myThere - myHere);
@@ -161,10 +168,12 @@ export function stepMediumField(
         const u_n = ((ux + uxThere) / 2) * dCol + ((uy + uyThere) / 2) * dRow;
         if (u_n > 0) {
           rhoAdvVel -= u_n * invPitch * rhoHere;
+          epsVisAdvVel -= u_n * invPitch * epsVisHere;
           mxAdvVel -= u_n * invPitch * mxHere;
           myAdvVel -= u_n * invPitch * myHere;
         } else if (u_n < 0) {
           rhoAdvVel -= u_n * invPitch * rhoThere;
+          epsVisAdvVel -= u_n * invPitch * epsVisThere;
           mxAdvVel -= u_n * invPitch * mxThere;
           myAdvVel -= u_n * invPitch * myThere;
         }
@@ -187,6 +196,15 @@ export function stepMediumField(
       if (epsNew < 0) epsNew = 0;
       epsNext[cell] = epsNew;
 
+      // --- εVis decay + boundary + source + velocity advection (streams) ---
+      const epsVisDecay = excitationDecayRate(epsVisHere, config.epsDecayTimescaleS);
+      const epsVisBnd = excitationBoundaryRate(epsVisHere, bFaces, config.boundaryEpsLossPerS);
+      const epsVisSrc = (sources.epsVisSrc[cell] ?? 0) * dt;
+      const dEpsVis = (epsVisDif + epsVisAdvVel + epsVisDecay - epsVisBnd) * dt + epsVisSrc;
+      let epsVisNew = epsVisHere + dEpsVis;
+      if (epsVisNew < 0) epsVisNew = 0;
+      epsVisNext[cell] = epsVisNew;
+
       // --- momentum drag + source (no clamp — momentum can be negative) ---
       const drag = config.momentumDragPerS;
       mxNext[cell] = mxHere + (mxDif + mxAdvVel - drag * mxHere) * dt + (sources.mxSrc[cell] ?? 0) * dt;
@@ -194,9 +212,10 @@ export function stepMediumField(
     }
     rho = rhoNext;
     eps = epsNext;
+    epsVis = epsVisNext;
     mx = mxNext;
     my = myNext;
   }
 
-  return { rho, eps, mx, my };
+  return { rho, eps, epsVis, mx, my };
 }
