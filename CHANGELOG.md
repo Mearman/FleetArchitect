@@ -1,3 +1,10 @@
+## [1.21.1](https://github.com/Mearman/FleetArchitect/compare/v1.21.0...v1.21.1) (2026-06-26)
+
+
+### Bug Fixes
+
+* **ui:** reduce glow gain 100x to prevent additive whiteout ([1e87d01](https://github.com/Mearman/FleetArchitect/commit/1e87d012e41d5ac720a87d73920870e9eefadff2))
+
 # [1.21.0](https://github.com/Mearman/FleetArchitect/compare/v1.20.0...v1.21.0) (2026-06-26)
 
 
