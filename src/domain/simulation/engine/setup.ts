@@ -8,7 +8,9 @@ import { hasAnomaly } from "@/domain/anomaly";
 import { DEFAULT_WEAPON_AMMO } from "@/schema/module";
 import type { WeaponEffect } from "@/schema/module";
 import type { Orders } from "@/schema/fleet";
-import type { ShipStance } from "@/schema/ai";
+import { compileOrdersToBase } from "@/schema/fleet-normalise";
+import { compileLegacyRules } from "@/schema/ship-normalise";
+import { Doctrine, type ShipStance } from "@/schema/ai";
 import type { Rng } from "@/domain/simulation/rng";
 import { ACCEL_PER_TICK_FROM_SI } from "../types";
 import type { BattleInputs, CombatShip, ResolvedHardwire, ResolvedModule, SimCrew } from "../types";
@@ -81,6 +83,19 @@ export function desiredRange(
   if (orders.engageRange === "hold") return 0;
   const base = maxWeaponRange(weapons, defaultRange) * SIM.rangeFraction[orders.engageRange];
   return base * SIM.stanceRangeFactor[stance];
+}
+
+/**
+ * Compile a CombatShip's legacy trio/orders into a unified {@link Doctrine} for
+ * the engine to read. Bridge while consumers switch from the legacy fields onto
+ * doctrine: every compiled axis equals the legacy value by construction, so a
+ * consumer reading `doctrine ?? legacy` is byte-identical. The authored doctrine
+ * (design overlaid by leaf) replaces this compile once the legacy fields drop.
+ */
+function combatShipDoctrine(ship: CombatShip): Doctrine {
+  const base = compileOrdersToBase(ship.orders);
+  base.crew = ship.crewPriority;
+  return Doctrine.parse({ base, rules: compileLegacyRules(ship.rules) });
 }
 
 /**
@@ -277,6 +292,7 @@ export function toSimShip(ship: CombatShip, rng: Rng): SimShip {
     crewPriority: ship.crewPriority,
     shipStance: ship.shipStance,
     rules: ship.rules,
+    doctrine: combatShipDoctrine(ship),
     // Live AI decisions start "unset": no stance override, no flags raised. The
     // AI interpreter step rewrites them each tick from the effective AiState.
     ...defaultAiDecisions(),

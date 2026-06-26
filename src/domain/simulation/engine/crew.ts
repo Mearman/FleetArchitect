@@ -134,7 +134,9 @@ export function updateCrew(ship: SimShip): void {
   // of everything once structure is critical) regardless of the ship's static
   // `crewPriority`. Without the rule (`aiPrioritiseRepair` false, the default for
   // every rule-less ship) the static priority stands and the order is unchanged.
-  const priority = ship.aiPrioritiseRepair ? "damageControl" : ship.crewPriority;
+  const priority = ship.aiPrioritiseRepair
+    ? "damageControl"
+    : (ship.doctrine?.base.crew ?? ship.crewPriority);
   const taskOrder = crewTaskOrder(priority, {
     structure: ship.structure,
     maxStructure: ship.maxStructure,

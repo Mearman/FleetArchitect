@@ -59,14 +59,14 @@ const USE_RELATIVISTIC_INTEGRATOR = true;
  * targeting scorer (stance-driven target preference).
  */
 export function effectiveStance(ship: SimShip): ShipStance {
-  return ship.aiStance ?? ship.orders.stance;
+  return ship.aiStance ?? ship.doctrine?.base.stance ?? ship.orders.stance;
 }
 
 export function isRetreating(ship: SimShip): boolean {
   // A `retreat` rule that fired this tick forces disengagement regardless of the
   // static threshold — the AI's explicit order overrides the HP-based default.
   if (ship.aiRetreat) return true;
-  const threshold = ship.orders.retreatThreshold;
+  const threshold = ship.doctrine?.base.retreat ?? ship.orders.retreatThreshold;
   if (threshold <= 0) return false;
   // Effective HP fraction: hull structure + module HP combined. The modular
   // damage model routes damage through module HP first (spilling to structure
@@ -474,22 +474,21 @@ export function moveShips(
         shouldThrust = true;
       }
     } else if (
-      // Formation-keeping: when formationKeeping > 0, blend the desired facing
-      // with the direction toward the fleet's centroid. The blend is a weighted
-      // average of the two bearings using the angular difference, so the ship
-      // steers somewhere between "toward my target" and "toward my fleet's
-      // centre". At formationKeeping=0 this is a no-op; at 1 it overrides the
-      // target-facing entirely (useful only for pure escort/formation flying).
-      // Only applied when the ship is not retreating and has a formation to join.
+      // Formation-keeping (doctrine `cohesion`, legacy `formationKeeping`): when
+      // > 0, blend the desired facing with the direction toward the fleet's
+      // centroid — a weighted average of the two bearings using the angular
+      // difference, so the ship steers somewhere between "toward my target" and
+      // "toward my fleet's centre". At 0 this is a no-op; at 1 it overrides the
+      // target-facing entirely. Only when not retreating and a centroid exists.
       !isRetreating(ship) &&
-      ship.orders.formationKeeping > 0 &&
+      (ship.doctrine?.base.cohesion ?? ship.orders.formationKeeping) > 0 &&
       centroid !== undefined
     ) {
       const formationFacing = Math.atan2(
         centroid.y - ship.y,
         centroid.x - ship.x,
       );
-      const fk = ship.orders.formationKeeping;
+      const fk = ship.doctrine?.base.cohesion ?? ship.orders.formationKeeping;
       // Blend using the angular difference to avoid wrapping artefacts.
       const angDiff = angleDifference(desiredFacing, formationFacing);
       desiredFacing = desiredFacing + angDiff * fk;

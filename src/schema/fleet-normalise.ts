@@ -47,7 +47,7 @@ function engageFraction(engageRange: string): number | undefined {
  * target — the legacy range-keeping semantics). Only fields present on the
  * legacy record are carried; a well-formed `orders` populates every axis.
  */
-function compileOrdersToBase(orders: unknown): Record<string, unknown> {
+export function compileOrdersToBase(orders: unknown): Record<string, unknown> {
   const base: Record<string, unknown> = {};
   if (!isRecord(orders)) return base;
   if (typeof orders.stance === "string") base.stance = orders.stance;

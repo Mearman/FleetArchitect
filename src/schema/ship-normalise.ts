@@ -25,7 +25,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * condition (Zod validates it at parse); the legacy `Action` maps onto a
  * {@link DoctrineAction}-shaped fragment via {@link compileLegacyAction}.
  */
-function compileLegacyRules(rules: unknown): unknown[] {
+export function compileLegacyRules(rules: unknown): unknown[] {
   if (!Array.isArray(rules)) return [];
   const out: unknown[] = [];
   for (const rule of rules) {

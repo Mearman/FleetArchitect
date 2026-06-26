@@ -10,7 +10,7 @@ import type { ShipClassification } from "@/schema/armor";
 import type { CellEdges, SurfaceKind } from "@/schema/grid";
 import type { ModuleEffect, WeaponEffect, WeaponType } from "@/schema/module";
 import type { Orders } from "@/schema/fleet";
-import type { CrewPriority, Rule, ShipStance } from "@/schema/ai";
+import type { CrewPriority, Doctrine, Rule, ShipStance } from "@/schema/ai";
 import type { ResolvedHardwire, SimCrew } from "../types";
 
 import type { UNREACHABLE } from "./config";
@@ -225,6 +225,10 @@ export interface SimShip {
    * default — the stance alone governs behaviour.
    */
   rules: Rule[];
+  /** Resolved unified doctrine (base + rules), compiled from the legacy trio/
+   *  orders by `toSimShip`. Consumers prefer it and fall back to the legacy
+   *  field when absent (direct-built test SimShips). Optional until legacy drops. */
+  doctrine?: Doctrine;
   /**
    * Transient per-tick AI decision (Phase 7 wiring): whether the ship holds
    * fire this tick. Set by the AI interpreter step from the effective
