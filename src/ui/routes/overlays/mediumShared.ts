@@ -102,9 +102,13 @@ export function worldToCellIndex(
 // Both constants are named, documented, and derived from the engine's SI
 // magnitudes (not magic numbers).
 
-/** ε (joules) → glow normaliser. Inverse of the typical sustained-plume ε so a
- *  plume reads as ~0.3–0.7 and ISM-baseline ε ≈ 0 stays dark. See rationale. */
-export const EPS_GAIN_J_INV = 3e-7;
+/** ε (joules) → glow normaliser. Tuned for the smoothed-blit renderer with
+ *  additive blending: the per-cell intensity must be low enough that the
+ *  additive sum over many neighbouring cells (plus bilinear smoothing) stays
+ *  below saturation. The old value (3e-7) was for per-cell radial gradients
+ *  (one contribution per cell); with the smoothed field + advection spreading
+ *  ε across the grid, 100× lower keeps the glow visible without whiteout. */
+export const EPS_GAIN_J_INV = 3e-9;
 
 /** ρ (kg per cell) at which the density amplifier doubles the glow. Set to half
  *  the nebula target density so a filled nebula triples the glow; ISM ρ is
