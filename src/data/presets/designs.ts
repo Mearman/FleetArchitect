@@ -17,68 +17,37 @@ import {
   syntheticGrid,
 } from "@/data/presets/tokens";
 import { subdivideGrid } from "@/domain/shipgen";
-import type { TileGrid } from "@/schema/grid";
-import { DREADNOUGHT_MAX_LENGTH_M, SHIP_LENGTH_METRES, bounds } from "@/domain/grid";
 
-/**
- * Subdivide a coarse ASCII-authored grid so its hull length classifies into the
- * intended ship tier. Uses the **minimum** subdivision factor `f` that places
- * the hull just above the tier's lower length threshold, keeping the cell count
- * as small as possible so the simulation engine remains tractable.
- *
- * The tier thresholds are (from `deriveClassification`):
- *   fighter  : longestAxis ≤ 20 m  →  lowerBound = 0  (any f ≥ 1 stays fighter)
- *   frigate  : longestAxis > 20 m  →  lowerBound = 20 (need f × longest > 20)
- *   cruiser  : longestAxis > 60 m  →  lowerBound = 60 (need f × longest > 60)
- *   dreadnought : longestAxis > 150 m → lowerBound = 150 (need f × longest > 150)
- *
- * For fighters the target is the class upper bound (20 m) rather than zero, so
- * the hull fills out to a recognisable fighter length rather than staying at 1 m
- * per coarse cell; `Math.floor` is used so the result never exceeds the 20 m
- * threshold and accidentally classifies as a frigate.
- *
- * For frigates, cruisers, and dreadnoughts `Math.ceil` is used on `(lowerBound
- * + 1) / longest`, giving the smallest integer f such that f × longest >
- * lowerBound.  The upper-bound limit is then clamped to prevent a cruiser being
- * re-classified as a dreadnought.
- *
- * @param coarse - The coarse grid from `gridFromMap` / `swarmGrid` / etc.
- * @param lowerBound - Class threshold the output must **exceed** in metres.
- *   Pass 0 for fighters (use upper-bound clamping instead via `maxM`).
- * @param maxM - Upper length limit in metres. The resulting f is clamped so
- *   the output never exceeds this value and crosses into the next tier.
- */
-function scaleToTier(coarse: TileGrid, lowerBound: number, maxM: number): TileGrid {
-  const b = bounds(coarse);
-  if (b === undefined) return coarse;
-  const longest = Math.max(b.maxCol - b.minCol + 1, b.maxRow - b.minRow + 1);
-
-  let f: number;
-  if (lowerBound === 0) {
-    // Fighter tier: pick the largest f that stays ≤ maxM (the 20 m upper
-    // bound), so the ship fills out to a recognisable fighter hull.
-    f = Math.max(1, Math.floor(maxM / longest));
-  } else {
-    // All other tiers: minimum f such that longest × f > lowerBound.
-    f = Math.ceil((lowerBound + 1) / longest);
-    // Clamp so we don't overshoot into the tier above.
-    const maxF = Math.floor(maxM / longest);
-    if (maxF >= 1) f = Math.min(f, maxF);
-  }
-
-  if (f <= 1) return coarse;
-  return subdivideGrid(coarse, f);
-}
-
-// Class length thresholds (metres), taken from `deriveClassification`.
-const FIGHTER_MAX_M  = SHIP_LENGTH_METRES.fighter;   // 20 m  (upper bound)
-const FIGHTER_LB_M   = 0;                             // lower bound (any length is fighter)
-const FRIGATE_MAX_M  = SHIP_LENGTH_METRES.frigate;   // 60 m  (upper bound)
-const FRIGATE_LB_M   = SHIP_LENGTH_METRES.fighter;   // 20 m  (lower bound: must exceed this)
-const CRUISER_MAX_M  = SHIP_LENGTH_METRES.cruiser;   // 150 m (upper bound)
-const CRUISER_LB_M   = SHIP_LENGTH_METRES.frigate;   // 60 m  (lower bound)
-const DREAD_MAX_M    = DREADNOUGHT_MAX_LENGTH_M;     // 300 m (upper bound; dreadnoughts may be ≤ 300 m)
-const DREAD_LB_M     = SHIP_LENGTH_METRES.cruiser;   // 150 m (lower bound: must exceed this)
+// Subdivision factors (f): expand each coarse cell into an f × f block of 1 m
+// cells so the ship reaches its physical scale. Chosen so the longest occupied
+// axis of the subdivided hull classifies to the correct tier per
+// `deriveClassification` (fighter ≤ 20 m, frigate ≤ 60 m, cruiser ≤ 150 m,
+// dreadnought > 150 m). Fixed per design — no dynamic tier-pinning logic.
+const F_SABRE    = 2;   // 7 m × 2 → 14 m (fighter)
+const F_WASP     = 2;   // 8 m × 2 → 16 m (fighter)
+const F_GUNSHIP  = 3;   // 8 m × 3 → 24 m (frigate)
+const F_BULWARK  = 3;   // 8 m × 3 → 24 m (frigate)
+const F_AEGIS    = 3;   // 9 m × 3 → 27 m (frigate)
+const F_TORPEDO  = 3;   // 9 m × 3 → 27 m (frigate)
+const F_LEVIATHAN = 7;  // 10 m × 7 → 70 m (cruiser)
+const F_TITAN    = 12;  // 13 m × 12 → 156 m (dreadnought)
+const F_DRONE    = 4;   // 5 m × 4 → 20 m (fighter)
+const F_CARRION  = 2;   // 7 m × 2 → 14 m (fighter)
+const F_RAVAGER  = 3;   // 9 m × 3 → 27 m (frigate)
+const F_SPITTER  = 3;   // 10 m × 3 → 30 m (frigate)
+const F_HIVE_LORD = 5;  // 13 m × 5 → 65 m (cruiser)
+const F_SHARD    = 4;   // 6 m × 4 → 24 m (frigate)
+const F_INGOT    = 4;   // 5 m × 4 → 20 m (fighter)
+const F_ANVIL    = 3;   // 7 m × 3 → 21 m (frigate)
+const F_BATTLERAM = 6;  // 11 m × 6 → 66 m (cruiser)
+const F_SIEGE_TITAN = 12; // 13 m × 12 → 156 m (dreadnought)
+const F_CUTLASS  = 4;   // 5 m × 4 → 20 m (fighter)
+const F_REAVER   = 3;   // 7 m × 3 → 21 m (frigate)
+const F_WARBRINGER = 7; // 9 m × 7 → 63 m (cruiser)
+const F_AUTOMATON = 3;  // 6 m × 3 → 18 m (fighter)
+const F_NODE     = 3;   // 7 m × 3 → 21 m (frigate)
+const F_NETWORK_HUB = 6; // 11 m × 6 → 66 m (cruiser)
+const F_NEXUS_PRIME = 12; // 13 m × 12 → 156 m (dreadnought)
 
 // Authoring note on orientation: ships face +x (to the right). A cell's world
 // x grows with its column, so the RIGHTMOST columns are the prow (forward) and
@@ -116,13 +85,13 @@ export const designData: ShipDesignInput[] = [
     // a berth. crewRequired 9 / crewCapacity 16 — comfortably manned.
     // Merged: keeps the scanner (V) and omni transceiver (O), and adds RCS
     // thrusters (J) on the nose and tail so the Sabre can actually slew.
-    grid: scaleToTier(gridFromMap([
+    grid: subdivideGrid(gridFromMap([
       "..J~L..",
       ".E=#LV.",
       "EFFCC~L",
       ".E=#LO.",
       "..J~L..",
-    ]), FIGHTER_LB_M, FIGHTER_MAX_M),
+    ]), F_SABRE),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -136,13 +105,13 @@ export const designData: ShipDesignInput[] = [
     // replaces the hull block in the ship's spine, feeding all wingtip missile
     // turrets — the whole ship is 4-connected so crew can walk from any
     // crew-quarters cell to the magazine and back. Plasma drives give good speed.
-    grid: scaleToTier(gridFromMap([
+    grid: subdivideGrid(gridFromMap([
       "..J~Mv.",
       "E=CFMM.",
       "EFCCGLL",
       "E=CFMM.",
       "..J~Mv.",
-    ]), FIGHTER_LB_M, FIGHTER_MAX_M),
+    ]), F_WASP),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -156,13 +125,13 @@ export const designData: ShipDesignInput[] = [
     // central magazine (G) fed by a floor corridor, twin fusion reactors, crew
     // quarters, and an engine bank. The Mk I shields protect the flanks, and a
     // light armour shoulder (#) caps each prow corner ahead of the railguns.
-    grid: scaleToTier(gridFromMap([
+    grid: subdivideGrid(gridFromMap([
       ".>JsRL#.",
       ".EFC~sWR",
       "EFFCGv#R",
       ".EFC~sWR",
       ".<JeRL#.",
-    ]), FRIGATE_LB_M, FRIGATE_MAX_M),
+    ]), F_GUNSHIP),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -175,13 +144,13 @@ export const designData: ShipDesignInput[] = [
     // Frigate: a shield brawler using only pulse lasers. No finite-ammo weapons
     // means no magazine required. A broad Mk II shield wall fronts a laser bank;
     // triple fusion reactors and a deep crew and engine block run it.
-    grid: scaleToTier(gridFromMap([
+    grid: subdivideGrid(gridFromMap([
       ".>JWS~L.",
       ".EFCSS~L",
       "EEFFCSvL",
       ".EFCSS~L",
       ".<JeWS~e",
-    ]), FRIGATE_LB_M, FRIGATE_MAX_M),
+    ]), F_BULWARK),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -196,13 +165,13 @@ export const designData: ShipDesignInput[] = [
     // the central corridor feeds all railguns; slow but unyielding. The armoured
     // prow column caps the front of the railgun battery so incoming fire strikes
     // plate before it reaches the guns.
-    grid: scaleToTier(gridFromMap([
+    grid: subdivideGrid(gridFromMap([
       ".>J~~sR#.",
       ".EFCCGsR#",
       "EXEFWGvR#",
       ".EFCCGsR#",
       ".<JeW~se#",
-    ]), FRIGATE_LB_M, FRIGATE_MAX_M),
+    ]), F_AEGIS),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -217,13 +186,13 @@ export const designData: ShipDesignInput[] = [
     // reactor bay feeding all weapons; five crew quarters sustain the large crew
     // needed to man torpedoes and missiles; titanium armour plate (#) on the prow
     // shoulders and core, plus shields, protect the fragile innards.
-    grid: scaleToTier(gridFromMap([
+    grid: subdivideGrid(gridFromMap([
       ".>JeMM#..",
       ".EFCCEWTT",
       "EXFGCv#TT",
       ".EFCCEWTT",
       ".<JeMM#..",
-    ]), FRIGATE_LB_M, FRIGATE_MAX_M),
+    ]), F_TORPEDO),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -249,13 +218,13 @@ export const designData: ShipDesignInput[] = [
     // Merged: keeps the omni transceivers (O, prow tips rows 0/6) and the laser
     // backbone links (b, rows 2/4 col 13) for fleet squad-net, and adds RCS (J)
     // plus reaction wheels (W) on the spine so the capital can come about.
-    grid: scaleToTier(gridFromMap([
+    grid: subdivideGrid(gridFromMap([
       ".>JWSTRL..",
       ".EXCCTRRLO",
       "EXFCCGvRRL",
       ".EXCCGTRLO",
       ".<JeWSTRe.",
-    ]), CRUISER_LB_M, CRUISER_MAX_M),
+    ]), F_LEVIATHAN),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -276,13 +245,13 @@ export const designData: ShipDesignInput[] = [
     // stern → engines → reactor/crew spine → crew decks → magazines → weapons → prow
     // C cells (crew quarters) line the central corridor; G (magazine) cells sit
     // between the crew block and the weapon batteries so crew can haul ammo.
-    grid: scaleToTier(gridFromMap([
+    grid: subdivideGrid(gridFromMap([
       "..>JWSvRML...",
       ".EXCCW~RRMLL.",
       "EXFCCG~RRMMLL",
       ".EXCCW~RRMLL.",
       "..<JeWS~RMLe.",
-    ]), DREAD_LB_M, DREAD_MAX_M),
+    ]), F_TITAN),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -310,11 +279,11 @@ export const designData: ShipDesignInput[] = [
     // are passive (no metabolic cost or crew), tucked onto the aft wing tips.
     // Merged: keeps the electro-receptor membrane (e) and pheromone net (h) for
     // hive-net awareness, and adds pseudopod clusters (x) so the Drone can turn.
-    grid: scaleToTier(swarmGrid([
+    grid: subdivideGrid(swarmGrid([
       ".>xpe",
       "jgfpp",
       ".<xph",
-    ]), FIGHTER_LB_M, FIGHTER_MAX_M),
+    ]), F_DRONE),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -326,13 +295,13 @@ export const designData: ShipDesignInput[] = [
     faction: "Swarm",
     // Fighter: a fast acid flanker. Forward-swept acid claws strip armour at
     // knife range; paired flagella and a pulse jet make it the quickest hunter.
-    grid: scaleToTier(swarmGrid([
+    grid: subdivideGrid(swarmGrid([
       "..>xa..",
       "j=gfaa.",
       "ug~gfaa",
       "j=gfaa.",
       "..<xa..",
-    ]), FIGHTER_LB_M, FIGHTER_MAX_M),
+    ]), F_CARRION),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -345,13 +314,13 @@ export const designData: ShipDesignInput[] = [
     // Frigate: a regenerating brawler. Banks of acid sprayers over a
     // self-knitting carapace, a metabolic core, and a cluster of flagella and
     // pulse jets. No discrete ammo weapons so no ammon sac needed.
-    grid: scaleToTier(swarmGrid([
+    grid: subdivideGrid(swarmGrid([
       ".>jx~aa..",
       "jgf~zaaa.",
       "ugm~rfaaa",
       "jgf~zaaa.",
       ".<jx~aa..",
-    ]), FRIGATE_LB_M, FRIGATE_MAX_M),
+    ]), F_RAVAGER),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -364,13 +333,13 @@ export const designData: ShipDesignInput[] = [
     // Frigate: living artillery. A fan of neural stingers spits homing tendrils
     // downrange; spore clouds screen it. Neural stings have no ammoCapacity so
     // no ammon sac is required. Regen membranes and a metabolic core sustain it.
-    grid: scaleToTier(swarmGrid([
+    grid: subdivideGrid(swarmGrid([
       "..>xsnn...",
       ".jgfzsnnn.",
       "ugm~rfsnnn",
       ".jgfzsnnn.",
       "..<xsnn...",
-    ]), FRIGATE_LB_M, FRIGATE_MAX_M),
+    ]), F_SPITTER),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -393,7 +362,7 @@ export const designData: ShipDesignInput[] = [
     // Merged: keeps the biolaser spines (k), pheromone nets (h) and chemosensor
     // organs (y) for hive-net coverage, and adds pseudopod clusters (x) plus
     // gyral organs (z) on the spine so the capital can come about.
-    grid: scaleToTier(swarmGrid([
+    grid: subdivideGrid(swarmGrid([
       "...>x~nnnk...",
       "..jgfzrsnnnnh",
       ".jgm~rfsannny",
@@ -401,7 +370,7 @@ export const designData: ShipDesignInput[] = [
       ".jgm~rfsannny",
       "..jgfzrsnnnnh",
       "...<x~nnnk...",
-    ]), CRUISER_LB_M, CRUISER_MAX_M),
+    ]), F_HIVE_LORD),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -418,11 +387,11 @@ export const designData: ShipDesignInput[] = [
     // A frigate built to phase in and out: an adaptive shield and prism beam
     // over a crystal spine, with a blink drive to reposition and a phase-cloak
     // to close unobserved. Brittle hull — it relies on shields and mobility.
-    grid: scaleToTier(crystalGrid([
+    grid: subdivideGrid(crystalGrid([
       "..##..",
       "ECSFLK",
       "..##..",
-    ]), FRIGATE_LB_M, FRIGATE_MAX_M),
+    ]), F_SHARD),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -443,13 +412,13 @@ export const designData: ShipDesignInput[] = [
     // crew barracks. Heavier than any comparable fighter; slow but almost
     // unkillable at close range. A single forge reactor and magazine feed the
     // guns; industrial thrusters push the whole mass forward.
-    grid: scaleToTier(foundryGrid([
+    grid: subdivideGrid(foundryGrid([
       "###>#",
       "#CFA#",
       "EFAGe",
       "#CFA#",
       "###<#",
-    ]), FIGHTER_LB_M, FIGHTER_MAX_M),
+    ]), F_INGOT),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -464,13 +433,13 @@ export const designData: ShipDesignInput[] = [
     // feed the guns and welders; a shell magazine carries the ammunition;
     // a corridor of deck space lets the crew reach every station. No shields —
     // the Anvil absorbs fire until the enemy breaks.
-    grid: scaleToTier(foundryGrid([
+    grid: subdivideGrid(foundryGrid([
       ".###>##",
       "ECFW~A#",
       "XFW~AGe",
       "ECFW~A#",
       ".###<##",
-    ]), FRIGATE_LB_M, FRIGATE_MAX_M),
+    ]), F_ANVIL),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -485,7 +454,7 @@ export const designData: ShipDesignInput[] = [
     // and mine layers work the flanks. Industrial cores and grav-drives push
     // the mass; two barracks blocks and a crew of welders keep it in the
     // fight long after lighter ships have folded. Slow and inexorable.
-    grid: scaleToTier(foundryGrid([
+    grid: subdivideGrid(foundryGrid([
       "..###>####.",
       ".#XCFW~AG##",
       "#XCCW~AAG##",
@@ -493,7 +462,7 @@ export const designData: ShipDesignInput[] = [
       "#XCCW~AAG##",
       ".#XCFW~AG##",
       "..###<####.",
-    ]), CRUISER_LB_M, CRUISER_MAX_M),
+    ]), F_BATTLERAM),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -509,7 +478,7 @@ export const designData: ShipDesignInput[] = [
     // of autocannons and mine layers cover every approach vector; a deep crew
     // complement mans the welders and magazines. Enemies either destroy it
     // before it closes range — or they do not.
-    grid: scaleToTier(foundryGrid([
+    grid: subdivideGrid(foundryGrid([
       "...##>######.",
       "..##XCFW~AG##",
       ".##XCCW~AAG##",
@@ -519,7 +488,7 @@ export const designData: ShipDesignInput[] = [
       ".##XCCW~AAG##",
       "..##XCFW~AG##",
       "...##<######.",
-    ]), DREAD_LB_M, DREAD_MAX_M),
+    ]), F_SIEGE_TITAN),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -539,12 +508,12 @@ export const designData: ShipDesignInput[] = [
     // heavier plating and a pair of missile racks; the lower hull is stripped
     // back for engine clearance. A salvaged reactor and magazine keep the
     // volley sustained; lateral drives give it the edge in a turning fight.
-    grid: scaleToTier(corsairGrid([
+    grid: subdivideGrid(corsairGrid([
       ".##>.",
       "ECFM#",
       "#FMGe",
       ".#<..",
-    ]), FIGHTER_LB_M, FIGHTER_MAX_M),
+    ]), F_CUTLASS),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -559,13 +528,13 @@ export const designData: ShipDesignInput[] = [
     // drive for the getaway. Crew quarters sit off-centre on the lighter side.
     // It looks like it was assembled in a hurry from three different ships —
     // which it was — and it works exactly because of that.
-    grid: scaleToTier(corsairGrid([
+    grid: subdivideGrid(corsairGrid([
       ".####>.",
       "ECF##Me",
       "EFM~GJe",
       "#CFMGe.",
       "..##<..",
-    ]), FRIGATE_LB_M, FRIGATE_MAX_M),
+    ]), F_REAVER),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -581,14 +550,14 @@ export const designData: ShipDesignInput[] = [
     // launchers, the lower section carries the drives and the blink core.
     // Raids in, empties the magazines, blinks out before the point defences
     // find their rhythm.
-    grid: scaleToTier(corsairGrid([
+    grid: subdivideGrid(corsairGrid([
       ".##>#####",
       "ECF~CM###",
       "EFMGCWM##",
       "#CFBGWM#.",
       "##FM<G##.",
       ".##e####.",
-    ]), CRUISER_LB_M, CRUISER_MAX_M),
+    ]), F_WARBRINGER),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -606,11 +575,11 @@ export const designData: ShipDesignInput[] = [
     // an active sensor array give it precision at range; a slug reservoir feeds
     // the cannon. No crew, no quarters — the processor runs the whole hull
     // alone. Armour rails top and bottom are the classic Synthetic silhouette.
-    grid: scaleToTier(syntheticGrid([
+    grid: subdivideGrid(syntheticGrid([
       ".##>..",
       "EPGCNe",
       ".##<..",
-    ]), FIGHTER_LB_M, FIGHTER_MAX_M),
+    ]), F_AUTOMATON),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -625,13 +594,13 @@ export const designData: ShipDesignInput[] = [
     // flanked by an interceptor array and a sensor suite. Paired slug
     // reservoirs keep both weapons fed. Armour rails wrap the grid; an armour
     // cap seals the prow behind the gun battery.
-    grid: scaleToTier(syntheticGrid([
+    grid: subdivideGrid(syntheticGrid([
       ".#####>",
       "EXGCINe",
       "EPGCRN#",
       "EXGCINe",
       ".#####<",
-    ]), FRIGATE_LB_M, FRIGATE_MAX_M),
+    ]), F_NODE),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -648,13 +617,13 @@ export const designData: ShipDesignInput[] = [
     // array, and an interceptor screen. Armour rails lock the hull into its
     // machine-precise frame; a double armour cap seals the prow on the
     // centre row.
-    grid: scaleToTier(syntheticGrid([
+    grid: subdivideGrid(syntheticGrid([
       ".#########>",
       "EX~GRHAINe#",
       "EPAGRHAIN##",
       "EX~GRHAINe#",
       ".#########<",
-    ]), CRUISER_LB_M, CRUISER_MAX_M),
+    ]), F_NETWORK_HUB),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -673,7 +642,7 @@ export const designData: ShipDesignInput[] = [
     // indefinitely. Armour rails and a double prow cap give the hull its
     // unmistakable machine silhouette — no crew, no quarters, just the
     // network.
-    grid: scaleToTier(syntheticGrid([
+    grid: subdivideGrid(syntheticGrid([
       ".###########>",
       "EX~GHAINRR##e",
       "EX~GAHAINR##e",
@@ -681,7 +650,7 @@ export const designData: ShipDesignInput[] = [
       "EX~GAHAINR##e",
       "EX~GHAINRR##e",
       ".###########<",
-    ]), DREAD_LB_M, DREAD_MAX_M),
+    ]), F_NEXUS_PRIME),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
