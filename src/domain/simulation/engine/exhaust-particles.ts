@@ -200,3 +200,82 @@ export function emitImpactBurstParticles(args: {
   }
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// Per-tick gather (the engine ticks this once, in fixed order, for determinism)
+// ---------------------------------------------------------------------------
+
+/** Beam-channel glow power proxy, W. `SimBeam` carries no power field, so the
+ *  channel uses a constant intensity tuned for a clear glowing line. */
+export const BEAM_CHANNEL_POWER_W = 1e6;
+
+/** Projectile-wake glow power proxy, W. A wake is faint; a small constant. */
+export const PROJECTILE_WAKE_POWER_W = 1e3;
+
+/** One firing nozzle's exhaust, extracted from a SimShip engine module. Fields
+ *  mirror {@link emitExhaustParticles} (minus `dt`, supplied by the gather). */
+export interface ParticleThrusterSource {
+  nozzleX: number;
+  nozzleY: number;
+  dirX: number;
+  dirY: number;
+  exhaustSpeed: number;
+  throttle: number;
+  jetPower: number;
+}
+
+/** One active beam's channel, extracted from a SimBeam. */
+export interface ParticleBeamSource {
+  sourceX: number;
+  sourceY: number;
+  targetX: number;
+  targetY: number;
+}
+
+/** One projectile's wake sample, extracted from a SimProjectile. */
+export interface ParticleProjectileSource {
+  x: number;
+  y: number;
+}
+
+/** One impact/strike point, extracted from a beam target or projectile hit. */
+export interface ParticleImpactSource {
+  x: number;
+  y: number;
+  energy: number;
+}
+
+/** The tick's particle sources: the engine extracts these slim structs from the
+ *  SimShip/SimBeam/SimProjectile state in fixed order, then the gather emits. */
+export interface ParticleSources {
+  thrusters: readonly ParticleThrusterSource[];
+  beams: readonly ParticleBeamSource[];
+  projectiles: readonly ParticleProjectileSource[];
+  impacts: readonly ParticleImpactSource[];
+}
+
+/**
+ * Gather one tick's new particles from every weapon source, concatenated in
+ * fixed order (thrusters, then beams, then projectile wakes, then impact
+ * bursts) so the result is deterministic — no RNG, array order only. Pure: the
+ * engine extracts the sources from live state each tick and passes them in.
+ */
+export function gatherParticles(
+  sources: ParticleSources,
+  dt: number,
+): ExhaustParticle[] {
+  const out: ExhaustParticle[] = [];
+  for (const t of sources.thrusters) {
+    out.push(...emitExhaustParticles({ ...t, dt }));
+  }
+  for (const b of sources.beams) {
+    out.push(...emitBeamChannelParticles({ ...b, beamPower: BEAM_CHANNEL_POWER_W, dt }));
+  }
+  for (const p of sources.projectiles) {
+    out.push(...emitProjectileWakeParticles({ ...p, wakePower: PROJECTILE_WAKE_POWER_W, dt }));
+  }
+  for (const i of sources.impacts) {
+    out.push(...emitImpactBurstParticles({ ...i, dt }));
+  }
+  return out;
+}

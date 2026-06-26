@@ -6,6 +6,7 @@ import {
   emitExhaustParticles,
   emitImpactBurstParticles,
   emitProjectileWakeParticles,
+  gatherParticles,
   stepExhaustParticle,
   stepExhaustParticles,
   type ExhaustParticle,
@@ -144,5 +145,24 @@ describe("engine.exhaust-particles", () => {
     // The burst spreads (not all one direction): at least two distinct angles.
     const angles = new Set(parts.map((p) => Math.round(Math.atan2(p.vy, p.vx) * 10)));
     expect(angles.size).toBeGreaterThan(1);
+  });
+
+  it("gatherParticles collects emissions from all sources in fixed order", () => {
+    // One of each source. Fixed concatenation order matters for determinism.
+    const out = gatherParticles(
+      {
+        thrusters: [
+          { nozzleX: 0, nozzleY: 0, dirX: 1, dirY: 0, exhaustSpeed: 3000, throttle: 1, jetPower: 1e6 },
+        ],
+        beams: [{ sourceX: 0, sourceY: 0, targetX: 500, targetY: 0 }],
+        projectiles: [{ x: 100, y: 0 }],
+        impacts: [{ x: 500, y: 0, energy: 1e6 }],
+      },
+      MEDIUM_DT_S,
+    );
+    // Exhaust (1) + beam channel over 500 m (6) + wake (1) + impact burst (8).
+    expect(out).toHaveLength(1 + 6 + 1 + 8);
+    // Thrusters come first — the streaming exhaust particle (vx ≈ exhaust speed).
+    expect(out[0]!.vx).toBeCloseTo(3000, 1);
   });
 });
