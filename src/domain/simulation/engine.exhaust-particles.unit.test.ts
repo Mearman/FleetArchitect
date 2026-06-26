@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import { MEDIUM_DT_S } from "./engine/medium-field";
 import {
+  emitBeamChannelParticles,
   emitExhaustParticles,
+  emitImpactBurstParticles,
+  emitProjectileWakeParticles,
   stepExhaustParticle,
   stepExhaustParticles,
   type ExhaustParticle,
@@ -86,5 +89,60 @@ describe("engine.exhaust-particles", () => {
     // The stale parcel is gone; the fresh one survives, aged by one tick.
     expect(out).toHaveLength(1);
     expect(out[0]!.age).toBeCloseTo(0.1 + MEDIUM_DT_S, 9);
+  });
+
+  it("a beam emits particles along its source-to-target channel", () => {
+    // A beam from the origin striking at x=1000: its ionised channel glows where
+    // the beam is, so particles land along the line (not streaming off it).
+    const parts = emitBeamChannelParticles({
+      sourceX: 0,
+      sourceY: 0,
+      targetX: 1000,
+      targetY: 0,
+      beamPower: 1e6,
+      dt: MEDIUM_DT_S,
+    });
+    expect(parts.length).toBeGreaterThan(1);
+    for (const p of parts) {
+      // On the source->target line (y == 0)...
+      expect(p.y).toBeCloseTo(0, 6);
+      // ...and within the segment.
+      expect(p.x).toBeGreaterThanOrEqual(-1);
+      expect(p.x).toBeLessThanOrEqual(1001);
+    }
+  });
+
+  it("a projectile leaves a heated wake particle at its position", () => {
+    // A round at x=500 moving fast: it leaves the medium it just passed through
+    // glowing behind it, so a low-energy wake particle lands where the round is.
+    const parts = emitProjectileWakeParticles({
+      x: 500,
+      y: 0,
+      wakePower: 1e3,
+      dt: MEDIUM_DT_S,
+    });
+    expect(parts).toHaveLength(1);
+    expect(parts[0]!.x).toBeCloseTo(500, 6);
+    expect(parts[0]!.y).toBeCloseTo(0, 6);
+  });
+
+  it("an impact bursts particles radially outward from the strike point", () => {
+    const parts = emitImpactBurstParticles({
+      x: 0,
+      y: 0,
+      energy: 1e6,
+      dt: MEDIUM_DT_S,
+    });
+    expect(parts.length).toBeGreaterThan(1);
+    for (const p of parts) {
+      // Each starts at the strike point...
+      expect(p.x).toBeCloseTo(0, 6);
+      expect(p.y).toBeCloseTo(0, 6);
+      // ...and flies outward (positive speed).
+      expect(Math.hypot(p.vx, p.vy)).toBeGreaterThan(0);
+    }
+    // The burst spreads (not all one direction): at least two distinct angles.
+    const angles = new Set(parts.map((p) => Math.round(Math.atan2(p.vy, p.vx) * 10)));
+    expect(angles.size).toBeGreaterThan(1);
   });
 });

@@ -100,3 +100,103 @@ export function stepExhaustParticles(
   }
   return out;
 }
+
+/**
+ * Spacing of particles sampled along a beam channel, metres. Dense enough that
+ * the rendered blobs read as a continuous glowing line.
+ */
+export const BEAM_CHANNEL_SAMPLE_STEP_M = 100;
+
+/**
+ * Emit particles along a beam's source-to-target channel. A beam is hitscan:
+ * its ionised channel glows WHERE THE BEAM IS, so the particles sit on the line
+ * (stationary) and decay, rather than streaming off like exhaust. Sampled at
+ * {@link BEAM_CHANNEL_SAMPLE_STEP_M} so a long strike reads as a continuous
+ * channel, a short one as a single hot spot.
+ */
+export function emitBeamChannelParticles(args: {
+  sourceX: number;
+  sourceY: number;
+  targetX: number;
+  targetY: number;
+  beamPower: number;
+  dt: number;
+}): ExhaustParticle[] {
+  const dx = args.targetX - args.sourceX;
+  const dy = args.targetY - args.sourceY;
+  const len = Math.hypot(dx, dy);
+  const n = Math.max(1, Math.ceil(len / BEAM_CHANNEL_SAMPLE_STEP_M));
+  const out: ExhaustParticle[] = [];
+  for (let i = 0; i <= n; i += 1) {
+    const t = i / n;
+    out.push({
+      x: args.sourceX + dx * t,
+      y: args.sourceY + dy * t,
+      vx: 0,
+      vy: 0,
+      energy: args.beamPower * args.dt,
+      age: 0,
+    });
+  }
+  return out;
+}
+
+/**
+ * Emit the wake a projectile leaves at its current position: the medium a fast
+ * round just punched through, heated and glowing. Near-stationary (the medium
+ * does not carry the round's velocity) and low-energy; deposited each tick at
+ * the round's position, so a moving round leaves a fading trail of wakes.
+ */
+export function emitProjectileWakeParticles(args: {
+  x: number;
+  y: number;
+  wakePower: number;
+  dt: number;
+}): ExhaustParticle[] {
+  return [
+    {
+      x: args.x,
+      y: args.y,
+      vx: 0,
+      vy: 0,
+      energy: args.wakePower * args.dt,
+      age: 0,
+    },
+  ];
+}
+
+/** Number of particles in an impact burst. Enough to read as a radial flash. */
+export const IMPACT_BURST_PARTICLE_COUNT = 8;
+
+/** Speed at which impact ejecta flies outward, m·s⁻¹. Authored: hot fragments
+ *  thrown from a strike, faster than a wake but slower than exhaust. */
+export const IMPACT_BURST_SPEED_M_PER_S = 800;
+
+/**
+ * Emit an impact burst: when a beam or projectile strikes, hot ejecta radiates
+ * outward from the strike point. The particles spread at evenly spaced angles
+ * (deterministic — fixed angles, no RNG) at {@link IMPACT_BURST_SPEED_M_PER_S},
+ * sharing the strike's energy, then cool as they fly out.
+ */
+export function emitImpactBurstParticles(args: {
+  x: number;
+  y: number;
+  energy: number;
+  dt: number;
+}): ExhaustParticle[] {
+  const n = IMPACT_BURST_PARTICLE_COUNT;
+  const perParticle = (args.energy * args.dt) / n;
+  const out: ExhaustParticle[] = [];
+  for (let i = 0; i < n; i += 1) {
+    const angle = (i / n) * Math.PI * 2;
+    out.push({
+      x: args.x,
+      y: args.y,
+      vx: Math.cos(angle) * IMPACT_BURST_SPEED_M_PER_S,
+      vy: Math.sin(angle) * IMPACT_BURST_SPEED_M_PER_S,
+      energy: perParticle,
+      age: 0,
+    });
+  }
+  return out;
+}
