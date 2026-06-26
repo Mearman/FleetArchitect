@@ -38,7 +38,9 @@ export function ShareButton({ shareable, label = "Share" }: ShareButtonProps) {
     <Button
       variant="light"
       leftSection={<IconShare size={16} />}
-      onClick={handleShare}
+      onClick={() => {
+        void handleShare();
+      }}
     >
       {label}
     </Button>

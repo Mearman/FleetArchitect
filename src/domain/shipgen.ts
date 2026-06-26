@@ -111,7 +111,7 @@ export function subdivideGrid(coarse: TileGrid, f: number): TileGrid {
 
   const newCols = coarse.cols * f;
   const newRows = coarse.rows * f;
-  const cells: GridCell[] = new Array(newCols * newRows);
+  const cells = new Array<GridCell>(newCols * newRows);
 
   // Row-major expansion: iterate source cells in (srcRow, srcCol) order, then
   // inner sub-cells in (dr, dc) order. This fixed order is the determinism

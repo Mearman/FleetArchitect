@@ -307,10 +307,10 @@ export function GridBoard({
               {edges.map(({ dir, kind, doorOpen }) => {
                 const cls =
                   kind === "wall"
-                    ? `${edgeWall} ${edgePositionClass("wall", dir)}`
+                    ? `${edgeWall.join(" ")} ${edgePositionClass("wall", dir)}`
                     : doorOpen
-                      ? `${edgeDoorOpen} ${edgePositionClass("door", dir)}`
-                      : `${edgeDoorClosed} ${edgePositionClass("door", dir)}`;
+                      ? `${edgeDoorOpen.join(" ")} ${edgePositionClass("door", dir)}`
+                      : `${edgeDoorClosed.join(" ")} ${edgePositionClass("door", dir)}`;
                 return (
                   <button
                     key={dir}

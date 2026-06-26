@@ -25,19 +25,15 @@ function freshDatabase(): FleetArchitectDatabase {
  * except `put`, which is replaced by the supplied stub. Used to simulate the
  * capacity-boundary error a long-battle checkpoint triggers in the browser
  * (DataCloneError on the structured clone of `preFrames`) without having to
- * build such a record. The Proxy keeps the full `Table` structural type so no
- * assertion is needed at the call site.
+ * build such a record. `Object.defineProperty` overrides `put` on the table
+ * instance directly, keeping the full `Table` structural type so no assertion
+ * is needed at the call site.
  */
 function withPutStub(
   table: Table<CheckpointRecord, string>,
   put: (record: CheckpointRecord) => Promise<void>,
 ): Table<CheckpointRecord, string> {
-  return new Proxy(table, {
-    get(target, prop, receiver) {
-      if (prop === "put") return put;
-      return Reflect.get(target, prop, receiver);
-    },
-  });
+  return Object.defineProperty(table, "put", { value: put, configurable: true });
 }
 
 /**
@@ -169,10 +165,10 @@ describe("DexieCheckpointStore", () => {
     await store.put("k1", minimalCheckpoint(10), [frame(0)]);
     expect(await db.checkpoints.get("k1")).toBeDefined();
 
-    const table = withPutStub(db.checkpoints, async () => {
+    const table = withPutStub(db.checkpoints, () => {
       const error = new Error("structured clone OOM");
       error.name = "DataCloneError";
-      throw error;
+      return Promise.reject(error);
     });
     const storeWithFailingPut = new DexieCheckpointStore(table);
 
@@ -196,12 +192,12 @@ describe("DexieCheckpointStore", () => {
     await store.put("k1", minimalCheckpoint(10), [frame(0)]);
     expect(await db.checkpoints.get("k1")).toBeDefined();
 
-    const table = withPutStub(db.checkpoints, async () => {
+    const table = withPutStub(db.checkpoints, () => {
       const error = new Error(
         "Failed to execute 'put' on 'IDBObjectStore': Data cannot be cloned, out of memory. DataCloneError: Failed to execute 'put' on 'IDBObjectStore': Data cannot be cloned, out of memory.",
       );
       error.name = "DexieError";
-      throw error;
+      return Promise.reject(error);
     });
     const storeWithFailingPut = new DexieCheckpointStore(table);
 
@@ -215,10 +211,10 @@ describe("DexieCheckpointStore", () => {
   it("rethrows a non-capacity error from put unchanged", async () => {
     // A genuine Dexie error (not a capacity boundary) must propagate to the
     // resume decorator's notifier rather than being swallowed.
-    const table = withPutStub(db.checkpoints, async () => {
+    const table = withPutStub(db.checkpoints, () => {
       const error = new Error("a real IDB failure");
       error.name = "UnknownError";
-      throw error;
+      return Promise.reject(error);
     });
     const storeWithFailingPut = new DexieCheckpointStore(table);
 

@@ -33,6 +33,13 @@ import type { CombatShip, ResolvedModule } from "@/domain/simulation/types";
 import type { ShipStats } from "@/domain/stats";
 import { defaultOrders } from "@/schema/fleet";
 
+/** Narrow an arbitrary value to `unknown[]`. `Array.isArray` alone narrows
+ *  `unknown` to `any[]`, which the type-checked lint rules reject; this guard
+ *  keeps the element type as `unknown` so callers must narrow it themselves. */
+function isUnknownArray(value: unknown): value is unknown[] {
+  return Array.isArray(value);
+}
+
 /**
  * EngineCheckpoint capture/restore is the serialisation core of resumable
  * battles, so it must:
@@ -319,7 +326,7 @@ describe("captureCheckpoint / restoreCheckpoint", () => {
       throw new Error("unexpected JSON shape");
     }
     const jsonShips = viaJson.ships;
-    if (!Array.isArray(jsonShips)) throw new Error("ships not an array");
+    if (!isUnknownArray(jsonShips)) throw new Error("ships not an array");
     const jsonDefender = jsonShips.find(
       (s): s is { instanceId: string; lastFiredTick: unknown } =>
         typeof s === "object" &&

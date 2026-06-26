@@ -153,16 +153,18 @@ function memoryStore(): CheckpointStore & {
     records,
     putCalls,
     deleteCalls,
-    async get(key) {
-      return records.get(key);
+    get(key) {
+      return Promise.resolve(records.get(key));
     },
-    async put(key, checkpoint, preFrames) {
+    put(key, checkpoint, preFrames) {
       putCalls.push({ key, checkpoint, preFrames });
       records.set(key, { checkpoint, preFrames });
+      return Promise.resolve();
     },
-    async delete(key) {
+    delete(key) {
       deleteCalls.push(key);
       records.delete(key);
+      return Promise.resolve();
     },
   };
 }

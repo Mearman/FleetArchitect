@@ -95,7 +95,7 @@ export function useShipDesignUrlSync(
       });
       ownPayloadRef.current = encoded;
       if (encoded !== payload) {
-        navigate(`/ships/${encoded}`, { replace: true });
+        void navigate(`/ships/${encoded}`, { replace: true });
       }
     }, WRITE_DEBOUNCE_MS);
     return () => {

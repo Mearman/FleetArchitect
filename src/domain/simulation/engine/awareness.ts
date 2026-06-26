@@ -205,7 +205,7 @@ export function computeAwareness(
   // (f) Per-ship awareness + ghost memory. The live pool drives ghost refresh;
   //     the merged awareness (live ∪ surviving ghosts) is what targeting reads.
   for (const ship of alive) {
-    refreshGhostsAndAwareness(ship, liveByShip.get(ship.instanceId) ?? new Map(), byId);
+    refreshGhostsAndAwareness(ship, liveByShip.get(ship.instanceId) ?? new Map<string, Contact>(), byId);
   }
   // A ship that died is not in `alive`; its ghosts/awareness are irrelevant
   // (it never targets again) and its stale awareness map is harmless.
@@ -572,7 +572,7 @@ export function buildAwarenessSnapshot(
   // their observer's side without a second pass over the live set.
   const sideByObserver = new Map<string, "attacker" | "defender">();
   for (const ship of alive) {
-    const live = liveByShip.get(ship.instanceId) ?? new Map();
+    const live = liveByShip.get(ship.instanceId) ?? new Map<string, Contact>();
     sideByObserver.set(ship.instanceId, ship.side);
     for (const [enemyId, c] of live) {
       contacts.push({

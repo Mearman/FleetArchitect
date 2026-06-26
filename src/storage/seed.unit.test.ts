@@ -40,7 +40,7 @@ function putRaw(db: FleetArchitectDatabase, store: string, value: object): Promi
     const tx = db.backendDB().transaction(store, "readwrite");
     tx.objectStore(store).put(value);
     tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+    tx.onerror = () => reject(tx.error ?? new Error("indexeddb transaction error"));
   });
 }
 

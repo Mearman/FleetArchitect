@@ -15,19 +15,17 @@ const DEFAULT_LARGE_ENTRIES = 1_000_000;
  * Wrap a Dexie table so every property access forwards to the underlying table
  * except `put`, which is replaced by the supplied stub. Used to simulate the
  * capacity-boundary errors a multi-hundred-MB BattleResult triggers in the
- * browser without having to build such a result. The Proxy keeps the full
- * `Table` structural type so no assertion is needed at the call site.
+ * browser without having to build such a result. `Object.defineProperty`
+ * overrides `put` on the table instance directly, keeping the full `Table`
+ * structural type so no assertion is needed at the call site. It mutates the
+ * table in place, so a stub that forwards on retry (the QuotaExceededError
+ * path) must capture the real `put` first — see that test.
  */
 function withPutStub(
   table: Table<SimCacheRecord, string>,
   put: (record: SimCacheRecord) => Promise<void>,
 ): Table<SimCacheRecord, string> {
-  return new Proxy(table, {
-    get(target, prop, receiver) {
-      if (prop === "put") return put;
-      return Reflect.get(target, prop, receiver);
-    },
-  });
+  return Object.defineProperty(table, "put", { value: put, configurable: true });
 }
 
 let dbCounter = 0;
@@ -97,7 +95,7 @@ describe("DexieSimCache", () => {
         lastAccess: Date.now(),
       });
       tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
+      tx.onerror = () => reject(tx.error ?? new Error("indexeddb transaction error"));
     });
 
     // The record fails the shape guard, so it is a miss and is evicted.
@@ -193,11 +191,11 @@ describe("DexieSimCache", () => {
       lastAccess: 1000,
     });
     let putCalls = 0;
-    const table = withPutStub(db.simCache, async () => {
+    const table = withPutStub(db.simCache, () => {
       putCalls += 1;
       const error = new Error("structured clone OOM");
       error.name = "DataCloneError";
-      throw error;
+      return Promise.reject(error);
     });
     const cache = new DexieSimCache(table);
 
@@ -225,8 +223,9 @@ describe("DexieSimCache", () => {
       lastAccess: 1000,
     });
     let putCalls = 0;
-    const table = withPutStub(db.simCache, async () => {
+    const table = withPutStub(db.simCache, () => {
       putCalls += 1;
+      return Promise.resolve();
     });
     const cache = new DexieSimCache(table);
     // Attach a toJSON that fails the way an oversized result fails the string
@@ -259,6 +258,10 @@ describe("DexieSimCache", () => {
       lastAccess: 1000,
     });
     let putCalls = 0;
+    // Capture the real put before `withPutStub` overrides it on the instance,
+    // so this stub can forward to it on retry (defineProperty mutates the table
+    // rather than wrapping it, so `db.simCache.put` would otherwise recurse).
+    const realPut = db.simCache.put.bind(db.simCache);
     const table = withPutStub(db.simCache, async (record) => {
       putCalls += 1;
       if (putCalls === 1) {
@@ -267,7 +270,7 @@ describe("DexieSimCache", () => {
         throw error;
       }
       // Retry after eviction: forward to the real table.
-      await db.simCache.put(record);
+      await realPut(record);
     });
     const cache = new DexieSimCache(table, DEFAULT_LARGE_BYTES, DEFAULT_LARGE_ENTRIES);
 

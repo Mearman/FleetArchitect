@@ -59,7 +59,7 @@ export function ImportRoute() {
       // A battle isn't stored — it's replayed by the battle route, which owns
       // the /battle/<payload> URL. Forward the link there.
       if (shareable.kind === "battle") {
-        if (!cancelled) navigate(`/battle/${payload}`, { replace: true });
+        if (!cancelled) await navigate(`/battle/${payload}`, { replace: true });
         return;
       }
 
@@ -110,7 +110,7 @@ export function ImportRoute() {
             >
               {status.message}
             </Alert>
-            <Button variant="light" onClick={() => navigate("/")}>
+            <Button variant="light" onClick={() => { void navigate("/"); }}>
               Back to home
             </Button>
           </Stack>
@@ -133,7 +133,7 @@ export function ImportRoute() {
             <Text size="sm" c="dimmed" ta="center">
               Saved to your browser. Open the {destinationLabel} to use it.
             </Text>
-            <Button mt="xs" onClick={() => navigate(destination)}>
+            <Button mt="xs" onClick={() => { void navigate(destination); }}>
               Open {destinationLabel}
             </Button>
           </Stack>

@@ -13,12 +13,20 @@ export default tseslint.config(
     // tsconfig.json files elsewhere in the tree (e.g. registered git
     // worktrees under .claude/). Required because lint-staged runs eslint
     // at commit time.
+    //
+    // `projectService` (global — no `files` filter) powers the type-checked
+    // rules below; it must apply to every matched file or the type-checked
+    // configs crash on files outside the program.
     languageOptions: {
-      parserOptions: { tsconfigRootDir: import.meta.dirname },
+      parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
     },
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
+  // Type-checked tier: catches floating promises, misused async handlers,
+  // unsafe `any`, and invalid template expressions. Requires the
+  // `projectService` parser option set in the block above.
+  ...tseslint.configs.recommendedTypeChecked,
   {
     // No inline eslint-disable / config comments anywhere.
     linterOptions: { noInlineConfig: true },

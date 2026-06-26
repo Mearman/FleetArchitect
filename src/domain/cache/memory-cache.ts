@@ -25,16 +25,19 @@ export class MemorySimCache implements SimCache {
 
   constructor(private readonly maxEntries: number = MAX_MEMORY_ENTRIES) {}
 
-  async get(key: string): Promise<BattleResult | undefined> {
+  // Synchronous internally — the body has nothing to await — but the methods
+  // stay Promise-returning to satisfy the async `SimCache` contract. Returning
+  // `Promise.resolve` directly (rather than `async`) keeps `require-await` happy.
+  get(key: string): Promise<BattleResult | undefined> {
     const value = this.entries.get(key);
-    if (value === undefined) return undefined;
+    if (value === undefined) return Promise.resolve(undefined);
     // Re-insert to mark most-recently used: delete then set moves it to the end.
     this.entries.delete(key);
     this.entries.set(key, value);
-    return value;
+    return Promise.resolve(value);
   }
 
-  async set(key: string, value: BattleResult): Promise<void> {
+  set(key: string, value: BattleResult): Promise<void> {
     // Delete first so an overwrite also refreshes recency ordering.
     this.entries.delete(key);
     this.entries.set(key, value);
@@ -43,9 +46,10 @@ export class MemorySimCache implements SimCache {
       if (oldest.done) break;
       this.entries.delete(oldest.value);
     }
+    return Promise.resolve();
   }
 
-  async has(key: string): Promise<boolean> {
-    return this.entries.has(key);
+  has(key: string): Promise<boolean> {
+    return Promise.resolve(this.entries.has(key));
   }
 }

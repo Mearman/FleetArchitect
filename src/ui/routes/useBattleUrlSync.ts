@@ -163,7 +163,7 @@ export function useBattleUrlSync({
     });
     ownPayloadRef.current = encoded;
     if (encoded !== payload) {
-      navigate(`/battle/${encoded}`, { replace: true });
+      void navigate(`/battle/${encoded}`, { replace: true });
     }
   }, [fleets, designs, attackerId, defenderId, anomalies, seed, payload, navigate]);
 }
