@@ -170,8 +170,8 @@ describe("analyseShipDesign", () => {
     expect(stats.weapons).toHaveLength(1);
     expect(stats.powerNet).toBeGreaterThanOrEqual(0);
     expect(stats.crewNet).toBeGreaterThanOrEqual(0);
-    // pulse laser(40) + fusion reactor(80) + crew quarters(30)
-    expect(stats.cost).toBe(40 + 80 + 30);
+    // pulse laser(55) + fusion reactor(80) + crew quarters(30)
+    expect(stats.cost).toBe(55 + 80 + 30);
   });
 
   it("flags a power and crew deficit for a lone weapon with no reactor", () => {

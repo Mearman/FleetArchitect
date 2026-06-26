@@ -42,11 +42,24 @@
 
 import { TICKS_PER_SECOND } from "@/domain/simulation/types";
 import {
+  ANTIMATTER_ADVANCED_POWER_DENSITY_W_PER_M3,
   ANTIMATTER_POWER_DENSITY_W_PER_M3,
+  FUSION_ADVANCED_POWER_DENSITY_W_PER_M3,
+  FUSION_COMPACT_POWER_DENSITY_W_PER_M3,
   FUSION_POWER_DENSITY_W_PER_M3,
   moduleVolume,
   specificDestructionEnergy,
 } from "./physics";
+
+// Re-export reactor power-density bands so catalogue modules can import them
+// from this leaf (which also anchors FUSION_REACTOR_OUTPUT_W).
+export {
+  ANTIMATTER_ADVANCED_POWER_DENSITY_W_PER_M3,
+  ANTIMATTER_POWER_DENSITY_W_PER_M3,
+  FUSION_ADVANCED_POWER_DENSITY_W_PER_M3,
+  FUSION_COMPACT_POWER_DENSITY_W_PER_M3,
+  FUSION_POWER_DENSITY_W_PER_M3,
+};
 
 // ---------------------------------------------------------------------------
 // Engagement reference range and weapon-range derivations (metres).
@@ -147,34 +160,40 @@ export const BEAM_RANGE_M = Math.sqrt(3) * BEAM_RAYLEIGH_REFERENCE_M;
 // AND reaches further (`v × MAX_TOF_S`) for free.
 // ---------------------------------------------------------------------------
 
-/**
- * Muzzle velocity (m/s) for each kinetic-weapon class — the speed a round
- * leaves the launcher. An autocannon is a chemical/cyclic gun (slower, rapid);
- * a railgun and a mass driver are electromagnetic launchers (faster, harder
- * hitting). These set both the round's kinetic energy (`½·m·v²`) and, via
- * {@link MAX_TOF_S}, the weapon's reach (`v × MAX_TOF_S`).
- */
+// Muzzle velocity (m/s) for each kinetic-weapon class — the speed a round
+// leaves the launcher. Sets both kinetic energy (`½·m·v²`) and reach
+// (`v × MAX_TOF_S`). The broadened menu spans fighter PD → capital super-driver
+// so factions can field light + heavy kinetics without converging on a band,
+// and `kineticWeaponMass(m, v)` gives each a distinct installed mass.
 export const MUZZLE_VELOCITY_M_PER_S = {
-  /** Autocannon: cyclic chemical gun, fastest fire rate, lowest muzzle speed. */
+  /** Point-defence autocannon: a small fast-cyclic chemical gun, the lowest
+   *  muzzle speed (a fighter-scale PD mount cycles faster than it flies). */
+  pdAutocannon: 3_000,
+  /** Autocannon: cyclic chemical gun, fastest fire rate, low muzzle speed. */
   autocannon: 4_000,
+  /** Heavy autocannon: a frigate-scale cyclic gun, slower but harder-hitting. */
+  heavyAutocannon: 5_000,
   /** Railgun: electromagnetic rail launcher, capacitor-fed, high muzzle speed. */
   railgun: 8_000,
-  /** Mass driver: heavy coilgun, the highest muzzle speed and round mass. */
+  /** Gauss cannon: a mid-band coilgun, between railgun and driver. */
+  gauss: 9_500,
+  /** Mass driver: heavy coilgun, high muzzle speed and round mass. */
   driver: 10_000,
+  /** Super-heavy driver: a capital coilgun, the highest muzzle speed. */
+  superDriver: 12_000,
 };
 
-/**
- * Projectile mass (kilograms) for each kinetic-weapon class — the mass of one
- * round. Banded by mount class so a hit's kinetic energy `½·m·v²` lands in the
- * intended band: a fighter-scale autocannon round (~1 kg @ 4 km/s ≈ 8 MJ), a
- * frigate-scale railgun slug (~10 kg @ 8 km/s ≈ 320 MJ), a capital mass-driver
- * round (~50 kg @ 10 km/s ≈ 2.5 GJ). Recoil and hit impulse already consume a
- * round's mass, so authoring it per class keeps momentum consistent for free.
- */
+// Projectile mass (kg) per kinetic-weapon class. Banded so `½·m·v²` lands the
+// round's kinetic energy in the intended fighter→capital band. Recoil and hit
+// impulse consume the round's mass, so this band keeps momentum consistent.
 export const PROJECTILE_MASS_KG = {
+  pdAutocannon: 0.3,
   autocannon: 1,
+  heavyAutocannon: 3,
   railgun: 10,
+  gauss: 20,
   driver: 50,
+  superDriver: 120,
 };
 
 /**
@@ -272,15 +291,9 @@ export const TORPEDO_RANGE_M = ordnanceRangeM(
   ORDNANCE_BURN_TIME_S.torpedo,
 );
 // Finite-burn motor derivation lives in `./ordnance-motor` (extracted for the cap).
-/**
- * Convert a reload / thermal-recovery interval authored in SI seconds into the
- * integer cooldown ticks the engine counts down between shots:
- * `Math.round(reloadSeconds × TICKS_PER_SECOND)`. THE single derivation a
- * weapon's `cooldown` field is authored from, so a refire interval traces to the
- * real mechanism time (a capacitor recharge, a cyclic feed, a magazine reload)
- * rather than a hand-tuned tick literal. Rounded to the nearest whole tick
- * because `cooldown` is an integer count (the schema enforces `z.number().int()`).
- */
+// Convert an SI reload/thermal interval to integer cooldown ticks:
+// `Math.round(seconds × TICKS_PER_SECOND)`. Rounded to the nearest tick because
+// `cooldown` is an integer count (the schema enforces `z.number().int()`).
 export function cooldownTicks(reloadSeconds: number): number {
   return Math.round(reloadSeconds * TICKS_PER_SECOND);
 }
@@ -328,23 +341,29 @@ export function projectileSpeedMPerTick(muzzleVelocityMs: number): number {
 // Reload / thermal-recovery intervals (seconds).
 //
 // A weapon's cooldown is the real mechanism that gates its next shot: a
-// capacitor recharge, a cyclic feed interval, a magazine reload, or a thermal
-// recovery. Authored in seconds; the catalogue converts to engine ticks as
-// `seconds × TICKS_PER_SECOND`.
+// capacitor recharge, a cyclic feed interval, a magazine reload, a thermal
+// recovery, or a beam emitter thermal cycle. Authored in seconds; the
+// catalogue converts to engine ticks as `seconds × TICKS_PER_SECOND`.
 // ---------------------------------------------------------------------------
 
-/**
- * Reload / thermal-recovery interval (seconds) for each weapon class — the time
- * its limiting mechanism needs before it can fire again. A railgun waits on its
- * capacitor bank to recharge (~3 s); an autocannon's cyclic feed cycles fast
- * (sub-second); a missile rack reloads from a magazine (~3 s); a torpedo tube
- * is the slowest (~5 s). DERIVED into cooldown ticks as `seconds × TPS`.
- */
+// Reload / thermal-recovery interval (s) per weapon class — the time its
+// limiting mechanism needs before it can fire again. DERIVED into cooldown
+// ticks as `seconds × TPS`.
 export const RELOAD_THERMAL_TIME_S = {
+  /** PD autocannon: a small fast-cyclic mount, the fastest refire. */
+  pdAutocannon: 0.15,
   /** Autocannon: cyclic feed, sub-second between rounds. */
   autocannon: 0.27,
+  /** Heavy autocannon: a slower cyclic mount, between autocannon and railgun. */
+  heavyAutocannon: 0.5,
   /** Railgun: capacitor-bank recharge between shots. */
   railgun: 3.2,
+  /** Gauss cannon: a mid-band coilgun, between railgun and driver. */
+  gauss: 4.5,
+  /** Mass driver: a heavy coilgun, slow capital refire. */
+  driver: 6,
+  /** Super-heavy driver: the slowest kinetic, a capital coilgun load cycle. */
+  superDriver: 8,
   /** Missile rack: launch-rail reload from the magazine. */
   missile: 3,
   /** Torpedo tube: the slowest reload, a heavy ordnance load cycle. */
@@ -366,22 +385,22 @@ export const RELOAD_THERMAL_TIME_S = {
 // so a few hundred megawatts to ~1 GW spans the classes.
 // ---------------------------------------------------------------------------
 
-/**
- * Sustained delivered beam power (W) for each beam-weapon class — the optical
- * power on target before range falloff, i.e. the beam's DPS rating. The energy a
- * single shot deposits is this power times the inter-shot dwell
- * (`cooldown / TICKS_PER_SECOND`, see {@link beamDamageJoules}), so a fast-
- * cycling pulse deposits a small pulse often and a slow capital lance a large one
- * on a long cooldown — both at a DPS comparable to a kinetic salvo. Banded so a
- * pulse laser chips lighter targets (~300 MW, ~300 MJ/shot at its ~1 s cooldown)
- * while a capital lance carves the gigajoule armour above (~1 GW, multi-gigajoule
- * per shot on its long cooldown).
- */
+// Sustained delivered beam power (W) per class — the beam's DPS rating. The
+// per-shot energy is `power × (cooldown / TPS)`; a fast pulse deposits a small
+// pulse often, a slow lance a large one on a long cooldown. The broadened menu
+// spans PD pulse → capital lance, and `beamWeaponMass(power)` gives each a
+// proportionally larger, heavier emitter + cooling stack.
 export const BEAM_POWER_W = {
-  /** Pulse laser: light point-defence-grade beam, the lowest DPS. */
+  /** PD pulse: a light point-defence-grade beam, the lowest DPS. */
+  pdPulse: 1e8,
+  /** Pulse laser: light point-defence-grade beam, low DPS. */
   pulse: 3e8,
+  /** Disruptor: a frigate anti-shield beam, between pulse and beam. */
+  disruptor: 4.5e8,
   /** Beam laser: a frigate-grade sustained beam, mid DPS. */
   beam: 6e8,
+  /** Heavy lance: a cruiser-grade energy weapon, between beam and lance. */
+  heavyLance: 8e8,
   /** Capital lance: the heaviest energy weapon, the highest DPS (~1 GW), beside
    *  a capital mass-driver's sustained kinetic DPS. */
   lance: 1e9,
@@ -452,59 +471,27 @@ export const ANTIMATTER_REACTOR_OUTPUT_W =
 // automatic.
 // ---------------------------------------------------------------------------
 
-/**
- * Reactor thermal efficiency η (dimensionless, 0–1) — the fraction of a
- * reactor's released power that becomes usable electrical output. The remainder,
- * `output × (1/η − 1)`, is dumped into the hull as waste heat the radiators must
- * shed (see {@link reactorWasteHeatWatts}).
- *
- * Set to 0.85 for an advanced DIRECT-CONVERSION fusion reactor: rather than
- * boiling a working fluid and running a heat-engine turbine (Carnot-limited to
- * ~40-60%), the in-universe reactor decelerates the charged fusion products
- * directly in an electrostatic/inductive converter, which can in principle reach
- * 80-90% conversion because it sidesteps the thermodynamic heat-engine limit.
- * 0.85 is the high-but-defensible end of that direct-conversion band — chosen so
- * a fusion reactor's waste heat (`1.5 GW × (1/0.85 − 1)` ≈ 265 MW) is a quarter
- * of the spike a naive `1/η = ∞` (all-output-as-waste) model would impose, which
- * is what lets a realistically-sized deployed radiator hold the reactor cell
- * below the 1500 K material limit. A lower η would raise the waste heat past
- * what any credible deployed-fin area can shed from a single cell.
- */
+// Reactor thermal efficiency η (0–1): the fraction of released power that
+// becomes usable electricity; the remainder `output × (1/η − 1)` is waste heat
+// the radiators must shed. 0.85 is the high end of the direct-conversion band
+// (the in-universe reactor decelerates charged fusion products electrostatically,
+// sidestepping the Carnot limit) — chosen so a fusion reactor's waste heat
+// (~265 MW at 1.5 GW) is within what a realistically-deployed radiator can
+// shed below the 1500 K material limit.
 export const REACTOR_THERMAL_EFFICIENCY = 0.85;
 
-/**
- * Waste heat (watts) a reactor dumps into the hull — DERIVED from its electrical
- * output and the thermal efficiency: `output × (1/η − 1)`. A reactor producing
- * `output` watts of electricity at efficiency η released `output / η` watts in
- * total, of which `output / η − output = output × (1/η − 1)` is rejected as heat.
- * This is the figure the resource step injects as the reactor cell's thermal
- * source (NOT the electrical output, which is the grid supply, not heat).
- */
+// Waste heat (W) a reactor dumps into the hull: `output × (1/η − 1)`. This is
+// the figure the resource step injects as the reactor cell's thermal source.
 export function reactorWasteHeatWatts(outputWatts: number): number {
   return outputWatts * (1 / REACTOR_THERMAL_EFFICIENCY - 1);
 }
 
-/**
- * Deployed-fin effective-area amplification factor (dimensionless) for a
- * radiator cell — how many times its bare 1 m² cell-face footprint of effective
- * radiating area a deployed radiator unfolds. A spacecraft radiator is not a
- * flat patch of hull: it is a large folded/deployed fin array (think the ISS's
- * thousands of square metres of panels unfolding from a compact stowed mount),
- * so the effective area radiating to space is far larger than the cell footprint
- * the panel mounts on. The thermal field multiplies a radiator cell's geometric
- * footprint by this factor to get its effective radiating area.
- *
- * Set to 800: a fusion reactor's waste heat (~265 MW at η = 0.85) shed from a
- * single reactor cell needs an effective radiating area of order `waste /
- * (ε·σ·T⁴)` to settle below 1500 K, which at a working temperature near 1300 K
- * is ~1300 m²; with the 2 m² both-faces footprint of one cell that is an ~650×
- * amplification, so 800× lands the reactor cell's steady state at ~1340 K — below
- * the 1500 K material limit with margin — while keeping the factor in the
- * high-but-physical band a large deployed multi-fin warship radiator reaches.
- * The corvette in the engagement integration test (a single fusion reactor cell)
- * survives at this figure; a combat heat spike that destroys radiator cells, or a
- * reactor far over-sized for its radiating area, still crosses 1500 K and dies.
- */
+// Deployed-fin effective-area amplification factor (dimensionless) for a
+// radiator cell: how many times its bare 1 m² footprint a deployed radiator
+// unfolds (a real spacecraft radiator is a large folded fin array, not a flat
+// hull patch). 800× lands a fusion reactor's waste-heat cell at ~1340 K — below
+// the 1500 K material limit with margin — while a combat heat spike that
+// destroys radiator cells still crosses the threshold and triggers overheat.
 export const RADIATOR_FIN_AREA_FACTOR = 800;
 
 // ---------------------------------------------------------------------------
@@ -592,41 +579,38 @@ export const LOCAL_CHARGE_BUFFER_J =
 // real rate rather than TPS× too fast.
 // ---------------------------------------------------------------------------
 
-/**
- * Shield capacity (joules) for each shield class — the energy the projector can
- * absorb before the field collapses. Banded by class so a hit (kinetic ½·m·v² or
- * beam power × dwell, both now real joules) drains a realistic share of the field:
- * a light deflector (~200 MJ) collapses to a couple of frigate salvos while a
- * heavy capital array (~600 MJ) rides out several. On the same joule scale as the
- * armour behind it, so shields buy time rather than trivially soaking or instantly
- * popping.
- */
+// Shield capacity (J) per class — the energy the projector absorbs before the
+// field collapses. Banded so a hit drains a realistic share of the field; on
+// the same joule scale as the armour behind it, so shields buy time rather than
+// trivially soaking or popping.
 export const SHIELD_CAPACITY_J = {
-  /** Light deflector: the smallest field, ~200 MJ. */
+  /** Point-defence bubble: the smallest field, a fighter-scale pop-up. */
+  pd: 8e7,
+  /** Light deflector: the smallest proper field, ~200 MJ. */
   light: 2e8,
   /** Medium shield: a frigate-grade array, ~400 MJ. */
   medium: 4e8,
-  /** Heavy shield: a capital-grade array, the largest field, ~600 MJ. */
+  /** Heavy shield: a cruiser-grade array, the broadest mid-tier field. */
   heavy: 6e8,
+  /** Capital array: the largest field, ~1 GJ. */
+  capital: 1e9,
 };
 
-/**
- * Shield recharge power (watts) for each shield class — the grid power the
- * projector draws to rebuild its field, and (because the catalogue sets the
- * shield module's `powerDraw` to this figure) the watts it takes off the reactor
- * while active. Banded so a field rebuilds over a watchable handful of seconds
- * (`capacity / rechargeRate` ≈ several seconds) and so shield recovery is a
- * meaningful, weapon-comparable load on the reactor: a light shield ~20 MW, a
- * heavy capital shield ~60 MW. The engine converts this to joules per tick as
- * `rechargeRate / TICKS_PER_SECOND` (the watts → joules-per-tick boundary).
- */
+// Shield recharge power (W) per class — the grid power the projector draws to
+// rebuild its field. The catalogue sets a shield module's `powerDraw` to this
+// figure, so shield recovery competes with weapons and drive for reactor watts.
+// The engine converts to J/tick as `rechargeRate / TICKS_PER_SECOND`.
 export const SHIELD_RECHARGE_W = {
+  /** PD bubble: ~8 MW — a ~10 s rebuild of its ~80 MJ field. */
+  pd: 8e6,
   /** Light deflector: ~20 MW — a ~10 s rebuild of its ~200 MJ field. */
   light: 2e7,
   /** Medium shield: ~40 MW — a ~10 s rebuild of its ~400 MJ field. */
   medium: 4e7,
   /** Heavy shield: ~60 MW — a ~10 s rebuild of its ~600 MJ field. */
   heavy: 6e7,
+  /** Capital array: ~100 MW — a ~10 s rebuild of its ~1 GJ field. */
+  capital: 1e8,
 };
 
 // ---------------------------------------------------------------------------

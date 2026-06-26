@@ -185,8 +185,12 @@ export const EXHAUST_VELOCITY_M_PER_S = {
 export const DRIVE_THRUST_NEWTONS = {
   /** Ion drive: efficient but low-thrust electrostatic drive. */
   ion: 45_000,
-  /** Plasma drive: fusion-torch class, the highest single-nozzle thrust. */
+  /** Light plasma drive: a compact fusion-torch, the entry high-thrust band. */
+  lightPlasma: 80_000,
+  /** Plasma drive: fusion-torch class, the standard high-thrust band. */
   plasma: 120_000,
+  /** Heavy plasma drive: a capital-scale fusion-torch, the highest thrust. */
+  heavyPlasma: 160_000,
   /** Bio-organic drive (Swarm): high mass-flow, modest exhaust velocity. */
   bio: 60_000,
   /** Crystal resonant drive (Crystalline): high-Isp, mid thrust. */
@@ -214,7 +218,11 @@ export const PROPELLANT_MASS_FLOW_KG_PER_S: Record<
   number
 > = {
   ion: DRIVE_THRUST_NEWTONS.ion / EXHAUST_VELOCITY_M_PER_S.ion,
+  lightPlasma:
+    DRIVE_THRUST_NEWTONS.lightPlasma / EXHAUST_VELOCITY_M_PER_S.plasma,
   plasma: DRIVE_THRUST_NEWTONS.plasma / EXHAUST_VELOCITY_M_PER_S.plasma,
+  heavyPlasma:
+    DRIVE_THRUST_NEWTONS.heavyPlasma / EXHAUST_VELOCITY_M_PER_S.plasma,
   bio: DRIVE_THRUST_NEWTONS.bio / EXHAUST_VELOCITY_M_PER_S.bio,
   crystal: DRIVE_THRUST_NEWTONS.crystal / EXHAUST_VELOCITY_M_PER_S.crystal,
   thermal: DRIVE_THRUST_NEWTONS.thermal / EXHAUST_VELOCITY_M_PER_S.thermal,
@@ -325,6 +333,20 @@ export function moduleVolume(classKey: keyof typeof MODULE_VOLUME_M3): number {
 }
 
 /**
+ * Mean density (kg/m³) of a module class — the typed accessor for
+ * {@link MODULE_DENSITY}, throwing on an unknown class so a typo surfaces at
+ * the call site (mirrors {@link moduleVolume}). Used for the default density
+ * arguments of the capability-derived mass functions below.
+ */
+export function moduleDensity(classKey: keyof typeof MODULE_DENSITY): number {
+  const density = MODULE_DENSITY[classKey];
+  if (density === undefined) {
+    throw new Error(`no module density for class "${String(classKey)}"`);
+  }
+  return density;
+}
+
+/**
  * Installed mass (kg) of a module: `meanDensity × moduleVolume`.
  */
 export function moduleMass(
@@ -339,6 +361,194 @@ export function moduleMass(
     throw new Error(`no module volume for class "${String(classKey)}"`);
   }
   return density * volume;
+}
+
+// ---------------------------------------------------------------------------
+// Reactor power-density bands (watts per cubic metre).
+//
+// Reactor output is `powerDensity × moduleVolume`. The volumetric power
+// densities themselves live here with the other module-mass anchors; the
+// combat-scale layer (`combat-scale.ts`) records the derived output constants
+// (`FUSION_REACTOR_OUTPUT_W`, `ANTIMATTER_REACTOR_OUTPUT_W`) for catalogue
+// derivations. A reactor's mass is then DERIVED from its output via
+// `reactorMass(output, powerDensity)` below, so a denser core is proportionally
+// smaller and lighter for the same output — by physics, not by a size class.
+//
+// The menu is broader than the two legacy densities: a compact fusion core is
+// less dense than a standard fusion core (a smaller, lighter, lower-output
+// variant), and an advanced antimatter core is denser than the legacy band.
+// ---------------------------------------------------------------------------
+
+/** Standard fusion core power density (W/m³) — the legacy band. */
+export const FUSION_POWER_DENSITY_W_PER_M3 = 5e7;
+/** Compact fusion core power density (W/m³) — a smaller, lighter variant. */
+export const FUSION_COMPACT_POWER_DENSITY_W_PER_M3 = 4e7;
+/** Advanced fusion core power density (W/m³) — a high-output variant. */
+export const FUSION_ADVANCED_POWER_DENSITY_W_PER_M3 = 6e7;
+/** Standard antimatter core power density (W/m³) — the legacy band. */
+export const ANTIMATTER_POWER_DENSITY_W_PER_M3 = 2e8;
+/** Advanced antimatter core power density (W/m³) — a high-output variant. */
+export const ANTIMATTER_ADVANCED_POWER_DENSITY_W_PER_M3 = 3e8;
+
+// ---------------------------------------------------------------------------
+// Capability-derived module mass (kilograms) — proportional and non-arbitrary.
+//
+// The fixed `MODULE_VOLUME_M3` bands above give every module of a class the
+// same envelope regardless of what it actually does, so a fighter autocannon
+// and a capital mass-driver both weigh the same "mediumWeapon" 56 t. The
+// derivations below retire that: a module's volume (and thus its mass) follows
+// from its authored capability via a per-category physical specific-rating, so
+// mass = `meanDensity × (capability / specificRating)`. A stronger module is
+// proportionally larger and heavier; a weaker one smaller and lighter — by
+// physics, not by an assigned class. There is no size/mount field and no mount
+// restriction: any ship may mount any module, and whether it works is decided
+// by the ship's own power/crew/mass/connectivity balance (`stats.ts`), not by a
+// size rule.
+//
+// The specific ratings are calibrated to the existing capability/mass points
+// (e.g. a 320 MJ railgun ≈ 56 t) so the migration is roughly mass-neutral
+// there; realistic variation then comes from authoring modules across a real
+// fighter→capital span of capabilities rather than converging on one band.
+// ---------------------------------------------------------------------------
+
+/**
+ * Volumetric muzzle-energy density of a kinetic-weapon mechanism (capacitor
+ * bank + barrel + breech), in J/m³. A frigate railgun stores ~320 MJ of muzzle
+ * energy in a ~16 m³ envelope → ~2e7 J/m³. THE anchor a kinetic weapon's
+ * installed mass is derived from: a 2.5 GJ capital driver is proportionally a
+ * ~125 m³, ~500 t mechanism; an 8 MJ fighter autocannon a ~0.4 m³, ~1 t one.
+ */
+export const KINETIC_WEAPON_ENERGY_DENSITY_J_PER_M3 = 2e7;
+
+/**
+ * Volumetric sustained-power density of a beam weapon (emitter + optics +
+ * cooling), in W/m³. A pulse beam delivers ~3e8 W from an ~8 m³ envelope →
+ * ~4e7 W/m³. THE anchor a beam weapon's installed mass is derived from: a 1 GW
+ * capital lance is proportionally a ~25 m³, ~100 t mechanism.
+ */
+export const BEAM_WEAPON_POWER_DENSITY_W_PER_M3 = 4e7;
+
+/**
+ * Volumetric thrust density of a drive (nozzle + power-conditioning envelope),
+ * in N/m³. A plasma drive's ~120 kN sits in a ~25 m³ envelope → ~5e3 N/m³. THE
+ * anchor an engine's installed mass is derived from: thrust sizing, independent
+ * of exhaust velocity (which sets propellant flow, not dry mass).
+ */
+export const ENGINE_THRUST_DENSITY_N_PER_M3 = 5e3;
+
+/**
+ * Volumetric energy density of a shield projector (field generator + emitters),
+ * in J/m³. A light deflector's ~200 MJ field sits in a ~15 m³ envelope →
+ * ~1.3e7 J/m³. THE anchor a shield's installed mass is derived from: a 600 MJ
+ * capital array is proportionally a ~46 m³, ~92 t mechanism.
+ */
+export const SHIELD_ENERGY_DENSITY_J_PER_M3 = 1.3e7;
+
+/**
+ * Volumetric storage density of a magazine (stored rounds per m³ of ordnance
+ * bay). ~30 rounds/m³ gives a 1200-round frigate magazine a ~40 m³ envelope
+ * (matching the legacy band) and a 250-round fighter store a ~8 m³ one. THE
+ * anchor a magazine's installed mass is derived from.
+ */
+export const MAGAZINE_ROUNDS_PER_M3 = 30;
+
+/**
+ * Habitable volume per crew berth (m³). ~12 m³/berth gives an 8-berth quarters
+ * block a ~96 m³ envelope (mostly air, hence the low `crew` density). THE
+ * anchor crew-quarters mass is derived from.
+ */
+export const CREW_VOLUME_PER_BERTH_M3 = 12;
+
+/**
+ * Installed mass (kg) of a kinetic weapon, DERIVED from its muzzle kinetic
+ * energy `½·m·v²`: `density × (muzzleEnergy / KINETIC_WEAPON_ENERGY_DENSITY)`.
+ * A heavier or faster round is proportionally a heavier gun, so damage, range
+ * (via muzzle), and mass all rise together.
+ */
+export function kineticWeaponMass(
+  projectileMassKg: number,
+  muzzleVelocityMs: number,
+  densityKgPerM3: number = moduleDensity("mediumWeapon"),
+): number {
+  const muzzleEnergyJ =
+    0.5 * projectileMassKg * muzzleVelocityMs * muzzleVelocityMs;
+  return (
+    densityKgPerM3 * (muzzleEnergyJ / KINETIC_WEAPON_ENERGY_DENSITY_J_PER_M3)
+  );
+}
+
+/**
+ * Installed mass (kg) of a beam weapon, DERIVED from its sustained beam power:
+ * `density × (beamPower / BEAM_WEAPON_POWER_DENSITY)`. A higher-power beam is
+ * proportionally a larger, heavier emitter + cooling stack.
+ */
+export function beamWeaponMass(
+  beamPowerW: number,
+  densityKgPerM3: number = moduleDensity("lightWeapon"),
+): number {
+  return densityKgPerM3 * (beamPowerW / BEAM_WEAPON_POWER_DENSITY_W_PER_M3);
+}
+
+/**
+ * Installed mass (kg) of a reactor, DERIVED from its electrical output:
+ * `density × (output / powerDensity)`. This is the inverse of the output
+ * derivation (`output = powerDensity × volume`), so a reactor's mass traces to
+ * its core power-density and the output it must deliver.
+ */
+export function reactorMass(
+  outputW: number,
+  powerDensityWPerM3: number,
+  densityKgPerM3: number = moduleDensity("reactor"),
+): number {
+  return densityKgPerM3 * (outputW / powerDensityWPerM3);
+}
+
+/**
+ * Installed mass (kg) of an engine, DERIVED from its rated thrust:
+ * `density × (thrust / ENGINE_THRUST_DENSITY)`. A higher-thrust drive is a
+ * proportionally larger nozzle + power-conditioning stack.
+ */
+export function engineMass(
+  thrustN: number,
+  densityKgPerM3: number = moduleDensity("engine"),
+): number {
+  return densityKgPerM3 * (thrustN / ENGINE_THRUST_DENSITY_N_PER_M3);
+}
+
+/**
+ * Installed mass (kg) of a shield projector, DERIVED from its field capacity:
+ * `density × (capacity / SHIELD_ENERGY_DENSITY)`. A stronger field is a
+ * proportionally larger generator + emitter array.
+ */
+export function shieldMass(
+  capacityJ: number,
+  densityKgPerM3: number = moduleDensity("shield"),
+): number {
+  return densityKgPerM3 * (capacityJ / SHIELD_ENERGY_DENSITY_J_PER_M3);
+}
+
+/**
+ * Installed mass (kg) of a magazine, DERIVED from its stored round count:
+ * `density × (rounds / MAGAZINE_ROUNDS_PER_M3)`. A larger store is a
+ * proportionally larger ordnance bay.
+ */
+export function magazineMass(
+  ammoStored: number,
+  densityKgPerM3: number = moduleDensity("magazine"),
+): number {
+  return densityKgPerM3 * (ammoStored / MAGAZINE_ROUNDS_PER_M3);
+}
+
+/**
+ * Installed mass (kg) of crew quarters, DERIVED from berth capacity:
+ * `density × (capacity × CREW_VOLUME_PER_BERTH)`. A larger crew needs a
+ * proportionally larger habitable volume (mostly air, hence the low density).
+ */
+export function crewMass(
+  capacity: number,
+  densityKgPerM3: number = moduleDensity("crew"),
+): number {
+  return densityKgPerM3 * (capacity * CREW_VOLUME_PER_BERTH_M3);
 }
 
 // ---------------------------------------------------------------------------
@@ -474,26 +684,6 @@ export function armorHpJoules(faction: string): number {
 // takes for fast manoeuvring and energy weapons. The two figures band the well's
 // two reactor classes — a fusion vessel and a denser antimatter core.
 // ---------------------------------------------------------------------------
-
-/**
- * Volumetric electrical power density (W/m³) of an advanced compact fusion
- * reactor core — the `reactor` module class. Set so a fusion vessel of the
- * authored `MODULE_VOLUME_M3.reactor` envelope produces order-gigawatt output,
- * the energy budget a ship needs to run energy weapons and a fusion-torch drive.
- * Orders of magnitude above any present-day power plant: the in-universe
- * advanced-fusion core is the setting's premise for a gigawatt ship reactor.
- */
-export const FUSION_POWER_DENSITY_W_PER_M3 = 5e7;
-
-/**
- * Volumetric electrical power density (W/m³) of an antimatter-annihilation
- * reactor core — the denser `reactorCompact` module class. Higher than fusion
- * because annihilation converts rest mass to energy near-completely, so a
- * smaller, heavier-shielded core yields more watts per cubic metre. Banded
- * above {@link FUSION_POWER_DENSITY_W_PER_M3} so an antimatter reactor outputs
- * several gigawatts from a compact envelope.
- */
-export const ANTIMATTER_POWER_DENSITY_W_PER_M3 = 2e8;
 
 // ---------------------------------------------------------------------------
 // Specific heat capacity (joules per kilogram per kelvin).
