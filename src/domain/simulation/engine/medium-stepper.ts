@@ -122,7 +122,6 @@ export function stepMediumField(
       let rhoDif = 0;     // ρ diffusion
       let rhoAdvVel = 0;  // ρ velocity-driven advection
       let epsDif = 0;
-      let epsAdvVel = 0;
       let mxDif = 0;
       let mxAdvVel = 0;
       let myDif = 0;
@@ -149,11 +148,12 @@ export function stepMediumField(
           else if (u < 0) rhoAdv -= u * invPitch * rhoThere;
         }
 
-        // Velocity-driven advection (upwind) of all four fields by u. The face-
-        // normal velocity is the AVERAGE of the two cells' velocities projected
-        // onto the face normal — symmetric, so the flux from A→B is the negative
-        // of B→A (mass-conservative). Diagonal transport is reconstructed from
-        // the x/y face fluxes (not flattened to cardinals).
+        // Velocity-driven advection (upwind) of ρ, mx, my by u. ε is NOT
+        // advected yet — it feeds sensor signatures, and advecting exhaust heat
+        // at km/s perturbs the AI. The glow still "streams" visually because the
+        // renderer's ε×(1+ρ/ρref) brightness is amplified where the streaming ρ
+        // is dense. Face-normal velocity is the AVERAGE of the two cells'
+        // velocities (symmetric → mass-conservative).
         const uxThere = rhoThere > 0 ? mxThere / rhoThere : 0;
         const uyThere = rhoThere > 0 ? myThere / rhoThere : 0;
         const dCol = (neighbour % widthM) - cellCol;
@@ -161,12 +161,10 @@ export function stepMediumField(
         const u_n = ((ux + uxThere) / 2) * dCol + ((uy + uyThere) / 2) * dRow;
         if (u_n > 0) {
           rhoAdvVel -= u_n * invPitch * rhoHere;
-          epsAdvVel -= u_n * invPitch * epsHere;
           mxAdvVel -= u_n * invPitch * mxHere;
           myAdvVel -= u_n * invPitch * myHere;
         } else if (u_n < 0) {
           rhoAdvVel -= u_n * invPitch * rhoThere;
-          epsAdvVel -= u_n * invPitch * epsThere;
           mxAdvVel -= u_n * invPitch * mxThere;
           myAdvVel -= u_n * invPitch * myThere;
         }
@@ -184,7 +182,7 @@ export function stepMediumField(
       const epsDecay = excitationDecayRate(epsHere, config.epsDecayTimescaleS);
       const epsBnd = excitationBoundaryRate(epsHere, bFaces, config.boundaryEpsLossPerS);
       const epsSrc = (sources.eps[cell] ?? 0) * dt;
-      const dEps = (epsDif + epsAdvVel + epsDecay - epsBnd) * dt + epsSrc;
+      const dEps = (epsDif + epsDecay - epsBnd) * dt + epsSrc;
       let epsNew = epsHere + dEps;
       if (epsNew < 0) epsNew = 0;
       epsNext[cell] = epsNew;

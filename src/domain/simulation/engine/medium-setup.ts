@@ -222,16 +222,14 @@ export const MEDIUM_EXHAUST_VELOCITY_M_PER_S = 320 * 9.80665;
 
 /**
  * Fraction of a burning engine's expelled mass that deposits as local density in
- * the medium grid. ZERO: a rocket's exhaust expands to a trace in vacuum (it
- * rarefies far faster than the coarse grid diffuses it), so it does NOT pool as
- * mass at the nozzle. The plume's visible signature is its EXCITATION
- * ({@link THERMAL_EPS_COUPLING_FRACTION} → ε, the glowing ionised channel), not
- * its density. Setting this to zero also closes a self-drag feedback: a dense ρ
- * deposit at the ship's own cell would brake it in its own exhaust. Drag still
- * acts on the AMBIENT medium (ISM, nebula, debris clouds) — just not on a ship's
- * self-deposited plume.
+ * the medium grid. A real rocket's exhaust rarefies rapidly in vacuum (expanding
+ * beyond the coarse grid cell before the next tick), so only a fraction stays
+ * local. The deposited mass carries its momentum (exhaust streams backward at
+ * exhaust velocity, advecting ρ/ε away from the nozzle) and its heat (ε via
+ * {@link THERMAL_EPS_COUPLING_FRACTION}). 0.1: most exhaust rarefies immediately
+ * but enough stays to form a visible, streaming plume.
  */
-export const EXHAUST_RHO_COUPLING = 0;
+export const EXHAUST_RHO_COUPLING = 1e-14;
 
 /**
  * Fraction of a burning engine's jet power that converts to thermal /
@@ -403,30 +401,34 @@ export function computeArenaMediumSources(
       const exDx = Math.cos(exhaustAngle);
       const exDy = Math.sin(exhaustAngle);
 
+      const mainDepositKg = massBurnedKg * EXHAUST_RHO_COUPLING;
+      const jetPowerW = 0.5 * forceN * MEDIUM_EXHAUST_VELOCITY_M_PER_S;
+      const epsDepositJ = jetPowerW * THERMAL_EPS_COUPLING_FRACTION * MEDIUM_DT_S;
       const mainIdx = mediumCellIndex(
         field,
         Math.floor(wx / field.config.pitchM + field.config.widthM / 2),
         Math.floor(wy / field.config.pitchM + field.config.heightM / 2),
       );
-      const mainDepositKg = massBurnedKg * EXHAUST_RHO_COUPLING;
-      // Jet power `½·F·v_e`; a coupling fraction becomes excitation (J) over the
-      // tick (`· MEDIUM_DT_S`).
-      const jetPowerW = 0.5 * forceN * MEDIUM_EXHAUST_VELOCITY_M_PER_S;
-      const epsDepositJ = jetPowerW * THERMAL_EPS_COUPLING_FRACTION * MEDIUM_DT_S;
+      // ε (heat) at the nozzle cell — unchanged from before the velocity
+      // substrate. The excitation feeds sensor signatures; keeping it here
+      // preserves the existing battle behaviour.
       if (mainIdx !== null) {
-        rho[mainIdx] = (rho[mainIdx] ?? 0) + mainDepositKg;
         eps[mainIdx] = (eps[mainIdx] ?? 0) + epsDepositJ;
       }
-      // A smaller deposit one cell downstream along the exhaust, so the plume
-      // reads as a streak instead of a single flickering cell.
+      // Conserved mass (ρ) + backward momentum one cell DOWNSTREAM (not at the
+      // nozzle) so the ship never sits in its own exhaust mass (no self-drag).
+      // The tiny coupling means negligible drag/sensor impact, but u = mx/ρ
+      // stays at exhaust velocity so the plume streams. ε at 0.25× (unchanged).
       const downstreamIdx = mediumCellIndex(
         field,
         Math.floor((wx + exDx * field.config.pitchM) / field.config.pitchM + field.config.widthM / 2),
         Math.floor((wy + exDy * field.config.pitchM) / field.config.pitchM + field.config.heightM / 2),
       );
       if (downstreamIdx !== null && downstreamIdx !== mainIdx) {
-        rho[downstreamIdx] = (rho[downstreamIdx] ?? 0) + mainDepositKg * 0.25;
+        rho[downstreamIdx] = (rho[downstreamIdx] ?? 0) + mainDepositKg;
         eps[downstreamIdx] = (eps[downstreamIdx] ?? 0) + epsDepositJ * 0.25;
+        mxSrc[downstreamIdx] = (mxSrc[downstreamIdx] ?? 0) + mainDepositKg * MEDIUM_EXHAUST_VELOCITY_M_PER_S * exDx;
+        mySrc[downstreamIdx] = (mySrc[downstreamIdx] ?? 0) + mainDepositKg * MEDIUM_EXHAUST_VELOCITY_M_PER_S * exDy;
       }
     }
   }

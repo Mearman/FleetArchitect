@@ -91,7 +91,7 @@ function drawParticleGlow(c: OverlayCtx): void {
 export const particleGlow: OverlayDef = {
   id: "particle-glow",
   label: "Weapon particles (exhaust / plumes / impacts)",
-  defaultOn: true,
+  defaultOn: false,
   defaultScope: "all",
   draw: drawParticleGlow,
 };
