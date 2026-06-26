@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { EntityId, IsoTimestamp } from "./primitives";
 import { TileGrid } from "./grid";
-import { ShipStance, CrewPriority, Rule } from "./ai";
+import { ShipStance, CrewPriority, Rule, Doctrine } from "./ai";
 
 /**
  * Provenance of a persisted record. `preset` records are bundled catalogue
@@ -54,5 +54,15 @@ export const ShipDesign = z.object({
    * Empty by default — the stance alone governs behaviour.
    */
   rules: z.array(Rule).default([]),
+  /**
+   * The unified doctrine (base action + conditional rules over the spatial,
+   * targeting, fire, stance, crew, cohesion, retreat axes). Additive alongside
+   * the legacy trio while the engine is re-plumbed to read it; populated from
+   * the trio at the parse boundary by `normaliseDesignInput`. Optional for now
+   * so legacy literal builders compile; every runtime read path (storage,
+   * sharing, presets) fills it via the normaliser. Made required when the trio
+   * is dropped.
+   */
+  doctrine: Doctrine.optional(),
 });
 export type ShipDesign = z.infer<typeof ShipDesign>;

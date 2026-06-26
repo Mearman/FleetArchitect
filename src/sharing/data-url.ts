@@ -5,6 +5,7 @@ import {
 import { z } from "zod";
 import { Fleet, FleetShip, Orders, defaultOrders } from "@/schema/fleet";
 import { ShipDesign } from "@/schema/ship";
+import { normaliseDesignInput } from "@/schema/ship-normalise";
 import type { TileGrid } from "@/schema/grid";
 import { BattleAnomalyKind } from "@/schema/battle";
 import { flatFormation, flattenShipLeaves } from "@/schema/formation";
@@ -148,7 +149,7 @@ function rebuildDesign(entry: CompactDesign, index: number): ShipDesign {
     crewPriority: entry.cp ?? "combat",
     rules: entry.r ?? [],
   };
-  return ShipDesign.parse(candidate);
+  return ShipDesign.parse(normaliseDesignInput(candidate));
 }
 
 // ---------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { EntityId, Vec2, IsoTimestamp } from "./primitives";
 import { Formation } from "./formation";
+import { Doctrine } from "./ai";
 
 /** Doctrine controlling how a ship behaves once battle begins (no twitch). */
 export const EngagementStance = z.enum([
@@ -99,6 +100,12 @@ export const FleetShip = z.object({
   position: Vec2,
   facing: z.number(),
   orders: Orders,
+  /**
+   * Per-ship doctrine override. Additive alongside `orders` while the engine is
+   * re-plumbed to read doctrine; populated from `orders` at the parse boundary
+   * by `normaliseFleetInput`. Overrides the design's doctrine at the leaf.
+   */
+  doctrine: Doctrine.optional(),
 });
 export type FleetShip = z.infer<typeof FleetShip>;
 
