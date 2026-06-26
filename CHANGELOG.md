@@ -1,3 +1,11 @@
+## [1.19.5](https://github.com/Mearman/FleetArchitect/compare/v1.19.4...v1.19.5) (2026-06-26)
+
+
+### Bug Fixes
+
+* **designer:** stop grid drift, fix iso grid tilt, re-fit on New ([30b57e2](https://github.com/Mearman/FleetArchitect/commit/30b57e2527c61e4092c2720f440c4b0562a4393e))
+* **ui:** resolve medium/atmosphere fields per-tick for scrub-safe replay ([2969d9d](https://github.com/Mearman/FleetArchitect/commit/2969d9de0ab72436e0b44be811b388222cbe4cd3))
+
 ## [1.19.4](https://github.com/Mearman/FleetArchitect/compare/v1.19.3...v1.19.4) (2026-06-25)
 
 
