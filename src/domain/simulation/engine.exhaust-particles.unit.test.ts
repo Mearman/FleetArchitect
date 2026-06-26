@@ -4,6 +4,7 @@ import { MEDIUM_DT_S } from "./engine/medium-field";
 import {
   emitExhaustParticles,
   stepExhaustParticle,
+  stepExhaustParticles,
   type ExhaustParticle,
 } from "./engine/exhaust-particles";
 
@@ -76,5 +77,14 @@ describe("engine.exhaust-particles", () => {
     const p: ExhaustParticle = { x: 0, y: 0, vx: 3000, vy: 0, energy: 1, age: 0 };
     const stepped = stepExhaustParticle(p, MEDIUM_DT_S);
     expect(stepped.age).toBeCloseTo(MEDIUM_DT_S, 9);
+  });
+
+  it("steps every particle and culls those past their lifetime", () => {
+    const fresh: ExhaustParticle = { x: 0, y: 0, vx: 1000, vy: 0, energy: 1, age: 0.1 };
+    const stale: ExhaustParticle = { x: 0, y: 0, vx: 1000, vy: 0, energy: 0.01, age: 99 };
+    const out = stepExhaustParticles([fresh, stale], MEDIUM_DT_S);
+    // The stale parcel is gone; the fresh one survives, aged by one tick.
+    expect(out).toHaveLength(1);
+    expect(out[0]!.age).toBeCloseTo(0.1 + MEDIUM_DT_S, 9);
   });
 });

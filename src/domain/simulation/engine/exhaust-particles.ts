@@ -74,3 +74,29 @@ export function emitExhaustParticles(args: {
     },
   ];
 }
+
+/**
+ * Particle lifetime, seconds. A parcel is kept until it has cooled to ~5 % of
+ * its emitted energy (3 cooling timescales: exp(-3) ≈ 0.05), then culled so the
+ * live set stays bounded. Energy decays asymptotically, so age — not energy —
+ * is the clean cull signal.
+ */
+export const EXHAUST_PARTICLE_LIFETIME_S = 3 * EXHAUST_COOLING_TIMESCALE_S;
+
+/**
+ * Step every particle (transport + cool + age) and cull those past their
+ * lifetime. Pure: returns a fresh array, input untouched. The engine calls this
+ * over the whole live plume each tick, then concatenates the tick's new
+ * emissions.
+ */
+export function stepExhaustParticles(
+  particles: readonly ExhaustParticle[],
+  dt: number,
+): ExhaustParticle[] {
+  const out: ExhaustParticle[] = [];
+  for (const p of particles) {
+    const stepped = stepExhaustParticle(p, dt);
+    if (stepped.age < EXHAUST_PARTICLE_LIFETIME_S) out.push(stepped);
+  }
+  return out;
+}
