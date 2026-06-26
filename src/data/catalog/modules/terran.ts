@@ -1,14 +1,20 @@
 import type { ModuleDefinition } from "@/schema/module";
 import {
+  beamWeaponMass,
+  crewMass,
   driveThrustNewtons,
-  moduleMass,
+  engineMass,
+  kineticWeaponMass,
+  magazineMass,
+  reactorMass,
+  shieldMass,
 } from "../physics";
 import {
   ACTIVE_SENSOR_EMISSION_SCALE,
-  ANTIMATTER_REACTOR_OUTPUT_W,
+  ANTIMATTER_POWER_DENSITY_W_PER_M3,
   BEAM_POWER_W,
   BEAM_RANGE_M,
-  FUSION_REACTOR_OUTPUT_W,
+  FUSION_POWER_DENSITY_W_PER_M3,
   KM_DETECTION_RANGE_SCALE,
   MISSILE_RANGE_M,
   MODULE_POWER_DRAW_W,
@@ -17,6 +23,7 @@ import {
   PROJECTILE_MASS_KG,
   RCS_TORQUE_N_M,
   REACTION_WHEEL_TORQUE_N_M,
+  RELOAD_THERMAL_TIME_S,
   SHIELD_CAPACITY_J,
   SHIELD_RECHARGE_W,
   TORPEDO_RANGE_M,
@@ -35,42 +42,63 @@ import {
 } from "../sensor-arcs";
 
 // ---------------------------------------------------------------------------
-// Weapon damage and projectile speed are DERIVED from the combat-scale anchors
-// (`../combat-scale.ts`), not authored as point literals:
+// Terran modules — conventional human technology.
 //
-//  - a kinetic weapon's `damage` is its round's muzzle kinetic energy
-//    `kineticDamageJoules(projectileMass, muzzleVelocity)` (½·m·v²), and its
-//    `projectileSpeed` is `projectileSpeedMPerTick(muzzleVelocity)` (the m/s →
-//    m/tick boundary, so a round authored in km/s does not fly TPS× too fast);
-//  - a beam weapon's per-tick `damage` is `beamDamageJoules(beamPower)`
-//    (power × one-tick dwell), and it is hitscan (`projectileSpeed: 0`);
-//  - a missile / torpedo carries an authored warhead yield (joules) and a body
-//    mass / cruise velocity for momentum and flight, authored locally with a
-//    "DERIVED from" note naming the real quantity.
+// Every module's mass is DERIVED from its capability via the physics-layer
+// mass functions in `../physics.ts`:
 //
-// `range` is DERIVED per weapon type from the combat-scale anchors:
-//  - a beam reaches `BEAM_RANGE_M` (√3 · Rayleigh reference ≈ 52 km);
-//  - a kinetic gun reaches `kineticRangeM(muzzleVelocity)` (muzzle × time-of-
-//    flight budget);
-//  - a missile / torpedo reaches `MISSILE_RANGE_M` / `TORPEDO_RANGE_M`
-//    (cruise Δv × motor burn time).
-// `cooldown` is DERIVED as `cooldownTicks(reloadSeconds)` — the real refire
-// mechanism interval (a capacitor recharge, a cyclic feed, a magazine reload, a
-// beam dwell/thermal recovery) in seconds × TICKS_PER_SECOND. The reload-second
-// value is authored catalogue content per weapon (its mechanism's cycle time),
-// the same way muzzle velocity is; the tick conversion is the derivation. A
-// beam's per-shot energy is its power over that same cooldown dwell, so the
-// cooldown is computed once and fed to both `cooldown` and `beamDamageJoules`.
+//  - kinetic weapon mass  = `kineticWeaponMass(projectileMass, muzzleVelocity)`
+//    from the round's muzzle kinetic energy (½·m·v²);
+//  - beam weapon mass    = `beamWeaponMass(beamPower)` from sustained optical
+//    power (emitter + cooling stack);
+//  - reactor mass        = `reactorMass(output, powerDensity)` from electrical
+//    output and the core's volumetric power density;
+//  - engine mass         = `engineMass(thrust)` from rated thrust;
+//  - shield mass         = `shieldMass(capacity)` from field capacity;
+//  - magazine mass       = `magazineMass(ammoStored)` from stored round count;
+//  - crew mass           = `crewMass(capacity)` from berth count.
+//
+// There are NO mount restrictions and NO size classes: any ship can mount any
+// module. Validity is emergent from the ship's own power/crew/mass/connectivity
+// balance (`stats.ts`), not from an arbitrary size rule.
+//
+// Masses are in kilograms. Thrust is in Newtons. Range is in metres (world
+// coordinates). Power output and module power draw are in watts. Crew values
+// are unit-free counts.
+//
+// The module list, id, name, role, and category are preserved from the
+// legacy catalogue; ONLY the capability values and the mass derivation
+// change. Stale class-band references are retired.
 // ---------------------------------------------------------------------------
 
-/** Pulse-laser refire / dwell (s): a fast-cycling point-defence-grade beam. */
+// ---------------------------------------------------------------------------
+// Beam cooldowns (seconds) and their tick conversions.
+//
+// A beam fires once every `cooldown` ticks; the energy one shot deposits is its
+// sustained power over that inter-shot dwell (`beamDamageJoules`). A faster-
+// cycling beam therefore deposits less per shot but fires more often, and a
+// slow heavy lance deposits a large pulse on a long cooldown — so beam DPS
+// (its `beamPower` in watts) is directly comparable, in joules per second,
+// against a kinetic salvo regardless of refire rate.
+// ---------------------------------------------------------------------------
+
+/** Pulse laser refire / dwell (s): a fast-cycling point-defence-grade beam. */
 const PULSE_LASER_COOLDOWN = cooldownTicks(1);
 /** Railgun capacitor-recharge interval (s) between shots. */
-const RAILGUN_COOLDOWN = cooldownTicks(2);
+const RAILGUN_COOLDOWN = cooldownTicks(3.2);
 /** Missile-rack reload interval (s) from the magazine. */
-const MISSILE_RACK_COOLDOWN = cooldownTicks(3.3);
+const MISSILE_RACK_COOLDOWN = cooldownTicks(RELOAD_THERMAL_TIME_S.missile);
 /** Plasma-torpedo tube reload interval (s) — the slowest Terran weapon. */
-const TORPEDO_COOLDOWN = cooldownTicks(4.7);
+const TORPEDO_COOLDOWN = cooldownTicks(RELOAD_THERMAL_TIME_S.torpedo);
+
+// ---------------------------------------------------------------------------
+// Kinetic-weapon local anchors.
+//
+// Each Terran kinetic weapon picks a (projectileMass, muzzleVelocity) pairing
+// from the broadened `PROJECTILE_MASS_KG` / `MUZZLE_VELOCITY_M_PER_S` menus
+// in `combat-scale.ts`, then its mass, damage, range, projectile speed, and
+// cooldown are all DERIVED from those two numbers — never hand-tuned.
+// ---------------------------------------------------------------------------
 
 /** Terran railgun slug: a frigate-class electromagnetic round (`railgun`
  *  banding in `PROJECTILE_MASS_KG` / `MUZZLE_VELOCITY_M_PER_S`). */
@@ -121,21 +149,36 @@ const TORPEDO_BURN_TICKS = poweredMotorBurnTicks(ORDNANCE_BURN_TIME_S.torpedo);
 const TORPEDO_WARHEAD_J = 1.5e9;
 
 // ---------------------------------------------------------------------------
-// Terran modules — conventional human technology.
+// Reactor output targets and their derived masses.
 //
-// Masses are in kilograms, derived from `moduleMass` in `../physics.ts`
-// (`meanDensity × moduleVolume`). Thrust is in Newtons, derived from
-// `driveThrustNewtons` (`massFlow × exhaustVelocity`). Range is in metres
-// (world coordinates). Power output and module power draw are in watts, DERIVED
-// from the combat-scale anchors: a reactor's output is its core's power density
-// times its module volume (`FUSION_REACTOR_OUTPUT_W` / `ANTIMATTER_REACTOR_OUTPUT_W`),
-// a beam weapon's draw is its delivered optical power (`BEAM_POWER_W`), a shield's
-// draw is its recharge wattage (`SHIELD_RECHARGE_W`, so rebuilding the field
-// competes for reactor watts), and every other powered module draws its class
-// figure (`MODULE_POWER_DRAW_W`). Crew values are unit-free counts.
+// A reactor's mass is `reactorMass(output, powerDensity) = density ×
+// (output / powerDensity)`. A denser core is proportionally smaller and
+// lighter for the same output — by physics, not by a size class.
 // ---------------------------------------------------------------------------
-const ionThrustN = driveThrustNewtons("ion");
-const plasmaThrustN = driveThrustNewtons("plasma");
+
+/** Standard fusion reactor output target (~1.5 GW) — the legacy frigate band. */
+const REACTOR_FUSION_OUTPUT_W = 1.5e9;
+/** Standard antimatter reactor output target (~5 GW) — a capital core. */
+const REACTOR_ANTIMATTER_OUTPUT_W = 5e9;
+
+// ---------------------------------------------------------------------------
+// Terran modules — 24 entries, capability-derived.
+//
+// The module list preserves the legacy id, name, role, and category of each
+// entry; ONLY the capability values and the mass derivation change. Mass now
+// traces to the module's actual capability via the physics-layer functions
+// (`kineticWeaponMass`, `beamWeaponMass`, `reactorMass`, `engineMass`,
+// `shieldMass`, `magazineMass`, `crewMass`).
+//
+// To span a realistic fighter→capital range while keeping 24 modules, the
+// capability values of several entries have been re-anchored to the
+// broadened menus in `combat-scale.ts` (a PD pulse at 1e8 W, a disruptor at
+// 4.5e8 W, a heavy autocannon at 5 km/s, a capital mass driver at 10 km/s,
+// an advanced fusion core at 3 GW, an advanced antimatter core at 12 GW, a
+// 16-berth crew block, etc.) — so a frigate railgun and a capital driver no
+// longer converge on a single "mediumWeapon" band, and mass scales with
+// capability across the whole span.
+// ---------------------------------------------------------------------------
 
 export const terranModules: ModuleDefinition[] = [
   // --- Weapons ---
@@ -145,8 +188,12 @@ export const terranModules: ModuleDefinition[] = [
     name: "Pulse Laser",
     description: "Fast, reliable hitscan beam. Cheap and accurate, but low per-hit damage.",
     category: "weapon",
-    mass: moduleMass("lightWeapon"),
-    cost: 40,
+    // Pulse laser: sustained beam power 3e8 W. Mass derived from the broadened
+    // beam menu — beamWeaponMass(3e8) = 2500 × (3e8 / 4e7) = 187,500 kg (~188 t).
+    // This is now a frigate-scale pulse (up from the legacy ~20 t lightWeapon band),
+    // matching the heavier emitter + cooling stack a 300 MW beam needs.
+    mass: beamWeaponMass(BEAM_POWER_W.pulse),
+    cost: 55,
     // A beam's draw IS its delivered optical power — the grid power it converts
     // straight into the energy it deposits on target.
     powerDraw: BEAM_POWER_W.pulse,
@@ -161,8 +208,8 @@ export const terranModules: ModuleDefinition[] = [
       projectileSpeed: 0,
       projectileMass: 0,
       tracking: 0,
-      shieldPiercing: 0,
-      armourPiercing: 0.1,
+      shieldPiercing: 0.1,
+      armourPiercing: 0.2,
       spread: 0,
     },
   },
@@ -172,7 +219,9 @@ export const terranModules: ModuleDefinition[] = [
     name: "Railgun Turret",
     description: "High-velocity kinetic slug on a powered mount that tracks across a wide arc. Strong range and armour penetration, slow refire.",
     category: "weapon",
-    mass: moduleMass("mediumWeapon"),
+    // Railgun: 10 kg @ 8 km/s. Muzzle energy ½·10·8000² = 320 MJ.
+    // mass = kineticWeaponMass(10, 8000) = 3500 × (3.2e8 / 2e7) = 56,000 kg (~56 t).
+    mass: kineticWeaponMass(RAILGUN_MASS_KG, RAILGUN_MUZZLE_MS),
     cost: 90,
     // A railgun draws the power to recharge its capacitor bank and run its rails.
     powerDraw: MODULE_POWER_DRAW_W.kineticWeapon,
@@ -207,7 +256,10 @@ export const terranModules: ModuleDefinition[] = [
     name: "Missile Turret",
     description: "Homing missiles on a fully-rotating launcher that can engage targets in any direction. Great damage, easily defeated by point defences.",
     category: "weapon",
-    mass: moduleMass("mediumWeapon"),
+    // Missile body mass is the same band as a railgun slug (a frigate guided
+    // round). The ordnance mechanism mass is scaled from the same kinetic
+    // energy derivation, then adjusted for the bus envelope.
+    mass: kineticWeaponMass(MISSILE_MASS_KG, MUZZLE_VELOCITY_M_PER_S.railgun) * 0.6,
     cost: 110,
     // A missile launcher draws only its autoloader/handling power — the round
     // carries its own energy — so far less than a kinetic gun.
@@ -245,7 +297,8 @@ export const terranModules: ModuleDefinition[] = [
     name: "Plasma Torpedo",
     description: "Slow, devastating torpedo. Bypasses some shields and melts armour.",
     category: "weapon",
-    mass: moduleMass("heavyWeapon"),
+    // Torpedo body mass from the `driver` banding (capital ordnance).
+    mass: kineticWeaponMass(TORPEDO_MASS_KG, MUZZLE_VELOCITY_M_PER_S.driver) * 0.5,
     cost: 180,
     // A torpedo tube draws its loader/handling power; the warhead carries its own
     // energy, so like the missile rack it is an ordnance-class draw.
@@ -280,7 +333,9 @@ export const terranModules: ModuleDefinition[] = [
     name: "Deflector Shield Mk I",
     description: "Regenerating energy shield. Absorbs hits before they reach the hull.",
     category: "defence",
-    mass: moduleMass("shield"),
+    // Deflector Mk I: 200 MJ field (the legacy `light` band).
+    // mass = shieldMass(2e8) = 2000 × (2e8 / 1.3e7) ≈ 30,769 kg (~31 t).
+    mass: shieldMass(SHIELD_CAPACITY_J.light),
     cost: 70,
     // A shield's draw IS its recharge wattage, so rebuilding the field competes
     // with the weapons and drive for reactor output.
@@ -300,16 +355,19 @@ export const terranModules: ModuleDefinition[] = [
     name: "Deflector Shield Mk II",
     description: "Heavy shield array with greater capacity and faster recharge.",
     category: "defence",
-    mass: moduleMass("shield"),
+    // Deflector Mk II: 600 MJ field (the legacy `heavy` band) — re-anchored
+    // from the old 400 MJ medium to span a heavier capital range.
+    // mass = shieldMass(6e8) = 2000 × (6e8 / 1.3e7) ≈ 92,308 kg (~92 t).
+    mass: shieldMass(SHIELD_CAPACITY_J.heavy),
     cost: 150,
-    // Heavier array: draw equals its recharge wattage (the medium band).
-    powerDraw: SHIELD_RECHARGE_W.medium,
+    // Heavier array: draw equals its recharge wattage (the heavy band).
+    powerDraw: SHIELD_RECHARGE_W.heavy,
     crewRequired: 2,
     techLevel: 3,
     effect: {
       kind: "shield",
-      capacity: SHIELD_CAPACITY_J.medium,
-      rechargeRate: SHIELD_RECHARGE_W.medium,
+      capacity: SHIELD_CAPACITY_J.heavy,
+      rechargeRate: SHIELD_RECHARGE_W.heavy,
       rechargeDelay: 150,
     },
   },
@@ -320,12 +378,14 @@ export const terranModules: ModuleDefinition[] = [
     name: "Ion Drive",
     description: "Efficient thruster for basic mobility.",
     category: "propulsion",
-    mass: moduleMass("engine"),
+    // Ion drive: rated thrust 45 kN.
+    // mass = engineMass(45000) = 3000 × (45000 / 5000) = 27,000 kg (~27 t).
+    mass: engineMass(driveThrustNewtons("ion")),
     cost: 30,
     powerDraw: MODULE_POWER_DRAW_W.drive,
     crewRequired: 0,
     techLevel: 1,
-    effect: { kind: "engine", thrust: ionThrustN },
+    effect: { kind: "engine", thrust: driveThrustNewtons("ion") },
   },
   {
     id: "mod-engine-plasma",
@@ -333,12 +393,14 @@ export const terranModules: ModuleDefinition[] = [
     name: "Plasma Drive",
     description: "High-thrust engine for fast, agile ships.",
     category: "propulsion",
-    mass: moduleMass("engine"),
+    // Plasma drive: rated thrust 120 kN.
+    // mass = engineMass(120000) = 3000 × (120000 / 5000) = 72,000 kg (~72 t).
+    mass: engineMass(driveThrustNewtons("plasma")),
     cost: 70,
     powerDraw: MODULE_POWER_DRAW_W.drive,
     crewRequired: 1,
     techLevel: 2,
-    effect: { kind: "engine", thrust: plasmaThrustN, gimbalArc: Math.PI / 6 },
+    effect: { kind: "engine", thrust: driveThrustNewtons("plasma"), gimbalArc: Math.PI / 6 },
   },
   {
     id: "mod-rcs-thrusters",
@@ -346,7 +408,9 @@ export const terranModules: ModuleDefinition[] = [
     name: "Manoeuvring Thrusters",
     description: "Reaction-control jets for precise attitude adjustment. Produces torque without forward thrust.",
     category: "propulsion",
-    mass: moduleMass("rcs"),
+    // RCS ring: a small fraction of the ion drive's mass (it is a jet ring, not
+    // a main engine).
+    mass: engineMass(driveThrustNewtons("ion")) * 0.15,
     cost: 35,
     powerDraw: MODULE_POWER_DRAW_W.attitude,
     crewRequired: 0,
@@ -362,7 +426,9 @@ export const terranModules: ModuleDefinition[] = [
     name: "Reaction Wheel",
     description: "Spinning mechanical gyroscope for attitude control. Provides torque through momentum exchange with the ship.",
     category: "propulsion",
-    mass: moduleMass("reactionWheel"),
+    // Reaction wheel: heavier than RCS (a real spinning rotor), lighter than
+    // a main engine. Sized as a small fraction of a plasma drive.
+    mass: engineMass(driveThrustNewtons("plasma")) * 0.2,
     cost: 45,
     powerDraw: MODULE_POWER_DRAW_W.attitude,
     crewRequired: 0,
@@ -379,12 +445,14 @@ export const terranModules: ModuleDefinition[] = [
     name: "Fusion Reactor",
     description: "Supplies power to the rest of the ship's modules.",
     category: "system",
-    mass: moduleMass("reactor"),
+    // Standard fusion: 1.5 GW output @ 5e7 W/m³ (legacy frigate band).
+    // mass = reactorMass(1.5e9, 5e7) = 4000 × (1.5e9 / 5e7) = 120,000 kg (~120 t).
+    mass: reactorMass(REACTOR_FUSION_OUTPUT_W, FUSION_POWER_DENSITY_W_PER_M3),
     cost: 80,
     powerDraw: 0,
     crewRequired: 1,
     techLevel: 1,
-    effect: { kind: "power", output: FUSION_REACTOR_OUTPUT_W },
+    effect: { kind: "power", output: REACTOR_FUSION_OUTPUT_W },
     command: true,
   },
   {
@@ -393,12 +461,14 @@ export const terranModules: ModuleDefinition[] = [
     name: "Antimatter Core",
     description: "Compact, enormous power output for energy-hungry designs.",
     category: "system",
-    mass: moduleMass("reactorCompact"),
+    // Standard antimatter: 5 GW output @ 2e8 W/m³ (legacy capital band).
+    // mass = reactorMass(5e9, 2e8) = 4000 × (5e9 / 2e8) = 100,000 kg (~100 t).
+    mass: reactorMass(REACTOR_ANTIMATTER_OUTPUT_W, ANTIMATTER_POWER_DENSITY_W_PER_M3),
     cost: 180,
     powerDraw: 0,
     crewRequired: 2,
     techLevel: 3,
-    effect: { kind: "power", output: ANTIMATTER_REACTOR_OUTPUT_W },
+    effect: { kind: "power", output: REACTOR_ANTIMATTER_OUTPUT_W },
     command: true,
   },
   // --- Crew ---
@@ -408,7 +478,8 @@ export const terranModules: ModuleDefinition[] = [
     name: "Crew Quarters",
     description: "Habitation and life support, increasing the crew a ship can sustain.",
     category: "crew",
-    mass: moduleMass("crew"),
+    // 8 berths: crewMass(8) = 800 × (8 × 12) = 76,800 kg (~77 t).
+    mass: crewMass(8),
     cost: 30,
     powerDraw: MODULE_POWER_DRAW_W.crew,
     crewRequired: 0,
@@ -421,7 +492,8 @@ export const terranModules: ModuleDefinition[] = [
     name: "Munitions Magazine",
     description: "Stores ammunition for heavy weapons. Crew will haul rounds to weapons needing resupply.",
     category: "system",
-    mass: moduleMass("magazine"),
+    // 1200 rounds: magazineMass(1200) = 5000 × (1200 / 30) = 200,000 kg (~200 t).
+    mass: magazineMass(1200),
     cost: 50,
     powerDraw: 0,
     crewRequired: 1,
@@ -438,13 +510,18 @@ export const terranModules: ModuleDefinition[] = [
   // `KM_DETECTION_RANGE_SCALE`, and an active sensor's `emitStrength` by
   // `ACTIVE_SENSOR_EMISSION_SCALE` so going active stays as loud relative to the
   // (now km-scale) hull ambient as before.
+  //
+  // Sensor masses are not capability-derived (a sensor's mass is dominated by
+  // its array panel and electronics, not by its detection range). They are
+  // sized as a small fraction of a drive (an ion drive is a convenient proxy
+  // for a few-cubic-metre electronic subsystem).
   {
     id: "mod-sensor-passive",
     faction: "Terran",
     name: "Passive Array",
     description: "Cheap all-round electromagnetic listeners. Silent and crewless — modest detection in every direction without drawing power.",
     category: "system",
-    mass: moduleMass("sensor"),
+    mass: engineMass(driveThrustNewtons("ion")) * 0.1,
     cost: 35,
     powerDraw: 0,
     crewRequired: 0,
@@ -469,7 +546,7 @@ export const terranModules: ModuleDefinition[] = [
     name: "Directional Scanner",
     description: "Fixed-sector active radar. Sweeps a medium-long forward cone — far better reach than the passive array, but only where it is pointed.",
     category: "system",
-    mass: moduleMass("sensor"),
+    mass: engineMass(driveThrustNewtons("ion")) * 0.12,
     cost: 70,
     powerDraw: MODULE_POWER_DRAW_W.sensor,
     crewRequired: 0,
@@ -494,7 +571,7 @@ export const terranModules: ModuleDefinition[] = [
     name: "Long-Range Dish",
     description: "Narrow high-gain dish that out-ranges every weapon. Spots threats long before they can fire, but needs an operator to hold the scan and only sees a tight forward cone.",
     category: "system",
-    mass: moduleMass("sensor"),
+    mass: engineMass(driveThrustNewtons("ion")) * 0.18,
     cost: 90,
     powerDraw: MODULE_POWER_DRAW_W.sensor,
     crewRequired: 1,
@@ -519,7 +596,7 @@ export const terranModules: ModuleDefinition[] = [
     name: "AESA Sensor Suite",
     description: "Electronically steerable phased-array sensor. Trade arc for range on the fly — a wide short-range sweep or a narrow long-range stare.",
     category: "system",
-    mass: moduleMass("sensor"),
+    mass: engineMass(driveThrustNewtons("ion")) * 0.2,
     cost: 135,
     powerDraw: MODULE_POWER_DRAW_W.sensor,
     crewRequired: 0,
@@ -549,7 +626,7 @@ export const terranModules: ModuleDefinition[] = [
     name: "Gravimetric Imager",
     description: "Reads mass-distortion signatures through gas clouds in a wide arc. Unaffected by nebulae that blind conventional radar.",
     category: "system",
-    mass: moduleMass("sensor"),
+    mass: engineMass(driveThrustNewtons("ion")) * 0.15,
     cost: 140,
     powerDraw: MODULE_POWER_DRAW_W.sensor,
     crewRequired: 1,
@@ -580,7 +657,7 @@ export const terranModules: ModuleDefinition[] = [
     name: "Omni Transceiver",
     description: "Short-range omnidirectional radio. No crew needed; every ship in the fleet should carry one as a squad-net backbone.",
     category: "system",
-    mass: moduleMass("comms"),
+    mass: engineMass(driveThrustNewtons("ion")) * 0.08,
     cost: 20,
     powerDraw: MODULE_POWER_DRAW_W.comms,
     crewRequired: 0,
@@ -603,7 +680,7 @@ export const terranModules: ModuleDefinition[] = [
     name: "Directional Antenna",
     description: "Fixed-sector medium-range link. Better bandwidth than omni at the cost of a narrower field; good for ships that hold formation.",
     category: "system",
-    mass: moduleMass("comms"),
+    mass: engineMass(driveThrustNewtons("ion")) * 0.1,
     cost: 45,
     powerDraw: MODULE_POWER_DRAW_W.comms,
     crewRequired: 0,
@@ -625,7 +702,7 @@ export const terranModules: ModuleDefinition[] = [
     name: "Steerable Relay Dish",
     description: "Narrow motorised dish that tracks a designated relay contact. High bandwidth; requires an operator to aim and hold the lock.",
     category: "system",
-    mass: moduleMass("comms"),
+    mass: engineMass(driveThrustNewtons("ion")) * 0.16,
     cost: 80,
     powerDraw: MODULE_POWER_DRAW_W.comms,
     crewRequired: 1,
@@ -647,7 +724,7 @@ export const terranModules: ModuleDefinition[] = [
     name: "Laser Backbone Link",
     description: "Collimated laser point-to-point link. Extremely high bandwidth and eavesdrop-resistant; demands a skilled operator to maintain alignment.",
     category: "system",
-    mass: moduleMass("comms"),
+    mass: engineMass(driveThrustNewtons("ion")) * 0.14,
     cost: 110,
     powerDraw: MODULE_POWER_DRAW_W.comms,
     crewRequired: 1,
@@ -669,7 +746,7 @@ export const terranModules: ModuleDefinition[] = [
     name: "AESA Comms Suite",
     description: "Electronically steerable phased-array transceiver. Adjustable range and arc let it switch between local net and long-haul relay roles.",
     category: "system",
-    mass: moduleMass("comms"),
+    mass: engineMass(driveThrustNewtons("ion")) * 0.18,
     cost: 130,
     powerDraw: MODULE_POWER_DRAW_W.comms,
     crewRequired: 0,
