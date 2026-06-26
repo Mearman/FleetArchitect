@@ -193,6 +193,7 @@ export type FormationReference =
   | { kind: "enemyArchetype"; archetype: ShipClassification }
   | { kind: "point"; pointId: string }
   | { kind: "deployment" }
+  | { kind: "target" }
   | { kind: "between"; a: FormationReference; b: FormationReference; alpha: number };
 
 export const FormationReference: z.ZodType<FormationReference> = z.lazy(() =>
@@ -203,6 +204,7 @@ export const FormationReference: z.ZodType<FormationReference> = z.lazy(() =>
     z.object({ kind: z.literal("enemyArchetype"), archetype: ShipClassification }),
     z.object({ kind: z.literal("point"), pointId: EntityId }),
     z.object({ kind: z.literal("deployment") }),
+    z.object({ kind: z.literal("target") }),
     z.object({
       kind: z.literal("between"),
       a: FormationReference,
@@ -231,6 +233,18 @@ export const RangeRule = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("evade"), minRange: z.number().min(0) }),
   z.object({ kind: z.literal("kite"), maxRange: z.number().min(0) }),
   z.object({ kind: z.literal("maintain"), range: z.number().min(0), tolerance: z.number().min(0) }),
+  /**
+   * Engage at a fraction of the ship's own maximum weapon range — the
+   * weapon-relative expression of the legacy `engageRange` (short/medium/long),
+   * resolved to an absolute range at setup against the ship's weapons (which the
+   * authoring model cannot know). `tolerance` is the at-range dead-zone fraction
+   * (the legacy `rangeKeepingBand`).
+   */
+  z.object({
+    kind: z.literal("engage"),
+    fraction: z.number().min(0).max(1),
+    tolerance: z.number().min(0),
+  }),
 ]);
 export type RangeRule = z.infer<typeof RangeRule>;
 
@@ -317,6 +331,13 @@ export const DoctrineAction = z.object({
   fire: FireDiscipline.optional(),
   crew: CrewPriority.optional(),
   cohesion: z.number().min(0).max(1).optional(),
+  /**
+   * The combined-HP fraction below which the ship disengages (0..1; absent or 0
+   * = never retreat). Subsumes the legacy `orders.retreatThreshold`. Distinct
+   * from a `structureBelow` rule because retreat compares against the COMBINED
+   * structure + module-HP fraction (combat effectiveness), not structure alone.
+   */
+  retreat: z.number().min(0).max(1).optional(),
 });
 export type DoctrineAction = z.infer<typeof DoctrineAction>;
 
