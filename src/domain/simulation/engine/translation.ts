@@ -18,22 +18,7 @@ import { angleDifference, angularAccelPerTick, anomalyAdjustedRange } from "./se
 import { effectiveSensorRange, sensorUnitsOf } from "./sensors";
 import type { DeploymentReference } from "./movement";
 import { effectiveStance, isRetreating } from "./movement";
-
-/** Whether the ship holds station (doctrine `hold` range, legacy `engageRange:"hold"`). */
-function isHoldRange(ship: SimShip): boolean {
-  return (
-    ship.doctrine?.base.spatial?.range?.kind === "hold" ||
-    ship.orders.engageRange === "hold"
-  );
-}
-
-/** The at-range dead-zone fraction (doctrine engage/maintain `tolerance`, legacy
- *  `rangeKeepingBand`). Reached only on the non-hold path, so the range is engage. */
-function rangeBand(ship: SimShip): number {
-  const range = ship.doctrine?.base.spatial?.range;
-  if (range?.kind === "engage" || range?.kind === "maintain") return range.tolerance;
-  return ship.orders.rangeKeepingBand;
-}
+import { isHoldRange, rangeBand } from "./doctrine";
 import type { SimShip } from "./types";
 
 /**
@@ -173,7 +158,7 @@ export function computeTranslationCommand(
       enemyDeployment.x,
       enemyDeployment.y,
       Math.min(
-        anomalyAdjustedRange(ship.orders, ship.weapons, anomalies, stance, defaultRange),
+        anomalyAdjustedRange(ship, ship.weapons, anomalies, stance, defaultRange),
         sightReach(ship),
       ),
     );
@@ -211,7 +196,7 @@ export function computeTranslationCommand(
   // this is what keeps a myopic ship fighting at the edge of its vision rather
   // than drifting out toward an unreachable stand-off.
   const want = Math.min(
-    anomalyAdjustedRange(ship.orders, ship.weapons, anomalies, stance, defaultRange),
+    anomalyAdjustedRange(ship, ship.weapons, anomalies, stance, defaultRange),
     sightReach(ship),
   );
   return stopInTimeToward(ship, target.x, target.y, want);

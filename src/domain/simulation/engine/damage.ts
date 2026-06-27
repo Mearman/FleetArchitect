@@ -717,6 +717,7 @@ export function makeChunkShip(
     crewPriority: parent.crewPriority,
     shipStance: parent.shipStance,
     rules: parent.rules,
+    doctrine: parent.doctrine,
     ...defaultAiDecisions(), // live AI decisions; the AI step rewrites them next tick
     target: undefined,
     alive: true,

@@ -7,7 +7,6 @@ import { CELL_SIZE } from "@/domain/grid";
 import { hasAnomaly } from "@/domain/anomaly";
 import { DEFAULT_WEAPON_AMMO } from "@/schema/module";
 import type { WeaponEffect } from "@/schema/module";
-import type { Orders } from "@/schema/fleet";
 import { compileOrdersToBase } from "@/schema/fleet-normalise";
 import { compileLegacyRules } from "@/schema/ship-normalise";
 import { Doctrine, type ShipStance } from "@/schema/ai";
@@ -16,6 +15,7 @@ import { ACCEL_PER_TICK_FROM_SI } from "../types";
 import type { BattleInputs, CombatShip, ResolvedHardwire, ResolvedModule, SimCrew } from "../types";
 
 import { defaultAiDecisions } from "./ai-step";
+import { engageFractionOf, isHoldRange } from "./doctrine";
 import { CREW_HP, SIM } from "./config";
 import { compareByCell } from "./crew-pathfinding";
 import { recomputeAggregates, sumWeaponThrust } from "./physics";
@@ -75,13 +75,13 @@ export function maxWeaponRange(
  * `maxWeaponRange` so an unarmed ship holds at the right distance.
  */
 export function desiredRange(
-  orders: Orders,
+  ship: SimShip,
   weapons: readonly WeaponEffect[],
   stance: ShipStance,
   defaultRange: number,
 ): number {
-  if (orders.engageRange === "hold") return 0;
-  const base = maxWeaponRange(weapons, defaultRange) * SIM.rangeFraction[orders.engageRange];
+  if (isHoldRange(ship)) return 0;
+  const base = maxWeaponRange(weapons, defaultRange) * engageFractionOf(ship);
   return base * SIM.stanceRangeFactor[stance];
 }
 
@@ -111,13 +111,13 @@ function combatShipDoctrine(ship: CombatShip): Doctrine {
  * `aiStance` override), so a `setStance` rule changes the held range deterministically.
  */
 export function anomalyAdjustedRange(
-  orders: Orders,
+  ship: SimShip,
   weapons: readonly WeaponEffect[],
   anomalies: BattleInputs["anomalies"],
   stance: ShipStance,
   defaultRange: number,
 ): number {
-  const base = desiredRange(orders, weapons, stance, defaultRange);
+  const base = desiredRange(ship, weapons, stance, defaultRange);
   let adjusted = base;
   if (hasAnomaly(anomalies, "nebula")) adjusted *= SIM.anomalyRangeFactor.nebula;
   if (hasAnomaly(anomalies, "asteroidField")) adjusted *= SIM.anomalyRangeFactor.asteroidField;
