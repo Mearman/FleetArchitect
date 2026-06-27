@@ -6,6 +6,7 @@ import { z } from "zod";
 import { Fleet, FleetShip, Orders, defaultOrders } from "@/schema/fleet";
 import { ShipDesign } from "@/schema/ship";
 import { normaliseDesignInput } from "@/schema/ship-normalise";
+import { parseFleetRecord } from "@/schema/fleet-normalise";
 import type { TileGrid } from "@/schema/grid";
 import { BattleAnomalyKind } from "@/schema/battle";
 import { flatFormation, flattenShipLeaves } from "@/schema/formation";
@@ -271,7 +272,11 @@ function rebuildFleetShip(entry: CompactFleetShip): FleetShip {
 }
 
 function rebuildFleet(entry: CompactFleet): Fleet {
-  return Fleet.parse({
+  // Parse through the fleet normaliser (not raw Fleet.parse) so each rebuilt
+  // leaf ship gets its doctrine compiled from its (round-tripped) orders — the
+  // engine reads the authored leaf doctrine, so without this a decoded fleet
+  // would resolve with a different stance than the original and diverge.
+  return parseFleetRecord({
     id: `f-${entry.n}`,
     name: entry.n,
     faction: entry.f,
