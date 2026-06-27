@@ -1,3 +1,10 @@
+# [1.27.0](https://github.com/Mearman/FleetArchitect/compare/v1.26.0...v1.27.0) (2026-06-27)
+
+
+### Features
+
+* **sharing:** round-trip formation trees and share formation templates ([985fa9a](https://github.com/Mearman/FleetArchitect/commit/985fa9a1fe910db5875eab192a33e63286d1943c))
+
 # [1.26.0](https://github.com/Mearman/FleetArchitect/compare/v1.25.0...v1.26.0) (2026-06-27)
 
 
