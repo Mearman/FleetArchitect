@@ -18,6 +18,22 @@ import { angleDifference, angularAccelPerTick, anomalyAdjustedRange } from "./se
 import { effectiveSensorRange, sensorUnitsOf } from "./sensors";
 import type { DeploymentReference } from "./movement";
 import { effectiveStance, isRetreating } from "./movement";
+
+/** Whether the ship holds station (doctrine `hold` range, legacy `engageRange:"hold"`). */
+function isHoldRange(ship: SimShip): boolean {
+  return (
+    ship.doctrine?.base.spatial?.range?.kind === "hold" ||
+    ship.orders.engageRange === "hold"
+  );
+}
+
+/** The at-range dead-zone fraction (doctrine engage/maintain `tolerance`, legacy
+ *  `rangeKeepingBand`). Reached only on the non-hold path, so the range is engage. */
+function rangeBand(ship: SimShip): number {
+  const range = ship.doctrine?.base.spatial?.range;
+  if (range?.kind === "engage" || range?.kind === "maintain") return range.tolerance;
+  return ship.orders.rangeKeepingBand;
+}
 import type { SimShip } from "./types";
 
 /**
@@ -139,7 +155,7 @@ export function computeTranslationCommand(
     const enemyDeployment =
       ship.side === "attacker" ? deployment.defender : deployment.attacker;
     if (enemyDeployment === undefined) return holdFacing(ship.facing);
-    if (ship.orders.engageRange === "hold" && !isRetreating(ship)) {
+    if (isHoldRange(ship) && !isRetreating(ship)) {
       return holdFacing(ship.facing);
     }
     const ex = enemyDeployment.x - ship.x;
@@ -174,7 +190,7 @@ export function computeTranslationCommand(
   // firing step's own range gate then suppresses out-of-range shots, so a passive
   // ship neither advances nor wastes fire. Every other stance runs the
   // stop-in-time range controller toward its stance-scaled desired range.
-  if (ship.orders.engageRange === "hold" || stance === "hold") {
+  if (isHoldRange(ship) || stance === "hold") {
     // Hold station against continuous perturbation (notably the ship's own gun
     // recoil): face the target but actively damp velocity via the station-keeper
     // at the CURRENT range (want = dist → rangeErr = 0 → only the
@@ -274,7 +290,7 @@ function stopInTimeToward(
   const bearing = Math.atan2(dy, dx);
   const { aPro, aRet } = thrustAccel(ship);
   const vClose = dist > 0 ? (ship.velX * dx + ship.velY * dy) / dist : 0;
-  const band = ship.orders.rangeKeepingBand;
+  const band = rangeBand(ship);
   const tFlip = flipTime(ship);
 
   // Outside desired range — close toward it.

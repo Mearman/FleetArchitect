@@ -7,6 +7,35 @@ import { SIM } from "./config";
 import { effectiveStance } from "./movement";
 import { isDetectable } from "./stealth";
 import type { SimShip } from "./types";
+import type { TargetPriority } from "@/schema/fleet";
+
+/**
+ * The scalar target priority a ship scores enemies by: the doctrine targeting
+ * mode when it is one of the four scalar kinds, else the legacy
+ * `orders.targetPriority`. (Relational modes — threatsTo/membersOf/etc. — are
+ * the formation-aware layer, deferred; until then a ship with one falls back to
+ * its legacy priority so behaviour is unchanged.)
+ */
+function targetPriorityOf(ship: SimShip): TargetPriority {
+  const mode = ship.doctrine?.base.targeting?.mode;
+  if (mode !== undefined) {
+    switch (mode.kind) {
+      case "nearest":
+      case "weakest":
+      case "strongest":
+      case "highestCost":
+        return mode.kind;
+    }
+  }
+  return ship.orders.targetPriority;
+}
+
+function vulnerableWeightOf(ship: SimShip): number {
+  return (
+    ship.doctrine?.base.targeting?.vulnerableWeight ??
+    ship.orders.vulnerableTargetWeight
+  );
+}
 
 /**
  * Whether a ship is concentrating fire with its fleet this tick: the live AI
@@ -15,7 +44,10 @@ import type { SimShip } from "./types";
  * so reads exactly its static order, keeping focus-election byte-identical.
  */
 export function wantsFocusFire(ship: SimShip): boolean {
-  return ship.aiFocusFire || ship.orders.focusFire;
+  return (
+    ship.aiFocusFire ||
+    (ship.doctrine?.base.targeting?.focusFire ?? ship.orders.focusFire)
+  );
 }
 
 /**
@@ -116,9 +148,10 @@ export function scoreEnemy(
   living: readonly EnemyView[],
 ): number {
   // Raw priority score (higher = better target for this priority).
+  const targetPriority = targetPriorityOf(ship);
   const distSq = (enemy.x - ship.x) ** 2 + (enemy.y - ship.y) ** 2;
   let rawScore: number;
-  switch (ship.orders.targetPriority) {
+  switch (targetPriority) {
     case "nearest":
       rawScore = -distSq;
       break;
@@ -133,7 +166,7 @@ export function scoreEnemy(
       break;
   }
 
-  const w = ship.orders.vulnerableTargetWeight;
+  const w = vulnerableWeightOf(ship);
   // Stance bias: a signed near(+)/far(−) preference for the ship's effective
   // stance (its base stance, or an `aiStance` override). Zero for a balanced or
   // default stance, so the fast path below is unchanged for rule-less fleets.
@@ -152,7 +185,7 @@ export function scoreEnemy(
     if (dSq < minDistSq) minDistSq = dSq;
     if (dSq > maxDistSq) maxDistSq = dSq;
     let s: number;
-    switch (ship.orders.targetPriority) {
+    switch (targetPriority) {
       case "nearest":
         s = -dSq;
         break;
