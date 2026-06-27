@@ -1,3 +1,10 @@
+# [1.24.0](https://github.com/Mearman/FleetArchitect/compare/v1.23.0...v1.24.0) (2026-06-27)
+
+
+### Features
+
+* **sim:** consume formation doctrine in movement and targeting ([eb51f3d](https://github.com/Mearman/FleetArchitect/commit/eb51f3de28709598feb8427c6babe6d96a521cf5))
+
 # [1.23.0](https://github.com/Mearman/FleetArchitect/compare/v1.22.0...v1.23.0) (2026-06-27)
 
 
