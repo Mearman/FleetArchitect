@@ -21,7 +21,11 @@
  * so a ship with no rules and the default stance behaves byte-identically.
  */
 
-import { effectiveAi, type TriggerContext } from "@/domain/simulation/engine/ai";
+import {
+  effectiveAi,
+  effectiveDoctrineAi,
+  type TriggerContext,
+} from "@/domain/simulation/engine/ai";
 import type { ModuleKind } from "@/schema/ai";
 import type { SimShip } from "@/domain/simulation/engine/types";
 
@@ -130,7 +134,10 @@ export function stepAi(
     // Phantoms carry no AI of their own; leave their (default) fields.
     if (ship.phantom !== undefined) continue;
     const ctx = buildContext(ship, byId, attackerStrength, defenderStrength);
-    const state = effectiveAi(ship.shipStance, ship.rules, ctx);
+    const state =
+      ship.doctrine !== undefined
+        ? effectiveDoctrineAi(ship.doctrine, ctx)
+        : effectiveAi(ship.shipStance, ship.rules, ctx);
     ship.aiHoldFire = state.holdFire;
     ship.aiFocusFire = state.focusFire;
     ship.aiRetreat = state.retreat;

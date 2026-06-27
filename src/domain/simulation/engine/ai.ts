@@ -14,6 +14,9 @@
 
 import type {
   Action,
+  Condition,
+  Doctrine,
+  DoctrineAction,
   ModuleKind,
   Rule,
   ShipStance,
@@ -131,6 +134,84 @@ export function effectiveAi(
   for (const rule of rules) {
     if (triggerSatisfied(rule.trigger, ctx)) {
       return applyAction(state, rule.action);
+    }
+  }
+  return state;
+}
+
+/**
+ * Whether a unified {@link Condition} holds against the trigger context. The
+ * ship-self kinds mirror the legacy {@link triggerSatisfied} exactly (their
+ * shapes are identical); the formation-state, spatial, and temporal conditions
+ * are the formation-aware layer (deferred) and are not yet satisfiable, so they
+ * return false — a rule guarded only by them never fires.
+ */
+function conditionSatisfied(condition: Condition, ctx: TriggerContext): boolean {
+  switch (condition.kind) {
+    case "shieldBelow":
+      return ctx.shieldFraction < condition.fraction;
+    case "structureBelow":
+      return ctx.structureFraction < condition.fraction;
+    case "targetInRange":
+      return (
+        ctx.targetRange !== undefined &&
+        ctx.targetRange >= condition.min &&
+        ctx.targetRange <= condition.max
+      );
+    case "targetClass":
+      return (
+        ctx.targetClassification !== undefined &&
+        condition.classes.includes(ctx.targetClassification)
+      );
+    case "moduleDestroyed":
+      return ctx.destroyedModuleKinds.has(condition.moduleKind);
+    case "outclassed":
+      return ctx.outclassed;
+    default:
+      // Formation/spatial/temporal/boolean-combo conditions: deferred.
+      return false;
+  }
+}
+
+/**
+ * Layer a unified {@link DoctrineAction} onto an AI state. This inverts the
+ * legacy-action compile (`setStance`→`stance`, `retreat`→`stance:"retreat"`,
+ * `focusFire`→`targeting.focusFire`, `prioritiseRepair`→`crew:"damageControl"`,
+ * `holdFire`/`fireAtWill`→`fire`), so a migrated rule produces the same AiState
+ * the legacy rule did. Axes with no AiState counterpart (spatial, whenFiredUpon,
+ * etc.) are deferred to the formation-aware layer.
+ */
+function applyDoctrineAction(state: AiState, action: DoctrineAction): AiState {
+  let next = state;
+  if (action.stance !== undefined) {
+    next =
+      action.stance === "retreat"
+        ? { ...next, retreat: true }
+        : { ...next, stance: action.stance };
+  }
+  if (action.fire === "holdFire") next = { ...next, holdFire: true };
+  else if (action.fire === "atWill") next = { ...next, holdFire: false };
+  if (action.targeting?.focusFire === true) next = { ...next, focusFire: true };
+  if (action.crew === "damageControl") next = { ...next, prioritiseRepair: true };
+  return next;
+}
+
+/**
+ * The doctrine-driven counterpart to {@link effectiveAi}: evaluate the unified
+ * rules (first match wins) against the context, layered onto the doctrine's
+ * base stance. For a ship whose doctrine was compiled from the legacy trio/
+ * orders (every run-of-battle ship, via `toSimShip`), the result equals what
+ * `effectiveAi(baseStance, legacyRules, ctx)` returned — so behaviour is
+ * byte-identical.
+ */
+export function effectiveDoctrineAi(
+  doctrine: Doctrine,
+  ctx: TriggerContext,
+): AiState {
+  const state = baseAiState(doctrine.base.stance ?? "balanced");
+  for (const rule of doctrine.rules) {
+    if (conditionSatisfied(rule.condition, ctx)) {
+      return applyDoctrineAction(state, rule.then);
     }
   }
   return state;
