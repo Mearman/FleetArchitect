@@ -1,3 +1,10 @@
+# [1.26.0](https://github.com/Mearman/FleetArchitect/compare/v1.25.0...v1.26.0) (2026-06-27)
+
+
+### Features
+
+* **schema:** wire formation templates into storage and battle-start ([9330cef](https://github.com/Mearman/FleetArchitect/commit/9330cef605c8562ec675dd332a4bf621a23feecc))
+
 # [1.25.0](https://github.com/Mearman/FleetArchitect/compare/v1.24.0...v1.25.0) (2026-06-27)
 
 
