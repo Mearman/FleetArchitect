@@ -140,13 +140,17 @@ export function effectiveAi(
 }
 
 /**
- * Whether a unified {@link Condition} holds against the trigger context. The
+ * Whether a ship-self {@link Condition} holds against the trigger context. The
  * ship-self kinds mirror the legacy {@link triggerSatisfied} exactly (their
- * shapes are identical); the formation-state, spatial, and temporal conditions
- * are the formation-aware layer (deferred) and are not yet satisfiable, so they
- * return false — a rule guarded only by them never fires.
+ * shapes are identical). Returns `undefined` for any non-ship-self kind so the
+ * caller (the doctrine interpreter and the formation pass) can dispatch
+ * formation/spatial/temporal/boolean conditions through their own evaluator.
+ * Pure.
  */
-function conditionSatisfied(condition: Condition, ctx: TriggerContext): boolean {
+export function shipSelfSatisfied(
+  condition: Condition,
+  ctx: TriggerContext,
+): boolean | undefined {
   switch (condition.kind) {
     case "shieldBelow":
       return ctx.shieldFraction < condition.fraction;
@@ -168,9 +172,25 @@ function conditionSatisfied(condition: Condition, ctx: TriggerContext): boolean 
     case "outclassed":
       return ctx.outclassed;
     default:
-      // Formation/spatial/temporal/boolean-combo conditions: deferred.
-      return false;
+      return undefined;
   }
+}
+
+/**
+ * Whether a unified {@link Condition} holds against the trigger context. The
+ * ship-self kinds mirror the legacy {@link triggerSatisfied} exactly (their
+ * shapes are identical); the formation-state, spatial, and temporal conditions
+ * are the formation-aware layer (deferred) and are not yet satisfiable, so they
+ * return false — a rule guarded only by them never fires.
+ */
+function conditionSatisfied(condition: Condition, ctx: TriggerContext): boolean {
+  const self = shipSelfSatisfied(condition, ctx);
+  if (self !== undefined) return self;
+  // Formation/spatial/temporal/boolean-combo conditions: deferred here.
+  // The formation-doctrine pass evaluates them when a fleet's doctrine uses
+  // them; this legacy path (effectiveDoctrineAi, called by stepAi) returns
+  // false so a rule guarded only by them never fires through this entry point.
+  return false;
 }
 
 /**

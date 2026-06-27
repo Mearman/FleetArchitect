@@ -17,6 +17,7 @@ import type { StalemateWatch } from "./stalemate";
 
 import { computeAwareness } from "./awareness";
 import { stepAi } from "./ai-step";
+import { stepFormationDoctrine } from "./formation-doctrine";
 import { rebuildEmissions } from "./em-reception";
 import { launchPods, updatePods } from "./boarding";
 import { applyCollisionDamage, buildShipCellHash, resolveShipCollisions } from "./collision";
@@ -250,6 +251,11 @@ export function* simulateBattle(
     //     rule wins. A ship with no rules evaluates to holdFire=false, so
     //     byte-output is unchanged for rule-less fleets.
     stepAi(state.ships, state.byId);
+    // 0d. Formation-doctrine pass. Evaluates unified rules whose conditions are
+    //     formation/spatial/temporal/boolean kinds (the kinds `stepAi` leaves
+    //     unsatisfied), writing the resolved axes onto `ai*` fields. GATED to a
+    //     no-op for fleets with no formation condition, so presets are byte-identical.
+    stepFormationDoctrine(state.ships, state.byId, tick, state.deployment);
 
     // 1. Targeting.
     // Elect focus-fire targets once per tick per side. A ship with

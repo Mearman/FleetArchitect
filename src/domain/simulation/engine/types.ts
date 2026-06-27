@@ -9,7 +9,7 @@
 import type { ShipClassification } from "@/schema/armor";
 import type { CellEdges, SurfaceKind } from "@/schema/grid";
 import type { ModuleEffect, WeaponEffect, WeaponType } from "@/schema/module";
-import type { Doctrine, ShipStance } from "@/schema/ai";
+import type { Doctrine, FireDiscipline, ShipStance, SpatialObjective, TargetingMode } from "@/schema/ai";
 import type { ResolvedHardwire, SimCrew } from "../types";
 
 import type { UNREACHABLE } from "./config";
@@ -250,6 +250,19 @@ export interface SimShip {
   aiRetreat: boolean;
   aiPrioritiseRepair: boolean;
   aiRally: boolean;
+  /**
+   * Transient per-tick formation-doctrine outputs (Phase C wiring): the
+   * resolved spatial/targeting/fire axes `stepFormationDoctrine` writes when a
+   * unified rule's formation/spatial/temporal/boolean condition fires.
+   * Undefined for every ship whose doctrine fires no such rule, so consumers
+   * fall through to their static read unchanged — preset battles are
+   * byte-identical. Recomputed each tick before any movement/targeting reader;
+   * never captured by the checkpoint (undefined on resume, repopulated by the
+   * pass). Phase D consumers will prefer these over the doctrine base.
+   */
+  aiSpatial?: SpatialObjective;
+  aiTargeting?: TargetingMode;
+  aiFire?: FireDiscipline;
   target: string | undefined;
   alive: boolean;
   /**
