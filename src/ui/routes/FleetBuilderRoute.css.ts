@@ -107,6 +107,60 @@ export const browserWing = style({
   },
 });
 
+/** Right column: a vertical stack of the ship-browser and template-library wings.
+ *  Each wing scrolls internally so the column fills the workspace height. */
+export const rightColumn = style({
+  flex: "0 0 320px",
+  minHeight: 0,
+  display: "flex",
+  flexDirection: "column",
+  gap: 8,
+  "@media": {
+    "(max-width: 48em)": {
+      flex: "1 1 auto",
+      minHeight: "auto",
+    },
+  },
+});
+
+/** A wing panel that shares height with its sibling inside the right column. */
+export const splitWing = style({
+  flex: "1 1 0",
+  minHeight: 0,
+  display: "flex",
+  flexDirection: "column",
+  padding: 12,
+  "@media": {
+    "(max-width: 48em)": {
+      flex: "1 1 auto",
+      minHeight: "auto",
+    },
+  },
+});
+
+/** The deployment-preview panel inside the centre, above the roster. */
+export const canvasRegion = style({
+  flexShrink: 0,
+  padding: 10,
+});
+
+/** A slim mode banner shown when editing a template (not a fleet). */
+export const modeBanner = style({
+  fontFamily: vars.font.mono,
+  fontSize: "0.6rem",
+  fontWeight: 600,
+  letterSpacing: "0.08em",
+  textTransform: "uppercase",
+  color: vars.color.cyan,
+  padding: "4px 8px",
+  borderBottom: `1px solid ${vars.color.border}`,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 8,
+  flexShrink: 0,
+});
+
 /** Centre column: fleet name, roster, budget, actions. On mobile it rises to top. */
 export const centre = style({
   flex: "1 1 auto",

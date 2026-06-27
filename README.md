@@ -39,6 +39,7 @@ gameplay parity layered on top. The simulation runs off the main thread.
 | Directional sensors (omni/directional/dish/variable cones mirroring comms; cone fog coverage) | Shipped |
 | Version history for ship and fleet designs (revision snapshots, restore, history panel) | Shipped |
 | Player-authored AI rules (trigger/action pairs wired into movement and targeting) | Shipped |
+| Formation authoring — nested formation trees, formation-scoped doctrine (posture presets + unified rule editor), deployment preview canvas, reusable formation templates shared by reference | Shipped |
 | Life support / atmosphere — hull breaches vent atmos; crew take vacuum damage; overlay shows state | Shipped |
 | Sensor data visualisation — EM pulses travel at c, reflect off contacts, fade by strength | Shipped |
 | Boarding pods rendered as block grids; debris collection; disabled-hull salvage and claiming | Shipped |
