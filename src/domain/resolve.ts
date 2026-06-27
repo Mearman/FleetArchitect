@@ -3,6 +3,8 @@ import { CELL_SIZE, cellToLocal, deriveClassification, deriveRadius, footprint }
 import { computeOutline, extractShell } from "@/domain/outline";
 import { cellCoverageFractions } from "@/domain/hull-outline";
 import { growArmourHull, padGrid } from "@/domain/hull-armour";
+import { hasPatternLayout, placeByPattern } from "@/domain/deploy";
+import type { ResolvedEntry, ShipBuilder } from "@/domain/deploy";
 import type { Catalog } from "@/domain/catalog";
 import type {
   CombatShip,
@@ -12,6 +14,9 @@ import type {
 import type { Fleet } from "@/schema/fleet";
 import { collectFormationLeaves } from "@/schema/formation";
 import type { Doctrine } from "@/schema/ai";
+import type { CellEdges, GridCell, SurfaceKind } from "@/schema/grid";
+import type { ModuleEffect, WeaponEffect } from "@/schema/module";
+import type { ShipDesign } from "@/schema/ship";
 
 /**
  * Resolve a ship's effective doctrine: the fleet-ship leaf doctrine overrides
@@ -27,9 +32,6 @@ function overlayDoctrine(
   const rules = [...(leaf?.rules ?? []), ...(design?.rules ?? [])];
   return { base, rules };
 }
-import type { CellEdges, GridCell, SurfaceKind } from "@/schema/grid";
-import type { ModuleEffect, WeaponEffect } from "@/schema/module";
-import type { ShipDesign } from "@/schema/ship";
 
 /**
  * Resolve a fleet's deployed ships into combat-ready ships. The caller supplies
@@ -269,6 +271,53 @@ function computeEdgeInsetM(
   return Math.max(reachCap, minSeparation);
 }
 
+/**
+ * Build a {@link CombatShip} from a resolved entry at a given position and
+ * facing. This is the shared per-ship builder: it runs the per-cell module
+ * resolution, hardwire and outline derivation, and stamps the formation
+ * identity (formationId/chain/role) from the leaf. Both deployment paths call
+ * it (the legacy column directly; the pattern walk via a {@link ShipBuilder}
+ * closure) so a ship resolved through either path carries identical data —
+ * only `position` and `facing` differ, computed by each path's geometry.
+ */
+function buildCombatShip(
+  entry: ResolvedEntry,
+  position: { x: number; y: number },
+  facing: number,
+  side: "attacker" | "defender",
+  instanceIndex: number,
+  catalog: Catalog,
+): CombatShip {
+  const { leaf, design, grownDesign, stats } = entry;
+  const modules = resolveModules(grownDesign, catalog);
+  const hardwires = resolveHardwires(grownDesign, modules);
+  const outline = computeOutline(extractShell(grownDesign.grid));
+  // Formation identity, threaded from the leaf's formation context. Stamped
+  // via conditional spread so a direct-constructed CombatShip (a test fixture)
+  // without them keeps an unchanged cache key; resolve-built ships always
+  // carry them.
+  const { formationId, formationChain, role } = leaf;
+  return {
+    // Stable across independent resolutions of the same fleet: side + index
+    // in the array being built gives a deterministic id without crypto.randomUUID.
+    instanceId: `ship_${side}_${instanceIndex}`,
+    designId: design.id,
+    faction: design.faction,
+    side,
+    stats,
+    position,
+    facing,
+    classification: deriveClassification(grownDesign.grid),
+    // The resolved authored doctrine (design overlaid by the leaf). Source of
+    // truth for the engine.
+    doctrine: overlayDoctrine(design.doctrine, leaf.ship.doctrine),
+    ...(modules.length > 0 ? { modules } : {}),
+    ...(hardwires.length > 0 ? { hardwires } : {}),
+    ...(outline.length > 0 ? { outline } : {}),
+    ...(formationId !== undefined ? { formationId, formationChain, role } : {}),
+  };
+}
+
 export function resolveFleetToCombatShips(
   fleet: Fleet,
   designs: ReadonlyMap<string, ShipDesign>,
@@ -284,8 +333,8 @@ export function resolveFleetToCombatShips(
   // resolve. Each leaf also carries its formation identity (formationId, chain,
   // role), stamped onto the resolved CombatShip below.
   const leaves = collectFormationLeaves(fleet.formation);
-  const resolved = leaves
-    .map((leaf) => {
+  const resolved: ResolvedEntry[] = leaves
+    .map((leaf): ResolvedEntry | undefined => {
       const design = designs.get(leaf.ship.designId);
       if (design === undefined) return undefined;
       // Derive the grown design once per ship so stats, radius, and the main
@@ -302,21 +351,11 @@ export function resolveFleetToCombatShips(
         stats,
         radius: deriveRadius(grownDesign.grid),
         weapons: stats.weapons.map((w) => w.effect),
-        // The ship's effective detection reach (metres): the longer of its innate
-        // naked-eye sight and its best sensor module's detectionRange. Feeds the
-        // deployment sight cap so the line is never placed beyond where ships can
-        // see one another at tick 0 — a sensorless (myopic) fleet forms up inside
-        // its ~5 km sight and fights close, while a sensor-equipped fleet may
-        // deploy out at its sensor reach and trade fire across the longer gap.
         sightReachM: maxSightReach(design, catalog),
-        // SI acceleration (m/s²) = thrust[N] / mass[kg]. Feeds the deployment
-        // kinematic closing budget so the line is placed where this ship can
-        // actually close it at real catalogue thrust. Mass is floored at 1 to
-        // mirror the engine's `Math.max(ship.mass, 1)` divide-by-zero guard.
         accelMps2: stats.thrust / Math.max(stats.mass, 1),
       };
     })
-    .filter((entry): entry is NonNullable<typeof entry> => entry !== undefined);
+    .filter((entry): entry is ResolvedEntry => entry !== undefined);
 
   // Edge inset derived from ship sizes + weapon range (see computeEdgeInsetM).
   // The fallback for a weaponless fleet is SIM.defaultRange, grounded as the
@@ -328,6 +367,20 @@ export function resolveFleetToCombatShips(
   // 5000 + CELL_SIZE / 2 — the same value SIM.defaultRange evaluates to.
   const edgeInset = computeEdgeInsetM(resolved, VISUAL_LOS_REFERENCE_M + CELL_SIZE / 2);
 
+  // Pattern branch: if any formation in the tree carries a `pattern` layout,
+  // walk the tree and place each leaf by its authored geometry (pattern offset
+  // or explicit slot override). The ship builder is threaded as a closure so
+  // `placeByPattern` (in `deploy.ts`) stays independent of this module's
+  // per-ship helpers — no import cycle. A fleet with no pattern layouts
+  // anywhere falls through to the legacy column below, byte-identical to the
+  // pre-formation resolve (the preset path).
+  if (hasPatternLayout(fleet.formation)) {
+    const buildShip: ShipBuilder = (entry, position, facing, instanceIndex) =>
+      buildCombatShip(entry, position, facing, side, instanceIndex, catalog);
+    return placeByPattern(fleet.formation, resolved, edgeInset, side, buildShip);
+  }
+
+  // Legacy column branch (byte-identical for flat/column fleets).
   // Total column height: every ship's diameter plus a margin between each pair.
   const totalHeight =
     resolved.reduce((sum, e) => sum + e.radius * 2, 0) +
@@ -342,41 +395,11 @@ export function resolveFleetToCombatShips(
 
   const ships: CombatShip[] = [];
   for (const entry of resolved) {
-    const { leaf, design, grownDesign, stats, radius } = entry;
-    const modules = resolveModules(grownDesign, catalog);
-    const hardwires = resolveHardwires(grownDesign, modules);
-    const outline = computeOutline(extractShell(grownDesign.grid));
+    const { radius } = entry;
     const x = dir * (edgeInset - radius);
     const y = cursorY + radius;
     cursorY += radius * 2 + DEPLOY_SHIP_MARGIN_M;
-    // Formation identity, threaded from the leaf's formation context. Stamped
-    // via conditional spread so a direct-constructed CombatShip (a test fixture)
-    // without them keeps an unchanged cache key; resolve-built ships always
-    // carry them. The engine reads these (aggregation, role resolution) once
-    // the formation-aware runtime lands; for now they only add to the cache key
-    // for resolve-built ships (one miss per fleet — acceptable).
-    const { formationId, formationChain, role } = leaf;
-    ships.push({
-      // Stable across independent resolutions of the same fleet: side + index
-      // in the array being built gives a deterministic id without crypto.randomUUID.
-      instanceId: `ship_${side}_${ships.length}`,
-      designId: design.id,
-      faction: design.faction,
-      side,
-      stats,
-      position: { x, y },
-      facing,
-      classification: deriveClassification(grownDesign.grid),
-      // The resolved authored doctrine (design overlaid by the leaf). Source of
-      // truth for the engine.
-      doctrine: overlayDoctrine(design.doctrine, leaf.ship.doctrine),
-      ...(modules.length > 0 ? { modules } : {}),
-      ...(hardwires.length > 0 ? { hardwires } : {}),
-      ...(outline.length > 0 ? { outline } : {}),
-      ...(formationId !== undefined
-        ? { formationId, formationChain, role }
-        : {}),
-    });
+    ships.push(buildCombatShip(entry, { x, y }, facing, side, ships.length, catalog));
   }
   return ships;
 }

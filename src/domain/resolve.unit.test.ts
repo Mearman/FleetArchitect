@@ -294,3 +294,246 @@ describe("resolveFleetToCombatShips (formation identity)", () => {
     }
   });
 });
+
+describe("resolveFleetToCombatShips (pattern layout)", () => {
+  // A pattern-layout fleet deploys in its authored geometry rather than the
+  // legacy radius-spaced column. The pattern formulas live in
+  // `formation-layout.ts` (shared with the fleet-builder preview); these tests
+  // pin the resolver's consumption of them so the engine and the preview never
+  // drift apart.
+
+  /** Three ships under a root carrying the given pattern layout. */
+  function patternFleet(
+    pattern: "column" | "line" | "wedge" | "ring" | "screen" | "echelon",
+    spacing: number,
+  ): Fleet {
+    const ship = () => ({
+      designId: "d-1",
+      position: { x: 0, y: 0 },
+      facing: 0,
+    });
+    return {
+      ...fleet(),
+      formation: {
+        id: "root",
+        doctrine: { base: {}, rules: [] },
+        layout: { kind: "pattern", pattern, spacing, facingAligned: true },
+        children: [
+          { kind: "ship", ship: ship() },
+          { kind: "ship", ship: ship() },
+          { kind: "ship", ship: ship() },
+        ],
+      },
+    };
+  }
+
+  it("places a `line` pattern as a forward trail centred on the anchor", () => {
+    // `line` is a forward stack (ships in trail, one behind another along the
+    // facing axis), centred on the anchor so the middle ship sits at the
+    // deployment edge. For 3 ships at spacing 100 the forward offsets (from
+    // patternOffset in formation-layout.ts) are -100, 0, +100 — and with the
+    // attacker facing 0 the rotation is identity, so world x = anchor.x +
+    // forward, world y = anchor.y + lateral (0 for a line).
+    const designs = new Map([["d-1", design()]]);
+    const ships = resolveFleetToCombatShips(
+      patternFleet("line", 100),
+      designs,
+      catalog(),
+      "attacker",
+    );
+    expect(ships).toHaveLength(3);
+    // All three share lateral = 0 (no lateral spread in a line) → identical y.
+    const y = ships[0]?.position.y;
+    expect(y).toBeDefined();
+    for (const ship of ships) {
+      expect(ship.position.y).toBeCloseTo(y ?? 0, 6);
+    }
+    // Forward offsets -100, 0, +100 centred on the anchor. The ships are in
+    // increasing x order: ship 0 is farthest back (most negative x), ship 2 is
+    // farthest forward (closest to the midline).
+    expect(ships[0]?.position.x).toBeLessThan(ships[1]?.position.x ?? NaN);
+    expect(ships[1]?.position.x).toBeLessThan(ships[2]?.position.x ?? NaN);
+    // The stride between adjacent ships is exactly the authored spacing.
+    const stride = (ships[1]?.position.x ?? 0) - (ships[0]?.position.x ?? 0);
+    expect(stride).toBeCloseTo(100, 6);
+    // The middle ship sits at the anchor x (forward offset 0) — the deployment
+    // edge inset, which is negative for an attacker.
+    expect(ships[1]?.position.x).toBeLessThan(0);
+  });
+
+  it("places a `column` pattern as a lateral abreast line, distinct from the legacy column", () => {
+    // `column` is a lateral line (ships abreast across the facing axis), NOT
+    // the legacy radius-spaced deployment column. For 3 ships at spacing 100
+    // the lateral offsets are -100, 0, +100 — all at the same forward (the
+    // anchor x), so the ships line up abreast across y.
+    const designs = new Map([["d-1", design()]]);
+    const ships = resolveFleetToCombatShips(
+      patternFleet("column", 100),
+      designs,
+      catalog(),
+      "attacker",
+    );
+    expect(ships).toHaveLength(3);
+    // All three share the anchor x (forward = 0 for every child of a column
+    // pattern) — distinct from the legacy column, which would also share x but
+    // derive y from ship radius rather than the authored spacing.
+    const x = ships[0]?.position.x;
+    expect(x).toBeDefined();
+    for (const ship of ships) {
+      expect(ship.position.x).toBeCloseTo(x ?? 0, 6);
+    }
+    // The lateral offsets place ships at y = -100, 0, +100 centred on the
+    // anchor (y = 0). The legacy column would instead place them at
+    // y = -totalHeight/2 + radius, 0, +totalHeight/2 - radius (radius-spaced),
+    // so asserting the exact authored spacing here is what proves the pattern
+    // branch ran rather than the legacy column.
+    expect(ships[0]?.position.y).toBeCloseTo(-100, 6);
+    expect(ships[1]?.position.y).toBeCloseTo(0, 6);
+    expect(ships[2]?.position.y).toBeCloseTo(100, 6);
+  });
+
+  it("mirrors the pattern for the defender side (facing π flips both axes)", () => {
+    // A defender fleet is the mirror image: base facing π rotates both the
+    // forward and lateral axes by 180°, so a `line` pattern's forward stack
+    // runs the opposite way in world x and the lateral abreast `column` runs
+    // the opposite way in world y. Verifying the mirror proves the rotation
+    // composes correctly for the defender rather than being special-cased.
+    const designs = new Map([["d-1", design()]]);
+    const attacker = resolveFleetToCombatShips(
+      patternFleet("column", 100),
+      designs,
+      catalog(),
+      "attacker",
+    );
+    const defender = resolveFleetToCombatShips(
+      patternFleet("column", 100),
+      designs,
+      catalog(),
+      "defender",
+    );
+    expect(defender).toHaveLength(3);
+    // The anchor x is mirrored: defender anchor is +edgeInset (right of
+    // midline) vs attacker -edgeInset.
+    expect(defender[1]?.position.x).toBeGreaterThan(0);
+    expect(attacker[1]?.position.x).toBeLessThan(0);
+    // The lateral order flips: attacker ship 0 is at y = -100, defender ship 0
+    // is at y = +100 (the π rotation negates lateral).
+    expect(attacker[0]?.position.y).toBeCloseTo(-100, 6);
+    expect(defender[0]?.position.y).toBeCloseTo(100, 6);
+    expect(defender[2]?.position.y).toBeCloseTo(-100, 6);
+  });
+
+  it("honours an explicit slot override on a pattern formation's child", () => {
+    // An explicit `slot` on a child overrides the pattern formula for that
+    // child only — the other children still follow the pattern. Here the
+    // middle ship of a column pattern carries a slot pushing it forward of the
+    // abreast line, so ships 0 and 2 stay on the line at lateral ∓100 while
+    // ship 1 is at (forward=50, lateral=0).
+    const ship = () => ({
+      designId: "d-1",
+      position: { x: 0, y: 0 },
+      facing: 0,
+    });
+    const slotFleet: Fleet = {
+      ...fleet(),
+      formation: {
+        id: "root",
+        doctrine: { base: {}, rules: [] },
+        layout: {
+          kind: "pattern",
+          pattern: "column",
+          spacing: 100,
+          facingAligned: true,
+        },
+        children: [
+          { kind: "ship", ship: ship() },
+          {
+            kind: "ship",
+            ship: ship(),
+            slot: { forward: 50, lateral: 0 },
+          },
+          { kind: "ship", ship: ship() },
+        ],
+      },
+    };
+    const designs = new Map([["d-1", design()]]);
+    const ships = resolveFleetToCombatShips(slotFleet, designs, catalog(), "attacker");
+    expect(ships).toHaveLength(3);
+    // Ships 0 and 2 follow the column pattern: lateral ∓100, forward 0.
+    expect(ships[0]?.position.y).toBeCloseTo(-100, 6);
+    expect(ships[2]?.position.y).toBeCloseTo(100, 6);
+    // Ship 1 honours its explicit slot: lateral 0 (y = anchor.y = 0), and
+    // forward 50 places it 50 m closer to the midline than the abreast line.
+    expect(ships[1]?.position.y).toBeCloseTo(0, 6);
+    const dx = (ships[1]?.position.x ?? 0) - (ships[0]?.position.x ?? 0);
+    expect(dx).toBeCloseTo(50, 6);
+  });
+
+  it("places a nested sub-formation by the parent's pattern, then its own", () => {
+    // A fleet whose root has a pattern layout AND contains a sub-formation
+    // with its own pattern composes the two: the sub-formation is offset by
+    // the root pattern (one position in the root's frame), and its children
+    // are arranged inside that offset by the sub-formation's pattern. This is
+    // the recursive composition the engine must get right.
+    const ship = () => ({
+      designId: "d-1",
+      position: { x: 0, y: 0 },
+      facing: 0,
+    });
+    const squad: Formation = {
+      id: "squad",
+      doctrine: { base: {}, rules: [] },
+      layout: {
+        kind: "pattern",
+        pattern: "line",
+        spacing: 40,
+        facingAligned: true,
+      },
+      children: [
+        { kind: "ship", ship: ship() },
+        { kind: "ship", ship: ship() },
+      ],
+    };
+    const nestedFleet: Fleet = {
+      ...fleet(),
+      formation: {
+        id: "root",
+        doctrine: { base: {}, rules: [] },
+        layout: {
+          kind: "pattern",
+          pattern: "line",
+          spacing: 200,
+          facingAligned: true,
+        },
+        children: [
+          { kind: "ship", ship: ship() },
+          { kind: "formation", formation: squad },
+        ],
+      },
+    };
+    const designs = new Map([["d-1", design()]]);
+    const ships = resolveFleetToCombatShips(nestedFleet, designs, catalog(), "attacker");
+    expect(ships).toHaveLength(3);
+    // Root `line` with 2 children at spacing 200 → forward offsets -100 (ship)
+    // and +100 (squad). Squad `line` with 2 children at spacing 40 → relative
+    // forward offsets -20 and +20 inside the squad's frame.
+    //
+    // Ship 0 (root child 0): forward -100 from the anchor.
+    // Ship 1 (squad child 0): squad at +100, then -20 inside → forward +80.
+    // Ship 2 (squad child 1): squad at +100, then +20 inside → forward +120.
+    const anchor = ships[1] !== undefined && ships[2] !== undefined
+      ? (ships[1].position.x + ships[2].position.x) / 2 - 100
+      : NaN;
+    expect(ships[0]?.position.x).toBeCloseTo(anchor - 100, 6);
+    expect(ships[1]?.position.x).toBeCloseTo(anchor + 80, 6);
+    expect(ships[2]?.position.x).toBeCloseTo(anchor + 120, 6);
+    // The squad's two ships are 40 m apart (the squad's spacing) along the
+    // forward axis.
+    const squadStride = (ships[2]?.position.x ?? 0) - (ships[1]?.position.x ?? 0);
+    expect(squadStride).toBeCloseTo(40, 6);
+    // All three ships share lateral = 0 (both patterns are forward lines).
+    for (const s of ships) {
+      expect(s.position.y).toBeCloseTo(0, 6);
+    }
+  });
+});

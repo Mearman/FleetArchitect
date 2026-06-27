@@ -241,6 +241,17 @@ const CheckpointShip = z.object({
    *  reads doctrine as its single source of ship behaviour, so a resumed
    *  battle must restore the same doctrine the pre-pause tick read. */
   doctrine: Doctrine,
+  /** Formation identity (formation overhaul). Authoritative — the doctrine
+   *  pass aggregates over the chain and resolves role references off these, so
+   *  a resumed doctrine-active battle must restore the same grouping the
+   *  pre-pause tick read. Optional/additive: absent on checkpoints written
+   *  before formation identity was captured (and on ships whose fleet carries
+   *  no formation context), so old checkpoints parse and a resumed ship simply
+   *  re-reads `undefined` exactly as a fresh ship without formation context
+   *  would. */
+  formationId: z.string().optional(),
+  formationChain: z.array(z.string()).optional(),
+  role: z.string().optional(),
   aiStance: ShipStance.nullable(),
   aiFocusFire: z.boolean(),
   aiRetreat: z.boolean(),
@@ -402,8 +413,10 @@ const StalemateWatch = z.object({
 
 /** The schema version. Bumped when the checkpoint shape changes so a stored
  *  checkpoint from an older shape is rejected at the storage boundary rather
- *  than silently mis-read. */
-export const CHECKPOINT_VERSION = 3;
+ *  than silently mis-read. v4 adds formation identity (formationId,
+ *  formationChain, role) to {@link CheckpointShip} so a resumed doctrine-active
+ *  battle keeps its formation grouping. */
+export const CHECKPOINT_VERSION = 4;
 
 /**
  * A complete engine checkpoint: everything needed to resume `simulateBattle`

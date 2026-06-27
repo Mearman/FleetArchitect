@@ -83,6 +83,18 @@ function snapshotShip(s: SimShip): CheckpointShip {
     weapons: [...s.weapons],
     weaponCooldowns: [...s.weaponCooldowns],
     doctrine: s.doctrine,
+    // Formation identity (formation overhaul). Captured so a resumed
+    // doctrine-active battle keeps its formation grouping — the doctrine pass
+    // aggregates over the chain and resolves role references off these.
+    // Conditionally spread (mirroring `toSimShip`) so a ship without formation
+    // context writes nothing and round-trips byte-identically.
+    ...(s.formationId !== undefined
+      ? {
+          formationId: s.formationId,
+          formationChain: s.formationChain,
+          role: s.role,
+        }
+      : {}),
     aiStance: s.aiStance,
     aiFocusFire: s.aiFocusFire,
     aiRetreat: s.aiRetreat,
@@ -363,6 +375,18 @@ function restoreShip(s: CheckpointShip): SimShip {
     weapons: s.weapons,
     weaponCooldowns: [...s.weaponCooldowns],
     doctrine: s.doctrine,
+    // Formation identity (formation overhaul). Restored so a resumed
+    // doctrine-active battle keeps its formation grouping — the doctrine pass
+    // reads these exactly as the pre-pause tick did. Conditionally spread so a
+    // pre-formation checkpoint (or a ship without formation context) restores
+    // `undefined`, matching the fresh-ship byte-identical contract.
+    ...(s.formationId !== undefined
+      ? {
+          formationId: s.formationId,
+          formationChain: s.formationChain,
+          role: s.role,
+        }
+      : {}),
     aiStance: s.aiStance,
     aiFocusFire: s.aiFocusFire,
     aiRetreat: s.aiRetreat,
