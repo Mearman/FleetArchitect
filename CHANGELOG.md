@@ -1,3 +1,10 @@
+# [1.29.0](https://github.com/Mearman/FleetArchitect/compare/v1.28.0...v1.29.0) (2026-06-27)
+
+
+### Features
+
+* **resolve:** consume formation layouts in the resolver ([dbec54c](https://github.com/Mearman/FleetArchitect/commit/dbec54c4f80f05958e637ef22cf39b8ad6a4e88a))
+
 # [1.28.0](https://github.com/Mearman/FleetArchitect/compare/v1.27.0...v1.28.0) (2026-06-27)
 
 
