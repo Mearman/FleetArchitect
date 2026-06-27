@@ -1,3 +1,10 @@
+# [1.22.0](https://github.com/Mearman/FleetArchitect/compare/v1.21.2...v1.22.0) (2026-06-27)
+
+
+### Features
+
+* **schema:** expand formation templates and stamp formation identity at resolve ([5db2fd6](https://github.com/Mearman/FleetArchitect/commit/5db2fd680e60d54b6846a266954374d12009d881))
+
 ## [1.21.2](https://github.com/Mearman/FleetArchitect/compare/v1.21.1...v1.21.2) (2026-06-27)
 
 
