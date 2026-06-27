@@ -1,3 +1,10 @@
+## [1.21.2](https://github.com/Mearman/FleetArchitect/compare/v1.21.1...v1.21.2) (2026-06-27)
+
+
+### Bug Fixes
+
+* **sharing:** round-trip leaf doctrine so decoded fleets resolve identically ([0bfcf66](https://github.com/Mearman/FleetArchitect/commit/0bfcf66f90b31c7013d4e773a158489454218dc5))
+
 ## [1.21.1](https://github.com/Mearman/FleetArchitect/compare/v1.21.0...v1.21.1) (2026-06-26)
 
 
