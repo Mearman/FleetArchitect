@@ -63,5 +63,19 @@ export const Fleet = z.object({
    * their authored revision.
    */
   revision: z.number().int().min(1).default(1),
+  /**
+   * Named waypoints in fleet-local coordinates (metres, relative to the fleet's
+   * deployment centroid). A doctrine {@link FormationReference} of `{kind:
+   * "point", pointId}` resolves to the world position of the point with that id
+   * at battle-start; the resolver ({@link resolveFleetPoints}) translates each
+   * authored local offset to a world position by the fleet's deployment centroid
+   * and facing, so a point authored at `(0, 0)` lands on the centroid and a
+   * defender's local `+x` (its "forward") points toward the midline. Optional
+   * and absent on every preset fleet, so a fleet with no points parses and
+   * resolves byte-identically (point references simply stay unresolvable). No
+   * UI authors points yet — the schema + resolve + doctrine pass make them work
+   * for data-authored fleets.
+   */
+  points: z.record(EntityId, Vec2).optional(),
 });
 export type Fleet = z.infer<typeof Fleet>;

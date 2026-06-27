@@ -27,7 +27,7 @@ import { angleDifference, angularAccelPerTick, blackHoleAvoidWeight, rotateLocal
 import { hasAnomaly } from "@/domain/anomaly";
 import { computeTranslationCommand } from "./translation";
 import { afterburnerMultipliers } from "./tech";
-import { buildAggregates, makeResolver } from "./formation-doctrine";
+import { buildAggregates, makeResolver, type Point } from "./formation-doctrine";
 import { desiredPoint, cohesionCentroidFor } from "./formation-movement";
 import type { SimShip } from "./types";
 import { isClaimed } from "./salvage";
@@ -303,6 +303,9 @@ export function moveShips(
   /** Current tick, threaded through so a formation-doctrine `orbit` bearing
    *  (the only time-dependent spatial term) resolves deterministically. */
   tick: number,
+  /** Named waypoints (pointId → world); a `{kind: "point"}` reference resolves
+   *  here. Empty when no fleet authored points. */
+  points: ReadonlyMap<string, Point>,
 ): void {
   // Pre-compute fleet centroids once per tick so formation-keeping blends
   // each ship's desired heading toward a stable reference point, not one
@@ -313,21 +316,15 @@ export function moveShips(
   // Phase D formation-doctrine support: build the per-formation aggregates and
   // reference resolver ONCE per tick (mirroring the formation-doctrine pass), so
   // a ship with an `aiSpatial` override resolves its spatial objective to the
-  // same point the pass used, and cohesion can read the ship's OWN formation
-  // centroid. Pure, instanceId-sorted; harmless for presets (aiSpatial
-  // undefined → desiredPoint undefined → existing path, byte-identical).
+  // same point the pass used. Pure, instanceId-sorted; harmless for presets
+  // (aiSpatial undefined → desiredPoint undefined → byte-identical).
   const sortedForFormation = ships
     .slice()
     .sort((a, b) =>
       a.instanceId < b.instanceId ? -1 : a.instanceId > b.instanceId ? 1 : 0,
     );
   const formationAggregates = buildAggregates(sortedForFormation);
-  const formationResolve = makeResolver(
-    sortedForFormation,
-    byId,
-    formationAggregates,
-    deployment,
-  );
+  const formationResolve = makeResolver(sortedForFormation, byId, formationAggregates, deployment, points);
 
   // Build the N-body gravitational field once per tick, with positions
   // snapshotted before any ship moves. Each ship then reads its pull from this

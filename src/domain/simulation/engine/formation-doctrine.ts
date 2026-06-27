@@ -261,15 +261,16 @@ export interface ResolveReference {
 }
 
 /** Build the resolver closure from the sorted ship list, the byId index, the
- *  per-formation aggregates, and the deployment reference. The Phase D movement
- *  consumer calls this once per tick (the same way the pass does) so a spatial
- *  objective's `reference` resolves to the identical world point the pass used
- *  to evaluate its conditions. Pure. */
+ *  per-formation aggregates, the deployment reference, and the named-waypoint
+ *  map. The Phase D movement consumer calls this once per tick (the same way
+ *  the pass does) so a spatial objective's `reference` resolves to the identical
+ *  world point the pass used to evaluate its conditions. Pure. */
 export function makeResolver(
   sortedById: readonly SimShip[],
   byId: ReadonlyMap<string, SimShip>,
   aggregates: ReadonlyMap<string, FormationAggregate>,
   deployment: DeploymentReference,
+  points: ReadonlyMap<string, Point>,
 ): ResolveReference {
   const resolve: ResolveReference = (ref, ship) => {
     switch (ref.kind) {
@@ -304,9 +305,11 @@ export function makeResolver(
           : undefined;
       }
       case "point":
-        // Waypoints are not yet authored. A condition using a point reference is
-        // unsatisfied until they exist — return undefined rather than erroring.
-        return undefined;
+        // Named waypoint: a pure lookup against the per-battle points map (the
+        // merged, resolved-to-world waypoint maps from both fleets). Absent when
+        // no fleet authored the id — an unresolvable reference makes any
+        // condition using it unsatisfied, never errors.
+        return points.get(ref.pointId);
       case "deployment": {
         const d = ship.side === "attacker" ? deployment.attacker : deployment.defender;
         return d !== undefined ? { x: d.x, y: d.y } : undefined;
@@ -662,6 +665,7 @@ export function stepFormationDoctrine(
   byId: ReadonlyMap<string, SimShip>,
   tick: number,
   deployment: DeploymentReference,
+  points: ReadonlyMap<string, Point>,
 ): void {
   // GATE: zero cost + zero writes for fleets with no formation conditions.
   if (!anyFormationCondition(ships)) return;
@@ -675,7 +679,7 @@ export function stepFormationDoctrine(
     );
 
   const aggregates = buildAggregates(sortedById);
-  const resolve = makeResolver(sortedById, byId, aggregates, deployment);
+  const resolve = makeResolver(sortedById, byId, aggregates, deployment, points);
 
   for (const ship of sortedById) {
     // Reset this tick's transient fields regardless of phantom status / doctrine

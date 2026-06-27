@@ -256,12 +256,12 @@ export function* simulateBattle(
     //     formation/spatial/temporal/boolean kinds (the kinds `stepAi` leaves
     //     unsatisfied), writing the resolved axes onto `ai*` fields. GATED to a
     //     no-op for fleets with no formation condition, so presets are byte-identical.
-    stepFormationDoctrine(state.ships, state.byId, tick, state.deployment);
+    stepFormationDoctrine(state.ships, state.byId, tick, state.deployment, state.points);
 
     // 1. Targeting. Phase D: build the formation-targeting context once per tick
     //    so an `aiTargeting` override can filter/score candidates by relational
     //    mode. Harmless for presets (identity filter).
-    const formationTargeting = buildFormationTargetingContext(state.ships, state.byId, state.deployment);
+    const formationTargeting = buildFormationTargetingContext(state.ships, state.byId, state.deployment, state.points);
     // Elect focus-fire targets once per tick per side, outside the per-ship loop
     // so every ship on a side sees the same fleet target this tick.
     const attackerFocusTarget = electFocusTarget("attacker", state.ships, state.defenders, tick, formationTargeting);
@@ -294,7 +294,7 @@ export function* simulateBattle(
     }
 
     // 2. Movement + facing.
-    moveShips(state.ships, state.byId, inputs.anomalies, state.deployment, SIM.defaultRange, state.medium, tick);
+    moveShips(state.ships, state.byId, inputs.anomalies, state.deployment, SIM.defaultRange, state.medium, tick, state.points);
 
     // 2b. Ship-vs-ship collision at cell granularity. After movement, any two
     //     ships whose cells now overlap are pushed apart with an elastic

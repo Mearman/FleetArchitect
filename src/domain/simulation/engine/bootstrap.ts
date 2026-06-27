@@ -78,6 +78,11 @@ export function bootstrapEngine(
         attacker: fleetCentroid(ships, "attacker"),
         defender: fleetCentroid(ships, "defender"),
       },
+      // Named waypoints: a static map authored on the fleets (resolved to world
+      // coordinates at battle-start). Empty for a battle with no authored points
+      // (every preset fleet). Not captured on the checkpoint — re-derived from
+      // `inputs.points` identically on both cold start and resume.
+      points: inputs.points ?? new Map(),
       projectiles: [],
       // Deployed mines live here for the whole run, advanced each tick like
       // projectiles. Empty unless a mine-layer module lays into it, so a battle
@@ -160,6 +165,10 @@ export function bootstrapEngine(
     defenders: restored.ships.filter((s) => s.side === "defender"),
     byId: new Map(restored.ships.map((s) => [s.instanceId, s])),
     deployment: restored.deployment,
+    // Points are static authored data; re-derive from inputs identically on
+    // resume (never captured on the checkpoint). Empty when no fleet authored
+    // points.
+    points: inputs.points ?? new Map(),
     projectiles: restored.projectiles,
     mines: restored.mines,
     pods: restored.pods,

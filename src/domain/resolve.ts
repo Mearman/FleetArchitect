@@ -318,6 +318,46 @@ function buildCombatShip(
   };
 }
 
+/** Resolve a fleet's named waypoints ({@link Fleet.points}) to world coords.
+ *  Each point is fleet-local metres relative to the deployment centroid; the
+ *  resolver adds the centroid and rotates by the side's facing (identity for an
+ *  attacker, π for a defender). No points or no ships → empty map; a missing
+ *  pointId is unresolvable (unsatisfied condition, never an error). Pure. */
+export function resolveFleetPoints(
+  fleet: Fleet,
+  ships: readonly { position: { x: number; y: number } }[],
+  side: "attacker" | "defender",
+): ReadonlyMap<string, { x: number; y: number }> {
+  const points = fleet.points;
+  if (points === undefined || ships.length === 0) return new Map();
+  let cx = 0;
+  let cy = 0;
+  for (const s of ships) { cx += s.position.x; cy += s.position.y; }
+  cx /= ships.length;
+  cy /= ships.length;
+  // Identity for an attacker, π for a defender (negates both axes), mirroring
+  // the deployment column.
+  const sign = side === "attacker" ? 1 : -1;
+  const out = new Map<string, { x: number; y: number }>();
+  for (const [pointId, local] of Object.entries(points)) {
+    out.set(pointId, { x: cx + sign * local.x, y: cy + sign * local.y });
+  }
+  return out;
+}
+
+/** Resolve a fleet's deployed ships AND its named waypoints in one call. Merge
+ *  both sides' maps at battle-start into the per-battle points map threaded to
+ *  the formation-doctrine pass. */
+export function resolveFleetToCombatShipsAndPoints(
+  fleet: Fleet,
+  designs: ReadonlyMap<string, ShipDesign>,
+  catalog: Catalog,
+  side: "attacker" | "defender",
+): { ships: CombatShip[]; points: ReadonlyMap<string, { x: number; y: number }> } {
+  const ships = resolveFleetToCombatShips(fleet, designs, catalog, side);
+  return { ships, points: resolveFleetPoints(fleet, ships, side) };
+}
+
 export function resolveFleetToCombatShips(
   fleet: Fleet,
   designs: ReadonlyMap<string, ShipDesign>,

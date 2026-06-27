@@ -13,7 +13,7 @@
 
 import type { EnemyView } from "./targeting";
 import type { SimShip } from "./types";
-import { buildAggregates, makeResolver, type ResolveReference } from "./formation-doctrine";
+import { buildAggregates, makeResolver, type Point, type ResolveReference } from "./formation-doctrine";
 import type { DeploymentReference } from "./movement";
 import type { TargetingMode, FormationReference } from "@/schema/ai";
 
@@ -38,6 +38,7 @@ export function buildFormationTargetingContext(
   ships: readonly SimShip[],
   byId: ReadonlyMap<string, SimShip>,
   deployment: DeploymentReference,
+  points: ReadonlyMap<string, Point>,
 ): FormationTargetingContext {
   const sortedById = ships
     .slice()
@@ -45,7 +46,7 @@ export function buildFormationTargetingContext(
       a.instanceId < b.instanceId ? -1 : a.instanceId > b.instanceId ? 1 : 0,
     );
   const aggregates = buildAggregates(sortedById);
-  const resolve = makeResolver(sortedById, byId, aggregates, deployment);
+  const resolve = makeResolver(sortedById, byId, aggregates, deployment, points);
   return { enemies: ships, byId, sortedById, resolve };
 }
 

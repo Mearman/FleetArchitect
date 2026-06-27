@@ -1,6 +1,6 @@
 import { notifications } from "@mantine/notifications";
 import { useEffect, useRef, useState } from "react";
-import { resolveFleetToCombatShips } from "@/domain/resolve";
+import { resolveFleetToCombatShips, resolveFleetToCombatShipsAndPoints } from "@/domain/resolve";
 import { loadTemplateTable } from "@/domain/formation-templates";
 import { expandTemplates } from "@/schema/expand-templates";
 import { BattleAbortError } from "@/domain/simulation/runner";
@@ -346,6 +346,17 @@ export function useBattleSimulation({
       });
       return;
     }
+    // Resolve each fleet's named waypoints (fleet-local → world) and merge into
+    // a single per-battle map keyed by pointId. Empty for fleets that author no
+    // points (every preset), so a battle between presets carries an empty map
+    // and point references stay unresolvable — byte-identical to before. On a
+    // pointId collision the defender's entry wins (last write); pointIds should
+    // be unique across both fleets.
+    const attackerPoints = resolveFleetToCombatShipsAndPoints(expandedAttacker, designMap, catalog(), "attacker").points;
+    const defenderPoints = resolveFleetToCombatShipsAndPoints(expandedDefender, designMap, catalog(), "defender").points;
+    const points = new Map<string, { x: number; y: number }>();
+    for (const [id, p] of attackerPoints) points.set(id, p);
+    for (const [id, p] of defenderPoints) points.set(id, p);
     // Compute off the main thread via the BattleRunner contract. Frames stream
     // in batch by batch through `onFrames`; playback starts on the first batch
     // of a fresh run and runs along the streamed leading edge while later
@@ -553,6 +564,7 @@ export function useBattleSimulation({
           defenderFleetId: defender.id,
           anomalies: normaliseAnomalies(chosenAnomalies),
           seed: chosenSeed,
+          ...(points.size > 0 ? { points } : {}),
         },
         { signal: controller.signal, onFrames },
       );

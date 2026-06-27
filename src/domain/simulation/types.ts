@@ -323,6 +323,20 @@ export interface BattleInputs {
    * tests may pass a small cap to stop a battle early without running it out.
    */
   maxTicks?: number;
+  /**
+   * The merged named-waypoint maps from both fleets, keyed by pointId → world
+   * position. Built once at battle-start by resolving each fleet's authored
+   * `points` (fleet-local metres) through the deployment centroid + facing
+   * (see `resolveFleetPoints`). A doctrine {@link FormationReference} of
+   * `{kind: "point", pointId}` resolves to `points.get(pointId)` — undefined
+   * when no fleet authored that id, making any condition using it unsatisfied
+   * (total references, never errors). Optional: a battle with no authored points
+   * (every preset fleet) leaves it absent and point references stay
+   * unresolvable, so preset battles are byte-identical. On collision (both
+   * fleets author the same pointId) the defender's entry wins (last write) —
+   * pointIds should be unique across both fleets.
+   */
+  points?: ReadonlyMap<string, { x: number; y: number }>;
 }
 
 /**

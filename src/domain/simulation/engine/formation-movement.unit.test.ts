@@ -86,7 +86,7 @@ function resolverFor(ships: readonly SimShip[]) {
     );
   const byId = new Map(ships.map((s) => [s.instanceId, s]));
   const aggregates = buildAggregates(sorted);
-  const resolve = makeResolver(sorted, byId, aggregates, DEPLOYMENT);
+  const resolve = makeResolver(sorted, byId, aggregates, DEPLOYMENT, new Map());
   return { sorted, byId, aggregates, resolve };
 }
 

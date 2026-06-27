@@ -1,6 +1,7 @@
 import type { input } from "zod";
 import type { Fleet } from "@/schema/fleet";
 import { flatFormation } from "@/schema/formation";
+import type { Doctrine } from "@/schema/ai";
 
 /** The input shape of a Fleet: fields with a schema default are optional here,
  *  so preset literals omit them. `presetFleets` (in ./index.ts) runs each entry
@@ -20,6 +21,67 @@ import {
   spearheadDoctrine,
   strikeDoctrine,
 } from "@/data/presets/orders";
+
+// --- Formation-showcase doctrines -------------------------------------------
+// Authored inline (not via the `fleetDoctrine` helper) because they exercise the
+// formation-aware axes the helper does not surface: relational targeting
+// (`threatsTo` a friendly role), conditional retreat keyed on a formation's
+// strength, and a `kite` range against an enemy formation role. Attached
+// per-ship on the showcase fleets' leaves so the resolver's design+leaf overlay
+// builds each ship's effective doctrine from them.
+
+/** Carrier doctrine: hold the line defensively. Authored on every ship in the
+ *  carrier sub-formation of the Carrier Group. */
+const carrierDoctrine: Doctrine = {
+  base: { stance: "defensive" },
+  rules: [],
+};
+
+/** Escort doctrine: screen ahead of the carrier, concentrate fire on whatever
+ *  threatens it, then break off once the carrier is badly damaged. The
+ *  `threatsTo` mode and the `formationStrength` rule both key off the carrier's
+ *  role — the formation-aware doctrine the showcase demonstrates. */
+const carrierEscortDoctrine: Doctrine = {
+  base: {
+    stance: "balanced",
+    targeting: {
+      mode: { kind: "threatsTo", reference: { kind: "friendly", role: "carrier" } },
+      vulnerableWeight: 0,
+      focusFire: true,
+    },
+  },
+  rules: [
+    {
+      condition: {
+        kind: "formationStrength",
+        reference: { kind: "friendly", role: "carrier" },
+        threshold: 0.3,
+        direction: "below",
+      },
+      then: { stance: "retreat" },
+    },
+  ],
+};
+
+/** Skirmisher doctrine: keep the enemy vanguard at the edge of weapon reach
+ *  (kite) while picking off the weakest contact. Authored on every ship in the
+ *  skirmishers sub-formation of the Skirmisher Line. */
+const skirmisherKiteDoctrine: Doctrine = {
+  base: {
+    stance: "evasive",
+    spatial: {
+      reference: { kind: "enemy", role: "vanguard" },
+      range: { kind: "kite", maxRange: 60000 },
+      bearing: { kind: "free" },
+    },
+    targeting: {
+      mode: { kind: "weakest" },
+      vulnerableWeight: 0,
+      focusFire: false,
+    },
+  },
+  rules: [],
+};
 
 export const fleetData: FleetInput[] = [
   // --- Terran fleets ---
@@ -344,6 +406,163 @@ export const fleetData: FleetInput[] = [
       { designId: "preset-ship-automaton", position: { x: -450, y: 0 }, facing: 0, doctrine: netDoctrine },
       { designId: "preset-ship-automaton", position: { x: -450, y: 200 }, facing: 0, doctrine: netDoctrine },
     ]),
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
+  },
+
+  // --- Formation showcase fleets ---
+  //
+  // These two fleets exercise the formation feature: nested sub-formations that
+  // carry roles + pattern layouts, and formation-aware doctrine whose rules
+  // reference formations by role. The doctrine is attached per-ship (the design
+  // + leaf overlay the resolver builds), so every ship in a sub-formation shares
+  // that formation's doctrine while the sub-formation's `role` advertises the
+  // handle the doctrine's references resolve against.
+
+  {
+    id: "preset-fleet-carrier-group",
+    name: "Carrier Group",
+    faction: "Terran",
+    // A nested formation tree: a root `line` of two sub-formations — a carrier
+    // group (the Leviathan, behind) screened ahead by an escort group (three
+    // Sabres in a picket). The root `line` layout staggers the two groups along
+    // the forward axis so the escorts sit closer to the midline than the carrier
+    // they guard, and each sub-formation's own pattern lays out its ships.
+    formation: {
+      id: "root",
+      doctrine: { base: {}, rules: [] },
+      layout: { kind: "pattern", pattern: "line", spacing: 300, facingAligned: true },
+      children: [
+        {
+          kind: "formation",
+          formation: {
+            id: "carrier",
+            role: "carrier",
+            doctrine: { base: {}, rules: [] },
+            layout: { kind: "pattern", pattern: "line", spacing: 200, facingAligned: true },
+            children: [
+              {
+                kind: "ship",
+                ship: {
+                  designId: "preset-ship-leviathan",
+                  position: { x: 0, y: 0 },
+                  facing: 0,
+                  doctrine: carrierDoctrine,
+                },
+              },
+            ],
+          },
+        },
+        {
+          kind: "formation",
+          formation: {
+            id: "escort",
+            role: "escort",
+            doctrine: { base: {}, rules: [] },
+            layout: { kind: "pattern", pattern: "screen", spacing: 120, facingAligned: true },
+            children: [
+              {
+                kind: "ship",
+                ship: {
+                  designId: "preset-ship-sabre",
+                  position: { x: 0, y: 0 },
+                  facing: 0,
+                  doctrine: carrierEscortDoctrine,
+                },
+              },
+              {
+                kind: "ship",
+                ship: {
+                  designId: "preset-ship-sabre",
+                  position: { x: 0, y: 0 },
+                  facing: 0,
+                  doctrine: carrierEscortDoctrine,
+                },
+              },
+              {
+                kind: "ship",
+                ship: {
+                  designId: "preset-ship-sabre",
+                  position: { x: 0, y: 0 },
+                  facing: 0,
+                  doctrine: carrierEscortDoctrine,
+                },
+              },
+            ],
+          },
+        },
+      ],
+    },
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
+  },
+  {
+    id: "preset-fleet-skirmisher-line",
+    name: "Skirmisher Line",
+    faction: "Corsair",
+    // A single skirmishers sub-formation of four Reavers in an echelon. They
+    // kite the enemy vanguard at the edge of weapon reach (60 km — inside the
+    // Reaver's 80 km missile envelope) and pick off the weakest contact. The
+    // doctrine's spatial reference names the enemy's `vanguard` role: it
+    // resolves when the opponent fields one, and otherwise falls through to the
+    // ship's default range-keeping (total references, never errors).
+    formation: {
+      id: "root",
+      doctrine: { base: {}, rules: [] },
+      children: [
+        {
+          kind: "formation",
+          formation: {
+            id: "skirmishers",
+            role: "skirmishers",
+            doctrine: { base: {}, rules: [] },
+            layout: { kind: "pattern", pattern: "echelon", spacing: 250, facingAligned: true },
+            children: [
+              {
+                kind: "ship",
+                ship: {
+                  designId: "preset-ship-reaver",
+                  position: { x: 0, y: 0 },
+                  facing: 0,
+                  doctrine: skirmisherKiteDoctrine,
+                },
+              },
+              {
+                kind: "ship",
+                ship: {
+                  designId: "preset-ship-reaver",
+                  position: { x: 0, y: 0 },
+                  facing: 0,
+                  doctrine: skirmisherKiteDoctrine,
+                },
+              },
+              {
+                kind: "ship",
+                ship: {
+                  designId: "preset-ship-reaver",
+                  position: { x: 0, y: 0 },
+                  facing: 0,
+                  doctrine: skirmisherKiteDoctrine,
+                },
+              },
+              {
+                kind: "ship",
+                ship: {
+                  designId: "preset-ship-reaver",
+                  position: { x: 0, y: 0 },
+                  facing: 0,
+                  doctrine: skirmisherKiteDoctrine,
+                },
+              },
+            ],
+          },
+        },
+      ],
+    },
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",

@@ -45,6 +45,18 @@ export interface EngineState {
   defenders: SimShip[];
   byId: Map<string, SimShip>;
   deployment: DeploymentReference;
+  /**
+   * The merged named-waypoint map (pointId → world position), built once at
+   * battle-start from both fleets' authored `points` (resolved through each
+   * fleet's deployment centroid + facing). Static for the whole battle; a
+   * doctrine `{kind: "point", pointId}` reference resolves against it every
+   * tick. Empty for a battle with no authored points (every preset fleet), so
+   * point references stay unresolvable and preset battles are byte-identical.
+   * Not captured on the checkpoint: it is a pure function of `inputs.points`
+   * (authored data, never mutated mid-battle), so the resume path re-derives it
+   * from `inputs` identically.
+   */
+  points: ReadonlyMap<string, { x: number; y: number }>;
   projectiles: SimProjectile[];
   mines: SimMine[];
   pods: SimPod[];

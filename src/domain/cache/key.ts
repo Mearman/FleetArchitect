@@ -108,6 +108,12 @@ export async function deriveCacheKey(
     anomalies: inputs.anomalies,
     seed: inputs.seed,
     maxTicks: inputs.maxTicks ?? DEFAULT_MAX_TICKS,
+    // Named waypoints: outcome-affecting when a doctrine references a point, so
+    // they are a cache determinant. Canonicalised as a plain object (keys sorted
+    // by `canonicalize`) built from the merged points map — an empty map and an
+    // absent one both canonicalise to `{}`, so a preset battle (no points) keeps
+    // its key unchanged.
+    points: Object.fromEntries(inputs.points ?? []),
     sim: simConfig,
     sig: algorithmSignature,
   };

@@ -112,6 +112,7 @@ function stateWith(ships: SimShip[]): EngineState {
     defenders: [],
     byId: new Map(),
     deployment: { attacker: { x: 0, y: 0 }, defender: { x: 0, y: 0 } },
+    points: new Map(),
     projectiles: [],
     mines: [],
     pods: [],

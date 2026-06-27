@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveFleetToCombatShips } from "@/domain/resolve";
+import { resolveFleetPoints, resolveFleetToCombatShips } from "@/domain/resolve";
 import { cellToLocal } from "@/domain/grid";
 import { growArmourHull, padGrid } from "@/domain/hull-armour";
 import { catalog } from "@/data/catalog";
@@ -535,5 +535,62 @@ describe("resolveFleetToCombatShips (pattern layout)", () => {
     for (const s of ships) {
       expect(s.position.y).toBeCloseTo(0, 6);
     }
+  });
+});
+
+describe("resolveFleetPoints (named waypoints)", () => {
+  // A fleet's authored `points` are fleet-local metres relative to its
+  // deployment centroid. The resolver translates each to a world position by
+  // the centroid + facing rotation: identity for an attacker, π for a defender
+  // (so the defender's local +x points toward the midline). A point authored at
+  // (0, 0) lands on the centroid; a fleet with no points yields an empty map.
+
+  /** A fleet that authors two named waypoints in fleet-local metres, deployed
+   *  as a flat column (so the centroid is the mean of the resolved ship
+   *  positions). The authored positions are arbitrary offsets; what matters is
+   *  the centroid-anchored + facing-rotated transform. */
+  function fleetWithPoints(): Fleet {
+    return {
+      ...fleet(),
+      points: {
+        "wp-origin": { x: 0, y: 0 },
+        "wp-near": { x: 100, y: -50 },
+      },
+    };
+  }
+
+  it("translates fleet-local points to world by the deployment centroid + facing (attacker)", () => {
+    // Attacker: facing 0, so world = centroid + local (identity rotation).
+    const designs = new Map([["d-1", design()]]);
+    const ships = resolveFleetToCombatShips(fleetWithPoints(), designs, catalog(), "attacker");
+    const points = resolveFleetPoints(fleetWithPoints(), ships, "attacker");
+    // The centroid is the mean of the resolved ship positions (one ship here).
+    const cx = ships[0]?.position.x ?? NaN;
+    const cy = ships[0]?.position.y ?? NaN;
+    expect(points.get("wp-origin")).toEqual({ x: cx, y: cy });
+    expect(points.get("wp-near")).toEqual({ x: cx + 100, y: cy - 50 });
+  });
+
+  it("mirrors the local frame for the defender (facing π negates both axes)", () => {
+    // Defender: facing π, so world = centroid + (-local.x, -local.y). A
+    // defender's local +x (its "forward") points toward the midline, matching
+    // the deployment mirror.
+    const designs = new Map([["d-1", design()]]);
+    const ships = resolveFleetToCombatShips(fleetWithPoints(), designs, catalog(), "defender");
+    const points = resolveFleetPoints(fleetWithPoints(), ships, "defender");
+    const cx = ships[0]?.position.x ?? NaN;
+    const cy = ships[0]?.position.y ?? NaN;
+    expect(points.get("wp-origin")).toEqual({ x: cx, y: cy });
+    // Local (100, -50) → world (cx - 100, cy + 50) under the π rotation.
+    expect(points.get("wp-near")).toEqual({ x: cx - 100, y: cy + 50 });
+  });
+
+  it("returns an empty map when the fleet authors no points", () => {
+    // A fleet with no `points` field (every preset fleet) yields an empty map,
+    // so point references stay unresolvable and preset battles are byte-identical.
+    const designs = new Map([["d-1", design()]]);
+    const ships = resolveFleetToCombatShips(fleet(), designs, catalog(), "attacker");
+    const points = resolveFleetPoints(fleet(), ships, "attacker");
+    expect(points.size).toBe(0);
   });
 });
