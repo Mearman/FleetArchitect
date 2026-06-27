@@ -3,6 +3,7 @@ import type { BattleFrame, BattleResult } from "@/schema/battle";
 import type { EngineCheckpoint } from "@/schema/checkpoint";
 import type { Fleet } from "@/schema/fleet";
 import { parseFleetRecord } from "@/schema/fleet-normalise";
+import { FormationTemplate } from "@/schema/formation-template";
 import { z } from "zod";
 import { type ShipDesign, DesignSource } from "@/schema/ship";
 import { parseDesignRecord } from "@/schema/ship-normalise";
@@ -33,6 +34,13 @@ export type DesignRevisionRecord = SerializedShipDesign;
  * The composite key is { id, revision }.
  */
 export type FleetRevisionRecord = Fleet;
+
+/**
+ * A snapshot of a FormationTemplate at a specific revision, stored for history.
+ * The composite key is { id, revision }. Reparsed through `FormationTemplate`
+ * on read so consumers always see a validated template.
+ */
+export type FormationTemplateRevisionRecord = FormationTemplate;
 
 /**
  * One cached deterministic battle result. The composite content `key` (see
@@ -75,9 +83,11 @@ export interface CheckpointRecord {
 class FleetArchitectDatabase extends Dexie {
   ships!: Table<SerializedShipDesign, string>;
   fleets!: Table<Fleet, string>;
+  formationTemplates!: Table<FormationTemplate, string>;
   meta!: Table<MetaRecord, string>;
   design_revisions!: Table<DesignRevisionRecord, [string, number]>;
   fleet_revisions!: Table<FleetRevisionRecord, [string, number]>;
+  formation_template_revisions!: Table<FormationTemplateRevisionRecord, [string, number]>;
   simCache!: Table<SimCacheRecord, string>;
   checkpoints!: Table<CheckpointRecord, string>;
 
@@ -125,6 +135,15 @@ class FleetArchitectDatabase extends Dexie {
     // only when a newer version sets it to null; version(1)'s declaration is
     // left intact so the upgrade chain stays consistent.
     this.version(7).stores({ battles: null });
+    // Phase F: formation templates — the by-reference formation subtree asset
+    // a fleet's `template` node links to. Indexed by id (primary), name (for
+    // lookup lists), and updatedAt (for recency sorts). The version-history
+    // store uses the same composite [id+revision] key as the ship/fleet
+    // revision stores so prior snapshots can be listed and restored.
+    this.version(8).stores({
+      formationTemplates: "id, name, updatedAt",
+      formation_template_revisions: "[id+revision], id",
+    });
   }
 }
 
@@ -201,11 +220,36 @@ function makeFleetRepository(table: Table<Fleet, string>): Repository<Fleet> {
   };
 }
 
+/**
+ * Repository over formation templates. Each record is parsed through
+ * {@link FormationTemplate} on read so consumers always see a validated
+ * template (the recursive Formation subtree is re-validated at every read).
+ * Mirrors the ship/fleet parse-on-read contract.
+ */
+function makeFormationTemplateRepository(
+  table: Table<FormationTemplate, string>,
+): Repository<FormationTemplate> {
+  return {
+    list: async () => (await table.toArray()).map((r) => FormationTemplate.parse(r)),
+    get: async (id) => {
+      const record = await table.get(id);
+      return record === undefined ? undefined : FormationTemplate.parse(record);
+    },
+    save: async (entity) => {
+      await table.put(entity);
+    },
+    remove: async (id) => {
+      await table.delete(id);
+    },
+  };
+}
+
 export function createStorage(): Storage {
   const instance = database();
   return {
     ships: makeShipRepository(instance.ships),
     fleets: makeFleetRepository(instance.fleets),
+    formationTemplates: makeFormationTemplateRepository(instance.formationTemplates),
   };
 }
 
@@ -504,4 +548,125 @@ export async function restoreFleetRevision(
     throw new Error(`Fleet ${id} not found after restore`);
   }
   return parseFleetRecord(restored);
+}
+
+// ---------------------------------------------------------------------------
+// Formation template operations
+// ---------------------------------------------------------------------------
+
+/**
+ * Save a formation template. Throws if the template is a preset — presets are
+ * read-only. If a record already exists at this id, the current HEAD is
+ * archived to formation_template_revisions and the revision counter is
+ * incremented on the new record. Mirrors {@link saveFleet}.
+ */
+export async function saveFormationTemplate(
+  template: FormationTemplate,
+): Promise<void> {
+  if (template.source === "preset") {
+    throw new Error(
+      `Cannot overwrite preset formation template "${template.name}" (id: ${template.id}). Copy it first.`,
+    );
+  }
+  const instance = database();
+  const existing = await instance.formationTemplates.get(template.id);
+  if (existing !== undefined && existing.source !== "preset") {
+    await instance.formation_template_revisions.put(existing);
+  }
+  const nextRevision =
+    existing !== undefined ? existing.revision + 1 : template.revision;
+  await instance.formationTemplates.put({ ...template, revision: nextRevision });
+}
+
+/**
+ * Load a formation template by id. Returns undefined if not found.
+ */
+export async function loadFormationTemplate(
+  id: string,
+): Promise<FormationTemplate | undefined> {
+  const record = await database().formationTemplates.get(id);
+  return record === undefined ? undefined : FormationTemplate.parse(record);
+}
+
+/**
+ * List all formation templates.
+ */
+export async function listFormationTemplates(): Promise<FormationTemplate[]> {
+  const records = await database().formationTemplates.toArray();
+  return records.map((r) => FormationTemplate.parse(r));
+}
+
+/**
+ * Delete a formation template by id.
+ */
+export async function deleteFormationTemplate(id: string): Promise<void> {
+  await database().formationTemplates.delete(id);
+}
+
+/**
+ * Copy a formation template: loads the original, assigns a new id, sets source
+ * to "user" and revision to 1, and saves the copy. Returns the new record.
+ */
+export async function copyFormationTemplate(
+  id: string,
+): Promise<FormationTemplate> {
+  const stored = await database().formationTemplates.get(id);
+  if (stored === undefined) {
+    throw new Error(`Formation template not found: ${id}`);
+  }
+  const original = FormationTemplate.parse(stored);
+  const copy: FormationTemplate = {
+    ...original,
+    id: createId("ftpl"),
+    source: "user",
+    revision: 1,
+    name: `${original.name} (copy)`,
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+  };
+  await database().formationTemplates.put(copy);
+  return copy;
+}
+
+/**
+ * List all archived revisions of a formation template, sorted newest first.
+ * The current HEAD is not included — only prior snapshots.
+ */
+export async function listFormationTemplateRevisions(
+  id: string,
+): Promise<FormationTemplate[]> {
+  const revisions = await database()
+    .formation_template_revisions.where("id")
+    .equals(id)
+    .toArray();
+  return revisions
+    .map((r) => FormationTemplate.parse(r))
+    .sort((a, b) => b.revision - a.revision);
+}
+
+/**
+ * Restore a formation template to a prior revision. Loads the snapshot from the
+ * revisions store, saves it as the new HEAD (which archives the current HEAD
+ * and bumps the revision again), and returns the restored record.
+ */
+export async function restoreFormationTemplateRevision(
+  id: string,
+  revision: number,
+): Promise<FormationTemplate> {
+  const snapshotRecord = await database().formation_template_revisions.get([
+    id,
+    revision,
+  ]);
+  if (snapshotRecord === undefined) {
+    throw new Error(
+      `No revision ${revision} found for formation template ${id}`,
+    );
+  }
+  const snapshot = FormationTemplate.parse(snapshotRecord);
+  await saveFormationTemplate({ ...snapshot, updatedAt: nowIso() });
+  const restored = await database().formationTemplates.get(id);
+  if (restored === undefined) {
+    throw new Error(`Formation template ${id} not found after restore`);
+  }
+  return FormationTemplate.parse(restored);
 }

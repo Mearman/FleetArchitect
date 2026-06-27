@@ -1,9 +1,12 @@
 import { notifications } from "@mantine/notifications";
 import { useEffect, useRef, useState } from "react";
 import { resolveFleetToCombatShips } from "@/domain/resolve";
+import { loadTemplateTable } from "@/domain/formation-templates";
+import { expandTemplates } from "@/schema/expand-templates";
 import { BattleAbortError } from "@/domain/simulation/runner";
 import { battleRunner } from "@/ui/battleRunner";
 import { catalog } from "@/data/catalog";
+import { storage } from "@/storage/db";
 import { normaliseAnomalies } from "@/schema/battle";
 import type {
   BattleAnomalyKind,
@@ -13,6 +16,7 @@ import type {
 } from "@/schema/battle";
 import type { DescriptorMap } from "@/ui/cellLayout";
 import type { Fleet } from "@/schema/fleet";
+import type { FormationTemplate } from "@/schema/formation-template";
 import type { ShipDesign } from "@/schema/ship";
 import type { Bounds } from "./battleCamera";
 import { SIM_RATE_EMA_WEIGHT } from "./battleConstants";
@@ -59,6 +63,15 @@ interface BattleArgs {
   anomalies: BattleAnomalyKind[];
   seed: number;
   designs: ShipDesign[];
+  /**
+   * Snapshot of the formation-template catalogue at battle-start time. A fleet's
+   * `template` nodes are by-reference links into this map; they are expanded to
+   * concrete formation subtrees before resolve, so the template ids never reach
+   * the engine or the cache key. Captured here (rather than reloaded on resume)
+   * so a paused run resumes against the same templates it started with — the
+   * resolved fleet, and therefore the cache key, stay stable across the pause.
+   */
+  templates: ReadonlyMap<string, FormationTemplate>;
 }
 
 /**
@@ -230,15 +243,21 @@ export function useBattleSimulation({
     chosenSeed: number,
     allDesigns: ShipDesign[],
   ): Promise<void> {
-    const args: BattleArgs = {
-      attacker,
-      defender,
-      anomalies: chosenAnomalies,
-      seed: chosenSeed,
-      designs: allDesigns,
-    };
-    lastBattleArgsRef.current = args;
-    return runCompute(args, { fresh: true });
+    // Load the formation-template catalogue before capturing args so the table
+    // is frozen into `BattleArgs` (and reused unchanged by a later resume). The
+    // expansion itself happens in `runCompute` — this only reads the catalogue.
+    return loadTemplateTable(storage()).then((templates) => {
+      const args: BattleArgs = {
+        attacker,
+        defender,
+        anomalies: chosenAnomalies,
+        seed: chosenSeed,
+        designs: allDesigns,
+        templates,
+      };
+      lastBattleArgsRef.current = args;
+      return runCompute(args, { fresh: true });
+    });
   }
 
   /**
@@ -290,12 +309,35 @@ export function useBattleSimulation({
     args: BattleArgs,
     opts: { fresh: boolean },
   ): Promise<void> {
-    const { attacker, defender, anomalies: chosenAnomalies, seed: chosenSeed, designs: allDesigns } = args;
+    const { attacker, defender, anomalies: chosenAnomalies, seed: chosenSeed, designs: allDesigns, templates: templateTable } = args;
     const fresh = opts.fresh;
 
     const designMap = new Map(allDesigns.map((d) => [d.id, d]));
-    const attackers = resolveFleetToCombatShips(attacker, designMap, catalog(), "attacker");
-    const defenders = resolveFleetToCombatShips(defender, designMap, catalog(), "defender");
+    // Inline every `template` formation node into a concrete formation tree
+    // BEFORE resolve, so the engine and the cache key never see a template id.
+    // A missing templateId or a cycle is an authoring error: refuse to start
+    // with a loud message naming the broken reference rather than silently
+    // deploying a partial fleet. A template-free fleet is returned unchanged
+    // (byte-identical fast path), so preset fleets — which have no template
+    // nodes — resolve exactly as before.
+    let expandedAttacker: Fleet;
+    let expandedDefender: Fleet;
+    try {
+      expandedAttacker = expandTemplates(attacker, templateTable);
+      expandedDefender = expandTemplates(defender, templateTable);
+    } catch (error) {
+      notifications.show({
+        title: "Fleet has unresolved formation templates",
+        message:
+          error instanceof Error
+            ? error.message
+            : "A referenced formation template could not be resolved.",
+        color: "red",
+      });
+      return;
+    }
+    const attackers = resolveFleetToCombatShips(expandedAttacker, designMap, catalog(), "attacker");
+    const defenders = resolveFleetToCombatShips(expandedDefender, designMap, catalog(), "defender");
     if (attackers.length === 0 || defenders.length === 0) {
       notifications.show({
         title: "Nothing to fight",

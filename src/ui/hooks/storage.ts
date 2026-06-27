@@ -1,6 +1,7 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { storage } from "@/storage/db";
 import type { Fleet } from "@/schema/fleet";
+import type { FormationTemplate } from "@/schema/formation-template";
 import type { ShipDesign } from "@/schema/ship";
 
 /**
@@ -28,6 +29,20 @@ export function useFleets(): Fleet[] | undefined {
 export function useFleet(id: string | undefined): Fleet | undefined {
   return useLiveQuery(
     async () => (id === undefined ? undefined : storage().fleets.get(id)),
+    [id],
+  );
+}
+
+export function useFormationTemplates(): FormationTemplate[] | undefined {
+  return useLiveQuery(() => storage().formationTemplates.list(), []);
+}
+
+export function useFormationTemplate(
+  id: string | undefined,
+): FormationTemplate | undefined {
+  return useLiveQuery(
+    async () =>
+      id === undefined ? undefined : storage().formationTemplates.get(id),
     [id],
   );
 }

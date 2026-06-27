@@ -1,4 +1,5 @@
 import type { Fleet } from "@/schema/fleet";
+import type { FormationTemplate } from "@/schema/formation-template";
 import type { ShipDesign } from "@/schema/ship";
 
 /**
@@ -15,8 +16,10 @@ export interface Repository<T extends { id: string }> {
 
 export type ShipDesignRepository = Repository<ShipDesign>;
 export type FleetRepository = Repository<Fleet>;
+export type FormationTemplateRepository = Repository<FormationTemplate>;
 
 export interface Storage {
   ships: ShipDesignRepository;
   fleets: FleetRepository;
+  formationTemplates: FormationTemplateRepository;
 }
