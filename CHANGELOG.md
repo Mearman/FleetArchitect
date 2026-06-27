@@ -1,3 +1,10 @@
+# [1.30.0](https://github.com/Mearman/FleetArchitect/compare/v1.29.0...v1.30.0) (2026-06-27)
+
+
+### Features
+
+* **formation:** named waypoints + formation-showcase preset fleets ([09e2499](https://github.com/Mearman/FleetArchitect/commit/09e24992a834e2a1f4fda0b9411b0e3defc76b21))
+
 # [1.29.0](https://github.com/Mearman/FleetArchitect/compare/v1.28.0...v1.29.0) (2026-06-27)
 
 
