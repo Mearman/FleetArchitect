@@ -123,6 +123,7 @@ function shipWith(over: Partial<SimShip> = {}): SimShip {
     aiRetreat: false,
     aiPrioritiseRepair: false,
     aiRally: false,
+    aiWasFiredUpon: false,
     target: undefined,
     alive: true,
     salvageMass: 0,

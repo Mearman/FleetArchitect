@@ -62,6 +62,7 @@ function ship(
     aiRetreat: false,
     aiPrioritiseRepair: false,
     aiRally: false,
+    aiWasFiredUpon: false,
     target: over.target,
     alive: over.alive ?? true,
     salvageMass: 0,

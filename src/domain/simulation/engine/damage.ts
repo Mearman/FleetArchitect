@@ -60,6 +60,11 @@ export function applyDamage(
   const bypass = damage * shieldPiercing;
   const toShield = damage - bypass;
   const shieldAbsorbed = Math.min(ship.shield, toShield);
+  // Phase D: any incoming damage this tick marks the ship as "fired upon" — read
+  // only by the `whenFiredUpon` fire discipline (the weapons step resets the flag
+  // after every ship has fired). A shield-only hit still counts: the ship was
+  // struck. Inert for every ship without that discipline.
+  if (damage > 0) ship.aiWasFiredUpon = true;
   ship.shield -= shieldAbsorbed;
   if (shieldAbsorbed > 0) {
     ship.shieldRegenCountdown = ship.shieldRechargeDelay;

@@ -7,6 +7,11 @@ import { SIM } from "./config";
 import { effectiveStance } from "./movement";
 import { isDetectable } from "./stealth";
 import type { SimShip } from "./types";
+import {
+  filterVisibleByTargeting,
+  pointDefenseBias,
+  type FormationTargetingContext,
+} from "./formation-targeting";
 
 /**
  * The scalar target priority a ship scores enemies by: the doctrine targeting
@@ -142,6 +147,10 @@ export function scoreEnemy(
   ship: SimShip,
   enemy: EnemyView,
   living: readonly EnemyView[],
+  /** Formation-targeting context, for the `pdPriority` bias. Undefined (or a
+   *  ship with no `aiTargeting` override) leaves scoring unchanged — the gate
+   *  that keeps preset battles byte-identical. */
+  formationCtx?: FormationTargetingContext,
 ): number {
   // Raw priority score (higher = better target for this priority).
   const targetPriority = targetPriorityOf(ship);
@@ -167,7 +176,15 @@ export function scoreEnemy(
   // stance (its base stance, or an `aiStance` override). Zero for a balanced or
   // default stance, so the fast path below is unchanged for rule-less fleets.
   const stanceBias = SIM.stanceTargetDistanceBias[effectiveStance(ship)];
-  if (w <= 0 && stanceBias === 0) return rawScore; // fast path: no blending needed
+  // Phase D: the `pdPriority` targeting mode adds a positive bias for phantom
+  // (drone/decoy) candidates so a point-defence ship prefers them over real
+  // ships. Zero for every preset ship (no `aiTargeting` override) and for real
+  // enemies, so the fast path is unchanged.
+  const pdBias =
+    formationCtx !== undefined
+      ? pointDefenseBias(ship, enemy.instanceId, formationCtx.byId)
+      : 0;
+  if (w <= 0 && stanceBias === 0 && pdBias === 0) return rawScore; // fast path
 
   // Normalise priority score to [0, 1] across the living set so the blend
   // with the vulnerability score (already in [0,1]) is dimensionally consistent.
@@ -209,7 +226,9 @@ export function scoreEnemy(
   // Player-doctrine blend: priority vs vulnerability, exactly as before.
   const doctrineScore = (1 - w) * normPriority + w * vulnerability;
 
-  if (stanceBias === 0) return doctrineScore;
+  // The PD bias is added last so a point-defence ship surfaces phantoms above
+  // any real ship regardless of the doctrine/stance blend.
+  if (stanceBias === 0) return doctrineScore + pdBias;
 
   // Stance preference: normalise distance to [0, 1] (0 = nearest of the set,
   // 1 = farthest), turn it into a near-preference (1 − normDist) so a positive
@@ -219,7 +238,7 @@ export function scoreEnemy(
   const distRange = maxDistSq - minDistSq;
   const normDist = distRange > 0 ? (distSq - minDistSq) / distRange : 0;
   const nearPreference = 1 - normDist;
-  return doctrineScore + stanceBias * nearPreference;
+  return doctrineScore + stanceBias * nearPreference + pdBias;
 }
 
 /**
@@ -244,15 +263,30 @@ export function pickTarget(
   enemies: readonly SimShip[],
   focusTargetId: string | undefined,
   tick: number,
+  /** Formation-targeting context (Phase D). When present and the ship carries
+   *  an `aiTargeting` override, the visible candidate set is filtered by the
+   *  relational mode before scoring. Undefined (or no override) leaves the
+   *  candidate set unchanged — the gate that keeps preset battles byte-identical. */
+  formationCtx?: FormationTargetingContext,
 ): EnemyView | undefined {
   // Visible = enemies in awareness (fog/sensors) AND locked-on (stealth gate),
   // filtered inside `visibleEnemyViews`. A non-stealth battle's candidate set is
   // unchanged, so targeting stays byte-identical for fleets without stealth tech.
-  const visible = visibleEnemyViews(ship, enemies, tick);
+  const allVisible = visibleEnemyViews(ship, enemies, tick);
+  if (allVisible.length === 0) return undefined;
+
+  // Phase D: apply the relational targeting filter (threatsTo/membersOf/class/
+  // inZone/sameAs/none) when the ship has an `aiTargeting` override. Returns
+  // the input list unchanged when there is no override (the gate).
+  const visible =
+    formationCtx !== undefined
+      ? filterVisibleByTargeting(ship, allVisible, formationCtx)
+      : allVisible;
   if (visible.length === 0) return undefined;
 
   // Focus-fire: defer to the fleet-agreed target, but only if this ship can
-  // personally see it; a target it can't see falls through to its own scoring.
+  // personally see it AND it survives the relational filter; a target it can't
+  // see (or that the filter excludes) falls through to its own scoring.
   if (wantsFocusFire(ship) && focusTargetId !== undefined) {
     const focus = visible.find((e) => e.instanceId === focusTargetId);
     if (focus !== undefined) return focus;
@@ -262,7 +296,7 @@ export function pickTarget(
   let best: EnemyView | undefined;
   let bestScore = -Infinity;
   for (const enemy of visible) {
-    const score = scoreEnemy(ship, enemy, visible);
+    const score = scoreEnemy(ship, enemy, visible, formationCtx);
     if (score > bestScore) {
       bestScore = score;
       best = enemy;
@@ -287,6 +321,11 @@ export function electFocusTarget(
   ships: readonly SimShip[],
   enemies: readonly SimShip[],
   tick: number,
+  /** Formation-targeting context (Phase D). Threaded through so a focus-fire
+   *  voter with an `aiTargeting` override applies its relational filter and PD
+   *  bias to its scoring. Undefined (or voters with no override) leaves the
+   *  election unchanged — the gate. */
+  formationCtx?: FormationTargetingContext,
 ): string | undefined {
   // Only real ships are focus-election candidates and voters — a fleet should
   // never agree to focus-fire a drone or decoy, and phantoms carry no doctrine.
@@ -304,10 +343,14 @@ export function electFocusTarget(
   // consistent with what each voter would pick alone.
   const totals = new Map<string, number>();
   for (const voter of voters) {
-    const visible = visibleEnemyViews(voter, living, tick);
+    let visible = visibleEnemyViews(voter, living, tick);
+    if (formationCtx !== undefined) {
+      visible = filterVisibleByTargeting(voter, visible, formationCtx);
+    }
     for (const enemy of visible) {
-      const s = scoreEnemy(voter, enemy, visible);
-      totals.set(enemy.instanceId, (totals.get(enemy.instanceId) ?? 0) + s);
+      const s = scoreEnemy(voter, enemy, visible, formationCtx);
+      const prev = totals.get(enemy.instanceId);
+      totals.set(enemy.instanceId, prev === undefined ? s : prev + s);
     }
   }
 

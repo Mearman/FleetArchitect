@@ -27,6 +27,8 @@ import { angleDifference, angularAccelPerTick, blackHoleAvoidWeight, rotateLocal
 import { hasAnomaly } from "@/domain/anomaly";
 import { computeTranslationCommand } from "./translation";
 import { afterburnerMultipliers } from "./tech";
+import { buildAggregates, makeResolver } from "./formation-doctrine";
+import { desiredPoint, cohesionCentroidFor } from "./formation-movement";
 import type { SimShip } from "./types";
 import { isClaimed } from "./salvage";
 
@@ -297,13 +299,35 @@ export function moveShips(
   anomalies: BattleInputs["anomalies"],
   deployment: DeploymentReference,
   defaultRange: number,
-  medium?: { field: MediumField; state: MediumState },
+  medium: { field: MediumField; state: MediumState } | undefined,
+  /** Current tick, threaded through so a formation-doctrine `orbit` bearing
+   *  (the only time-dependent spatial term) resolves deterministically. */
+  tick: number,
 ): void {
   // Pre-compute fleet centroids once per tick so formation-keeping blends
   // each ship's desired heading toward a stable reference point, not one
   // that shifts mid-loop as individual ships move.
   const centroidAttacker = fleetCentroid(ships, "attacker");
   const centroidDefender = fleetCentroid(ships, "defender");
+
+  // Phase D formation-doctrine support: build the per-formation aggregates and
+  // reference resolver ONCE per tick (mirroring the formation-doctrine pass), so
+  // a ship with an `aiSpatial` override resolves its spatial objective to the
+  // same point the pass used, and cohesion can read the ship's OWN formation
+  // centroid. Pure, instanceId-sorted; harmless for presets (aiSpatial
+  // undefined → desiredPoint undefined → existing path, byte-identical).
+  const sortedForFormation = ships
+    .slice()
+    .sort((a, b) =>
+      a.instanceId < b.instanceId ? -1 : a.instanceId > b.instanceId ? 1 : 0,
+    );
+  const formationAggregates = buildAggregates(sortedForFormation);
+  const formationResolve = makeResolver(
+    sortedForFormation,
+    byId,
+    formationAggregates,
+    deployment,
+  );
 
   // Build the N-body gravitational field once per tick, with positions
   // snapshotted before any ship moves. Each ship then reads its pull from this
@@ -420,7 +444,18 @@ export function moveShips(
     // controller should aim for, and whether to fire engines this tick.
     // Replaces the old desired-range/steering + reverse block; see its
     // docstring for the full decision table.
-    const cmd = computeTranslationCommand(ship, target, anomalies, deployment, defaultRange);
+    const cmd = computeTranslationCommand(
+      ship,
+      target,
+      anomalies,
+      deployment,
+      defaultRange,
+      // Phase D: resolve `aiSpatial` (if any) to a world desired-point.
+      // Undefined for every preset ship (the pass is a gated no-op), so the
+      // existing target/deployment logic runs byte-identically. The orbit term
+      // `phase + omega·tick` is the only time dependence — pure in tick.
+      desiredPoint(ship, tick, formationResolve),
+    );
     let desiredFacing = cmd.desiredFacing;
     let shouldThrust = cmd.shouldThrust;
     const thrustMode = cmd.thrustMode;
@@ -470,23 +505,27 @@ export function moveShips(
       }
     } else if (
       // Formation-keeping (doctrine `cohesion`): when > 0, blend the desired
-      // facing with the direction toward the fleet's centroid — a weighted
-      // average of the two bearings using the angular difference, so the ship
-      // steers somewhere between "toward my target" and "toward my fleet's
-      // centre". At 0 this is a no-op; at 1 it overrides the target-facing
-      // entirely. Only when not retreating and a centroid exists.
+      // facing toward a centroid. At 0 a no-op; at 1 it overrides target-facing.
+      // Phase D generalises the centroid: a nested/override ship blends toward
+      // its OWN formation's centroid (`cohesionCentroidFor`), GATED so a flat
+      // preset fleet keeps the whole-fleet centroid.
       !isRetreating(ship) &&
-      (ship.doctrine.base.cohesion ?? 0) > 0 &&
-      centroid !== undefined
+      (ship.doctrine.base.cohesion ?? 0) > 0
     ) {
-      const formationFacing = Math.atan2(
-        centroid.y - ship.y,
-        centroid.x - ship.x,
+      const cohesionCentroid = cohesionCentroidFor(
+        ship,
+        centroid,
+        formationAggregates,
       );
-      const fk = ship.doctrine.base.cohesion ?? 0;
-      // Blend using the angular difference to avoid wrapping artefacts.
-      const angDiff = angleDifference(desiredFacing, formationFacing);
-      desiredFacing = desiredFacing + angDiff * fk;
+      if (cohesionCentroid !== undefined) {
+        const formationFacing = Math.atan2(
+          cohesionCentroid.y - ship.y,
+          cohesionCentroid.x - ship.x,
+        );
+        const fk = ship.doctrine.base.cohesion ?? 0;
+        const angDiff = angleDifference(desiredFacing, formationFacing);
+        desiredFacing = desiredFacing + angDiff * fk;
+      }
     }
 
     // Black-hole avoidance: ships fly into the well blind otherwise. Blend a

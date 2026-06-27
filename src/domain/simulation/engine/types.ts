@@ -251,18 +251,21 @@ export interface SimShip {
   aiPrioritiseRepair: boolean;
   aiRally: boolean;
   /**
-   * Transient per-tick formation-doctrine outputs (Phase C wiring): the
-   * resolved spatial/targeting/fire axes `stepFormationDoctrine` writes when a
-   * unified rule's formation/spatial/temporal/boolean condition fires.
-   * Undefined for every ship whose doctrine fires no such rule, so consumers
-   * fall through to their static read unchanged — preset battles are
-   * byte-identical. Recomputed each tick before any movement/targeting reader;
-   * never captured by the checkpoint (undefined on resume, repopulated by the
-   * pass). Phase D consumers will prefer these over the doctrine base.
+   * Transient per-tick formation-doctrine outputs (Phase C/D): the resolved
+   * spatial/targeting/fire axes `stepFormationDoctrine` writes when a unified
+   * rule's formation/spatial/temporal/boolean condition fires. Undefined for
+   * every ship whose doctrine fires no such rule, so consumers fall through to
+   * their static read unchanged — preset battles are byte-identical. Never
+   * captured by the checkpoint (undefined on resume, repopulated by the pass).
    */
   aiSpatial?: SpatialObjective;
   aiTargeting?: TargetingMode;
   aiFire?: FireDiscipline;
+  /** Transient per-tick flag (Phase D): true when the ship took damage this
+   *  tick — set in `applyDamage`, reset by the weapons step after every ship
+   *  has fired. Read only by the `whenFiredUpon` fire discipline, so it is
+   *  GATED and inert for every other ship (presets unchanged). Not checkpointed. */
+  aiWasFiredUpon: boolean;
   target: string | undefined;
   alive: boolean;
   /**

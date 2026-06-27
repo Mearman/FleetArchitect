@@ -50,6 +50,7 @@ function ship(over: Partial<SimShip> & { instanceId: string; side: "attacker" | 
     aiRetreat: false,
     aiPrioritiseRepair: false,
     aiRally: false,
+    aiWasFiredUpon: false,
     target: over.target,
     alive: true,
     salvageMass: 0,

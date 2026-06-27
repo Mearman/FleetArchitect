@@ -18,6 +18,7 @@ import type { StalemateWatch } from "./stalemate";
 import { computeAwareness } from "./awareness";
 import { stepAi } from "./ai-step";
 import { stepFormationDoctrine } from "./formation-doctrine";
+import { buildFormationTargetingContext } from "./formation-targeting";
 import { rebuildEmissions } from "./em-reception";
 import { launchPods, updatePods } from "./boarding";
 import { applyCollisionDamage, buildShipCellHash, resolveShipCollisions } from "./collision";
@@ -257,17 +258,16 @@ export function* simulateBattle(
     //     no-op for fleets with no formation condition, so presets are byte-identical.
     stepFormationDoctrine(state.ships, state.byId, tick, state.deployment);
 
-    // 1. Targeting.
-    // Elect focus-fire targets once per tick per side. A ship with
-    // focusFire=true defers to this fleet-agreed target; all others pick
-    // independently. Computing the election outside the per-ship loop keeps
-    // determinism: every ship on a side sees the same fleet target for this
-    // tick, not a target that shifts as earlier ships set their own.
-    const attackerFocusTarget = electFocusTarget("attacker", state.ships, state.defenders, tick);
-    const defenderFocusTarget = electFocusTarget("defender", state.ships, state.attackers, tick);
+    // 1. Targeting. Phase D: build the formation-targeting context once per tick
+    //    so an `aiTargeting` override can filter/score candidates by relational
+    //    mode. Harmless for presets (identity filter).
+    const formationTargeting = buildFormationTargetingContext(state.ships, state.byId, state.deployment);
+    // Elect focus-fire targets once per tick per side, outside the per-ship loop
+    // so every ship on a side sees the same fleet target this tick.
+    const attackerFocusTarget = electFocusTarget("attacker", state.ships, state.defenders, tick, formationTargeting);
+    const defenderFocusTarget = electFocusTarget("defender", state.ships, state.attackers, tick, formationTargeting);
     for (const ship of state.ships) {
       if (!ship.alive) continue;
-      // A claimed hull is inert salvage: it holds no target and engages nothing.
       if (isClaimed(ship)) {
         ship.target = undefined;
         continue;
@@ -275,7 +275,7 @@ export function* simulateBattle(
       const enemies = ship.side === "attacker" ? state.defenders : state.attackers;
       const focusTarget =
         ship.side === "attacker" ? attackerFocusTarget : defenderFocusTarget;
-      ship.target = pickTarget(ship, enemies, focusTarget, tick)?.instanceId;
+      ship.target = pickTarget(ship, enemies, focusTarget, tick, formationTargeting)?.instanceId;
     }
 
     // 1b. Tech timers (factions update). Advance every movement/power tech
@@ -294,7 +294,7 @@ export function* simulateBattle(
     }
 
     // 2. Movement + facing.
-    moveShips(state.ships, state.byId, inputs.anomalies, state.deployment, SIM.defaultRange, state.medium);
+    moveShips(state.ships, state.byId, inputs.anomalies, state.deployment, SIM.defaultRange, state.medium, tick);
 
     // 2b. Ship-vs-ship collision at cell granularity. After movement, any two
     //     ships whose cells now overlap are pushed apart with an elastic

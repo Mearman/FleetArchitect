@@ -373,6 +373,9 @@ function restoreShip(s: CheckpointShip): SimShip {
     // restore seeds its documented default (`false`), exactly as `toSimShip`
     // does via `defaultAiDecisions`.
     aiHoldFire: false,
+    // `aiWasFiredUpon` is likewise transient (set by applyDamage, reset by the
+    // weapons step), so it is not captured; restore seeds `false`.
+    aiWasFiredUpon: false,
     target: s.target,
     alive: s.alive,
     salvageMass: s.salvageMass,

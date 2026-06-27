@@ -207,6 +207,18 @@ export function fireWeapons(
     // is holdFire ceases weapon fire — a holdFire rule or stance action overrides
     // the firing loop. False by default, so a ship with no rules fires as before.
     if (ship.aiHoldFire) continue;
+    // Phase D fire discipline (formation-doctrine `aiFire`): GATED on the field
+    // being set (every preset ship has it undefined → unchanged). `holdFire`
+    // ceases fire (mirrors aiHoldFire); `whenFiredUpon` fires only if the ship
+    // took damage this tick (the `aiWasFiredUpon` flag, set in applyDamage and
+    // reset at the top of this weapons step — a one-tick reaction latency, since
+    // damage from the enemy's shot lands after this ship's fire check); `atWill`
+    // and `onlyAt` fire normally (`onlyAt` restricts to the locked target, which
+    // is the single-target model's default — the enum carries no separate
+    // reference, so it reduces to "fire at ship.target").
+    const fire = ship.aiFire;
+    if (fire === "holdFire") continue;
+    if (fire === "whenFiredUpon" && !ship.aiWasFiredUpon) continue;
     const target = ship.target !== undefined ? byId.get(ship.target) : undefined;
     if (target === undefined || !target.alive) continue;
 
@@ -297,6 +309,18 @@ export function fireWeapons(
       // origin (0, 0) — the legacy CoM.
       fireOne(ship, weapon, weapon.facing ?? 0, 0, 0, target, rng, fired, ship.auraAccuracyBonus, anomalies, beams);
     }
+  }
+  // Phase D: reset the per-tick "was fired upon" flag AFTER every ship has made
+  // its fire decision this tick. The flag was set by applyDamage during this
+  // tick's collision step (2b) and the prior tick's projectile-resolution step
+  // (4), so a `whenFiredUpon` ship reads whether it was shot since its last fire
+  // decision — a one-tick reaction latency, which is the intended "fire back
+  // once shot" behaviour. Resetting here (not in stepAi) keeps the signal alive
+  // across the damage→fire boundary; resetting after the loop means every ship
+  // reads the same flag state. Inert for ships without the `whenFiredUpon`
+  // discipline.
+  for (const ship of ships) {
+    ship.aiWasFiredUpon = false;
   }
   return fired;
 }

@@ -35,7 +35,13 @@ import type { SimShip } from "@/domain/simulation/engine/types";
  *  `stepAi` overwrites every one of these each tick for non-phantom ships. */
 export function defaultAiDecisions(): Pick<
   SimShip,
-  "aiHoldFire" | "aiStance" | "aiFocusFire" | "aiRetreat" | "aiPrioritiseRepair" | "aiRally"
+  | "aiHoldFire"
+  | "aiStance"
+  | "aiFocusFire"
+  | "aiRetreat"
+  | "aiPrioritiseRepair"
+  | "aiRally"
+  | "aiWasFiredUpon"
 > {
   return {
     aiHoldFire: false,
@@ -44,6 +50,7 @@ export function defaultAiDecisions(): Pick<
     aiRetreat: false,
     aiPrioritiseRepair: false,
     aiRally: false,
+    aiWasFiredUpon: false,
   };
 }
 

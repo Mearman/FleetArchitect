@@ -119,7 +119,47 @@ export function computeTranslationCommand(
   anomalies: BattleInputs["anomalies"],
   deployment: DeploymentReference,
   defaultRange: number,
+  /** A formation-doctrine desired-point (from the ship's `aiSpatial`), or
+   *  undefined when the ship has no spatial override this tick. When present,
+   *  the controller steers toward this point at the desired range `want` using
+   *  the same stop-in-time / station-keep maths it uses for a live target — the
+   *  existing target / deployment-based logic is bypassed entirely. Undefined
+   *  for every preset ship, so the existing path runs byte-identically. */
+  formationPoint?: { x: number; y: number; want: number; band: number | undefined },
 ): TranslationCommand {
+  // Phase D: when the formation-doctrine pass has resolved a spatial objective
+  // to a desired-point this tick, steer toward it with the stop-in-time
+  // controller. The point encodes the bearing rule (where around the reference)
+  // and `want` encodes the range rule (how far from the point). Retreat still
+  // takes precedence; the gate is the presence of `formationPoint` — undefined
+  // falls through to the existing target/deployment logic unchanged.
+  if (formationPoint !== undefined && !isRetreating(ship)) {
+    const isHold = ship.aiSpatial?.range.kind === "hold";
+    if (isHold) {
+      // Hold station AT the desired point: face the point and actively damp
+      // velocity via the station-keeper so continuous perturbation (recoil)
+      // cannot accumulate into a slow runaway. `want = dist` (hold the current
+      // separation) and the band is the rule's authored hold fraction — the
+      // dead-zone within which the ship considers itself on post. When the rule
+      // left the band loose it defaults to a one-cell post (CELL_SIZE / dist).
+      const dx = formationPoint.x - ship.x;
+      const dy = formationPoint.y - ship.y;
+      const dist = Math.hypot(dx, dy);
+      const { aPro, aRet } = thrustAccel(ship);
+      const band =
+        formationPoint.band ?? (dist > 0 ? CELL_SIZE / dist : 1);
+      return stationKeep(ship, dx, dy, dist, dist, band, aPro, aRet);
+    }
+    // All non-hold verbs: drive to the point holding range `want` (0 for
+    // close/offset/orbit; minRange/maxRange/range for evade/kite/maintain/engage).
+    return stopInTimeToward(
+      ship,
+      formationPoint.x,
+      formationPoint.y,
+      formationPoint.want,
+    );
+  }
+
   // Retreat and hold are directional decisions handled before the stop-in-time
   // core: a retreating ship thrusts away from its reference and does not try to
   // hold a range; a holding ship faces its reference and coasts. Everything

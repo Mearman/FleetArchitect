@@ -84,7 +84,7 @@ function anyFormationCondition(ships: readonly SimShip[]): boolean {
  * the ships present THIS TICK — see {@link buildAggregates} for the documented
  * choice. `engaged` is true when any alive member holds a target this tick.
  */
-interface FormationAggregate {
+export interface FormationAggregate {
   centroidX: number;
   centroidY: number;
   /** Alive (structure + shield) / initial (structure + shield), in [0, 1]. */
@@ -120,7 +120,13 @@ interface FormationAggregate {
  * approximation; the numerator is the sum of CURRENT `structure + shield` over
  * alive members only.
  */
-function buildAggregates(
+/** Build the per-formation aggregate map. Exported so the Phase D movement
+ *  consumer can read each formation's centroid for the cohesion generalisation
+ *  (a ship in a nested formation blends toward its OWN formation's centroid,
+ *  not the whole-fleet centroid). DETERMINISM: see the inline contract — every
+ *  ship is iterated in instanceId-sorted order, so the centroid summations
+ *  accumulate in the same order across runs. Pure. */
+export function buildAggregates(
   sortedById: readonly SimShip[],
 ): Map<string, FormationAggregate> {
   // First pass: collect members per formation id. A ship with no formationId is
@@ -188,7 +194,7 @@ function buildAggregates(
 /** A resolved world point, or undefined when the reference cannot be resolved
  *  (e.g. an enemy formation of a role that does not exist). Undefined makes any
  *  condition that uses it unsatisfied — references are total, never errors. */
-interface Point {
+export interface Point {
   x: number;
   y: number;
 }
@@ -247,12 +253,19 @@ function formationOfArchetype(
 
 /** A pure resolver closure: given a FormationReference and the ship it is being
  *  resolved for, return the world point or undefined. Closes over the sorted
- *  ship list, the aggregate map, the id index, and the deployment reference. */
-interface ResolveReference {
+ *  ship list, the aggregate map, the id index, and the deployment reference.
+ *  Exported so the Phase D movement consumer can resolve a spatial objective's
+ *  reference to the same world point the pass itself used. */
+export interface ResolveReference {
   (ref: FormationReference, ship: SimShip): Point | undefined;
 }
 
-function makeResolver(
+/** Build the resolver closure from the sorted ship list, the byId index, the
+ *  per-formation aggregates, and the deployment reference. The Phase D movement
+ *  consumer calls this once per tick (the same way the pass does) so a spatial
+ *  objective's `reference` resolves to the identical world point the pass used
+ *  to evaluate its conditions. Pure. */
+export function makeResolver(
   sortedById: readonly SimShip[],
   byId: ReadonlyMap<string, SimShip>,
   aggregates: ReadonlyMap<string, FormationAggregate>,
