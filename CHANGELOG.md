@@ -1,3 +1,10 @@
+# [1.28.0](https://github.com/Mearman/FleetArchitect/compare/v1.27.0...v1.28.0) (2026-06-27)
+
+
+### Features
+
+* **ui:** formation-authoring console (tree, doctrine, canvas, templates) ([09bb231](https://github.com/Mearman/FleetArchitect/commit/09bb23178c308aa8a0211207f72f05fe35577fb9))
+
 # [1.27.0](https://github.com/Mearman/FleetArchitect/compare/v1.26.0...v1.27.0) (2026-06-27)
 
 
