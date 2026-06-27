@@ -1,5 +1,5 @@
 import type { SurfaceKind } from "@/schema/grid";
-import type { CrewPriority, Rule, ShipStance } from "@/schema/ai";
+import type { Doctrine } from "@/schema/ai";
 import type { TileGrid } from "@/schema/grid";
 
 /** Default grid dimensions for a fresh design. */
@@ -31,10 +31,8 @@ export interface WorkingDesign {
   faction: string;
   grid: TileGrid;
   source: "preset" | "user";
-  shipStance: ShipStance;
-  crewPriority: CrewPriority;
-  /** Player-authored trigger/action rules, evaluated in list order each tick. */
-  rules: Rule[];
+  /** Behaviour: base action plus an ordered list of conditional rules. */
+  doctrine: Doctrine;
 }
 
 /**

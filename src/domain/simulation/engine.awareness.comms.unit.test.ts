@@ -5,6 +5,7 @@ import type {
   ResolvedModule,
 } from "@/domain/simulation/types";
 import type { CommsEffect } from "@/schema/module";
+import type { Doctrine } from "@/schema/ai";
 import {
   beam,
   comms,
@@ -19,7 +20,21 @@ import {
   statsFor,
   structureOf,
 } from "@/domain/simulation/engine.awareness-helpers";
-import { defaultOrders } from "@/schema/fleet";
+
+// Empty doctrine == legacy defaults (stance undefined -> balanced fallback,
+// crew undefined -> combat, targeting undefined -> nearest). Ships that need a
+// specific axis set it on `base`; here only the fragile defender overrides
+// anything, holding its position so the attacker can close and destroy it.
+const holdDoctrine: Doctrine = {
+  base: {
+    spatial: {
+      reference: { kind: "target" },
+      range: { kind: "hold", band: 0.3 },
+      bearing: { kind: "free" },
+    },
+  },
+  rules: [],
+};
 
 // ---------------------------------------------------------------------------
 // 3. Comms links: channel, arc, manning, laser LOS
@@ -207,10 +222,7 @@ describe("engine.awareness — ghosts", () => {
           stats: statsFor(1, 100),
           position: { x: 150, y: 0 },
           facing: Math.PI,
-          orders: { ...defaultOrders, engageRange: "hold" },
-          crewPriority: "combat",
-          shipStance: "balanced",
-          rules: [],
+          doctrine: holdDoctrine,
           classification: "fighter",
         },
       ]),

@@ -31,10 +31,8 @@ import {
   restoreFleetRevision,
   saveFleet,
 } from "@/storage/db";
-import {
-  defaultOrders,
-} from "@/schema/fleet";
-import type { Fleet, FleetShip, Orders } from "@/schema/fleet";
+import type { Doctrine } from "@/schema/ai";
+import type { Fleet, FleetShip } from "@/schema/fleet";
 import { flatFormation, flattenShipLeaves } from "@/schema/formation";
 import type { ShipDesign } from "@/schema/ship";
 import { panelLabel } from "@/ui/components/panel.css";
@@ -57,8 +55,13 @@ import {
 } from "./FleetBuilderRoute.css";
 
 /** A fleet row carries a local React key alongside the schema's FleetShip. */
-interface FleetRow extends FleetShip {
+/** A fleet row carries a local React key alongside the schema's FleetShip. The
+ *  working state always carries a concrete doctrine (addShip seeds one; load
+ *  materialises one for a ship whose stored doctrine was absent), so doctrine
+ *  is required here even though it is optional on FleetShip. */
+interface FleetRow extends Omit<FleetShip, "doctrine"> {
   rowId: string;
+  doctrine: Doctrine;
 }
 
 interface WorkingFleet {
@@ -78,7 +81,7 @@ function toFleetShip(row: FleetRow): FleetShip {
     designId: row.designId,
     position: row.position,
     facing: row.facing,
-    orders: row.orders,
+    doctrine: row.doctrine,
   };
 }
 
@@ -149,7 +152,7 @@ export function FleetBuilderRoute() {
         y: ((index % 5) - 2) * 80,
       },
       facing: 0,
-      orders: { ...defaultOrders },
+      doctrine: { base: {}, rules: [] },
     };
     setWorking((prev) => ({ ...prev, rows: [...prev.rows, row] }));
   }
@@ -163,11 +166,11 @@ export function FleetBuilderRoute() {
     }));
   }
 
-  function updateOrders(rowId: string, patch: Partial<Orders>) {
+  function updateDoctrine(rowId: string, next: Doctrine) {
     setWorking((prev) => ({
       ...prev,
       rows: prev.rows.map((row) =>
-        row.rowId === rowId ? { ...row, orders: { ...row.orders, ...patch } } : row,
+        row.rowId === rowId ? { ...row, doctrine: next } : row,
       ),
     }));
   }
@@ -218,6 +221,10 @@ export function FleetBuilderRoute() {
       faction: fleet.faction,
       rows: flattenShipLeaves(fleet.formation).map((ship) => ({
         ...ship,
+        // A fleet-ship may carry no doctrine (a record with neither orders nor
+        // doctrine). Seed the empty default so the row editor always has a
+        // concrete doctrine to edit.
+        doctrine: ship.doctrine ?? { base: {}, rules: [] },
         rowId: createId("row"),
       })),
     });
@@ -331,13 +338,13 @@ export function FleetBuilderRoute() {
                         key={row.rowId}
                         rowId={row.rowId}
                         design={design}
-                        orders={row.orders}
+                        doctrine={row.doctrine}
                         position={row.position}
                         facing={row.facing}
                         cost={cost}
                         overBudget={overBudget}
                         advancedOpen={advancedOpen.has(row.rowId)}
-                        onUpdateOrders={updateOrders}
+                        onUpdateDoctrine={updateDoctrine}
                         onUpdatePosition={(id, x, y) =>
                           updateRow(id, { position: { x, y } })
                         }

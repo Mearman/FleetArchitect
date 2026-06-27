@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleInputs, CombatShip, ResolvedHardwire, ResolvedModule } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
+import type { Doctrine } from "@/schema/ai";
 import type { ShipStats } from "@/domain/stats";
 
 
@@ -14,6 +14,22 @@ const OPEN_EDGES: CellEdges = {
   s: "open",
   w: "open",
   doorStates: {},
+};
+
+/**
+ * Doctrine equivalent of the legacy `defaultOrders` with `engageRange: "hold"`:
+ * hold range relative to the current target. The legacy `rangeKeepingBand`
+ * default was 0.3, carried over as the hold `band`.
+ */
+const HOLD_RANGE_DOCTRINE: Doctrine = {
+  base: {
+    spatial: {
+      reference: { kind: "target" },
+      range: { kind: "hold", band: 0.3 },
+      bearing: { kind: "free" },
+    },
+  },
+  rules: [],
 };
 
 /**
@@ -137,10 +153,7 @@ function shooterShip(
     stats: baseStats(structure),
     position: { x, y: 0 },
     facing: 0,
-    orders: { ...defaultOrders, engageRange: "hold" },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: HOLD_RANGE_DOCTRINE,
     classification: "frigate",
     modules,
     ...(hardwires !== undefined && hardwires.length > 0 ? { hardwires } : {}),
@@ -157,10 +170,7 @@ function toughTarget(id: string, x: number): CombatShip {
     stats: baseStats(1_000_000),
     position: { x, y: 0 },
     facing: Math.PI,
-    orders: { ...defaultOrders, engageRange: "hold" },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: HOLD_RANGE_DOCTRINE,
     classification: "frigate",
   };
 }
@@ -549,10 +559,7 @@ describe("engine.hardwire — severed link reverts sink", () => {
       },
       position: { x: 60, y: 0 },
       facing: Math.PI,
-      orders: { ...defaultOrders, engageRange: "hold" },
-      crewPriority: "combat",
-      shipStance: "balanced",
-      rules: [],
+      doctrine: HOLD_RANGE_DOCTRINE,
       classification: "frigate",
     };
 
@@ -658,10 +665,7 @@ describe("engine.hardwire — severed link reverts sink", () => {
       },
       position: { x: 80, y: 0 },
       facing: Math.PI,
-      orders: { ...defaultOrders, engageRange: "hold" },
-      crewPriority: "combat",
-      shipStance: "balanced",
-      rules: [],
+      doctrine: HOLD_RANGE_DOCTRINE,
       classification: "frigate",
     };
 

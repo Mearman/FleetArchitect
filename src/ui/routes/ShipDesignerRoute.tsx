@@ -203,9 +203,7 @@ export function ShipDesignerRoute() {
       updatedAt: nowIso(),
       source: working.source,
       revision: 1,
-      shipStance: working.shipStance,
-      crewPriority: working.crewPriority,
-      rules: working.rules,
+      doctrine: working.doctrine,
     };
     return analyseShipDesign(design, catalog());
   }, [working]);
@@ -312,9 +310,7 @@ export function ShipDesignerRoute() {
       updatedAt: now,
       source: "user",
       revision: 1,
-      shipStance: working.shipStance,
-      crewPriority: working.crewPriority,
-      rules: working.rules,
+      doctrine: working.doctrine,
     };
     await saveShipDesign(design);
     setWorking((prev) => ({ ...prev, id: design.id, createdAt: design.createdAt }));
@@ -362,9 +358,7 @@ export function ShipDesignerRoute() {
       faction: design.faction,
       grid: fitToViewport(design.grid),
       source: design.source,
-      shipStance: design.shipStance,
-      crewPriority: design.crewPriority,
-      rules: design.rules,
+      doctrine: design.doctrine,
     });
     setSelected(null);
     resetPan();
@@ -504,13 +498,9 @@ export function ShipDesignerRoute() {
       />
       <div className={panelLabel} style={{ marginTop: 8 }}>Behaviour</div>
       <BehaviourPanel
-        shipStance={working.shipStance}
-        crewPriority={working.crewPriority}
-        rules={working.rules}
+        doctrine={working.doctrine}
         readOnly={readOnly}
-        onStanceChange={(s) => setWorking((prev) => ({ ...prev, shipStance: s }))}
-        onPriorityChange={(p) => setWorking((prev) => ({ ...prev, crewPriority: p }))}
-        onRulesChange={(r) => setWorking((prev) => ({ ...prev, rules: r }))}
+        onDoctrineChange={(d) => setWorking((prev) => ({ ...prev, doctrine: d }))}
       />
 
       {/* Selected-cell config panels */}
@@ -704,9 +694,7 @@ export function ShipDesignerRoute() {
                 updatedAt: nowIso(),
                 source: working.source,
                 revision: 1,
-                shipStance: working.shipStance,
-                crewPriority: working.crewPriority,
-                rules: working.rules,
+                doctrine: working.doctrine,
               },
             }}
           />

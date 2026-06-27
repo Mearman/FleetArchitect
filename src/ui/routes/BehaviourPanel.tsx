@@ -12,16 +12,15 @@ import {
 import { IconTrash } from "@tabler/icons-react";
 import { useState } from "react";
 import {
-  type Action as ActionType,
+  type Condition as ConditionType,
   type CrewPriority as CrewPriorityType,
-  type Rule,
+  type Doctrine,
+  type DoctrineAction,
+  type DoctrineRule,
   type ShipStance as ShipStanceType,
-  type Trigger as TriggerType,
-  Action,
   CrewPriority,
   ModuleKind,
   ShipStance,
-  Trigger,
 } from "@/schema/ai";
 import { ShipClassification } from "@/schema/armor";
 
@@ -60,11 +59,29 @@ const CREW_PRIORITY_OPTIONS = CrewPriority.options.map((p) => ({
   label: CREW_PRIORITY_LABEL[p],
 }));
 
-/** Trigger kind options in a stable display order. Each entry pairs the
- *  discriminator string (used as the Select value) with a human-readable label.
- *  The type annotation on `value` ensures every kind in the `Trigger` union has
- *  an entry and prevents stale labels after schema changes. */
-const TRIGGER_KIND_OPTIONS: { value: TriggerType["kind"]; label: string }[] = [
+/**
+ * The ship-self condition subset the rules editor authors — the legacy trigger
+ * kinds, all valid {@link ConditionType} members. A authored LegacyCondition
+ * widens to Condition without a cast when added to the doctrine rule list.
+ */
+type LegacyCondition = Extract<
+  ConditionType,
+  | { kind: "shieldBelow" }
+  | { kind: "structureBelow" }
+  | { kind: "targetInRange" }
+  | { kind: "targetClass" }
+  | { kind: "moduleDestroyed" }
+  | { kind: "outclassed" }
+>;
+
+/**
+ * Condition kind options in a stable display order. Each entry pairs the
+ * discriminator string (used as the Select value) with a human-readable label.
+ * These are the ship-self conditions that mirror the legacy trigger set; the
+ * full {@link Condition} union adds formation/spatial/temporal kinds surfaced
+ * in later phases.
+ */
+const CONDITION_KIND_OPTIONS: { value: LegacyCondition["kind"]; label: string }[] = [
   { value: "shieldBelow", label: "Shield below %" },
   { value: "structureBelow", label: "Structure below %" },
   { value: "targetInRange", label: "Target in range" },
@@ -73,24 +90,37 @@ const TRIGGER_KIND_OPTIONS: { value: TriggerType["kind"]; label: string }[] = [
   { value: "outclassed", label: "Outclassed by enemy" },
 ];
 
-/** Action kind options in a stable display order. */
-const ACTION_KIND_OPTIONS: { value: ActionType["kind"]; label: string }[] = [
+/** The authorable legacy action verbs, each mapping to a DoctrineAction axis. */
+type ActionKind =
+  | "setStance"
+  | "retreat"
+  | "focusFire"
+  | "prioritiseRepair"
+  | "holdFire"
+  | "fireAtWill";
+
+/**
+ * Action-kind options in a stable display order. Each entry pairs the verb
+ * (used as the Select value) with a human-readable label. Selecting one builds
+ * the corresponding DoctrineAction via {@link defaultAction}; the player never
+ * edits raw DoctrineAction fields.
+ */
+const ACTION_KIND_OPTIONS: { value: ActionKind; label: string }[] = [
   { value: "setStance", label: "Set stance" },
   { value: "retreat", label: "Retreat" },
   { value: "focusFire", label: "Focus fire" },
   { value: "prioritiseRepair", label: "Prioritise repair" },
   { value: "holdFire", label: "Hold fire" },
   { value: "fireAtWill", label: "Fire at will" },
-  { value: "rally", label: "Rally" },
 ];
 
-/** Type predicate: narrows a string to a valid trigger kind without a cast. */
-function isTriggerKind(v: string): v is TriggerType["kind"] {
-  return TRIGGER_KIND_OPTIONS.some((o) => o.value === v);
+/** Type predicate: narrows a string to a valid condition kind without a cast. */
+function isConditionKind(v: string): v is LegacyCondition["kind"] {
+  return CONDITION_KIND_OPTIONS.some((o) => o.value === v);
 }
 
 /** Type predicate: narrows a string to a valid action kind without a cast. */
-function isActionKind(v: string): v is ActionType["kind"] {
+function isActionKind(v: string): v is ActionKind {
   return ACTION_KIND_OPTIONS.some((o) => o.value === v);
 }
 
@@ -104,27 +134,45 @@ const SHIP_CLASS_OPTIONS = ShipClassification.options.map((c) => ({
   label: c,
 }));
 
-/** A one-line prose summary of a trigger, used in the rule list. */
-function triggerDescription(trigger: TriggerType): string {
-  switch (trigger.kind) {
+/**
+ * Which action kind a DoctrineAction encodes, so the editor can reflect the
+ * authored axis back to the player. `undefined` means the action carries no
+ * recognised legacy verb (a future-scope axis the editor cannot edit yet).
+ */
+function actionKindOf(action: DoctrineAction): ActionKind | undefined {
+  if (action.stance === "retreat") return "retreat";
+  if (action.stance !== undefined) return "setStance";
+  if (action.targeting?.focusFire === true) return "focusFire";
+  if (action.crew === "damageControl") return "prioritiseRepair";
+  if (action.fire === "holdFire") return "holdFire";
+  if (action.fire === "atWill") return "fireAtWill";
+  return undefined;
+}
+
+/** A one-line prose summary of a condition, used in the rule list. */
+function conditionDescription(condition: ConditionType): string {
+  switch (condition.kind) {
     case "shieldBelow":
-      return `shield < ${Math.round(trigger.fraction * 100)}%`;
+      return `shield < ${Math.round(condition.fraction * 100)}%`;
     case "structureBelow":
-      return `structure < ${Math.round(trigger.fraction * 100)}%`;
+      return `structure < ${Math.round(condition.fraction * 100)}%`;
     case "targetInRange":
-      return `target in range ${trigger.min}–${trigger.max}`;
+      return `target in range ${condition.min}–${condition.max}`;
     case "targetClass":
-      return `target is ${trigger.classes.join(" or ")}`;
+      return `target is ${condition.classes.join(" or ")}`;
     case "moduleDestroyed":
-      return `${trigger.moduleKind} destroyed`;
+      return `${condition.moduleKind} destroyed`;
     case "outclassed":
       return "outclassed by enemy";
+    default:
+      return condition.kind;
   }
 }
 
-/** A one-line prose summary of an action. */
-function actionDescription(action: ActionType): string {
-  switch (action.kind) {
+/** A one-line prose summary of a DoctrineAction, mirroring the legacy verbs. */
+function actionDescription(action: DoctrineAction): string {
+  const kind = actionKindOf(action);
+  switch (kind) {
     case "setStance":
       return `set stance → ${action.stance}`;
     case "retreat":
@@ -137,13 +185,13 @@ function actionDescription(action: ActionType): string {
       return "hold fire";
     case "fireAtWill":
       return "fire at will";
-    case "rally":
-      return "rally";
+    case undefined:
+      return "custom action";
   }
 }
 
-/** Default parameter values when switching to a new trigger kind. */
-function defaultTrigger(kind: TriggerType["kind"]): TriggerType {
+/** Default parameter values when switching to a new condition kind. */
+function defaultCondition(kind: LegacyCondition["kind"]): LegacyCondition {
   switch (kind) {
     case "shieldBelow":
       return { kind: "shieldBelow", fraction: 0.25 };
@@ -160,38 +208,41 @@ function defaultTrigger(kind: TriggerType["kind"]): TriggerType {
   }
 }
 
-/** Default parameter values when switching to a new action kind. */
-function defaultAction(kind: ActionType["kind"]): ActionType {
+/**
+ * Build a fresh DoctrineAction for an action kind. The mapping preserves the
+ * legacy verb semantics: `setStance` sets the stance axis; `retreat` sets
+ * stance to "retreat"; `focusFire` sets the targeting axis; `prioritiseRepair`
+ * sets crew to damage control; `holdFire`/`fireAtWill` set the fire axis.
+ */
+function defaultAction(kind: ActionKind, stance: ShipStanceType): DoctrineAction {
   switch (kind) {
     case "setStance":
-      return { kind: "setStance", stance: "evasive" };
+      return { stance };
     case "retreat":
-      return { kind: "retreat" };
+      return { stance: "retreat" };
     case "focusFire":
-      return { kind: "focusFire" };
+      return { targeting: { mode: { kind: "nearest" }, vulnerableWeight: 0, focusFire: true } };
     case "prioritiseRepair":
-      return { kind: "prioritiseRepair" };
+      return { crew: "damageControl" };
     case "holdFire":
-      return { kind: "holdFire" };
+      return { fire: "holdFire" };
     case "fireAtWill":
-      return { kind: "fireAtWill" };
-    case "rally":
-      return { kind: "rally" };
+      return { fire: "atWill" };
   }
 }
 
-/** Inline parameter controls for a trigger being edited. */
-function TriggerParams({
-  trigger,
+/** Inline parameter controls for a condition being edited. */
+function ConditionParams({
+  condition,
   onChange,
 }: {
-  trigger: TriggerType;
-  onChange: (next: TriggerType) => void;
+  condition: LegacyCondition;
+  onChange: (next: LegacyCondition) => void;
 }) {
-  switch (trigger.kind) {
+  switch (condition.kind) {
     case "shieldBelow":
     case "structureBelow": {
-      const pct = Math.round(trigger.fraction * 100);
+      const pct = Math.round(condition.fraction * 100);
       return (
         <NumberInput
           label="Threshold (%)"
@@ -203,7 +254,7 @@ function TriggerParams({
             const num = typeof v === "number" ? v : Number(v);
             if (!Number.isFinite(num)) return;
             const clamped = Math.max(1, Math.min(99, num));
-            onChange({ ...trigger, fraction: clamped / 100 });
+            onChange({ ...condition, fraction: clamped / 100 });
           }}
         />
       );
@@ -215,22 +266,22 @@ function TriggerParams({
             label="Min range"
             size="xs"
             min={0}
-            value={trigger.min}
+            value={condition.min}
             onChange={(v) => {
               const num = typeof v === "number" ? v : Number(v);
               if (!Number.isFinite(num)) return;
-              onChange({ ...trigger, min: Math.max(0, num) });
+              onChange({ ...condition, min: Math.max(0, num) });
             }}
           />
           <NumberInput
             label="Max range"
             size="xs"
             min={0}
-            value={trigger.max}
+            value={condition.max}
             onChange={(v) => {
               const num = typeof v === "number" ? v : Number(v);
               if (!Number.isFinite(num)) return;
-              onChange({ ...trigger, max: Math.max(0, num) });
+              onChange({ ...condition, max: Math.max(0, num) });
             }}
           />
         </Group>
@@ -241,12 +292,12 @@ function TriggerParams({
           label="Target class"
           size="xs"
           data={SHIP_CLASS_OPTIONS}
-          value={trigger.classes[0] ?? "fighter"}
+          value={condition.classes[0] ?? "fighter"}
           onChange={(v) => {
             if (v === null) return;
             const parsed = ShipClassification.safeParse(v);
             if (!parsed.success) return;
-            onChange({ ...trigger, classes: [parsed.data] });
+            onChange({ ...condition, classes: [parsed.data] });
           }}
         />
       );
@@ -256,12 +307,12 @@ function TriggerParams({
           label="Module kind"
           size="xs"
           data={MODULE_KIND_OPTIONS}
-          value={trigger.moduleKind}
+          value={condition.moduleKind}
           onChange={(v) => {
             if (v === null) return;
             const parsed = ModuleKind.safeParse(v);
             if (!parsed.success) return;
-            onChange({ ...trigger, moduleKind: parsed.data });
+            onChange({ ...condition, moduleKind: parsed.data });
           }}
         />
       );
@@ -270,57 +321,56 @@ function TriggerParams({
   }
 }
 
-/** Inline parameter controls for an action being edited. */
+/** Inline parameter controls for a DoctrineAction being edited. */
 function ActionParams({
   action,
   onChange,
 }: {
-  action: ActionType;
-  onChange: (next: ActionType) => void;
+  action: DoctrineAction;
+  onChange: (next: DoctrineAction) => void;
 }) {
-  if (action.kind !== "setStance") return null;
+  const kind = actionKindOf(action);
+  if (kind !== "setStance") return null;
   return (
     <Select
       label="New stance"
       size="xs"
       data={STANCE_OPTIONS}
-      value={action.stance}
+      value={action.stance ?? "balanced"}
       onChange={(v) => {
         if (v === null) return;
         const parsed = ShipStance.safeParse(v);
         if (!parsed.success) return;
-        onChange({ kind: "setStance", stance: parsed.data });
+        onChange({ ...action, stance: parsed.data });
       }}
     />
   );
 }
 
 /** The inline "add a new rule" form. */
-function AddRuleForm({ onAdd }: { onAdd: (rule: Rule) => void }) {
-  const [trigger, setTrigger] = useState<TriggerType>({
+function AddRuleForm({ onAdd }: { onAdd: (rule: DoctrineRule) => void }) {
+  const [condition, setCondition] = useState<LegacyCondition>({
     kind: "shieldBelow",
     fraction: 0.25,
   });
-  const [action, setAction] = useState<ActionType>({
-    kind: "setStance",
+  const [actionKind, setActionKind] = useState<ActionKind>("setStance");
+  const [action, setAction] = useState<DoctrineAction>({
     stance: "evasive",
   });
 
-  function handleTriggerKindChange(v: string | null) {
-    if (v === null || !isTriggerKind(v)) return;
-    setTrigger(defaultTrigger(v));
+  function handleConditionKindChange(v: string | null) {
+    if (v === null || !isConditionKind(v)) return;
+    setCondition(defaultCondition(v));
   }
 
   function handleActionKindChange(v: string | null) {
     if (v === null || !isActionKind(v)) return;
-    setAction(defaultAction(v));
+    setActionKind(v);
+    setAction(defaultAction(v, "evasive"));
   }
 
   function submit() {
-    const parsedTrigger = Trigger.safeParse(trigger);
-    const parsedAction = Action.safeParse(action);
-    if (!parsedTrigger.success || !parsedAction.success) return;
-    onAdd({ trigger: parsedTrigger.data, action: parsedAction.data });
+    onAdd({ condition, then: action });
   }
 
   return (
@@ -329,18 +379,18 @@ function AddRuleForm({ onAdd }: { onAdd: (rule: Rule) => void }) {
         Add rule
       </Text>
       <Select
-        label="When (trigger)"
+        label="When (condition)"
         size="xs"
-        data={TRIGGER_KIND_OPTIONS}
-        value={trigger.kind}
-        onChange={handleTriggerKindChange}
+        data={CONDITION_KIND_OPTIONS}
+        value={condition.kind}
+        onChange={handleConditionKindChange}
       />
-      <TriggerParams trigger={trigger} onChange={setTrigger} />
+      <ConditionParams condition={condition} onChange={setCondition} />
       <Select
         label="Then (action)"
         size="xs"
         data={ACTION_KIND_OPTIONS}
-        value={action.kind}
+        value={actionKind}
         onChange={handleActionKindChange}
       />
       <ActionParams action={action} onChange={setAction} />
@@ -352,36 +402,52 @@ function AddRuleForm({ onAdd }: { onAdd: (rule: Rule) => void }) {
 }
 
 /**
- * The behaviour panel: the ship's base stance, the crew task-scheduler
- * priority mode, and the player-authored trigger/action rule list. All three
- * are persisted on the design and read by the AI interpreter.
+ * The behaviour panel: the ship's base stance and crew priority (doctrine base
+ * axes), plus the player-authored condition/action rule list. All are
+ * persisted on the design as a single {@link Doctrine} and read by the AI
+ * interpreter.
  *
  * Rules are evaluated in list order each tick; the first matching rule wins.
- * The stance alone governs behaviour when the rule list is empty.
+ * The base action alone governs behaviour when the rule list is empty.
  */
 export function BehaviourPanel({
-  shipStance,
-  crewPriority,
-  rules,
+  doctrine,
   readOnly,
-  onStanceChange,
-  onPriorityChange,
-  onRulesChange,
+  onDoctrineChange,
 }: {
-  shipStance: ShipStanceType;
-  crewPriority: CrewPriorityType;
-  rules: Rule[];
+  doctrine: Doctrine;
   readOnly: boolean;
-  onStanceChange: (next: ShipStanceType) => void;
-  onPriorityChange: (next: CrewPriorityType) => void;
-  onRulesChange: (next: Rule[]) => void;
+  onDoctrineChange: (next: Doctrine) => void;
 }) {
-  function removeRule(index: number) {
-    onRulesChange(rules.filter((_, i) => i !== index));
+  // The stance and crew selects need concrete values; fall back to the
+  // historical defaults when the axis is absent so the control always shows a
+  // selection. Selecting a value authors that axis.
+  const stance = doctrine.base.stance ?? "balanced";
+  const crew = doctrine.base.crew ?? "combat";
+
+  function setBaseStance(next: ShipStanceType) {
+    onDoctrineChange({
+      ...doctrine,
+      base: { ...doctrine.base, stance: next },
+    });
   }
 
-  function addRule(rule: Rule) {
-    onRulesChange([...rules, rule]);
+  function setBaseCrew(next: CrewPriorityType) {
+    onDoctrineChange({
+      ...doctrine,
+      base: { ...doctrine.base, crew: next },
+    });
+  }
+
+  function removeRule(index: number) {
+    onDoctrineChange({
+      ...doctrine,
+      rules: doctrine.rules.filter((_, i) => i !== index),
+    });
+  }
+
+  function addRule(rule: DoctrineRule) {
+    onDoctrineChange({ ...doctrine, rules: [...doctrine.rules, rule] });
   }
 
   return (
@@ -391,20 +457,26 @@ export function BehaviourPanel({
           label="Ship stance"
           size="xs"
           data={STANCE_OPTIONS}
-          value={shipStance}
+          value={stance}
           disabled={readOnly}
           onChange={(v) => {
-            if (v !== null) onStanceChange(ShipStance.parse(v));
+            if (v !== null) {
+              const parsed = ShipStance.safeParse(v);
+              if (parsed.success) setBaseStance(parsed.data);
+            }
           }}
         />
         <Select
           label="Crew priority"
           size="xs"
           data={CREW_PRIORITY_OPTIONS}
-          value={crewPriority}
+          value={crew}
           disabled={readOnly}
           onChange={(v) => {
-            if (v !== null) onPriorityChange(CrewPriority.parse(v));
+            if (v !== null) {
+              const parsed = CrewPriority.safeParse(v);
+              if (parsed.success) setBaseCrew(parsed.data);
+            }
           }}
         />
 
@@ -414,17 +486,17 @@ export function BehaviourPanel({
           Rules
         </Text>
 
-        {rules.length === 0 ? (
+        {doctrine.rules.length === 0 ? (
           <Text size="xs" c="dimmed">
             No rules — ship follows stance only.
           </Text>
         ) : (
           <Stack gap={4}>
-            {rules.map((rule, index) => (
+            {doctrine.rules.map((rule, index) => (
               <Group key={index} justify="space-between" wrap="nowrap">
                 <Text size="xs" style={{ flex: 1, minWidth: 0 }}>
-                  When {triggerDescription(rule.trigger)} &rarr;{" "}
-                  {actionDescription(rule.action)}
+                  When {conditionDescription(rule.condition)} &rarr;{" "}
+                  {actionDescription(rule.then)}
                 </Text>
                 {!readOnly && (
                   <ActionIcon

@@ -177,9 +177,7 @@ export function blankDesign(): WorkingDesign {
     faction: "Terran",
     grid: blankGrid(DEFAULT_COLS, DEFAULT_ROWS),
     source: "user",
-    shipStance: "balanced",
-    crewPriority: "combat",
-    rules: [],
+    doctrine: { base: {}, rules: [] },
   };
 }
 

@@ -28,9 +28,7 @@ function workingToDesign(working: WorkingDesign): ShipDesign {
     updatedAt: nowIso(),
     source: working.source,
     revision: 1,
-    shipStance: working.shipStance,
-    crewPriority: working.crewPriority,
-    rules: working.rules,
+    doctrine: working.doctrine,
   };
 }
 

@@ -4,8 +4,8 @@ import { runBattle } from "@/domain/simulation/engine";
 import { cellHpAt } from "@/domain/simulation/test-cell-helpers";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
+import type { Doctrine } from "@/schema/ai";
 import type { ShipStats } from "@/domain/stats";
 
 
@@ -15,6 +15,23 @@ const OPEN_EDGES: CellEdges = {
   s: "open",
   w: "open",
   doorStates: {},
+};
+
+/**
+ * Doctrine equivalent of the legacy `defaultOrders` with `engageRange: "hold"`:
+ * station-keep within the default range-keeping band (0.3) of the current
+ * target. Empty base otherwise == legacy defaults (stance balanced, crew
+ * combat, targeting nearest).
+ */
+const HOLD_RANGE_DOCTRINE: Doctrine = {
+  base: {
+    spatial: {
+      reference: { kind: "target" },
+      range: { kind: "hold", band: 0.3 },
+      bearing: { kind: "free" },
+    },
+  },
+  rules: [],
 };
 
 /**
@@ -118,10 +135,7 @@ function hammerShip(id: string, x: number): CombatShip {
     stats,
     position: { x, y: 0 },
     facing: 0,
-    orders: { ...defaultOrders, engageRange: "hold" },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: HOLD_RANGE_DOCTRINE,
     classification: "frigate",
   };
 }
@@ -177,10 +191,7 @@ function modularDefender(id: string, x: number, repairRate: number): CombatShip 
     stats,
     position: { x, y: 0 },
     facing: Math.PI,
-    orders: { ...defaultOrders, engageRange: "hold" },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: HOLD_RANGE_DOCTRINE,
     classification: "frigate",
     modules,
   };
