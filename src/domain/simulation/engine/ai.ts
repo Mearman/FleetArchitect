@@ -1,26 +1,26 @@
 /**
- * Ship AI interpreter (Phase 7). A ship's behaviour is its base stance (a
- * preset: target selection, desired range, built-in conditionals) plus an
- * ordered list of player-authored trigger/action rules that layer on top. The
- * engine evaluates the rules in list order each tick; the first rule whose
- * trigger is satisfied wins (later rules do not stack — see the Rule schema),
- * and its action overrides/extends the stance for that tick. Fully
- * deterministic: no RNG, fixed rule order, pure predicates over frame state.
+ * Ship AI interpreter (Phase 7). A ship's behaviour is its doctrine: a base
+ * {@link DoctrineAction} (a preset posture — stance, crew priority, and the
+ * spatial/targeting/fire axes the engine resolves) plus an ordered list of
+ * player-authored condition/action rules that layer on top. The engine
+ * evaluates the rules in list order each tick; the first rule whose condition
+ * is satisfied wins (later rules do not stack), and its action overrides the
+ * base for that tick. Fully deterministic: no RNG, fixed rule order, pure
+ * predicates over frame state.
  *
- * This module is the pure interpreter — `triggerSatisfied` and `effectiveAi`.
- * It does not decide targets or move ships; it produces an {@link AiState} the
- * engine's targeting/firing/movement reads. Wiring is integration.
+ * This module is the pure interpreter — `shipSelfSatisfied` (the ship-self
+ * predicate evaluator, shared with the formation-doctrine pass) and
+ * `effectiveDoctrineAi`. It does not decide targets or move ships; it produces
+ * an {@link AiState} the engine's targeting/firing/movement reads. Wiring is
+ * integration.
  */
 
 import type {
-  Action,
   Condition,
   Doctrine,
   DoctrineAction,
   ModuleKind,
-  Rule,
   ShipStance,
-  Trigger,
 } from "@/schema/ai";
 import type { ShipClassification } from "@/schema/armor";
 
@@ -28,8 +28,8 @@ import type { ShipClassification } from "@/schema/armor";
  *  engine reads these flags: `holdFire` ceases weapon fire, `focusFire`
  *  concentrates fire with allies on a shared target, `retreat` disengages,
  *  `prioritiseRepair` directs crew toward repair, `rally` returns to the
- *  fleet's formation reference. `stance` is the effective stance (the base,
- *  or one overridden by a `setStance` action). */
+ *  fleet's formation reference. `stance` is the effective stance (the doctrine
+ *  base, or one overridden by a rule's `stance` axis). */
 export interface AiState {
   stance: ShipStance;
   holdFire: boolean;
@@ -71,82 +71,10 @@ export function baseAiState(stance: ShipStance): AiState {
   };
 }
 
-/** Whether a trigger's condition is satisfied by the given context. Pure. */
-export function triggerSatisfied(
-  trigger: Trigger,
-  ctx: TriggerContext,
-): boolean {
-  switch (trigger.kind) {
-    case "shieldBelow":
-      return ctx.shieldFraction < trigger.fraction;
-    case "structureBelow":
-      return ctx.structureFraction < trigger.fraction;
-    case "targetInRange":
-      // No target -> the range condition cannot be met.
-      return (
-        ctx.targetRange !== undefined &&
-        ctx.targetRange >= trigger.min &&
-        ctx.targetRange <= trigger.max
-      );
-    case "targetClass":
-      return (
-        ctx.targetClassification !== undefined &&
-        trigger.classes.includes(ctx.targetClassification)
-      );
-    case "moduleDestroyed":
-      return ctx.destroyedModuleKinds.has(trigger.moduleKind);
-    case "outclassed":
-      return ctx.outclassed;
-  }
-}
-
-/** Layer an action onto an AI state (mutates a copy). `setStance` switches the
- *  effective stance; the flag actions set their flag. */
-function applyAction(state: AiState, action: Action): AiState {
-  switch (action.kind) {
-    case "setStance":
-      return { ...state, stance: action.stance };
-    case "retreat":
-      return { ...state, retreat: true };
-    case "focusFire":
-      return { ...state, focusFire: true };
-    case "prioritiseRepair":
-      return { ...state, prioritiseRepair: true };
-    case "holdFire":
-      return { ...state, holdFire: true };
-    case "fireAtWill":
-      return { ...state, holdFire: false };
-    case "rally":
-      return { ...state, rally: true };
-  }
-}
-
-/** Evaluate a ship's rules in order against the context and return the
- *  effective AI state: the base stance, overridden by the FIRST matching
- *  rule's action (first-match-wins, per the Rule schema). If no rule matches,
- *  the base stance stands. Deterministic. */
-export function effectiveAi(
-  baseStance: ShipStance,
-  rules: readonly Rule[],
-  ctx: TriggerContext,
-): AiState {
-  const state = baseAiState(baseStance);
-  for (const rule of rules) {
-    if (triggerSatisfied(rule.trigger, ctx)) {
-      return applyAction(state, rule.action);
-    }
-  }
-  return state;
-}
-
-/**
- * Whether a ship-self {@link Condition} holds against the trigger context. The
- * ship-self kinds mirror the legacy {@link triggerSatisfied} exactly (their
- * shapes are identical). Returns `undefined` for any non-ship-self kind so the
- * caller (the doctrine interpreter and the formation pass) can dispatch
- * formation/spatial/temporal/boolean conditions through their own evaluator.
- * Pure.
- */
+/** Whether a ship-self {@link Condition} holds against the trigger context.
+ *  Returns `undefined` for any non-ship-self kind so the caller (the doctrine
+ *  interpreter and the formation pass) can dispatch formation/spatial/temporal/
+ *  boolean conditions through their own evaluator. Pure. */
 export function shipSelfSatisfied(
   condition: Condition,
   ctx: TriggerContext,
@@ -178,27 +106,27 @@ export function shipSelfSatisfied(
 
 /**
  * Whether a unified {@link Condition} holds against the trigger context. The
- * ship-self kinds mirror the legacy {@link triggerSatisfied} exactly (their
- * shapes are identical); the formation-state, spatial, and temporal conditions
- * are the formation-aware layer (deferred) and are not yet satisfiable, so they
- * return false — a rule guarded only by them never fires.
+ * ship-self kinds are evaluated by {@link shipSelfSatisfied}; the
+ * formation-state, spatial, and temporal conditions are the formation-aware
+ * layer (deferred here) and are not yet satisfiable through this entry point,
+ * so they return false — a rule guarded only by them never fires via
+ * `effectiveDoctrineAi` (the formation-doctrine pass evaluates them).
  */
 function conditionSatisfied(condition: Condition, ctx: TriggerContext): boolean {
   const self = shipSelfSatisfied(condition, ctx);
   if (self !== undefined) return self;
   // Formation/spatial/temporal/boolean-combo conditions: deferred here.
   // The formation-doctrine pass evaluates them when a fleet's doctrine uses
-  // them; this legacy path (effectiveDoctrineAi, called by stepAi) returns
-  // false so a rule guarded only by them never fires through this entry point.
+  // them; this path (effectiveDoctrineAi, called by stepAi) returns false so a
+  // rule guarded only by them never fires through this entry point.
   return false;
 }
 
 /**
- * Layer a unified {@link DoctrineAction} onto an AI state. This inverts the
- * legacy-action compile (`setStance`→`stance`, `retreat`→`stance:"retreat"`,
- * `focusFire`→`targeting.focusFire`, `prioritiseRepair`→`crew:"damageControl"`,
- * `holdFire`/`fireAtWill`→`fire`), so a migrated rule produces the same AiState
- * the legacy rule did. Axes with no AiState counterpart (spatial, whenFiredUpon,
+ * Layer a unified {@link DoctrineAction} onto an AI state. Maps each axis onto
+ * the {@link AiState} flags: `stance`/`stance:"retreat"` → stance or retreat,
+ * `targeting.focusFire` → focusFire, `crew:"damageControl"` → prioritiseRepair,
+ * `fire` → holdFire. Axes with no AiState counterpart (spatial, whenFiredUpon,
  * etc.) are deferred to the formation-aware layer.
  */
 function applyDoctrineAction(state: AiState, action: DoctrineAction): AiState {
@@ -217,12 +145,11 @@ function applyDoctrineAction(state: AiState, action: DoctrineAction): AiState {
 }
 
 /**
- * The doctrine-driven counterpart to {@link effectiveAi}: evaluate the unified
- * rules (first match wins) against the context, layered onto the doctrine's
- * base stance. For a ship whose doctrine was compiled from the legacy trio/
- * orders (every run-of-battle ship, via `toSimShip`), the result equals what
- * `effectiveAi(baseStance, legacyRules, ctx)` returned — so behaviour is
- * byte-identical.
+ * Evaluate the doctrine's unified rules (first match wins) against the context,
+ * layered onto the doctrine's base stance. Returns the resulting {@link AiState}
+ * the engine's targeting/firing/movement steps read. For a run-of-battle ship
+ * whose doctrine was compiled from its Orders (via `toSimShip`), the result
+ * matches the historical behaviour. Deterministic.
  */
 export function effectiveDoctrineAi(
   doctrine: Doctrine,

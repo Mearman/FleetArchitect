@@ -1,16 +1,16 @@
 /**
  * The per-tick AI interpreter step (Phase 7 wiring). For each ship, build the
- * {@link TriggerContext} from the live frame state, call {@link effectiveAi}
- * against the ship's stance + rules, and write the resulting decision onto the
- * ship's transient AI fields (currently just `aiHoldFire`, which gates the
- * weapon-fire step).
+ * {@link TriggerContext} from the live frame state, call
+ * {@link effectiveDoctrineAi} against the ship's doctrine, and write the
+ * resulting decision onto the ship's transient AI fields (currently just
+ * `aiHoldFire`, which gates the weapon-fire step).
  *
  * The context is built from the post-awareness, pre-targeting state: shield and
  * structure fractions from the ship's effective HP, the current target's range
  * and classification, the set of destroyed module kinds, and an outclassed flag
  * derived from the two sides' total effective HP. Deterministic throughout:
  * ships iterate in array order, the destroyed-kind set is built in module array
- * order, and `effectiveAi` is a pure first-match-wins rule evaluation.
+ * order, and `effectiveDoctrineAi` is a pure first-match-wins rule evaluation.
  *
  * All five AiState outputs are written onto the ship's transient `ai*` fields:
  * `aiHoldFire`, `aiFocusFire`, `aiRetreat`, `aiPrioritiseRepair`, `aiRally`, and

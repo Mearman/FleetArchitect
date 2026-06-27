@@ -39,7 +39,7 @@ export type CrewPriority = z.infer<typeof CrewPriority>;
 /**
  * The set of module effect kinds, mirroring the discriminator of
  * `ModuleEffect` in `./module`. Kept as a literal enum so the
- * `moduleDestroyed` trigger can name a kind without depending on the full
+ * `moduleDestroyed` condition can name a kind without depending on the full
  * effect union. If a new module effect kind is added to `ModuleEffect`, it
  * must be added here too — there is a unit test asserting the two stay in
  * sync (`ai.unit.test.ts`, Phase 10).
@@ -76,98 +76,12 @@ export type ModuleKind = z.infer<typeof ModuleKind>;
 /** A fraction in the closed range [0, 1]. */
 const Fraction = z.number().min(0).max(1);
 
-/**
- * A condition that, when met, fires an {@link Action}. Triggers are pure
- * predicates over the ship's frame state — shields, structure, target, and
- * destroyed modules — evaluated in deterministic order each tick.
- *
- * - `shieldBelow`     — current shield fraction is below `fraction`.
- * - `structureBelow`  — current hull/structure fraction is below `fraction`.
- * - `targetInRange`   — distance to the current target is within `[min, max]`
- *                       (inclusive; world units).
- * - `targetClass`     — the current target's {@link ShipClassification} is in
- *                       `classes`.
- * - `moduleDestroyed` — at least one module of `moduleKind` has been destroyed.
- * - `outclassed`      — the ship is outclassed by the opposing force (engine
- *                       defines the comparison; e.g. total fleet point value
- *                       or class mismatch).
- */
-export const Trigger = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("shieldBelow"),
-    fraction: Fraction,
-  }),
-  z.object({
-    kind: z.literal("structureBelow"),
-    fraction: Fraction,
-  }),
-  z.object({
-    kind: z.literal("targetInRange"),
-    min: z.number(),
-    max: z.number(),
-  }),
-  z.object({
-    kind: z.literal("targetClass"),
-    classes: z.array(ShipClassification).min(1),
-  }),
-  z.object({
-    kind: z.literal("moduleDestroyed"),
-    moduleKind: ModuleKind,
-  }),
-  z.object({
-    kind: z.literal("outclassed"),
-  }),
-]);
-export type Trigger = z.infer<typeof Trigger>;
-
-/**
- * What to do when a {@link Trigger} fires. Actions layer onto the current
- * stance for as long as the trigger remains true (or apply a one-shot effect
- * for `retreat`/`rally`, depending on the interpreter).
- *
- * - `setStance`         — switch the ship's stance to `stance`.
- * - `retreat`           — begin disengaging from the battle.
- * - `focusFire`         — concentrate fire with allies on a shared target.
- * - `prioritiseRepair`  — direct crew and the ship toward repairing damage.
- * - `holdFire`          — cease firing weapons.
- * - `fireAtWill`        — resume autonomous weapon fire.
- * - `rally`             — return toward the fleet's formation reference point.
- */
-export const Action = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("setStance"),
-    stance: ShipStance,
-  }),
-  z.object({ kind: z.literal("retreat") }),
-  z.object({ kind: z.literal("focusFire") }),
-  z.object({ kind: z.literal("prioritiseRepair") }),
-  z.object({ kind: z.literal("holdFire") }),
-  z.object({ kind: z.literal("fireAtWill") }),
-  z.object({ kind: z.literal("rally") }),
-]);
-export type Action = z.infer<typeof Action>;
-
-/**
- * A single player-authored rule: when `trigger` is true, apply `action`. Rules
- * are evaluated in list order each tick; the first matching rule wins (later
- * phases may refine this to allow stacking).
- */
-export const Rule = z.object({
-  trigger: Trigger,
-  action: Action,
-});
-export type Rule = z.infer<typeof Rule>;
-
 // ---------------------------------------------------------------------------
 // Unified doctrine vocabulary (formation overhaul).
 //
-// The legacy Trigger/Action/Rule above govern a single ship's AI from its
-// ShipDesign. The unified vocabulary below is the SINGLE authoring model for
-// conditional behaviour across ship-design, per-ship, and formation scopes:
-// it absorbs Orders / EngagementStance / Trigger / Action / Rule into one
-// composable set of axes. It is introduced additively; the legacy trio stays
-// until the engine is re-plumbed to consume the unified model, after which
-// they are removed.
+// This is the SINGLE authoring model for conditional behaviour across
+// ship-design, per-ship, and formation scopes: it absorbs Orders /
+// EngagementStance into one composable set of axes.
 //
 // A doctrine is an ordered list of rules (first match wins) plus a base
 // DoctrineAction applied when no rule fires. Each rule's action may set any
@@ -342,8 +256,8 @@ export const DoctrineAction = z.object({
 export type DoctrineAction = z.infer<typeof DoctrineAction>;
 
 /**
- * A condition that, when satisfied, fires a {@link DoctrineAction}. Extends the
- * legacy ship-self triggers (shieldBelow … outclassed) with formation-state,
+ * A condition that, when satisfied, fires a {@link DoctrineAction}. Comprises
+ * the ship-self predicates (shieldBelow … outclassed) plus formation-state,
  * spatial-between-formations, temporal/phase, and bounded boolean combinations.
  * Recursive (`all`/`any` reference Condition, capped at 4 sub-conditions).
  */
@@ -386,7 +300,7 @@ export type Condition =
 
 export const Condition: z.ZodType<Condition> = z.lazy(() =>
   z.discriminatedUnion("kind", [
-    // Ship-self (mirror the legacy Trigger set).
+    // Ship-self predicates.
     z.object({ kind: z.literal("shieldBelow"), fraction: Fraction }),
     z.object({ kind: z.literal("structureBelow"), fraction: Fraction }),
     z.object({ kind: z.literal("targetInRange"), min: z.number(), max: z.number() }),
