@@ -11,6 +11,22 @@ import type {
 } from "@/domain/simulation/types";
 import type { Fleet } from "@/schema/fleet";
 import { flattenShipLeaves } from "@/schema/formation";
+import type { Doctrine } from "@/schema/ai";
+
+/**
+ * Resolve a ship's effective doctrine: the fleet-ship leaf doctrine overrides
+ * the design doctrine axis-by-axis (most-specific wins — a per-ship `stance`
+ * beats the design's), and the rule lists concatenate leaf-first then design
+ * (the more specific scope is evaluated before it falls through). Pure.
+ */
+function overlayDoctrine(
+  design: Doctrine | undefined,
+  leaf: Doctrine | undefined,
+): Doctrine {
+  const base = { ...(design?.base ?? {}), ...(leaf?.base ?? {}) };
+  const rules = [...(leaf?.rules ?? []), ...(design?.rules ?? [])];
+  return { base, rules };
+}
 import type { CellEdges, GridCell, SurfaceKind } from "@/schema/grid";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipDesign } from "@/schema/ship";
@@ -346,6 +362,10 @@ export function resolveFleetToCombatShips(
       crewPriority: design.crewPriority,
       shipStance: design.shipStance,
       rules: design.rules,
+      // The resolved authored doctrine (design overlaid by the leaf). Source of
+      // truth for the engine; the legacy trio/orders above stay only as the
+      // oracle fallback until they are dropped.
+      doctrine: overlayDoctrine(design.doctrine, deployed.doctrine),
       ...(modules.length > 0 ? { modules } : {}),
       ...(hardwires.length > 0 ? { hardwires } : {}),
       ...(outline.length > 0 ? { outline } : {}),

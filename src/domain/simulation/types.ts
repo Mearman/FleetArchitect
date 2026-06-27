@@ -5,7 +5,7 @@ import type { ShipClassification } from "@/schema/armor";
 import type { ModuleEffect } from "@/schema/module";
 import type { BattleAnomalyKind, BattleSide, ShipDescriptor } from "@/schema/battle";
 import type { Vec2 } from "@/schema/primitives";
-import type { CrewPriority, Rule, ShipStance } from "@/schema/ai";
+import type { CrewPriority, Doctrine, Rule, ShipStance } from "@/schema/ai";
 
 /**
  * A ship fully resolved for combat: identity + aggregate stats + deployment +
@@ -52,6 +52,14 @@ export interface CombatShip {
    * default.
    */
   rules: Rule[];
+  /**
+   * The resolved authored doctrine (design overlaid by the fleet-ship leaf),
+   * threaded by the resolver. The engine's source of truth; the legacy
+   * trio/orders above remain only as the oracle fallback until they are dropped.
+   * Conditionally-spread so a direct-constructed CombatShip (test fixtures)
+   * without it keeps an unchanged cache key.
+   */
+  doctrine?: Doctrine;
   /** Chamfered hull outline (computed at resolve from the grid's armor shell).
    *  Render-only; the engine snapshots it. */
   outline?: { x: number; y: number }[][];

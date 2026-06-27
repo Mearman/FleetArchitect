@@ -292,7 +292,7 @@ export function toSimShip(ship: CombatShip, rng: Rng): SimShip {
     crewPriority: ship.crewPriority,
     shipStance: ship.shipStance,
     rules: ship.rules,
-    doctrine: combatShipDoctrine(ship),
+    doctrine: ship.doctrine ?? combatShipDoctrine(ship),
     // Live AI decisions start "unset": no stance override, no flags raised. The
     // AI interpreter step rewrites them each tick from the effective AiState.
     ...defaultAiDecisions(),
