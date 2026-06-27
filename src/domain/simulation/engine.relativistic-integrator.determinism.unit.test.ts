@@ -35,7 +35,6 @@ import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulati
 import type { ModuleEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
 import type { CellEdges } from "@/schema/grid";
-import { defaultOrders } from "@/schema/fleet";
 
 const C = SPEED_OF_LIGHT_M_PER_TICK;
 
@@ -188,11 +187,10 @@ function ship(opts: {
     stats,
     position: { x: opts.x, y: 0 },
     facing: 0,
-    orders: { ...defaultOrders },
-    crewPriority: "combat",
-    shipStance: "balanced",
+    // Empty doctrine == legacy defaults: stance undefined -> balanced fallback,
+    // crew undefined -> combat, targeting undefined -> nearest.
+    doctrine: { base: {}, rules: [] },
     classification: "frigate",
-    rules: [],
     modules,
   };
 }

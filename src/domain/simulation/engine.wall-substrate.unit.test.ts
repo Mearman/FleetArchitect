@@ -7,7 +7,6 @@ import { toSimShip } from "@/domain/simulation/engine/setup";
 import type { SimShip } from "@/domain/simulation/engine/types";
 import { mulberry32 } from "@/domain/simulation/rng";
 import type { CombatShip, ResolvedModule } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
 import type { CellEdges } from "@/schema/grid";
 import type { ModuleEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
@@ -114,12 +113,23 @@ function combatShip(
     stats: stats(),
     position: { x: 0, y: 0 },
     facing: 0,
-    orders: { ...defaultOrders, engageRange: "hold" },
     classification: "frigate",
     modules,
-    shipStance: "balanced",
-    crewPriority: "combat",
-    rules: [],
+    // The legacy orders here carried only `engageRange: "hold"` (over the
+    // `defaultOrders` baseline); the rest of that baseline (balanced stance,
+    // nearest targeting, combat crew, no retreat) collapses to an empty base.
+    // The single non-default axis — hold range-keeping at the legacy default
+    // band of 0.3 — is preserved as a `hold` spatial objective.
+    doctrine: {
+      base: {
+        spatial: {
+          reference: { kind: "target" },
+          range: { kind: "hold", band: 0.3 },
+          bearing: { kind: "free" },
+        },
+      },
+      rules: [],
+    },
     ...over,
   };
 }

@@ -22,7 +22,6 @@ import type { CombatShip, ResolvedModule } from "@/domain/simulation/types";
 import type { ShipStats } from "@/domain/stats";
 import type { CellEdges } from "@/schema/grid";
 import type { ModuleEffect } from "@/schema/module";
-import { defaultOrders } from "@/schema/fleet";
 
 const OPEN: CellEdges = { n: "open", e: "open", s: "open", w: "open", doorStates: {} };
 
@@ -95,12 +94,12 @@ function buildSimShip(id: string, side: "attacker" | "defender"): SimShip {
     stats: stats(),
     position: { x: 0, y: 0 },
     facing: 0,
-    orders: { ...defaultOrders, engageRange: "hold" },
     classification: "frigate",
     modules: [hullModule(`${id}-h`)],
-    shipStance: "balanced",
-    crewPriority: "combat",
-    rules: [],
+    // Empty doctrine is legacy-equivalent (stance → balanced fallback,
+    // crew → combat, targeting → nearest) and is all the roster mechanics
+    // under test here require.
+    doctrine: { base: {}, rules: [] },
   };
   return toSimShip(combat, mulberry32(1));
 }

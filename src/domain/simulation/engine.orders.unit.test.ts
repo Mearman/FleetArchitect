@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import { sumCellHp } from "@/domain/simulation/test-cell-helpers";
 import type { CombatShip, BattleInputs, ResolvedModule } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
+import type { Doctrine } from "@/schema/ai";
 import type { ShipClassification } from "@/schema/armor";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
@@ -105,6 +105,69 @@ function omniSensor(detectionRange: number): ModuleEffect {
 }
 
 /**
+ * The legacy per-ship orders shape (orders/shipStance/crewPriority/rules were
+ * dropped from the schema in favour of doctrine). These tests still reason in
+ * that vocabulary — `ordersToDoctrine` maps each axis onto the doctrine base so
+ * the assertions keep their original intent.
+ */
+type LegacyOrders = {
+  stance?: "aggressive" | "balanced" | "defensive" | "evasive";
+  targetPriority?: "nearest" | "weakest" | "strongest" | "highestCost";
+  vulnerableTargetWeight?: number;
+  focusFire?: boolean;
+  formationKeeping?: number;
+  retreatThreshold?: number;
+  engageRange?: "short" | "medium" | "long" | "hold";
+  rangeKeepingBand?: number;
+};
+
+/** Fraction-of-weapon-range each legacy engageRange band maps to. */
+const ENGAGE_RANGE_FRACTION: Record<"short" | "medium" | "long", number> = {
+  short: 0.3,
+  medium: 0.55,
+  long: 0.85,
+};
+
+/**
+ * Map a legacy orders partial onto a doctrine base. Empty doctrine == legacy
+ * defaults (stance undefined -> balanced fallback, targeting undefined ->
+ * nearest, no spatial objective). Only axes the orders set are carried across.
+ */
+function ordersToDoctrine(orders: LegacyOrders): Doctrine {
+  const base: Doctrine["base"] = {};
+  if (orders.stance !== undefined) base.stance = orders.stance;
+  if (
+    orders.targetPriority !== undefined ||
+    orders.vulnerableTargetWeight !== undefined ||
+    orders.focusFire !== undefined
+  ) {
+    base.targeting = {
+      mode: { kind: orders.targetPriority ?? "nearest" },
+      vulnerableWeight: orders.vulnerableTargetWeight ?? 0,
+      focusFire: orders.focusFire ?? false,
+    };
+  }
+  if (orders.formationKeeping !== undefined) base.cohesion = orders.formationKeeping;
+  if (orders.retreatThreshold !== undefined) base.retreat = orders.retreatThreshold;
+  if (orders.engageRange !== undefined) {
+    const band = orders.rangeKeepingBand ?? 0;
+    base.spatial = {
+      reference: { kind: "target" },
+      range:
+        orders.engageRange === "hold"
+          ? { kind: "hold", band }
+          : {
+              kind: "engage",
+              fraction: ENGAGE_RANGE_FRACTION[orders.engageRange],
+              tolerance: band,
+            },
+      bearing: { kind: "free" },
+    };
+  }
+  return { base, rules: [] };
+}
+
+/**
  * The engine-module thrust that reproduces the legacy movement model's
  * terminal velocity on a per-module ship. Derived, not magic:
  *
@@ -186,7 +249,7 @@ function makeShip(opts: {
   cost?: number;
   weapons?: WeaponEffect[];
   classification?: ShipClassification;
-  orders?: Partial<typeof defaultOrders>;
+  orders?: LegacyOrders;
 }): CombatShip {
   const weapons = opts.weapons ?? [];
   const s = stats({
@@ -243,10 +306,7 @@ function makeShip(opts: {
     stats: s,
     position: { x: opts.x, y: opts.y },
     facing: opts.facing ?? 0,
-    orders: { ...defaultOrders, ...opts.orders },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: ordersToDoctrine(opts.orders ?? {}),
     classification: opts.classification ?? "frigate",
     modules,
   };

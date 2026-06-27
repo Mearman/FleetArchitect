@@ -3,10 +3,11 @@ import { resolveFleetToCombatShips } from "@/domain/resolve";
 import { runBattle } from "@/domain/simulation/engine";
 import { catalog } from "@/data/catalog";
 import { presetDesigns, presetFleets } from "@/data/presets";
-import { Fleet, defaultOrders } from "@/schema/fleet";
+import { Fleet } from "@/schema/fleet";
 import { flatFormation } from "@/schema/formation";
 import type { BattleInputs } from "@/domain/simulation/types";
 import type { BattleResult } from "@/schema/battle";
+import type { DoctrineAction } from "@/schema/ai";
 
 /**
  * Lethality regression guards for crewed Terran battles.
@@ -188,6 +189,25 @@ describe("engine.lethality — crewed Terran battles resolve decisively", () => 
 
 describe("engine.lethality — fast uncapped terminal-state guard", () => {
   /**
+   * Aggressive short-range doctrine: the legacy `defaultOrders` with
+   * `stance: "aggressive"` and `engageRange: "short"`, compiled to its doctrine
+   * equivalent so ships close and engage as quickly as possible. Authored once
+   * here (every ship in the inline fleet shares it) and typed as
+   * {@link DoctrineAction} so the discriminated-union literals resolve.
+   */
+  const aggressiveShortRange: DoctrineAction = {
+    stance: "aggressive",
+    targeting: { mode: { kind: "nearest" }, vulnerableWeight: 0, focusFire: false },
+    cohesion: 0,
+    retreat: 0,
+    spatial: {
+      reference: { kind: "target" },
+      range: { kind: "engage", fraction: 0.3, tolerance: 0.3 },
+      bearing: { kind: "free" },
+    },
+  };
+
+  /**
    * Builds a minimal inline fleet. Positions ships stacked vertically 40 m
    * apart at the given x offset from origin. Uses aggressive short-range orders
    * so ships close and engage as quickly as possible.
@@ -208,10 +228,9 @@ describe("engine.lethality — fast uncapped terminal-state guard", () => {
           designId,
           position: { x: baseX, y: (i - (designIds.length - 1) / 2) * 40 },
           facing,
-          orders: {
-            ...defaultOrders,
-            stance: "aggressive",
-            engageRange: "short",
+          doctrine: {
+            base: aggressiveShortRange,
+            rules: [],
           },
         })),
       ),

@@ -3,9 +3,14 @@ import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import { sumCellHp } from "@/domain/simulation/test-cell-helpers";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
+import type { Doctrine } from "@/schema/ai";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
+
+/** Empty doctrine — equivalent to the legacy defaults (stance undefined falls
+ *  back to balanced, crew to combat, targeting to nearest). Every ship in this
+ *  file holds position and fights with default behaviour. */
+const defaultDoctrine: Doctrine = { base: {}, rules: [] };
 
 
 const OPEN_EDGES: CellEdges = {
@@ -177,10 +182,7 @@ function ship(opts: {
     }),
     position: { x: opts.x, y: 0 },
     facing: opts.facing,
-    orders: defaultOrders,
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: defaultDoctrine,
     classification: "frigate",
     modules,
   };

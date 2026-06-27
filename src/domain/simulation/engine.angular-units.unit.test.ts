@@ -7,7 +7,6 @@ import type {
   CombatShip,
   ResolvedModule,
 } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
 import type { ModuleEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
 import { mulberry32 } from "@/domain/simulation/rng";
@@ -135,10 +134,21 @@ function reactionWheelShip(
     stats: shipStats({}),
     position: pos,
     facing,
-    orders: { ...defaultOrders, engageRange: "hold" },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: {
+      base: {
+        stance: "balanced",
+        crew: "combat",
+        targeting: { mode: { kind: "nearest" }, vulnerableWeight: 0, focusFire: false },
+        cohesion: 0,
+        retreat: 0,
+        spatial: {
+          reference: { kind: "target" },
+          range: { kind: "hold", band: 0.3 },
+          bearing: { kind: "free" },
+        },
+      },
+      rules: [],
+    },
     classification: "frigate",
     modules: [
       moduleOf("c", { kind: "power", output: 40 }, 0, 0, true),

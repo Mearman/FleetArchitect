@@ -12,10 +12,45 @@ import type { SimShip } from "@/domain/simulation/engine/types";
 import { mulberry32 } from "@/domain/simulation/rng";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
 import type { CellEdges } from "@/schema/grid";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
+import type { Doctrine } from "@/schema/ai";
+
+/**
+ * Hold-position doctrine: the legacy `orders.engageRange: "hold"` equivalent —
+ * station-keep at 0.3 (the legacy default `rangeKeepingBand`) of the range to
+ * the target, bearing free. Empty base otherwise == legacy defaults (stance
+ * undefined->balanced, crew undefined->combat, targeting undefined->nearest).
+ */
+const HOLD_POSITION_DOCTRINE: Doctrine = {
+  base: {
+    spatial: {
+      reference: { kind: "target" },
+      range: { kind: "hold", band: 0.3 },
+      bearing: { kind: "free" },
+    },
+  },
+  rules: [],
+};
+
+/**
+ * Aggressive short-engage doctrine: the legacy
+ * `orders.engageRange: "short" + stance: "aggressive"` equivalent — drive to
+ * 0.3 of own weapon range (point-blank) so the ships collide and ram, bearing
+ * free. Stance aggressive so the movement controller presses in.
+ */
+const AGGRESSIVE_SHORT_ENGAGE_DOCTRINE: Doctrine = {
+  base: {
+    stance: "aggressive",
+    spatial: {
+      reference: { kind: "target" },
+      range: { kind: "engage", fraction: 0.3, tolerance: 0.3 },
+      bearing: { kind: "free" },
+    },
+  },
+  rules: [],
+};
 
 /**
  * Phase 4 of the realism overhaul: explosive chain reactions (a reactor or
@@ -112,12 +147,9 @@ function combatShip(
     stats: stats(),
     position: { x: 0, y: 0 },
     facing: 0,
-    orders: { ...defaultOrders, engageRange: "hold" },
+    doctrine: HOLD_POSITION_DOCTRINE,
     classification: "frigate",
     modules,
-    shipStance: "balanced",
-    crewPriority: "combat",
-    rules: [],
     ...over,
   };
 }
@@ -385,7 +417,7 @@ function rammer(
       stats: stats({ thrust: 900 }),
       position,
       facing,
-      orders: { ...defaultOrders, engageRange: "short", stance: "aggressive" },
+      doctrine: AGGRESSIVE_SHORT_ENGAGE_DOCTRINE,
     },
   );
 }
@@ -525,11 +557,8 @@ describe("engine.damage — determinism", () => {
       stats: stats({ structure: 99_999, weapons: [{ slotId: "s", effect: beam }] }),
       position: { x: 0, y: 0 },
       facing: 0,
-      orders: { ...defaultOrders, engageRange: "hold" },
+      doctrine: HOLD_POSITION_DOCTRINE,
       classification: "frigate",
-      shipStance: "balanced",
-      crewPriority: "combat",
-      rules: [],
     };
     const target = combatShip(
       "tgt",

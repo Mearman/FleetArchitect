@@ -2,9 +2,27 @@ import type { CellEdges } from "@/schema/grid";
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
+import type { Doctrine } from "@/schema/ai";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
+
+/**
+ * Doctrine equivalent of the legacy `{ ...defaultOrders, engageRange: "hold" }`
+ * the fixtures below used to carry: hold station relative to the current target,
+ * so positions stay fixed and the attacker remains in salvage range from tick 1.
+ * Every other axis falls through to the empty-doctrine defaults (balanced
+ * stance, nearest targeting, combat crew priority).
+ */
+const HOLD_STATION_DOCTRINE: Doctrine = {
+  base: {
+    spatial: {
+      reference: { kind: "target" },
+      range: { kind: "hold", band: 0.05 },
+      bearing: { kind: "free" },
+    },
+  },
+  rules: [],
+};
 
 /**
  * Salvage mechanics: deterministic debris collection and hull claiming.
@@ -131,10 +149,7 @@ function attackerShip(id: string, x: number): CombatShip {
     stats: baseStats({ weapons: [] }),
     position: { x, y: 0 },
     facing: 0,
-    orders: { ...defaultOrders, engageRange: "hold" },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: HOLD_STATION_DOCTRINE,
     classification: "frigate",
     modules,
   };
@@ -172,10 +187,7 @@ function defenderShip(id: string, x: number): CombatShip {
     stats: baseStats({ thrust: 100 }),
     position: { x, y: 0 },
     facing: 0,
-    orders: { ...defaultOrders, engageRange: "hold" },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: HOLD_STATION_DOCTRINE,
     classification: "frigate",
     modules,
   };
@@ -222,10 +234,7 @@ function fragileDefenderShip(id: string, x: number): CombatShip {
     stats: baseStats({ thrust: 100 }),
     position: { x, y: 0 },
     facing: 0,
-    orders: { ...defaultOrders, engageRange: "hold" },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: HOLD_STATION_DOCTRINE,
     classification: "frigate",
     modules,
   };

@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
 
@@ -120,10 +119,16 @@ function modularShooter(id: string, x: number, ammo: number): CombatShip {
     stats,
     position: { x, y: 0 },
     facing: 0,
-    orders: { ...defaultOrders, engageRange: "hold" },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: {
+      base: {
+        spatial: {
+          reference: { kind: "target" },
+          range: { kind: "hold", band: 0.1 },
+          bearing: { kind: "free" },
+        },
+      },
+      rules: [],
+    },
     classification: "frigate",
     modules,
   };
@@ -161,10 +166,16 @@ function toughTarget(id: string, x: number): CombatShip {
     stats,
     position: { x, y: 0 },
     facing: Math.PI,
-    orders: { ...defaultOrders, engageRange: "hold" },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: {
+      base: {
+        spatial: {
+          reference: { kind: "target" },
+          range: { kind: "hold", band: 0.1 },
+          bearing: { kind: "free" },
+        },
+      },
+      rules: [],
+    },
     classification: "frigate",
   };
 }

@@ -10,11 +10,109 @@ import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulati
 import type { CellEdges } from "@/schema/grid";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipClassification } from "@/schema/armor";
-import { defaultOrders } from "@/schema/fleet";
-import type { Orders } from "@/schema/fleet";
+import type { Doctrine } from "@/schema/ai";
 import type { ShipStats } from "@/domain/stats";
 import { CELL_SIZE } from "@/domain/grid";
 import type { runBattle } from "@/domain/simulation/engine";
+
+/**
+ * Legacy per-ship orders vocabulary, retained only so the split factions-tech
+ * test files can keep passing `orders: { ... }` to these fixtures. The schema
+ * dropped `Orders` for the unified {@link Doctrine}; these fixtures translate
+ * the old axes onto doctrine at construction time (see {@link ordersToDoctrine}).
+ */
+type LegacyEngagementStance = "aggressive" | "balanced" | "defensive" | "evasive";
+type LegacyTargetPriority = "nearest" | "weakest" | "strongest" | "highestCost";
+type LegacyEngageRange = "short" | "medium" | "long" | "hold";
+
+type LegacyOrders = {
+  stance: LegacyEngagementStance;
+  targetPriority: LegacyTargetPriority;
+  engageRange: LegacyEngageRange;
+  retreatThreshold: number;
+  focusFire: boolean;
+  vulnerableTargetWeight: number;
+  formationKeeping: number;
+  rangeKeepingBand: number;
+};
+
+/** Legacy defaults — the values `defaultOrders` carried before the schema swap. */
+const defaultLegacyOrders: LegacyOrders = {
+  stance: "balanced",
+  targetPriority: "nearest",
+  engageRange: "medium",
+  retreatThreshold: 0,
+  focusFire: false,
+  vulnerableTargetWeight: 0,
+  formationKeeping: 0,
+  rangeKeepingBand: 0.3,
+};
+
+/** Fraction of own max weapon range each legacy `engageRange` band maps to. */
+const ENGAGE_RANGE_FRACTION: Record<LegacyEngageRange, number> = {
+  short: 0.3,
+  medium: 0.55,
+  long: 0.85,
+  hold: 0,
+};
+
+/**
+ * Compile a legacy `orders` override (merged over {@link defaultLegacyOrders}
+ * by the caller) into the doctrine the engine now reads. Each legacy axis maps
+ * onto the doctrine base axis of the same intent, so a test that set a specific
+ * order to exercise behaviour still asserts the same thing:
+ *
+ *  - stance                -> base.stance
+ *  - targetPriority        -> base.targeting.mode = { kind: <same> }
+ *  - vulnerableTargetWeight-> base.targeting.vulnerableWeight
+ *  - focusFire             -> base.targeting.focusFire
+ *  - formationKeeping      -> base.cohesion
+ *  - retreatThreshold      -> base.retreat
+ *  - engageRange + band    -> base.spatial (engage fraction, or hold band),
+ *                             referenced against the target, free bearing
+ *
+ * Empty/absent orders parse to an empty base, which is exactly the legacy
+ * default (stance undefined -> balanced fallback, crew undefined -> combat,
+ * targeting undefined -> nearest).
+ */
+function ordersToDoctrine(orders: Partial<LegacyOrders> | undefined): Doctrine {
+  const o = orders === undefined ? {} : orders;
+  const base: NonNullable<Doctrine["base"]> = {};
+  if (o.stance !== undefined) base.stance = o.stance;
+  if (o.retreatThreshold !== undefined) base.retreat = o.retreatThreshold;
+  if (o.formationKeeping !== undefined) base.cohesion = o.formationKeeping;
+  const anyTargeting =
+    o.targetPriority !== undefined ||
+    o.vulnerableTargetWeight !== undefined ||
+    o.focusFire !== undefined;
+  if (anyTargeting) {
+    base.targeting = {
+      mode: o.targetPriority !== undefined ? { kind: o.targetPriority } : { kind: "nearest" },
+      vulnerableWeight: o.vulnerableTargetWeight ?? 0,
+      focusFire: o.focusFire ?? false,
+    };
+  }
+  if (o.engageRange !== undefined) {
+    const band = o.rangeKeepingBand ?? defaultLegacyOrders.rangeKeepingBand;
+    base.spatial =
+      o.engageRange === "hold"
+        ? {
+            reference: { kind: "target" },
+            range: { kind: "hold", band },
+            bearing: { kind: "free" },
+          }
+        : {
+            reference: { kind: "target" },
+            range: {
+              kind: "engage",
+              fraction: ENGAGE_RANGE_FRACTION[o.engageRange],
+              tolerance: band,
+            },
+            bearing: { kind: "free" },
+          };
+  }
+  return { base, rules: [] };
+}
 
 /** Cell pitch (world units) these fixtures lay their grid cells out on. Kept
  *  at twice the engine cell size so a fixture's cells sit two contact-distances
@@ -237,7 +335,7 @@ export function modularShip(opts: {
   turnRate?: number;
   weapons?: WeaponEffect[];
   classification?: ShipClassification;
-  orders?: Partial<Orders>;
+  orders?: Partial<LegacyOrders>;
   /** Substrate HP of the hull/engine/sensor cells. Defaults to 50. Set to 0
    *  for a target dummy whose modules should be transparent to damage so
    *  every hit flows through to hull structure (mirroring the legacy
@@ -405,10 +503,7 @@ export function modularShip(opts: {
     stats,
     position: { x: opts.x, y: opts.y },
     facing: opts.facing ?? 0,
-    orders: { ...defaultOrders, ...opts.orders },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: ordersToDoctrine(opts.orders),
     classification: opts.classification ?? "frigate",
     modules,
   };
@@ -447,7 +542,7 @@ export function targetDummy(opts: {
   shieldRechargeDelay?: number;
   damageReduction?: number;
   classification?: ShipClassification;
-  orders?: Partial<Orders>;
+  orders?: Partial<LegacyOrders>;
   /** How many hull cells line the primary axis. More cells means more hits
    *  reach structure before the axis is shot clear and the dummy stops
    *  presenting an on-line target. Defaults to 5. */
@@ -538,10 +633,7 @@ export function targetDummy(opts: {
     stats,
     position: { x: opts.x, y: opts.y },
     facing: opts.facing ?? Math.PI,
-    orders: { ...defaultOrders, ...opts.orders },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: ordersToDoctrine(opts.orders),
     classification: opts.classification ?? "frigate",
     modules,
   };

@@ -3,7 +3,6 @@ import { resolveFleetToCombatShips } from "@/domain/resolve";
 import { runBattle } from "@/domain/simulation/engine";
 import { catalog } from "@/data/catalog";
 import { createId, nowIso } from "@/domain/id";
-import { defaultOrders } from "@/schema/fleet";
 import type { Fleet } from "@/schema/fleet";
 import { flatFormation } from "@/schema/formation";
 import type { CellEdges, GridCell } from "@/schema/grid";
@@ -46,9 +45,7 @@ function armedFighter(id: string): ShipDesign {
     updatedAt: nowIso(),
     source: "user",
     revision: 1,
-    shipStance: "balanced",
-    crewPriority: "combat",
-    rules: [],
+    doctrine: { base: {}, rules: [] },
   };
 }
 
@@ -62,13 +59,11 @@ function fleet(id: string, designId: string): Fleet {
         designId,
         position: { x: -300, y: -80 },
         facing: 0,
-        orders: { ...defaultOrders },
       },
       {
         designId,
         position: { x: -300, y: 80 },
         facing: 0,
-        orders: { ...defaultOrders },
       },
     ]),
     createdAt: nowIso(),

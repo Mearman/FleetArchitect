@@ -4,7 +4,7 @@ import { runBattle } from "@/domain/simulation/engine";
 import { CELL_SIZE } from "@/domain/grid";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
+import type { Doctrine } from "@/schema/ai";
 import type { ModuleEffect, PointDefenseEffect, WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
 
@@ -142,10 +142,7 @@ function modularAttacker(id: string): CombatShip {
     stats,
     position: { x: 0, y: 0 },
     facing: 0,
-    orders: { ...defaultOrders, engageRange: "hold" },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: holdDoctrine,
     classification: "frigate",
     modules,
   };
@@ -200,14 +197,28 @@ function modularDefender(id: string, withPd: boolean): CombatShip {
     stats,
     position: { x: 80, y: 0 },
     facing: Math.PI,
-    orders: { ...defaultOrders, engageRange: "hold" },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: holdDoctrine,
     classification: "frigate",
     modules,
   };
 }
+
+/**
+ * Doctrine equivalent of the legacy `defaultOrders` with `engageRange: "hold"`
+ * (and the default `rangeKeepingBand: 0.3`): hold station within a 0.3 band of
+ * the target, bearing free. Stance/targeting/cohesion left absent so they fall
+ * through to the legacy-equivalent defaults (balanced stance, nearest target).
+ */
+const holdDoctrine: Doctrine = {
+  base: {
+    spatial: {
+      reference: { kind: "target" },
+      range: { kind: "hold", band: 0.3 },
+      bearing: { kind: "free" },
+    },
+  },
+  rules: [],
+};
 
 function inputs(ships: CombatShip[]): BattleInputs {
   return {

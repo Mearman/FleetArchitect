@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import { sumCellHp } from "@/domain/simulation/test-cell-helpers";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
+import type { Doctrine } from "@/schema/ai";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
 
@@ -15,6 +15,10 @@ const OPEN_EDGES: CellEdges = {
   w: "open",
   doorStates: {},
 };
+
+/** Empty doctrine == legacy defaults: stance undefined -> balanced fallback,
+ *  crew undefined -> combat, targeting undefined -> nearest. */
+const DEFAULT_DOCTRINE: Doctrine = { base: {}, rules: [] };
 
 /**
  * World-state entities (factions update): proximity mines laid by mine-layer
@@ -155,10 +159,7 @@ function ship(opts: {
     }),
     position: { x: opts.x, y: 0 },
     facing: opts.facing,
-    orders: defaultOrders,
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: DEFAULT_DOCTRINE,
     classification: "frigate",
     modules,
   };

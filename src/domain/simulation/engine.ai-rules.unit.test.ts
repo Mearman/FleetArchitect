@@ -19,7 +19,7 @@ import { describe, expect, it } from "vitest";
 
 import { runBattle } from "@/domain/simulation/engine";
 import type { BattleInputs, CombatShip } from "@/domain/simulation/types";
-import type { Rule } from "@/schema/ai";
+import type { DoctrineRule, SpatialObjective } from "@/schema/ai";
 import type { WeaponEffect } from "@/schema/module";
 
 import { modularShip } from "./engine.factions-tech-helpers";
@@ -47,15 +47,24 @@ function cannon(over: Partial<WeaponEffect> = {}): WeaponEffect {
  *  defender whose `shieldBelow → retreat` rule fires once its shield is chipped
  *  down, steering it away from the nearest threat. Fixed seed and tick cap. */
 function retreatBattle(seed: number, maxTicks: number): BattleInputs {
-  const retreatRule: Rule = {
-    trigger: { kind: "shieldBelow", fraction: 0.5 },
-    action: { kind: "retreat" },
+  const retreatRule: DoctrineRule = {
+    condition: { kind: "shieldBelow", fraction: 0.5 },
+    then: { stance: "retreat" },
   };
   // A `setStance` rule on the attacker so the stance-override path (range rescale
   // + targeting bias) is exercised too, not only the retreat branch.
-  const aggressiveRule: Rule = {
-    trigger: { kind: "structureBelow", fraction: 1 },
-    action: { kind: "setStance", stance: "aggressive" },
+  const aggressiveRule: DoctrineRule = {
+    condition: { kind: "structureBelow", fraction: 1 },
+    then: { stance: "aggressive" },
+  };
+  // The legacy `orders: { engageRange: "medium" }` maps onto a doctrine base
+  // spatial objective: engage at 0.55 of the ship's own max weapon range (the
+  // medium band), bearing free relative to the current target. Both ships share
+  // it so the closing/range-keeping behaviour the test relies on is preserved.
+  const mediumEngageSpatial: SpatialObjective = {
+    reference: { kind: "target" },
+    range: { kind: "engage", fraction: 0.55, tolerance: 0 },
+    bearing: { kind: "free" },
   };
   const attacker: CombatShip = {
     ...modularShip({
@@ -73,7 +82,7 @@ function retreatBattle(seed: number, maxTicks: number): BattleInputs {
       weapons: [cannon()],
       orders: { engageRange: "medium" },
     }),
-    rules: [aggressiveRule],
+    doctrine: { base: { spatial: mediumEngageSpatial }, rules: [aggressiveRule] },
   };
   const defender: CombatShip = {
     ...modularShip({
@@ -93,7 +102,7 @@ function retreatBattle(seed: number, maxTicks: number): BattleInputs {
       weapons: [cannon()],
       orders: { engageRange: "medium" },
     }),
-    rules: [retreatRule],
+    doctrine: { base: { spatial: mediumEngageSpatial }, rules: [retreatRule] },
   };
   return {
     ships: [attacker, defender],

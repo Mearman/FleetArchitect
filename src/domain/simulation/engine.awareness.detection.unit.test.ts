@@ -14,7 +14,6 @@ import {
   ship,
 } from "@/domain/simulation/engine.awareness-helpers";
 import type { ShipStats } from "@/domain/stats";
-import { defaultOrders } from "@/schema/fleet";
 
 // ---------------------------------------------------------------------------
 // 1. Determinism
@@ -289,10 +288,7 @@ describe("engine.awareness — faithful fog (no omniscience)", () => {
       // in place when blind (see engine.movement-modes "hold orders"). These
       // mobile ships use the default engage range so they genuinely close on the
       // enemy and acquire them within visual range.
-      orders: { ...defaultOrders },
-      crewPriority: "combat",
-      shipStance: "balanced",
-      rules: [],
+      doctrine: { base: {}, rules: [] },
       classification: "frigate",
     };
   }

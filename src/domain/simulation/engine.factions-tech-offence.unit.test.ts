@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import type { CombatShip, ResolvedModule } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
+import type { Doctrine } from "@/schema/ai";
 import {
   baseStats,
   beam,
@@ -9,6 +9,14 @@ import {
   inputs,
   moduleOf,
 } from "./engine.factions-tech-helpers";
+
+/**
+ * The doctrine equivalent of the legacy `defaultOrders` — every axis left
+ * unset so the engine falls back to its built-in defaults (stance balanced,
+ * targeting nearest, crew combat), which match the legacy scalar defaults.
+ * Used by fixtures that previously spread `defaultOrders` unmodified.
+ */
+const defaultDoctrine: Doctrine = { base: {}, rules: [] };
 
 // ---------------------------------------------------------------------------
 // Overcharge
@@ -83,10 +91,9 @@ describe("engine.factions-tech – overcharge", () => {
       }),
       position: { x: 0, y: 0 },
       facing: 0,
-      orders: { ...defaultOrders, stance: "aggressive" },
-      crewPriority: "combat",
-      shipStance: "balanced",
-      rules: [],
+      // doctrine.base.stance replaces the legacy `orders.stance: "aggressive"`;
+      // the other axes fall through to engine defaults (== legacy defaults).
+      doctrine: { base: { stance: "aggressive" }, rules: [] },
       classification: "frigate",
       modules,
     };
@@ -108,10 +115,18 @@ describe("engine.factions-tech – overcharge", () => {
       stats: baseStats({ structure: 500, weapons: [] }),
       position: { x: 150, y: 0 },
       facing: Math.PI,
-      orders: { ...defaultOrders, engageRange: "hold" },
-      crewPriority: "combat",
-      shipStance: "balanced",
-      rules: [],
+      // doctrine.base.spatial replaces `orders: { ...defaultOrders, engageRange: "hold" }`.
+      // hold station-keeps within band 0.3 (the legacy default rangeKeepingBand).
+      doctrine: {
+        base: {
+          spatial: {
+            reference: { kind: "target" },
+            range: { kind: "hold", band: 0.3 },
+            bearing: { kind: "free" },
+          },
+        },
+        rules: [],
+      },
       classification: "frigate",
     };
     const withOC = runBattle(inputs([powerStressedShip(true), weakDefender], 300));
@@ -136,10 +151,16 @@ describe("engine.factions-tech – overcharge", () => {
       stats: baseStats({ structure: 300, weapons: [] }),
       position: { x: 150, y: 0 },
       facing: Math.PI,
-      orders: { ...defaultOrders, engageRange: "hold" },
-      crewPriority: "combat",
-      shipStance: "balanced",
-      rules: [],
+      doctrine: {
+        base: {
+          spatial: {
+            reference: { kind: "target" },
+            range: { kind: "hold", band: 0.3 },
+            bearing: { kind: "free" },
+          },
+        },
+        rules: [],
+      },
       classification: "frigate",
     };
     const withOC = runBattle(inputs([powerStressedShip(true), weakDefender], 80));
@@ -181,10 +202,16 @@ describe("engine.factions-tech – command aura", () => {
       stats: baseStats({ structure: 99999, weapons: [] }),
       position: { x: 50, y: 0 },
       facing: 0,
-      orders: { ...defaultOrders, engageRange: "hold" },
-      crewPriority: "combat",
-      shipStance: "balanced",
-      rules: [],
+      doctrine: {
+        base: {
+          spatial: {
+            reference: { kind: "target" },
+            range: { kind: "hold", band: 0.3 },
+            bearing: { kind: "free" },
+          },
+        },
+        rules: [],
+      },
       classification: "frigate",
       modules: [
         moduleOf("p1", { kind: "power", output: 100 }, 0, 0, 50, 5, 0),
@@ -225,10 +252,16 @@ describe("engine.factions-tech – command aura", () => {
       }),
       position: { x: 0, y: 0 },
       facing: 0,
-      orders: { ...defaultOrders, engageRange: "hold" },
-      crewPriority: "combat",
-      shipStance: "balanced",
-      rules: [],
+      doctrine: {
+        base: {
+          spatial: {
+            reference: { kind: "target" },
+            range: { kind: "hold", band: 0.3 },
+            bearing: { kind: "free" },
+          },
+        },
+        rules: [],
+      },
       classification: "frigate",
       modules: [
         moduleOf("p1", { kind: "power", output: 100 }, 0, 0, 50, 5, 0),
@@ -259,10 +292,16 @@ describe("engine.factions-tech – command aura", () => {
       stats: baseStats({ structure: 5000, weapons: [] }),
       position: { x: 250, y: 0 },
       facing: Math.PI,
-      orders: { ...defaultOrders, engageRange: "hold" },
-      crewPriority: "combat",
-      shipStance: "balanced",
-      rules: [],
+      doctrine: {
+        base: {
+          spatial: {
+            reference: { kind: "target" },
+            range: { kind: "hold", band: 0.3 },
+            bearing: { kind: "free" },
+          },
+        },
+        rules: [],
+      },
       classification: "frigate",
     };
   }
@@ -371,10 +410,7 @@ describe("engine.factions-tech – determinism (non-tech designs)", () => {
       }),
       position: { x, y: 0 },
       facing: side === "attacker" ? 0 : Math.PI,
-      orders: defaultOrders,
-      crewPriority: "combat",
-      shipStance: "balanced",
-      rules: [],
+      doctrine: defaultDoctrine,
       classification: "frigate",
       modules,
     };

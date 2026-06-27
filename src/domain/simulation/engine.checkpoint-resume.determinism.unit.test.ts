@@ -34,8 +34,8 @@ import type {
 import type { BattleFrame } from "@/schema/battle";
 import type { EngineCheckpoint } from "@/schema/checkpoint";
 import type { CellEdges } from "@/schema/grid";
+import type { Doctrine } from "@/schema/ai";
 import type { ModuleEffect } from "@/schema/module";
-import { defaultOrders } from "@/schema/fleet";
 import type { ShipStats } from "@/domain/stats";
 
 const OPEN_EDGES: CellEdges = {
@@ -44,6 +44,21 @@ const OPEN_EDGES: CellEdges = {
   s: "open",
   w: "open",
   doorStates: {},
+};
+
+/** Hold-station doctrine: the legacy `defaultOrders` with `engageRange: "hold"`
+ *  re-expressed on the spatial axis — station-keep within band of the target.
+ *  Every other axis is left at the doctrine default (balanced stance fallback,
+ *  combat crew, nearest targeting), matching the legacy `defaultOrders` baseline. */
+const HOLD_DOCTRINE: Doctrine = {
+  base: {
+    spatial: {
+      reference: { kind: "target" },
+      range: { kind: "hold", band: 0.3 },
+      bearing: { kind: "free" },
+    },
+  },
+  rules: [],
 };
 
 /** A cannon that spawns projectile entities (projectileSpeed > 0), so the
@@ -153,10 +168,7 @@ function crewedShooter(
     stats: statsFor(99999),
     position: { x, y: 0 },
     facing: 0,
-    orders: { ...defaultOrders, engageRange: "hold" },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: HOLD_DOCTRINE,
     classification: "frigate",
     modules,
   };
@@ -177,10 +189,7 @@ function toughTarget(
     stats: statsFor(1_000_000),
     position: { x, y: 0 },
     facing: Math.PI,
-    orders: { ...defaultOrders, engageRange: "hold" },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: HOLD_DOCTRINE,
     classification: "frigate",
   };
 }

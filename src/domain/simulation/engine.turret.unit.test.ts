@@ -4,7 +4,7 @@ import { CELL_SIZE } from "@/domain/grid";
 import { runBattle } from "@/domain/simulation/engine";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
+import type { Doctrine } from "@/schema/ai";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
 
@@ -37,6 +37,23 @@ const OPEN_EDGES: CellEdges = {
 
 /** The muzzle clearance the engine spawns projectiles at, in world units. */
 const MUZZLE_OFFSET = CELL_SIZE / 2;
+
+/**
+ * Doctrine equivalent of the legacy `{ ...defaultOrders, engageRange: "hold" }`:
+ * every axis at its default (balanced stance, nearest targeting, no focus fire,
+ * no cohesion, no retreat) except range, which holds station within a 0.3 band
+ * of the target so the ship's heading never changes.
+ */
+const HOLD_STATION_DOCTRINE: Doctrine = {
+  base: {
+    spatial: {
+      reference: { kind: "target" },
+      range: { kind: "hold", band: 0.3 },
+      bearing: { kind: "free" },
+    },
+  },
+  rules: [],
+};
 
 function cannon(over: Partial<WeaponEffect> = {}): WeaponEffect {
   return {
@@ -136,10 +153,7 @@ function weaponShip(id: string, weapon: WeaponEffect): CombatShip {
     stats: statsBlock(),
     position: { x: 0, y: 0 },
     facing: 0,
-    orders: { ...defaultOrders, engageRange: "hold" },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: HOLD_STATION_DOCTRINE,
     classification: "frigate",
     modules,
   };
@@ -155,10 +169,7 @@ function targetAt(id: string, x: number, y: number): CombatShip {
     stats: { ...statsBlock(), structure: 1_000_000 },
     position: { x, y },
     facing: Math.PI,
-    orders: { ...defaultOrders, engageRange: "hold" },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: HOLD_STATION_DOCTRINE,
     classification: "frigate",
   };
 }

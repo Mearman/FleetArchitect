@@ -6,7 +6,7 @@ import { toSimShip } from "@/domain/simulation/engine/setup";
 import { shipForceAndTorque } from "@/domain/simulation/engine/physics";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
+import type { Doctrine } from "@/schema/ai";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
 
@@ -17,6 +17,42 @@ const OPEN_EDGES: CellEdges = {
   s: "open",
   w: "open",
   doorStates: {},
+};
+
+/**
+ * Doctrine equivalents of the legacy `defaultOrders` presets these fixtures
+ * used. The engine now reads `SimShip.doctrine` only; the legacy
+ * `orders` / `shipStance` / `crewPriority` / `rules` fields are gone.
+ *
+ * - `HOLD_DOCTRINE` — was `{ ...defaultOrders, engageRange: "hold" }`: hold at
+ *   the default range-keeping band (0.3) of the current target, bearing free.
+ *   Empty base otherwise == legacy defaults (stance balanced, crew combat,
+ *   targeting nearest). Used by every ship that should neither move under its
+ *   own thrust nor turn — any velocity it gains is purely from impulses.
+ * - `ENGAGE_MEDIUM_DOCTRINE` — was plain `defaultOrders`: close to the
+ *   medium-range fraction (0.55) of max weapon range, tolerance 0.3, bearing
+ *   free. Used where a ship must actually thrust (the engine fires).
+ */
+const HOLD_RANGE_BAND = 0.3;
+const HOLD_DOCTRINE: Doctrine = {
+  base: {
+    spatial: {
+      reference: { kind: "target" },
+      range: { kind: "hold", band: HOLD_RANGE_BAND },
+      bearing: { kind: "free" },
+    },
+  },
+  rules: [],
+};
+const ENGAGE_MEDIUM_DOCTRINE: Doctrine = {
+  base: {
+    spatial: {
+      reference: { kind: "target" },
+      range: { kind: "engage", fraction: 0.55, tolerance: HOLD_RANGE_BAND },
+      bearing: { kind: "free" },
+    },
+  },
+  rules: [],
 };
 
 /**
@@ -124,7 +160,7 @@ function stats(over: Partial<ShipStats> = {}): ShipStats {
 
 /** A modular ship with a power module at the origin (the command module)
  *  and whatever other modules the caller supplies. Sits at the given world
- *  position with the given facing and uses `hold` orders so it neither
+ *  position with the given facing and uses hold doctrine so it neither
  *  moves under its own thrust nor turns — any velocity it gains is purely
  *  from impulses. */
 function modularShip(
@@ -148,10 +184,7 @@ function modularShip(
     }),
     position,
     facing,
-    orders: { ...defaultOrders, engageRange: "hold" },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: HOLD_DOCTRINE,
     classification: "frigate",
     modules: all,
   };
@@ -431,8 +464,8 @@ describe("engine.rigidbody — moment of inertia and engine torque", () => {
       ),
     ]);
     const target = modularShip("d1", "defender", { x: 0, y: 500 }, 0, []);
-    // Use non-hold orders so the ship actually thrusts.
-    ship.orders = defaultOrders;
+    // Use non-hold doctrine so the ship actually thrusts.
+    ship.doctrine = ENGAGE_MEDIUM_DOCTRINE;
     const result = runBattle(inputs([ship, target]));
     // Wait several ticks for any angVel to manifest; compare facing.
     const a = result.frames[5];
@@ -503,10 +536,7 @@ describe("engine.rigidbody — break-apart chunks", () => {
       }),
       position: { x: 0, y: 0 },
       facing: 0,
-      orders: { ...defaultOrders, engageRange: "hold" },
-      crewPriority: "combat",
-      shipStance: "balanced",
-      rules: [],
+      doctrine: HOLD_DOCTRINE,
       classification: "frigate",
     };
     // Defender faces π so its local -x edge faces the attacker. Modules
@@ -524,10 +554,7 @@ describe("engine.rigidbody — break-apart chunks", () => {
       stats: stats({ structure: 5000 }),
       position: { x: 80, y: 0 },
       facing: Math.PI,
-      orders: { ...defaultOrders, engageRange: "hold" },
-      crewPriority: "combat",
-      shipStance: "balanced",
-      rules: [],
+      doctrine: HOLD_DOCTRINE,
       classification: "frigate",
       modules: [
         moduleOf("h1", { kind: "hull" }, -14, 0, 1, 5, true),

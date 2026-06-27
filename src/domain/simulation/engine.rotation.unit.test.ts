@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import { ACCEL_PER_TICK_FROM_SI } from "@/domain/simulation/types";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
+import type { Doctrine } from "@/schema/ai";
 import type { ModuleEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
 
@@ -16,6 +16,25 @@ import type { ShipStats } from "@/domain/stats";
  * the ship turns at the same visible rate the bang-bang assertions were tuned to.
  */
 const RCS_TORQUE = 0.5 / ACCEL_PER_TICK_FROM_SI;
+
+/**
+ * Doctrine equivalent of the legacy `{ ...defaultOrders, engageRange: "hold" }`
+ * the rotation fixtures previously used: hold station within a 0.3 band of the
+ * target (defaultOrders.rangeKeepingBand), free bearing, and otherwise empty
+ * (stance/targeting fall back to the engine's balanced/nearest defaults, which
+ * is what defaultOrders provided). Rotation behaviour is independent of the
+ * targeting/stance axes, so only the spatial hold-range needs expressing.
+ */
+const HOLD_DOCTRINE: Doctrine = {
+  base: {
+    spatial: {
+      reference: { kind: "target" },
+      range: { kind: "hold", band: 0.3 },
+      bearing: { kind: "free" },
+    },
+  },
+  rules: [],
+};
 
 const OPEN_EDGES: CellEdges = {
   n: "open",
@@ -134,10 +153,7 @@ function rcsShip(
     stats: shipStats({}),
     position: pos,
     facing,
-    orders: { ...defaultOrders, engageRange: "hold" },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: HOLD_DOCTRINE,
     classification: "frigate",
     modules: [
       moduleOf("c", { kind: "power", output: 40 }, 0, 0, true),
@@ -174,10 +190,7 @@ function noTorqueShip(
     stats: shipStats({}),
     position: pos,
     facing,
-    orders: { ...defaultOrders, engageRange: "hold" },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: HOLD_DOCTRINE,
     classification: "frigate",
     modules: [
       moduleOf("c", { kind: "power", output: 40 }, 0, 0, true),
@@ -337,10 +350,7 @@ describe("bang-bang attitude control", () => {
         stats: shipStats({}),
         position: { x: 0, y: 0 },
         facing: 0,
-        orders: { ...defaultOrders, engageRange: "hold" },
-        crewPriority: "combat",
-        shipStance: "balanced",
-        rules: [],
+        doctrine: HOLD_DOCTRINE,
         classification: "frigate",
         modules: [
           moduleOf("c", { kind: "power", output: 40 }, 0, 0, true),
@@ -365,10 +375,7 @@ describe("bang-bang attitude control", () => {
         stats: shipStats({}),
         position: { x: 100, y: 0 },
         facing: 0,
-        orders: { ...defaultOrders, engageRange: "hold" },
-        crewPriority: "combat",
-        shipStance: "balanced",
-        rules: [],
+        doctrine: HOLD_DOCTRINE,
         classification: "frigate",
         modules: [
           moduleOf("c", { kind: "power", output: 40 }, 0, 0, true),

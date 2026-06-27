@@ -6,7 +6,6 @@ import { toSimShip } from "@/domain/simulation/engine/setup";
 import { availableThrust, shipForceAndTorque } from "@/domain/simulation/engine/physics";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
 import type { ModuleEffect, EngineEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
 
@@ -111,7 +110,7 @@ function modularShip(
   modules: ResolvedModule[],
   position: { x: number; y: number },
   facing: number,
-  orders = defaultOrders,
+  doctrine: CombatShip["doctrine"] = { base: {}, rules: [] },
 ): CombatShip {
   const stats: ShipStats = {
     mass: 10,
@@ -143,10 +142,7 @@ function modularShip(
     stats,
     position,
     facing,
-    orders,
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine,
     classification: "frigate",
     modules,
   };
@@ -154,7 +150,8 @@ function modularShip(
 
 /** A stationary target at a given position — used to give modular ships
  *  something to chase so the per-tick movement loop actually runs. The
- *  target is held in place by giving it zero thrust and `hold` orders. */
+ *  target is held in place by giving it zero thrust and a hold-station
+ *  spatial doctrine (legacy `engageRange: "hold"`). */
 function dummy(id: string, x: number, y = 0): CombatShip {
   const stats: ShipStats = {
     mass: 10,
@@ -184,10 +181,16 @@ function dummy(id: string, x: number, y = 0): CombatShip {
     stats,
     position: { x, y },
     facing: 0,
-    orders: { ...defaultOrders, engageRange: "hold" },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: {
+      base: {
+        spatial: {
+          reference: { kind: "target" },
+          range: { kind: "hold", band: 0.3 },
+          bearing: { kind: "free" },
+        },
+      },
+      rules: [],
+    },
     classification: "frigate",
   };
 }

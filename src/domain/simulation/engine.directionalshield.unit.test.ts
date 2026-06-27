@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
+import type { Doctrine } from "@/schema/ai";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
 
@@ -14,6 +14,27 @@ const OPEN_EDGES: CellEdges = {
   s: "open",
   w: "open",
   doorStates: {},
+};
+
+/**
+ * Shared doctrine for the stationary test fixtures. Maps the legacy
+ * `{ ...defaultOrders, engageRange: "hold" }` (rangeKeepingBand defaulted to
+ * 0.3) plus `shipStance: "balanced"` and `crewPriority: "combat"` onto the
+ * doctrine axes: hold station relative to the target at band 0.3, balanced
+ * stance, combat crew. Ships still drift to/hold at their deploy range rather
+ * than closing, which is what the directional-shield assertions rely on.
+ */
+const HOLD_DOCTRINE: Doctrine = {
+  base: {
+    stance: "balanced",
+    crew: "combat",
+    spatial: {
+      reference: { kind: "target" },
+      range: { kind: "hold", band: 0.3 },
+      bearing: { kind: "free" },
+    },
+  },
+  rules: [],
 };
 
 /**
@@ -162,10 +183,7 @@ function modularDefender(id: string): CombatShip {
     stats,
     position: { x: 0, y: 0 },
     facing: 0,
-    orders: { ...defaultOrders, engageRange: "hold" },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: HOLD_DOCTRINE,
     classification: "frigate",
     modules,
   };
@@ -216,10 +234,7 @@ function frontAttacker(id: string): CombatShip {
     stats,
     position: { x: -80, y: 0 },
     facing: 0,
-    orders: { ...defaultOrders, engageRange: "hold" },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: HOLD_DOCTRINE,
     classification: "frigate",
     modules,
   };
@@ -270,10 +285,7 @@ function rearAttacker(id: string): CombatShip {
     stats,
     position: { x: 80, y: 0 },
     facing: Math.PI,
-    orders: { ...defaultOrders, engageRange: "hold" },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: HOLD_DOCTRINE,
     classification: "frigate",
     modules,
   };

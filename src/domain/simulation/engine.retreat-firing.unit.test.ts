@@ -3,10 +3,64 @@ import { runBattle } from "@/domain/simulation/engine";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import { sumCellHp } from "@/domain/simulation/test-cell-helpers";
 import type { CombatShip, BattleInputs } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
 import type { ShipClassification } from "@/schema/armor";
 import type { WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
+import type { Doctrine, DoctrineAction } from "@/schema/ai";
+
+/**
+ * Legacy `orders` shape this fixture previously accepted. The schema dropped
+ * `orders`, but the test's intent is expressed in those terms (a retreat
+ * threshold, a hold-range stance), so the helper keeps the old vocabulary and
+ * compiles it to a doctrine `base` — mirroring `compileOrdersToBase` in
+ * `schema/fleet-normalise.ts`. Only the axes the test exercises are carried;
+ * everything else falls through to the empty-doctrine defaults (stance
+ * undefined -> balanced fallback, crew undefined -> combat, targeting
+ * undefined -> nearest).
+ */
+interface LegacyOrders {
+  retreatThreshold?: number;
+  engageRange?: "short" | "medium" | "long" | "hold";
+  rangeKeepingBand?: number;
+}
+
+/** Legacy `defaultOrders` carry-over: the band a `hold`/engage range keeps. */
+const DEFAULT_RANGE_KEEPING_BAND = 0.3;
+
+const ENGAGE_FRACTION: Record<"short" | "medium" | "long", number> = {
+  short: 0.3,
+  medium: 0.55,
+  long: 0.85,
+};
+
+/** Compile the subset of legacy `orders` this fixture uses to a doctrine base. */
+function ordersToBase(orders: LegacyOrders): DoctrineAction {
+  const base: DoctrineAction = {};
+  if (typeof orders.retreatThreshold === "number") base.retreat = orders.retreatThreshold;
+  if (typeof orders.engageRange === "string") {
+    const band = orders.rangeKeepingBand ?? DEFAULT_RANGE_KEEPING_BAND;
+    // Contextual typing against `base.spatial` narrows the discriminated range
+    // literal without an assertion.
+    if (orders.engageRange === "hold") {
+      base.spatial = {
+        reference: { kind: "target" },
+        range: { kind: "hold", band },
+        bearing: { kind: "free" },
+      };
+    } else {
+      base.spatial = {
+        reference: { kind: "target" },
+        range: {
+          kind: "engage",
+          fraction: ENGAGE_FRACTION[orders.engageRange],
+          tolerance: band,
+        },
+        bearing: { kind: "free" },
+      };
+    }
+  }
+  return base;
+}
 
 /**
  * Haiku-tier: a ship whose structure drops below its retreatThreshold must
@@ -43,7 +97,7 @@ function makeShip(opts: {
   structure?: number;
   weapons?: WeaponEffect[];
   classification?: ShipClassification;
-  orders?: Partial<typeof defaultOrders>;
+  orders?: LegacyOrders;
 }): CombatShip {
   const weapons = opts.weapons ?? [];
   const stats: ShipStats = {
@@ -66,6 +120,7 @@ function makeShip(opts: {
     compartments: 0,
   airtightCompartments: 0,
 };
+  const doctrine: Doctrine = { base: ordersToBase(opts.orders ?? {}), rules: [] };
   return {
     instanceId: opts.id,
     designId: `design-${opts.id}`,
@@ -74,10 +129,7 @@ function makeShip(opts: {
     stats,
     position: { x: opts.x, y: opts.y },
     facing: opts.facing ?? 0,
-    orders: { ...defaultOrders, ...opts.orders },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine,
     classification: (opts.classification ?? "frigate"),
   };
 }

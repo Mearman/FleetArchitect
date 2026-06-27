@@ -105,9 +105,7 @@ describe("seedPresets — legacy record migration", () => {
       updatedAt: nowIso(),
       source: "user",
       revision: 1,
-      shipStance: "balanced",
-      crewPriority: "combat",
-      rules: [],
+      doctrine: { base: {}, rules: [] },
     });
 
     await seedPresets();

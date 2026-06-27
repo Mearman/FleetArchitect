@@ -4,7 +4,7 @@ import { runBattle } from "@/domain/simulation/engine";
 import { countAlive, hasDeadCell } from "@/domain/simulation/test-cell-helpers";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
+import type { Doctrine } from "@/schema/ai";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
 
@@ -117,10 +117,7 @@ function hammerShip(id: string, x: number): CombatShip {
     stats,
     position: { x, y: 0 },
     facing: 0,
-    orders: { ...defaultOrders, engageRange: "hold" },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: HOLD_DOCTRINE,
     classification: "frigate",
   };
 }
@@ -163,14 +160,28 @@ function modularDefender(id: string, x: number): CombatShip {
     stats,
     position: { x, y: 0 },
     facing: Math.PI,
-    orders: { ...defaultOrders, engageRange: "hold" },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: HOLD_DOCTRINE,
     classification: "frigate",
     modules,
   };
 }
+
+/**
+ * Doctrine equivalent of the legacy `{ ...defaultOrders, engageRange: "hold" }`
+ * both fixtures used: hold station at range (band 0.3, the legacy default), all
+ * other axes left empty so the engine's legacy-equivalent fallbacks apply
+ * (stance -> balanced, crew -> combat, targeting -> nearest).
+ */
+const HOLD_DOCTRINE: Doctrine = {
+  base: {
+    spatial: {
+      reference: { kind: "target" },
+      range: { kind: "hold", band: 0.3 },
+      bearing: { kind: "free" },
+    },
+  },
+  rules: [],
+};
 
 function inputs(ships: CombatShip[]): BattleInputs {
   return {

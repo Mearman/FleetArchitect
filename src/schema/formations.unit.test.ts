@@ -19,21 +19,10 @@ import {
   DoctrineAction,
   type FormationReference,
 } from "@/schema/ai";
-import type { FleetShip, Orders } from "@/schema/fleet";
-
-const orders: Orders = {
-  stance: "balanced",
-  targetPriority: "nearest",
-  engageRange: "medium",
-  retreatThreshold: 0,
-  focusFire: false,
-  vulnerableTargetWeight: 0,
-  formationKeeping: 0,
-  rangeKeepingBand: 0.3,
-};
+import type { FleetShip } from "@/schema/fleet";
 
 function ship(designId: string): FleetShip {
-  return { designId, position: { x: 0, y: 0 }, facing: 0, orders };
+  return { designId, position: { x: 0, y: 0 }, facing: 0 };
 }
 
 describe("formation schema", () => {

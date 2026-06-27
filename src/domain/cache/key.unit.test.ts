@@ -4,7 +4,6 @@ import { getSimConfig } from "@/domain/cache/sim-config";
 import type { SimConfig } from "@/domain/cache/sim-config";
 import type { BattleInputs, CombatShip } from "@/domain/simulation/types";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
 import { normaliseAnomalies } from "@/schema/battle";
 import type { ShipStats } from "@/domain/stats";
 
@@ -42,10 +41,18 @@ function ship(id: string, structure = 50): CombatShip {
     stats,
     position: { x: 0, y: 0 },
     facing: 0,
-    orders: { ...defaultOrders, engageRange: "hold" },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: {
+      base: {
+        stance: "balanced",
+        targeting: { mode: { kind: "nearest" }, vulnerableWeight: 0, focusFire: false },
+        spatial: {
+          reference: { kind: "target" },
+          range: { kind: "hold", band: 0.3 },
+          bearing: { kind: "free" },
+        },
+      },
+      rules: [],
+    },
     classification: "frigate",
   };
 }

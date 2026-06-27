@@ -4,7 +4,6 @@ import { resolveFleetToCombatShips } from "@/domain/resolve";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import { catalog } from "@/data/catalog";
 import { createId, nowIso } from "@/domain/id";
-import { defaultOrders } from "@/schema/fleet";
 import type { Fleet } from "@/schema/fleet";
 import { flatFormation } from "@/schema/formation";
 import type { CellEdges, GridCell } from "@/schema/grid";
@@ -51,9 +50,7 @@ function corvette(id: string): ShipDesign {
     updatedAt: nowIso(),
     source: "user",
     revision: 1,
-    shipStance: "balanced",
-    crewPriority: "combat",
-    rules: [],
+    doctrine: { base: {}, rules: [] },
   };
 }
 
@@ -67,9 +64,19 @@ function fleetOf(id: string, designId: string, x: number, ys: readonly number[])
         designId,
         position: { x, y },
         facing: 0,
-        // Aggressive, short-range orders so the fleets commit to a point-blank
+        // Aggressive, short-range doctrine so the fleets commit to a point-blank
         // brawl rather than kiting at range — the engagement we want to assert.
-        orders: { ...defaultOrders, engageRange: "short", stance: "aggressive" },
+        doctrine: {
+          base: {
+            stance: "aggressive",
+            spatial: {
+              reference: { kind: "target" },
+              range: { kind: "engage", fraction: 0.3, tolerance: 0.3 },
+              bearing: { kind: "free" },
+            },
+          },
+          rules: [],
+        },
       })),
     ),
     createdAt: nowIso(),

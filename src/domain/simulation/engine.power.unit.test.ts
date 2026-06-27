@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
+import type { Doctrine } from "@/schema/ai";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
 
@@ -14,6 +14,23 @@ const OPEN_EDGES: CellEdges = {
   s: "open",
   w: "open",
   doorStates: {},
+};
+
+/**
+ * Doctrine equivalent of the former `defaultOrders` with `engageRange: "hold"`
+ * (and the default `rangeKeepingBand: 0.3`): station-keep within 0.3 of the
+ * target. Every ship in this suite held that engagement profile, so the
+ * behaviour is preserved on the doctrine's spatial axis.
+ */
+const HOLD_RANGE_DOCTRINE: Doctrine = {
+  base: {
+    spatial: {
+      reference: { kind: "target" },
+      range: { kind: "hold", band: 0.3 },
+      bearing: { kind: "free" },
+    },
+  },
+  rules: [],
 };
 
 /**
@@ -151,10 +168,7 @@ function modularAttacker(
     stats,
     position: { x: 0, y: 0 },
     facing: 0,
-    orders: { ...defaultOrders, engageRange: "hold" },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: HOLD_RANGE_DOCTRINE,
     classification: "frigate",
     modules,
   };
@@ -191,10 +205,7 @@ function toughTarget(id: string, x: number): CombatShip {
     stats,
     position: { x, y: 0 },
     facing: Math.PI,
-    orders: { ...defaultOrders, engageRange: "hold" },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: HOLD_RANGE_DOCTRINE,
     classification: "frigate",
   };
 }
@@ -301,10 +312,7 @@ describe("engine.per-module power grid", () => {
         stats,
         position: { x: 0, y: 0 },
         facing: 0,
-        orders: { ...defaultOrders, engageRange: "hold" },
-        crewPriority: "combat",
-        shipStance: "balanced",
-        rules: [],
+        doctrine: HOLD_RANGE_DOCTRINE,
         classification: "frigate",
       };
     };

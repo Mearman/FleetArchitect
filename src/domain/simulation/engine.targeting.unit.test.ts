@@ -1,19 +1,39 @@
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import type { CombatShip, BattleInputs } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
+import type { Doctrine } from "@/schema/ai";
 import type { ShipClassification } from "@/schema/armor";
 import type { WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
 
 /**
  * Sonnet-tier: pickTarget must choose the correct living enemy for each
- * orders.targetPriority. Each test arranges three enemies so the priority's
+ * doctrine targeting mode. Each test arranges three enemies so the mode's
  * winner is unambiguous, then runs the battle and asserts the first hit
  * lands on that enemy.
  *
  * Helper duplicated so this file is self-contained.
  */
+
+/** Empty doctrine == the legacy defaults: stance undefined -> balanced
+ *  fallback, crew undefined -> combat, targeting undefined -> nearest. */
+const defaultDoctrine: Doctrine = { base: {}, rules: [] };
+
+/** A doctrine that sets only the targeting mode (the axis these tests
+ *  exercise), leaving the scoring blend at its legacy defaults
+ *  (vulnerableWeight 0, focusFire false). */
+function targetingDoctrine(modeKind: "nearest" | "weakest" | "strongest" | "highestCost"): Doctrine {
+  return {
+    base: {
+      targeting: {
+        mode: { kind: modeKind },
+        vulnerableWeight: 0,
+        focusFire: false,
+      },
+    },
+    rules: [],
+  };
+}
 
 function weapon(over: Partial<WeaponEffect> = {}): WeaponEffect {
   return {
@@ -43,7 +63,7 @@ function makeShip(opts: {
   cost?: number;
   weapons?: WeaponEffect[];
   classification?: ShipClassification;
-  orders?: Partial<typeof defaultOrders>;
+  doctrine?: Doctrine;
 }): CombatShip {
   const weapons = opts.weapons ?? [];
   const stats: ShipStats = {
@@ -74,10 +94,7 @@ function makeShip(opts: {
     stats,
     position: { x: opts.x, y: opts.y },
     facing: opts.facing ?? 0,
-    orders: { ...defaultOrders, ...opts.orders },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: opts.doctrine ?? defaultDoctrine,
     classification: (opts.classification ?? "frigate"),
   };
 }
@@ -115,7 +132,7 @@ function firstHitTarget(
 }
 
 describe("engine.targeting", () => {
-  it("picks the nearest enemy when targetPriority is 'nearest'", () => {
+  it("picks the nearest enemy when targeting mode is 'nearest'", () => {
     const result = runBattle(
       inputs([
         makeShip({
@@ -124,7 +141,7 @@ describe("engine.targeting", () => {
           x: 0,
           y: 0,
           weapons: [weapon()],
-          orders: { targetPriority: "nearest" },
+          doctrine: targetingDoctrine("nearest"),
         }),
         // Distinct distances, all within the attacker's visual range so every
         // candidate is genuinely seen and the nearest (d1) wins on distance.
@@ -136,7 +153,7 @@ describe("engine.targeting", () => {
     expect(firstHitTarget(result, ["d1", "d2", "d3"])).toBe("d1");
   });
 
-  it("picks the weakest enemy when targetPriority is 'weakest'", () => {
+  it("picks the weakest enemy when targeting mode is 'weakest'", () => {
     const result = runBattle(
       inputs([
         makeShip({
@@ -145,7 +162,7 @@ describe("engine.targeting", () => {
           x: 0,
           y: 0,
           weapons: [weapon()],
-          orders: { targetPriority: "weakest" },
+          doctrine: targetingDoctrine("weakest"),
         }),
         // Co-located within the attacker's visual range so neither distance nor
         // fog can decide — only the priority (structure) does. The weakest
@@ -158,7 +175,7 @@ describe("engine.targeting", () => {
     expect(firstHitTarget(result, ["d1", "d2", "d3"])).toBe("d2");
   });
 
-  it("picks the strongest enemy when targetPriority is 'strongest'", () => {
+  it("picks the strongest enemy when targeting mode is 'strongest'", () => {
     const result = runBattle(
       inputs([
         makeShip({
@@ -167,7 +184,7 @@ describe("engine.targeting", () => {
           x: 0,
           y: 0,
           weapons: [weapon()],
-          orders: { targetPriority: "strongest" },
+          doctrine: targetingDoctrine("strongest"),
         }),
         // Co-located within the attacker's visual range so only the priority
         // (structure) decides; the strongest (d3, structure 300) must be picked.
@@ -179,7 +196,7 @@ describe("engine.targeting", () => {
     expect(firstHitTarget(result, ["d1", "d2", "d3"])).toBe("d3");
   });
 
-  it("picks the highest-cost enemy when targetPriority is 'highestCost'", () => {
+  it("picks the highest-cost enemy when targeting mode is 'highestCost'", () => {
     const result = runBattle(
       inputs([
         makeShip({
@@ -188,7 +205,7 @@ describe("engine.targeting", () => {
           x: 0,
           y: 0,
           weapons: [weapon()],
-          orders: { targetPriority: "highestCost" },
+          doctrine: targetingDoctrine("highestCost"),
         }),
         // Equal distances, equal structure, differing `cost` (the build cost).
         makeShip({ id: "d1", side: "defender", x: 100, y: 0, cost: 50, structure: 500 }),
@@ -212,7 +229,7 @@ describe("engine.targeting", () => {
           x: 0,
           y: 0,
           weapons: [weapon()],
-          orders: { targetPriority: "nearest" },
+          doctrine: targetingDoctrine("nearest"),
         }),
         makeShip({
           id: "d1",
@@ -220,7 +237,18 @@ describe("engine.targeting", () => {
           x: 60,
           y: 0,
           structure: 500,
-          orders: { engageRange: "hold" },
+          // engageRange: "hold" -> hold station within a band of the target.
+          // The legacy default rangeKeepingBand (0.3) becomes the hold band.
+          doctrine: {
+            base: {
+              spatial: {
+                reference: { kind: "target" },
+                range: { kind: "hold", band: 0.3 },
+                bearing: { kind: "free" },
+              },
+            },
+            rules: [],
+          },
         }),
       ]),
     );

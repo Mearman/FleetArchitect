@@ -4,7 +4,6 @@ import { cellToLocal } from "@/domain/grid";
 import { growArmourHull, padGrid } from "@/domain/hull-armour";
 import { catalog } from "@/data/catalog";
 import { nowIso } from "@/domain/id";
-import { defaultOrders } from "@/schema/fleet";
 import type { Fleet } from "@/schema/fleet";
 import { flatFormation } from "@/schema/formation";
 import type { CellEdges, TileGrid } from "@/schema/grid";
@@ -34,9 +33,7 @@ function design(): ShipDesign {
     updatedAt: nowIso(),
     source: "user",
     revision: 1,
-    shipStance: "balanced",
-    crewPriority: "combat",
-    rules: [],
+    doctrine: { base: {}, rules: [] },
   };
 }
 
@@ -46,7 +43,7 @@ function fleet(): Fleet {
     name: "F",
     faction: "Terran",
     formation: flatFormation([
-      { designId: "d-1", position: { x: -100, y: 20 }, facing: 0, orders: { ...defaultOrders } },
+      { designId: "d-1", position: { x: -100, y: 20 }, facing: 0 },
     ]),
     createdAt: nowIso(),
     updatedAt: nowIso(),

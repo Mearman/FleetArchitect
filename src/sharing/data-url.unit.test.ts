@@ -8,7 +8,6 @@ import {
   type BattleShare,
 } from "@/sharing/data-url";
 import { createId, nowIso } from "@/domain/id";
-import { defaultOrders } from "@/schema/fleet";
 import type { Fleet } from "@/schema/fleet";
 import { flatFormation, flattenShipLeaves } from "@/schema/formation";
 import type { ShipDesign } from "@/schema/ship";
@@ -36,14 +35,12 @@ function sampleDesign(): ShipDesign {
     updatedAt: nowIso(),
     source: "user",
     revision: 1,
-    shipStance: "balanced",
-    crewPriority: "combat",
-    rules: [],
+    doctrine: { base: {}, rules: [] },
   };
 }
 
 describe("sharing round-trip (replay-relevant data)", () => {
-  it("round-trips a ship design's grid, name, faction and AI posture", () => {
+  it("round-trips a ship design's grid, name and faction", () => {
     const original = sampleDesign();
     const encoded = encodeShareable({ kind: "shipDesign", value: original });
     expect(typeof encoded).toBe("string");
@@ -55,12 +52,9 @@ describe("sharing round-trip (replay-relevant data)", () => {
     expect(decoded.value.name).toBe(original.name);
     expect(decoded.value.faction).toBe(original.faction);
     expect(decoded.value.grid).toEqual(original.grid);
-    expect(decoded.value.shipStance).toBe(original.shipStance);
-    expect(decoded.value.crewPriority).toBe(original.crewPriority);
-    expect(decoded.value.rules).toEqual(original.rules);
   });
 
-  it("round-trips a fleet's composition and orders", () => {
+  it("round-trips a fleet's composition and doctrine", () => {
     const fleet: Fleet = {
       id: createId("fleet"),
       name: "Strike Wing",
@@ -70,11 +64,17 @@ describe("sharing round-trip (replay-relevant data)", () => {
           designId: "preset-ship-gunship",
           position: { x: 10, y: 20 },
           facing: 1.25,
-          orders: {
-            ...defaultOrders,
-            stance: "aggressive",
-            focusFire: true,
-            retreatThreshold: 0.4,
+          doctrine: {
+            base: {
+              stance: "aggressive",
+              targeting: {
+                mode: { kind: "nearest" },
+                vulnerableWeight: 0,
+                focusFire: true,
+              },
+              retreat: 0.4,
+            },
+            rules: [],
           },
         },
       ]),
@@ -99,7 +99,7 @@ describe("sharing round-trip (replay-relevant data)", () => {
     expect(ship.designId).toBe("preset-ship-gunship");
     expect(ship.position).toEqual({ x: 10, y: 20 });
     expect(ship.facing).toBe(1.25);
-    expect(ship.orders).toEqual(originalShips[0]?.orders);
+    expect(ship.doctrine).toEqual(originalShips[0]?.doctrine);
   });
 
   it("round-trips a whole battle's grids, factions, composition, orders, anomalies and seed", () => {
@@ -113,7 +113,16 @@ describe("sharing round-trip (replay-relevant data)", () => {
           designId: design.id,
           position: { x: -100, y: 0 },
           facing: 0,
-          orders: { ...defaultOrders, engageRange: "long" },
+          doctrine: {
+            base: {
+              spatial: {
+                reference: { kind: "target" },
+                range: { kind: "engage", fraction: 0.85, tolerance: 0.3 },
+                bearing: { kind: "free" },
+              },
+            },
+            rules: [],
+          },
         },
       ]),
       createdAt: nowIso(),
@@ -149,9 +158,9 @@ describe("sharing round-trip (replay-relevant data)", () => {
     expect(flattenShipLeaves(value.defender.formation)[0]?.designId).toBe(
       value.designs[0]?.id,
     );
-    expect(flattenShipLeaves(value.attacker.formation)[0]?.orders.engageRange).toBe(
-      "long",
-    );
+    expect(
+      flattenShipLeaves(value.attacker.formation)[0]?.doctrine?.base.spatial?.range,
+    ).toEqual({ kind: "engage", fraction: 0.85, tolerance: 0.3 });
   });
 
   it("rejects an older share version with ShareDecodeError", () => {

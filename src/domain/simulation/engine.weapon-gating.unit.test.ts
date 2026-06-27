@@ -2,10 +2,17 @@ import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { CombatShip, BattleInputs } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
+import type { Doctrine } from "@/schema/ai";
 import type { ShipClassification } from "@/schema/armor";
 import type { WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
+
+/**
+ * Empty doctrine == legacy defaults: stance absent (balanced fallback), crew
+ * absent (combat), targeting absent (nearest). Used for every ship that
+ * previously relied on `defaultOrders`.
+ */
+const DEFAULT_DOCTRINE: Doctrine = { base: {}, rules: [] };
 
 /**
  * Haiku-tier: mechanical gating of fireWeapons — the conditions that decide
@@ -44,7 +51,7 @@ function makeShip(opts: {
   structure?: number;
   weapons?: WeaponEffect[];
   classification?: ShipClassification;
-  orders?: Partial<typeof defaultOrders>;
+  doctrine?: Doctrine;
 }): CombatShip {
   const weapons = opts.weapons ?? [];
   const stats: ShipStats = {
@@ -75,10 +82,7 @@ function makeShip(opts: {
     stats,
     position: { x: opts.x, y: opts.y },
     facing: opts.facing ?? 0,
-    orders: { ...defaultOrders, ...opts.orders },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: opts.doctrine ?? DEFAULT_DOCTRINE,
     classification: opts.classification ?? "frigate",
   };
 }
@@ -129,8 +133,9 @@ describe("engine.weapon-gating", () => {
   });
 
   it("does not fire when the target is out of range (hold orders prevent closing)", () => {
-    // Hold orders pin the attacker in place so it can't close the distance
-    // to satisfy the range gate.
+    // A hold range rule pins the attacker at its reference so it can't close
+    // the distance to satisfy the range gate. (Legacy `engageRange: "hold"`
+    // with the default `rangeKeepingBand: 0.3`.)
     const result = runBattle(
       inputs([
         makeShip({
@@ -140,7 +145,16 @@ describe("engine.weapon-gating", () => {
           y: 0,
           facing: 0,
           weapons: [weapon({ damage: 25, range: 50, cooldown: 5 })],
-          orders: { engageRange: "hold" },
+          doctrine: {
+            base: {
+              spatial: {
+                reference: { kind: "target" },
+                range: { kind: "hold", band: 0.3 },
+                bearing: { kind: "free" },
+              },
+            },
+            rules: [],
+          },
         }),
         makeShip({ id: "d1", side: "defender", x: 500, y: 0, structure: 500 }),
       ]),

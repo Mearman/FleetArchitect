@@ -31,7 +31,6 @@ import type { CellEdges } from "@/schema/grid";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { CombatShip, ResolvedModule } from "@/domain/simulation/types";
 import type { ShipStats } from "@/domain/stats";
-import { defaultOrders } from "@/schema/fleet";
 
 /** Narrow an arbitrary value to `unknown[]`. `Array.isArray` alone narrows
  *  `unknown` to `any[]`, which the type-checked lint rules reject; this guard
@@ -160,10 +159,10 @@ function modularShip(id: string, side: "attacker" | "defender"): CombatShip {
     stats: baseStats(),
     position: { x: side === "attacker" ? -100 : 100, y: 0 },
     facing: side === "attacker" ? 0 : Math.PI,
-    orders: defaultOrders,
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    // Empty doctrine matches the legacy default-orders behaviour (stance
+    // undefined -> balanced fallback, crew undefined -> combat, targeting
+    // undefined -> nearest). The checkpoint surface round-trips it verbatim.
+    doctrine: { base: {}, rules: [] },
     classification: "frigate",
     modules,
   };

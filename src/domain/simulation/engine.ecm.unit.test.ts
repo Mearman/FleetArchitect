@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
 import { sumCellHp } from "@/domain/simulation/test-cell-helpers";
-import { defaultOrders } from "@/schema/fleet";
 import type { CellEdges } from "@/schema/grid";
+import type { Doctrine } from "@/schema/ai";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
 
@@ -14,6 +14,14 @@ const OPEN_EDGES: CellEdges = {
   w: "open",
   doorStates: {},
 };
+
+/**
+ * Empty doctrine — the legacy-default behaviour (stance falls back to balanced,
+ * crew to combat, targeting to nearest, no movement constraint). Ships that
+ * previously rode `defaultOrders` carry this; only ships that overrode a legacy
+ * axis supply a non-empty base.
+ */
+const DEFAULT_DOCTRINE: Doctrine = { base: {}, rules: [] };
 
 /**
  * ECM (jamming) and ECCM (counter) in the projectile/weapon path.
@@ -181,7 +189,7 @@ function ship(opts: {
   turnRate?: number;
   weapons?: WeaponEffect[];
   extra?: ResolvedModule[];
-  orders?: Partial<typeof defaultOrders>;
+  doctrine?: Doctrine;
   velocity?: { x: number; y: number };
 }): CombatShip {
   const weapons = opts.weapons ?? [];
@@ -203,10 +211,7 @@ function ship(opts: {
     position: { x: opts.x, y: opts.y ?? 0 },
     velocity: opts.velocity,
     facing: opts.facing,
-    orders: { ...defaultOrders, ...(opts.orders ?? {}) },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: opts.doctrine ?? DEFAULT_DOCTRINE,
     classification: "frigate",
     modules,
   };
@@ -291,7 +296,21 @@ function prey(extra: ResolvedModule[] = []): CombatShip {
  * engine's thrust speed (the fixed crossing course). Placed far enough that the
  * prey never closes on it within the battle, and unarmed + hold so it never
  * fires, moves, or otherwise perturbs the hunter/prey duel.
+ *
+ * The legacy `orders.engageRange: "hold"` (with the default rangeKeepingBand of
+ * 0.3) maps to a doctrine that station-keeps within a 0.3 band of the target.
  */
+const LURE_DOCTRINE: Doctrine = {
+  base: {
+    spatial: {
+      reference: { kind: "target" },
+      range: { kind: "hold", band: 0.3 },
+      bearing: { kind: "free" },
+    },
+  },
+  rules: [],
+};
+
 function lure(): CombatShip {
   return ship({
     id: "lure",
@@ -299,7 +318,7 @@ function lure(): CombatShip {
     x: 600,
     y: 100000,
     facing: 0,
-    orders: { engageRange: "hold" },
+    doctrine: LURE_DOCTRINE,
   });
 }
 

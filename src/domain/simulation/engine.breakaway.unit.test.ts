@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
+import type { Doctrine } from "@/schema/ai";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
 import { splitBreakApart, splitBreakApartReference } from "@/domain/simulation/engine/damage";
@@ -39,6 +39,23 @@ const OPEN_EDGES: CellEdges = {
   s: "open",
   w: "open",
   doorStates: {},
+};
+
+/**
+ * Doctrine equivalent of the legacy `orders: { ...defaultOrders, engageRange:
+ * "hold" }`: station-keep within the default range-keeping band (0.3) of the
+ * target, bearing free. These fixtures exist to exercise break-apart topology,
+ * not movement, so the ships hold at their deployment positions.
+ */
+const HOLD_DOCTRINE: Doctrine = {
+  base: {
+    spatial: {
+      reference: { kind: "target" },
+      range: { kind: "hold", band: 0.3 },
+      bearing: { kind: "free" },
+    },
+  },
+  rules: [],
 };
 
 /**
@@ -156,10 +173,7 @@ function hammerShip(id: string, x: number): CombatShip {
     stats,
     position: { x, y: 0 },
     facing: 0,
-    orders: { ...defaultOrders, engageRange: "hold" },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: HOLD_DOCTRINE,
     classification: "frigate",
   };
 }
@@ -208,10 +222,7 @@ function columnShip(id: string, x: number, hullHp: number): CombatShip {
     stats,
     position: { x, y: 0 },
     facing: Math.PI,
-    orders: { ...defaultOrders, engageRange: "hold" },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: HOLD_DOCTRINE,
     classification: "frigate",
     modules,
   };
@@ -486,10 +497,7 @@ describe("engine.breakaway", () => {
         },
         position: { x: 80, y: 0 },
         facing: Math.PI,
-        orders: { ...defaultOrders, engageRange: "hold" },
-        crewPriority: "combat",
-        shipStance: "balanced",
-        rules: [],
+        doctrine: HOLD_DOCTRINE,
         classification: "frigate",
         modules,
       };

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { stepAi } from "./engine/ai-step";
-import type { Rule } from "@/schema/ai";
+import type { DoctrineRule } from "@/schema/ai";
 import type { SimShip } from "./engine/types";
 
 /** Minimal valid SimShip for AI-step tests. Only the fields stepAi reads are
@@ -43,19 +43,7 @@ function ship(over: Partial<SimShip> & { instanceId: string; side: "attacker" | 
     cost: 0,
     weapons: [],
     weaponCooldowns: [],
-    orders: {
-      stance: "balanced",
-      targetPriority: "nearest",
-      engageRange: "medium",
-      retreatThreshold: 0,
-      focusFire: false,
-      vulnerableTargetWeight: 0,
-      formationKeeping: 0,
-      rangeKeepingBand: 0.3,
-    },
-    crewPriority: "combat",
-    shipStance: over.shipStance ?? "balanced",
-    rules: over.rules ?? [],
+    doctrine: over.doctrine ?? { base: {}, rules: [] },
     aiHoldFire: false,
     aiStance: null,
     aiFocusFire: false,
@@ -74,16 +62,16 @@ function ship(over: Partial<SimShip> & { instanceId: string; side: "attacker" | 
 
 describe("engine.ai-step", () => {
   it("holds fire when a holdFire rule's trigger is satisfied", () => {
-    const rule: Rule = {
-      trigger: { kind: "shieldBelow", fraction: 0.5 },
-      action: { kind: "holdFire" },
+    const rule: DoctrineRule = {
+      condition: { kind: "shieldBelow", fraction: 0.5 },
+      then: { fire: "holdFire" },
     };
     const shipA = ship({
       instanceId: "a1",
       side: "attacker",
       shield: 10,
       maxShield: 100,
-      rules: [rule],
+      doctrine: { base: {}, rules: [rule] },
       target: "d1",
       x: 0,
     });
@@ -98,7 +86,10 @@ describe("engine.ai-step", () => {
       side: "attacker",
       shield: 80,
       maxShield: 100,
-      rules: [{ trigger: { kind: "shieldBelow", fraction: 0.5 }, action: { kind: "holdFire" } }],
+      doctrine: {
+        base: {},
+        rules: [{ condition: { kind: "shieldBelow", fraction: 0.5 }, then: { fire: "holdFire" } }],
+      },
       target: "d1",
     });
     const shipD = ship({ instanceId: "d1", side: "defender", x: 100 });
@@ -115,16 +106,16 @@ describe("engine.ai-step", () => {
 
   it("derives structureFraction from effective structure HP", () => {
     // structureBelow 0.25 -> holdFire when structure is at 10% (10/100).
-    const rule: Rule = {
-      trigger: { kind: "structureBelow", fraction: 0.25 },
-      action: { kind: "holdFire" },
+    const rule: DoctrineRule = {
+      condition: { kind: "structureBelow", fraction: 0.25 },
+      then: { fire: "holdFire" },
     };
     const shipA = ship({
       instanceId: "a1",
       side: "attacker",
       structure: 10,
       maxStructure: 100,
-      rules: [rule],
+      doctrine: { base: {}, rules: [rule] },
       target: "d1",
     });
     const shipD = ship({ instanceId: "d1", side: "defender", x: 100 });
@@ -134,9 +125,9 @@ describe("engine.ai-step", () => {
 
   it("sets outclassed from the two sides' total effective HP", () => {
     // Attacker total = 110, defender total = 500 -> attacker is outclassed.
-    const rule: Rule = {
-      trigger: { kind: "outclassed" },
-      action: { kind: "holdFire" },
+    const rule: DoctrineRule = {
+      condition: { kind: "outclassed" },
+      then: { fire: "holdFire" },
     };
     const shipA = ship({
       instanceId: "a1",
@@ -144,7 +135,7 @@ describe("engine.ai-step", () => {
       structure: 10,
       shield: 100,
       maxShield: 100,
-      rules: [rule],
+      doctrine: { base: {}, rules: [rule] },
       target: "d1",
     });
     const shipD = ship({ instanceId: "d1", side: "defender", x: 100, structure: 500, shield: 0, maxShield: 0 });

@@ -114,19 +114,9 @@ function shipWith(over: Partial<SimShip> = {}): SimShip {
     cost: 0,
     weapons: [],
     weaponCooldowns: [],
-    orders: {
-      stance: "balanced",
-      targetPriority: "nearest",
-      engageRange: "medium",
-      retreatThreshold: 0,
-      focusFire: false,
-      vulnerableTargetWeight: 0,
-      formationKeeping: 0,
-      rangeKeepingBand: 0.3,
-    },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    // Empty doctrine == legacy defaults: stance undefined -> balanced
+    // fallback, crew undefined -> combat, targeting undefined -> nearest.
+    doctrine: { base: {}, rules: [] },
     aiHoldFire: false,
     aiStance: null,
     aiFocusFire: false,

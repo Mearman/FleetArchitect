@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import type { CombatShip, ResolvedModule } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
+import type { Doctrine } from "@/schema/ai";
 import {
   baseStats,
   beam,
@@ -10,6 +10,32 @@ import {
   moduleOf,
   shipAt,
 } from "./engine.factions-tech-helpers";
+
+/**
+ * Doctrine equivalents of the legacy `defaultOrders` presets these fixtures
+ * used. The engine now reads `SimShip.doctrine` only; the legacy
+ * `orders` / `shipStance` / `crewPriority` / `rules` fields are gone.
+ *
+ * - `AGGRESSIVE_DOCTRINE` — was `{ ...defaultOrders, stance: "aggressive" }`.
+ * - `HOLD_DOCTRINE` — was `{ ...defaultOrders, engageRange: "hold" }`: hold at
+ *   the default range-keeping band (0.3) from the current target, bearing free.
+ *   `rangeKeepingBand` defaulted to 0.3 in the legacy `defaultOrders`.
+ */
+const AGGRESSIVE_DOCTRINE: Doctrine = {
+  base: { stance: "aggressive" },
+  rules: [],
+};
+const HOLD_BAND = 0.3;
+const HOLD_DOCTRINE: Doctrine = {
+  base: {
+    spatial: {
+      reference: { kind: "target" },
+      range: { kind: "hold", band: HOLD_BAND },
+      bearing: { kind: "free" },
+    },
+  },
+  rules: [],
+};
 
 // ---------------------------------------------------------------------------
 // Blink drive
@@ -69,10 +95,7 @@ describe("engine.factions-tech – blink (tactical)", () => {
       stats: baseStats({ thrust: 0.8, turnRate: 0.15, weapons: [{ slotId: "w1", effect: beam({ damage: 5, range: 400 }) }] }),
       position: { x: 0, y: 0 },
       facing: 0,
-      orders: { ...defaultOrders, stance: "aggressive" },
-      crewPriority: "combat",
-      shipStance: "balanced",
-      rules: [],
+      doctrine: AGGRESSIVE_DOCTRINE,
       classification: "frigate",
       modules,
     };
@@ -87,10 +110,7 @@ describe("engine.factions-tech – blink (tactical)", () => {
       stats: baseStats({ structure: 99999, weapons: [] }),
       position: { x: 500, y: 0 },
       facing: Math.PI,
-      orders: { ...defaultOrders, engageRange: "hold" },
-      crewPriority: "combat",
-      shipStance: "balanced",
-      rules: [],
+      doctrine: HOLD_DOCTRINE,
       classification: "frigate",
     };
   }
@@ -141,10 +161,7 @@ describe("engine.factions-tech – blink (escape)", () => {
       stats: baseStats({ structure: 99999, weapons: [{ slotId: "w1", effect: beam({ damage: 1 }) }] }),
       position: { x: 100, y: 0 },
       facing: Math.PI,
-      orders: { ...defaultOrders, engageRange: "hold" },
-      crewPriority: "combat",
-      shipStance: "balanced",
-      rules: [],
+      doctrine: HOLD_DOCTRINE,
       classification: "frigate",
     };
   }
@@ -182,10 +199,7 @@ describe("engine.factions-tech – blink (escape)", () => {
       stats: baseStats({ structure: 100, thrust: 0.5, turnRate: 0.1, weapons: [] }),
       position: { x: 0, y: 0 },
       facing: 0,
-      orders: { ...defaultOrders, engageRange: "hold" },
-      crewPriority: "combat",
-      shipStance: "balanced",
-      rules: [],
+      doctrine: HOLD_DOCTRINE,
       classification: "frigate",
       modules,
     };
@@ -228,10 +242,7 @@ describe("engine.factions-tech – blink (escape)", () => {
       stats: baseStats({ structure: 200, thrust: 0.5, turnRate: 0.1, weapons: [] }),
       position: { x: 0, y: 0 },
       facing: 0,
-      orders: { ...defaultOrders, engageRange: "hold" },
-      crewPriority: "combat",
-      shipStance: "balanced",
-      rules: [],
+      doctrine: HOLD_DOCTRINE,
       classification: "frigate",
       modules,
     };
@@ -296,10 +307,7 @@ describe("engine.factions-tech – afterburner", () => {
       stats: baseStats({ thrust: 900, turnRate: 0.1, weapons: [{ slotId: "w1", effect: beam({ damage: 5, range: 500 }) }] }),
       position: { x: 0, y: 0 },
       facing: 0,
-      orders: { ...defaultOrders, stance: "aggressive" },
-      crewPriority: "combat",
-      shipStance: "balanced",
-      rules: [],
+      doctrine: AGGRESSIVE_DOCTRINE,
       classification: "frigate",
       modules,
     };
@@ -314,10 +322,7 @@ describe("engine.factions-tech – afterburner", () => {
       stats: baseStats({ structure: 99999, weapons: [] }),
       position: { x: 600, y: 0 },
       facing: Math.PI,
-      orders: { ...defaultOrders, engageRange: "hold" },
-      crewPriority: "combat",
-      shipStance: "balanced",
-      rules: [],
+      doctrine: HOLD_DOCTRINE,
       classification: "frigate",
     };
   }

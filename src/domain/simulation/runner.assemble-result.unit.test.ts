@@ -3,7 +3,7 @@ import { runBattle } from "@/domain/simulation/engine";
 import { assembleResult } from "@/domain/simulation/runner";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleInputs, CombatShip } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
+import type { Doctrine } from "@/schema/ai";
 import type { WeaponEffect } from "@/schema/module";
 import type {
   BattleFrame,
@@ -59,6 +59,10 @@ function makeShip(id: string, side: "attacker" | "defender", x: number): CombatS
     compartments: 0,
     airtightCompartments: 0,
   };
+  // Empty doctrine carries the legacy defaults: stance undefined falls back to
+  // balanced, crew undefined to combat, targeting undefined to nearest — the
+  // behaviour these fixtures previously got from spreading `defaultOrders`.
+  const doctrine: Doctrine = { base: {}, rules: [] };
   return {
     instanceId: id,
     designId: `design-${id}`,
@@ -67,10 +71,7 @@ function makeShip(id: string, side: "attacker" | "defender", x: number): CombatS
     stats,
     position: { x, y: 0 },
     facing: 0,
-    orders: { ...defaultOrders },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine,
     classification: "frigate",
   };
 }

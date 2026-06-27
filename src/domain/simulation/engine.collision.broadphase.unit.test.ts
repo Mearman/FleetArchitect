@@ -11,7 +11,6 @@ import {
 } from "@/domain/simulation/engine/collision";
 import { toSimShip } from "@/domain/simulation/engine/setup";
 import type { CombatShip, ResolvedModule } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
 import type { ModuleEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
 import type { SimShip } from "@/domain/simulation/engine/types";
@@ -125,10 +124,9 @@ function driftingShip(
     position,
     facing,
     velocity: opts.velocity,
-    orders: defaultOrders,
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    // Empty doctrine matches the legacy defaults: stance undefined -> balanced
+    // fallback, crew undefined -> combat, targeting undefined -> nearest.
+    doctrine: { base: {}, rules: [] },
     classification: "frigate",
     outline: opts.outline,
     modules: [

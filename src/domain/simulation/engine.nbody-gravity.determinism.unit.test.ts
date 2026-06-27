@@ -27,7 +27,6 @@ import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulati
 import type { ModuleEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
 import type { CellEdges } from "@/schema/grid";
-import { defaultOrders } from "@/schema/fleet";
 
 const OPEN_EDGES: CellEdges = {
   n: "open",
@@ -123,10 +122,7 @@ function ship(opts: {
     stats,
     position: { x: opts.x, y: opts.y },
     facing: 0,
-    orders: { ...defaultOrders },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: { base: {}, rules: [] },
     classification: "frigate",
     modules,
   };

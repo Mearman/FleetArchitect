@@ -7,10 +7,17 @@ import {
 } from "@/domain/simulation/runner";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleInputs, CombatShip } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
+import type { Doctrine } from "@/schema/ai";
 import type { WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
 import type { BattleFrame } from "@/schema/battle";
+
+/**
+ * Empty doctrine — parses to "no rules, empty base", which the engine resolves
+ * to the legacy defaults (balanced stance, combat crew priority, nearest
+ * targeting). Used by ships that previously relied on `defaultOrders`.
+ */
+const EMPTY_DOCTRINE: Doctrine = { base: {}, rules: [] };
 
 function weapon(): WeaponEffect {
   return {
@@ -57,10 +64,7 @@ function makeShip(id: string, side: "attacker" | "defender", x: number): CombatS
     stats,
     position: { x, y: 0 },
     facing: 0,
-    orders: { ...defaultOrders },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: EMPTY_DOCTRINE,
     classification: "frigate",
   };
 }

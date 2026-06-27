@@ -23,7 +23,6 @@ import {
   saveShipDesign,
 } from "@/storage/db";
 import { createId, nowIso } from "@/domain/id";
-import { defaultOrders } from "@/schema/fleet";
 import type { Fleet } from "@/schema/fleet";
 import { flatFormation } from "@/schema/formation";
 import type { ShipDesign } from "@/schema/ship";
@@ -76,9 +75,7 @@ function sampleDesign(overrides?: Partial<ShipDesign>): ShipDesign {
     updatedAt: nowIso(),
     source: "user",
     revision: 1,
-    shipStance: "balanced",
-    crewPriority: "combat",
-    rules: [],
+    doctrine: { base: {}, rules: [] },
     ...overrides,
   };
 }
@@ -93,7 +90,6 @@ function sampleFleet(designId: string, overrides?: Partial<Fleet>): Fleet {
         designId,
         position: { x: 0, y: 0 },
         facing: 0,
-        orders: { ...defaultOrders },
       },
     ]),
     createdAt: nowIso(),

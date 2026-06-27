@@ -1,7 +1,7 @@
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
 import type { BattleAnomalyKind } from "@/schema/battle";
 import type { CellEdges } from "@/schema/grid";
-import { defaultOrders } from "@/schema/fleet";
+import type { Doctrine } from "@/schema/ai";
 import type {
   CommsEffect,
   ModuleEffect,
@@ -170,6 +170,25 @@ export function beam(over: Partial<WeaponEffect> = {}): WeaponEffect {
   };
 }
 
+/**
+ * Default doctrine for awareness fixtures. The legacy `defaultOrders` these
+ * fixtures replaced set `engageRange: "hold"` (overriding the schema's "medium")
+ * so stationary geometry is fully under the fixtures' control; the equivalent
+ * doctrine base station-keeps within the legacy default band (0.3) of its
+ * target. An empty base would also fall through to the engine's balanced
+ * defaults, but stating `hold` here keeps the stationarity intent explicit.
+ */
+const HOLD_DOCTRINE: Doctrine = {
+  base: {
+    spatial: {
+      reference: { kind: "target" },
+      range: { kind: "hold", band: 0.3 },
+      bearing: { kind: "free" },
+    },
+  },
+  rules: [],
+};
+
 export function ship(
   id: string,
   side: "attacker" | "defender",
@@ -179,7 +198,8 @@ export function ship(
   opts: {
     cost?: number;
     facing?: number;
-    orders?: Partial<typeof defaultOrders>;
+    /** Per-ship doctrine override; defaults to {@link HOLD_DOCTRINE}. */
+    doctrine?: Doctrine;
     /** Optional initial velocity (world units/tick); defaults to a stationary
      *  start. Lets a fixture fly a bright source past an observer to exercise
      *  dazzle recovery over time. */
@@ -195,10 +215,7 @@ export function ship(
     position: { x, y },
     facing: opts.facing ?? (side === "attacker" ? 0 : Math.PI),
     ...(opts.velocity !== undefined ? { velocity: opts.velocity } : {}),
-    orders: { ...defaultOrders, engageRange: "hold", ...opts.orders },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: opts.doctrine ?? HOLD_DOCTRINE,
     classification: "frigate",
     modules,
   };

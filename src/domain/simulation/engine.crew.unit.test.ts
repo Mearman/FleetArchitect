@@ -3,9 +3,28 @@ import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
+import type { Doctrine } from "@/schema/ai";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
+
+
+/**
+ * The doctrine every fixture here used to express via legacy `orders`: hold at
+ * the target (engageRange "hold" with the default rangeKeepingBand 0.3), stance
+ * balanced, crew combat, targeting nearest. An empty doctrine base already
+ * falls back to those same legacy defaults for stance/crew/targeting; the only
+ * authored axis is `spatial` — hold station within band 0.3 of the target.
+ */
+const HOLD_DOCTRINE: Doctrine = {
+  base: {
+    spatial: {
+      reference: { kind: "target" },
+      range: { kind: "hold", band: 0.3 },
+      bearing: { kind: "free" },
+    },
+  },
+  rules: [],
+};
 
 
 const OPEN_EDGES: CellEdges = {
@@ -130,10 +149,7 @@ function shooterShip(
     stats: statsFor(structure),
     position: { x, y: 0 },
     facing: 0,
-    orders: { ...defaultOrders, engageRange: "hold" },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: HOLD_DOCTRINE,
     classification: "frigate",
     modules,
   };
@@ -150,10 +166,7 @@ function toughTarget(id: string, x: number): CombatShip {
     stats: statsFor(1_000_000),
     position: { x, y: 0 },
     facing: Math.PI,
-    orders: { ...defaultOrders, engageRange: "hold" },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: HOLD_DOCTRINE,
     classification: "frigate",
   };
 }
@@ -473,10 +486,7 @@ describe("engine.crew — break-apart partition", () => {
       stats: { ...statsFor(99999), weapons: [{ slotId: "s", effect: beam({ damage: 50, range: 500, cooldown: 1 }) }] },
       position: { x, y: 0 },
       facing: 0,
-      orders: { ...defaultOrders, engageRange: "hold" },
-      crewPriority: "combat",
-      shipStance: "balanced",
-      rules: [],
+      doctrine: HOLD_DOCTRINE,
       classification: "frigate",
     };
   }
@@ -504,10 +514,7 @@ describe("engine.crew — break-apart partition", () => {
       stats: { ...statsFor(5000), thrust: 0, turnRate: 0 },
       position: { x, y: 0 },
       facing: Math.PI,
-      orders: { ...defaultOrders, engageRange: "hold" },
-      crewPriority: "combat",
-      shipStance: "balanced",
-      rules: [],
+      doctrine: HOLD_DOCTRINE,
       classification: "frigate",
       modules,
     };

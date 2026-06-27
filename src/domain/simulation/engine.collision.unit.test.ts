@@ -4,7 +4,6 @@ import { runBattle } from "@/domain/simulation/engine";
 import { CELL_SIZE } from "@/domain/grid";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
 import type { ModuleEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
 
@@ -111,10 +110,17 @@ function rammer(
     stats: stats({ thrust: 1 }),
     position,
     facing,
-    orders: { ...defaultOrders, engageRange: "short", stance: "aggressive" },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: {
+      base: {
+        stance: "aggressive",
+        spatial: {
+          reference: { kind: "target" },
+          range: { kind: "engage", fraction: 0.3, tolerance: 0.1 },
+          bearing: { kind: "free" },
+        },
+      },
+      rules: [],
+    },
     classification: "frigate",
     modules: [
       moduleOf("c1", { kind: "power", output: 40 }, 0, 0, 5, true),
@@ -166,10 +172,7 @@ function coaster(
     position,
     velocity,
     facing: side === "attacker" ? 0 : Math.PI,
-    orders: defaultOrders,
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: { base: {}, rules: [] },
     classification: "frigate",
     modules: [
       moduleOf("c1", { kind: "power", output: 40 }, 0, 0, 5, true),

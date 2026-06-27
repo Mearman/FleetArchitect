@@ -9,7 +9,6 @@ import { catalog } from "@/data/catalog";
 import { presetDesigns, presetFleets } from "@/data/presets";
 import type { CombatShip, ResolvedModule } from "@/domain/simulation/types";
 import type { BattleInputs } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
 import type { CellEdges } from "@/schema/grid";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
@@ -132,12 +131,23 @@ function combatShip(
     stats: stats(),
     position,
     facing,
-    orders: { ...defaultOrders, engageRange: "hold" },
+    // Legacy orders were `{ ...defaultOrders, engageRange: "hold" }`: stance
+    // balanced, targetPriority nearest (both empty-doctrine defaults), with the
+    // one non-default axis being engageRange "hold" at rangeKeepingBand 0.3 —
+    // expressed here as a hold spatial objective so ships station-keep rather
+    // than close to medium range.
+    doctrine: {
+      base: {
+        spatial: {
+          reference: { kind: "target" },
+          range: { kind: "hold", band: 0.3 },
+          bearing: { kind: "free" },
+        },
+      },
+      rules: [],
+    },
     classification: "frigate",
     modules,
-    shipStance: "balanced",
-    crewPriority: "combat",
-    rules: [],
     ...over,
   };
 }

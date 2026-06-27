@@ -5,7 +5,7 @@ import { runBattle } from "@/domain/simulation/engine";
 import { ACCEL_PER_TICK_FROM_SI, DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleAnomalyKind } from "@/schema/battle";
 import type { CombatShip, BattleInputs, ResolvedModule } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
+import type { Doctrine } from "@/schema/ai";
 import type { ShipClassification } from "@/schema/armor";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
@@ -18,6 +18,32 @@ const OPEN_EDGES: CellEdges = {
   s: "open",
   w: "open",
   doorStates: {},
+};
+
+/**
+ * Empty doctrine == legacy defaults: stance undefined (balanced fallback),
+ * crew undefined (combat), targeting undefined (nearest), no spatial rule. The
+ * engine reads SimShip.doctrine only, so this is what a ship that previously
+ * carried `defaultOrders` now receives.
+ */
+const DEFAULT_DOCTRINE: Doctrine = { base: {}, rules: [] };
+
+/**
+ * Hold-position doctrine: the legacy `orders.engageRange: "hold"` equivalent —
+ * station-keep at 0.3 (the legacy default `rangeKeepingBand`) of the range to
+ * the target, bearing free. Used by every fixture that was a fixed firing
+ * turret so the realistic-thrust closing controller does not drift the firing
+ * line between runs.
+ */
+const HOLD_POSITION_DOCTRINE: Doctrine = {
+  base: {
+    spatial: {
+      reference: { kind: "target" },
+      range: { kind: "hold", band: 0.3 },
+      bearing: { kind: "free" },
+    },
+  },
+  rules: [],
 };
 
 /**
@@ -127,7 +153,10 @@ function attacker(opts: {
   structure?: number;
   weapons?: WeaponEffect[];
   classification?: ShipClassification;
-  orders?: Partial<typeof defaultOrders>;
+  /** Resolved authored doctrine. Defaults to {@link DEFAULT_DOCTRINE} (legacy
+   *  `defaultOrders` equivalent). Pass {@link HOLD_POSITION_DOCTRINE} for a ship
+   *  that was previously `orders.engageRange: "hold"`. */
+  doctrine?: Doctrine;
 }): CombatShip {
   const weapons = opts.weapons ?? [];
   const stats: ShipStats = {
@@ -168,10 +197,7 @@ function attacker(opts: {
     stats,
     position: { x: opts.x, y: opts.y },
     facing: opts.facing ?? 0,
-    orders: { ...defaultOrders, ...opts.orders },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: opts.doctrine ?? DEFAULT_DOCTRINE,
     classification: opts.classification ?? "frigate",
     modules,
   };
@@ -192,13 +218,16 @@ function defender(opts: {
   shieldRechargeRate?: number;
   shieldRechargeDelay?: number;
   classification?: ShipClassification;
-  orders?: Partial<typeof defaultOrders>;
   /** Substrate HP of each on-axis absorbing cell. Defaults to 0 (bare cells
    *  that pass damage straight to structure). Set above the per-shot damage
    *  so each cell absorbs several hits before dying, for fixture patterns
    *  that count landed hits via cell losses. */
   absorbingSubstrateHp?: number;
 }): CombatShip {
+  // The defender is a thrustless (thrust 0, turnRate 0) target dummy, so its
+  // movement doctrine has no behavioural effect — it stays put regardless. The
+  // legacy `orders.engageRange: "hold"` it carried was therefore a no-op and is
+  // not mirrored onto a doctrine here.
   return targetDummy({
     id: opts.id,
     side: "defender",
@@ -211,7 +240,6 @@ function defender(opts: {
     classification: opts.classification,
     absorbingCells: 60,
     absorbingSubstrateHp: opts.absorbingSubstrateHp,
-    orders: opts.orders,
   });
 }
 
@@ -277,7 +305,7 @@ describe("engine.anomalies", () => {
               // under test — the asteroid field's in-flight projectile
               // destruction — rather than letting the realistic-thrust closing
               // controller drift the firing line between the two runs.
-              orders: { engageRange: "hold" },
+              doctrine: HOLD_POSITION_DOCTRINE,
               // A round that steps one cell size per tick so it samples each
               // absorbing cell on the defender's row rather than tunnelling
               // past them — the cell contact distance is now one (1 m) cell, so
@@ -293,7 +321,6 @@ describe("engine.anomalies", () => {
               // several hits before dying — giving a large sample of cell-loss
               // events whose count the asteroid field can reduce.
               absorbingSubstrateHp: 100,
-              orders: { engageRange: "hold" },
             }),
           ],
           anomalies,
@@ -327,7 +354,7 @@ describe("engine.anomalies", () => {
               // rest of the battle is pure shield regen. The cooldown exceeds
               // the battle's tick cap so a second shot never lands.
               weapons: [weapon({ damage: 8000, cooldown: 400, range: 200 })],
-              orders: { engageRange: "hold" },
+              doctrine: HOLD_POSITION_DOCTRINE,
             }),
             defender({
               id: "d1",
@@ -337,7 +364,6 @@ describe("engine.anomalies", () => {
               shield: 10000,
               shieldRechargeRate: 1,
               shieldRechargeDelay: 1,
-              orders: { engageRange: "hold" },
             }),
           ],
           anomalies,
@@ -377,9 +403,9 @@ describe("engine.anomalies", () => {
               x: 50_000,
               y: 0,
               structure: 99999,
-              orders: { engageRange: "hold" },
+              doctrine: HOLD_POSITION_DOCTRINE,
             }),
-            defender({ id: "d1", x: 4_500, y: 0, structure: 1e12, orders: { engageRange: "hold" } }),
+            defender({ id: "d1", x: 4_500, y: 0, structure: 1e12 }),
           ],
           anomalies,
           1,

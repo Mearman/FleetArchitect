@@ -2,8 +2,7 @@ import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { CombatShip, BattleInputs } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
-import type { Orders } from "@/schema/fleet";
+import type { Doctrine, DoctrineAction } from "@/schema/ai";
 import type { ShipClassification } from "@/schema/armor";
 import type { WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
@@ -38,7 +37,9 @@ function makeShip(opts: {
   thrust?: number;
   turnRate?: number;
   classification?: ShipClassification;
-  orders?: Partial<Orders>;
+  /** Hold position at the ship's current range (legacy `engageRange: "hold"`
+   *  with the default `rangeKeepingBand` of 0.3). */
+  holdPosition?: boolean;
 }): CombatShip {
   const weapons = opts.weapons ?? [];
   const stats: ShipStats = {
@@ -61,6 +62,16 @@ function makeShip(opts: {
     compartments: 0,
   airtightCompartments: 0,
 };
+  const base: DoctrineAction = opts.holdPosition
+    ? {
+        spatial: {
+          reference: { kind: "target" },
+          range: { kind: "hold", band: 0.3 },
+          bearing: { kind: "free" },
+        },
+      }
+    : {};
+  const doctrine: Doctrine = { base, rules: [] };
   return {
     instanceId: opts.id,
     designId: `design-${opts.id}`,
@@ -69,10 +80,7 @@ function makeShip(opts: {
     stats,
     position: { x: opts.x, y: opts.y },
     facing: opts.facing ?? 0,
-    orders: { ...defaultOrders, ...opts.orders },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine,
     classification: opts.classification ?? "frigate",
   };
 }
@@ -144,7 +152,7 @@ describe("runBattle", () => {
         structure: 50,
         shield: 0,
         weapons: [],
-        orders: { engageRange: "hold" },
+        holdPosition: true,
       }),
     ];
     const result = runBattle(inputs(ships, 7));
@@ -166,7 +174,7 @@ describe("runBattle", () => {
         y: 0,
         structure: 100,
         weapons: [],
-        orders: { engageRange: "hold" },
+        holdPosition: true,
       }),
       makeShip({
         id: "d1",
@@ -175,7 +183,7 @@ describe("runBattle", () => {
         y: 0,
         structure: 100,
         weapons: [],
-        orders: { engageRange: "hold" },
+        holdPosition: true,
       }),
     ];
     const result = runBattle(inputs(ships, 1, 5));
@@ -209,7 +217,7 @@ describe("runBattle", () => {
         y: 0,
         structure: 1000,
         weapons: [],
-        orders: { engageRange: "hold" },
+        holdPosition: true,
       }),
     ];
     const result = runBattle(inputs(ships, 99, 50));
@@ -236,7 +244,7 @@ describe("runBattle", () => {
         shield: 0,
         damageReduction: 0.5,
         weapons: [],
-        orders: { engageRange: "hold" },
+        holdPosition: true,
       }),
     ];
     const result = runBattle(inputs(ships, 3));
@@ -264,7 +272,7 @@ describe("runBattle", () => {
         y: 0,
         structure: 4000,
         weapons: [],
-        orders: { engageRange: "hold" },
+        holdPosition: true,
       }),
     ];
     const result = runBattle(inputs(ships, 11, 80));

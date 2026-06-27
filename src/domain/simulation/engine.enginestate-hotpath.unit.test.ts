@@ -39,7 +39,7 @@ import type { BattleInputs, CombatShip } from "@/domain/simulation/types";
 import type { BattleFrame } from "@/schema/battle";
 import type { WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
-import { defaultOrders } from "@/schema/fleet";
+import type { Doctrine } from "@/schema/ai";
 
 /** A hitscan beam: lands damage the instant a target is in arc and range, so
  *  hulls reliably die within the cap and the per-side rebuild on a death is
@@ -114,10 +114,11 @@ function ship(opts: {
     stats,
     position: { x: opts.x, y: opts.y },
     facing: 0,
-    orders: { ...defaultOrders },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    // Empty doctrine == the legacy defaults this fixture previously set:
+    // stance undefined -> balanced fallback, crew undefined -> combat,
+    // targeting undefined -> nearest. The base schema defaults to {} and
+    // rules to [], so this is the authored no-op doctrine.
+    doctrine: { base: {}, rules: [] } satisfies Doctrine,
     classification: "frigate",
   };
 }

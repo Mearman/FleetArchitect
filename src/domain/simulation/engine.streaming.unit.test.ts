@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { runBattle, simulateBattle } from "@/domain/simulation/engine";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleInputs, CombatShip } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
+import type { Doctrine } from "@/schema/ai";
 import type { WeaponEffect } from "@/schema/module";
 import type { ShipDescriptor } from "@/schema/battle";
 import type { ShipStats } from "@/domain/stats";
@@ -65,10 +65,7 @@ function makeShip(opts: {
     stats,
     position: { x: opts.x, y: 0 },
     facing: 0,
-    orders: { ...defaultOrders },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: { base: {}, rules: [] } satisfies Doctrine,
     classification: "frigate",
   };
 }

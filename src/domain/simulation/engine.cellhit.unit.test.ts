@@ -4,7 +4,6 @@ import { runBattle } from "@/domain/simulation/engine";
 import { CELL_SIZE } from "@/domain/grid";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
-import { defaultOrders } from "@/schema/fleet";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
 
@@ -130,10 +129,16 @@ function shooter(weapon: WeaponEffect): CombatShip {
     stats: stats({ thrust: 0 }),
     position: { x: 0, y: 0 },
     facing: 0,
-    orders: { ...defaultOrders, engageRange: "hold" },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: {
+      base: {
+        spatial: {
+          reference: { kind: "target" },
+          range: { kind: "hold", band: 0 },
+          bearing: { kind: "free" },
+        },
+      },
+      rules: [],
+    },
     classification: "frigate",
     modules: [
       moduleOf("c1", { kind: "power", output: 40 }, 0, 0, 100, 5, true),
@@ -161,10 +166,16 @@ function defenderColumn(distance: number, cellHp: number[]): CombatShip {
     stats: stats(),
     position: { x: distance, y: 0 },
     facing: 0,
-    orders: { ...defaultOrders, engageRange: "hold" },
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: {
+      base: {
+        spatial: {
+          reference: { kind: "target" },
+          range: { kind: "hold", band: 0 },
+          bearing: { kind: "free" },
+        },
+      },
+      rules: [],
+    },
     classification: "frigate",
     modules,
   };
