@@ -2,13 +2,16 @@ import { useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { notifications } from "@mantine/notifications";
 import type { Fleet } from "@/schema/fleet";
+import type { FormationTemplate } from "@/schema/formation-template";
 import { flattenShipLeaves } from "@/schema/formation";
 import type { ShipDesign } from "@/schema/ship";
 import type { BattleAnomalyKind } from "@/schema/battle";
+import { storage } from "@/storage/db";
 import {
   ShareDecodeError,
   decodeShareable,
   encodeShareable,
+  referencedTemplates,
 } from "@/sharing/data-url";
 
 /** Everything `startBattle` needs to (re)start a shared battle. */
@@ -39,6 +42,7 @@ function referencedDesigns(
 interface BattleUrlSyncParams {
   fleets: Fleet[] | undefined;
   designs: ShipDesign[] | undefined;
+  templates: FormationTemplate[] | undefined;
   attackerId: string | null;
   defenderId: string | null;
   anomalies: BattleAnomalyKind[];
@@ -74,6 +78,7 @@ interface BattleUrlSyncParams {
 export function useBattleUrlSync({
   fleets,
   designs,
+  templates,
   attackerId,
   defenderId,
   anomalies,
@@ -120,31 +125,48 @@ export function useBattleUrlSync({
     }
     if (shareable.kind !== "battle") return;
 
-    const { attacker, defender, designs: shared, anomalies: a, seed: s } =
-      shareable.value;
+    const {
+      attacker,
+      defender,
+      designs: shared,
+      templates: sharedTemplates,
+      anomalies: a,
+      seed: s,
+    } = shareable.value;
     setAnomalies(a);
     setSeed(s);
-    if (autoStart) {
-      notifications.show({
-        title: "Replaying shared battle",
-        message: `${attacker.name} vs ${defender.name}.`,
-        color: "indigo",
-      });
-      startBattleRef.current(attacker, defender, a, s, shared);
-    } else {
-      notifications.show({
-        title: "Shared battle loaded",
-        message: `${attacker.name} vs ${defender.name} — press Start.`,
-        color: "indigo",
-      });
-      onSharedBattleHeld({
-        attacker,
-        defender,
-        anomalies: a,
-        seed: s,
-        designs: shared,
-      });
-    }
+    // The decoded fleets are run transiently (never written), but a shared
+    // battle's `template` nodes can only resolve against templates that live in
+    // storage — `startBattle` reads them back via `loadTemplateTable`. Upsert
+    // the bundled templates by id first (plain puts; replaying a link must not
+    // churn the recipient's collection), then start. Preset battles bundle no
+    // templates, so this is a no-op for the common preset-share case.
+    void (async () => {
+      for (const template of sharedTemplates) {
+        await storage().formationTemplates.save(template);
+      }
+      if (autoStart) {
+        notifications.show({
+          title: "Replaying shared battle",
+          message: `${attacker.name} vs ${defender.name}.`,
+          color: "indigo",
+        });
+        startBattleRef.current(attacker, defender, a, s, shared);
+      } else {
+        notifications.show({
+          title: "Shared battle loaded",
+          message: `${attacker.name} vs ${defender.name} — press Start.`,
+          color: "indigo",
+        });
+        onSharedBattleHeld({
+          attacker,
+          defender,
+          anomalies: a,
+          seed: s,
+          designs: shared,
+        });
+      }
+    })();
   }, [payload, setAnomalies, setSeed, autoStart, onSharedBattleHeld]);
 
   // WRITE — mirror a complete local matchup into the URL.
@@ -161,6 +183,7 @@ export function useBattleUrlSync({
         attacker,
         defender,
         designs: referencedDesigns(attacker, defender, designs),
+        templates: referencedTemplates([attacker, defender], templates ?? []),
         anomalies,
         seed,
       },
@@ -169,5 +192,5 @@ export function useBattleUrlSync({
     if (encoded !== payload) {
       void navigate(`/battle/${encoded}`, { replace: true });
     }
-  }, [fleets, designs, attackerId, defenderId, anomalies, seed, payload, navigate]);
+  }, [fleets, designs, templates, attackerId, defenderId, anomalies, seed, payload, navigate]);
 }

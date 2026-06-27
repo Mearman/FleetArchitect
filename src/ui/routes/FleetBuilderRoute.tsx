@@ -24,7 +24,7 @@ import { ShareButton } from "@/ui/components/ShareButton";
 import { VersionHistoryPanel } from "@/ui/components/VersionHistoryPanel";
 import { CassettePanel } from "@/ui/components/CassettePanel";
 import { ShipBrowser } from "@/ui/components/ShipBrowser";
-import { useFleets, useShipDesigns } from "@/ui/hooks/storage";
+import { useFleets, useFormationTemplates, useShipDesigns } from "@/ui/hooks/storage";
 import {
   deleteFleet,
   listFleetRevisions,
@@ -33,6 +33,8 @@ import {
 } from "@/storage/db";
 import type { Doctrine } from "@/schema/ai";
 import type { Fleet, FleetShip } from "@/schema/fleet";
+import { referencedTemplates } from "@/sharing/data-url";
+import type { Shareable } from "@/sharing/data-url";
 import { flatFormation, flattenShipLeaves } from "@/schema/formation";
 import type { ShipDesign } from "@/schema/ship";
 import { panelLabel } from "@/ui/components/panel.css";
@@ -88,12 +90,37 @@ function toFleetShip(row: FleetRow): FleetShip {
 export function FleetBuilderRoute() {
   const fleets = useFleets();
   const designs = useShipDesigns();
+  const templates = useFormationTemplates();
   const [working, setWorking] = useState<WorkingFleet>(blankFleet);
   const [advancedOpen, setAdvancedOpen] = useState<ReadonlySet<string>>(new Set());
   const [historyOpen, setHistoryOpen] = useState(false);
   const [revisions, setRevisions] = useState<Fleet[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const factions = catalog().factions();
+
+  /**
+   * The shareable form of the working fleet: the fleet plus every formation
+   * template its tree references, bundled so a recipient can re-establish the
+   * by-reference links before resolve. The builder authors flat formations
+   * today (no `template` nodes), so the bundle is empty until template
+   * authoring lands — but the wiring is correct either way.
+   */
+  const shareable = useMemo<Shareable>(() => {
+    const fleet: Fleet = {
+      id: working.id ?? "draft",
+      name: working.name || "Untitled",
+      faction: working.faction || "Unaligned",
+      formation: flatFormation(working.rows.map(toFleetShip)),
+      createdAt: working.createdAt ?? nowIso(),
+      updatedAt: nowIso(),
+      source: "user",
+      revision: 1,
+    };
+    return {
+      kind: "fleet",
+      value: { fleet, templates: referencedTemplates([fleet], templates ?? []) },
+    };
+  }, [working, templates]);
 
   function toggleAdvanced(rowId: string) {
     setAdvancedOpen((prev) => {
@@ -372,21 +399,7 @@ export function FleetBuilderRoute() {
               </Collapse>
 
               <div className={actionBar}>
-                <ShareButton
-                  shareable={{
-                    kind: "fleet",
-                    value: {
-                      id: working.id ?? "draft",
-                      name: working.name || "Untitled",
-                      faction: working.faction || "Unaligned",
-                      formation: flatFormation(working.rows.map(toFleetShip)),
-                      createdAt: working.createdAt ?? nowIso(),
-                      updatedAt: nowIso(),
-                      source: "user",
-                      revision: 1,
-                    },
-                  }}
-                />
+                <ShareButton shareable={shareable} />
                 {working.id !== null ? (
                   <Tooltip label="View version history">
                     <Button

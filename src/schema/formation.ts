@@ -137,6 +137,33 @@ export function flatFormation(ships: readonly FleetShip[]): Formation {
 }
 
 /**
+ * Collect every `template` node's templateId in a formation tree, deduplicated
+ * and in pre-order DFS (the order template instances first appear). These are
+ * the by-reference links a fleet carries: a share must bundle each referenced
+ * template so the recipient can re-establish the links before resolve. sibling
+ * to {@link flattenShipLeaves}: the sharing codec uses this to walk a fleet and
+ * gather the templates it depends on, while {@link expandTemplates} is what
+ * later inlines them at battle-start.
+ */
+export function collectTemplateRefs(formation: Formation): string[] {
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  const walk = (node: FormationNode): void => {
+    if (node.kind === "template") {
+      if (!seen.has(node.templateId)) {
+        seen.add(node.templateId);
+        ids.push(node.templateId);
+      }
+    } else if (node.kind === "formation") {
+      for (const child of node.formation.children) walk(child);
+    }
+    // kind === "ship": a leaf carries no template reference.
+  };
+  for (const child of formation.children) walk(child);
+  return ids;
+}
+
+/**
  * Collect every ship leaf of a formation tree in pre-order DFS. The resolver
  * lays these out as the deployment column in this order, so for a flat root
  * formation the result is exactly the legacy `Fleet.ships` array order. The

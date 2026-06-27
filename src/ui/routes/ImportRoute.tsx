@@ -12,7 +12,7 @@ import { notifications } from "@mantine/notifications";
 import { IconAlertTriangle, IconCircleCheck } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { saveFleet, saveShipDesign } from "@/storage/db";
+import { saveFleet, saveFormationTemplate, saveShipDesign, storage } from "@/storage/db";
 import { ShareDecodeError, decodeShareable } from "@/sharing/data-url";
 import type { Shareable } from "@/sharing/data-url";
 import { contentRouteScroll } from "./contentRoute.css";
@@ -63,16 +63,30 @@ export function ImportRoute() {
         return;
       }
 
+      let savedName: string;
       if (shareable.kind === "shipDesign") {
         await saveShipDesign(shareable.value);
+        savedName = shareable.value.name;
+      } else if (shareable.kind === "formationTemplate") {
+        await saveFormationTemplate(shareable.value);
+        savedName = shareable.value.name;
       } else {
-        await saveFleet(shareable.value);
+        // A fleet share bundles every formation template its tree references;
+        // upsert them by id FIRST so the fleet's `template` nodes resolve on
+        // resolve. Plain puts (not saveFormationTemplate) so re-importing a
+        // link is idempotent — bundled templates are dependencies, not primary
+        // imports, and a re-import must not churn the recipient's collection.
+        for (const template of shareable.value.templates) {
+          await storage().formationTemplates.save(template);
+        }
+        await saveFleet(shareable.value.fleet);
+        savedName = shareable.value.fleet.name;
       }
       if (!cancelled) {
-        setStatus({ state: "saved", kind: shareable.kind, name: shareable.value.name });
+        setStatus({ state: "saved", kind: shareable.kind, name: savedName });
         notifications.show({
           title: "Imported",
-          message: `${shareable.value.name} added to your collection.`,
+          message: `${savedName} added to your collection.`,
           color: "teal",
         });
       }

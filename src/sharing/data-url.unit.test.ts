@@ -5,10 +5,12 @@ import {
   SHARE_VERSION,
   decodeShareable,
   encodeShareable,
+  referencedTemplates,
   type BattleShare,
 } from "@/sharing/data-url";
 import { createId, nowIso } from "@/domain/id";
 import type { Fleet } from "@/schema/fleet";
+import type { FormationTemplate } from "@/schema/formation-template";
 import { flatFormation, flattenShipLeaves } from "@/schema/formation";
 import type { ShipDesign } from "@/schema/ship";
 import { presetDesigns, presetFleets } from "@/data/presets";
@@ -84,14 +86,17 @@ describe("sharing round-trip (replay-relevant data)", () => {
       revision: 1,
     };
     const originalShips = flattenShipLeaves(fleet.formation);
-    const encoded = encodeShareable({ kind: "fleet", value: fleet });
+    const encoded = encodeShareable({
+      kind: "fleet",
+      value: { fleet, templates: [] },
+    });
     const decoded = decodeShareable(encoded);
     if (decoded.kind !== "fleet") {
       throw new Error("expected a fleet share");
     }
-    expect(decoded.value.name).toBe(fleet.name);
-    expect(decoded.value.faction).toBe(fleet.faction);
-    const decodedShips = flattenShipLeaves(decoded.value.formation);
+    expect(decoded.value.fleet.name).toBe(fleet.name);
+    expect(decoded.value.fleet.faction).toBe(fleet.faction);
+    const decodedShips = flattenShipLeaves(decoded.value.fleet.formation);
     expect(decodedShips).toHaveLength(1);
     const ship = decodedShips[0];
     if (ship === undefined) throw new Error("expected a fleet ship");
@@ -100,6 +105,188 @@ describe("sharing round-trip (replay-relevant data)", () => {
     expect(ship.position).toEqual({ x: 10, y: 20 });
     expect(ship.facing).toBe(1.25);
     expect(ship.doctrine).toEqual(originalShips[0]?.doctrine);
+  });
+
+  it("round-trips a nested formation tree with a template reference", () => {
+    // A template referenced by id from a fleet's tree (the by-reference link a
+    // share must preserve). Its own subtree carries a role + a non-default
+    // doctrine so those round-trip too.
+    const template: FormationTemplate = {
+      id: createId("ftpl"),
+      name: "Vanguard Wedge",
+      faction: "Terran",
+      formation: {
+        id: "wedge",
+        role: "vanguard",
+        doctrine: { base: { stance: "aggressive" }, rules: [] },
+        children: [
+          {
+            kind: "ship",
+            ship: {
+              designId: "preset-ship-gunship",
+              position: { x: 0, y: -5 },
+              facing: 0,
+            },
+          },
+          {
+            kind: "ship",
+            ship: {
+              designId: "preset-ship-gunship",
+              position: { x: 0, y: 5 },
+              facing: 0,
+            },
+          },
+        ],
+      },
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+      source: "user",
+      revision: 1,
+    };
+    // A fleet whose root formation holds a lone ship leaf, a nested formation
+    // (with its own role + slot), and a template reference (with a slot). The
+    // pre-share tree and the decoded tree must be structurally identical.
+    const fleet: Fleet = {
+      id: createId("fleet"),
+      name: "Mixed Wing",
+      faction: "Terran",
+      formation: {
+        id: "root",
+        doctrine: { base: {}, rules: [] },
+        children: [
+          {
+            kind: "ship",
+            ship: {
+              designId: "preset-ship-gunship",
+              position: { x: 1, y: 2 },
+              facing: 0.5,
+            },
+          },
+          {
+            kind: "formation",
+            slot: { forward: 40, lateral: -10 },
+            formation: {
+              id: "screen",
+              role: "screen",
+              layout: { kind: "pattern", pattern: "line", spacing: 8, facingAligned: true },
+              doctrine: { base: {}, rules: [] },
+              children: [
+                {
+                  kind: "ship",
+                  ship: {
+                    designId: "preset-ship-gunship",
+                    position: { x: 0, y: 0 },
+                    facing: 0,
+                  },
+                },
+              ],
+            },
+          },
+          {
+            kind: "template",
+            templateId: template.id,
+            slot: { forward: 80, lateral: 0 },
+          },
+        ],
+      },
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+      source: "user",
+      revision: 1,
+    };
+    const encoded = encodeShareable({
+      kind: "fleet",
+      value: { fleet, templates: [template] },
+    });
+    const decoded = decodeShareable(encoded);
+    if (decoded.kind !== "fleet") {
+      throw new Error("expected a fleet share");
+    }
+    // The bundled template round-trips by id (the by-reference link target).
+    expect(decoded.value.templates).toHaveLength(1);
+    expect(decoded.value.templates[0]?.id).toBe(template.id);
+    expect(decoded.value.templates[0]?.formation.role).toBe("vanguard");
+    // The whole formation tree round-trips structurally — including the nested
+    // formation (role, layout, slot) and the template reference (id, slot).
+    expect(decoded.value.fleet.formation).toEqual(fleet.formation);
+  });
+
+  it("bundles transitively referenced templates (a template referencing a template)", () => {
+    // templateB: a simple two-ship scout pair.
+    const templateB: FormationTemplate = {
+      id: createId("ftpl"),
+      name: "Scout Pair",
+      faction: "Terran",
+      formation: {
+        id: "scouts",
+        doctrine: { base: {}, rules: [] },
+        children: [
+          {
+            kind: "ship",
+            ship: { designId: "preset-ship-gunship", position: { x: 0, y: -3 }, facing: 0 },
+          },
+          {
+            kind: "ship",
+            ship: { designId: "preset-ship-gunship", position: { x: 0, y: 3 }, facing: 0 },
+          },
+        ],
+      },
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+      source: "user",
+      revision: 1,
+    };
+    // templateA: references templateB from inside its own subtree (recursive
+    // composition — exactly what expandTemplates inlines at battle-start).
+    const templateA: FormationTemplate = {
+      id: createId("ftpl"),
+      name: "Carrier Group",
+      faction: "Terran",
+      formation: {
+        id: "group",
+        doctrine: { base: {}, rules: [] },
+        children: [
+          {
+            kind: "ship",
+            ship: { designId: "preset-ship-gunship", position: { x: 0, y: 0 }, facing: 0 },
+          },
+          { kind: "template", templateId: templateB.id },
+        ],
+      },
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+      source: "user",
+      revision: 1,
+    };
+    const fleet: Fleet = {
+      id: createId("fleet"),
+      name: "Transitive Wing",
+      faction: "Terran",
+      formation: {
+        id: "root",
+        doctrine: { base: {}, rules: [] },
+        children: [{ kind: "template", templateId: templateA.id }],
+      },
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+      source: "user",
+      revision: 1,
+    };
+    // The bundle is closed transitively: the fleet references A, A references B,
+    // so both must ship even though the fleet never names B directly.
+    const bundle = referencedTemplates([fleet], [templateA, templateB]);
+    expect(bundle.map((t) => t.id).sort()).toEqual([templateA.id, templateB.id].sort());
+
+    const decoded = decodeShareable(
+      encodeShareable({ kind: "fleet", value: { fleet, templates: bundle } }),
+    );
+    if (decoded.kind !== "fleet") {
+      throw new Error("expected a fleet share");
+    }
+    expect(decoded.value.templates.map((t) => t.id).sort()).toEqual(
+      [templateA.id, templateB.id].sort(),
+    );
+    expect(decoded.value.fleet.formation).toEqual(fleet.formation);
   });
 
   it("round-trips a whole battle's grids, factions, composition, orders, anomalies and seed", () => {
@@ -134,6 +321,7 @@ describe("sharing round-trip (replay-relevant data)", () => {
       attacker: makeFleet("Attacker"),
       defender: makeFleet("Defender"),
       designs: [design],
+      templates: [],
       anomalies: ["asteroidField"],
       seed: 42,
     };
@@ -199,6 +387,7 @@ function presetBattle(): BattleShare {
     attacker,
     defender,
     designs: presetDesigns.filter((d) => referenced.has(d.id)),
+    templates: [],
     anomalies: ["asteroidField"],
     seed: 1234,
   };

@@ -21,7 +21,7 @@ import {
 } from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TICKS_PER_SECOND } from "@/domain/simulation/types";
-import { useFleets, useShipDesigns } from "@/ui/hooks/storage";
+import { useFleets, useFormationTemplates, useShipDesigns } from "@/ui/hooks/storage";
 import { normaliseAnomalies } from "@/schema/battle";
 import type { BattleAnomalyKind, BattleFrame } from "@/schema/battle";
 import type { DescriptorMap } from "@/ui/cellLayout";
@@ -53,6 +53,7 @@ import * as styles from "./BattleRoute.css";
 export function BattleRoute() {
   const fleets = useFleets();
   const designs = useShipDesigns();
+  const templates = useFormationTemplates();
   const [attackerId, setAttackerId] = useState<string | null>(null);
   const [defenderId, setDefenderId] = useState<string | null>(null);
   const [anomalies, setAnomalies] = useState<BattleAnomalyKind[]>([]);
@@ -132,6 +133,7 @@ export function BattleRoute() {
   useBattleUrlSync({
     fleets,
     designs,
+    templates,
     attackerId,
     defenderId,
     anomalies,
