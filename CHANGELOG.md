@@ -1,3 +1,10 @@
+# [1.23.0](https://github.com/Mearman/FleetArchitect/compare/v1.22.0...v1.23.0) (2026-06-27)
+
+
+### Features
+
+* **sim:** add the formation-doctrine pass (step 0d) ([14304db](https://github.com/Mearman/FleetArchitect/commit/14304db01192e499178ad5a710a743d24107ad28))
+
 # [1.22.0](https://github.com/Mearman/FleetArchitect/compare/v1.21.2...v1.22.0) (2026-06-27)
 
 
