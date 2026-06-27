@@ -3,8 +3,9 @@ import {
   decompressFromEncodedURIComponent,
 } from "lz-string";
 import { z } from "zod";
-import { Fleet, FleetShip, Orders, defaultOrders } from "@/schema/fleet";
+import { Fleet, FleetShip } from "@/schema/fleet";
 import { ShipDesign } from "@/schema/ship";
+import { Doctrine } from "@/schema/ai";
 import { normaliseDesignInput } from "@/schema/ship-normalise";
 import { parseFleetRecord } from "@/schema/fleet-normalise";
 import type { TileGrid } from "@/schema/grid";
@@ -109,17 +110,35 @@ function base64UrlToBytes(value: string): Uint8Array {
 // ---------------------------------------------------------------------------
 
 /**
+ * The schema's default doctrine (no rules, empty base). Used to omit the
+ * doctrine from the compact wire form when a design or fleet ship carries it,
+ * keeping the common (doctrine-less) share tiny.
+ */
+const DEFAULT_DOCTRINE: Doctrine = Doctrine.parse({ base: {}, rules: [] });
+
+/**
+ * Whether a doctrine equals the empty default (no authored axes, no rules). The
+ * compact form omits it in that case so a plain share stays small.
+ */
+function isDefaultDoctrine(doctrine: Doctrine): boolean {
+  return (
+    doctrine.rules.length === 0 &&
+    Object.keys(doctrine.base).length === 0
+  );
+}
+
+/**
  * The short-key form of a `ShipDesign` inside the envelope. Persistence-only
- * fields are dropped; the grid is binary; AI posture is carried only when it
+ * fields are dropped; the grid is binary; the doctrine is carried only when it
  * differs from the schema default so the common case stays tiny.
  */
 const CompactDesign = z.object({
   n: z.string(),
   f: z.string(),
   b: z.string(),
-  ss: ShipDesign.shape.shipStance.optional(),
-  cp: ShipDesign.shape.crewPriority.optional(),
-  r: ShipDesign.shape.rules.optional(),
+  // The design's doctrine (base action + rules). Omitted when it equals the
+  // empty default so a doctrine-less design round-trips compactly.
+  dc: Doctrine.optional(),
 });
 type CompactDesign = z.infer<typeof CompactDesign>;
 
@@ -129,9 +148,7 @@ function compactDesign(design: ShipDesign): CompactDesign {
     f: design.faction,
     b: bytesToBase64Url(encodeGrid(design.grid)),
   };
-  if (design.shipStance !== "balanced") entry.ss = design.shipStance;
-  if (design.crewPriority !== "combat") entry.cp = design.crewPriority;
-  if (design.rules.length > 0) entry.r = design.rules;
+  if (!isDefaultDoctrine(design.doctrine)) entry.dc = design.doctrine;
   return entry;
 }
 
@@ -146,69 +163,9 @@ function rebuildDesign(entry: CompactDesign, index: number): ShipDesign {
     updatedAt: SYNTHETIC_TIMESTAMP,
     source: SYNTHETIC_SOURCE,
     revision: SYNTHETIC_REVISION,
-    shipStance: entry.ss ?? "balanced",
-    crewPriority: entry.cp ?? "combat",
-    rules: entry.r ?? [],
+    doctrine: entry.dc ?? DEFAULT_DOCTRINE,
   };
   return ShipDesign.parse(normaliseDesignInput(candidate));
-}
-
-// ---------------------------------------------------------------------------
-// Compact projection: orders (omit default-valued fields).
-// ---------------------------------------------------------------------------
-
-const ORDER_KEYS: readonly (keyof Orders)[] = [
-  "stance",
-  "targetPriority",
-  "engageRange",
-  "retreatThreshold",
-  "focusFire",
-  "vulnerableTargetWeight",
-  "formationKeeping",
-  "rangeKeepingBand",
-];
-
-const PartialOrders = Orders.partial();
-type PartialOrders = z.infer<typeof PartialOrders>;
-
-function compactOrders(orders: Orders): PartialOrders {
-  const out: PartialOrders = {};
-  for (const key of ORDER_KEYS) {
-    if (orders[key] !== defaultOrders[key]) {
-      // Index-by-literal-key assignment keeps every value at its own type.
-      switch (key) {
-        case "stance":
-          out.stance = orders.stance;
-          break;
-        case "targetPriority":
-          out.targetPriority = orders.targetPriority;
-          break;
-        case "engageRange":
-          out.engageRange = orders.engageRange;
-          break;
-        case "retreatThreshold":
-          out.retreatThreshold = orders.retreatThreshold;
-          break;
-        case "focusFire":
-          out.focusFire = orders.focusFire;
-          break;
-        case "vulnerableTargetWeight":
-          out.vulnerableTargetWeight = orders.vulnerableTargetWeight;
-          break;
-        case "formationKeeping":
-          out.formationKeeping = orders.formationKeeping;
-          break;
-        case "rangeKeepingBand":
-          out.rangeKeepingBand = orders.rangeKeepingBand;
-          break;
-      }
-    }
-  }
-  return out;
-}
-
-function rebuildOrders(partial: PartialOrders): Orders {
-  return Orders.parse({ ...defaultOrders, ...partial });
 }
 
 // ---------------------------------------------------------------------------
@@ -218,14 +175,15 @@ function rebuildOrders(partial: PartialOrders): Orders {
 /**
  * Short-key fleet ship. `d` is the design reference: a small integer index into
  * the battle's design table, or — for a standalone fleet share with no design
- * table — the original design id string.
+ * table — the original design id string. `dc` is the per-ship leaf doctrine
+ * override (omitted when absent or equal to the empty default).
  */
 const CompactFleetShip = z.object({
   d: z.union([z.number().int(), z.string()]),
   x: z.number(),
   y: z.number(),
   fa: z.number(),
-  o: PartialOrders,
+  dc: Doctrine.optional(),
 });
 type CompactFleetShip = z.infer<typeof CompactFleetShip>;
 
@@ -249,13 +207,18 @@ function compactFleet(
     s: flattenShipLeaves(fleet.formation).map((ship) => {
       const index = designIndexById?.get(ship.designId);
       const designRef = index ?? ship.designId;
-      return {
+      const entry: CompactFleetShip = {
         d: designRef,
         x: ship.position.x,
         y: ship.position.y,
         fa: ship.facing,
-        o: compactOrders(ship.orders),
       };
+      // Carry the leaf doctrine only when it is authored (present and not the
+      // empty default), so a doctrine-less fleet ship round-trips compactly.
+      if (ship.doctrine !== undefined && !isDefaultDoctrine(ship.doctrine)) {
+        entry.dc = ship.doctrine;
+      }
+      return entry;
     }),
   };
 }
@@ -263,19 +226,19 @@ function compactFleet(
 function rebuildFleetShip(entry: CompactFleetShip): FleetShip {
   const designId =
     typeof entry.d === "number" ? synthDesignId(entry.d) : entry.d;
-  return FleetShip.parse({
+  const ship: Record<string, unknown> = {
     designId,
     position: { x: entry.x, y: entry.y },
     facing: entry.fa,
-    orders: rebuildOrders(entry.o),
-  });
+  };
+  if (entry.dc !== undefined) ship.doctrine = entry.dc;
+  return FleetShip.parse(ship);
 }
 
 function rebuildFleet(entry: CompactFleet): Fleet {
-  // Parse through the fleet normaliser (not raw Fleet.parse) so each rebuilt
-  // leaf ship gets its doctrine compiled from its (round-tripped) orders — the
-  // engine reads the authored leaf doctrine, so without this a decoded fleet
-  // would resolve with a different stance than the original and diverge.
+  // Parse through the fleet normaliser so each rebuilt leaf ship keeps its
+  // round-tripped doctrine (and a legacy `orders`-carrying share, should one
+  // ever appear, is compiled at the boundary).
   return parseFleetRecord({
     id: `f-${entry.n}`,
     name: entry.n,

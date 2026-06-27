@@ -357,14 +357,9 @@ export function resolveFleetToCombatShips(
       stats,
       position: { x, y },
       facing,
-      orders: deployed.orders,
       classification: deriveClassification(grownDesign.grid),
-      crewPriority: design.crewPriority,
-      shipStance: design.shipStance,
-      rules: design.rules,
       // The resolved authored doctrine (design overlaid by the leaf). Source of
-      // truth for the engine; the legacy trio/orders above stay only as the
-      // oracle fallback until they are dropped.
+      // truth for the engine.
       doctrine: overlayDoctrine(design.doctrine, deployed.doctrine),
       ...(modules.length > 0 ? { modules } : {}),
       ...(hardwires.length > 0 ? { hardwires } : {}),

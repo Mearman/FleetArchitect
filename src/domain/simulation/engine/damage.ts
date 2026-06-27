@@ -711,12 +711,8 @@ export function makeChunkShip(
     cost: 0,
     weapons: [],
     weaponCooldowns: [],
-    orders: parent.orders,
-    // A fragment inherits the parent's crew doctrine, stance, and rules — it
-    // is a piece of the same ship, so it fights under the same posture.
-    crewPriority: parent.crewPriority,
-    shipStance: parent.shipStance,
-    rules: parent.rules,
+    // A fragment inherits the parent's doctrine — it is a piece of the same
+    // ship, so it fights under the same posture.
     doctrine: parent.doctrine,
     ...defaultAiDecisions(), // live AI decisions; the AI step rewrites them next tick
     target: undefined,

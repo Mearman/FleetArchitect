@@ -1,15 +1,14 @@
 import type { ShipStats } from "@/domain/stats";
-import type { Orders } from "@/schema/fleet";
 import type { CellEdges, HardwireResource, SurfaceKind } from "@/schema/grid";
 import type { ShipClassification } from "@/schema/armor";
 import type { ModuleEffect } from "@/schema/module";
 import type { BattleAnomalyKind, BattleSide, ShipDescriptor } from "@/schema/battle";
 import type { Vec2 } from "@/schema/primitives";
-import type { CrewPriority, Doctrine, Rule, ShipStance } from "@/schema/ai";
+import type { Doctrine } from "@/schema/ai";
 
 /**
  * A ship fully resolved for combat: identity + aggregate stats + deployment +
- * orders. This is the runtime unit the simulation pushes around; it carries no
+ * doctrine. This is the runtime unit the simulation pushes around; it carries no
  * rendering concerns.
  */
 export interface CombatShip {
@@ -29,37 +28,14 @@ export interface CombatShip {
    *  only interaction is the contact impulse and momentum is conserved). */
   velocity?: Vec2;
   facing: number;
-  orders: Orders;
   classification: ShipClassification;
   /**
-   * Crew task-scheduler priority mode, copied from `ShipDesign.crewPriority` by
-   * the resolver. Read by the crew tick to reorder the four task kinds
-   * (manning, ammo haul, power haul, repair) under the ship's doctrine. The
-   * default `"combat"` preserves the historical fixed order for designs
-   * authored before this field existed.
-   */
-  crewPriority: CrewPriority;
-  /**
-   * Base ship stance, copied from `ShipDesign.shipStance` by the resolver. The
-   * AI interpreter reads it each tick as the base posture that the ship's
-   * `rules` layer onto. Defaults to `"balanced"`.
-   */
-  shipStance: ShipStance;
-  /**
-   * Player-authored trigger/action rules, copied from `ShipDesign.rules` by the
-   * resolver. Evaluated in list order each tick by the AI interpreter; the
-   * first matching rule's action layers onto the base stance. Empty by
-   * default.
-   */
-  rules: Rule[];
-  /**
    * The resolved authored doctrine (design overlaid by the fleet-ship leaf),
-   * threaded by the resolver. The engine's source of truth; the legacy
-   * trio/orders above remain only as the oracle fallback until they are dropped.
-   * Conditionally-spread so a direct-constructed CombatShip (test fixtures)
-   * without it keeps an unchanged cache key.
+   * threaded by the resolver. The engine's single source of truth for the
+   * ship's behaviour: movement, targeting, crew, and the AI interpreter all
+   * read it.
    */
-  doctrine?: Doctrine;
+  doctrine: Doctrine;
   /** Chamfered hull outline (computed at resolve from the grid's armor shell).
    *  Render-only; the engine snapshots it. */
   outline?: { x: number; y: number }[][];

@@ -136,7 +136,7 @@ export function updateCrew(ship: SimShip): void {
   // every rule-less ship) the static priority stands and the order is unchanged.
   const priority = ship.aiPrioritiseRepair
     ? "damageControl"
-    : (ship.doctrine?.base.crew ?? ship.crewPriority);
+    : (ship.doctrine.base.crew ?? "combat");
   const taskOrder = crewTaskOrder(priority, {
     structure: ship.structure,
     maxStructure: ship.maxStructure,

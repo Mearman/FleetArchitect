@@ -22,7 +22,6 @@
  */
 
 import {
-  effectiveAi,
   effectiveDoctrineAi,
   type TriggerContext,
 } from "@/domain/simulation/engine/ai";
@@ -134,19 +133,17 @@ export function stepAi(
     // Phantoms carry no AI of their own; leave their (default) fields.
     if (ship.phantom !== undefined) continue;
     const ctx = buildContext(ship, byId, attackerStrength, defenderStrength);
-    const state =
-      ship.doctrine !== undefined
-        ? effectiveDoctrineAi(ship.doctrine, ctx)
-        : effectiveAi(ship.shipStance, ship.rules, ctx);
+    const state = effectiveDoctrineAi(ship.doctrine, ctx);
     ship.aiHoldFire = state.holdFire;
     ship.aiFocusFire = state.focusFire;
     ship.aiRetreat = state.retreat;
     ship.aiPrioritiseRepair = state.prioritiseRepair;
     ship.aiRally = state.rally;
     // `aiStance` records a stance OVERRIDE only: the effective stance differs
-    // from the ship's base stance exactly when a `setStance` rule fired this
-    // tick. Leaving it `null` otherwise keeps a rule-less ship on its static
-    // `orders.stance`, so the movement/targeting stance reads are unchanged.
-    ship.aiStance = state.stance !== ship.shipStance ? state.stance : null;
+    // from the doctrine base stance exactly when a `setStance` rule fired this
+    // tick. Leaving it `null` otherwise keeps a rule-less ship on its doctrine
+    // base stance, so the movement/targeting stance reads are unchanged.
+    const baseStance = ship.doctrine.base.stance ?? "balanced";
+    ship.aiStance = state.stance !== baseStance ? state.stance : null;
   }
 }

@@ -37,8 +37,7 @@
 import { z } from "zod";
 
 import { ShipClassification } from "./armor";
-import { ShipStance, CrewPriority, ModuleKind, Rule } from "./ai";
-import { Orders } from "./fleet";
+import { ShipStance, ModuleKind, Doctrine } from "./ai";
 import { CellEdges, HardwireResource, SurfaceKind } from "./grid";
 import { ModuleEffect, WeaponEffect, WeaponType } from "./module";
 
@@ -238,10 +237,10 @@ const CheckpointShip = z.object({
   cost: z.number(),
   weapons: z.array(WeaponEffect),
   weaponCooldowns: z.array(z.number()),
-  orders: Orders,
-  crewPriority: CrewPriority,
-  shipStance: ShipStance,
-  rules: z.array(Rule),
+  /** The resolved authored doctrine (base + rules). Authoritative — the engine
+   *  reads doctrine as its single source of ship behaviour, so a resumed
+   *  battle must restore the same doctrine the pre-pause tick read. */
+  doctrine: Doctrine,
   aiStance: ShipStance.nullable(),
   aiFocusFire: z.boolean(),
   aiRetreat: z.boolean(),
@@ -404,7 +403,7 @@ const StalemateWatch = z.object({
 /** The schema version. Bumped when the checkpoint shape changes so a stored
  *  checkpoint from an older shape is rejected at the storage boundary rather
  *  than silently mis-read. */
-export const CHECKPOINT_VERSION = 2;
+export const CHECKPOINT_VERSION = 3;
 
 /**
  * A complete engine checkpoint: everything needed to resume `simulateBattle`

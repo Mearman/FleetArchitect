@@ -4,7 +4,7 @@
  */
 
 import type { DecoyEffect, HangarEffect } from "@/schema/module";
-import { defaultOrders } from "@/schema/fleet";
+import { Doctrine } from "@/schema/ai";
 
 import { defaultAiDecisions } from "./ai-step";
 import { SIM } from "./config";
@@ -12,6 +12,13 @@ import { isOperational } from "./crew";
 import { applyDamage } from "./damage";
 import { cellWorldPosition } from "@/domain/simulation/spatial-hash";
 import type { SimShip } from "./types";
+
+/**
+ * The empty doctrine every phantom carries. Phantoms have no AI of their own
+ * (`stepAi` skips them), so their doctrine is never read; it exists only to
+ * satisfy the required `SimShip.doctrine` field. Empty base, no rules.
+ */
+const PHANTOM_DOCTRINE = Doctrine.parse({ base: {}, rules: [] });
 
 /** A fresh drone SimShip, launched from `owner` toward the fight. `spawnX/Y`
  *  is the hangar module's world position — the drone appears at the bay door,
@@ -66,10 +73,7 @@ export function makeDrone(
     cost: 0,
     weapons: [],
     weaponCooldowns: [],
-    orders: defaultOrders,
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: PHANTOM_DOCTRINE,
     // Phantoms carry no AI of their own; leave the live decisions unset.
     ...defaultAiDecisions(),
     target: undefined,
@@ -142,10 +146,7 @@ export function makeDecoy(
     cost: 0,
     weapons: [],
     weaponCooldowns: [],
-    orders: defaultOrders,
-    crewPriority: "combat",
-    shipStance: "balanced",
-    rules: [],
+    doctrine: PHANTOM_DOCTRINE,
     // Phantoms carry no AI of their own; leave the live decisions unset.
     ...defaultAiDecisions(),
     target: undefined,

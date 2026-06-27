@@ -9,8 +9,7 @@
 import type { ShipClassification } from "@/schema/armor";
 import type { CellEdges, SurfaceKind } from "@/schema/grid";
 import type { ModuleEffect, WeaponEffect, WeaponType } from "@/schema/module";
-import type { Orders } from "@/schema/fleet";
-import type { CrewPriority, Doctrine, Rule, ShipStance } from "@/schema/ai";
+import type { Doctrine, ShipStance } from "@/schema/ai";
 import type { ResolvedHardwire, SimCrew } from "../types";
 
 import type { UNREACHABLE } from "./config";
@@ -207,28 +206,13 @@ export interface SimShip {
   cost: number;
   weapons: readonly WeaponEffect[];
   weaponCooldowns: number[];
-  orders: Orders;
   /**
-   * Crew task-scheduler priority mode (Phase 6 wiring). Read by the crew tick
-   * to reorder the four task kinds via `crewTaskOrder`. Defaults to `"combat"`
-   * (the historical fixed order) so legacy designs behave unchanged.
+   * The ship's resolved doctrine (base action + ordered conditional rules).
+   * Compiled in `toSimShip` from the design doctrine overlaid by the
+   * fleet-ship leaf doctrine. The engine's single source of truth for
+   * behaviour: movement, targeting, crew, and the AI interpreter all read it.
    */
-  crewPriority: CrewPriority;
-  /**
-   * Base ship stance (Phase 7 wiring). The AI interpreter reads it each tick
-   * as the base posture; `rules` layer on top. Defaults to `"balanced"`.
-   */
-  shipStance: ShipStance;
-  /**
-   * Player-authored trigger/action rules (Phase 7 wiring). Evaluated in list
-   * order each tick by `effectiveAi`; the first matching rule wins. Empty by
-   * default — the stance alone governs behaviour.
-   */
-  rules: Rule[];
-  /** Resolved unified doctrine (base + rules), compiled from the legacy trio/
-   *  orders by `toSimShip`. Consumers prefer it and fall back to the legacy
-   *  field when absent (direct-built test SimShips). Optional until legacy drops. */
-  doctrine?: Doctrine;
+  doctrine: Doctrine;
   /**
    * Transient per-tick AI decision (Phase 7 wiring): whether the ship holds
    * fire this tick. Set by the AI interpreter step from the effective

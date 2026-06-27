@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { EntityId, IsoTimestamp } from "./primitives";
 import { TileGrid } from "./grid";
-import { ShipStance, CrewPriority, Rule, Doctrine } from "./ai";
+import { Doctrine } from "./ai";
 
 /**
  * Provenance of a persisted record. `preset` records are bundled catalogue
@@ -24,11 +24,12 @@ export type DesignSource = z.infer<typeof DesignSource>;
  * id or slot/placement list. This is the unit of persistence and sharing for
  * individual ships.
  *
- * The AI and provenance fields are additive: every one carries a `.default()`
- * so designs authored before this schema version parse unchanged. The
- * simulation does not yet read `shipStance`/`crewPriority`/`rules` — that
- * interpreter lands in a later phase — but the values are persisted now so
- * designs capture the author's intent at the point of creation.
+ * Behaviour is authored solely through `doctrine` (the unified vocabulary over
+ * the spatial, targeting, fire, stance, crew, cohesion, and retreat axes). A
+ * design persisted before the doctrine overhaul carries the legacy trio
+ * `shipStance` / `crewPriority` / `rules`; the storage read boundary
+ * (`normaliseDesignInput`) compiles that trio into a doctrine at parse time,
+ * so a record written under the old shape parses under the new one.
  */
 export const ShipDesign = z.object({
   id: EntityId,
@@ -45,24 +46,13 @@ export const ShipDesign = z.object({
    * their authored revision.
    */
   revision: z.number().int().min(1).default(1),
-  /** Base posture; overridden and extended by `rules`. */
-  shipStance: ShipStance.default("balanced"),
-  /** Crew task-scheduler priority mode. */
-  crewPriority: CrewPriority.default("combat"),
   /**
-   * Player-authored trigger/action rules, evaluated in list order each tick.
-   * Empty by default — the stance alone governs behaviour.
+   * The ship's behaviour: a base action plus an ordered list of conditional
+   * rules. Required with an empty default so a design literal need not set it
+   * (absent doctrine parses to "no rules, empty base" — pure legacy behaviour);
+   * every runtime read path also fills it via the normaliser when a stored
+   * record carries the legacy trio instead.
    */
-  rules: z.array(Rule).default([]),
-  /**
-   * The unified doctrine (base action + conditional rules over the spatial,
-   * targeting, fire, stance, crew, cohesion, retreat axes). Additive alongside
-   * the legacy trio while the engine is re-plumbed to read it; populated from
-   * the trio at the parse boundary by `normaliseDesignInput`. Optional for now
-   * so legacy literal builders compile; every runtime read path (storage,
-   * sharing, presets) fills it via the normaliser. Made required when the trio
-   * is dropped.
-   */
-  doctrine: Doctrine.optional(),
+  doctrine: Doctrine.default({ base: {}, rules: [] }),
 });
 export type ShipDesign = z.infer<typeof ShipDesign>;

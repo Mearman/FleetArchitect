@@ -7,17 +7,16 @@ import { SIM } from "./config";
 import { effectiveStance } from "./movement";
 import { isDetectable } from "./stealth";
 import type { SimShip } from "./types";
-import type { TargetPriority } from "@/schema/fleet";
 
 /**
  * The scalar target priority a ship scores enemies by: the doctrine targeting
- * mode when it is one of the four scalar kinds, else the legacy
- * `orders.targetPriority`. (Relational modes — threatsTo/membersOf/etc. — are
- * the formation-aware layer, deferred; until then a ship with one falls back to
- * its legacy priority so behaviour is unchanged.)
+ * mode when it is one of the four scalar kinds, else `"nearest"` (the default
+ * when no targeting objective is authored). Relational modes —
+ * threatsTo/membersOf/etc. — are the formation-aware layer (deferred); a ship
+ * with one falls back to `"nearest"` so its scalar scoring is unchanged.
  */
-function targetPriorityOf(ship: SimShip): TargetPriority {
-  const mode = ship.doctrine?.base.targeting?.mode;
+function targetPriorityOf(ship: SimShip): "nearest" | "weakest" | "strongest" | "highestCost" {
+  const mode = ship.doctrine.base.targeting?.mode;
   if (mode !== undefined) {
     switch (mode.kind) {
       case "nearest":
@@ -27,26 +26,23 @@ function targetPriorityOf(ship: SimShip): TargetPriority {
         return mode.kind;
     }
   }
-  return ship.orders.targetPriority;
+  return "nearest";
 }
 
 function vulnerableWeightOf(ship: SimShip): number {
-  return (
-    ship.doctrine?.base.targeting?.vulnerableWeight ??
-    ship.orders.vulnerableTargetWeight
-  );
+  return ship.doctrine.base.targeting?.vulnerableWeight ?? 0;
 }
 
 /**
  * Whether a ship is concentrating fire with its fleet this tick: the live AI
- * decision (`aiFocusFire`, raised by a `focusFire` rule this tick) OR the static
- * `orders.focusFire` doctrine. A rule-less ship leaves `aiFocusFire` false and
- * so reads exactly its static order, keeping focus-election byte-identical.
+ * decision (`aiFocusFire`, raised by a `focusFire` rule this tick) OR the
+ * static doctrine `targeting.focusFire`. A rule-less ship leaves `aiFocusFire`
+ * false and reads its doctrine's static flag.
  */
 export function wantsFocusFire(ship: SimShip): boolean {
   return (
     ship.aiFocusFire ||
-    (ship.doctrine?.base.targeting?.focusFire ?? ship.orders.focusFire)
+    (ship.doctrine.base.targeting?.focusFire ?? false)
   );
 }
 
