@@ -1,3 +1,10 @@
+# [1.25.0](https://github.com/Mearman/FleetArchitect/compare/v1.24.0...v1.25.0) (2026-06-27)
+
+
+### Features
+
+* **sim:** carry formation identity on replay descriptor and roster ([befaccf](https://github.com/Mearman/FleetArchitect/commit/befaccf4da2a0414a99f1566e961805977e6d178))
+
 # [1.24.0](https://github.com/Mearman/FleetArchitect/compare/v1.23.0...v1.24.0) (2026-06-27)
 
 
