@@ -157,3 +157,78 @@ export function flattenShipLeaves(formation: Formation): FleetShip[] {
   for (const child of formation.children) walk(child);
   return out;
 }
+
+/**
+ * A ship leaf paired with its formation context: the id of the formation it is
+ * a DIRECT child of, the chain of ancestor formation ids from the root down to
+ * (and including) that formation, and that formation's authored role (if any).
+ * The resolver stamps these onto each resolved {@link CombatShip} so the engine
+ * can build per-formation aggregates and resolve role references — the identity
+ * the formation-aware runtime reads.
+ */
+export interface FormationLeaf {
+  ship: FleetShip;
+  /** Id of the formation this leaf is a direct child of. */
+  formationId: string;
+  /** Ancestor formation ids from the root down to (and including) the leaf's
+   *  parent formation. */
+  formationChain: string[];
+  /** The leaf's parent formation's authored role, if any. */
+  role?: string;
+}
+
+/**
+ * Walk a formation tree in pre-order DFS, yielding each ship leaf WITH its
+ * formation context: {@link formationId} is the id of the formation the leaf is
+ * a DIRECT child of; {@link formationChain} is the ancestor formation ids from
+ * the root down to that formation (inclusive); {@link role} is that formation's
+ * authored role. For a flat root (root formation with ship-leaf children) every
+ * leaf gets `formationId === root.id`, `formationChain === [root.id]`, and the
+ * root's role.
+ *
+ * Order matters: the walk is pre-order DFS in child order, so for a flat root
+ * of ship leaves the leaf sequence is EXACTLY the {@link flattenShipLeaves}
+ * sequence — the resolver's column and every instanceId stay byte-identical to
+ * the legacy path. `template` nodes are not expanded here (they are inlined
+ * before resolve by `expandTemplates`); an unexpanded template node is skipped,
+ * matching `flattenShipLeaves`.
+ *
+ * Sibling to {@link flattenShipLeaves}: the sharing codec and the battle-URL
+ * sync continue to use the lighter `flattenShipLeaves` (they need only the
+ * ships), while the resolver migrates to this richer walker to pick up
+ * formation identity.
+ */
+export function collectFormationLeaves(formation: Formation): FormationLeaf[] {
+  const out: FormationLeaf[] = [];
+  const walk = (
+    node: FormationNode,
+    chain: readonly string[],
+    role: string | undefined,
+  ): void => {
+    if (node.kind === "ship") {
+      // The leaf's parent formation is the last id in `chain`; the chain runs
+      // root → … → parent (inclusive); `role` is the parent formation's role.
+      const formationId = chain[chain.length - 1];
+      if (formationId === undefined) return;
+      out.push({
+        ship: node.ship,
+        formationId,
+        formationChain: [...chain],
+        role,
+      });
+    } else if (node.kind === "formation") {
+      // Descend: extend the chain with this formation's id and rebind the role
+      // to this formation's role for ITS direct ship-leaf children.
+      const nextChain = [...chain, node.formation.id];
+      for (const child of node.formation.children) {
+        walk(child, nextChain, node.formation.role);
+      }
+    }
+    // kind === "template": expanded before resolve; nothing to collect here.
+  };
+  const rootChain = [formation.id];
+  for (const child of formation.children) {
+    walk(child, rootChain, formation.role);
+  }
+  return out;
+}

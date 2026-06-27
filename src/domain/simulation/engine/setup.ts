@@ -276,6 +276,17 @@ export function toSimShip(ship: CombatShip, rng: Rng): SimShip {
     // The resolved authored doctrine (design overlaid by leaf) is the engine's
     // single source of truth for the ship's behaviour.
     doctrine: ship.doctrine,
+    // Formation identity (formation overhaul), threaded from the resolved
+    // CombatShip via conditional spread so a legacy/test ship without it stays
+    // byte-identical (no field set). The doctrine pass aggregates over the
+    // chain and resolves role references off these once it lands.
+    ...(ship.formationId !== undefined
+      ? {
+          formationId: ship.formationId,
+          formationChain: ship.formationChain,
+          role: ship.role,
+        }
+      : {}),
     // Live AI decisions start "unset": no stance override, no flags raised. The
     // AI interpreter step rewrites them each tick from the effective AiState.
     ...defaultAiDecisions(),

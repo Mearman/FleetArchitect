@@ -10,7 +10,7 @@ import type {
   ResolvedModule,
 } from "@/domain/simulation/types";
 import type { Fleet } from "@/schema/fleet";
-import { flattenShipLeaves } from "@/schema/formation";
+import { collectFormationLeaves } from "@/schema/formation";
 import type { Doctrine } from "@/schema/ai";
 
 /**
@@ -278,13 +278,15 @@ export function resolveFleetToCombatShips(
   // Resolve every deployable design first, carrying its radius and weapon
   // effects so the column can be spaced by actual ship size and the edge
   // inset derived from the fleet's longest weapon reach. The formation tree is
-  // flattened in pre-order DFS — for a flat root of ship leaves (no layout) this
-  // is exactly the legacy `fleet.ships` order, so the column and every
-  // instanceId are byte-identical to the pre-formation resolve.
-  const deployedShips = flattenShipLeaves(fleet.formation);
-  const resolved = deployedShips
-    .map((deployed) => {
-      const design = designs.get(deployed.designId);
+  // walked in pre-order DFS via `collectFormationLeaves` — for a flat root of
+  // ship leaves (no layout) this yields exactly the legacy `fleet.ships` order,
+  // so the column and every instanceId are byte-identical to the pre-formation
+  // resolve. Each leaf also carries its formation identity (formationId, chain,
+  // role), stamped onto the resolved CombatShip below.
+  const leaves = collectFormationLeaves(fleet.formation);
+  const resolved = leaves
+    .map((leaf) => {
+      const design = designs.get(leaf.ship.designId);
       if (design === undefined) return undefined;
       // Derive the grown design once per ship so stats, radius, and the main
       // loop all work from the same expanded grid.
@@ -294,7 +296,7 @@ export function resolveFleetToCombatShips(
       // already-grown grid (single-grow on both paths).
       const { stats } = analyseShipDesign(design, catalog);
       return {
-        deployed,
+        leaf,
         design,
         grownDesign,
         stats,
@@ -340,13 +342,20 @@ export function resolveFleetToCombatShips(
 
   const ships: CombatShip[] = [];
   for (const entry of resolved) {
-    const { deployed, design, grownDesign, stats, radius } = entry;
+    const { leaf, design, grownDesign, stats, radius } = entry;
     const modules = resolveModules(grownDesign, catalog);
     const hardwires = resolveHardwires(grownDesign, modules);
     const outline = computeOutline(extractShell(grownDesign.grid));
     const x = dir * (edgeInset - radius);
     const y = cursorY + radius;
     cursorY += radius * 2 + DEPLOY_SHIP_MARGIN_M;
+    // Formation identity, threaded from the leaf's formation context. Stamped
+    // via conditional spread so a direct-constructed CombatShip (a test fixture)
+    // without them keeps an unchanged cache key; resolve-built ships always
+    // carry them. The engine reads these (aggregation, role resolution) once
+    // the formation-aware runtime lands; for now they only add to the cache key
+    // for resolve-built ships (one miss per fleet — acceptable).
+    const { formationId, formationChain, role } = leaf;
     ships.push({
       // Stable across independent resolutions of the same fleet: side + index
       // in the array being built gives a deterministic id without crypto.randomUUID.
@@ -360,10 +369,13 @@ export function resolveFleetToCombatShips(
       classification: deriveClassification(grownDesign.grid),
       // The resolved authored doctrine (design overlaid by the leaf). Source of
       // truth for the engine.
-      doctrine: overlayDoctrine(design.doctrine, deployed.doctrine),
+      doctrine: overlayDoctrine(design.doctrine, leaf.ship.doctrine),
       ...(modules.length > 0 ? { modules } : {}),
       ...(hardwires.length > 0 ? { hardwires } : {}),
       ...(outline.length > 0 ? { outline } : {}),
+      ...(formationId !== undefined
+        ? { formationId, formationChain, role }
+        : {}),
     });
   }
   return ships;

@@ -6,6 +6,7 @@ import { catalog } from "@/data/catalog";
 import { nowIso } from "@/domain/id";
 import type { Fleet } from "@/schema/fleet";
 import { flatFormation } from "@/schema/formation";
+import type { Formation } from "@/schema/formation";
 import type { CellEdges, TileGrid } from "@/schema/grid";
 import type { ShipDesign } from "@/schema/ship";
 
@@ -180,5 +181,116 @@ describe("resolveFleetToCombatShips (grid)", () => {
     const gap = def.position.x - att.position.x;
     expect(gap).toBeCloseTo(visualLosRadius, 6);
     expect(gap).toBeLessThan(weaponRange);
+  });
+});
+
+describe("resolveFleetToCombatShips (formation identity)", () => {
+  // A flat fleet and a nested fleet that deploy the SAME ships in the SAME DFS
+  // order must produce byte-identical columns (positions, facings, instanceIds)
+  // — the formation structure changes only the stamped formationId/chain/role,
+  // never the deployment geometry. This is the byte-identical column invariant
+  // the formation overhaul must hold.
+
+  function flatFleet(): Fleet {
+    return {
+      ...fleet(),
+      formation: flatFormation([
+        { designId: "d-1", position: { x: -100, y: 20 }, facing: 0 },
+        { designId: "d-1", position: { x: -100, y: 20 }, facing: 0 },
+      ]),
+    };
+  }
+
+  /** A nested fleet whose ship-leaf DFS order matches the flat fleet above:
+   *  root(div) -> [ship, formation(squad, role "vanguard") -> [ship, ship]].
+   *  The first ship is a direct child of root; the next two sit in a "squad"
+   *  sub-formation carrying a role. Pre-order DFS yields the same three-ship
+   *  sequence as the flat fleet. */
+  function nestedFleet(): Fleet {
+    const squad: Formation = {
+      id: "squad",
+      role: "vanguard",
+      doctrine: { base: {}, rules: [] },
+      children: [
+        { kind: "ship", ship: { designId: "d-1", position: { x: -100, y: 20 }, facing: 0 } },
+        { kind: "ship", ship: { designId: "d-1", position: { x: -100, y: 20 }, facing: 0 } },
+      ],
+    };
+    const root: Formation = {
+      id: "root",
+      role: "line",
+      doctrine: { base: {}, rules: [] },
+      children: [
+        { kind: "ship", ship: { designId: "d-1", position: { x: -100, y: 20 }, facing: 0 } },
+        { kind: "formation", formation: squad },
+      ],
+    };
+    return { ...fleet(), formation: root };
+  }
+
+  it("stamps formationId=root.id and formationChain=[root.id] on every ship of a flat fleet", () => {
+    const designs = new Map([["d-1", design()]]);
+    const ships = resolveFleetToCombatShips(flatFleet(), designs, catalog(), "attacker");
+    expect(ships).toHaveLength(2);
+    for (const ship of ships) {
+      expect(ship.formationId).toBe("root");
+      expect(ship.formationChain).toEqual(["root"]);
+      // flatFormation authors no role, so role is undefined.
+      expect(ship.role).toBeUndefined();
+    }
+  });
+
+  it("stamps the correct formationId/chain/role for a nested fleet", () => {
+    const designs = new Map([["d-1", design()]]);
+    const ships = resolveFleetToCombatShips(nestedFleet(), designs, catalog(), "attacker");
+    expect(ships).toHaveLength(3);
+    // Ship 0 is a direct child of root: formationId=root, chain=[root], role=line.
+    expect(ships[0]?.formationId).toBe("root");
+    expect(ships[0]?.formationChain).toEqual(["root"]);
+    expect(ships[0]?.role).toBe("line");
+    // Ships 1 and 2 are children of squad: formationId=squad, chain=[root, squad],
+    // role=vanguard.
+    for (const ship of [ships[1], ships[2]]) {
+      if (ship === undefined) continue;
+      expect(ship.formationId).toBe("squad");
+      expect(ship.formationChain).toEqual(["root", "squad"]);
+      expect(ship.role).toBe("vanguard");
+    }
+  });
+
+  it("assigns instanceIds and positions by DFS leaf order regardless of nesting (byte-identical column)", () => {
+    // The deployment column depends only on the per-ship radius/weapon set and
+    // the DFS leaf order — NOT on the formation structure. So a nested fleet
+    // whose pre-order DFS leaf sequence matches a flat fleet's produces the
+    // same per-index instanceId and the same x facing. (The y-positions differ
+    // only because the two fleets have different total ship counts, which
+    // recentres the column; the per-ship geometry is otherwise identical, and
+    // the full byte-identical guard for real fleets is the preset-determinism
+    // regression test.)
+    const designs = new Map([["d-1", design()]]);
+    const flat = resolveFleetToCombatShips(flatFleet(), designs, catalog(), "attacker");
+    const nested = resolveFleetToCombatShips(nestedFleet(), designs, catalog(), "attacker");
+    // The first two leaves of both fleets deploy in the same order, so their
+    // instanceIds and facing match index-for-index.
+    expect(flat[0]?.instanceId).toBe("ship_attacker_0");
+    expect(nested[0]?.instanceId).toBe("ship_attacker_0");
+    expect(nested[1]?.instanceId).toBe("ship_attacker_1");
+    expect(nested[2]?.instanceId).toBe("ship_attacker_2");
+    // x is a function of (edgeInset, radius) — identical for every ship of the
+    // same design — so every ship in both fleets shares the same x.
+    const x = flat[0]?.position.x;
+    expect(x).toBeDefined();
+    for (const ship of [...flat, ...nested]) {
+      expect(ship.position.x).toBeCloseTo(x ?? 0, 6);
+      expect(ship.facing).toBeCloseTo(0, 6);
+    }
+    // The nested fleet's y-positions are a strictly increasing column (the
+    // deployment column order is the DFS leaf order, top to bottom).
+    for (let i = 1; i < nested.length; i += 1) {
+      const prev = nested[i - 1];
+      const curr = nested[i];
+      if (prev === undefined || curr === undefined) continue;
+      expect(curr.position.y).toBeGreaterThan(prev.position.y);
+    }
   });
 });
