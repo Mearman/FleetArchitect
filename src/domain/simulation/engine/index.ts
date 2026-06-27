@@ -11,7 +11,7 @@ import { computeOccluders } from "@/domain/occluders";
 import { hasAnomaly } from "@/domain/anomaly";
 import type { BattleFrame, BattleResult, ShipDescriptor } from "@/schema/battle";
 import type { BattleInputs, BattleSummary } from "../types";
-import { STALEMATE_IDLE_TICKS, TICKS_PER_SECOND } from "../types";
+import { buildShipRoster, STALEMATE_IDLE_TICKS, TICKS_PER_SECOND } from "../types";
 import { createStalemateWatch, tickStalemateWatch } from "./stalemate";
 import type { StalemateWatch } from "./stalemate";
 
@@ -787,11 +787,7 @@ export function runBattle(inputs: BattleInputs): BattleResult {
     frames,
     // Faction/side of each combatant, carried once per battle so the renderer
     // can colour ships by faction without bloating per-tick snapshots.
-    roster: inputs.ships.map((s) => ({
-      instanceId: s.instanceId,
-      faction: s.faction,
-      side: s.side,
-    })),
+    roster: buildShipRoster(inputs.ships),
     // Static per-ship cell layout + outline (renderer derives cell positions).
     descriptors: summary.descriptors,
     // Per-ship salvage earned, omitted when nothing was salvaged.

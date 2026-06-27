@@ -487,7 +487,18 @@ function atmosphereSnapshot(
  * no `cells` (and no `outline` unless one was resolved).
  */
 export function shipDescriptor(s: SimShip): ShipDescriptor {
-  const base: ShipDescriptor = { instanceId: s.instanceId, side: s.side };
+  const base: ShipDescriptor = {
+    instanceId: s.instanceId,
+    side: s.side,
+    // Formation identity (formation overhaul): carried once per battle on the
+    // descriptor so the renderer can group ships by formation without bloating
+    // per-tick frames. Conditional spread — a ship with no formation identity
+    // (legacy/test ships that never had it stamped) keeps a byte-identical
+    // descriptor with the keys absent.
+    ...(s.formationId !== undefined
+      ? { formationId: s.formationId, role: s.role }
+      : {}),
+  };
   if (s.outline !== undefined) base.outline = s.outline;
   if (s.modules === undefined) return base;
   return {

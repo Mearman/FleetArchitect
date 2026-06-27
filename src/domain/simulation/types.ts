@@ -2,7 +2,7 @@ import type { ShipStats } from "@/domain/stats";
 import type { CellEdges, HardwireResource, SurfaceKind } from "@/schema/grid";
 import type { ShipClassification } from "@/schema/armor";
 import type { ModuleEffect } from "@/schema/module";
-import type { BattleAnomalyKind, BattleSide, ShipDescriptor } from "@/schema/battle";
+import type { BattleAnomalyKind, BattleSide, ShipDescriptor, ShipRosterEntry } from "@/schema/battle";
 import type { Vec2 } from "@/schema/primitives";
 import type { Doctrine } from "@/schema/ai";
 
@@ -323,6 +323,29 @@ export interface BattleInputs {
    * tests may pass a small cap to stop a battle early without running it out.
    */
   maxTicks?: number;
+}
+
+/**
+ * Build the per-battle ship roster (faction + side + formation identity, keyed
+ * by instance id) from the resolved combat ships. Carried once on the
+ * {@link BattleResult} so the renderer can colour and group combatants by
+ * formation without bloating per-tick frames.
+ *
+ * Formation identity is conditionally spread — a resolved ship with no
+ * formationId (legacy/test ships that never had it stamped) produces a roster
+ * entry with the keys absent, byte-identical to the pre-formation shape. The
+ * run/resume/worker assembly paths share this helper so the three call sites
+ * cannot drift apart.
+ */
+export function buildShipRoster(ships: readonly CombatShip[]): ShipRosterEntry[] {
+  return ships.map((s) => ({
+    instanceId: s.instanceId,
+    faction: s.faction,
+    side: s.side,
+    ...(s.formationId !== undefined
+      ? { formationId: s.formationId, role: s.role }
+      : {}),
+  }));
 }
 
 /**

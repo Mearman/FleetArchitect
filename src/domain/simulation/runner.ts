@@ -1,5 +1,6 @@
 import { createId, nowIso } from "@/domain/id";
 import { runBattle, simulateBattle } from "@/domain/simulation/engine";
+import { buildShipRoster } from "@/domain/simulation/types";
 import type { BattleInputs } from "@/domain/simulation/types";
 import type {
   BattleFrame,
@@ -223,11 +224,7 @@ export class DirectBattleRunner implements BattleRunner {
       ticks: summary.ticks,
       playedAt: nowIso(),
       frames,
-      roster: inputs.ships.map((s) => ({
-        instanceId: s.instanceId,
-        faction: s.faction,
-        side: s.side,
-      })),
+      roster: buildShipRoster(inputs.ships),
       descriptors: summary.descriptors,
       ...(summary.salvage.length > 0 ? { salvage: summary.salvage } : {}),
     };

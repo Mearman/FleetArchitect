@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { CELL_SIZE } from "@/domain/grid";
 import type { BattleAnomalyKind, BattleFrame } from "@/schema/battle";
 import type { DescriptorMap } from "@/ui/cellLayout";
@@ -25,6 +25,7 @@ import {
 import { appearanceOf } from "@/ui/render/moduleAppearance";
 import { glyphPath2D } from "@/ui/render/moduleGlyphs";
 import { drawIsoShipCells } from "./isoShipCells";
+import { buildFormationColourByInstance, drawFormationCentroids } from "./battleFormation";
 import { OVERLAYS, OVER_SHIP_IDS, UNDER_SHIP_IDS } from "./overlays";
 import type { OverlayScope } from "./overlays";
 import { SPRITE_PX_PER_WORLD, rasteriseShipSprite, spriteKey } from "./shipSprite";
@@ -85,6 +86,16 @@ export function useBattleCanvas({
   // instance id; a stale entry whose ship has left the battle is simply never
   // read again (the map is small — one entry per live ship).
   const spriteCache = useRef<Map<string, ShipSprite>>(new Map());
+  // Per-battle formation colour per instance id (Phase E replay grouping).
+  // Descriptors are emitted once per battle and never mutate, so this map is
+  // derived once and read on the hot draw path without re-hashing per ship per
+  // frame. Empty for a pre-formation battle (every ship lacks formationId), in
+  // which case formation tinting and centroid markers are no-ops and the frame
+  // renders byte-identically to before.
+  const formationColourByInstance = useMemo(
+    () => buildFormationColourByInstance(descriptors),
+    [descriptors],
+  );
   return useCallback(
     (frame: BattleFrame, tick: number, frames: readonly BattleFrame[]) => {
       const canvas = canvasRef.current;
@@ -198,9 +209,14 @@ export function useBattleCanvas({
         // Faction accent tints the hull; the side colour is shown separately as
         // an outline ring so allegiance stays legible in a mirror match. Falls
         // back to the side colour for replays recorded before the factions update.
+        // When the ship carries a formation identity (Phase E), its formation
+        // colour takes priority over the faction accent — within a fleet every
+        // ship shares one faction, so the formation tint is the informative
+        // sub-grouping, and the side ring still carries attacker/defender.
+        const formationColour = formationColourByInstance.get(s.instanceId);
         const faction = factionByInstance.get(s.instanceId);
         const palette = faction !== undefined ? FACTION_PALETTE[faction] : undefined;
-        const base = palette?.accent ?? SIDE_COLOUR[s.side];
+        const base = formationColour ?? (palette?.accent ?? SIDE_COLOUR[s.side]);
         const max = maxHp.get(s.instanceId);
 
         // World extent of the hull (farthest cell from the centre), driving the
@@ -374,10 +390,13 @@ export function useBattleCanvas({
             }
 
             // Hull outline: vertices are in ship-local units; rotate into world
-            // and project each so the shell traces correctly under the tilt.
+            // and project each so the shell traces correctly under the tilt. The
+            // outline takes the formation colour when the ship has one (Phase E)
+            // so a formation reads as a shared silhouette hue; the side ring
+            // drawn earlier keeps attacker/defender legible.
             const outlineF = descriptor?.outline;
             if (outlineF !== undefined) {
-              ctx.strokeStyle = SIDE_COLOUR[s.side];
+              ctx.strokeStyle = formationColour ?? SIDE_COLOUR[s.side];
               ctx.lineWidth = 1;
               ctx.globalAlpha = 0.5;
               for (const loop of outlineF) {
@@ -581,12 +600,14 @@ export function useBattleCanvas({
             }
 
             // Chamfered hull outline: drawn over the cells as a semi-transparent
-            // side-colour stroke through the shell's corner vertices. Vertices
-            // are in ship-local world units; the composed matrix places them on
-            // screen (with the projection tilt applied).
+            // stroke through the shell's corner vertices. Takes the formation
+            // colour when present (Phase E) so the silhouette carries the
+            // formation hue; otherwise the side colour. Vertices are in
+            // ship-local world units; the composed matrix places them on screen
+            // (with the projection tilt applied).
             const outline = descriptor?.outline;
             if (outline !== undefined) {
-              ctx.strokeStyle = SIDE_COLOUR[s.side];
+              ctx.strokeStyle = formationColour ?? SIDE_COLOUR[s.side];
               ctx.lineWidth = strokePx(1);
               ctx.globalAlpha = 0.5;
               for (const loop of outline) {
@@ -647,6 +668,12 @@ export function useBattleCanvas({
           frac > 0.5 ? PHOSPHOR_GREEN : frac > 0.25 ? PHOSPHOR_AMBER : NEON_MAGENTA;
         ctx.fillRect(px - barW / 2, py + 10, barW * frac, 3);
       }
+
+      // Formation centroids (Phase E): a subtle ring and role label at each
+      // formation's live mean position, drawn on top of the ships at low alpha
+      // so the grouping reads without obscuring hulls. No-op when no ship
+      // carries a formation identity (pre-formation battle).
+      drawFormationCentroids(ctx, t, frame, descriptors);
 
       // Energy-weapon beams (hitscan): drawn as lines from the firing gun
       // cell to the strike point. A hitscan beam applies damage instantly and
@@ -721,7 +748,7 @@ export function useBattleCanvas({
       // Over-ship layer: target lock, damage pulse, sensor pulses, boarding/debris.
       drawOverlays(OVER_SHIP_IDS);
     },
-    [bounds, maxHp, activeAnomalies, activeSeed, showFog, factionByInstance, overlays, descriptors, canvasRef, cameraRef],
+    [bounds, maxHp, activeAnomalies, activeSeed, showFog, factionByInstance, overlays, descriptors, formationColourByInstance, canvasRef, cameraRef],
   );
 }
 

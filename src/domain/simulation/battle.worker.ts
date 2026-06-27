@@ -2,7 +2,7 @@
 import { createId, nowIso } from "@/domain/id";
 import { simulateBattle } from "@/domain/simulation/engine";
 import type { BattleInputs } from "@/domain/simulation/types";
-import { STREAM_BATCH_INTERVAL_MS } from "@/domain/simulation/types";
+import { buildShipRoster, STREAM_BATCH_INTERVAL_MS } from "@/domain/simulation/types";
 import type { BattleFrame, CellStateArrays, ShipDescriptor, ShipSnapshot } from "@/schema/battle";
 import type { BattleResultSummary } from "@/schema/battle";
 import type { EngineCheckpoint } from "@/schema/checkpoint";
@@ -249,11 +249,7 @@ self.onmessage = (event: MessageEvent<BattleWorkerRequest>) => {
     winner: summary.winner,
     ticks: summary.ticks,
     playedAt: nowIso(),
-    roster: inputs.ships.map((s) => ({
-      instanceId: s.instanceId,
-      faction: s.faction,
-      side: s.side,
-    })),
+    roster: buildShipRoster(inputs.ships),
     descriptors: summary.descriptors,
     ...(summary.salvage.length > 0 ? { salvage: summary.salvage } : {}),
   };
