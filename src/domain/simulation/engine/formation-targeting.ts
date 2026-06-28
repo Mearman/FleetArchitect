@@ -17,6 +17,26 @@ import { buildAggregates, makeResolver, type Point, type ResolveReference } from
 import type { DeploymentReference } from "./movement";
 import type { TargetingMode, FormationReference } from "@/schema/ai";
 
+/**
+ * Return the ship's base.targeting.mode when it is a RELATIONAL kind (not one of
+ * the four scalar kinds the existing scoring path already handles). Scalar modes
+ * return undefined so presets (which use nearest/weakest/strongest/highestCost)
+ * stay byte-identical — the filter is skipped and targetPriorityOf scores them.
+ */
+function baseRelationalMode(ship: SimShip): TargetingMode | undefined {
+  const mode = ship.doctrine.base.targeting?.mode;
+  if (mode === undefined) return undefined;
+  switch (mode.kind) {
+    case "nearest":
+    case "weakest":
+    case "strongest":
+    case "highestCost":
+      return undefined;
+    default:
+      return mode;
+  }
+}
+
 /** Context the relational filter closes over: the live enemy list (for set
  *  membership lookups), the byId index, the sorted ship list, and the
  *  reference resolver (for `threatsTo`/`membersOf`/`sameAs` formation
@@ -184,7 +204,11 @@ export function filterVisibleByTargeting(
   visible: EnemyView[],
   ctx: FormationTargetingContext,
 ): EnemyView[] {
-  const mode: TargetingMode | undefined = ship.aiTargeting;
+  // Fall back to base.targeting.mode for relational kinds (threatsTo/membersOf/
+  // etc.) — the scalar kinds (nearest/weakest/strongest/highestCost) are handled
+  // by targetPriorityOf in the existing scoring path, so only relational modes
+  // need the filter here.
+  const mode: TargetingMode | undefined = ship.aiTargeting ?? baseRelationalMode(ship);
   if (mode === undefined) {
     // GATE: no override. Return the input list (the existing scalar scoring
     // path runs unchanged). Callers do not mutate, so no copy is needed.
@@ -272,7 +296,7 @@ export function filterVisibleByTargeting(
  * `pdPriority` override (the gate). Pure.
  */
 export function pointDefenseBias(ship: SimShip, enemyId: string, byId: ReadonlyMap<string, SimShip>): number {
-  const mode = ship.aiTargeting;
+  const mode = ship.aiTargeting ?? baseRelationalMode(ship);
   if (mode?.kind !== "pdPriority") return 0;
   const enemy = byId.get(enemyId);
   // A phantom (drone or decoy) is the missile-like thing in the ship candidate

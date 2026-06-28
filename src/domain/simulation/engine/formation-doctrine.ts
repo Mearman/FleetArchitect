@@ -637,6 +637,17 @@ function applyDoctrineAxes(ship: SimShip, action: DoctrineAction): void {
   if (action.spatial !== undefined) ship.aiSpatial = action.spatial;
   if (action.targeting !== undefined) ship.aiTargeting = action.targeting.mode;
   if (action.fire !== undefined) ship.aiFire = action.fire;
+  // Stance: a formation-conditioned rule can change stance. stepAi runs first
+  // (handles ship-self conditions); the formation pass overrides for formation
+  // conditions. "retreat" sets aiRetreat (drives isRetreating); other stances
+  // override aiStance (drives effectiveStance).
+  if (action.stance !== undefined) {
+    if (action.stance === "retreat") {
+      ship.aiRetreat = true;
+    } else {
+      ship.aiStance = action.stance;
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
