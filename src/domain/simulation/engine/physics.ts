@@ -9,7 +9,6 @@ import type { CombatShip } from "../types";
 
 import { SIM } from "./config";
 import { isCharged, isOperational } from "./crew";
-import { PERF_GUARDS } from "./perf-guards";
 import { angleDifference, angularAccelPerTick, gridRadius } from "./setup";
 import type { SimModule, SimShip } from "./types";
 /**
@@ -146,53 +145,31 @@ export function recomputeAggregates(ship: SimShip): void {
   for (const m of ship.modules) demand += demandOf(m);
 
   if (demand > supply) {
-    if (PERF_GUARDS.brownoutBounded) {
-      // Bounded cut: cutting a module only lowers demand, so the naive loop's
-      // sequence — repeatedly removing the hungriest powered weapon/PD/shield —
-      // is that candidate set in descending `powerDraw` order. Pre-sort the
-      // candidates once (O(C) + O(c log c)) and walk them, instead of
-      // re-scanning per cut. sort() is stable, so equal draws keep their array
-      // order — matching the naive loop's strict-`>` "first wins" tie-break.
-      const candidates: SimModule[] = [];
-      for (const m of ship.modules) {
-        if (!m.powered) continue;
-        if (
-          m.effect.kind === "weapon" ||
-          m.effect.kind === "pointDefense" ||
-          m.effect.kind === "shield"
-        ) {
-          candidates.push(m);
-        }
+    // Bounded cut: cutting a module only lowers demand, so the naive re-scan
+    // loop's sequence — repeatedly removing the hungriest powered
+    // weapon/PD/shield — is the candidate set in descending `powerDraw` order.
+    // Pre-sort the candidates once (O(C) + O(c log c)) and walk them, instead
+    // of re-scanning per cut. sort() is stable, so equal draws keep their
+    // array order — matching the naive re-scan's strict-`>` "first wins"
+    // tie-break. (The naive re-scan path is preserved as
+    // `recomputeAggregatesReference` in `./physics.reference` for the
+    // equivalence test to compare against; both yield the same victims.)
+    const candidates: SimModule[] = [];
+    for (const m of ship.modules) {
+      if (!m.powered) continue;
+      if (
+        m.effect.kind === "weapon" ||
+        m.effect.kind === "pointDefense" ||
+        m.effect.kind === "shield"
+      ) {
+        candidates.push(m);
       }
-      candidates.sort((a, b) => b.powerDraw - a.powerDraw);
-      for (const victim of candidates) {
-        if (demand <= supply) break;
-        victim.powered = false;
-        demand -= victim.powerDraw;
-      }
-    } else {
-      while (demand > supply) {
-        // Candidates to cut: powered weapons or PD modules, else powered shields.
-        let victim: SimModule | undefined;
-        let bestDraw = -1;
-        for (const m of ship.modules) {
-          if (!m.powered) continue;
-          if (
-            m.effect.kind !== "weapon" &&
-            m.effect.kind !== "pointDefense" &&
-            m.effect.kind !== "shield"
-          ) {
-            continue;
-          }
-          if (m.powerDraw > bestDraw) {
-            bestDraw = m.powerDraw;
-            victim = m;
-          }
-        }
-        if (victim === undefined) break; // nothing power-hungry left to cut
-        victim.powered = false;
-        demand -= victim.powerDraw;
-      }
+    }
+    candidates.sort((a, b) => b.powerDraw - a.powerDraw);
+    for (const victim of candidates) {
+      if (demand <= supply) break;
+      victim.powered = false;
+      demand -= victim.powerDraw;
     }
   }
 

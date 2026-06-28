@@ -289,18 +289,26 @@ export function directionalShieldFor(
 }
 
 /** The alive module whose cell is nearest the given local point (or the
- *  centroid of alive modules when there's no impact point). */
+ *  first alive module in array order when there's no impact point). Iterates
+ *  `ship.modules` in place rather than allocating a filtered copy, since this
+ *  runs per beam/hitscan hit; dead modules are skipped, and the strict `<`
+ *  comparison preserves the original "first wins" tie-break on equal distances
+ *  (same array order, same selected module). */
 export function nearestAliveModule(
   ship: SimShip,
   local: { x: number; y: number } | undefined,
 ): SimModule | undefined {
   if (ship.modules === undefined) return undefined;
-  const alive = ship.modules.filter((m) => m.alive);
-  if (alive.length === 0) return undefined;
-  if (local === undefined) return alive[0];
+  if (local === undefined) {
+    for (const m of ship.modules) {
+      if (m.alive) return m;
+    }
+    return undefined;
+  }
   let best: SimModule | undefined;
   let bestDist = Infinity;
-  for (const m of alive) {
+  for (const m of ship.modules) {
+    if (!m.alive) continue;
     const d = (m.x - local.x) ** 2 + (m.y - local.y) ** 2;
     if (d < bestDist) {
       bestDist = d;
