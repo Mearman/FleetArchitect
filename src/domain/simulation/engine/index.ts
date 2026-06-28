@@ -8,6 +8,7 @@
 import { createId, nowIso } from "@/domain/id";
 import { mulberry32 } from "@/domain/simulation/rng";
 import { computeOccluders } from "@/domain/occluders";
+import type { Disc } from "@/domain/occluders";
 import { hasAnomaly } from "@/domain/anomaly";
 import type { BattleFrame, BattleResult, ShipDescriptor } from "@/schema/battle";
 import type { BattleInputs, BattleSummary } from "../types";
@@ -28,6 +29,7 @@ import { captureCheckpoint } from "./checkpoint";
 import type { EngineCheckpoint } from "@/schema/checkpoint";
 import { leadingSide } from "./outcome";
 import { stepArenaMediumFromState } from "./medium-setup";
+import { collectMediumEmissions } from "./medium-emissions";
 import { ageBeams } from "./beams";
 import { stepPlume } from "./particle-sources";
 import { updateCrew } from "./crew";
@@ -156,11 +158,15 @@ export function* simulateBattle(
   if (resumeFrom === undefined) {
     // Frame 0: run the awareness phase once so the opening snapshot carries the
     // same fog-of-war data every later frame does, and so each ship's `awareness`
-    // is populated before the first targeting pass below.
-    const frame0Awareness = computeAwareness(state.ships, state.byId, occluders, inputs.anomalies, state.medium, 0);
+    // is populated before the first targeting pass below. The medium-cell
+    // emissions are collected once and shared between `computeAwareness` (the
+    // reception pass) and `rebuildEmissions` (the snapshot log) — same array,
+    // same row-major order, byte-identical to each building its own copy.
+    const frame0MediumEmissions = collectMediumEmissions(state.medium);
+    const frame0Awareness = computeAwareness(state.ships, state.byId, occluders, inputs.anomalies, state.medium, 0, frame0MediumEmissions);
     // Record the frame-0 EM emission log alongside the awareness it produced. The
     // monotonic counter threads from its initial value through every later tick.
-    state.emissionSeq = rebuildEmissions(state.ships, state.emissions, 0, state.emissionSeq, state.medium);
+    state.emissionSeq = rebuildEmissions(state.ships, state.emissions, 0, state.emissionSeq, state.medium, undefined, frame0MediumEmissions);
 
     captureDescriptors(state.ships);
     yield snapshot(0, state.ships, state.projectiles, frame0Awareness, state.mines, state.pods, state.pulses, state.emissions, state.debris, state.beams, state.particles, state.medium);
@@ -194,31 +200,43 @@ export function* simulateBattle(
     //    from the battle rng. The returned snapshot is recorded on this tick's
     //    frame at the end of the loop body.
     //
-    //    Dynamic occluders: the static anomaly occluders are pre-computed once
-    //    (line ~161 above), but debris fragments change every tick as new
-    //    wreckage spawns. Rebuild a per-tick list each awareness pass by
-    //    appending one Disc per drifting fragment — radius maps directly from
-    //    the fragment's `radius` field to `r` (same physical meaning, different
-    //    field name by convention). The static array is never mutated.
-    const dynamicOccluders = state.debris.length === 0
-      ? occluders
-      : [
-          ...occluders,
-          ...state.debris.filter((d): d is NonNullable<typeof d> => d !== undefined).map((d) => ({
-            x: d.x,
-            y: d.y,
-            r: d.radius,
-          })),
-        ];
-    const awareness = computeAwareness(state.ships, state.byId, dynamicOccluders, inputs.anomalies, state.medium, tick);
+    //    Dynamic occluders: static anomaly occluders are pre-computed once, but
+    //    debris fragments change every tick. Rebuild by clearing the pooled
+    //    scratch and pushing the static occluders then one Disc per debris
+    //    fragment (radius → r). When there is no debris the static array is used
+    //    directly. The static array is never mutated.
+    let dynamicOccluders: readonly Disc[] = occluders;
+    if (state.debris.length > 0) {
+      const occluderScratch = state.dynamicOccluderScratch;
+      occluderScratch.length = 0;
+      for (const o of occluders) occluderScratch.push(o);
+      for (const d of state.debris) {
+        if (d === undefined) continue;
+        occluderScratch.push({ x: d.x, y: d.y, r: d.radius });
+      }
+      dynamicOccluders = occluderScratch;
+    }
+    // Medium-cell emissions: a pure function of `state.medium`, computed once
+    // and shared between `computeAwareness` and `rebuildEmissions` (medium is
+    // unchanged between them) — byte-identical to each building its own copy.
+    const mediumEmissions = collectMediumEmissions(state.medium);
+    // Alive-real-sorted producer (U15): the alive, non-phantom, instanceId-sorted
+    // ship list, built once here into the pooled scratch. Read by
+    // `rebuildEmissions` and `aliveAtTickStart` (no ship can die between this
+    // build and those reads). The debris hazard later in the tick refreshes the
+    // buffer in place — post-collision deaths can shrink the alive set by then.
+    const aliveRealSorted = state.aliveRealSortedScratch;
+    aliveRealSorted.length = 0;
+    for (const s of state.ships) {
+      if (s.alive && s.phantom === undefined) aliveRealSorted.push(s);
+    }
+    aliveRealSorted.sort((a, b) => (a.instanceId < b.instanceId ? -1 : a.instanceId > b.instanceId ? 1 : 0));
+    const awareness = computeAwareness(state.ships, state.byId, dynamicOccluders, inputs.anomalies, state.medium, tick, mediumEmissions);
     // 0a. Record the continuous EM emission log for this tick (Phase 9), behind
-    //     the monotonic emission counter. The reception that built `awareness`
-    //     above evaluated each enemy's emission strength per-pair; this log is
-    //     the deterministic record of every EM event for the snapshot. Rebuilt
-    //     from scratch each tick (a continuous emission reflects the current
-    //     positions), so the array is freshly populated, never appended across
-    //     ticks.
-    state.emissionSeq = rebuildEmissions(state.ships, state.emissions, tick, state.emissionSeq, state.medium);
+    //     the monotonic emission counter. Rebuilt from scratch each tick. The
+    //     alive-real-sorted list and medium emissions are threaded in from the
+    //     producer above (same contents + order; byte-identical).
+    state.emissionSeq = rebuildEmissions(state.ships, state.emissions, tick, state.emissionSeq, state.medium, aliveRealSorted, mediumEmissions);
     // 0. Refresh the per-side ship lists and id index from the live `ships`
     //    array so they include phantoms (drones/decoys) and break-away chunks
     //    added on a previous tick. Incremental: membership only grows and ships
@@ -227,13 +245,12 @@ export function* simulateBattle(
     refreshRosterIncremental(state);
 
     // 0a-debris. Record which real ships are alive entering this tick, so the
-    //     debris step after the damage phases can spawn wreckage for exactly the
-    //     ships that died this tick (a transition from alive to dead). Phantoms
-    //     (drones/decoys) leave no debris — they are transient projections, not
-    //     hulls. Captured before any death-producing step runs.
-    const aliveAtTickStart = new Set(
-      state.ships.filter((s) => s.alive && s.phantom === undefined).map((s) => s.instanceId),
-    );
+    //     debris step can spawn wreckage for exactly the ships that died this
+    //     tick. Phantoms leave no debris. Built from the pooled alive-real-sorted
+    //     list into the pooled Set — no per-tick allocation.
+    const aliveAtTickStart = state.aliveAtTickStartScratch;
+    aliveAtTickStart.clear();
+    for (const s of aliveRealSorted) aliveAtTickStart.add(s.instanceId);
 
     // 0b. Active-radar pulse field (Phase 8). Each active-mode sensor emits a
     //     light-speed pulse; live pulses expand by c and scatter reflections off
@@ -245,13 +262,10 @@ export function* simulateBattle(
     state.pulseSeq = stepPulses(state.ships, state.byId, state.pulses, inputs.anomalies, tick, state.pulseSeq);
 
     // 0c. AI interpreter (Phase 7 wiring). Evaluate each ship's stance + rules
-    //     against the frame state and write the resulting hold-fire decision
-    //     onto `aiHoldFire`, which the weapon-fire step reads below. Runs after
-    //     awareness (so rules can read who has a target) and before targeting
-    //     (so the decision reflects the ship's current situation, not the prior
-    //     tick's). Pure: deterministic ship order, pure predicates, first-match
-    //     rule wins. A ship with no rules evaluates to holdFire=false, so
-    //     byte-output is unchanged for rule-less fleets.
+    //     and write the hold-fire decision onto `aiHoldFire` (read by the
+    //     weapon-fire step). Runs after awareness and before targeting. Pure:
+    //     deterministic ship order, pure predicates, first-match rule wins. A
+    //     ship with no rules evaluates to holdFire=false.
     stepAi(state.ships, state.byId);
     // 0d. Formation-doctrine pass. Evaluates unified rules whose conditions are
     //     formation/spatial/temporal/boolean kinds (the kinds `stepAi` leaves
@@ -276,7 +290,7 @@ export function* simulateBattle(
       const enemies = ship.side === "attacker" ? state.defenders : state.attackers;
       const focusTarget =
         ship.side === "attacker" ? attackerFocusTarget : defenderFocusTarget;
-      ship.target = pickTarget(ship, enemies, focusTarget, tick, formationTargeting)?.instanceId;
+      ship.target = pickTarget(ship, enemies, focusTarget, tick, formationTargeting, state.byId)?.instanceId;
     }
 
     // 1b. Tech timers (factions update). Advance every movement/power tech
@@ -304,31 +318,32 @@ export function* simulateBattle(
     //     contacts feed the kinetic-damage step below.
     const shipContacts = resolveShipCollisions(buildShipCellHash(state.ships));
 
-    // 2b-kinetic. Kinetic collision damage (realism overhaul, Phase 4). Convert a
-    //     fraction of each contact's collision kinetic energy (measured from the
-    //     pre-impulse approach velocity the resolve step captured) into structural
-    //     damage on both ships (Newton's third law), routed through applyDamage so
-    //     shields/armour/modules apply. A no-op tick with no contacts, so byte
-    //     output is unchanged for battles where ships never touch.
+    // 2b-kinetic. Kinetic collision damage (realism overhaul, Phase 4). Convert
+    //     a fraction of each contact's collision kinetic energy into structural
+    //     damage on both ships (Newton's third law), routed through applyDamage.
+    //     A no-op tick with no contacts.
     applyCollisionDamage(shipContacts);
 
-    // 2b-debris. Debris kinetic hazard (Phase 12). Drifting wreckage occupies the
-    //     same world space as ships; when a fragment's bounding disc overlaps a
-    //     ship's bounding disc, it transfers kinetic energy to the ship's hull
-    //     (½·m·v_rel²·damageFraction), routed through applyDamage so
-    //     shields/armour/modules apply. No shieldPiercing or armourPiercing —
-    //     wreckage hits the outer surface. The debris fragment is not destroyed or
-    //     modified (it is large drifting mass, not a round). Contacts below
-    //     SIM.debrisMinRelSpeed are ignored (stationary relative nudges). Debris
-    //     is advanced one tick later (step 4e-debris below), so the positions here
-    //     are from the previous tick's advance — consistent: the advance and the
-    //     damage step are in the same relative order every tick. A no-op until the
-    //     first ship dies and leaves wreckage; ships iterated in instanceId order.
+    // 2b-debris. Debris kinetic hazard (Phase 12). A drifting fragment whose
+    //     bounding disc overlaps a ship transfers kinetic energy
+    //     (½·m·v_rel²·damageFraction) through applyDamage (no piercing — wreckage
+    //     hits the outer surface; the fragment is not destroyed). Contacts below
+    //     SIM.debrisMinRelSpeed are ignored. Debris is advanced one tick later
+    //     (4e-debris), so positions are from the previous advance — same relative
+    //     order every tick. A no-op until the first ship dies; ships in
+    //     instanceId order.
     if (state.debris.length > 0) {
-      // Build a sorted alive-ship list once for this debris pass, deterministic.
-      const aliveShipsSorted = state.ships
-        .filter((s) => s.alive && s.phantom === undefined)
-        .sort((a, b) => (a.instanceId < b.instanceId ? -1 : a.instanceId > b.instanceId ? 1 : 0));
+      // Sorted alive-ship list for this debris pass, reusing the pooled
+      // alive-real-sorted scratch. Refreshed in place because collision damage
+      // at 2b-kinetic may have killed ships since the early-tick build; reading
+      // the stale snapshot would iterate dead ships. Byte-identical to the
+      // prior filter+sort (same set, same order).
+      const aliveShipsSorted = state.aliveRealSortedScratch;
+      aliveShipsSorted.length = 0;
+      for (const s of state.ships) {
+        if (s.alive && s.phantom === undefined) aliveShipsSorted.push(s);
+      }
+      aliveShipsSorted.sort((a, b) => (a.instanceId < b.instanceId ? -1 : a.instanceId > b.instanceId ? 1 : 0));
       for (const d of state.debris) {
         if (d === undefined) continue;
         for (const s of aliveShipsSorted) {
@@ -352,11 +367,9 @@ export function* simulateBattle(
       }
     }
 
-    // 2c. Command auras (factions update). With positions settled for the tick,
-    //     recompute each ship's best friendly aura bonus so the firing step below
-    //     reads the current buff. Opt-in: a no-op (every bonus reset to 0, then
-    //     left there) for a battle with no command-aura module, so byte output is
-    //     unchanged.
+    // 2c. Command auras (factions update). With positions settled, recompute
+    //     each ship's best friendly aura bonus so the firing step reads the
+    //     current buff. Opt-in: a no-op for a battle with no command-aura module.
     applyCommandAuras(state.ships);
 
     // 2d. Mine laying (factions update). With positions settled, every ready,
@@ -389,7 +402,13 @@ export function* simulateBattle(
     }
 
     // 3. Weapon firing (creates projectiles; hitscan applies damage at once).
-    state.projectiles = state.projectiles.concat(fireWeapons(state.ships, state.byId, rng, tick, inputs.anomalies, state.beams));
+    //    The newly fired projectiles are pushed in place onto the existing
+    //    array rather than `concat`-allocating a fresh one — same contents,
+    //    same order (existing entries preserved, new ones appended), byte-
+    //    identical snapshot output.
+    for (const p of fireWeapons(state.ships, state.byId, rng, tick, inputs.anomalies, state.beams)) {
+      state.projectiles.push(p);
+    }
 
     // 3-beams. Age the beam emissions the fire step just pushed and drop expired
     //     entries (order-preserving; byte-identical across same-seed runs).
@@ -412,36 +431,29 @@ export function* simulateBattle(
     state.projectiles = updateProjectiles(state.projectiles, state.byId, inputs.anomalies, rng, state.medium);
 
     // 4-mines. Mines (factions update). Arm down, then detonate any armed mine
-    //     with an enemy in range against the nearest such enemy (via applyDamage,
-    //     so shields/armour/modules apply). Detonated mines are dropped. Runs in
-    //     the same damage phase as projectiles so the aggregate recompute below
-    //     reflects modules a mine destroyed this tick. A no-op when no mines
-    //     exist, so byte output is unchanged for battles without mine-layers.
+    //     with an enemy in range against the nearest (via applyDamage). Runs in
+    //     the same damage phase so the aggregate recompute below reflects modules
+    //     a mine destroyed this tick. A no-op when no mines exist.
     state.mines = updateMines(state.mines, state.ships);
 
-    // 4-pods. Boarding pods (factions update). Home toward their targets and
-    //     board on contact, disabling modules (so shields/armour/weapons drop)
-    //     via recomputeAggregates inside boardShip. Runs in the same damage
-    //     phase so the aggregate recompute below reflects modules a boarding
-    //     disabled this tick. A no-op when no pods exist, so byte output is
-    //     unchanged for battles without boarding modules.
+    // 4-pods. Boarding pods (factions update). Home and board on contact,
+    //     disabling modules via recomputeAggregates inside boardShip. Runs in
+    //     the damage phase so the aggregate recompute below reflects modules a
+    //     boarding disabled this tick. A no-op when no pods exist.
     state.pods = updatePods(state.pods, state.ships);
 
     // 4-phantoms. Drones and decoys (factions update). Drones home on the
-    //     nearest real enemy and strike it (via applyDamage); decoys merely
-    //     count down. Expired or destroyed phantoms are marked dead in place.
-    //     Runs in the damage phase so the aggregate recompute below reflects
-    //     anything a drone destroyed this tick. A no-op when no phantoms exist.
+    //     nearest real enemy and strike it (via applyDamage); decoys count down.
+    //     Expired or destroyed phantoms are marked dead in place. A no-op when
+    //     no phantoms exist.
     stepPhantoms(state.ships);
 
-    // 4a-chain. Explosive chain reactions (realism overhaul, Phase 4). Any
-    //     volatile module (reactor / magazine) reduced to zero HP this tick — by
-    //     a weapon, a mine, a kinetic ram, or an earlier blast — detonates,
-    //     dealing radial damage to its ship's other modules and chaining into any
-    //     further volatile cells it destroys. Drained to completion within this
-    //     tick before the aggregate recompute below, so a reactor breach is
-    //     reflected in the same frame. A no-op for a ship that lost no volatile
-    //     module, so byte output is unchanged for those.
+    // 4a-chain. Explosive chain reactions (realism overhaul, Phase 4). A
+    //     volatile module (reactor / magazine) reduced to zero HP this tick
+    //     detonates, dealing radial damage and chaining into further volatile
+    //     cells. Drained to completion before the aggregate recompute below, so
+    //     a breach is reflected in the same frame. A no-op for a ship that lost
+    //     no volatile module.
     for (const ship of state.ships) {
       if (ship.modules !== undefined) resolveChainReactions(ship, state.ships);
     }
@@ -470,33 +482,26 @@ export function* simulateBattle(
     }
 
     // 4b-crew/ammo. Crew AI + movement, then ammo-conduit refill — fused into a
-    //     single per-ship pass because both are fully per-ship (neither reads
-    //     another ship's state), so interleaving them is byte-identical to the
-    //     prior two-pass all-crew-then-all-ammo form. After aggregates settle
-    //     `powered`, each ship's crew walk one cell toward an under-manned
-    //     station, then every module's `manned` flag is recomputed from the new
-    //     positions (done before break-apart so the split partitions crew by
-    //     their post-move cell). Then every conduit-fed weapon refills directly
-    //     from its magazine's store, dividing each magazine across its hardwired
-    //     sinks — at the same latency as a crew deposit (rounds land this tick,
-    //     fire next) and independently of crew, so a crewless hardwired ship is
-    //     resupplied too. Fully deterministic (crew in id order, stations in
-    //     (col, row) order, fixed-tie-break A* paths; magazines in module order)
-    //     and a no-op on designs with no crew / no ammo hardwires.
+    //     single per-ship pass because both are fully per-ship, so interleaving
+    //     is byte-identical to the prior two-pass form. After aggregates settle
+    //     `powered`, crew walk one cell toward an under-manned station and
+    //     `manned` is recomputed (before break-apart so splits partition crew by
+    //     post-move cell); then conduit-fed weapons refill from their magazine,
+    //     dividing each magazine across its sinks at crew-deposit latency. A
+    //     no-op on designs with no crew / no ammo hardwires.
     for (const ship of state.ships) {
       if (!ship.alive || ship.modules === undefined) continue;
       updateCrew(ship);
       refillHardwiredAmmo(ship);
     }
 
-    // 4b-resource. Resource & environment step (Phase 12). Advance each ship's
-    //     thermal, propellant, atmosphere, and power state one tick, then enforce
-    //     the resource consequences: dry-tank engine flame-out, energy-buffer
-    //     brownout load-shedding, and overheat module destruction (asphyxiation /
-    //     venting is enforced inside the step via the airtightness vent mask).
-    //     Runs after crew (atmosphere reads settled positions) and before
-    //     break-apart, so an overheat-killed cell splits the hull this same tick.
-    //     A no-op for ships with no resource state.
+    // 4b-resource. Resource & environment step (Phase 12). Advance thermal,
+    //     propellant, atmosphere, and power one tick, then enforce consequences:
+    //     dry-tank flame-out, brownout load-shedding, overheat module destruction
+    //     (asphyxiation/venting inside the step via the airtightness mask). Runs
+    //     after crew (atmosphere reads settled positions) and before break-apart,
+    //     so an overheat-killed cell splits the hull this same tick. A no-op for
+    //     ships with no resource state.
     for (const ship of state.ships) {
       if (!ship.alive) continue;
       resourceStep(ship);
@@ -580,20 +585,16 @@ export function* simulateBattle(
 
     // 4e-debris. Spawn wreckage for every real ship that died this tick (alive
     //     at the top of the loop, dead now) and was genuinely destroyed rather
-    //     than split into chunks. A break-apart already carried the hull mass off
-    //     into its chunks, so those deaths are excluded to avoid double-counting.
-    //     The fragment inherits the ship's centre-of-mass velocity (Newton's
-    //     first law — momentum is conserved when the hull comes apart), with no
-    //     breakup kick (a directed kick has no deterministic direction without
-    //     rng, and reception/hazard wiring is use-deferred). The wreckage mass is
-    //     a fraction of the hull's BUILT structural mass — the sum of every cell's
-    //     mass, alive or destroyed, since `ship.mass` counts only alive cells and
-    //     a destroyed hull has none left (a legacy non-modular ship keeps its
-    //     per-class mass, so it falls back to that). Accumulated in module-array
-    //     order (the fixed design-time slot order), so the sum is deterministic.
-    //     Spawned in lexicographic id order behind the monotonic debris counter so
-    //     two same-seed runs produce byte-identical ids; then every debris drifts
-    //     one tick. A no-op until the first ship dies.
+    //     than split into chunks (break-apart carried that mass into its chunks,
+    //     so those deaths are excluded). The fragment inherits the ship's COM
+    //     velocity (Newton's first law), no breakup kick (no deterministic
+    //     direction without rng). Wreckage mass is a fraction of the hull's BUILT
+    //     structural mass — every cell's mass, alive or destroyed (`ship.mass`
+    //     counts only alive cells and a destroyed hull has none); legacy
+    //     non-modular ships fall back to per-class mass. Summed in module-array
+    //     order; spawned in lexicographic id order behind the monotonic debris
+    //     counter, then every debris drifts one tick. A no-op until the first
+    //     death.
     const newlyDead = state.ships
       .filter(
         (s) =>
@@ -632,12 +633,9 @@ export function* simulateBattle(
     const regenFactor = hasAnomaly(inputs.anomalies, "nebula") ? SIM.nebulaRegenFactor : 1;
     for (const ship of state.ships) {
       if (!ship.alive) continue;
-      // Adaptive shields: count the ticks since the shield was last touched. A hit
-      // this tick already reset the streak to 0 in applyDamage, so incrementing
-      // here advances any shield that went untouched. Only the regen below reads
-      // it, and only when the ship's ramp is non-zero, so a conventional shield's
-      // streak never affects anything. The streak is bounded by the multiplier
-      // cap, so it need not grow without limit.
+      // Adaptive shields: count ticks since the shield was last touched (a hit
+      // this tick already reset the streak to 0 in applyDamage). Only the regen
+      // below reads it, and only when the ramp is non-zero. Bounded by the cap.
       if (ship.shieldAdaptiveRamp > 0) {
         const cap = Math.ceil(
           (SIM.adaptiveShieldMaxMultiple - 1) / ship.shieldAdaptiveRamp,
@@ -648,17 +646,14 @@ export function* simulateBattle(
       if (ship.shieldRegenCountdown > 0) {
         ship.shieldRegenCountdown -= ship.dilationFactor;
       } else {
-        // Effective rate ramps with the untouched streak for an adaptive shield,
-        // capped at `adaptiveShieldMaxMultiple` times the base rate; a
-        // conventional shield (ramp 0) keeps its flat base rate exactly.
-        // The recharge amount is scaled by `dilationFactor` so a ship in a
-        // relativistic frame regenerates at the same slowed rate as it fires.
+        // Effective rate ramps with the untouched streak, capped at the max
+        // multiple; scaled by `dilationFactor` so a relativistic frame regens at
+        // the same slowed rate as it fires. `shieldRechargeRate` is watts;
+        // /TICKS_PER_SECOND gives joules-per-tick.
         const rampMultiple = Math.min(
           SIM.adaptiveShieldMaxMultiple,
           1 + ship.shieldAdaptiveRamp * ship.shieldUntouchedTicks,
         );
-        // `shieldRechargeRate` is watts; /TICKS_PER_SECOND gives joules-per-tick
-        // (else it regens TPS× too fast). The ramp multiple stays unitless.
         const rechargeJoulesThisTick =
           (ship.shieldRechargeRate / TICKS_PER_SECOND) * rampMultiple * regenFactor * ship.dilationFactor;
         ship.shield = Math.min(ship.maxShield, ship.shield + rechargeJoulesThisTick);
@@ -687,7 +682,13 @@ export function* simulateBattle(
 
     // 5c. Arena medium: per-tick sources, then diffuse and decay. `tick` seeds
     //     the per-cell birthTicks the sustained-radiation startup light-lag gates.
-    const pMedium = state.projectiles.map((p) => ({ x: p.x, y: p.y, powered: p.powered, burnTicks: p.burnTicks, thrust: p.thrust, mass: p.mass }));
+    //     The projectile-medium entries are cleared and refilled into the pooled
+    //     scratch each tick (no `.map` allocation) — same entries, same order.
+    const pMedium = state.projectileMediumScratch;
+    pMedium.length = 0;
+    for (const p of state.projectiles) {
+      pMedium.push({ x: p.x, y: p.y, powered: p.powered, burnTicks: p.burnTicks, thrust: p.thrust, mass: p.mass });
+    }
     state.medium = stepArenaMediumFromState(state.medium, state.ships, state.debris, pMedium, inputs.anomalies, state.asteroidDiscs, tick);
     // 5d. Exhaust/plume particles: step the live plume (transport + cool + cull)
     //     and gather this tick's emissions — no RNG, deterministic.

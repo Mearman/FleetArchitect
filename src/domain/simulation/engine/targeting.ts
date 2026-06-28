@@ -99,16 +99,24 @@ export interface EnemyView {
  * (the AI keeps engaging the last fix). Enemies the ship cannot see at all —
  * directly or relayed — are absent, so it never targets or votes for them. Built
  * in awareness-map order then sorted by instanceId for a deterministic scan.
+ *
+ * `byId` resolves an `enemyId` from the awareness set to the live `SimShip`.
+ * The tick loop passes the engine's authoritative `state.byId` (every ship ever
+ * spawned, keyed by instanceId); an attacker's awareness set only ever carries
+ * defender ids (the awareness phase filters by opposing side), so the lookup
+ * resolves the same reference the per-side `enemyById` map the body used to
+ * build would have produced — byte-identical. The focus-election callers pass a
+ * map restricted to the living non-phantom candidates, which is the same set
+ * their filtered `enemies` list used to seed the per-call map.
  */
 export function visibleEnemyViews(
   ship: SimShip,
-  enemies: readonly SimShip[],
+  byId: ReadonlyMap<string, SimShip>,
   tick: number,
 ): EnemyView[] {
-  const enemyById = new Map(enemies.map((e) => [e.instanceId, e]));
   const views: EnemyView[] = [];
   for (const [enemyId, contact] of ship.awareness) {
-    const enemy = enemyById.get(enemyId);
+    const enemy = byId.get(enemyId);
     // The awareness set may name an enemy that has since died or that belongs to
     // the other enemy list (focus election passes a single side's list); only
     // act on a live enemy present in this list.
@@ -348,17 +356,24 @@ export function scoreEnemyReference(
  * {@link pickTargetReference} so the awareness/stealth/relational-filter
  * derivation — everything before the scoring argmax — is identical across the
  * two paths.
+ *
+ * `byId` is the resolution map threaded into {@link visibleEnemyViews}. When
+ * undefined, this function builds a per-call map from `enemies` (the historical
+ * behaviour) so standalone callers — the equivalence test — keep working
+ * without the engine's `state.byId`.
  */
 function visibleCandidates(
   ship: SimShip,
   enemies: readonly SimShip[],
   tick: number,
   formationCtx: FormationTargetingContext | undefined,
+  byId?: ReadonlyMap<string, SimShip>,
 ): EnemyView[] | undefined {
   // Visible = enemies in awareness (fog/sensors) AND locked-on (stealth gate),
   // filtered inside `visibleEnemyViews`. A non-stealth battle's candidate set is
   // unchanged, so targeting stays byte-identical for fleets without stealth tech.
-  const allVisible = visibleEnemyViews(ship, enemies, tick);
+  const resolvedById = byId ?? new Map(enemies.map((e) => [e.instanceId, e]));
+  const allVisible = visibleEnemyViews(ship, resolvedById, tick);
   if (allVisible.length === 0) return undefined;
 
   // Phase D: apply the relational targeting filter (threatsTo/membersOf/class/
@@ -404,8 +419,16 @@ export function pickTarget(
    *  relational mode before scoring. Undefined (or no override) leaves the
    *  candidate set unchanged — the gate that keeps preset battles byte-identical. */
   formationCtx?: FormationTargetingContext,
+  /**
+   * The engine's authoritative id → ship map. When supplied (the production
+   * tick loop passes `state.byId`), `visibleEnemyViews` resolves awareness ids
+   * against it directly instead of rebuilding a per-call map from `enemies`;
+   * byte-identical because an observer's awareness set only carries opposing-
+   * side ids. When omitted, the map is built from `enemies` (standalone use).
+   */
+  byId?: ReadonlyMap<string, SimShip>,
 ): EnemyView | undefined {
-  const visible = visibleCandidates(ship, enemies, tick, formationCtx);
+  const visible = visibleCandidates(ship, enemies, tick, formationCtx, byId);
   if (visible === undefined) return undefined;
 
   // Focus-fire: defer to the fleet-agreed target, but only if this ship can
@@ -454,8 +477,9 @@ export function pickTargetReference(
   focusTargetId: string | undefined,
   tick: number,
   formationCtx?: FormationTargetingContext,
+  byId?: ReadonlyMap<string, SimShip>,
 ): EnemyView | undefined {
-  const visible = visibleCandidates(ship, enemies, tick, formationCtx);
+  const visible = visibleCandidates(ship, enemies, tick, formationCtx, byId);
   if (visible === undefined) return undefined;
 
   if (wantsFocusFire(ship) && focusTargetId !== undefined) {
@@ -557,9 +581,16 @@ export function electFocusTarget(
   if (sets === undefined) return undefined;
   const { living, voters } = sets;
 
+  // Build the living-candidate id map ONCE per election (not per voter). The
+  // phantom filter is load-bearing here — a fleet must never agree to focus-
+  // fire a drone or decoy — so the map is built from `living` (alive and
+  // non-phantom), not the engine-wide `state.byId`. Same set, same references
+  // the per-voter map the body used to build would have produced.
+  const livingById = new Map(living.map((e) => [e.instanceId, e]));
+
   const totals = new Map<string, number>();
   for (const voter of voters) {
-    let visible = visibleEnemyViews(voter, living, tick);
+    let visible = visibleEnemyViews(voter, livingById, tick);
     if (formationCtx !== undefined) {
       visible = filterVisibleByTargeting(voter, visible, formationCtx);
     }
@@ -600,9 +631,11 @@ export function electFocusTargetReference(
   if (sets === undefined) return undefined;
   const { living, voters } = sets;
 
+  const livingById = new Map(living.map((e) => [e.instanceId, e]));
+
   const totals = new Map<string, number>();
   for (const voter of voters) {
-    let visible = visibleEnemyViews(voter, living, tick);
+    let visible = visibleEnemyViews(voter, livingById, tick);
     if (formationCtx !== undefined) {
       visible = filterVisibleByTargeting(voter, visible, formationCtx);
     }
