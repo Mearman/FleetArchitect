@@ -3,9 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   closestPointOnSegment,
   outerWorldLoop,
+  outerWorldLoopReference,
   outlineWorldLoops,
   pointInPolygon,
   polygonsContact,
+  polygonsContactReference,
   rayPolygonEntry,
   raySegmentIntersect,
 } from "@/domain/simulation/engine/poly-collision";
@@ -210,5 +212,118 @@ describe("rayPolygonEntry (hitscan beam vs outline)", () => {
   it("a beam fired away from the hull misses", () => {
     // Firing along -x from the origin heads away from the hull at +x.
     expect(rayPolygonEntry(0, 0, -1, 0, hull)).toBeNull();
+  });
+});
+
+/**
+ * Optimised-vs-reference equivalence. The single-pass {@link polygonsContact}
+ * folds the reference's second `allVerticesOutward` pass into the tracked
+ * `deepestInward` and caches the chosen edge inside the loop, so it must return
+ * a bit-identical contact (or null) to the two-pass {@link polygonsContactReference}
+ * on the same inputs. Both implementations share their arithmetic — same `d`,
+ * same normal formula, same projection — so `toEqual` (Object.is on numbers)
+ * holds exactly, not just within a tolerance.
+ */
+describe("polygonsContact single-pass equivalence vs reference", () => {
+  /** Run both implementations on structuredClone-d identical inputs and assert
+   *  the same null-or-contact result. Cloning per call guards against either
+   *  implementation mutating its operands (they must not). */
+  function assertContactsIdentical(a: Point[], b: Point[]): void {
+    const ref = polygonsContactReference(structuredClone(a), structuredClone(b));
+    const opt = polygonsContact(structuredClone(a), structuredClone(b));
+    expect(opt).toEqual(ref);
+  }
+
+  it("overlapping squares", () => {
+    assertContactsIdentical(square(0, 0, 1), square(1.5, 0, 1));
+  });
+
+  it("edge-touching squares (shared boundary)", () => {
+    assertContactsIdentical(square(0, 0, 1), square(2, 0, 1));
+  });
+
+  it("disjoint squares (separation returns null)", () => {
+    assertContactsIdentical(square(0, 0, 1), square(5, 0, 1));
+  });
+
+  it("nested squares (b fully inside a)", () => {
+    assertContactsIdentical(square(0, 0, 5), square(0, 0, 1));
+  });
+
+  it("nested the other way (a fully inside b)", () => {
+    assertContactsIdentical(square(0, 0, 1), square(0, 0, 5));
+  });
+
+  it("rotated overlapping diamond into a square (exercises normal-flip)", () => {
+    // A unit diamond (rotated square) centred at (1.5, 0) overlaps a's right
+    // edge; the contact normal must still resolve along +x. Non-axis-aligned
+    // edges stress the outward-normal orientation the cache carries through.
+    const s = Math.SQRT1_2;
+    const diamond: Point[] = [
+      { x: 1.5, y: -s },
+      { x: 1.5 + s, y: 0 },
+      { x: 1.5, y: s },
+      { x: 1.5 - s, y: 0 },
+    ];
+    assertContactsIdentical(square(0, 0, 1), diamond);
+  });
+
+  it("two rotated triangles overlapping off-axis", () => {
+    // Concave-stress: triangles exercise all three SAT axes with neither polygon
+    // axis-aligned, so the chosen-edge cache and the folded separation gate are
+    // both checked against the reference's post-loop recompute.
+    const triA: Point[] = [
+      { x: 0, y: 0 },
+      { x: 4, y: 0 },
+      { x: 2, y: 3 },
+    ];
+    const triB: Point[] = [
+      { x: 2, y: 1 },
+      { x: 6, y: 1 },
+      { x: 4, y: 4 },
+    ];
+    assertContactsIdentical(triA, triB);
+  });
+});
+
+/**
+ * Pose-cache equivalence. The cached {@link outerWorldLoop} must return the same
+ * loop as the uncached {@link outerWorldLoopReference}, reuse the memoised array
+ * across calls at one pose, and rebuild when the pose moves.
+ */
+describe("outerWorldLoop pose cache vs reference", () => {
+  it("returns the same loop as the uncached reference", () => {
+    // Two loops: the largest-area one must be picked, matching the reference.
+    const ship = shipWithOutline(10, 20, Math.PI / 4, [
+      square(0, 0, 0.25),
+      square(0, 0, 1),
+    ]);
+    expect(outerWorldLoop(ship)).toEqual(outerWorldLoopReference(ship));
+  });
+
+  it("reuses the cached array across calls at the same pose", () => {
+    // Cache hit: the second call returns the SAME array reference, not a rebuild.
+    const ship = shipWithOutline(3, 4, 0, [square(0, 0, 1)]);
+    const first = outerWorldLoop(ship);
+    const second = outerWorldLoop(ship);
+    expect(second).toBe(first);
+  });
+
+  it("rebuilds when the pose changes", () => {
+    // Mutate the pose on the same object: the cache must invalidate and rebuild,
+    // and the rebuilt loop must match the uncached reference at the new pose.
+    const ship = shipWithOutline(0, 0, 0, [square(0, 0, 1)]);
+    const atOrigin = outerWorldLoop(ship);
+    ship.x = 10;
+    const moved = outerWorldLoop(ship);
+    expect(moved).not.toEqual(atOrigin);
+    expect(moved).toEqual(outerWorldLoopReference(ship));
+  });
+
+  it("caches undefined for an outline-less ship (miss then hit)", () => {
+    const ship = shipWithOutline(0, 0, 0, undefined);
+    expect(outerWorldLoop(ship)).toBeUndefined(); // miss: rebuild, cache undefined
+    expect(outerWorldLoop(ship)).toBeUndefined(); // hit: cached undefined
+    expect(outerWorldLoopReference(ship)).toBeUndefined();
   });
 });

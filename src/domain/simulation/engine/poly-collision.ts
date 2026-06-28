@@ -65,8 +65,13 @@ export function outlineWorldLoops(ship: OutlinedPose): Point[][] {
  * Inner loops (holes in a complex hull) are deliberately excluded here: contact
  * and ray entry resolve against the outer silhouette. Callers needing every
  * loop use `outlineWorldLoops` directly.
+ *
+ * This is the uncached oracle: it rebuilds the world-space loops and re-picks
+ * the largest-area loop on every call. Kept as the reference implementation
+ * against which the pose-cached {@link outerWorldLoop} is equivalence-tested;
+ * do not call it on the hot path.
  */
-export function outerWorldLoop(ship: OutlinedPose): Point[] | undefined {
+export function outerWorldLoopReference(ship: OutlinedPose): Point[] | undefined {
   const loops = outlineWorldLoops(ship);
   if (loops.length === 0) return undefined;
   let best = loops[0]!;
@@ -79,6 +84,54 @@ export function outerWorldLoop(ship: OutlinedPose): Point[] | undefined {
     }
   }
   return best;
+}
+
+/** Pose key plus the precomputed outer loop for one ship. The outline is
+ *  lifetime-stable (set at resolve time; break-apart makes a FRESH SimShip, so
+ *  the cache misses and rebuilds for the fragment), so the loop only changes
+ *  when the live pose `(x, y, facing)` does. */
+interface OuterLoopCache {
+  x: number;
+  y: number;
+  facing: number;
+  loop: Point[] | undefined;
+}
+
+/**
+ * Per-ship pose cache for the outer world loop. A ship is refined against many
+ * candidate contacts (and traced by many beam targets) in a single tick, all
+ * under the same pose, so the transform plus largest-area pick — constant for a
+ * given pose — is memoised on the ship object and reused until the pose moves.
+ *
+ * Keyed by object identity (the module's `OutlinedPose` view rather than the
+ * full `SimShip`: the geometry helpers depend only on the pose they read, and
+ * every runtime caller passes the live `SimShip`, whose object identity is the
+ * cache key either way). Break-apart allocates a new `SimShip`, so the old
+ * entry is GC'd and the fragment rebuilds. The cached `loop` array is shared
+ * between callers — it is typed `readonly Point[]` and no caller mutates it,
+ * so returning the same reference is safe.
+ */
+const outerLoopCache = new WeakMap<OutlinedPose, OuterLoopCache>();
+
+/**
+ * The cached outer hull loop (see {@link outerWorldLoopReference} for the pure
+ * computation). Rebuilds only when the ship's `(x, y, facing)` differs from the
+ * cached pose; otherwise returns the memoised loop. Call semantics are
+ * unchanged from the uncached oracle.
+ */
+export function outerWorldLoop(ship: OutlinedPose): Point[] | undefined {
+  const cached = outerLoopCache.get(ship);
+  if (
+    cached !== undefined &&
+    cached.x === ship.x &&
+    cached.y === ship.y &&
+    cached.facing === ship.facing
+  ) {
+    return cached.loop;
+  }
+  const loop = outerWorldLoopReference(ship);
+  outerLoopCache.set(ship, { x: ship.x, y: ship.y, facing: ship.facing, loop });
+  return loop;
 }
 
 /** Shoelace signed area of a polygon. Sign depends on winding; callers that
@@ -257,8 +310,14 @@ export function pointInPolygon(px: number, py: number, poly: readonly Point[]): 
  * The returned normal `(nx, ny)` points outward from `a` (the direction to push
  * `b` to separate), matching the ship-ship contact convention (normal from a
  * toward b).
+ *
+ * This is the uncached oracle: a two-pass SAT sweep (the inner b-vertex pass,
+ * then a separate `allVerticesOutward` separation pass) followed by a post-loop
+ * recompute of the chosen edge's normal. Kept as the reference against which
+ * the single-pass {@link polygonsContact} is equivalence-tested; do not call it
+ * on the hot path.
  */
-export function polygonsContact(
+export function polygonsContactReference(
   a: readonly Point[],
   b: readonly Point[],
 ): { x: number; y: number; nx: number; ny: number } | null {
@@ -339,6 +398,100 @@ export function polygonsContact(
   const v = b[bestVertex]!;
   const contact = closestPointOnSegment(v.x, v.y, p1.x, p1.y, p2.x, p2.y);
   return { x: contact.x, y: contact.y, nx, ny };
+}
+
+/**
+ * Production polygon overlap test: a single-pass SAT sweep that yields a
+ * byte-identical result to {@link polygonsContactReference} while folding the
+ * reference's two redundant passes into the inner loop:
+ *
+ *  - The separation test. The reference runs a SECOND full b-vertex pass
+ *    (`allVerticesOutward`) to confirm every b-vertex is strictly outward. That
+ *    holds exactly when the smallest signed outward distance is `> 0`, and the
+ *    inner loop already tracks that minimum as `deepestInward` — so the
+ *    post-loop separation check becomes one comparison, `deepestInward > 0`,
+ *    with no second pass. (The reference's `maxOutward > 0` pre-check is
+ *    implied: if every distance is `> 0` the maximum is too.)
+ *  - The chosen edge's contact geometry. The reference recomputes the selected
+ *    edge's two vertices and outward normal after the loop; the single pass
+ *    caches them (`bestP1*`, `bestP2*`, `bestNx/Ny`) at the moment the edge
+ *    wins, so the post-loop recompute is free.
+ *
+ * The arithmetic is identical to the reference — same `d`, same normal formula,
+ * same `closestPointOnSegment` projection — so for the same inputs the two
+ * return bit-identical contacts (verified by the equivalence test).
+ */
+export function polygonsContact(
+  a: readonly Point[],
+  b: readonly Point[],
+): { x: number; y: number; nx: number; ny: number } | null {
+  if (a.length < 3 || b.length < 3) return null;
+  const aCentroid = polygonCentroid(a);
+
+  // SAT minimum-penetration sweep. Per edge of a we walk every b-vertex once,
+  // tracking the smallest signed outward distance and the vertex realising it
+  // (the deepest penetration along this axis). That smallest distance doubles
+  // as the separation gate (see above), and the winning edge's two vertices
+  // plus flipped outward normal are cached as we go.
+  let bestDepth = -Infinity;
+  let bestVertex = -1;
+  let bestP1x = 0;
+  let bestP1y = 0;
+  let bestP2x = 0;
+  let bestP2y = 0;
+  let bestNx = 0;
+  let bestNy = 0;
+
+  for (let i = 0; i < a.length; i += 1) {
+    const p1 = a[i]!;
+    const p2 = a[(i + 1) % a.length]!;
+    const ex = p2.x - p1.x;
+    const ey = p2.y - p1.y;
+    const elen = Math.hypot(ex, ey);
+    if (elen <= 0) continue;
+    let nx = -ey / elen;
+    let ny = ex / elen;
+    const midX = (p1.x + p2.x) / 2;
+    const midY = (p1.y + p2.y) / 2;
+    if ((midX - aCentroid.x) * nx + (midY - aCentroid.y) * ny < 0) {
+      nx = -nx;
+      ny = -ny;
+    }
+    let deepestInward = Infinity; // smallest signed outward distance: the gate.
+    let deepestVertex = -1;
+    for (let k = 0; k < b.length; k += 1) {
+      const v = b[k]!;
+      const d = (v.x - p1.x) * nx + (v.y - p1.y) * ny;
+      if (d < deepestInward) {
+        deepestInward = d;
+        deepestVertex = k;
+      }
+    }
+    // Folded separation test: every b-vertex is strictly outward iff the
+    // smallest outward distance is > 0. Replaces the reference's second
+    // `allVerticesOutward` pass; the reference's `maxOutward > 0` pre-check is
+    // implied by `deepestInward > 0`.
+    if (deepestInward > 0) return null;
+    // Shallowest penetration across edges == the SAT minimum-translation axis.
+    if (deepestInward > bestDepth) {
+      bestDepth = deepestInward;
+      bestVertex = deepestVertex;
+      bestP1x = p1.x;
+      bestP1y = p1.y;
+      bestP2x = p2.x;
+      bestP2y = p2.y;
+      bestNx = nx;
+      bestNy = ny;
+    }
+  }
+
+  if (bestVertex < 0) return null;
+
+  // Contact point: the deepest-penetrating b-vertex projected onto the cached
+  // winning edge — no post-loop edge recompute.
+  const v = b[bestVertex]!;
+  const contact = closestPointOnSegment(v.x, v.y, bestP1x, bestP1y, bestP2x, bestP2y);
+  return { x: contact.x, y: contact.y, nx: bestNx, ny: bestNy };
 }
 
 /** Whether every vertex of `poly` lies on the outward side of the line through
