@@ -1,7 +1,6 @@
-import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { runBattle } from "@/domain/simulation/engine";
 import { resolveFleetToCombatShips } from "@/domain/resolve";
+import { frameHash } from "@/domain/simulation/test-frame-hash";
 import { catalog } from "@/data/catalog";
 import { presetDesigns, presetFleets } from "@/data/presets";
 import { PINNED_FRAME_HASHES } from "@/domain/cache/algorithm-signature";
@@ -25,12 +24,6 @@ import type { BattleInputs } from "@/domain/simulation/types";
  * regenerate after an intended frame change: update PINNED_FRAME_HASHES in the
  * shared module; both this test and the cache key follow automatically.
  */
-
-/** Run a battle and return a SHA-256 digest of the serialised frame stream. */
-function frameHash(inputs: BattleInputs): string {
-  const result = runBattle({ ...inputs, ships: structuredClone(inputs.ships) });
-  return createHash("sha256").update(JSON.stringify(result.frames)).digest("hex");
-}
 
 /** Build a battle inputs snapshot from two preset fleet ids at a given seed. */
 function inputsFor(
