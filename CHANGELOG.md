@@ -1,3 +1,10 @@
+## [1.30.1](https://github.com/Mearman/FleetArchitect/compare/v1.30.0...v1.30.1) (2026-06-28)
+
+
+### Bug Fixes
+
+* **resolve:** don't leak undefined role onto resolved ships ([7731805](https://github.com/Mearman/FleetArchitect/commit/7731805faacb5c0110aac06c269d52540a913672))
+
 # [1.30.0](https://github.com/Mearman/FleetArchitect/compare/v1.29.0...v1.30.0) (2026-06-27)
 
 
