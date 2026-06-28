@@ -145,6 +145,12 @@ export function bootstrapEngine(
       ticks: 0,
       winner: "draw",
       resolved: false,
+      // Per-tick scratch buffers — empty here, cleared and refilled each tick.
+      // Not captured on the checkpoint; a resume re-derives them on first use.
+      dynamicOccluderScratch: [],
+      aliveAtTickStartScratch: new Set(),
+      aliveRealSortedScratch: [],
+      projectileMediumScratch: [],
     };
     return { state, startTick: 1, stalemate: undefined };
   }
@@ -194,6 +200,12 @@ export function bootstrapEngine(
     ticks: restored.ticks,
     winner: "draw",
     resolved: false,
+    // Per-tick scratch buffers — empty here, cleared and refilled each tick.
+    // Not captured on the checkpoint; a resume re-derives them on first use.
+    dynamicOccluderScratch: [],
+    aliveAtTickStartScratch: new Set(),
+    aliveRealSortedScratch: [],
+    projectileMediumScratch: [],
   };
   return { state, startTick: restored.tick + 1, stalemate: restored.stalemate };
 }

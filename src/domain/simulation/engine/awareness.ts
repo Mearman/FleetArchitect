@@ -17,6 +17,7 @@ import {
 } from "./em-reception";
 import { SATURATION_DECAY_FACTOR } from "./em-anchors";
 import { collectMediumEmissions } from "./medium-emissions";
+import type { Emission } from "./emissions";
 import type { ArenaMedium } from "./medium-setup";
 import { aberratedContactPosition } from "./optics-aberration";
 import type { CommsLink, CommsUnit } from "./sensors";
@@ -55,6 +56,14 @@ export function computeAwareness(
   anomalies: readonly BattleAnomalyKind[],
   medium?: ArenaMedium,
   tick?: number,
+  /**
+   * The medium-cell emissions for this tick, when the caller has already
+   * computed them (the tick loop calls {@link collectMediumEmissions} once and
+   * shares the result with `rebuildEmissions`). When omitted, this function
+   * collects its own copy via {@link collectMediumContacts} — so it still works
+   * standalone. Same array, same row-major order, byte-identical contacts.
+   */
+  precomputedEmissions?: readonly Emission[],
 ): AwarenessSnapshot {
   // Alive ships in instanceId order — the canonical order for every pass.
   const alive = [...ships]
@@ -229,6 +238,7 @@ export function computeAwareness(
     occluders,
     anomalies,
     dazzleAccum,
+    precomputedEmissions,
   );
 
   // (h) Write the per-observer dazzle boost back into the carried saturation
@@ -267,9 +277,10 @@ function collectMediumContacts(
   occluders: readonly Disc[],
   anomalies: readonly BattleAnomalyKind[],
   dazzleAccum: Map<string, number>,
+  precomputedEmissions?: readonly Emission[],
 ): Contact[] {
   if (medium === undefined || tick === undefined) return [];
-  const mediumEmissions = collectMediumEmissions(medium);
+  const mediumEmissions = precomputedEmissions ?? collectMediumEmissions(medium);
   if (mediumEmissions.length === 0) return [];
   const out: Contact[] = [];
   for (const observer of alive) {

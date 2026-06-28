@@ -10,12 +10,13 @@
  * first touch, so they are deliberately NOT part of this object.
  */
 
+import type { Disc } from "@/domain/occluders";
 import type { BattleSide } from "@/schema/battle";
 import type { SimBeam } from "./beams";
 import type { Debris } from "./debris";
 import type { Emission } from "./emissions";
 import type { ExhaustParticle } from "./exhaust-particles";
-import type { ArenaMedium } from "./medium-setup";
+import type { ArenaMedium, ProjectileMediumEntry } from "./medium-setup";
 import type { DeploymentReference } from "./movement";
 import type { SimPulse } from "./pulses";
 import type { SimMine, SimPod, SimProjectile, SimShip } from "./types";
@@ -108,4 +109,20 @@ export interface EngineState {
   ticks: number;
   winner: BattleSide;
   resolved: boolean;
+  /**
+   * Per-tick scratch buffers — reusable allocations the tick loop clears and
+   * refills each tick so the hot path does not allocate. Each is derived
+   * purely from the authoritative state above (ships, debris, projectiles),
+   * rebuilt at the tick position its first consumer reads it, and read only
+   * within the same tick; they are deliberately NOT part of the checkpoint
+   * (a resume re-derives them from the restored state on the first tick).
+   * `aliveRealSortedScratch` is rebuilt twice in a tick that has both an
+   * awareness-phase read (early) and a debris-hazard read (after collision
+   * damage can kill ships): the debris pass needs the post-collision alive
+   * set, so it refreshes the buffer in place before iterating.
+   */
+  dynamicOccluderScratch: Disc[];
+  aliveAtTickStartScratch: Set<string>;
+  aliveRealSortedScratch: SimShip[];
+  projectileMediumScratch: ProjectileMediumEntry[];
 }

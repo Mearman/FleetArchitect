@@ -464,6 +464,14 @@ export function recordEmissions(
  * snapshot cannot bloat. The UNcapped set is what the reception pass in
  * `computeAwareness` consumes (it collects its own copy); this function only
  * shapes what the snapshot RECORDS. Omit `medium` for a pre-medium caller.
+ *
+ * The two optional precomputed params let the tick loop share work it has
+ * already done this tick: `precomputedAliveRealSorted` is the alive,
+ * non-phantom, instanceId-sorted ship list (this function's only use of `ships`
+ * is to build that list); `precomputedEmissions` is the medium-cell emission
+ * array the loop already computed for `computeAwareness`. When omitted, each is
+ * derived internally — same contents, same order, byte-identical — so this
+ * function still works standalone.
  */
 export function rebuildEmissions(
   ships: readonly SimShip[],
@@ -471,19 +479,23 @@ export function rebuildEmissions(
   tick: number,
   seq: number,
   medium?: ArenaMedium,
+  precomputedAliveRealSorted?: readonly SimShip[],
+  precomputedEmissions?: readonly Emission[],
 ): number {
   emissions.length = 0;
   let next = seq;
-  const ordered = [...ships]
-    .filter((s) => s.alive && s.phantom === undefined)
-    .sort((a, b) => (a.instanceId < b.instanceId ? -1 : a.instanceId > b.instanceId ? 1 : 0));
+  const ordered =
+    precomputedAliveRealSorted ??
+    [...ships]
+      .filter((s) => s.alive && s.phantom === undefined)
+      .sort((a, b) => (a.instanceId < b.instanceId ? -1 : a.instanceId > b.instanceId ? 1 : 0));
   for (const ship of ordered) {
     next = recordEmissions(ship, emissions, tick, next);
   }
   if (medium !== undefined) {
     // Collect, cap, and append for the snapshot. The reception pass collects its
     // own uncapped copy; this only records what the renderer sees.
-    const mediumEmissions = collectMediumEmissions(medium);
+    const mediumEmissions = precomputedEmissions ?? collectMediumEmissions(medium);
     next = appendMediumEmissionsToSnapshot(mediumEmissions, emissions, next);
   }
   return next;

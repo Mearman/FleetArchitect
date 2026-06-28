@@ -286,6 +286,10 @@ function makeState(): { state: EngineState; rng: ReturnType<typeof mulberry32> }
     winner: "draw",
     resolved: false,
     asteroidDiscs: [],
+    dynamicOccluderScratch: [],
+    aliveAtTickStartScratch: new Set(),
+    aliveRealSortedScratch: [],
+    projectileMediumScratch: [],
   };
   // Advance the projectile counter so capture records a non-zero value.
   setProjectileCounter(1);
@@ -378,6 +382,10 @@ describe("captureCheckpoint / restoreCheckpoint", () => {
       winner: "draw",
       resolved: false,
       asteroidDiscs: [],
+      dynamicOccluderScratch: [],
+      aliveAtTickStartScratch: new Set(),
+      aliveRealSortedScratch: [],
+      projectileMediumScratch: [],
     };
     const second = captureCheckpoint(reState, resumedRng, restored.tick, restored.stalemate);
 

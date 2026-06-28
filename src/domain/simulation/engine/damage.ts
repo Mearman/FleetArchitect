@@ -9,6 +9,7 @@ import type { SimCrew } from "../types";
 import { computeChunkOutline } from "./chunk-outline";
 import { analyseBreakApartFast } from "./damage-break-apart-fast";
 import { defaultAiDecisions } from "./ai-step";
+import { aliveDirectionalShields } from "./directional-shield-cache";
 import { SIM } from "./config";
 import { resetCrewForFragment } from "./crew";
 import { comTangentialVelocity, localCentreOfMass, recomputeAggregates } from "./physics";
@@ -265,6 +266,12 @@ export function spillToStructure(ship: SimShip, amount: number, armourPiercing: 
  * arc test. When two shields cover the shot the one with the most remaining
  * HP intercepts, so a pair of front shields share hits rather than the first
  * being chewed apart.
+ *
+ * The candidate set is cached per ship against the aggregates fingerprint (see
+ * `./directional-shield-cache`); the per-hit `m.hp` read stays live, so a shield
+ * that already absorbed part of a prior hit this tick still contributes its
+ * reduced HP to the max-of-HP selection — byte-identical to a per-hit full
+ * module scan.
  */
 export function directionalShieldFor(
   ship: SimShip,
@@ -274,9 +281,7 @@ export function directionalShieldFor(
   const localShot = normaliseAngle(shotAngle - ship.facing);
   let candidate: SimModule | undefined;
   let bestScore = -Infinity;
-  for (const m of ship.modules) {
-    if (!m.alive || m.effect.kind !== "shield") continue;
-    if (m.shieldArc >= Math.PI * 2) continue; // omnidirectional, use the pool
+  for (const m of aliveDirectionalShields(ship)) {
     const halfArc = m.shieldArc / 2;
     const offset = Math.abs(angleDifference(m.shieldFacing, localShot));
     if (offset > halfArc) continue; // shot is outside this shield's arc
