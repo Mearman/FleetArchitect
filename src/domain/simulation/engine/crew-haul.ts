@@ -9,7 +9,7 @@ import type { SimCrew } from "../types";
 
 import { SIM } from "./config";
 import { abandonHaul } from "./crew";
-import { aliveCellMap, compareByCell, crewCellKey, findCrewPath } from "./crew-pathfinding";
+import { aliveCellMap, compareByCell, crewCellKey, findCrewPath, modulesBySlot } from "./crew-pathfinding";
 import type { SimModule, SimShip } from "./types";
 
 /**
@@ -28,7 +28,7 @@ import type { SimModule, SimShip } from "./types";
  */
 export function refillHardwiredPower(ship: SimShip): void {
   if (ship.modules === undefined) return;
-  const bySlot = new Map(ship.modules.map((m) => [m.slotId, m]));
+  const bySlot = modulesBySlot(ship);
   for (const sink of ship.modules) {
     if (sink.powerDraw <= 0 || !sink.alive) continue;
     if (sink.hardwireSinks === undefined) continue;
@@ -248,7 +248,7 @@ export function hasLiveAmmoHardwire(
  */
 export function refillHardwiredAmmo(ship: SimShip): void {
   if (ship.modules === undefined) return;
-  const bySlot = new Map(ship.modules.map((m) => [m.slotId, m]));
+  const bySlot = modulesBySlot(ship);
 
   // Group conduit-fed sinks by their feeding magazine so a magazine's store is
   // shared fairly across the weapons it serves. A weapon may name more than one
@@ -335,7 +335,7 @@ export function chooseAmmoRun(
   if (dryWeapons.length === 0 || magazines.length === 0) return undefined;
   if (ship.modules === undefined) return undefined;
   const modules = ship.modules;
-  const bySlot = new Map(modules.map((m) => [m.slotId, m]));
+  const bySlot = modulesBySlot(ship);
   const weapons = modules
     .filter(
       (m) =>

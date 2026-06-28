@@ -9,7 +9,7 @@ import { SIM } from "./config";
 import { TICK_DURATION_SECONDS } from "./power";
 import { crewTaskOrder, type CrewTaskKind } from "./crew-priority";
 import { ammoShortfall, chargeShortfall, chooseAmmoRun, choosePowerRun, hasLiveManningHardwire, reactorWiringReach, refillHardwiredPower, resolveAmmoArrival, resolvePowerArrival } from "./crew-haul";
-import { aliveCellMap, compareByCell, crewCellKey, findCrewPath, refreshPathCache } from "./crew-pathfinding";
+import { aliveCellMap, compareByCell, crewCellKey, findCrewPath, modulesBySlot, refreshPathCache } from "./crew-pathfinding";
 import { edgeDirection } from "@/domain/grid";
 import type { SimModule, SimShip } from "./types";
 
@@ -53,8 +53,7 @@ export function updateCrew(ship: SimShip): void {
     ship.aliveCells = aliveCellMap(ship);
   }
   const cells = ship.aliveCells;
-  const bySlot = new Map<string, SimModule>();
-  for (const m of ship.modules) bySlot.set(m.slotId, m);
+  const bySlot = modulesBySlot(ship);
 
   // 1. Remove crew standing on a cell that no longer exists.
   ship.crew = ship.crew.filter((c) => cells.has(crewCellKey(c.col, c.row)));
@@ -495,7 +494,7 @@ export function advanceCrew(crew: SimCrew, cells: ReadonlyMap<string, SimModule>
  */
 export function recomputeManning(ship: SimShip): void {
   if (ship.modules === undefined || ship.crew === undefined) return;
-  const bySlot = new Map(ship.modules.map((m) => [m.slotId, m]));
+  const bySlot = modulesBySlot(ship);
   const counts = new Map<string, number>();
   for (const c of ship.crew) {
     const k = crewCellKey(c.col, c.row);
