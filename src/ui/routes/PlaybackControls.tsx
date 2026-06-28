@@ -113,7 +113,21 @@ export function PlaybackControls({
           onChange={(val) => onSpeedChange(Number(val))}
         />
       </Group>
-      <Slider min={0} max={maxTick} value={playbackTick} step={0.1} onChange={(val) => onSeek(val)} />
+      {/*
+        Smooth scrubbing: step 0.1 + fractional playbackTick keeps the thumb
+        gliding between ticks (sub-tick interpolation in the renderer). The
+        thumb label is the only place a fractional value leaked through, so it
+        is floored to match the rendered frame and the "Tick X / Y" readout
+        (both derive the shown tick via Math.floor(playbackTick)).
+      */}
+      <Slider
+        min={0}
+        max={maxTick}
+        value={playbackTick}
+        step={0.1}
+        onChange={(val) => onSeek(val)}
+        label={(value) => Math.floor(value)}
+      />
     </Stack>
   );
 }
