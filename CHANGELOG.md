@@ -1,3 +1,10 @@
+## [1.30.2](https://github.com/Mearman/FleetArchitect/compare/v1.30.1...v1.30.2) (2026-06-28)
+
+
+### Bug Fixes
+
+* **sim:** consume base.spatial kite/evade/maintain/close (not just rules) ([afded3c](https://github.com/Mearman/FleetArchitect/commit/afded3c6975fecb92f456d0709f7d56d6273191d))
+
 ## [1.30.1](https://github.com/Mearman/FleetArchitect/compare/v1.30.0...v1.30.1) (2026-06-28)
 
 
