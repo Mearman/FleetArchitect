@@ -65,6 +65,32 @@ export interface ArenaMedium {
   /** Per-cell sustained-radiation birth tick (the tick each cell first crossed
    *  the emission threshold this burn); -1 when the cell is not radiating. */
   readonly birthTicks: readonly number[];
+  /** Pre-allocated per-tick source buffers (cleared and refilled in place each
+   *  tick by the optimised {@link computeArenaMediumSources} path to avoid 5
+   *  full-grid allocations per tick). The reference (oracle) path allocates
+   *  fresh arrays instead. Not part of the checkpoint — `restoreArenaMedium`
+   *  rebuilds a zeroed set on resume. */
+  readonly sourceBuffers: MediumSourceBuffers;
+}
+
+/**
+ * The five per-cell medium-source arrays as mutable buffers, pre-allocated once
+ * on the {@link ArenaMedium} and cleared (`.fill(0)`) then refilled in place
+ * each tick by the optimised source-computation path. Exposed as `number[]`
+ * (not `readonly number[]`) so the deposit core can write in place; the
+ * `readonly` properties prevent reassigning the buffer references themselves.
+ */
+export interface MediumSourceBuffers {
+  /** Per-cell density source, kg·s⁻¹. Cleared and refilled each tick. */
+  readonly rho: number[];
+  /** Per-cell excitation source, J·s⁻¹. Cleared and refilled each tick. */
+  readonly eps: number[];
+  /** Per-cell visual-excitation source, J·s⁻¹. Cleared and refilled each tick. */
+  readonly epsVisSrc: number[];
+  /** Per-cell x-momentum source, kg·m·s⁻². Cleared and refilled each tick. */
+  readonly mxSrc: number[];
+  /** Per-cell y-momentum source, kg·m·s⁻². Cleared and refilled each tick. */
+  readonly mySrc: number[];
 }
 
 /**
@@ -163,7 +189,16 @@ export function buildArenaMedium(ships: readonly SimShip[]): ArenaMedium {
   // gate suppresses reception until a cell first crosses the emission
   // threshold inside `stepArenaMedium`.
   const birthTicks = new Array<number>(field.cellCount).fill(-1);
-  return { field, state, birthTicks };
+  // Source buffers: pre-allocated once and cleared/refilled in place each tick
+  // by the optimised source path (avoids 5 full-grid allocations per tick).
+  const sourceBuffers: MediumSourceBuffers = {
+    rho: new Array<number>(field.cellCount).fill(0),
+    eps: new Array<number>(field.cellCount).fill(0),
+    epsVisSrc: new Array<number>(field.cellCount).fill(0),
+    mxSrc: new Array<number>(field.cellCount).fill(0),
+    mySrc: new Array<number>(field.cellCount).fill(0),
+  };
+  return { field, state, birthTicks, sourceBuffers };
 }
 
 /**
@@ -205,6 +240,16 @@ export function restoreArenaMedium(
     field,
     state: { rho: captured.rho, eps: captured.eps, epsVis: captured.epsVis ?? new Array<number>(captured.rho.length).fill(0), mx: new Array<number>(captured.rho.length).fill(0), my: new Array<number>(captured.rho.length).fill(0) },
     birthTicks: [...captured.birthTick],
+    // Source buffers are not captured (they are transient per-tick scratch);
+    // rebuild a zeroed set on resume so the next tick's optimised source
+    // computation clears and refills them.
+    sourceBuffers: {
+      rho: new Array<number>(captured.rho.length).fill(0),
+      eps: new Array<number>(captured.rho.length).fill(0),
+      epsVisSrc: new Array<number>(captured.rho.length).fill(0),
+      mxSrc: new Array<number>(captured.rho.length).fill(0),
+      mySrc: new Array<number>(captured.rho.length).fill(0),
+    },
   };
 }
 
@@ -358,7 +403,11 @@ export function sampleLocalRhoKgPerM3(
 /**
  * Compute the per-tick medium sources from the battle state. Pure function of
  * its inputs: no RNG, no mutation, fixed iteration order. Consumed by
- * {@link stepArenaMedium} and diffused/glowed by the field stepper.
+ * {@link stepArenaMedium} and diffused/glowed by the field stepper. Production
+ * runs the OPTIMISED path: the five source arrays are cleared in place on the
+ * {@link ArenaMedium.sourceBuffers} (pre-allocated once at build time) and
+ * refilled by the shared {@link depositMediumSources} core, avoiding the 5
+ * full-grid allocations per tick the reference path pays.
  *
  * Sources inject matter (ρ) and deposited energy (ε) where the battle physically
  * puts it — engine exhaust nozzles, ablating debris, the nebula and asteroid
@@ -372,8 +421,43 @@ export function sampleLocalRhoKgPerM3(
  * lives on the engine state (pre-computed once in `bootstrapEngine` as a pure
  * function of `(anomalies, seed)`), so it deterministically mirrors the discs
  * the awareness/occlusion phase reads.
+ *
+ * @param buffers Pre-allocated per-cell source buffers (cleared and refilled in
+ *                place). Supplied by the caller from {@link ArenaMedium.sourceBuffers}.
  */
 export function computeArenaMediumSources(
+  field: MediumField,
+  liveRho: readonly number[],
+  ships: readonly SimShip[],
+  debris: readonly Debris[],
+  projectiles: ReadonlyArray<ProjectileMediumEntry>,
+  anomalies: readonly BattleAnomalyKind[],
+  asteroidDiscs: ReadonlyArray<{ x: number; y: number; r: number }>,
+  buffers: MediumSourceBuffers,
+): MediumSources {
+  const { rho, eps, epsVisSrc, mxSrc, mySrc } = buffers;
+  // Clear in place (the buffers carry the previous tick's sources) then deposit
+  // into them. fill(0) on a previously-used buffer leaves it identical to a
+  // fresh zeroed array, so the deposit arithmetic is unchanged.
+  rho.fill(0);
+  eps.fill(0);
+  epsVisSrc.fill(0);
+  mxSrc.fill(0);
+  mySrc.fill(0);
+  depositMediumSources(field, liveRho, ships, debris, projectiles, anomalies, asteroidDiscs, rho, eps, epsVisSrc, mxSrc, mySrc);
+  return { rho, eps, epsVisSrc, mxSrc, mySrc };
+}
+
+/**
+ * REFERENCE (oracle) medium-source computation: the naive allocating path, kept
+ * as a first-class implementation the equivalence test compares against the
+ * optimised path. Not wired into production; production runs
+ * {@link computeArenaMediumSources}. Allocates five fresh full-grid arrays per
+ * call — the allocation pattern the in-place buffer reuse replaces. Shares the
+ * {@link depositMediumSources} core, so the deposited values are byte-identical
+ * to the optimised path; only the array objects differ.
+ */
+export function computeArenaMediumSourcesReference(
   field: MediumField,
   liveRho: readonly number[],
   ships: readonly SimShip[],
@@ -388,6 +472,36 @@ export function computeArenaMediumSources(
   const epsVisSrc = new Array<number>(cellCount).fill(0);
   const mxSrc = new Array<number>(cellCount).fill(0);
   const mySrc = new Array<number>(cellCount).fill(0);
+  depositMediumSources(field, liveRho, ships, debris, projectiles, anomalies, asteroidDiscs, rho, eps, epsVisSrc, mxSrc, mySrc);
+  return { rho, eps, epsVisSrc, mxSrc, mySrc };
+}
+
+/**
+ * Shared medium-source deposit core. Writes the per-tick sources (thruster
+ * exhaust, debris ablation, projectile wakes + plumes, nebula and asteroid
+ * anomaly fills, body-drag wakes) into the five given arrays, ADDING to
+ * whatever they currently hold. The caller is responsible for clearing the
+ * arrays first (the optimised path clears in place via `.fill(0)`; the
+ * reference path passes freshly-allocated zeroed arrays). Pure and
+ * deterministic: fixed iteration order over ships, debris, projectiles, and
+ * asteroid discs; no RNG. Identical inputs plus identically-cleared arrays
+ * produce byte-identical deposits, so the optimised and reference paths agree.
+ */
+function depositMediumSources(
+  field: MediumField,
+  liveRho: readonly number[],
+  ships: readonly SimShip[],
+  debris: readonly Debris[],
+  projectiles: ReadonlyArray<ProjectileMediumEntry>,
+  anomalies: readonly BattleAnomalyKind[],
+  asteroidDiscs: ReadonlyArray<{ x: number; y: number; r: number }>,
+  rho: number[],
+  eps: number[],
+  epsVisSrc: number[],
+  mxSrc: number[],
+  mySrc: number[],
+): void {
+  const cellCount = field.cellCount;
 
   // --- Thruster exhaust: every engine/afterburner cell that is firing this tick
   // deposits a fraction of its expelled propellant mass as local density, and a
@@ -554,8 +668,6 @@ export function computeArenaMediumSources(
     mySrc[idx] = (mySrc[idx] ?? 0) + dragForce * dirY;
     epsVisSrc[idx] = (epsVisSrc[idx] ?? 0) + dragForce * speedMps * WAKE_EPS_COUPLING;
   }
-
-  return { rho, eps, epsVisSrc, mxSrc, mySrc };
 }
 
 /**
@@ -599,6 +711,9 @@ export function stepArenaMedium(
       medium.birthTicks,
       tick,
     ),
+    // The source buffers are transient scratch, carried forward unchanged for
+    // the next tick's optimised source computation to clear and refill in place.
+    sourceBuffers: medium.sourceBuffers,
   };
 }
 
@@ -630,6 +745,7 @@ export function stepArenaMediumFromState(
       projectiles,
       anomalies,
       asteroidDiscs,
+      medium.sourceBuffers,
     ),
     tick,
   );

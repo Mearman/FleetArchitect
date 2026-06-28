@@ -22,7 +22,6 @@
 
 import {
   TRANSPORT_GEOMETRY,
-  type BoundaryFlux,
   type TransportFace,
   type TransportSubstance,
 } from "@/domain/simulation/engine/transport-field";
@@ -200,14 +199,21 @@ export function makeAtmosphereSubstance(
     floor: 0,
     source: (cell) =>
       -(crew.get(cell) ?? 0) * CREW_O2_CONSUMPTION_KG_PER_S,
-    boundaryFlux: (cell, phi): BoundaryFlux => {
+    boundaryFlux: (cell, phi, out) => {
+      out.cell = cell;
       const vent = vents.get(cell);
       if (vent === undefined) {
-        return { cell, scalarFlux: 0, momentumX: 0, momentumY: 0 };
+        out.scalarFlux = 0;
+        out.momentumX = 0;
+        out.momentumY = 0;
+        return;
       }
       const mass = phi[cell] ?? 0;
       if (mass <= 0) {
-        return { cell, scalarFlux: 0, momentumX: 0, momentumY: 0 };
+        out.scalarFlux = 0;
+        out.momentumX = 0;
+        out.momentumY = 0;
+        return;
       }
       // Vent rate `dm/dt = ρ·A·v_e` derived from cell density and exhaust
       // velocity. The field integrator applies `dt` and clamps the cell to
@@ -218,12 +224,9 @@ export function makeAtmosphereSubstance(
       // Momentum reaction: gas leaves along +vent normal, so the hull feels
       // a force along −vent normal. F = (dm/dt) · v_e.
       const force = rate * VENT_EXHAUST_VELOCITY_M_PER_S;
-      return {
-        cell,
-        scalarFlux: rate,
-        momentumX: -vent.nx * force,
-        momentumY: -vent.ny * force,
-      };
+      out.scalarFlux = rate;
+      out.momentumX = -vent.nx * force;
+      out.momentumY = -vent.ny * force;
     },
   };
 }

@@ -36,7 +36,6 @@ import { RADIATOR_FIN_AREA_FACTOR } from "@/data/catalog/combat-scale";
 import {
   STEFAN_BOLTZMANN_W_PER_M2_K4,
   TRANSPORT_GEOMETRY,
-  type BoundaryFlux,
   type TransportSubstance,
 } from "@/domain/simulation/engine/transport-field";
 
@@ -150,9 +149,13 @@ export function makeThermalSubstance(
       const watts = sources.get(cell) ?? 0;
       return watts === 0 ? 0 : watts / capacityOf(cell);
     },
-    boundaryFlux: (cell, phi): BoundaryFlux => {
+    boundaryFlux: (cell, phi, out) => {
+      out.cell = cell;
+      out.momentumX = 0;
+      out.momentumY = 0;
       if (!radiators.has(cell)) {
-        return { cell, scalarFlux: 0, momentumX: 0, momentumY: 0 };
+        out.scalarFlux = 0;
+        return;
       }
       const t = phi[cell] ?? SPACE_TEMPERATURE_K;
       // Net radiated power: ε·σ·A·(T⁴ − T_space⁴), watts. Positive ⇒ heat leaves
@@ -166,8 +169,7 @@ export function makeThermalSubstance(
         STEFAN_BOLTZMANN_W_PER_M2_K4 *
         RADIATOR_AREA_PER_CELL_M2 *
         (t * t * t * t - SPACE_TEMPERATURE_K ** 4);
-      const scalarFlux = radiatedWatts / capacityOf(cell);
-      return { cell, scalarFlux, momentumX: 0, momentumY: 0 };
+      out.scalarFlux = radiatedWatts / capacityOf(cell);
     },
   };
 }

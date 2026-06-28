@@ -210,12 +210,14 @@ describe("transport-field primitives", () => {
       const substance: TransportSubstance = {
         name: "venting",
         coefficient: 0,
-        boundaryFlux: () => ({
-          cell: 0,
-          scalarFlux: 1, // 1 kg/s leaves
-          momentumX: -1, // hull feels -1 N
-          momentumY: 0,
-        }),
+        boundaryFlux: (cell, phi, out) => {
+          out.cell = cell;
+          // Vent at 1 kg/s as long as the cell holds mass (phi). The test seeds
+          // phi = [10], so the rate is 1 for the duration of the tick.
+          out.scalarFlux = (phi[cell] ?? 0) > 0 ? 1 : 0;
+          out.momentumX = -1; // hull feels -1 N
+          out.momentumY = 0;
+        },
       };
       const field: TransportField = {
         substance,
