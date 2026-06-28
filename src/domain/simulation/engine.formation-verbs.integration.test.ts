@@ -535,4 +535,49 @@ describe("formation-doctrine verbs: FORMATION_STRENGTH retreat", () => {
       "escort should flee the gunner after the carrier is weakened",
     ).toBeGreaterThan(crossSep + 30);
   });
+
+  it("kite authored on base.spatial (no rule) opens range toward maxRange", () => {
+    // The kite range kind authored directly on base.spatial — NOT in a rule's
+    // then.spatial — should still take effect. Currently it's silently ignored
+    // (the movement consumer only reads aiSpatial from rules; base.spatial is
+    // read only for hold/engage via the existing range-keeping path).
+    const target = targetDummy({
+      id: "d-target",
+      side: "defender",
+      x: 300,
+      y: 0,
+    });
+    const kicker = modularShip({
+      id: "s-kicker",
+      side: "attacker",
+      x: 100,
+      y: 0,
+      thrust: 4000,
+      turnRate: 0.5,
+      weapons: [beam({ range: 600, damage: 0 })],
+    });
+    // modularShip takes `orders`, not `doctrine` — set it directly.
+    kicker.doctrine = {
+      base: {
+        stance: "balanced",
+        spatial: {
+          reference: { kind: "target" },
+          range: { kind: "kite", maxRange: 100 },
+          bearing: { kind: "free" },
+        },
+      },
+      rules: [],
+    };
+    const res = runBattle(
+      inputs([kicker, target], 60, SEED),
+    );
+    const ship = shipAt(res, 50, "s-kicker");
+    expect(ship).toBeDefined();
+    if (ship === undefined) return;
+    const dist = Math.hypot(ship.x - 300, ship.y);
+    // With kite maxRange=100, the ship should settle near 100 (well inside 150).
+    // Without kite (broken — base.spatial kite is ignored), it settles at ~279
+    // (the engage-medium / sight-capped default). This assertion FAILS now.
+    expect(dist).toBeLessThan(150);
+  });
 });

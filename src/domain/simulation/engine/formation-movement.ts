@@ -146,12 +146,33 @@ function offsetPoint(
  * The orbit's `phase + omega·tick` is the only time-dependent term; everything
  * else is pure in the live frame state.
  */
+
+/**
+ * Return the ship's base.spatial objective when its range kind is NOT hold or
+ * engage — the two kinds the existing range-keeping path (isHoldRange /
+ * engageFractionOf) already consumes. Kite/evade/maintain/close on base.spatial
+ * flow through desiredPoint instead. Returns undefined for hold/engage (and for
+ * ships with no spatial objective) so presets stay byte-identical.
+ */
+function baseSpatialForDesiredPoint(ship: SimShip): SpatialObjective | undefined {
+  const spatial = ship.doctrine.base.spatial;
+  if (spatial === undefined) return undefined;
+  if (spatial.range.kind === "hold" || spatial.range.kind === "engage") {
+    return undefined;
+  }
+  return spatial;
+}
+
 export function desiredPoint(
   ship: SimShip,
   tick: number,
   resolve: ResolveReference,
 ): DesiredPoint | undefined {
-  const spatial = ship.aiSpatial;
+  // Fall back to base.spatial for range kinds the existing range-keeping path
+  // doesn't handle (kite/evade/maintain/close). Hold and engage are already
+  // consumed by isHoldRange/engageFractionOf, so they stay on that path
+  // (returning undefined here keeps presets byte-identical).
+  const spatial = ship.aiSpatial ?? baseSpatialForDesiredPoint(ship);
   if (spatial === undefined) return undefined;
   const P = resolve(spatial.reference, ship);
   if (P === undefined) return undefined;
