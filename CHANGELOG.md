@@ -1,3 +1,20 @@
+## [1.30.5](https://github.com/Mearman/FleetArchitect/compare/v1.30.4...v1.30.5) (2026-06-28)
+
+
+### Performance Improvements
+
+* **sim:** cache moduleByCell per ship and inline door-presence check ([a1d19ab](https://github.com/Mearman/FleetArchitect/commit/a1d19abd747dc81f49b8873d1b7b15bae2a941b6))
+* **sim:** cache modulesBySlot + linearise A* path reconstruction (cluster C) ([be5ac90](https://github.com/Mearman/FleetArchitect/commit/be5ac90fd0d765a8bba1a6c94a52641debc6ce85))
+* **sim:** fold resource-step indices into cached graph, split oracle ([a819216](https://github.com/Mearman/FleetArchitect/commit/a81921670a363ee51093926256464094937b6290))
+* **sim:** gate formation-targeting context + drop unused aggregate build ([4fbc5d3](https://github.com/Mearman/FleetArchitect/commit/4fbc5d3289684369cb98158a6c3483806b9d60a2))
+* **sim:** integer-keyed spatial hash + no-alloc candidate iteration ([e07a0c9](https://github.com/Mearman/FleetArchitect/commit/e07a0c9cd4a66148689c310c6f323902597a7acc))
+* **sim:** pool per-tick scratch + share sorted lists, emissions, byId, shield cache ([4ee8901](https://github.com/Mearman/FleetArchitect/commit/4ee8901bd61231251d507d42885982f1bab7ce95))
+* **sim:** pose-cache outer hull loop + single-pass polygon contact ([5943621](https://github.com/Mearman/FleetArchitect/commit/5943621a1a4ac1c7e81c762930d50d1a20522c47))
+* **sim:** precompute targeting scoreEnemy extrema once per ship (O(K^2)→O(K)) ([09ba7bd](https://github.com/Mearman/FleetArchitect/commit/09ba7bd9087ac2594a4d227cd5514b71c6a07671))
+* **sim:** retire brownoutBounded flag + in-place nearestAliveModule ([c98d57f](https://github.com/Mearman/FleetArchitect/commit/c98d57f30d278283236ab3900069c0846fcc8834))
+* **sim:** reuse medium + transport-field buffers across sub-steps ([ccf3915](https://github.com/Mearman/FleetArchitect/commit/ccf39153a066c8c8e2aa0f5d72132d3fc4fb85d8))
+* **sim:** skip unchanged aggregate recomputes + fuse per-ship passes ([6cd428a](https://github.com/Mearman/FleetArchitect/commit/6cd428a5acc38dbd9495ef33d3d33c1ad0f6a020))
+
 ## [1.30.4](https://github.com/Mearman/FleetArchitect/compare/v1.30.3...v1.30.4) (2026-06-28)
 
 
