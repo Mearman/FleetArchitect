@@ -4,16 +4,21 @@
  * the rest of its ship and chaining into any further volatile cells it kills.
  *
  * Split out of `damage.ts` so each file stays within the line budget; the logic
- * is unchanged. `resolveChainReactions` is the only entry point (called once per
- * ship per tick by the engine); the blast routing reuses `applyDamage` from
- * `damage.ts`, so there is no duplicated damage maths and no import cycle
- * (`damage.ts` never imports this module back).
+ * is unchanged. Two entry points share the drain core (`drainChainReactions`):
+ *  - `resolveChainReactions`: the production (optimised) path, called once per
+ *    ship per tick by the engine. Builds a spatial index so each blast only
+ *    scans cells within its radius box.
+ *  - `resolveChainReactionsReference`: the naive (oracle) path, kept as a
+ *    first-class implementation the equivalence test compares against the
+ *    optimised path. Scans every alive cell per blast.
+ * The blast routing reuses `applyDamage` from `damage.ts`, so there is no
+ * duplicated damage maths and no import cycle (`damage.ts` never imports this
+ * module back).
  */
 import { CELL_SIZE } from "@/domain/grid";
 
 import { SIM } from "./config";
 import { applyDamage } from "./damage";
-import { PERF_GUARDS } from "./perf-guards";
 import { localPointToWorld } from "./setup";
 import type { SimModule, SimShip } from "./types";
 
@@ -84,8 +89,47 @@ function blastYield(m: SimModule): number {
  */
 export function resolveChainReactions(ship: SimShip, allShips: readonly SimShip[]): void {
   if (ship.modules === undefined) return;
-  const modules = ship.modules;
+  // OPTIMISED path: build the spatial index once for the whole chain so each
+  // blast gathers candidates via a radius-box lookup instead of scanning the
+  // whole hull. Every cell keyed by its integer grid position; cells only ever
+  // die (never resurrect), so a stale entry is simply skipped on lookup via its
+  // live `alive` flag — no removal needed. Built only when there is at least one
+  // pending detonation (the undefined guard above plus the collectPending
+  // early-return inside drainChainReactions), so a battle with no volatile
+  // deaths never pays for it.
+  drainChainReactions(ship, ship.modules, allShips, buildCellIndex(ship.modules));
+}
 
+/**
+ * REFERENCE (oracle) chain-reaction resolution: the naive per-blast full scan,
+ * kept as a first-class implementation the equivalence test
+ * (`engine.chain-reaction.equivalence.unit.test.ts`) compares against the
+ * optimised path. Not wired into production; production runs
+ * {@link resolveChainReactions}. Passes `cellIndex = undefined` so
+ * `collectBlastTargets` scans every alive cell per blast rather than querying a
+ * radius box — the unoptimised O(C) candidate gathering the optimised path
+ * bounds.
+ */
+export function resolveChainReactionsReference(ship: SimShip, allShips: readonly SimShip[]): void {
+  if (ship.modules === undefined) return;
+  drainChainReactions(ship, ship.modules, allShips, undefined);
+}
+
+/**
+ * Shared chain drain: seeds the work queue with every volatile module that has
+ * died but not yet detonated, then iterates the queue applying each blast via
+ * {@link detonate} until the chain settles. The `cellIndex` parameter selects
+ * the candidate-gathering strategy (spatial radius-box lookup when present,
+ * full-hull scan when `undefined`); both strategies return the identical
+ * candidate list (same members, same order), so the drain is byte-identical
+ * either way.
+ */
+function drainChainReactions(
+  ship: SimShip,
+  modules: readonly SimModule[],
+  allShips: readonly SimShip[],
+  cellIndex: Map<number, SimModule> | undefined,
+): void {
   // Seed the queue with every volatile module that has died but not yet
   // detonated. The chain may add more as blasts kill further volatile cells.
   const collectPending = (): SimModule[] =>
@@ -95,15 +139,6 @@ export function resolveChainReactions(ship: SimShip, allShips: readonly SimShip[
 
   let pending = collectPending();
   if (pending.length === 0) return; // no volatile death: the common case, untouched.
-
-  // Spatial index for the blast-target query: every cell keyed by its integer
-  // grid position, so a blast can look up only the cells within its radius box
-  // instead of scanning (and sorting) the whole hull per blast. Built once for
-  // the whole chain; cells only ever die (never resurrect), so a stale entry is
-  // simply skipped on lookup via its live `alive` flag — no removal needed.
-  // Built only when there is at least one detonation to process, so a battle
-  // with no volatile deaths never pays for it.
-  const cellIndex = PERF_GUARDS.chainReactionSpatial ? buildCellIndex(modules) : undefined;
 
   // Sort other ships by instanceId once so every detonation iterates them in
   // the same deterministic order without re-sorting per blast.
@@ -237,9 +272,10 @@ function detonate(
     if (dist >= radius) continue;
     const falloff = 1 - dist / radius;
     // Wall / door blast attenuation: multiply the damage by the fraction of the
-    // wave that survives the edges between the source and target cells. When no
-    // cellIndex was built (the naive path) attenuation is skipped (factor = 1),
-    // keeping the naive and spatial paths byte-identical in the no-cellIndex case.
+    // wave that survives the edges between the source and target cells. The
+    // reference path passes no cellIndex, so attenuation is skipped (factor = 1)
+    // there; the optimised (production) path computes it via the spatial index.
+    // Both agree on open-edge layouts, where every edge contributes factor 1.
     const attenuation = cellIndex !== undefined
       ? blastAttenuationFactor(source, target, cellIndex)
       : 1.0;
