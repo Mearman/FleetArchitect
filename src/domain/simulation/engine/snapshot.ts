@@ -37,6 +37,29 @@ import type { SimMine, SimModule, SimPod, SimProjectile, SimShip } from "./types
  */
 const RESOURCE_EVERY = 6;
 
+/**
+ * Per-ship cache of `crewCellKey(col, row)` → `SimModule` for the crew
+ * snapshot. Lifetime-stable: a module's `col`/`row`/`x`/`y` are immutable
+ * post-construction, dead modules stay in `ship.modules` marked dead (never
+ * removed), and break-apart builds a fresh `SimShip` whose cache rebuilds once
+ * on first snapshot. WeakMap-keyed by ship so the entry is collected with the
+ * ship; checkpoint resume and break-apart create new ship objects, giving an
+ * automatic cache miss → rebuild identical to a cold start.
+ */
+const moduleByCellCache = new WeakMap<SimShip, Map<string, SimModule>>();
+
+function moduleByCellFor(
+  ship: SimShip,
+  modules: readonly SimModule[],
+): Map<string, SimModule> {
+  const cached = moduleByCellCache.get(ship);
+  if (cached !== undefined) return cached;
+  const built = new Map<string, SimModule>();
+  for (const m of modules) built.set(crewCellKey(m.col, m.row), m);
+  moduleByCellCache.set(ship, built);
+  return built;
+}
+
 export function snapshot(
   tick: number,
   ships: readonly SimShip[],
@@ -131,8 +154,7 @@ export function snapshot(
             }
           : withModules;
       if (s.crew === undefined || s.crew.length === 0) return withResource;
-      const moduleByCell = new Map<string, SimModule>();
-      for (const m of s.modules) moduleByCell.set(crewCellKey(m.col, m.row), m);
+      const moduleByCell = moduleByCellFor(s, s.modules);
       return {
         ...withResource,
         crew: s.crew.map((c) => {
@@ -377,7 +399,9 @@ function buildCellArrays(modules: readonly SimModule[]): CellStateArrays {
     if (m.crewRequired > 0) hasManned = true;
     if (m.effect.kind === "weapon" && m.effect.ammoCapacity !== undefined) hasAmmo = true;
     if (m.powerDraw > 0) hasCharge = true;
-    if (Object.keys(m.edges.doorStates).length > 0) hasDoors = true;
+    const ds = m.edges.doorStates;
+    if (ds.n !== undefined || ds.e !== undefined || ds.s !== undefined || ds.w !== undefined)
+      hasDoors = true;
   }
 
   // Allocate the optional arrays (filled with sentinels by default).
