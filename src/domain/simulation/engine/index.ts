@@ -261,7 +261,7 @@ export function* simulateBattle(
     // 1. Targeting. Phase D: build the formation-targeting context once per tick
     //    so an `aiTargeting` override can filter/score candidates by relational
     //    mode. Harmless for presets (identity filter).
-    const formationTargeting = buildFormationTargetingContext(state.ships, state.byId, state.deployment, state.points);
+    const formationTargeting = buildFormationTargetingContext(state.ships, state.byId);
     // Elect focus-fire targets once per tick per side, outside the per-ship loop
     // so every ship on a side sees the same fleet target this tick.
     const attackerFocusTarget = electFocusTarget("attacker", state.ships, state.defenders, tick, formationTargeting);

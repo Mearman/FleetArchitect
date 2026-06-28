@@ -13,8 +13,7 @@
 
 import type { EnemyView } from "./targeting";
 import type { SimShip } from "./types";
-import { buildAggregates, makeResolver, type Point, type ResolveReference } from "./formation-doctrine";
-import type { DeploymentReference } from "./movement";
+import { anyFormationCondition } from "./formation-doctrine";
 import type { TargetingMode, FormationReference } from "@/schema/ai";
 
 /**
@@ -37,37 +36,62 @@ function baseRelationalMode(ship: SimShip): TargetingMode | undefined {
   }
 }
 
+/** Whether any non-phantom ship carries a relational base targeting mode — one
+ *  the filter resolves via `sortedById` (membersOf / threatsTo / sameAs / class
+ *  / inZone / none / pdPriority). Such a mode activates the filter even with no
+ *  formation condition (the formation pass is a no-op, but `baseRelationalMode`
+ *  is read directly from doctrine). Used with {@link anyFormationCondition} to
+ *  gate the per-tick context build. Pure. */
+function anyRelationalBaseTargeting(ships: readonly SimShip[]): boolean {
+  for (const ship of ships) {
+    if (ship.phantom !== undefined) continue;
+    if (baseRelationalMode(ship) !== undefined) return true;
+  }
+  return false;
+}
+
 /** Context the relational filter closes over: the live enemy list (for set
- *  membership lookups), the byId index, the sorted ship list, and the
- *  reference resolver (for `threatsTo`/`membersOf`/`sameAs` formation
- *  resolution). Built once per tick by the engine and threaded through. */
+ *  membership lookups), the byId index, and the instanceId-sorted ship list
+ *  (for `threatsTo` / `membersOf` / `sameAs` membership scans). The filter
+ *  resolves relational references ITSELF via `sortedById` — it does not call a
+ *  resolver closure — so no aggregate map or resolver is held here. Built once
+ *  per tick by the engine and threaded through. */
 export interface FormationTargetingContext {
   enemies: readonly SimShip[];
   byId: ReadonlyMap<string, SimShip>;
   sortedById: readonly SimShip[];
-  resolve: ResolveReference;
 }
 
-/** Build the formation-targeting context once per tick. Mirrors the structures
- *  the formation-doctrine pass itself builds (instanceId-sorted ships,
- *  per-formation aggregates, the reference resolver) so a ship's `aiTargeting`
- *  override resolves against the same world state the pass used. Pure; harmless
- *  for a preset fleet (every `aiTargeting` is undefined → the filter is the
- *  identity and the PD bias is zero — byte-identical). */
+/** Build the formation-targeting context once per tick. The filter needs only
+ *  the instanceId-sorted ship list, the byId index, and the live enemy list; it
+ *  no longer mirrors the formation pass's aggregates/resolver (it never read
+ *  them — relational references are resolved in-place via `sortedById`), so
+ *  those are not built here.
+ *
+ *  GATED: when no ship carries a formation condition AND no ship has a
+ *  relational base targeting mode, every ship's effective targeting mode is
+ *  undefined (`aiTargeting` is never written — the formation pass is itself
+ *  gated to a no-op; `baseRelationalMode` is undefined for scalar base modes).
+ *  `filterVisibleByTargeting` then returns `visible` unchanged and
+ *  `pointDefenseBias` returns 0, so `sortedById` is never read. The per-tick
+ *  sort is skipped and the inputs are returned directly — byte-identical, zero
+ *  allocation. This is the common preset case (ship-self-only or empty rules,
+ *  scalar base targeting). Pure. */
 export function buildFormationTargetingContext(
   ships: readonly SimShip[],
   byId: ReadonlyMap<string, SimShip>,
-  deployment: DeploymentReference,
-  points: ReadonlyMap<string, Point>,
 ): FormationTargetingContext {
+  if (!anyFormationCondition(ships) && !anyRelationalBaseTargeting(ships)) {
+    // `sortedById` is unread in this branch (every mode is undefined), so the
+    // unsorted input is passed through without an O(n log n) copy.
+    return { enemies: ships, byId, sortedById: ships };
+  }
   const sortedById = ships
     .slice()
     .sort((a, b) =>
       a.instanceId < b.instanceId ? -1 : a.instanceId > b.instanceId ? 1 : 0,
     );
-  const aggregates = buildAggregates(sortedById);
-  const resolve = makeResolver(sortedById, byId, aggregates, deployment, points);
-  return { enemies: ships, byId, sortedById, resolve };
+  return { enemies: ships, byId, sortedById };
 }
 
 /**

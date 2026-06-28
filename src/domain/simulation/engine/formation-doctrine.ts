@@ -61,8 +61,12 @@ function isFormationCondition(condition: Condition): boolean {
  * condition is a ship-self kind (or ships have no rules), the pass returns
  * immediately without building aggregates or writing fields, so a preset fleet
  * pays nothing and its frame output is byte-identical. Pure.
+ *
+ * Exported so the Phase D targeting context can run the same gate: when no
+ * formation condition holds, the formation pass is a no-op so `aiTargeting` is
+ * never written, and the relational filter can skip its sort.
  */
-function anyFormationCondition(ships: readonly SimShip[]): boolean {
+export function anyFormationCondition(ships: readonly SimShip[]): boolean {
   for (const ship of ships) {
     if (ship.phantom !== undefined) continue;
     for (const rule of ship.doctrine.rules) {
