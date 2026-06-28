@@ -19,7 +19,6 @@
 
 import {
   STANDARD_GRAVITY_M_PER_S2,
-  type BoundaryFlux,
   type TransportFace,
   type TransportSubstance,
 } from "@/domain/simulation/engine/transport-field";
@@ -124,28 +123,32 @@ export function makePropellantSubstance(
       // both the mass loss and the thrust impulse.
       return 0;
     },
-    boundaryFlux: (cell, phi): BoundaryFlux => {
+    boundaryFlux: (cell, phi, out) => {
+      out.cell = cell;
       const thrust = engineThrust.get(cell) ?? 0;
       if (thrust <= 0) {
-        return { cell, scalarFlux: 0, momentumX: 0, momentumY: 0 };
+        out.scalarFlux = 0;
+        out.momentumX = 0;
+        out.momentumY = 0;
+        return;
       }
       const mass = phi[cell] ?? 0;
       // Burn rate: dm/dt = thrust / v_e. If the tank is dry there is nothing
       // to burn — the flux is zero and the engine flames out.
       const burnRate = thrust / EXHAUST_VELOCITY_M_PER_S;
       if (mass <= 0) {
-        return { cell, scalarFlux: 0, momentumX: 0, momentumY: 0 };
+        out.scalarFlux = 0;
+        out.momentumX = 0;
+        out.momentumY = 0;
+        return;
       }
       const normal = exhaust.get(cell) ?? { nx: 0, ny: -1 };
       // Thrust force = burnRate · v_e = thrust (by construction). Pushes the
       // ship along −normal (Newton's third law: exhaust leaves along
       // +normal, ship recoils along −normal).
-      return {
-        cell,
-        scalarFlux: burnRate,
-        momentumX: -normal.nx * thrust,
-        momentumY: -normal.ny * thrust,
-      };
+      out.scalarFlux = burnRate;
+      out.momentumX = -normal.nx * thrust;
+      out.momentumY = -normal.ny * thrust;
     },
   };
 }

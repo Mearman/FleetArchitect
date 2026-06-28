@@ -185,13 +185,20 @@ export interface TransportSubstance {
   readonly floor?: number;
   /**
    * Boundary flux for a designated boundary face of `cell`. Substances with
-   * no boundary flux (e.g. an enclosed thermal mass with no radiator) return
-   * a zero flux, or the caller simply omits the face from the boundary list.
+   * no boundary flux (e.g. an enclosed thermal mass with no radiator) write a
+   * zero `scalarFlux`, or the caller simply omits the face from the boundary
+   * list. The substance writes its values into the integrator-owned `out`
+   * scratch object (an out-param) rather than returning a fresh allocation —
+   * the integrator reuses one scratch across every boundary cell and sub-step,
+   * so no `BoundaryFlux` object is allocated per call. The substance must write
+   * every field (`cell`, `scalarFlux`, `momentumX`, `momentumY`) on every call,
+   * including the no-flux case, so no stale value survives in the scratch.
    */
   readonly boundaryFlux?: (
     cell: number,
     phi: readonly number[],
-  ) => BoundaryFlux;
+    out: BoundaryFlux,
+  ) => void;
 }
 
 /**
@@ -356,7 +363,10 @@ export interface TransportStepResult {
  * Advance a transport field by one tick. Pure: returns a new φ array and the
  * accumulated hull reaction force; the input array is untouched. Sub-steps
  * the explicit integrator so the substance's diffusivity stays inside the
- * FTCS bound.
+ * FTCS bound. Production runs the OPTIMISED path: two pre-allocated φ buffers
+ * are ping-ponged across sub-steps (no per-sub-step `slice()`), and one
+ * reused `BoundaryFlux` scratch receives the substance's boundary flux via
+ * the out-param contract (no per-call object allocation).
  *
  * Momentum bookkeeping: every boundary flux reports a reaction force in
  * Newtons; the integrator multiplies by `dt` and sums, returning the impulse
@@ -369,13 +379,69 @@ export function stepTransportField(
   phi: readonly number[],
   options?: { diagnostics?: boolean },
 ): TransportStepResult {
+  return runTransportStep(field, phi, options, true);
+}
+
+/**
+ * REFERENCE (oracle) transport step: the naive allocating path, kept as a
+ * first-class implementation the equivalence test
+ * (`engine.transport-field.equivalence.unit.test.ts`) compares against the
+ * optimised path. Not wired into production; production runs
+ * {@link stepTransportField}. Allocates a fresh `next = current.slice()` every
+ * sub-step — the O(subSteps) allocation pattern the optimised ping-pong
+ * replaces. The inner cell loop is identical, so the post-step φ array,
+ * accumulated momentum, and diagnostics are byte-identical to the optimised
+ * path; only the array objects differ.
+ */
+export function stepTransportFieldReference(
+  field: TransportField,
+  phi: readonly number[],
+  options?: { diagnostics?: boolean },
+): TransportStepResult {
+  return runTransportStep(field, phi, options, false);
+}
+
+/**
+ * Shared transport-step core. The ONLY difference between the reference
+ * (oracle) and optimised (production) paths is the per-sub-step buffer
+ * strategy, selected by `reuse`:
+ *  - `reuse = false` (reference): allocates a fresh `next = current.slice()`
+ *    every sub-step — the naive O(subSteps) allocation pattern.
+ *  - `reuse = true` (optimised): ping-pongs between two pre-allocated buffers
+ *    (`bufA`, `bufB`) so no per-sub-step allocation occurs.
+ *
+ * The inner cell loop is identical in both paths: it reads only from
+ * `current` and writes every cell of `next`, so the computed values — and
+ * therefore the post-step φ array, accumulated momentum, and diagnostics —
+ * are byte-identical regardless of which array objects hold `current` and
+ * `next`. Ping-pong safety: `current` and `next` are always distinct arrays
+ * (bufA vs bufB), matching the slice() path's read-from-current /
+ * write-to-next discipline, so no cell ever reads a half-written value.
+ *
+ * Boundary flux: the substance writes into the integrator-owned `scratch`
+ * BoundaryFlux (out-param contract), reused across every boundary cell and
+ * sub-step, avoiding a fresh object per call. The substance contract requires
+ * it to write every field on every call (including the no-flux case), so no
+ * stale value survives in the scratch between calls.
+ */
+function runTransportStep(
+  field: TransportField,
+  phi: readonly number[],
+  options: { diagnostics?: boolean } | undefined,
+  reuse: boolean,
+): TransportStepResult {
   const n = phi.length;
   const subSteps = transportSubSteps(field.substance);
   const dt = TRANSPORT_DT_S / subSteps;
   const floor = field.substance.nonNegative ? (field.substance.floor ?? 0) : -Infinity;
 
   // Work on a mutable copy so the input is untouched (deterministic, pure).
-  let current = phi.slice();
+  const bufA = phi.slice();
+  // In the optimised path bufB is the ping-pong partner; in the reference path
+  // the slice() branch is always taken so bufB is never read (aliased to bufA
+  // to avoid a pointless allocation in the naive baseline).
+  const bufB = reuse ? new Array<number>(n) : bufA;
+  let current = bufA;
   let momentumX = 0;
   let momentumY = 0;
   // Diagnostics are skipped by default (expensive allocation) — only computed
@@ -403,8 +469,13 @@ export function stepTransportField(
   const boundarySet: ReadonlySet<number> = field.boundaryCellSet ?? new Set(field.boundaryCells);
   const D = field.substance.coefficient;
   const velocity = field.substance.velocity;
+  // Boundary-flux callback (hoisted out of the loop): when absent the whole
+  // boundary block is skipped. The scratch is reused across every call (out-
+  // param contract); the substance writes all fields every call.
+  const boundaryFlux = field.substance.boundaryFlux;
+  const scratch: BoundaryFlux = { cell: 0, scalarFlux: 0, momentumX: 0, momentumY: 0 };
   for (let step = 0; step < subSteps; step += 1) {
-    const next = current.slice();
+    const next = reuse ? (current === bufA ? bufB : bufA) : current.slice();
     for (let cell = 0; cell < n; cell += 1) {
       const phiHere = current[cell] ?? 0;
       const cellFaces = facesByCell[cell] ?? [];
@@ -432,16 +503,16 @@ export function stepTransportField(
       // amount actually removed this sub-step at what the cell holds above
       // its floor — a cell cannot vent more mass than it contains.
       let bnd = 0;
-      if (boundarySet.has(cell)) {
-        const bf = field.substance.boundaryFlux?.(cell, current);
-        if (bf !== undefined && bf.scalarFlux > 0) {
+      if (boundaryFlux !== undefined && boundarySet.has(cell)) {
+        boundaryFlux(cell, current, scratch);
+        if (scratch.scalarFlux > 0) {
           const available = (current[cell] ?? 0) - floor;
           const maxRemovable = Math.max(0, available / dt);
-          const effective = Math.min(bf.scalarFlux, maxRemovable);
-          const scale = bf.scalarFlux === 0 ? 0 : effective / bf.scalarFlux;
+          const effective = Math.min(scratch.scalarFlux, maxRemovable);
+          const scale = scratch.scalarFlux === 0 ? 0 : effective / scratch.scalarFlux;
           bnd -= effective;
-          momentumX += bf.momentumX * dt * scale;
-          momentumY += bf.momentumY * dt * scale;
+          momentumX += scratch.momentumX * dt * scale;
+          momentumY += scratch.momentumY * dt * scale;
         }
       }
       const dPhi = (adv + dif + src + bnd) * dt;

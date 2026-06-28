@@ -48,6 +48,52 @@ export function stepMediumField(
   state: MediumState,
   sources: MediumSources,
 ): MediumStepResult {
+  // Production runs the OPTIMISED path: two pre-allocated buffers per substance
+  // are ping-ponged across sub-steps (no per-sub-step slice()).
+  return runMediumStep(field, state, sources, true);
+}
+
+/**
+ * REFERENCE (oracle) medium step: the naive allocating path, kept as a
+ * first-class implementation the equivalence test compares against the
+ * optimised path. Not wired into production; production runs
+ * {@link stepMediumField}. Allocates a fresh `slice()` of every current buffer
+ * each sub-step — the O(5 · subSteps) allocation pattern the optimised
+ * ping-pong replaces. The inner cell loop is identical, so the post-step
+ * ρ / ε / εVis / mx / my arrays are byte-identical to the optimised path; only
+ * the array objects differ.
+ */
+export function stepMediumFieldReference(
+  field: MediumField,
+  state: MediumState,
+  sources: MediumSources,
+): MediumStepResult {
+  return runMediumStep(field, state, sources, false);
+}
+
+/**
+ * Shared medium-step core. The ONLY difference between the reference (oracle)
+ * and optimised (production) paths is the per-sub-step buffer strategy,
+ * selected by `reuse`:
+ *  - `reuse = false` (reference): allocates a fresh `slice()` of every current
+ *    buffer each sub-step — the naive O(5 · subSteps) allocation pattern.
+ *  - `reuse = true` (optimised): ping-pongs between two pre-allocated buffers
+ *    per substance so no per-sub-step allocation occurs.
+ *
+ * The inner cell loop is identical in both paths: it reads only from the
+ * current buffers and writes every cell of the next buffers, so the computed
+ * values — and therefore the five post-step arrays — are byte-identical
+ * regardless of which array objects hold current and next. Ping-pong safety:
+ * for each substance `current` and `next` are always distinct arrays (A vs B),
+ * matching the slice() path's read-from-current / write-to-next discipline, so
+ * no cell ever reads a half-written neighbour value.
+ */
+function runMediumStep(
+  field: MediumField,
+  state: MediumState,
+  sources: MediumSources,
+  reuse: boolean,
+): MediumStepResult {
   const { config, cellCount, neighbours, boundaryFaceCount } = field;
   const pitch = config.pitchM;
   const slabDepth = MEDIUM_SLAB_DEPTH_M;
@@ -69,18 +115,32 @@ export function stepMediumField(
   const dt = MEDIUM_DT_S / subSteps;
 
   // Work on mutable copies so the input is untouched (deterministic, pure).
-  let rho = state.rho.slice();
-  let eps = state.eps.slice();
-  let epsVis = state.epsVis.slice();
-  let mx = state.mx.slice();
-  let my = state.my.slice();
+  // In the optimised path each substance has a ping-pong partner buffer (B)
+  // pre-allocated once; in the reference path the slice() branch is always
+  // taken so the B buffers are never read (aliased to A to avoid a pointless
+  // allocation in the naive baseline).
+  const bufRhoA = state.rho.slice();
+  const bufEpsA = state.eps.slice();
+  const bufEpsVisA = state.epsVis.slice();
+  const bufMxA = state.mx.slice();
+  const bufMyA = state.my.slice();
+  const bufRhoB = reuse ? new Array<number>(cellCount) : bufRhoA;
+  const bufEpsB = reuse ? new Array<number>(cellCount) : bufEpsA;
+  const bufEpsVisB = reuse ? new Array<number>(cellCount) : bufEpsVisA;
+  const bufMxB = reuse ? new Array<number>(cellCount) : bufMxA;
+  const bufMyB = reuse ? new Array<number>(cellCount) : bufMyA;
+  let rho = bufRhoA;
+  let eps = bufEpsA;
+  let epsVis = bufEpsVisA;
+  let mx = bufMxA;
+  let my = bufMyA;
 
   for (let step = 0; step < subSteps; step += 1) {
-    const rhoNext = rho.slice();
-    const epsNext = eps.slice();
-    const epsVisNext = epsVis.slice();
-    const mxNext = mx.slice();
-    const myNext = my.slice();
+    const rhoNext = reuse ? (rho === bufRhoA ? bufRhoB : bufRhoA) : rho.slice();
+    const epsNext = reuse ? (eps === bufEpsA ? bufEpsB : bufEpsA) : eps.slice();
+    const epsVisNext = reuse ? (epsVis === bufEpsVisA ? bufEpsVisB : bufEpsVisA) : epsVis.slice();
+    const mxNext = reuse ? (mx === bufMxA ? bufMxB : bufMxA) : mx.slice();
+    const myNext = reuse ? (my === bufMyA ? bufMyB : bufMyA) : my.slice();
     for (let cell = 0; cell < cellCount; cell += 1) {
       const rhoHere = rho[cell] ?? 0;
       const epsHere = eps[cell] ?? 0;
