@@ -285,8 +285,11 @@ export function generateCandidateContactsReference(hash: SpatialHash<ShipCell>):
  * the reference's swept segment when the cell's per-tick displacement stays
  * below the contact distance, and a superset of the same cell set otherwise
  * (duplicate candidates are harmless: `recordDeepest` keeps the deepest per
- * pair). The static `candidates` query avoids the per-call `Set` allocation the
- * segment query performs, which was a measurable share of the profile.
+ * pair). The static `forEachCandidate` walk avoids both the per-call `Set`
+ * allocation the segment query performs and the per-call result-array
+ * allocation `candidates` performs — relevant here because this narrow-phase
+ * runs once per A-cell per candidate pair, so the array allocation was a
+ * measurable share of the profile.
  */
 export function generateCandidateContactsOptimised(hash: SpatialHash<ShipCell>): CandidateContacts {
   // Collect each ship's alive cells and bounding info in a single pass over the
@@ -327,10 +330,12 @@ export function generateCandidateContactsOptimised(hash: SpatialHash<ShipCell>):
       // ships); filter to B. Duplicates are harmless — recordDeepest keeps the
       // maximum depth.
       for (const cell of aCells) {
-        for (const other of hash.candidates(cell.wx, cell.wy, CELL_CONTACT_DISTANCE)) {
-          if (other.payload.ship !== b) continue;
+        // No-alloc candidate walk: forEachCandidate invokes the callback per
+        // entry rather than materialising a fresh array per cell per pair.
+        hash.forEachCandidate(cell.wx, cell.wy, CELL_CONTACT_DISTANCE, (other) => {
+          if (other.payload.ship !== b) return;
           recordDeepest(contacts, a, b, cell.wx, cell.wy, other.wx, other.wy);
-        }
+        });
       }
     }
   }
