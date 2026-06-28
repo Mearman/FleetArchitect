@@ -314,7 +314,7 @@ function buildCombatShip(
     ...(modules.length > 0 ? { modules } : {}),
     ...(hardwires.length > 0 ? { hardwires } : {}),
     ...(outline.length > 0 ? { outline } : {}),
-    ...(formationId !== undefined ? { formationId, formationChain, role } : {}),
+    ...(formationId !== undefined ? { formationId, formationChain, ...(role !== undefined ? { role } : {}) } : {}),
   };
 }
 

@@ -4,6 +4,7 @@ import { cellToLocal } from "@/domain/grid";
 import { growArmourHull, padGrid } from "@/domain/hull-armour";
 import { catalog } from "@/data/catalog";
 import { nowIso } from "@/domain/id";
+import { canonicalize } from "@/domain/cache/key";
 import type { Fleet } from "@/schema/fleet";
 import { flatFormation } from "@/schema/formation";
 import type { Formation } from "@/schema/formation";
@@ -592,5 +593,19 @@ describe("resolveFleetPoints (named waypoints)", () => {
     const ships = resolveFleetToCombatShips(fleet(), designs, catalog(), "attacker");
     const points = resolveFleetPoints(fleet(), ships, "attacker");
     expect(points.size).toBe(0);
+  });
+});
+
+describe("resolveFleetToCombatShips (cache-key safety)", () => {
+  it("does not leak undefined role onto resolved ships (breaks canonicalize)", () => {
+    // A flat-root fleet has no formation role. The resolved ship must not carry
+    // `role: undefined` — canonicalize (the cache-key encoder) throws on
+    // undefined leaves, which crashes "AI vs AI" in the browser (the caching
+    // runner computes the key).
+    const designs = new Map([["d-1", design()]]);
+    const [ship] = resolveFleetToCombatShips(fleet(), designs, catalog(), "attacker");
+    expect(ship).toBeDefined();
+    if (ship === undefined) return;
+    expect(() => canonicalize(ship)).not.toThrow();
   });
 });
