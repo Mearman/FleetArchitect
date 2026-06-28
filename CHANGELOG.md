@@ -1,3 +1,10 @@
+## [1.30.4](https://github.com/Mearman/FleetArchitect/compare/v1.30.3...v1.30.4) (2026-06-28)
+
+
+### Bug Fixes
+
+* **ui:** floor the timeline slider tooltip to whole ticks ([fddee63](https://github.com/Mearman/FleetArchitect/commit/fddee63beb84e360991137c792da2a86274724dd))
+
 ## [1.30.3](https://github.com/Mearman/FleetArchitect/compare/v1.30.2...v1.30.3) (2026-06-28)
 
 
