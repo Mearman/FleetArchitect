@@ -321,7 +321,7 @@ export interface SimShip {
    * Rolling fingerprint of the ship's alive-cell set: a count and a hash over
    * every alive cell's `(col, row)`. Recomputed at the top of `updateCrew`; when
    * it differs from the cached value the path cache is cleared and the new
-   * fingerprint stored. Also seeded for a fresh chunk ship in `makeChunkShip`.
+   * fingerprint stored. `undefined` on fresh chunks and on resume; first `updateCrew` sets it.
    * A pure function of the alive set, so two ships with identical topology share
    * a fingerprint without ambiguity, and a topology change always moves it. */
   topologyFingerprint?: number;
