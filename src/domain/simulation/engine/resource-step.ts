@@ -59,7 +59,6 @@ import {
   type VentMask,
 } from "@/domain/simulation/engine/lifesupport";
 import { CREW_HP, SIM } from "@/domain/simulation/engine/config";
-import { PERF_GUARDS } from "@/domain/simulation/engine/perf-guards";
 import { TICKS_PER_SECOND } from "@/domain/simulation/types";
 import { applyImpulse } from "@/domain/simulation/engine/weapons";
 import { recomputeAggregates } from "@/domain/simulation/engine/physics";
@@ -124,6 +123,33 @@ const POWER_BUFFER_RESERVE_S = 1;
 /** Canonical "col,row" cell key used by the module index. */
 function cellKey(col: number, row: number): string {
   return `${col},${row}`;
+}
+
+/**
+ * Per-topology indices folded into the cached transport graph (U10). Each is a
+ * pure function of the alive module set at graph-build time, stable across the
+ * topology window (no module death → identical alive set every tick), so they
+ * are computed once when the graph is built and reused every tick. `deckCells`
+ * is NOT folded — see `deckCells` build site for why.
+ */
+interface SparseTransportGraph extends RectangularTransportGraph {
+  /** Dense φ-index → alive module (vent-recoil lever arm). */
+  aliveByIndex: ReadonlyMap<number, SimModule>;
+  /** Dense φ-index → reactor waste-heat watts (output is fixed for life). */
+  thermalSources: ReadonlyMap<number, number>;
+  /** Dense φ-index → engine exhaust normal (facing is fixed for life). Read
+   *  only for cells with live thrust, gated by the per-tick `engineThrust` map
+   *  in `makePropellantSubstance`, so a mid-tick-dead engine is never read. */
+  exhaust: ReadonlyMap<number, { nx: number; ny: number }>;
+}
+
+/** Narrow a cached graph to its sparse form. The cache is written solely by
+ *  `transportGraph`, which always builds a sparse graph, so this always
+ *  succeeds on a cache hit — the type-safe alternative to a cast. */
+function isSparseTransportGraph(
+  graph: RectangularTransportGraph,
+): graph is SparseTransportGraph {
+  return "aliveByIndex" in graph && "thermalSources" in graph && "exhaust" in graph;
 }
 
 /**
@@ -237,13 +263,18 @@ export function makeResourceState(ship: SimShip): ResourceState | undefined {
 /** Build (or return the cached) sparse transport graph for the ship's alive
  *  module set. n = number of live modules in `state.moduleIndex`. Faces
  *  connect 4-adjacent alive pairs where the edge between them is open.
- *  Cached on `ship.resourceGraph`; rebuilt only on a topology change.  */
-function transportGraph(ship: SimShip, state: ResourceState): RectangularTransportGraph {
+ *  Cached on `ship.resourceGraph`; rebuilt only on a topology change. The
+ *  graph also carries the three folded per-topology indices
+ *  (`aliveByIndex`, `thermalSources`, `exhaust`) so they are reused across
+ *  ticks instead of rebuilt.  */
+function transportGraph(ship: SimShip, state: ResourceState): SparseTransportGraph {
+  const cached = ship.resourceGraph;
   if (
-    ship.resourceGraph !== undefined &&
-    ship.resourceGraph.fingerprint === (ship.topologyFingerprint ?? 0)
+    cached !== undefined &&
+    cached.fingerprint === (ship.topologyFingerprint ?? 0) &&
+    isSparseTransportGraph(cached.graph)
   ) {
-    return ship.resourceGraph.graph;
+    return cached.graph;
   }
 
   const aliveByKey = new Map<string, SimModule>();
@@ -357,7 +388,29 @@ function transportGraph(ship: SimShip, state: ResourceState): RectangularTranspo
     if (face.to !== undefined && face.open) openInteriorPipes.add(pipeKey(face.from, face.to));
   }
 
-  const graph: RectangularTransportGraph = { faces, facesFrom, boundaryCells, boundaryCellSet, openInteriorPipes, ventMask };
+  // Folded per-topology indices (U10). Each is a pure function of the alive
+  // module set this graph was built from, stable for the rest of the topology
+  // window, so they rebuild only on a fingerprint change. Built from
+  // `aliveByKey` so they are consistent with the vent mask and boundary cells.
+  // Iterated in `aliveByKey` insertion order (ship.modules array order for alive
+  // modules) — the same order the previous per-tick builds used, so the Maps'
+  // insertion order is preserved exactly.
+  const aliveByIndex = new Map<number, SimModule>();
+  const thermalSources = new Map<number, number>();
+  const exhaust = new Map<number, { nx: number; ny: number }>();
+  for (const [key, m] of aliveByKey) {
+    const i = state.moduleIndex.get(key);
+    if (i === undefined) continue;
+    aliveByIndex.set(i, m);
+    if (m.effect.kind === "power") {
+      thermalSources.set(i, reactorWasteHeatWatts(m.effect.output));
+    }
+    if (m.effect.kind === "engine") {
+      exhaust.set(i, { nx: Math.cos(m.facing), ny: Math.sin(m.facing) });
+    }
+  }
+
+  const graph: SparseTransportGraph = { faces, facesFrom, boundaryCells, boundaryCellSet, openInteriorPipes, ventMask, aliveByIndex, thermalSources, exhaust };
   ship.resourceGraph = { graph, fingerprint: ship.topologyFingerprint ?? 0 };
   return graph;
 }
@@ -377,23 +430,47 @@ function transportGraph(ship: SimShip, state: ResourceState): RectangularTranspo
  * step is a no-op.
  */
 export function resourceStep(ship: SimShip): void {
+  runResourceStep(ship, () => (m: SimModule) => m.transportIndex);
+}
+
+/**
+ * REFERENCE (oracle) resource step: the naive map-lookup path, kept as a
+ * first-class implementation the equivalence test
+ * (`engine.resource-step.equivalence.unit.test.ts`) compares against the
+ * optimised path. Not wired into production; production runs
+ * {@link resourceStep}. Resolves each module's dense transport index by
+ * allocating a `"col,row"` template string and hashing the `moduleIndex` map
+ * per call — the unoptimised lookup the cached `m.transportIndex` read
+ * replaces. Both paths return the same value (the cache is populated FROM the
+ * map in `makeResourceState`), so the step is byte-identical either way.
+ */
+export function resourceStepReference(ship: SimShip): void {
+  runResourceStep(
+    ship,
+    (state) => (m: SimModule) => state.moduleIndex.get(cellKey(m.col, m.row)),
+  );
+}
+
+/**
+ * Shared resource-step core. The `idx` lookup is the ONLY difference between
+ * the optimised and reference paths: optimised reads each module's precomputed
+ * `m.transportIndex` (a property access); reference allocates a `"col,row"`
+ * template string and hashes the `moduleIndex` map. Both return the same value
+ * (the cache is the map's value), so the rest of the step — graph fetch,
+ * substance builds, consequence enforcement — is shared and byte-identical.
+ * The folded per-topology indices (`graph.aliveByIndex`, `graph.thermalSources`,
+ * `graph.exhaust`) are read from the cached graph rather than rebuilt per tick.
+ */
+function runResourceStep(
+  ship: SimShip,
+  makeIdx: (state: ResourceState) => (m: SimModule) => number | undefined,
+): void {
   if (ship.modules === undefined) return;
   const state = ship.resource;
   if (state === undefined) return;
 
   const graph = transportGraph(ship, state);
-  // Resolve a module to its dense transport index. The map path (oracle)
-  // allocates a "col,row" template string and hashes the moduleIndex map per
-  // call; the cached path (production, `resourceModuleIndex` flag on) reads
-  // the precomputed `m.transportIndex` that `makeResourceState` stored — a
-  // plain property access. The two paths return the same value (the cache is
-  // the map's value), so the optimised lookup is byte-identical to the map
-  // lookup. The A/B determinism suite (`engine.perf-guards.unit.test.ts`)
-  // toggles the flag and asserts frame-identical output.
-  const useCachedIndex = PERF_GUARDS.resourceModuleIndex;
-  const idx = useCachedIndex
-    ? (m: SimModule): number | undefined => m.transportIndex
-    : (m: SimModule): number | undefined => state.moduleIndex.get(cellKey(m.col, m.row));
+  const idx = makeIdx(state);
 
   // Resource consequences are recomputed fresh every tick: clear the previous
   // tick's flame-out and grid-shed verdicts before the substance steps re-derive
@@ -404,30 +481,16 @@ export function resourceStep(ship: SimShip): void {
     m.powerCut = false;
   }
 
-  // Reverse index (cell φ-index → alive module), used by the vent recoil to
-  // recover a breached cell's ship-local position for the lever arm. Built once
-  // per tick from the live module set in fixed module order.
-  const aliveByIndex = new Map<number, SimModule>();
-  for (const m of ship.modules) {
-    if (!m.alive) continue;
-    const i = idx(m);
-    if (i !== undefined) aliveByIndex.set(i, m);
-  }
-
   // --- Thermal substance ---
-  // Heat sources: alive reactors inject their WASTE heat — not their electrical
-  // output. A reactor producing `output` watts of usable electricity at
-  // efficiency η rejects `output × (1/η − 1)` watts as heat into the hull
-  // (`reactorWasteHeatWatts`); the electrical output itself is the grid supply,
-  // not heat. Injecting the full output (the previous behaviour) overstated the
-  // heat by `1/(1/η − 1)` ≈ 5.7× and, at gigawatt outputs, drove every reactor
-  // cell over the overheat threshold on the first tick.
-  const thermalSources = new Map<number, number>();
-  for (const m of ship.modules) {
-    if (!m.alive || m.effect.kind !== "power") continue;
-    const i = idx(m);
-    if (i !== undefined) thermalSources.set(i, reactorWasteHeatWatts(m.effect.output));
-  }
+  // Heat sources (alive reactors' WASTE heat — not their electrical output)
+  // are folded into the cached graph (`graph.thermalSources`), since reactor
+  // output and the alive set are stable across the topology window. A reactor
+  // producing `output` watts of usable electricity at efficiency η rejects
+  // `output × (1/η − 1)` watts as heat into the hull (`reactorWasteHeatWatts`);
+  // the electrical output itself is the grid supply, not heat. Injecting the
+  // full output (the previous behaviour) overstated the heat by `1/(1/η − 1)`
+  // ≈ 5.7× and, at gigawatt outputs, drove every reactor cell over the
+  // overheat threshold on the first tick.
   // Per-cell heat capacity (J/K): cell mass × the faction material's specific
   // heat. Built once in `makeResourceState` and cached on the state (a cell's
   // mass and the index map are fixed for the battle), so the thermal step reuses
@@ -442,7 +505,7 @@ export function resourceStep(ship: SimShip): void {
   // radiator surface (v1 simplification). Use the pre-built set from the
   // cached graph to avoid O(n) Set construction on every tick.
   const thermalField: TransportField = {
-    substance: makeThermalSubstance(thermalSources, graph.boundaryCellSet, state.heatCapacity),
+    substance: makeThermalSubstance(graph.thermalSources, graph.boundaryCellSet, state.heatCapacity),
     faces: graph.faces,
     facesFrom: graph.facesFrom,
     boundaryCells: graph.boundaryCells,
@@ -479,21 +542,23 @@ export function resourceStep(ship: SimShip): void {
   // so the dry-tank flame-out reflects real usage rather than charging every
   // engine full burn every tick.
   const throttle = ship.engineThrottle;
+  // Engine thrust command (per-tick — throttle varies): each alive engine's
+  // rated thrust scaled by the throttle the movement step applied. The exhaust
+  // NORMALS are folded into the cached graph (`graph.exhaust`) since engine
+  // facing is fixed for life; only the thrust magnitude is rebuilt here.
   const engineThrust = new Map<number, number>();
-  const exhaust = new Map<number, { nx: number; ny: number }>();
   for (const m of ship.modules) {
     if (!m.alive || m.effect.kind !== "engine") continue;
     const i = idx(m);
-    if (i !== undefined) {
-      if (throttle > 0) engineThrust.set(i, m.effect.thrust * throttle);
-      exhaust.set(i, { nx: Math.cos(m.facing), ny: Math.sin(m.facing) });
+    if (i !== undefined && throttle > 0) {
+      engineThrust.set(i, m.effect.thrust * throttle);
     }
   }
   // Pipes: every open interior face is part of the fuel manifold. Use the
   // pre-built set from the cached graph — avoids O(n_faces) string allocations
   // on every tick.
   const propellantField: TransportField = {
-    substance: makePropellantSubstance(engineThrust, graph.openInteriorPipes, exhaust),
+    substance: makePropellantSubstance(engineThrust, graph.openInteriorPipes, graph.exhaust),
     faces: graph.faces,
     facesFrom: graph.facesFrom,
     boundaryCells: graph.boundaryCells,
@@ -531,8 +596,13 @@ export function resourceStep(ship: SimShip): void {
     }
   }
   // Deck mask: the alive deck cells (pressurised, gas-holding compartments).
-  // Advection flows only between two decks; a deck never advects gas into a solid
-  // armour/hull cell. Built once per tick in fixed module-array order.
+  // Advection flows only between two decks; a deck never advects gas into a
+  // solid armour/hull cell. NOT folded into the cached graph: the atmosphere
+  // advection gate reads deck membership directly (no per-tick-valued gate the
+  // way `engineThrust` gates the propellant exhaust read), and the overheat
+  // pass above can kill a deck cell mid-tick AFTER the graph is fetched — a
+  // cell that overheated this tick must be excluded from THIS tick's advection,
+  // which only a per-tick build reflects. Built in fixed module-array order.
   const deckCells = new Set<number>();
   for (const m of ship.modules) {
     if (!m.alive || !isDeck(m)) continue;
@@ -573,7 +643,7 @@ export function resourceStep(ship: SimShip): void {
     let cy = 0;
     let count = 0;
     for (const cellIdx of graph.ventMask.keys()) {
-      const m = aliveByIndex.get(cellIdx);
+      const m = graph.aliveByIndex.get(cellIdx);
       if (m === undefined) continue;
       cx += m.x;
       cy += m.y;

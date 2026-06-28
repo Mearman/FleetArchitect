@@ -745,8 +745,8 @@ export interface SimModule {
   exploded: boolean;
   /** Dense transport index (Phase 12): cached copy of the value
    *  `ResourceState.moduleIndex` maps this module's `"col,row"` cell to, written
-   *  once by `makeResourceState` from the map. The `resourceModuleIndex`
-   *  PERF_GUARDS flag toggles cached read vs map lookup; see `resource-step.ts`. */
+   *  once by `makeResourceState`. Read by `resourceStep` (production); the
+   *  oracle `resourceStepReference` re-hashes the map. See `resource-step.ts`. */
   transportIndex?: number;
 }
 
