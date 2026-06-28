@@ -294,6 +294,10 @@ export function computeCrewPathAStar(
     closed.add(currentKey);
 
     if (current.col === to.col && current.row === to.row) {
+      // Reconstruct by pushing the back-chain in reverse arrival order
+      // (to, then its predecessor, ...), then a single in-place reverse.
+      // Element-for-element identical to repeated `unshift` but O(L) overall
+      // instead of O(L²): each `unshift` shifted every prior element by one.
       const path: { col: number; row: number }[] = [
         { col: current.col, row: current.row },
       ];
@@ -301,9 +305,10 @@ export function computeCrewPathAStar(
       for (;;) {
         const prev = cameFrom.get(key);
         if (prev === undefined) break;
-        path.unshift({ col: prev.col, row: prev.row });
+        path.push({ col: prev.col, row: prev.row });
         key = crewCellKey(prev.col, prev.row);
       }
+      path.reverse();
       return path;
     }
 
@@ -358,4 +363,34 @@ export function aliveCellMap(ship: SimShip): Map<string, SimModule> {
     if (m.alive && m.surface === "deck") map.set(crewCellKey(m.col, m.row), m);
   }
   return map;
+}
+
+/**
+ * Per-ship cache of `slotId → module` over `ship.modules`. `slotId` is authored
+ * at design time and never mutates, and modules are never added after
+ * construction (break-apart makes a fresh SimShip), so the index is stable for
+ * the lifetime of a given ship object — built once and reused across the
+ * ~5 sites per crewed modular ship per tick that previously rebuilt it from
+ * scratch (`updateCrew`, `recomputeManning`, `refillHardwiredPower`,
+ * `refillHardwiredAmmo`, `chooseAmmoRun`).
+ *
+ * `WeakMap`-keyed by ship so break-apart's fresh SimShip objects miss and
+ * rebuild with the fragment's own modules automatically; no explicit
+ * invalidation is needed on topology change. A module dying only flips its
+ * `alive` flag, which consumers read at call sites — the slotId mapping itself
+ * is unchanged, so the cache stays correct across damage phases. Returns an
+ * empty map for a ship with no modules array, matching `aliveCellMap`'s
+ * convention.
+ */
+const bySlotCache = new WeakMap<SimShip, Map<string, SimModule>>();
+
+export function modulesBySlot(ship: SimShip): Map<string, SimModule> {
+  const cached = bySlotCache.get(ship);
+  if (cached !== undefined) return cached;
+  const built = new Map<string, SimModule>();
+  if (ship.modules !== undefined) {
+    for (const m of ship.modules) built.set(m.slotId, m);
+  }
+  bySlotCache.set(ship, built);
+  return built;
 }
