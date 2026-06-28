@@ -41,6 +41,7 @@ import { layMines, stepTechCooldowns, updateMines } from "./mines";
 import { moveShips } from "./movement";
 import { launchDecoys, launchDrones, stepPhantoms } from "./phantoms";
 import { stepPulses } from "./pulse-step";
+import { aggregatesChanged } from "./aggregates-fingerprint";
 import { hasAliveCommand, recomputeAggregates } from "./physics";
 import { electFocusTarget, pickTarget } from "./targeting";
 import { refreshRosterIncremental } from "./roster";
@@ -280,16 +281,16 @@ export function* simulateBattle(
 
     // 1b. Tech timers (factions update). Advance every movement/power tech
     //     module's active-window and cooldown counters one tick, then fire any
-    //     ready blink drive (teleporting the hull before the movement integrator
-    //     runs, so the jumped-to position is where the ship thrusts from this
-    //     tick). Both steps are opt-in: a ship with no tech modules has all
-    //     timers at 0 and no blink modules, so neither touches its state.
+    //     ready blink drive (teleporting the hull before movement runs, so the
+    //     jumped-to position is where the ship thrusts from this tick). Fused
+    //     into one per-ship pass: `stepTechCooldowns` writes only timer fields
+    //     (no positions), and `applyBlink` reads other ships' positions — not
+    //     their timers — so interleaving is byte-identical to the prior two-pass
+    //     all-timers-then-all-blink form (within-array blink order is unchanged).
+    //     Opt-in: a ship with no tech modules is untouched.
     for (const ship of state.ships) {
       if (!ship.alive) continue;
       stepTechCooldowns(ship);
-    }
-    for (const ship of state.ships) {
-      if (!ship.alive) continue;
       applyBlink(ship, state.byId, state.ships);
     }
 
@@ -447,10 +448,14 @@ export function* simulateBattle(
 
     // 4b. Recompute aggregate stats from the alive module set, so a module
     //     destroyed this tick (hitscan or projectile) is reflected in the
-    //     shield pool, thrust, and weapon list before regen and the snapshot,
-    //     and carried into the next tick's movement and firing.
+    //     shield pool, thrust, and weapon list before regen and the snapshot.
+    //     Skipped when `aggregatesChanged` reports no aggregate-relevant input
+    //     has moved since the last recompute — an unchanged hash means every
+    //     tracked flag equals its prior value, so a re-run would produce
+    //     identical aggregates. The overcharge and break-apart sites below still
+    //     run unconditionally on their own triggers (and move next tick's hash).
     for (const ship of state.ships) {
-      if (ship.modules !== undefined) recomputeAggregates(ship);
+      if (ship.modules !== undefined && aggregatesChanged(ship)) recomputeAggregates(ship);
     }
 
     // 4b-overcharge. Reactor overcharge (factions update). With the power budget
@@ -464,25 +469,23 @@ export function* simulateBattle(
       if (stepOvercharge(ship)) recomputeAggregates(ship);
     }
 
-    // 4b-crew. Crew AI + movement. After aggregates settle `powered`, each
-    //     ship's crew walk one cell toward an under-manned station, then every
-    //     module's `manned` flag is recomputed from the new positions. Done
-    //     before break-apart so the split partitions crew by their post-move
-    //     cell. Fully deterministic: crew iterate in id order, stations scan in
-    //     (col, row) order, paths come from the fixed-tie-break A*.
+    // 4b-crew/ammo. Crew AI + movement, then ammo-conduit refill — fused into a
+    //     single per-ship pass because both are fully per-ship (neither reads
+    //     another ship's state), so interleaving them is byte-identical to the
+    //     prior two-pass all-crew-then-all-ammo form. After aggregates settle
+    //     `powered`, each ship's crew walk one cell toward an under-manned
+    //     station, then every module's `manned` flag is recomputed from the new
+    //     positions (done before break-apart so the split partitions crew by
+    //     their post-move cell). Then every conduit-fed weapon refills directly
+    //     from its magazine's store, dividing each magazine across its hardwired
+    //     sinks — at the same latency as a crew deposit (rounds land this tick,
+    //     fire next) and independently of crew, so a crewless hardwired ship is
+    //     resupplied too. Fully deterministic (crew in id order, stations in
+    //     (col, row) order, fixed-tie-break A* paths; magazines in module order)
+    //     and a no-op on designs with no crew / no ammo hardwires.
     for (const ship of state.ships) {
       if (!ship.alive || ship.modules === undefined) continue;
       updateCrew(ship);
-    }
-
-    // 4b-ammo. Ammo conduits: refill every conduit-fed weapon directly from its
-    //     magazine's store, dividing each magazine across its hardwired sinks.
-    //     Runs after crew (which never haul to a conduit-fed weapon) and at the
-    //     same latency as a crew deposit — rounds land this tick and fire next —
-    //     and independently of crew, so a crewless hardwired ship is resupplied
-    //     too. A no-op on designs with no ammo hardwires, preserving byte output.
-    for (const ship of state.ships) {
-      if (!ship.alive || ship.modules === undefined) continue;
       refillHardwiredAmmo(ship);
     }
 
