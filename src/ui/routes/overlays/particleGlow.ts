@@ -87,11 +87,14 @@ function drawParticleGlow(c: OverlayCtx): void {
 }
 
 /** Overlay definition: weapon-source particle glow (exhaust, plumes, channels,
- *  impacts), drawn beneath the ship layer. */
+ *  impacts), drawn beneath the ship layer. On by default so strikes and exhaust
+ *  are visible — the broad medium glow is too coarse (500 m/cell) to resolve
+ *  them. FX-gated (off/reduced/full) and the live set is capped
+ *  (MAX_LIVE_PARTICLES), so the cost is bounded. */
 export const particleGlow: OverlayDef = {
   id: "particle-glow",
   label: "Weapon particles (exhaust / plumes / impacts)",
-  defaultOn: false,
+  defaultOn: true,
   defaultScope: "all",
   draw: drawParticleGlow,
 };
