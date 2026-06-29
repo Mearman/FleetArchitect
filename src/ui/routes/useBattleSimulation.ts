@@ -334,6 +334,12 @@ export function useBattleSimulation({
    */
   const releaseSim = useCallback((): void => {
     pacingHandleRef.current?.resume();
+    // Re-seed the sim-rate EMA: the next batch after a cooperative resume would
+    // otherwise span the whole hold in its inter-batch gap, crashing the EMA
+    // (and the buffering resume-lead it feeds). Dropping the previous-batch
+    // anchor makes the next batch skip the rate update and the one after
+    // re-establish a clean gap.
+    lastBatchRef.current = null;
   }, []);
 
   /**

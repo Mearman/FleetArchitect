@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { TICKS_PER_SECOND } from "@/domain/simulation/types";
 import { interpolateFrame } from "@/ui/interpolateFrame";
 import type { BattleFrame, BattleResult } from "@/schema/battle";
-import { resumeLeadSeconds } from "./battleConstants";
+import { resumeLeadSeconds, SIM_DELIVERED_RATE_WINDOW_MS } from "./battleConstants";
 
 /**
  * Props for {@link useBattlePlayback}. The hook owns the playback clock state
@@ -25,6 +25,9 @@ export interface UseBattlePlaybackProps {
   simTickRateRef: React.RefObject<number>;
   result: BattleResult | null;
   computedTicks: number;
+  /** Ref mirror of `computedTicks` (the streamed leading edge) so the rAF can
+   *  read the current edge for the delivered-rate bar without a stale closure. */
+  computedTicksRef: React.RefObject<number>;
   hasFrames: boolean;
   drawFrame: (frame: BattleFrame, tick: number, frames: readonly BattleFrame[]) => void;
   statusOpen: boolean;
@@ -52,6 +55,7 @@ export function useBattlePlayback({
   simTickRateRef,
   result,
   computedTicks,
+  computedTicksRef,
   hasFrames,
   drawFrame,
   statusOpen,
@@ -75,17 +79,25 @@ export function useBattlePlayback({
   const [buffering, setBuffering] = useState(false);
 
   /**
-   * Measured simulation throughput as a speed multiplier (sim ticks produced per
-   * real second / {@link TICKS_PER_SECOND}), mirrored from `simTickRateRef` for
-   * the speed slider's telemetry bar. Null while no measurement exists or once
-   * the battle is fully computed (no production limit remains). Gated by
-   * {@link lastSimSpeedRef} so it only re-renders when the rounded value changes.
+   * The sim-speed telemetry shown by the speed slider's cyan bar: the sim's
+   * DELIVERED rate (leading-edge advance per real second over a rolling window),
+   * NOT the raw inter-batch compute rate. This includes cooperative-hold gaps,
+   * so it drops while the sim is held (Overdrive off), sits near the thumb when
+   * paced, and pokes past it when Overdrive is on. Null before the first batch
+   * and once the battle is fully computed. Gated by {@link lastSimSpeedRef} so it
+   * only re-renders when the rounded value changes.
    */
   const [simSpeed, setSimSpeed] = useState<number | null>(null);
   // Last rounded sim-speed multiplier mirrored into state, or -1 when hidden.
   // A ref (not a loop-local) so the computed/no-measurement clear survives the
   // effect re-running whenever `result` lands.
   const lastSimSpeedRef = useRef(-1);
+  /**
+   * Rolling (time, leading-edge-ticks) samples for the delivered-rate window,
+   * updated each rAF frame and pruned to {@link SIM_DELIVERED_RATE_WINDOW_MS}.
+   * Cleared on edge regression (a fresh run) and when the result lands.
+   */
+  const deliveredSamplesRef = useRef<{ t: number; ticks: number }[]>([]);
 
   // The status panel uses the discrete-nearest frame since it shows system HP
   // values, not positions — there is no meaningful interpolation for HP. It is
@@ -201,27 +213,56 @@ export function useBattlePlayback({
         }
       }
 
-      // Mirror the measured simulation throughput as a sim-speed multiplier for
-      // the speed slider's telemetry bar. Only meaningful while the battle is
-      // still computing; once `result` lands the simulation is done and the bar
-      // is hidden. -1 = hidden; updated only when the rounded value changes so
-      // the slider does not re-render every animation frame.
+      // Mirror the sim's DELIVERED rate (leading-edge advance per real second
+      // over a rolling window) for the speed slider's telemetry bar. Unlike the
+      // inter-batch sim-rate EMA (which feeds the buffering calc and freezes
+      // during a cooperative hold), this includes hold gaps, so the bar drops
+      // while the sim is held (Overdrive off) and reflects the effective rate:
+      // near the thumb when paced, past it when Overdrive is on. Computed from
+      // the shared computedTicksRef each frame; gated on value change so the
+      // slider does not re-render every animation frame.
       if (result === null) {
-        const rate = simTickRateRef.current;
-        if (rate > 0) {
-          const rounded = Math.round((rate / TICKS_PER_SECOND) * 10) / 10;
+        const edge = computedTicksRef.current;
+        const samples = deliveredSamplesRef.current;
+        // A fresh run resets the edge downward; drop stale samples so the window
+        // never spans the boundary between battles.
+        const prev = samples[samples.length - 1];
+        if (prev !== undefined && edge < prev.ticks) samples.length = 0;
+        samples.push({ t: now, ticks: edge });
+        const cutoff = now - SIM_DELIVERED_RATE_WINDOW_MS;
+        // Prune samples older than the window (keep at least one). Read
+        // samples[0] into a narrowed local each iteration — noUncheckedIndexedAccess
+        // won't narrow an indexed access gated only on `samples.length`.
+        while (samples.length > 1) {
+          const first = samples[0];
+          if (first === undefined || first.t >= cutoff) break;
+          samples.shift();
+        }
+        const oldest = samples[0];
+        let deliveredX = 0;
+        if (oldest !== undefined) {
+          const spanMs = now - oldest.t;
+          if (spanMs > 0) {
+            deliveredX = ((edge - oldest.ticks) / TICKS_PER_SECOND) / (spanMs / 1000);
+          }
+        }
+        // Show once the sim has produced frames; hide before the first batch.
+        if (edge > 0) {
+          const rounded = Math.round(deliveredX * 10) / 10;
           if (rounded !== lastSimSpeedRef.current) {
             lastSimSpeedRef.current = rounded;
             setSimSpeed(rounded);
           }
         } else if (lastSimSpeedRef.current !== -1) {
-          // Fresh run, no batches yet — drop any stale value from a prior battle.
           lastSimSpeedRef.current = -1;
           setSimSpeed(null);
         }
-      } else if (lastSimSpeedRef.current !== -1) {
-        lastSimSpeedRef.current = -1;
-        setSimSpeed(null);
+      } else {
+        deliveredSamplesRef.current = [];
+        if (lastSimSpeedRef.current !== -1) {
+          lastSimSpeedRef.current = -1;
+          setSimSpeed(null);
+        }
       }
 
       rafId = requestAnimationFrame(loop);
@@ -238,7 +279,7 @@ export function useBattlePlayback({
   // `playbackTimeRef`/`bufferingRef`/`framesRef`/`simTickRateRef` are stable
   // route-level refs (they never change identity); they are listed only to
   // satisfy the exhaustive-deps lint, not because they ever retrigger the loop.
-  }, [hasFrames, playing, speed, drawFrame, result, computedTicks, statusOpen, bufferingRef, framesRef, playbackTimeRef, simTickRateRef]);
+  }, [hasFrames, playing, speed, drawFrame, result, computedTicks, statusOpen, bufferingRef, framesRef, playbackTimeRef, simTickRateRef, computedTicksRef]);
 
   // Redraw when the canvas is resized (canvasSize changes). The draw itself is
   // purely a side-effect of the current playbackTime; no clock advance needed.

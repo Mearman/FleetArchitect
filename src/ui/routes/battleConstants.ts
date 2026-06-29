@@ -118,6 +118,16 @@ export const PACE_PAUSE_LEAD_SECONDS = 2.0;
 export const PACE_RESUME_LEAD_SECONDS = 0.7;
 
 /**
+ * Rolling-window length (ms) for the sim-speed bar's DELIVERED rate (leading-edge
+ * advance per real second). Long enough to average the Overdrive-off hold/run
+ * cycle down to the effective (paced) rate, short enough to stay responsive. The
+ * delivered rate includes cooperative-hold gaps, so the bar drops while the sim
+ * is held and reflects the effective rate rather than the raw compute rate.
+ * Tunable.
+ */
+export const SIM_DELIVERED_RATE_WINDOW_MS = 2000;
+
+/**
  * Resume threshold in playback seconds: how far the streamed leading edge must
  * be ahead of the playhead before playback (re)starts. Driven by the measured
  * simulation rate versus the playback consumption rate. When the sim keeps up

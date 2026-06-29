@@ -223,6 +223,7 @@ export function BattleRoute() {
     simTickRateRef,
     result: simulation.result,
     computedTicks: simulation.computedTicks,
+    computedTicksRef: simulation.computedTicksRef,
     hasFrames,
     drawFrame,
     // The controls wing is always present once a battle is running, so refresh
