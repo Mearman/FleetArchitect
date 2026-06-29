@@ -1,8 +1,7 @@
 import {
-  EPS_GAIN_J_INV,
   INTENSITY_DRAW_THRESHOLD,
-  RHO_REF_KG,
   fxGainFor,
+  mediumCellIntensity,
   paletteSample,
   readFxLevel,
   resolveMediumField,
@@ -118,11 +117,8 @@ function drawMediumGlow(c: OverlayCtx): void {
       continue;
     }
     const rhoHere = rho[i] ?? 0;
-    // ε-driven, ρ-amplified brightness, clamped to [0, 1].
-    const intensity = Math.max(
-      0,
-      Math.min(1, epsHere * EPS_GAIN_J_INV * fxGain * (1 + rhoHere / RHO_REF_KG)),
-    );
+    // ε-driven, ρ-amplified, tone-mapped brightness (see mediumShared).
+    const intensity = mediumCellIntensity(epsHere, rhoHere, fxGain);
     if (intensity < INTENSITY_DRAW_THRESHOLD) {
       data[p] = 0;
       data[p + 1] = 0;

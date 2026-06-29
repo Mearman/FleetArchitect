@@ -73,61 +73,90 @@ export function worldToCellIndex(
 }
 
 // ---------------------------------------------------------------------------
-// Brightness mapping (ε-driven, ρ-amplified)
+// Brightness mapping (ε-driven, ρ-amplified, tone-mapped)
 // ---------------------------------------------------------------------------
 //
-// Per cell:
+// Per cell the glow intensity is a saturating (Michaelis–Menten) response over
+// the ρ-amplified excitation:
 //
-//   intensity = eps[cell] * EPS_GAIN_J_INV * (1 + rho[cell] / RHO_REF_KG)
+//   effEps    = eps[cell] * min(RHO_AMPLIFIER_CAP, 1 + rho[cell] / RHO_REF_KG)
+//   intensity = fxGain * effEps / (effEps + EPS_HALFSAT_J)
 //
-// clamped to [0, 1]. `EPS_GAIN_J_INV` normalises ε (in joules) so a typical
-// exhaust deposit reads as a clear glow; `RHO_REF_KG` is the density at which
-// the ρ-amplifier doubles the glow, tuned to the nebula-target magnitude so a
-// nebula battle visibly amplifies its plumes but ISM-baseline space (negligible
-// ρ) leaves the amplifier at ~1.0.
+// Why saturating, not a linear gain. ε spans a huge range — a fresh muzzle
+// flash deposits ~1e3 J, a sustained multi-MN drive plume accumulates to
+// ~1e6–1e7 J — and it grows over a battle as plumes sustain. A linear
+// `eps * gain` either saturates the bright cores (every exhaust cell clamps to
+// 1 → a flat max-brightness blob) or, with a gain low enough to avoid that,
+// makes everything else invisible. The saturating response asymptotes to 1, so
+// the glow never hard-clips however large ε grows, yet small ε still reads as a
+// visible non-zero value: the full range is a gradient (bright core fading to a
+// faint haze) rather than a blob.
 //
-// Tuning rationale (magnitudes taken from the engine constants):
-//   - Exhaust deposit per tick per cell =
-//       0.5 * F * v_exhaust * coupling * dt
-//     with v_exhaust ≈ 3138 m/s, coupling 0.02, dt 1/30 s. A multi-MN thruster
-//     (F ~ 1e6 N) deposits ~1e6 J per cell per tick into ε; cells accumulate
-//     and diffuse, so a sustained plume reaches ε on the order of 1e6–1e7 J.
-//     EPS_GAIN_J_INV = 3e-7 maps that range to ~0.3–0.7 glow (clear without
-//     saturating); ISM-space ε ≈ 0 maps to 0 (dark, as required).
-//   - Nebula target ρ is 1e-12 kg per cell. Setting RHO_REF_KG = 5e-13 means a
-//     fully filled nebula cell (1e-12 kg) amplifies the glow by 3x (1 + 2),
-//     while ISM-baseline cells (1.7e-22 kg) contribute a factor of 1.0 — the
-//     amplifier only matters where matter actually exists.
+// Tuning anchors (magnitudes from the engine SI constants):
+//   - A sustained drive plume reaches ε ≈ 2e6 J (measured on the preset
+//     matchups); with the 3× ρ-amplifier, effEps ≈ 6e6, so EPS_HALFSAT_J = 4e6
+//     maps it to 6e6 / (6e6 + 4e6) ≈ 0.6. ISM-space ε ≈ 0 maps to 0 (dark).
+//   - Nebula target ρ is 1e-12 kg/cell; RHO_REF_KG = 5e-13 → a filled nebula
+//     amplifies 3× (the cap); ISM ρ (1.7e-22) leaves the amplifier at 1.0. An
+//     exhaust plume's own ρ (~1e-5) is capped at the same 3× so it cannot
+//     self-amplify to saturation.
 //
-// Both constants are named, documented, and derived from the engine's SI
-// magnitudes (not magic numbers).
+// fxGain (`fxGainFor(level)`) scales the result for the FX level ("off" → 0,
+// "reduced" → 0.5, "full" → 1). The mapping is a pure renderer choice; the
+// simulation's ε/ρ fields are unchanged.
 
-/** ε (joules) → glow normaliser. Tuned for the smoothed-blit renderer with
- *  additive blending: the per-cell intensity must be low enough that the
- *  additive sum over many neighbouring cells (plus bilinear smoothing) stays
- *  below saturation. The old value (3e-7) was for per-cell radial gradients
- *  (one contribution per cell); with the smoothed field + advection spreading
- *  ε across the grid, 100× lower keeps the glow visible without whiteout. */
-export const EPS_GAIN_J_INV = 3e-9;
+/** ρ-amplified ε (joules) at which a cell reaches half-max glow brightness. The
+ *  glow uses a saturating `effEps / (effEps + K)` response (not a linear gain):
+ *  ε spans a huge range (a fresh muzzle flash ~1e3 J, a sustained drive plume
+ *  ~1e6–1e7 J) and grows over a battle, so a linear gain either saturates the
+ *  bright cores to a flat max-brightness blob or makes the rest invisible. The
+ *  saturating response asymptotes to 1, so the glow never hard-clips however
+ *  large a plume grows, yet small ε still maps to a visible value — the full
+ *  range reads as a gradient (bright core fading to faint haze) instead of a
+ *  blob. Calibrated so a sustained drive plume (ε ~2e6 J, 3× ρ-amplified →
+ *  effEps ~6e6) reads 6e6 / (6e6 + 4e6) ≈ 0.6. */
+export const EPS_HALFSAT_J = 4e6;
 
 /** ρ (kg per cell) at which the density amplifier doubles the glow. Set to half
  *  the nebula target density so a filled nebula triples the glow; ISM ρ is
  *  negligible and leaves the amplifier at 1.0. See rationale. */
 export const RHO_REF_KG = 5e-13;
 
+/** Cap on the ρ-amplifier. An exhaust plume's own ρ (~1e-5 kg/cell) is orders
+ *  above the nebula target this amplifier is scaled to, so without a cap it
+ *  would amplify the plume's own ε by ~1e7 and saturate the glow to a flat blob.
+ *  Capping at the intended nebula max (3×) keeps the denser-medium boost without
+ *  the exhaust self-amplification blow-out. */
+export const RHO_AMPLIFIER_CAP = 3;
+
 /** Cells below this normalised intensity are skipped entirely. Bounds paint
  *  count on a 20k-cell grid to the few cells that actually glow. */
 export const INTENSITY_DRAW_THRESHOLD = 0.02;
 
 /**
- * Sample the ε-driven, ρ-amplified medium intensity at a world point. Returns a
- * value in [0, 1] (0 outside the grid or where no ε is deposited), scaled by the
- * resolved FX gain. This is the single brightness truth both medium overlays
- * share: a point in a dense/excited region reads bright, a point in cold vacuum
- * reads dark, regardless of which overlay paints it.
+ * The ε-driven, ρ-amplified, tone-mapped glow intensity for one cell: a
+ * saturating `effEps / (effEps + EPS_HALFSAT_J)` response over the
+ * ρ-amplified excitation, scaled by the FX gain. Returns a value in [0, fxGain]
+ * — the saturating response never reaches fxGain, so the glow never hard-clips
+ * however large ε grows. 0 where no ε is deposited. This is the single
+ * brightness truth both medium overlays share: a sustained plume reads bright at
+ * its core and fades to a faint haze at its edges, regardless of which overlay
+ * paints it.
  *
  * `fxGain` is the resolved FX multiplier for the current level
  * (`fxGainFor(level)`), NOT the raw level string.
+ */
+export function mediumCellIntensity(eps: number, rho: number, fxGain: number): number {
+  if (eps <= 0) return 0;
+  const amp = Math.min(RHO_AMPLIFIER_CAP, 1 + rho / RHO_REF_KG);
+  const effEps = eps * amp;
+  return (fxGain * effEps) / (effEps + EPS_HALFSAT_J);
+}
+
+/**
+ * Sample the medium glow intensity at a world point — {@link mediumCellIntensity}
+ * at the cell containing `(wx, wy)`. Used by the analytic trails overlay; the
+ * ambient glow rasterises the whole field instead (so it does not call this).
  */
 export function sampleMediumIntensity(
   field: MediumSnapshot,
@@ -140,10 +169,7 @@ export function sampleMediumIntensity(
   const eps = (field.epsVis ?? field.eps)[idx];
   if (eps === undefined || eps <= 0) return 0; // nothing deposited → dark
   const rho = field.rho[idx] ?? 0;
-  return Math.max(
-    0,
-    Math.min(1, eps * EPS_GAIN_J_INV * fxGain * (1 + rho / RHO_REF_KG)),
-  );
+  return mediumCellIntensity(eps, rho, fxGain);
 }
 
 // ---------------------------------------------------------------------------
