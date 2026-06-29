@@ -16,12 +16,12 @@ import { GAS_DRAG_CROSS_SECTION_SHIP_M2, SIM, THRUST_ALIGNMENT_RAD } from "./con
 import { TICKS_PER_SECOND } from "../types";
 import { combinedDilation } from "./proper-time";
 import {
-  availableThrust,
-  commandedTurn,
+  bangBangTurnSign,
   lateralForceAndTorque,
   maxCommandableTorque,
   shipForceAndTorque,
 } from "./physics";
+import { computeMovementInputs } from "./movement-dynamics";
 import { relativisticMomentumStep } from "./relativistic-momentum";
 import { angleDifference, angularAccelPerTick, blackHoleAvoidWeight, rotateLocal } from "./setup";
 import { hasAnomaly } from "@/domain/anomaly";
@@ -497,14 +497,23 @@ export function moveShips(
     //
     // Pre-compute the commandable torque and angular alpha so the bang-bang
     // controller and the post-integration settle snap share the same value.
-    const mct = maxCommandableTorque(ship, shouldThrust);
+    // Movement capabilities. Modular ships fuse the four independent per-module
+    // scans (commandable torque, geometric disturbance torque, lateral budget,
+    // afterburner multipliers) into one pass via computeMovementInputs; legacy
+    // ships use the scalar fallbacks. The geometric torque feeds the bang-bang
+    // controller directly (bangBangTurnSign), so the redundant geometricTorque
+    // scan inside commandedTurn is avoided — one pass replaces four scans.
+    const { mct, geoTorque, latBudget, boost } =
+      ship.modules !== undefined
+        ? computeMovementInputs(ship, shouldThrust)
+        : {
+            mct: maxCommandableTorque(ship, shouldThrust),
+            geoTorque: 0,
+            latBudget: 0,
+            boost: afterburnerMultipliers(ship, shouldThrust),
+          };
     const alpha = angularAccelPerTick(mct, ship.momentOfInertia);
-    const turnSign = commandedTurn(ship, desiredFacing, mct, shouldThrust);
-    // Afterburner (factions update): when the ship has movement intent this
-    // tick, fire any ready afterburner and fold its thrust/turn surge into the
-    // integrator below. Identity (1, 1) for ships without the tech, so the
-    // movement maths is unchanged for them.
-    const boost = afterburnerMultipliers(ship, shouldThrust);
+    const turnSign = bangBangTurnSign(ship, desiredFacing, mct, geoTorque);
 
     // Linear: thrust accelerates velocity. Velocity PERSISTS — real space is
     // frictionless, so a ship that stops thrusting keeps its momentum and only
@@ -569,7 +578,8 @@ export function moveShips(
       // is the proportional throttle that arrests `vPerp` in one tick, clamped
       // to the lateral budget. Pure CoM translation (no torque — see
       // `lateralForceAndTorque`), so it never spins the ship.
-      const latBudget = availableThrust(ship).lateral;
+      // latBudget (the symmetric lateral thrust budget) was computed above in
+      // computeMovementInputs.
       // Per-tick lateral Δv capacity (m/tick²): F/m is an SI acceleration
       // (m/s²); ACCEL_PER_TICK_FROM_SI rescales it into the m/tick velocity
       // clock so the `vPerp / aLat` throttle below compares like with like

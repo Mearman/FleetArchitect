@@ -728,11 +728,13 @@ export function discreteStoppingAngle(w: number, alphaBrake: number): number {
   return (wAbs * wAbs) / (2 * alphaBrake);
 }
 
-export function commandedTurn(
+/** Bang-bang turn sign (-1/0/+1) from the pre-computed commandable torque
+ *  (`mct`) and geometric disturbance torque (`geoTorque`); pure, no scan. */
+export function bangBangTurnSign(
   ship: SimShip,
   desiredFacing: number,
   mct: number,
-  shouldThrust: boolean,
+  geoTorque: number,
 ): -1 | 0 | 1 {
   const e = angleDifference(ship.facing, desiredFacing);
   const w = ship.angVel;
@@ -744,20 +746,12 @@ export function commandedTurn(
 
   // Net geometric disturbance angular acceleration (uncommandable r × F).
   // Only non-zero when engines are actually firing this tick.
-  const gTorque = geometricTorque(ship, shouldThrust);
-  const gAlpha = angularAccelPerTick(gTorque, I);
+  const gAlpha = angularAccelPerTick(geoTorque, I);
 
-  // Settle deadband: the ship is close enough to the target that this tick's
-  // angular displacement will carry it across (or it is within the static
-  // heading tolerance). Command no turn so the post-integration snap in
-  // moveShips clamps the ship cleanly to rest at the target heading. Without
-  // angular damping the snap is the only thing that ends the bang-bang limit
-  // cycle around the target: the discrete controller cannot zero angVel
-  // exactly at the target under forward Euler, so without the clamp the ship
-  // oscillates forever. Using |w| (the per-tick angular step) as the deadband
-  // when |w| > angularDeadband ensures the snap fires the tick the ship
-  // reaches the target, not a tick later when it has already overshot. The
-  // alpha > 0 guard above ensured the ship has real steering authority.
+  // Settle deadband: close enough that this tick's angular step carries the
+  // ship across (|e| <= max(|w|, angularDeadband)). Command no turn so the
+  // post-integration snap clamps it to rest; without angular damping that snap
+  // is the only thing that ends the bang-bang limit cycle around the target.
   if (Math.abs(e) <= Math.max(Math.abs(w), SIM.angularDeadband)) {
     return 0;
   }
@@ -788,4 +782,16 @@ export function commandedTurn(
   // Accelerate toward the target.
   if (e > 0) return 1;
   return -1;
+}
+
+export function commandedTurn(
+  ship: SimShip,
+  desiredFacing: number,
+  mct: number,
+  shouldThrust: boolean,
+): -1 | 0 | 1 {
+  // Self-contained wrapper: computes the geometric disturbance torque, then
+  // delegates to the pure controller. The fused movement pass calls
+  // bangBangTurnSign directly with the geoTorque it already accumulated.
+  return bangBangTurnSign(ship, desiredFacing, mct, geometricTorque(ship, shouldThrust));
 }
