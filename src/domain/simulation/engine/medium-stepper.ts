@@ -135,6 +135,21 @@ function runMediumStep(
   let mx = bufMxA;
   let my = bufMyA;
 
+  // Call-invariant coefficients: each depends only on `config` or `pitch`, not
+  // on the sub-step or the cell, so hoisting them out of the cell loop (and the
+  // sub-step loop) means the two divisions and the config reads happen once per
+  // step instead of per cell × per sub-step. Pure code motion — identical
+  // values, computed in the same order, so the post-step arrays are unchanged.
+  const advVelMax = config.velocityMaxMPerS;
+  const invPitch2 = pitch > 0 ? 1 / (pitch * pitch) : 0;
+  const invPitch = pitch > 0 ? 1 / pitch : 0;
+  const D = config.rhoDiffusionM2PerS;
+  const vMax = config.rhoMaxVelocityMPerS;
+  const gradRef = MEDIUM_DENSITY_GRAD_REF_KG_PER_M3;
+  const Deps = config.epsDiffusionM2PerS;
+  const Dmom = config.momentumDiffusionM2PerS;
+  const drag = config.momentumDragPerS;
+
   for (let step = 0; step < subSteps; step += 1) {
     const rhoNext = reuse ? (rho === bufRhoA ? bufRhoB : bufRhoA) : rho.slice();
     const epsNext = reuse ? (eps === bufEpsA ? bufEpsB : bufEpsA) : eps.slice();
@@ -156,7 +171,6 @@ function runMediumStep(
       // the substep count is sized for; clamping to `velocityMaxMPerS` — above
       // the exhaust velocity, so genuine plume streaming is untouched — keeps
       // upwind advection stable and stops the field running away to ~1eN.
-      const advVelMax = config.velocityMaxMPerS;
       let ux = rhoHere > 0 ? mxHere / rhoHere : 0;
       let uy = rhoHere > 0 ? myHere / rhoHere : 0;
       const uMag = Math.hypot(ux, uy);
@@ -178,21 +192,12 @@ function runMediumStep(
       // Both diffusion and advection coefficients are independent of slab depth
       // — it cancels because both the face flux and the cell capacity scale
       // with it. See the module header for the derivation.
-      const invPitch2 = pitch > 0 ? 1 / (pitch * pitch) : 0;
-      const invPitch = pitch > 0 ? 1 / pitch : 0;
-
       // --- Unified neighbour loop: diffusion for all four fields, ρ gradient-
       //     flow advection (existing bulk-flow closure), and velocity-driven
       //     upwind advection of all four fields by the cell's velocity u. The
       //     face-normal direction is derived from grid indices so diagonal
       //     transport is reconstructed from the x/y face fluxes (not flattened
       //     to cardinals). ---
-      const D = config.rhoDiffusionM2PerS;
-      const vMax = config.rhoMaxVelocityMPerS;
-      const gradRef = MEDIUM_DENSITY_GRAD_REF_KG_PER_M3;
-      const Deps = config.epsDiffusionM2PerS;
-      const Dmom = config.momentumDiffusionM2PerS;
-
       let rhoAdv = 0;     // ρ gradient-flow advection (bulk flow)
       let rhoDif = 0;     // ρ diffusion
       let rhoAdvVel = 0;  // ρ velocity-driven advection
@@ -282,7 +287,6 @@ function runMediumStep(
       epsVisNext[cell] = epsVisNew;
 
       // --- momentum drag + source (no clamp — momentum can be negative) ---
-      const drag = config.momentumDragPerS;
       mxNext[cell] = mxHere + (mxDif + mxAdvVel - drag * mxHere) * dt + (sources.mxSrc[cell] ?? 0) * dt;
       myNext[cell] = myHere + (myDif + myAdvVel - drag * myHere) * dt + (sources.mySrc[cell] ?? 0) * dt;
     }
