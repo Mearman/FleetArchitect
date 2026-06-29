@@ -150,9 +150,21 @@ function runMediumStep(
       const cellNeighbours = neighbours[cell] ?? [];
       const bFaces = boundaryFaceCount[cell] ?? 0;
 
-      // Derive per-cell velocity u = m / ρ (0 where ρ = 0).
-      const ux = rhoHere > 0 ? mxHere / rhoHere : 0;
-      const uy = rhoHere > 0 ? myHere / rhoHere : 0;
+      // Derive per-cell velocity u = m / ρ (0 where ρ = 0), clamped to the
+      // advection velocity ceiling. u is unbounded as ρ → 0 (momentum that
+      // diffused into a near-empty cell), which would violate the CFL condition
+      // the substep count is sized for; clamping to `velocityMaxMPerS` — above
+      // the exhaust velocity, so genuine plume streaming is untouched — keeps
+      // upwind advection stable and stops the field running away to ~1eN.
+      const advVelMax = config.velocityMaxMPerS;
+      let ux = rhoHere > 0 ? mxHere / rhoHere : 0;
+      let uy = rhoHere > 0 ? myHere / rhoHere : 0;
+      const uMag = Math.hypot(ux, uy);
+      if (uMag > advVelMax) {
+        const s = advVelMax / uMag;
+        ux *= s;
+        uy *= s;
+      }
       // Per-cell grid position for face-direction mapping.
       const cellCol = cell % widthM;
       const cellRow = Math.floor(cell / widthM);
@@ -223,9 +235,13 @@ function runMediumStep(
         // velocities (symmetric → mass-conservative).
         const uxThere = rhoThere > 0 ? mxThere / rhoThere : 0;
         const uyThere = rhoThere > 0 ? myThere / rhoThere : 0;
+        // Clamp the neighbour velocity too (same low-ρ blow-up as the cell).
+        const uMagThere = Math.hypot(uxThere, uyThere);
+        const uxThereC = uMagThere > advVelMax ? uxThere * (advVelMax / uMagThere) : uxThere;
+        const uyThereC = uMagThere > advVelMax ? uyThere * (advVelMax / uMagThere) : uyThere;
         const dCol = (neighbour % widthM) - cellCol;
         const dRow = (Math.floor(neighbour / widthM)) - cellRow;
-        const u_n = ((ux + uxThere) / 2) * dCol + ((uy + uyThere) / 2) * dRow;
+        const u_n = ((ux + uxThereC) / 2) * dCol + ((uy + uyThereC) / 2) * dRow;
         if (u_n > 0) {
           rhoAdvVel -= u_n * invPitch * rhoHere;
           epsVisAdvVel -= u_n * invPitch * epsVisHere;

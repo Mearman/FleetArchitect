@@ -116,19 +116,24 @@ export interface ProjectileMediumEntry {
 /**
  * Build the arena medium field and its ISM-seeded initial state.
  *
- * The grid spans the deployment bounding box (every ship's centre ± its
- * broad-phase radius, symmetric about the world origin since `resolve.ts`
- * deploys fleets at `±edgeInset` on x and centred on y=0), rounded up to a
- * whole number of {@link MEDIUM_PITCH_M_DEFAULT}-metre cells. The grid is
- * centred on the world origin: cell `(col, row)` centre maps to world
- * `((col + 0.5 - widthM / 2) · pitch, (row + 0.5 - heightM / 2) · pitch)`.
+ * The grid is a SQUARE spanning the LARGER deployment axis (every ship's centre
+ * ± its broad-phase radius), rounded up to {@link MEDIUM_PITCH_M_DEFAULT}-metre
+ * cells, centred on the world origin: cell `(col, row)` centre maps to world
+ * `((col + 0.5 - widthM / 2) · pitch, (row + 0.5 - heightM / 2) · pitch)`. The
+ * deployment is symmetric about the origin, so an origin-centred square of side
+ * `max(spanX, spanY)` encloses the whole bounding box on both axes.
  *
- * ρ is seeded at the baseline interstellar-medium density
- * ({@link ISM_DENSITY_KG_PER_M3}); ε at zero. With zero sources (this pass),
- * ρ diffuses and vents at the open boundary and ε decays to zero — the medium
- * relaxes from its ISM baseline, a pure function of the grid shape. The SI
- * coefficients are the documented anchors from `medium-field.ts`; the field
- * config does not fill defaults, so every coefficient is supplied explicitly.
+ * Why square, not the raw bounding box: head-to-head fleets separate on x but
+ * cluster on y (a wall a few hundred metres tall), so the box is far wider than
+ * tall. Sizing the grid to it collapsed `heightM` to 1 for real preset battles,
+ * rendering the glow overlay as a solid horizontal bar (one texel row blitted
+ * across the arena) AND destabilising the solver — every cell a boundary,
+ * momentum diffusing into low-ρ ISM cells where `u = mx / ρ` is unbounded,
+ * blowing the field up to ~1e290. A square grid gives isotropic 2D extent so a
+ * plume diffuses/advects vertically instead of being trapped in one row; the
+ * extra cells are dark vacuum (ε ≈ 0). Self-sizing, no hard cap: real presets
+ * land at ≤ ~15² cells. ρ is seeded at the ISM baseline; ε at zero. SI
+ * coefficients come from `medium-field.ts`, supplied explicitly.
  */
 export function buildArenaMedium(ships: readonly SimShip[]): ArenaMedium {
   // Deployment bounding box: every ship's centre ± its broad-phase radius. The
@@ -163,10 +168,10 @@ export function buildArenaMedium(ships: readonly SimShip[]): ArenaMedium {
   const spanX = seen ? maxX - minX : 0;
   const spanY = seen ? maxY - minY : 0;
   const pitch = MEDIUM_PITCH_M_DEFAULT;
-  // ceil(span / pitch) cells covers the whole box; at least 1 cell so the
-  // field is well-formed even for a degenerate (zero-span) fleet.
-  const widthM = Math.max(1, Math.ceil(spanX / pitch));
-  const heightM = Math.max(1, Math.ceil(spanY / pitch));
+  // Square grid covering the larger span (header explains why not the raw box).
+  const spanCells = Math.max(1, Math.ceil(Math.max(spanX, spanY) / pitch));
+  const widthM = spanCells;
+  const heightM = spanCells;
   const field = buildMediumField({
     widthM,
     heightM,
