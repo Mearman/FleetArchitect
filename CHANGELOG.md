@@ -1,3 +1,20 @@
+# [1.32.0](https://github.com/Mearman/FleetArchitect/compare/v1.31.1...v1.32.0) (2026-06-29)
+
+
+### Bug Fixes
+
+* **presets:** deepen leviathan armoured prow to close foundry structure gap ([c44506e](https://github.com/Mearman/FleetArchitect/commit/c44506e1ab5b2e20a223b07dae3b38cda0192e53))
+* **presets:** right-size leviathan prow armour ([f0ebcc1](https://github.com/Mearman/FleetArchitect/commit/f0ebcc1b36dd39bbfd37528eb860942f5dc41b29))
+
+
+### Features
+
+* **catalog:** add crystalline resonance sensor ([5448c54](https://github.com/Mearman/FleetArchitect/commit/5448c54527a6a4c703237ecdbd0bb87b82985562))
+* **presets:** add crystalline resonance court fleet ([a6124e4](https://github.com/Mearman/FleetArchitect/commit/a6124e48e890f9733bad8ca6d945a47b313ba055))
+* **presets:** add crystalline spinal shield sensor tokens ([8b8efcc](https://github.com/Mearman/FleetArchitect/commit/8b8efcccd8cf3daba79bc0716502156c10b0acd8))
+* **presets:** armour terran capitals and hive lord ([5c4f015](https://github.com/Mearman/FleetArchitect/commit/5c4f01508f7ad758a5a5925f04f091a41a5eb2bf))
+* **presets:** rework shard and add crystalline splinter and monolith ([1fae660](https://github.com/Mearman/FleetArchitect/commit/1fae6609c6f6f876f5625eda42bfea8ab4044662))
+
 ## [1.31.1](https://github.com/Mearman/FleetArchitect/compare/v1.31.0...v1.31.1) (2026-06-29)
 
 
