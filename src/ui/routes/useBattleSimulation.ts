@@ -1,6 +1,6 @@
 import { notifications } from "@mantine/notifications";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { resolveFleetToCombatShips, resolveFleetToCombatShipsAndPoints } from "@/domain/resolve";
+import { resolveFleetPoints, resolveFleetToCombatShips } from "@/domain/resolve";
 import { loadTemplateTable } from "@/domain/formation-templates";
 import { expandTemplates } from "@/schema/expand-templates";
 import { BattleAbortError } from "@/domain/simulation/runner";
@@ -122,11 +122,11 @@ export function useBattleSimulation({
   const [descriptors, setDescriptors] = useState<DescriptorMap>(() => new Map());
 
   /**
-   * Number of frames streamed so far, mirrored from `framesRef` on each batch.
-   * Drives `hasFrames` and bounds-checks in the render path without reading the
-   * ref during render.
+   * Whether any frames have streamed yet, flipped true on the first batch. A
+   * boolean rather than a running count so the route does not re-render on every
+   * streamed batch — once true it stays true until a fresh run resets it.
    */
-  const [frameCount, setFrameCount] = useState(0);
+  const [hasFrames, setHasFrames] = useState(false);
 
   /**
    * The tick-0 deployment frame, captured once when the first batch lands. The
@@ -405,8 +405,13 @@ export function useBattleSimulation({
     // and point references stay unresolvable — byte-identical to before. On a
     // pointId collision the defender's entry wins (last write); pointIds should
     // be unique across both fleets.
-    const attackerPoints = resolveFleetToCombatShipsAndPoints(expandedAttacker, designMap, catalog(), "attacker").points;
-    const defenderPoints = resolveFleetToCombatShipsAndPoints(expandedDefender, designMap, catalog(), "defender").points;
+    // Derive each fleet's named waypoints from the ships already resolved
+    // above, instead of re-resolving the whole fleet a second time.
+    // `resolveFleetPoints` is exactly what `resolveFleetToCombatShipsAndPoints`
+    // delegates to, so the points are identical and the per-ship hull growth,
+    // analysis, and module resolution no longer run twice at battle start.
+    const attackerPoints = resolveFleetPoints(expandedAttacker, attackers, "attacker");
+    const defenderPoints = resolveFleetPoints(expandedDefender, defenders, "defender");
     const points = new Map<string, { x: number; y: number }>();
     for (const [id, p] of attackerPoints) points.set(id, p);
     for (const [id, p] of defenderPoints) points.set(id, p);
@@ -439,7 +444,7 @@ export function useBattleSimulation({
       // hook does not own playback state.
       resetForNewRun();
       framesRef.current = [];
-      setFrameCount(0);
+      setHasFrames(false);
       setDeploymentFrame(null);
       setRawBounds(null);
       setComputedTicks(0);
@@ -568,7 +573,7 @@ export function useBattleSimulation({
           return { minX, maxX, minY, maxY };
         });
 
-        setFrameCount(framesRef.current.length);
+        setHasFrames(true);
         setComputedTicks(streamedTicks);
         computedTicksRef.current = streamedTicks;
 
@@ -669,7 +674,7 @@ export function useBattleSimulation({
 
   return {
     result,
-    frameCount,
+    hasFrames,
     deploymentFrame,
     computedTicks,
     rawBounds,

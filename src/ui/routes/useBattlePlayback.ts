@@ -24,7 +24,6 @@ export interface UseBattlePlaybackProps {
   framesRef: React.RefObject<BattleFrame[]>;
   simTickRateRef: React.RefObject<number>;
   result: BattleResult | null;
-  computedTicks: number;
   /** Ref mirror of `computedTicks` (the streamed leading edge) so the rAF can
    *  read the current edge for the delivered-rate bar without a stale closure. */
   computedTicksRef: React.RefObject<number>;
@@ -54,7 +53,6 @@ export function useBattlePlayback({
   framesRef,
   simTickRateRef,
   result,
-  computedTicks,
   computedTicksRef,
   hasFrames,
   drawFrame,
@@ -108,6 +106,15 @@ export function useBattlePlayback({
   // within one frame of reopening.
   const [statusFrame, setStatusFrame] = useState<BattleFrame | null>(null);
 
+  // Latest `drawFrame` held in a ref so the rAF loop reads the current frame
+  // painter without the effect restarting whenever `drawFrame`'s identity
+  // changes (it changes when descriptors/bounds/maxHp change, which happens on
+  // early streamed batches). The loop reads `drawFrameRef.current` each frame.
+  const drawFrameRef = useRef(drawFrame);
+  useEffect(() => {
+    drawFrameRef.current = drawFrame;
+  });
+
   /**
    * Main rAF loop: advances the playback clock by the real wall-clock delta
    * (multiplied by the speed factor), derives the fractional sim-tick position,
@@ -134,8 +141,9 @@ export function useBattlePlayback({
         const clampedDt = Math.min(realDt, 0.2);
 
         if (playing) {
-          // Reading `result`/`computedTicks` from the closure: the effect re-runs
-          // when either changes, so the closure always sees current values.
+          // Reading `result` from the closure (the effect re-runs when it lands)
+          // and the streamed leading edge from `computedTicksRef` (so the effect
+          // does NOT re-run on every batch — the ref always holds the current edge).
           const final = result !== null;
           const newTime = playbackTimeRef.current + clampedDt * speed;
 
@@ -164,7 +172,7 @@ export function useBattlePlayback({
             // playback can run smoothly given how fast the sim is producing
             // frames (the rebuffer model — fewer, longer stalls over constant
             // micro-stutter when the sim is slower than playback).
-            const edgeTime = computedTicks / TICKS_PER_SECOND;
+            const edgeTime = computedTicksRef.current / TICKS_PER_SECOND;
             const playbackTickRate = TICKS_PER_SECOND * speed;
             const resumeLead = resumeLeadSeconds(simTickRateRef.current, playbackTickRate);
 
@@ -199,7 +207,7 @@ export function useBattlePlayback({
       const fractionalTick = playbackTimeRef.current * TICKS_PER_SECOND;
       const frames = framesRef.current;
       const frame = interpolateFrame(frames, fractionalTick);
-      drawFrame(frame, Math.floor(fractionalTick), frames);
+      drawFrameRef.current(frame, Math.floor(fractionalTick), frames);
 
       // Mirror the discrete-nearest frame into state for the status panel, but
       // only when the panel is open and the integer tick has moved — avoiding a
@@ -270,16 +278,18 @@ export function useBattlePlayback({
 
     rafId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(rafId);
-  // Restart the loop when: the first batch lands, playing toggles, speed
-  // changes, the streamed leading edge grows, the final result arrives, or
-  // drawFrame is recreated (bounds/maxHp changed), or the status panel opens or
-  // closes (so the loop begins/stops mirroring the status frame). All are
-  // legitimate reasons to reset `lastTimestamp` so the first dt after each
-  // change is not inflated.
-  // `playbackTimeRef`/`bufferingRef`/`framesRef`/`simTickRateRef` are stable
-  // route-level refs (they never change identity); they are listed only to
-  // satisfy the exhaustive-deps lint, not because they ever retrigger the loop.
-  }, [hasFrames, playing, speed, drawFrame, result, computedTicks, statusOpen, bufferingRef, framesRef, playbackTimeRef, simTickRateRef, computedTicksRef]);
+  // Restart the loop only when: the first batch lands, playing toggles, speed
+  // changes, the final result arrives, or the status panel opens or closes (so
+  // the loop begins/stops mirroring the status frame). The streamed leading edge
+  // and the frame painter are read via refs (`computedTicksRef`/`drawFrameRef`)
+  // each frame, so a new batch or a recreated `drawFrame` no longer tears the
+  // loop down and re-creates it ~60x/sec during streaming. Each restart resets
+  // `lastTimestamp` so the first dt after a real pause is not inflated.
+  // `playbackTimeRef`/`bufferingRef`/`framesRef`/`simTickRateRef`/
+  // `computedTicksRef`/`drawFrameRef` are stable refs (they never change
+  // identity); listed only to satisfy exhaustive-deps lint, not because they
+  // ever retrigger the loop.
+  }, [hasFrames, playing, speed, result, statusOpen, bufferingRef, framesRef, playbackTimeRef, simTickRateRef, computedTicksRef, drawFrameRef]);
 
   // Redraw when the canvas is resized (canvasSize changes). The draw itself is
   // purely a side-effect of the current playbackTime; no clock advance needed.

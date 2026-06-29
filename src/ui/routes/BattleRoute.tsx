@@ -154,7 +154,7 @@ export function BattleRoute() {
    * begin the moment the first batch arrives — long before the final result
    * resolves.
    */
-  const hasFrames = simulation.frameCount > 0;
+  const hasFrames = simulation.hasFrames;
 
   // --- Camera hook (canvas sizing/camera state/pointer) -------------------
   const camera = useBattleCamera({
@@ -222,7 +222,6 @@ export function BattleRoute() {
     framesRef,
     simTickRateRef,
     result: simulation.result,
-    computedTicks: simulation.computedTicks,
     computedTicksRef: simulation.computedTicksRef,
     hasFrames,
     drawFrame,
