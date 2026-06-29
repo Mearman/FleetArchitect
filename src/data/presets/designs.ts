@@ -205,27 +205,24 @@ export const designData: ShipDesignInput[] = [
     name: "Leviathan Battleship",
     faction: "Terran",
     // Cruiser: a true capital broadside. Corridors (~) run from the crew block
-    // through two magazines (G) to the torpedo and railgun batteries along the
-    // flanks. A stepped armoured prow fronts the works; antimatter cores and a
-    // five-engine stern bank drive the whole mass.
+    // through the magazine (G) to the torpedo and railgun batteries along the
+    // flanks. A stepped armoured prow of ablative plate (#) fronts the works —
+    // a shallow step on the outer rows deepening to a three-cell cap on the
+    // centre row, so the broadside batteries fire over a layered shield of
+    // plate; antimatter cores and a five-engine stern bank drive the whole mass.
     //
-    // Phase B: omni transceivers (O) bolted to the outer prow tips (rows 0 and 6
-    // col 10) give fleet squad-net coverage on channel 0. Laser backbone links
-    // (b) on rows 2 and 4 col 13 extend the high-bandwidth spine to relay ships
-    // (dish/laser, also channel 0). Laser links are manned — crew can reach them
-    // via the continuous walkable surface from the C cells in the interior.
+    // Omni transceivers (O) bolted to the prow (rows 1 and 3, col 9) give fleet
+    // squad-net coverage on channel 0. RCS thrusters (J) and reaction wheels (W)
+    // on the spine let the capital come about.
     //
-    // Layout (14 cols × 7 rows):
-    // stern (left) → crew/reactor spine → corridors → magazines → weapons → prow
-    // Merged: keeps the omni transceivers (O, prow tips rows 0/6) and the laser
-    // backbone links (b, rows 2/4 col 13) for fleet squad-net, and adds RCS (J)
-    // plus reaction wheel (W) on the spine so the capital can come about.
+    // Layout (13 cols × 5 rows), subdivided ×7 → 91 m cruiser:
+    // stern (left) → crew/reactor spine → corridors → magazine → weapons → prow
     grid: subdivideGrid(gridFromMap([
-      ".>JWSTRL..",
-      ".EXCCTRRLO",
-      "EXFCCGvRRL",
-      ".EXCCGTRLO",
-      ".<JeWSTRe.",
+      ".>JWSTRL##...",
+      ".EXCCTRRLO##.",
+      "EXFCCGvRRL###",
+      ".EXCCTRRLO##.",
+      ".<JeWSTRL##..",
     ]), F_LEVIATHAN),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -238,21 +235,24 @@ export const designData: ShipDesignInput[] = [
     faction: "Terran",
     // Capital: the apex Terran hull — a true dreadnought with a proper crewed
     // interior. Floor corridors (~) run fore–aft through the ship's core,
-    // branching to magazines (G) that supply the railgun and missile batteries.
-    // A great arrowhead prow of ablative armour and stacked Mk II shields fronts
-    // banked weapon batteries; antimatter cores and crew decks drive a vast stern
-    // engine bank. One anchors an entire fleet.
+    // branching to a magazine (G) that supplies the railgun and missile
+    // batteries. A great arrowhead prow of ablative armour (#) sweeps forward
+    // from the weapon face — a diagonal cap pointing at the prow tip (centre
+    // row, col 12), shouldering back over the laser battery — so incoming fire
+    // strikes plate before it reaches the guns; stacked shields front the banked
+    // weapons. Antimatter cores and crew decks drive a vast stern engine bank.
+    // One anchors an entire fleet.
     //
-    // Layout (19 cols × 9 rows):
-    // stern → engines → reactor/crew spine → crew decks → magazines → weapons → prow
-    // C cells (crew quarters) line the central corridor; G (magazine) cells sit
-    // between the crew block and the weapon batteries so crew can haul ammo.
+    // Layout (13 cols × 5 rows), subdivided ×12 → 156 m dreadnought:
+    // stern → engines → reactor/crew spine → crew decks → magazine → weapons → prow
+    // C cells (crew quarters) line the central corridor; the G (magazine) cell
+    // sits between the crew block and the weapon batteries so crew can haul ammo.
     grid: subdivideGrid(gridFromMap([
-      "..>JWSvRML...",
-      ".EXCCW~RRMLL.",
-      "EXFCCG~RRMMLL",
-      ".EXCCW~RRMLL.",
-      "..<JeWS~RMLe.",
+      "..>JWSvRML#..",
+      ".EXCCW~RRML#.",
+      "EXFCCG~RRMML#",
+      ".EXCCW~RRML#.",
+      "..<JeWS~RML#.",
     ]), F_TITAN),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -365,13 +365,13 @@ export const designData: ShipDesignInput[] = [
     // organs (y) for hive-net coverage, and adds pseudopod clusters (x) plus
     // gyral organs (z) on the spine so the capital can come about.
     grid: subdivideGrid(swarmGrid([
-      "...>x~nnnk...",
+      "...>x~nnnkccc",
       "..jgfzrsnnnnh",
       ".jgm~rfsannny",
       "ugmm~rfsaannn",
       ".jgm~rfsannny",
       "..jgfzrsnnnnh",
-      "...<x~nnnk...",
+      "...<x~nnnkccc",
     ]), F_HIVE_LORD),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
