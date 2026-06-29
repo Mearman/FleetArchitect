@@ -39,6 +39,11 @@ import {
   EM_RECEIVER_NOISE_FLOOR,
 } from "@/domain/simulation/engine/em-anchors";
 import {
+  SEPARATION_BURN_THRESHOLD,
+  SEPARATION_CLEARANCE_FACTOR,
+  SEPARATION_EDGE_WEIGHT,
+} from "@/domain/simulation/engine/separation";
+import {
   ACCEL_PER_TICK_FROM_SI,
   STALEMATE_IDLE_TICKS,
   TICKS_PER_SECOND,
@@ -56,6 +61,8 @@ import {
  *    movement, and the translation controller.
  *  - The tick rate, the SI→tick acceleration rescale, and the stalemate window
  *    are read from `simulation/types.ts` and govern integration and termination.
+ *  - The separation steering field (clearance factor, edge weight, burn
+ *    threshold) drives inter-ship collision avoidance in `movement.ts`.
  */
 export interface SimConstants {
   readonly SPEED_OF_LIGHT_M_PER_S: number;
@@ -69,6 +76,9 @@ export interface SimConstants {
   readonly TICKS_PER_SECOND: number;
   readonly ACCEL_PER_TICK_FROM_SI: number;
   readonly STALEMATE_IDLE_TICKS: number;
+  readonly SEPARATION_CLEARANCE_FACTOR: number;
+  readonly SEPARATION_EDGE_WEIGHT: number;
+  readonly SEPARATION_BURN_THRESHOLD: number;
 }
 
 /**
@@ -105,6 +115,9 @@ export function getSimConfig(): SimConfig {
       TICKS_PER_SECOND,
       ACCEL_PER_TICK_FROM_SI,
       STALEMATE_IDLE_TICKS,
+      SEPARATION_CLEARANCE_FACTOR,
+      SEPARATION_EDGE_WEIGHT,
+      SEPARATION_BURN_THRESHOLD,
     },
   };
 }

@@ -246,12 +246,17 @@ function fragileDefenderShip(id: string, x: number): CombatShip {
  * alive the battle does not terminate — so on a later tick the attacker, still
  * within salvage range of the wreckage, sweeps it up. A single defender would let
  * the battle end the instant it died, before any collection tick runs.
+ *
+ * The two defenders are spaced well beyond the inter-ship separation field (their
+ * contact distance is 5 m, field outer ~7.5 m): two ships parked at contact would
+ * (correctly) be pushed apart by separation, so the second defender sits far
+ * enough clear that both hold station as authored.
  */
 function debrisScenario(): BattleInputs {
   return inputs([
     attackerShip("att", 0),
     fragileDefenderShip("def1", 40),
-    fragileDefenderShip("def2", 45),
+    fragileDefenderShip("def2", 60),
   ]);
 }
 

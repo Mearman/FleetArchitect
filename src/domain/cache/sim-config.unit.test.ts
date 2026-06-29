@@ -15,6 +15,11 @@ import {
   EM_RECEIVER_NOISE_FLOOR,
 } from "@/domain/simulation/engine/em-anchors";
 import {
+  SEPARATION_BURN_THRESHOLD,
+  SEPARATION_CLEARANCE_FACTOR,
+  SEPARATION_EDGE_WEIGHT,
+} from "@/domain/simulation/engine/separation";
+import {
   ACCEL_PER_TICK_FROM_SI,
   STALEMATE_IDLE_TICKS,
   TICKS_PER_SECOND,
@@ -59,6 +64,9 @@ describe("getSimConfig — determinant completeness", () => {
       TICKS_PER_SECOND,
       ACCEL_PER_TICK_FROM_SI,
       STALEMATE_IDLE_TICKS,
+      SEPARATION_CLEARANCE_FACTOR,
+      SEPARATION_EDGE_WEIGHT,
+      SEPARATION_BURN_THRESHOLD,
     });
   });
 

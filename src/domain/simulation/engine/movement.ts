@@ -12,7 +12,7 @@ import { ACCEL_PER_TICK_FROM_SI, type BattleInputs } from "../types";
 import type { MediumField, MediumState } from "./medium-field";
 import { sampleLocalRhoKgPerM3 } from "./medium-setup";
 
-import { GRAVITY_CONSTANT_ARENA, GAS_DRAG_CROSS_SECTION_SHIP_M2, SIM, THRUST_ALIGNMENT_RAD } from "./config";
+import { GAS_DRAG_CROSS_SECTION_SHIP_M2, SIM, THRUST_ALIGNMENT_RAD } from "./config";
 import { TICKS_PER_SECOND } from "../types";
 import { combinedDilation } from "./proper-time";
 import {
@@ -31,6 +31,8 @@ import { buildAggregates, makeResolver, type Point } from "./formation-doctrine"
 import { desiredPoint, cohesionCentroidFor } from "./formation-movement";
 import type { SimShip } from "./types";
 import { isClaimed } from "./salvage";
+import { buildGravityField, gravityAcceleration } from "./gravity";
+import { buildSeparationSnapshot, separationHeading, SEPARATION_BURN_THRESHOLD } from "./separation";
 
 /**
  * Whether the linear integrator routes thrust through the relativistic
@@ -194,105 +196,6 @@ export function fleetCentroid(
   return count > 0 ? { x: cx / count, y: cy / count } : undefined;
 }
 
-/**
- * One body in the per-tick N-body gravitational field: its `G·M` (already
- * folded with the arena gravitational constant, so the acceleration it induces
- * is `gm / r^2`), its position SNAPSHOTTED at the start of the tick, and a
- * stable `id` used solely to order the accumulation deterministically. The
- * black hole carries a sentinel id that sorts before every ship id so it is
- * always first in the summation; ships carry their `instanceId`.
- */
-interface MassBody {
-  id: string;
-  gm: number;
-  x: number;
-  y: number;
-}
-
-/**
- * The sentinel id for the black hole on the gravitational body list. Chosen to
- * sort lexicographically before any ship `instanceId` (a control character
- * below every printable character) so the well is always the first term in the
- * fixed-order force summation, independent of the ship ids present.
- */
-const BLACK_HOLE_BODY_ID = "black-hole";
-
-/**
- * Build the N-body gravitational field for this tick: the black hole followed
- * by every alive, non-phantom ship, each as a {@link MassBody} with positions
- * snapshotted NOW — before any ship has moved — so the field every ship reads
- * is the same simultaneous configuration and the step does not depend on
- * iteration order. The list is sorted by `id` lexicographically: the
- * deterministic accumulation order is a property of the list, so summing a
- * ship's pulls in list order is byte-reproducible across runs. A ship's `gm` is
- * `GRAVITY_CONSTANT_ARENA · mass` — the same `G·M` law the black hole obeys, so
- * heavy ships pull harder and the equivalence principle (mass-independent
- * acceleration of the pulled body) still holds.
- *
- * Built only inside a black-hole battle. The well is the field's dominant mass
- * by ~5000×; ships gravitate within it (and on each other) as a real N-body
- * system. In open space (no anomaly) there is no dominant mass and the only
- * gravitating bodies would be the ships themselves, whose mutual pull at combat
- * ranges is far below the precision of every other force — modelling it there
- * would only perturb baseline combat with physically-negligible noise. So
- * gravity is a feature of the gravitational scenario, and the caller skips this
- * entirely when there is no black hole.
- */
-function buildGravityField(ships: readonly SimShip[]): MassBody[] {
-  const bodies: MassBody[] = [
-    { id: BLACK_HOLE_BODY_ID, gm: SIM.blackHoleStrength, x: 0, y: 0 },
-  ];
-  for (const s of ships) {
-    if (!s.alive || s.phantom !== undefined) continue;
-    bodies.push({
-      id: s.instanceId,
-      gm: GRAVITY_CONSTANT_ARENA * s.mass,
-      x: s.x,
-      y: s.y,
-    });
-  }
-  // Lexicographic id sort: the determinism contract. Floating-point addition is
-  // not associative, so the summation order below must be fixed and identical
-  // across runs; sorting by the stable instanceId (with the black hole's
-  // sentinel sorting first) fixes it.
-  bodies.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  return bodies;
-}
-
-/**
- * The net gravitational acceleration on the ship at (`shipX`, `shipY`) with id
- * `shipId`, summed over every OTHER body in the field in the field's fixed
- * lexicographic order. Each body contributes `gm / r^2` directed toward it,
- * with `r` softened to the lethal radius so the singularity at r→0 stays finite
- * (the same softening the scalar black-hole pull used). A body at the ship's
- * own position (the ship itself, matched by id) is skipped. Returns the
- * acceleration components in world units per tick^2, to be added to velocity.
- */
-function gravityAcceleration(
-  field: readonly MassBody[],
-  shipId: string,
-  shipX: number,
-  shipY: number,
-): { ax: number; ay: number } {
-  let ax = 0;
-  let ay = 0;
-  for (const body of field) {
-    if (body.id === shipId) continue;
-    const dx = body.x - shipX;
-    const dy = body.y - shipY;
-    const dist = Math.hypot(dx, dy);
-    if (dist <= 0) continue;
-    // Soften the singularity at r→0 by clamping the effective r to the lethal
-    // radius, so the acceleration stays finite right next to a body — the same
-    // softening the original scalar black-hole pull applied.
-    const effectiveR = Math.max(dist, SIM.blackHoleLethalRadius);
-    const accelMag = body.gm / (effectiveR * effectiveR);
-    ax += (dx / dist) * accelMag;
-    ay += (dy / dist) * accelMag;
-  }
-  return { ax, ay };
-}
-
 export function moveShips(
   ships: readonly SimShip[],
   byId: Map<string, SimShip>,
@@ -337,6 +240,13 @@ export function moveShips(
   // of the scenario and open-space combat stays exactly gravity-free.
   const gravityField =
     hasAnomaly(anomalies, "blackHole") ? buildGravityField(ships) : undefined;
+
+  // Separation snapshot: every alive, non-phantom ship's pose and bounding
+  // radius, captured once before any ship moves and sorted by instanceId — the
+  // same determinism contract as the gravity field above. Each ship then reads
+  // its neighbours from this single simultaneous configuration, so the
+  // separation blend is independent of the loop order and byte-reproducible.
+  const separationField = buildSeparationSnapshot(ships);
   for (const ship of ships) {
     if (!ship.alive) continue;
     // Phantoms (drones/decoys) move in their own bespoke step, not here.
@@ -547,6 +457,29 @@ export function moveShips(
         // forceFire flag bypasses the orient-before-burn gate so the engine
         // fires immediately, before the ship has fully turned onto the escape
         // heading.
+        shouldThrust = true;
+        forceFire = true;
+      }
+    }
+
+    // Inter-ship separation — the repulsive counterpart to cohesion. Cohesion
+    // blends a ship toward its fleet centroid; nothing else steers it AWAY from a
+    // ship it is about to ram, so two enemies targeting each other close head-on
+    // until their cells overlap (separated only reactively by the collision
+    // step's elastic push-apart). Separation adds the missing term: blend the
+    // desired facing toward the resultant of the near-neighbour away-vectors
+    // (see separationHeading). Universal — ships are solid bodies that cannot
+    // share space, friend or foe — so, like black-hole avoidance, this is a
+    // global constant rather than a per-doctrine knob, and it layers on top of
+    // every other heading decision. Soft field: heading-only, so ordinary
+    // closing-to-range combat is untouched; at a genuinely-imminent weight the
+    // ship also burns out (the same forceFire survival override as black-hole
+    // avoidance) so a fast head-on closer escapes before contact.
+    const sep = separationHeading(ship, separationField);
+    if (sep !== undefined) {
+      const angDiff = angleDifference(desiredFacing, sep.heading);
+      desiredFacing = desiredFacing + angDiff * sep.weight;
+      if (sep.weight >= SEPARATION_BURN_THRESHOLD) {
         shouldThrust = true;
         forceFire = true;
       }
