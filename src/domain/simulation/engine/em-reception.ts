@@ -40,6 +40,7 @@ import {
   appendMediumEmissionsToSnapshot,
   collectMediumEmissions,
 } from "./medium-emissions";
+import { MEDIUM_PITCH_M_DEFAULT } from "./medium-field";
 import type { ArenaMedium } from "./medium-setup";
 import { cellWorldPosition } from "@/domain/simulation/spatial-hash";
 import {
@@ -174,10 +175,30 @@ export function mediumDazzleContribution(observer: SimShip, emission: Emission):
   const dx = emission.x - observer.x;
   const dy = emission.y - observer.y;
   const distSq = dx * dx + dy * dy;
+  // A ship is not dazzled by its own exhaust plume. The plume is deposited at
+  // the ship's nozzle cell and the cell one pitch downstream (aft of the
+  // forward-facing sensors), so it sits within ~2 cells of the ship. Excluding
+  // medium-cell dazzle inside that radius stops a thrusting ship blinding its
+  // own sensors with its aft plume (the dazzle is otherwise source-agnostic).
+  // Legitimate dazzle sources — an enemy drive, a beam strike — are farther
+  // away (the dazzle test's emitter passes at 3 km).
+  if (distSq < MEDIUM_OWN_PLUME_DAZZLE_RADIUS_M * MEDIUM_OWN_PLUME_DAZZLE_RADIUS_M) {
+    return 0;
+  }
   const received =
     distSq <= 0 ? emission.strength : emission.strength / (4 * Math.PI * distSq);
   return dazzleBoost(received / EM_RECEIVER_NOISE_FLOOR);
 }
+
+/**
+ * Radius within which a medium-cell emission is treated as the observer's OWN
+ * exhaust plume and excluded from dazzling it (see {@link
+ * mediumDazzleContribution}). Sized at two medium cells — the nozzle cell plus
+ * the downstream cell the exhaust deposits into, with a margin for the plume's
+ * dense core — so it tracks the grid pitch rather than being a fixed magic
+ * number.
+ */
+const MEDIUM_OWN_PLUME_DAZZLE_RADIUS_M = MEDIUM_PITCH_M_DEFAULT * 2;
 
 /**
  * The effective receiver gain a sensor cone provides relative to the baseline

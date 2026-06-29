@@ -416,7 +416,7 @@ const StalemateWatch = z.object({
  *  than silently mis-read. v4 adds formation identity (formationId,
  *  formationChain, role) to {@link CheckpointShip} so a resumed doctrine-active
  *  battle keeps its formation grouping. */
-export const CHECKPOINT_VERSION = 4;
+export const CHECKPOINT_VERSION = 5;
 
 /**
  * A complete engine checkpoint: everything needed to resume `simulateBattle`
@@ -484,6 +484,12 @@ export const EngineCheckpoint = z.object({
       rho: z.array(z.number()),
       eps: z.array(z.number()),
       epsVis: z.array(z.number()).optional(),
+      // Momentum substrate (mx, my). Required since CHECKPOINT_VERSION 5: a
+      // checkpoint that omits them would resume with zeroed momentum and the
+      // subsequent advection step would diverge from a fresh run wherever
+      // exhaust had deposited momentum.
+      mx: z.array(z.number()),
+      my: z.array(z.number()),
       birthTick: z.array(z.number()),
     })
     .optional(),

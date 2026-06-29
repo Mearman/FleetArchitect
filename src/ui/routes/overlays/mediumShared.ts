@@ -133,6 +133,31 @@ export const RHO_AMPLIFIER_CAP = 3;
  *  count on a 20k-cell grid to the few cells that actually glow. */
 export const INTENSITY_DRAW_THRESHOLD = 0.02;
 
+/** Number of cell-rows at each grid edge over which the ambient glow fades from
+ *  full intensity to zero. The glow only exists inside the medium grid, so
+ *  without a feather the buffer hard-clips at the grid rectangle — a visible
+ *  straight border wherever the edge falls on screen. The grid is padded
+ *  (`MEDIUM_GRID_MARGIN_CELLS` in the engine) so this feather fades within the
+ *  padded margin (behind the ships), not into the ships' own plumes. Keep this
+ *  ≤ the engine margin. */
+export const GLOW_EDGE_FEATHER_CELLS = 3;
+
+/**
+ * Edge fade factor (0 at the grid boundary → 1 in the interior) for a cell at
+ * `(col, row)` in a `widthM × heightM` grid, ramping linearly over the outermost
+ * {@link GLOW_EDGE_FEATHER_CELLS} rows/cols. The glow overlay multiplies each
+ * cell's intensity by this so the field fades out at the grid edge instead of
+ * being hard-clipped by the buffer's rectangle. */
+export function glowEdgeFade(
+  col: number,
+  row: number,
+  widthM: number,
+  heightM: number,
+): number {
+  const edgeDist = Math.min(col, widthM - 1 - col, row, heightM - 1 - row);
+  return Math.max(0, Math.min(1, edgeDist / GLOW_EDGE_FEATHER_CELLS));
+}
+
 /**
  * The ε-driven, ρ-amplified, tone-mapped glow intensity for one cell: a
  * saturating `effEps / (effEps + EPS_HALFSAT_J)` response over the

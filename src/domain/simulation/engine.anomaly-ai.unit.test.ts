@@ -297,10 +297,6 @@ describe("engine.anomalies-ai", () => {
               x: -600,
               y: 0,
               facing: 0,
-              // Moderate thrust: at extreme thrust the attacker's own exhaust
-              // plume dazzles its sensors and, with nebula attenuation, breaks
-              // target tracking — a degenerate edge, not the range-closing this
-              // test verifies. 9000 keeps the plume below the self-dazzle regime.
               thrust: 9000,
               turnRate: 0.1,
               weapons: [weapon({ range: 600, tracking: 1 })],

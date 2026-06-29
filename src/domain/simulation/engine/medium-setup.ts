@@ -19,6 +19,7 @@ import {
   MEDIUM_BOUNDARY_EPS_LOSS_PER_S,
   MEDIUM_BOUNDARY_VENT_VELOCITY_M_PER_S,
   MEDIUM_DT_S,
+  MEDIUM_GRID_MARGIN_CELLS,
   MEDIUM_MAX_VELOCITY_M_PER_S,
   MEDIUM_PITCH_M_DEFAULT,
   MOMENTUM_DRAG_PER_S,
@@ -126,14 +127,12 @@ export interface ProjectileMediumEntry {
  * Why square, not the raw bounding box: head-to-head fleets separate on x but
  * cluster on y (a wall a few hundred metres tall), so the box is far wider than
  * tall. Sizing the grid to it collapsed `heightM` to 1 for real preset battles,
- * rendering the glow overlay as a solid horizontal bar (one texel row blitted
- * across the arena) AND destabilising the solver — every cell a boundary,
- * momentum diffusing into low-ρ ISM cells where `u = mx / ρ` is unbounded,
- * blowing the field up to ~1e290. A square grid gives isotropic 2D extent so a
- * plume diffuses/advects vertically instead of being trapped in one row; the
- * extra cells are dark vacuum (ε ≈ 0). Self-sizing, no hard cap: real presets
- * land at ≤ ~15² cells. ρ is seeded at the ISM baseline; ε at zero. SI
- * coefficients come from `medium-field.ts`, supplied explicitly.
+ * rendering the glow as a solid horizontal bar AND destabilising the solver
+ * (every cell a boundary; `u = mx / ρ` unbounded in low-ρ cells → field blew up
+ * to ~1e290). A square grid gives isotropic 2D extent so a plume diffuses
+ * vertically instead of being trapped in one row; the extra cells are dark
+ * vacuum. Self-sizing, no hard cap. ρ is seeded at ISM baseline; ε at zero; SI
+ * coefficients from `medium-field.ts`, supplied explicitly.
  */
 export function buildArenaMedium(ships: readonly SimShip[]): ArenaMedium {
   // Deployment bounding box: every ship's centre ± its broad-phase radius. The
@@ -168,10 +167,11 @@ export function buildArenaMedium(ships: readonly SimShip[]): ArenaMedium {
   const spanX = seen ? maxX - minX : 0;
   const spanY = seen ? maxY - minY : 0;
   const pitch = MEDIUM_PITCH_M_DEFAULT;
-  // Square grid covering the larger span (header explains why not the raw box).
+  // Square grid covering the larger span + a padded margin so ships sit in the
+  // interior, not on the grid's hard clip edge. See header + MEDIUM_GRID_MARGIN_CELLS.
   const spanCells = Math.max(1, Math.ceil(Math.max(spanX, spanY) / pitch));
-  const widthM = spanCells;
-  const heightM = spanCells;
+  const widthM = spanCells + 2 * MEDIUM_GRID_MARGIN_CELLS;
+  const heightM = spanCells + 2 * MEDIUM_GRID_MARGIN_CELLS;
   const field = buildMediumField({
     widthM,
     heightM,
@@ -243,7 +243,7 @@ export function restoreArenaMedium(
   });
   return {
     field,
-    state: { rho: captured.rho, eps: captured.eps, epsVis: captured.epsVis ?? new Array<number>(captured.rho.length).fill(0), mx: new Array<number>(captured.rho.length).fill(0), my: new Array<number>(captured.rho.length).fill(0) },
+    state: { rho: captured.rho, eps: captured.eps, epsVis: captured.epsVis ?? new Array<number>(captured.rho.length).fill(0), mx: captured.mx, my: captured.my },
     birthTicks: [...captured.birthTick],
     // Source buffers are not captured (they are transient per-tick scratch);
     // rebuild a zeroed set on resume so the next tick's optimised source

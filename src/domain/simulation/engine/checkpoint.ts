@@ -252,6 +252,8 @@ export function captureCheckpoint(
       rho: [...state.medium.state.rho],
       eps: [...state.medium.state.eps],
       epsVis: [...state.medium.state.epsVis],
+      mx: [...state.medium.state.mx],
+      my: [...state.medium.state.my],
       birthTick: [...state.medium.birthTicks],
     },
   };

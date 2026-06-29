@@ -108,6 +108,25 @@ export const MEDIUM_SLAB_DEPTH_M = 1;
 export const MEDIUM_PITCH_M_DEFAULT = 500;
 
 /**
+ * Cells of margin padded around the deployment bounding box when sizing the
+ * arena grid ({@link buildArenaMedium}). The grid is otherwise sized exactly to
+ * the ships' bounding box, so without this margin the grid's rectangular
+ * boundary lies right on the deployment line — ships sit in the outermost cell
+ * (col 0), their backward exhaust plumes spill over the edge, and the glow
+ * overlay (which only paints inside the grid) hard-clips there, showing a
+ * visible straight border through the battle. The padding seats ships in the
+ * interior with room behind them for the plume to exist and fade, pushing the
+ * clip edge off the battlefield. The renderer feathers the outermost cells (see
+ * `GLOW_EDGE_FEATHER_CELLS` in `mediumShared.ts`) so even if the padded edge is
+ * on screen it fades rather than clips.
+ *
+ * Classification: unit-spec-rate-epsilon (a rendering/coverage margin, not
+ * physics-derived). Keep ≥ `GLOW_EDGE_FEATHER_CELLS` so the feather fades
+ * within the padded region, not into the ships.
+ */
+export const MEDIUM_GRID_MARGIN_CELLS = 4;
+
+/**
  * Interstellar medium baseline density, kg·m⁻³. The real ISM is faint but
  * non-zero: the warm ionised medium (WIM) that dominates the Milky Way's volume
  * has number density `n_H ≈ 0.1 cm⁻³` (Draine 2011, ch. 1). Converting to a mass

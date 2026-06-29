@@ -1,6 +1,7 @@
 import {
   INTENSITY_DRAW_THRESHOLD,
   fxGainFor,
+  glowEdgeFade,
   mediumCellIntensity,
   paletteSample,
   readFxLevel,
@@ -117,8 +118,14 @@ function drawMediumGlow(c: OverlayCtx): void {
       continue;
     }
     const rhoHere = rho[i] ?? 0;
-    // ε-driven, ρ-amplified, tone-mapped brightness (see mediumShared).
-    const intensity = mediumCellIntensity(epsHere, rhoHere, fxGain);
+    // ε-driven, ρ-amplified, tone-mapped brightness (see mediumShared), faded
+    // to zero at the grid edge so the glow doesn't hard-clip on the buffer's
+    // rectangle (a straight border through the battle).
+    const col = i % widthM;
+    const row = Math.floor(i / widthM);
+    const intensity =
+      mediumCellIntensity(epsHere, rhoHere, fxGain) *
+      glowEdgeFade(col, row, widthM, heightM);
     if (intensity < INTENSITY_DRAW_THRESHOLD) {
       data[p] = 0;
       data[p + 1] = 0;
