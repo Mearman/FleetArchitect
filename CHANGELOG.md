@@ -1,3 +1,20 @@
+## [1.31.1](https://github.com/Mearman/FleetArchitect/compare/v1.31.0...v1.31.1) (2026-06-29)
+
+
+### Bug Fixes
+
+* **ui:** extract lazy routes to a components-only module ([eb4918d](https://github.com/Mearman/FleetArchitect/commit/eb4918d8c0753562855c22bdbce858e66f19c428))
+
+
+### Performance Improvements
+
+* **sim:** gather observer sensors once per observer per tick ([94ab4a0](https://github.com/Mearman/FleetArchitect/commit/94ab4a0e1fa22d473fd8ec6da7eb6b1fa9d521c0))
+* **sim:** hoist cell cos/sin out of the per-cell hash build ([a1e6ab7](https://github.com/Mearman/FleetArchitect/commit/a1e6ab759a7567cc7179464e89ef2b97e0532c5f))
+* **sim:** hoist medium-stepper loop-invariant coefficients ([516138b](https://github.com/Mearman/FleetArchitect/commit/516138b06fe05c810da9edd6664c85623c06395d))
+* **ui:** cut battle-start resolve and streaming render churn ([b9eb814](https://github.com/Mearman/FleetArchitect/commit/b9eb814f18d0d3c029bae6a7297d02624f4eca73))
+* **ui:** cut per-frame canvas setup in the battle draw ([9208006](https://github.com/Mearman/FleetArchitect/commit/92080061de948ccfa45d24229d9c8d3e0004c341))
+* **ui:** lazy-load routes to split the battle bundle ([2e975bc](https://github.com/Mearman/FleetArchitect/commit/2e975bc48dfa48b655eaca3e8cd21dc8f501091f))
+
 # [1.31.0](https://github.com/Mearman/FleetArchitect/compare/v1.30.6...v1.31.0) (2026-06-29)
 
 
