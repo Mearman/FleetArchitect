@@ -12,6 +12,7 @@ import {
   BEAM_POWER_W,
   BEAM_RANGE_M,
   FUSION_POWER_DENSITY_W_PER_M3,
+  KM_DETECTION_RANGE_SCALE,
   MODULE_POWER_DRAW_W,
   MUZZLE_VELOCITY_M_PER_S,
   PROJECTILE_MASS_KG,
@@ -24,6 +25,7 @@ import {
   kineticRangeM,
   projectileSpeedMPerTick,
 } from "../combat-scale";
+import { SENSOR_OMNI_ARC } from "../sensor-arcs";
 
 // ---------------------------------------------------------------------------
 // Crystalline Concord modules — grown-crystal faction.
@@ -423,6 +425,33 @@ export const crystallineModules: ModuleDefinition[] = [
       powerSurge: 30,
       duration: 60,
       cooldown: 200,
+    },
+  },
+  {
+    id: "cry-resonance-sensor",
+    faction: "Crystalline",
+    name: "Resonance Sensor",
+    description: "A grown crystal resonance array. Listens in every direction for the faint harmonics of drives and shields — the Concord's silent all-round awareness.",
+    category: "system",
+    // Resonance Sensor: an omni passive array. A sensor's mass is dominated by
+    // its array panel and electronics, not by its detection range, so like the
+    // Terran passive array it is sized as a small fraction of a drive. Crystal
+    // variant uses the crystal drive: engineMass(crystal) × 0.1.
+    mass: engineMass(driveThrustNewtons("crystal"), CRYSTAL_ENGINE_DENSITY) * 0.1,
+    cost: 40,
+    powerDraw: MODULE_POWER_DRAW_W.sensor,
+    crewRequired: 0,
+    techLevel: 1,
+    effect: {
+      kind: "sensor",
+      sensorType: "omni",
+      arc: SENSOR_OMNI_ARC,
+      detectionRange: 320 * KM_DETECTION_RANGE_SCALE,
+      bearing: 0,
+      nebulaImmune: false,
+      mode: "passive",
+      passiveBands: ["thermal", "radar"],
+      gain: 1.0,
     },
   },
   // --- Stealth: phase-cloak + signature dampening ---
