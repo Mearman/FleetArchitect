@@ -248,6 +248,26 @@ export const fleetData: FleetInput[] = [
     source: "preset",
     revision: 1,
   },
+  {
+    id: "preset-fleet-resonance-court",
+    name: "Resonance Court",
+    faction: "Crystalline",
+    // A phase court: the Monolith dreadnought anchors the line with its spinal
+    // resonance lances while Shards and Splinters kite and blink around it,
+    // closing under cloak to land beam strikes then folding clear.
+    formation: flatFormation([
+      { designId: "preset-ship-monolith", position: { x: -260, y:    0 }, facing: 0, doctrine: phaseDoctrine },
+      { designId: "preset-ship-shard",    position: { x: -340, y: -150 }, facing: 0, doctrine: phaseDoctrine },
+      { designId: "preset-ship-shard",    position: { x: -340, y:    0 }, facing: 0, doctrine: phaseDoctrine },
+      { designId: "preset-ship-shard",    position: { x: -340, y:  150 }, facing: 0, doctrine: phaseDoctrine },
+      { designId: "preset-ship-splinter", position: { x: -420, y:  -90 }, facing: 0, doctrine: phaseDoctrine },
+      { designId: "preset-ship-splinter", position: { x: -420, y:   90 }, facing: 0, doctrine: phaseDoctrine },
+    ]),
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
+  },
 
   // --- Foundry Combine fleets ---
   {
