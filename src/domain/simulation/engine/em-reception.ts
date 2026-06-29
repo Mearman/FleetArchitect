@@ -54,6 +54,7 @@ import {
   effectiveSensorBearing,
   sensorUnitsOf,
 } from "./sensors";
+import type { SensorUnit } from "./sensors";
 import { angleDifference } from "./setup";
 import type { SimShip } from "./types";
 
@@ -281,6 +282,14 @@ export function emReceives(
   observer: SimShip,
   enemy: SimShip,
   anomalies: readonly BattleAnomalyKind[],
+  /**
+   * The observer's live sensor units, when the caller has already gathered them.
+   * computeAwareness calls this once per enemy per observer, so it gathers the
+   * sensor set once per observer and threads it in — avoiding an N×M fresh-array
+   * rebuild. When omitted the function gathers its own copy via sensorUnitsOf,
+   * so it still works standalone. Same array, same module-array order.
+   */
+  observerSensors?: readonly SensorUnit[],
 ): boolean {
   const dx = enemy.x - observer.x;
   const dy = enemy.y - observer.y;
@@ -302,7 +311,8 @@ export function emReceives(
   // Any sensor cone whose gain pulls the enemy above the floor AND whose arc
   // covers the bearing. An omni sensor (arc >= PI) skips the angle test.
   const toEnemy = Math.atan2(dy, dx);
-  for (const unit of sensorUnitsOf(observer)) {
+  const sensors = observerSensors ?? sensorUnitsOf(observer);
+  for (const unit of sensors) {
     const range = attenuatedSensorRange(unit, anomalies);
     if (range <= 0) continue;
     const gain = sensorGain(range);
@@ -363,6 +373,13 @@ export function mediumReceives(
   emission: Emission,
   tick: number,
   anomalies: readonly BattleAnomalyKind[],
+  /**
+   * The observer's live sensor units, when the caller has already gathered them
+   * — see {@link emReceives}. computeAwareness gathers these once per observer
+   * and threads them into the per-emission loop. When omitted the function
+   * gathers its own copy via sensorUnitsOf.
+   */
+  observerSensors?: readonly SensorUnit[],
 ): number | undefined {
   const dx = emission.x - observer.x;
   const dy = emission.y - observer.y;
@@ -395,7 +412,8 @@ export function mediumReceives(
   // Any sensor cone whose gain pulls the emission above the floor AND whose arc
   // covers the bearing. An omni sensor (arc >= PI) skips the angle test.
   const toCell = Math.atan2(dy, dx);
-  for (const unit of sensorUnitsOf(observer)) {
+  const sensors = observerSensors ?? sensorUnitsOf(observer);
+  for (const unit of sensors) {
     const range = attenuatedSensorRange(unit, anomalies);
     if (range <= 0) continue;
     const gain = sensorGain(range);

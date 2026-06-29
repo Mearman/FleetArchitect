@@ -21,7 +21,14 @@ import type { Emission } from "./emissions";
 import type { ArenaMedium } from "./medium-setup";
 import { aberratedContactPosition } from "./optics-aberration";
 import type { CommsLink, CommsUnit } from "./sensors";
-import { aimDishes, commsUnitOperable, commsUnitsOf, contactThreat, linkForms } from "./sensors";
+import {
+  aimDishes,
+  commsUnitOperable,
+  commsUnitsOf,
+  contactThreat,
+  linkForms,
+  sensorUnitsOf,
+} from "./sensors";
 import type { Contact, GhostContact, SimShip } from "./types";
 
 /**
@@ -114,6 +121,10 @@ export function computeAwareness(
     // instanceId (it is a filter of the sorted `alive` set).
     const enemies =
       observer.side === "attacker" ? enemiesBySide.attacker : enemiesBySide.defender;
+    // The observer's sensor set is constant across every enemy this tick, so
+    // gather it once per observer and thread it into emReceives rather than
+    // rebuilding a fresh SensorUnit[] per (observer, enemy) pair.
+    const observerSensors = sensorUnitsOf(observer);
     for (const enemy of enemies) {
       if (segmentBlocked(observer.x, observer.y, enemy.x, enemy.y, occluders)) continue;
       // Sensor dazzle (phase 5): a strong emission raises the observer's
@@ -127,7 +138,7 @@ export function computeAwareness(
           accum + hullDazzleContribution(observer, enemy, anomalies),
         );
       }
-      if (!emReceives(observer, enemy, anomalies)) continue;
+      if (!emReceives(observer, enemy, anomalies, observerSensors)) continue;
       // Relativistic aberration (Phase 10): a moving observer measures the
       // contact's bearing swept toward its own direction of travel, so the
       // REPORTED position is the aberrated apparent one, not the true position.
@@ -284,6 +295,9 @@ function collectMediumContacts(
   if (mediumEmissions.length === 0) return [];
   const out: Contact[] = [];
   for (const observer of alive) {
+    // The observer's sensor set is constant across every medium emission this
+    // tick — gather once per observer and thread it into mediumReceives.
+    const observerSensors = sensorUnitsOf(observer);
     for (const emission of mediumEmissions) {
       // An occluder between the observer and the radiating cell blocks the
       // light path, exactly as it blocks continuous ship-ship reception.
@@ -299,7 +313,7 @@ function collectMediumContacts(
           accum + mediumDazzleContribution(observer, emission),
         );
       }
-      if (mediumReceives(observer, emission, tick, anomalies) === undefined) continue;
+      if (mediumReceives(observer, emission, tick, anomalies, observerSensors) === undefined) continue;
       out.push({
         // The synthetic cell id; never matches a real ship instanceId, so
         // targeting's visibleEnemyViews skips it (no hull to lock).
