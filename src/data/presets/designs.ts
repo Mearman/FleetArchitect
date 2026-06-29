@@ -29,7 +29,7 @@ const F_GUNSHIP  = 3;   // 8 m × 3 → 24 m (frigate)
 const F_BULWARK  = 3;   // 8 m × 3 → 24 m (frigate)
 const F_AEGIS    = 3;   // 9 m × 3 → 27 m (frigate)
 const F_TORPEDO  = 3;   // 9 m × 3 → 27 m (frigate)
-const F_LEVIATHAN = 7;  // 10 m × 7 → 70 m (cruiser)
+const F_LEVIATHAN = 7;  // 16 m × 7 → 112 m (cruiser)
 const F_TITAN    = 12;  // 13 m × 12 → 156 m (dreadnought)
 const F_DRONE    = 4;   // 5 m × 4 → 20 m (fighter)
 const F_CARRION  = 2;   // 7 m × 2 → 14 m (fighter)
@@ -206,23 +206,25 @@ export const designData: ShipDesignInput[] = [
     faction: "Terran",
     // Cruiser: a true capital broadside. Corridors (~) run from the crew block
     // through the magazine (G) to the torpedo and railgun batteries along the
-    // flanks. A stepped armoured prow of ablative plate (#) fronts the works —
-    // a shallow step on the outer rows deepening to a three-cell cap on the
-    // centre row, so the broadside batteries fire over a layered shield of
-    // plate; antimatter cores and a five-engine stern bank drive the whole mass.
+    // flanks. A deep stepped armoured prow of ablative plate (#) fronts the
+    // works — a five-cell cap shouldering forward on the outer rows deepening
+    // to a six-cell full-height wall on the centre row, so the broadside
+    // batteries fire over a layered shield of plate that lifts the Leviathan's
+    // hull mass toward the Foundry siege platforms; antimatter cores and a
+    // five-engine stern bank drive the whole mass.
     //
     // Omni transceivers (O) bolted to the prow (rows 1 and 3, col 9) give fleet
     // squad-net coverage on channel 0. RCS thrusters (J) and reaction wheels (W)
     // on the spine let the capital come about.
     //
-    // Layout (13 cols × 5 rows), subdivided ×7 → 91 m cruiser:
+    // Layout (16 cols × 5 rows), subdivided ×7 → 112 m cruiser:
     // stern (left) → crew/reactor spine → corridors → magazine → weapons → prow
     grid: subdivideGrid(gridFromMap([
-      ".>JWSTRL##...",
-      ".EXCCTRRLO##.",
-      "EXFCCGvRRL###",
-      ".EXCCTRRLO##.",
-      ".<JeWSTRL##..",
+      ".>JWSTRL#####...",
+      ".EXCCTRRLO#####.",
+      "EXFCCGvRRL######",
+      ".EXCCTRRLO#####.",
+      ".<JeWSTRL#####..",
     ]), F_LEVIATHAN),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
