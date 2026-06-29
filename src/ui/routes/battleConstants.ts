@@ -105,17 +105,24 @@ export const MIN_RESUME_LEAD_SECONDS = 0.3;
 
 /**
  * Overdrive-OFF pacing thresholds (playback seconds of computed lead ahead of
- * the playhead). When Overdrive is off the simulation is held to the playhead:
- * once the lead exceeds {@link PACE_PAUSE_LEAD_SECONDS} the auto-pacer asks the
- * worker to pause (cooperatively, at its next batch boundary); it resumes once
- * the lead drops back below {@link PACE_RESUME_LEAD_SECONDS}. The hysteresis
- * (pause above, resume below) prevents thrash, and the resume threshold sits
- * above {@link MIN_RESUME_LEAD_SECONDS} so playback never stalls from pacing.
- * Pausing playback releases the sim — only the bezel Pause-computation button
- * actually stops it — so these engage solely while playback is playing.
+ * the playhead). When Overdrive is off the simulation is paced: once the lead
+ * exceeds {@link PACE_PAUSE_LEAD_SECONDS} the auto-pacer asks the worker to
+ * pause (cooperatively, at its next batch boundary); it resumes once the lead
+ * drops back below {@link PACE_RESUME_LEAD_SECONDS}.
+ *
+ * The window is sized for a comfortable buffer rather than a tight pace. The sim
+ * is allowed to run slightly ahead of playback (up to the pause threshold) and
+ * is only released once the lead drops back to the resume threshold, which stays
+ * well above {@link MIN_RESUME_LEAD_SECONDS}. That headroom means the playhead
+ * cannot catch the leading edge during the pacer's reaction time (a rAF tick)
+ * plus the worker's cooperative-resume latency (a batch interval) — the lead
+ * shrinks at the playback speed during that gap, so the margin matters most at
+ * high speeds, where a tight pace would dip below the buffering threshold and
+ * stutter. Pausing playback releases the sim (only the bezel Pause-computation
+ * button actually stops it), so these engage solely while playback is playing.
  */
-export const PACE_PAUSE_LEAD_SECONDS = 2.0;
-export const PACE_RESUME_LEAD_SECONDS = 0.7;
+export const PACE_PAUSE_LEAD_SECONDS = 3.0;
+export const PACE_RESUME_LEAD_SECONDS = 1.5;
 
 /**
  * Rolling-window length (ms) for the sim-speed bar's DELIVERED rate (leading-edge
