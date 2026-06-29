@@ -34,6 +34,40 @@ import type { ShipSprite } from "./shipSprite";
 /** Per-overlay on/scope state held by the route. */
 export type OverlayState = Record<string, { on: boolean; scope: OverlayScope }>;
 
+// Client-space vignette gradient, cached across frames. It depends only on the
+// canvas dimensions, so the radial gradient (a relatively expensive Canvas 2D
+// call) is rebuilt only on resize. Keyed by context identity too, so a canvas
+// remount (which yields a fresh context) rebuilds rather than reusing a stale
+// gradient bound to the old context.
+let vignetteCache: {
+  ctx: CanvasRenderingContext2D;
+  key: string;
+  grad: CanvasGradient;
+} | null = null;
+
+function vignetteGradient(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+): CanvasGradient {
+  const key = `${width}x${height}`;
+  if (vignetteCache !== null && vignetteCache.ctx === ctx && vignetteCache.key === key) {
+    return vignetteCache.grad;
+  }
+  const grad = ctx.createRadialGradient(
+    width / 2,
+    height / 2,
+    height * 0.3,
+    width / 2,
+    height / 2,
+    height * 0.85,
+  );
+  grad.addColorStop(0, "transparent");
+  grad.addColorStop(1, "rgba(0,0,0,0.45)");
+  vignetteCache = { ctx, key, grad };
+  return grad;
+}
+
 /**
  * Props for {@link useBattleCanvas}. The draw callback closes over the current
  * view bounds, per-ship HP maxima, the active anomalies and seed, the fog
@@ -108,7 +142,8 @@ export function useBattleCanvas({
       const width = canvas.clientWidth;
       const height = canvas.clientHeight;
       if (width === 0 || height === 0) return;
-      ctx.clearRect(0, 0, width, height);
+      // No explicit clear: the backdrop fill below is opaque and covers the
+      // whole canvas, so a clear here would be painted straight over.
 
       // Resolve the view transform. In auto-fit mode the camera frames this
       // frame's live ships; otherwise it honours the manual zoom/pan and, when
@@ -738,10 +773,7 @@ export function useBattleCanvas({
       // Client-space vignette: darkens the frame edges to focus the eye on the
       // action and seat the battle in the cassette-cyberpunk atmosphere.
       ctx.save();
-      const vig = ctx.createRadialGradient(width / 2, height / 2, height * 0.3, width / 2, height / 2, height * 0.85);
-      vig.addColorStop(0, "transparent");
-      vig.addColorStop(1, "rgba(0,0,0,0.45)");
-      ctx.fillStyle = vig;
+      ctx.fillStyle = vignetteGradient(ctx, width, height);
       ctx.fillRect(0, 0, width, height);
       ctx.restore();
 

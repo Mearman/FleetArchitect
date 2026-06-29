@@ -50,6 +50,30 @@ function cellHash(ix: number, iy: number, k: number): number {
   return (h >>> 0) / 4294967296;
 }
 
+// Vertical base gradient, cached across frames. It depends only on the canvas
+// height, so it is rebuilt only on resize (and on a canvas remount, which yields
+// a fresh context). Recreating a linear gradient every frame is needless setup.
+let baseGradientCache: {
+  ctx: CanvasRenderingContext2D;
+  height: number;
+  grad: CanvasGradient;
+} | null = null;
+
+function baseGradient(ctx: CanvasRenderingContext2D, height: number): CanvasGradient {
+  if (
+    baseGradientCache !== null &&
+    baseGradientCache.ctx === ctx &&
+    baseGradientCache.height === height
+  ) {
+    return baseGradientCache.grad;
+  }
+  const grad = ctx.createLinearGradient(0, 0, 0, height);
+  grad.addColorStop(0, BASE_PANEL);
+  grad.addColorStop(1, BASE_VOID);
+  baseGradientCache = { ctx, height, grad };
+  return grad;
+}
+
 /**
  * Draw the canvas backdrop beneath everything else: a vertical base gradient,
  * a world-space grid, and a deterministic starfield. Both the grid and the
@@ -71,10 +95,7 @@ export function drawBackdrop(
   t: Transform,
 ): void {
   // 1. Base gradient — prevents the page background from bleeding through.
-  const grad = ctx.createLinearGradient(0, 0, 0, height);
-  grad.addColorStop(0, BASE_PANEL);
-  grad.addColorStop(1, BASE_VOID);
-  ctx.fillStyle = grad;
+  ctx.fillStyle = baseGradient(ctx, height);
   ctx.fillRect(0, 0, width, height);
 
   // Visible world rectangle for the current transform. Under a tilted
@@ -113,26 +134,28 @@ export function drawBackdrop(
     ctx.save();
     ctx.strokeStyle = "rgba(28,38,32,0.25)";
     ctx.lineWidth = 1;
-    // Constant-x lines run from (x, top) to (x, bottom) in world space.
+    // Accumulate every gridline of each axis into one Path2D and stroke it
+    // once, rather than issuing a separate beginPath/stroke per line (up to
+    // ~480 strokes otherwise). The endpoints are still projected per line —
+    // only the stroke submission is batched.
+    const xGrid = new Path2D();
     for (let i = gx0; i <= gx1; i += 1) {
       const wx = i * GRID_WORLD_SPACING;
       const a = t.project(wx, top);
       const b = t.project(wx, bottom);
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      ctx.stroke();
+      xGrid.moveTo(a.x, a.y);
+      xGrid.lineTo(b.x, b.y);
     }
-    // Constant-y lines run from (left, y) to (right, y) in world space.
+    const yGrid = new Path2D();
     for (let i = gy0; i <= gy1; i += 1) {
       const wy = i * GRID_WORLD_SPACING;
       const a = t.project(left, wy);
       const b = t.project(right, wy);
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      ctx.stroke();
+      yGrid.moveTo(a.x, a.y);
+      yGrid.lineTo(b.x, b.y);
     }
+    ctx.stroke(xGrid);
+    ctx.stroke(yGrid);
     ctx.restore();
   }
 
