@@ -1,3 +1,13 @@
+## [1.30.6](https://github.com/Mearman/FleetArchitect/compare/v1.30.5...v1.30.6) (2026-06-29)
+
+
+### Bug Fixes
+
+* **sim:** remove the medium glow's hard grid border; fix the bugs it exposed ([aed3f1f](https://github.com/Mearman/FleetArchitect/commit/aed3f1f832e55f789ccc0a200806b920b2bc8ad9))
+* **sim:** square medium grid + clamp advection velocity (WIP) ([85281f2](https://github.com/Mearman/FleetArchitect/commit/85281f2b5a857af60066596cbe159bf2e46f83bf)), closes [hi#u](https://github.com/hi/issues/u)
+* **sim:** use bbox + pad for the medium grid, not square (CI OOM) ([7bfc53e](https://github.com/Mearman/FleetArchitect/commit/7bfc53ee576dae71cb78edd31b2a50b5bbe9f072))
+* **ui:** tone-map medium glow to stop the brightness blow-out ([5d7a3b1](https://github.com/Mearman/FleetArchitect/commit/5d7a3b11961e9be41375f0ed2cbdb472271e5660))
+
 ## [1.30.5](https://github.com/Mearman/FleetArchitect/compare/v1.30.4...v1.30.5) (2026-06-28)
 
 
