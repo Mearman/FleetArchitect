@@ -106,44 +106,46 @@ export function comTangentialVelocity(
 export function recomputeAggregates(ship: SimShip): void {
   if (ship.modules === undefined) return;
 
-  // 1. Supply from alive, manned reactors. A reactor that needs crew only
-  //    outputs when its cell is manned — an unmanned reactor is cold.
-  let supply = 0;
+  // 1. Supply. Two disjoint module classes contribute — alive, manned reactors
+  //    (output) and active overcharge modules (powerSurge, which lifts the
+  //    ceiling for the brownout below). They are accumulated in one pass but in
+  //    SEPARATE accumulators, then summed reactor-first, so the floating-point
+  //    addition order matches the original two scans: addition is not
+  //    associative, and a ship can interleave reactor and overcharge modules.
+  let supplyPower = 0;
+  let supplySurge = 0;
   for (const m of ship.modules) {
     if (m.alive && m.manned && m.effect.kind === "power") {
-      supply += m.effect.output;
+      supplyPower += m.effect.output;
     }
-  }
-  // Reactor overcharge (factions update): every active overcharge module lifts
-  // the power ceiling by its `powerSurge` for the duration of its window, so
-  // more consumers stay online through a brownout. Activation lives in
-  // `stepOvercharge` (driven by the brownout below); here we only fold in the
-  // surge of modules already active. A ship with no active overcharge
-  // contributes nothing, so the power budget is unchanged.
-  for (const m of ship.modules) {
+    // Reactor overcharge (factions update): every active overcharge module lifts
+    // the power ceiling by its `powerSurge` for the duration of its window, so
+    // more consumers stay online through a brownout. Activation lives in
+    // `stepOvercharge`; here we only fold in the surge of modules already
+    // active. A ship with no active overcharge contributes nothing.
     if (m.effect.kind === "overcharge" && m.techActive > 0 && isOperational(m)) {
-      supply += m.effect.powerSurge;
+      supplySurge += m.effect.powerSurge;
     }
   }
+  const supply = supplyPower + supplySurge;
 
-  // 2. Start every alive module powered; we'll disable the hungriest to fit the
-  //    budget. Reactors draw nothing. Also refreshes `ship.aliveCount`.
+  // 2. Powered flags, alive count, and demand in one pass. Each alive
+  //    non-reactor starts powered (reactors draw nothing); the hungriest are
+  //    disabled in the brownout below. Demand is read off each module's
+  //    just-set `powered` flag, summed in module-array order exactly as the
+  //    original separate demand scan did.
   let aliveCount = 0;
+  let demand = 0;
   for (const m of ship.modules) {
     m.powered = m.alive && m.effect.kind !== "power";
     if (m.alive) aliveCount += 1;
+    demand += m.powered ? m.powerDraw : 0;
   }
   ship.aliveCount = aliveCount;
 
-  // 3. Demand from powered consumers. If it exceeds supply, take the
-  //    hungriest offline — weapons and PD first (PD is an active defence
-  //    system, same priority class as offensive weapons), then shields —
-  //    rechecking each time, until demand ≤ supply (or nothing is left to
-  //    cut).
-  const demandOf = (m: SimModule): number => (m.powered ? m.powerDraw : 0);
-  let demand = 0;
-  for (const m of ship.modules) demand += demandOf(m);
-
+  // 3. Brownout: if demand exceeds supply, disable the hungriest consumers —
+  //    weapons and PD first (PD is an active defence system, same priority
+  //    class as offensive weapons), then shields.
   if (demand > supply) {
     // Bounded cut: cutting a module only lowers demand, so the naive re-scan
     // loop's sequence — repeatedly removing the hungriest powered
@@ -180,6 +182,10 @@ export function recomputeAggregates(ship: SimShip): void {
   // exactly the mass of the cells it is built from. The legacy aggregated
   // path (no modules) keeps the per-class hull mass via toSimShip.
   let mass = 0;
+  // Mass-weighted centroid sums, folded in from localCentreOfMass (accumulated
+  // over the same alive modules, in the same order, below).
+  let comMx = 0;
+  let comMy = 0;
   const armourReduction = 0;
   let shieldCapacity = 0;
   let shieldRechargeRate = 0;
@@ -194,6 +200,8 @@ export function recomputeAggregates(ship: SimShip): void {
       continue;
     }
     mass += m.mass;
+    comMx += m.mass * m.x;
+    comMy += m.mass * m.y;
     // Modules that are present (still massing the ship) but non-functional this
     // tick contribute nothing. A station works only when alive, powered (the
     // whole-ship brownout ceiling), not grid-shed by the energy-buffer brownout
@@ -267,9 +275,11 @@ export function recomputeAggregates(ship: SimShip): void {
   // shot away the CoM shifts toward what is left, and a chunk that splits off
   // carries exactly its own cells' CoM. No hull-base point mass is added — the
   // ship has no mass beyond its cells.
-  const com = localCentreOfMass(ship.modules);
-  const comX = com.x;
-  const comY = com.y;
+  // Centre of mass, folded from localCentreOfMass: the mass-weighted centroid
+  // of the alive cells, accumulated alongside `mass` in the aggregates pass
+  // above (same alive set, same module-array order, so byte-identical).
+  const comX = mass > 0 ? comMx / mass : 0;
+  const comY = mass > 0 ? comMy / mass : 0;
   let moi = 0;
   for (const m of ship.modules) {
     if (!m.alive) continue;
