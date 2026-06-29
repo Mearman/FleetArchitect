@@ -88,7 +88,7 @@ import {
  * column, so a reseeded fleet fights identically. This bump replaces the prior
  * `ships[]`-shaped preset records with the formation-shaped ones.
  */
-const PRESETS_VERSION = 16;
+const PRESETS_VERSION = 17;
 const VERSION_KEY = "presetsVersion";
 
 /**
