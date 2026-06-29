@@ -23,6 +23,14 @@ export const Preferences = z.object({
   autoStartPlayback: z.boolean().default(true),
   /** When auto-playback triggers: as soon as the buffer is ready, or only once the full computation finishes. */
   playbackStartMode: z.enum(["whenBuffered", "onComplete"]).default("whenBuffered"),
+  /**
+   * Whether the simulation may run faster than playback (pre-computing frames
+   * the viewer hasn't reached). Off (default) paces the simulation to the
+   * playback head for a "live" view; on lets it race ahead as fast as the CPU
+   * allows. Pacing is cooperative (the worker yields at batch boundaries and is
+   * held/released), never aborting the run, so it costs no recompute.
+   */
+  overdrive: z.boolean().default(false),
 });
 export type Preferences = z.infer<typeof Preferences>;
 export type PlaybackStartMode = z.infer<typeof Preferences.shape.playbackStartMode>;

@@ -176,6 +176,29 @@ export function BattleSetupPanel({
         </Group>
       </Stack>
 
+      <Stack gap={6}>
+        <Text size="sm" fw={500}>
+          Simulation
+        </Text>
+        <Tooltip
+          multiline
+          maw={240}
+          label="Overdrive — let the simulation run faster than playback and pre-compute frames ahead. Off (default): the simulation stays paced to playback for a live view."
+        >
+          <Switch
+            size="xs"
+            label="Overdrive"
+            checked={preferences.overdrive}
+            onChange={(e) =>
+              setPreferences({
+                ...preferences,
+                overdrive: e.currentTarget.checked,
+              })
+            }
+          />
+        </Tooltip>
+      </Stack>
+
       <Group align="flex-end">
         <NumberInput
           label="Seed"

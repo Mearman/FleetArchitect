@@ -29,7 +29,7 @@ import { interpolateFrame } from "@/ui/interpolateFrame";
 import { usePreferences } from "@/ui/preferences/usePreferences";
 import { DEFAULT_CAMERA } from "./battleCamera";
 import type { Camera } from "./battleCamera";
-import { ANOMALY_LABEL } from "./battleConstants";
+import { ANOMALY_LABEL, PACE_PAUSE_LEAD_SECONDS, PACE_RESUME_LEAD_SECONDS } from "./battleConstants";
 import { BattleControlsPanel } from "./BattleControlsPanel";
 import { BattleSetupPanel } from "./BattleSetupPanel";
 import { BattleStatusReadout } from "./BattleStatusReadout";
@@ -125,6 +125,7 @@ export function BattleRoute() {
     descriptorsRef,
     resetForNewRun: () => engineCallbacksRef.current.resetForNewRun(),
     onFirstBatch: () => engineCallbacksRef.current.onFirstBatch(),
+    overdrive: prefs.overdrive,
   });
 
   // Mirror the battle config to/from the URL so the address bar is the
@@ -231,12 +232,19 @@ export function BattleRoute() {
   });
 
   // Keep the engine-callbacks ref current after every render.
+  // Whether the Overdrive-off auto-pacer currently holds the simulation. Ref so
+  // the pacing rAF can read/toggle it without re-rendering; reset on each fresh
+  // run so a new battle starts unheld.
+  const pacingHeldRef = useRef(false);
+
   useEffect(() => {
     engineCallbacksRef.current = {
       resetForNewRun: () => {
         playback.setBuffering(false);
         bufferingRef.current = false;
         playback.setPlaying(false);
+        // A fresh run starts unheld; the auto-pacer re-engages as the lead grows.
+        pacingHeldRef.current = false;
       },
       onFirstBatch: () => {
         playback.setPlaybackTime(0);
@@ -268,6 +276,45 @@ export function BattleRoute() {
       playback.setPlaying(true);
     }
   }, [simulation.result, prefs, playback]);
+
+  /**
+   * Overdrive-off auto-pacer. While Overdrive is off and the simulation is
+   * running, holds the sim cooperatively near the playback playhead so it cannot
+   * run far ahead: once the computed lead exceeds the pause threshold (and
+   * playback is playing) the sim is held; it resumes when the lead drops back.
+   * Pausing playback releases the sim — it keeps computing — so only the bezel
+   * Pause-computation button actually stops the simulation. `holdSim`/`releaseSim`
+   * are stable (useCallback) and the lead refs are stable, so this effect only
+   * re-arms when Overdrive, the compute status, or playback playing changes.
+   */
+  const { holdSim, releaseSim, computedTicksRef: simComputedTicksRef } = simulation;
+  const playbackPlaying = playback.playing;
+  const simComputeStatus = simulation.computeStatus;
+  useEffect(() => {
+    if (prefs.overdrive || simComputeStatus !== "running") return;
+    let rafId = 0;
+    const tick = (): void => {
+      const lead = simComputedTicksRef.current / TICKS_PER_SECOND - playbackTimeRef.current;
+      if (playbackPlaying && lead > PACE_PAUSE_LEAD_SECONDS && !pacingHeldRef.current) {
+        pacingHeldRef.current = true;
+        holdSim();
+      } else if ((!playbackPlaying || lead < PACE_RESUME_LEAD_SECONDS) && pacingHeldRef.current) {
+        pacingHeldRef.current = false;
+        releaseSim();
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(rafId);
+      // Release on teardown so toggling Overdrive on or finishing the run never
+      // leaves the sim held.
+      if (pacingHeldRef.current) {
+        pacingHeldRef.current = false;
+        releaseSim();
+      }
+    };
+  }, [prefs.overdrive, simComputeStatus, playbackPlaying, holdSim, releaseSim, simComputedTicksRef]);
 
   /** Authoritative max tick: the streamed leading edge while computing, the
    *  final tick count once the result has landed. */

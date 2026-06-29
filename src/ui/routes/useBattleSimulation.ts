@@ -1,9 +1,10 @@
 import { notifications } from "@mantine/notifications";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { resolveFleetToCombatShips, resolveFleetToCombatShipsAndPoints } from "@/domain/resolve";
 import { loadTemplateTable } from "@/domain/formation-templates";
 import { expandTemplates } from "@/schema/expand-templates";
 import { BattleAbortError } from "@/domain/simulation/runner";
+import type { PacingHandle } from "@/domain/simulation/runner";
 import { battleRunner } from "@/ui/battleRunner";
 import { catalog } from "@/data/catalog";
 import { storage } from "@/storage/db";
@@ -51,6 +52,14 @@ export interface UseBattleSimulationProps {
   descriptorsRef: React.RefObject<DescriptorMap>;
   resetForNewRun: () => void;
   onFirstBatch: () => void;
+  /**
+   * Whether the simulation may run faster than playback (Overdrive). When false
+   * the run starts in pausable mode so the route's auto-pacer can hold it to the
+   * playback playhead; when true the worker runs the tight, non-pausable loop at
+   * full speed. Fixed at run start — a mid-run toggle takes effect on the next
+   * battle.
+   */
+  overdrive: boolean;
 }
 
 /** Lifecycle state of the computation. */
@@ -93,6 +102,7 @@ export function useBattleSimulation({
   descriptorsRef,
   resetForNewRun,
   onFirstBatch,
+  overdrive,
 }: UseBattleSimulationProps) {
   /**
    * The full, final BattleResult. Set only when the run promise resolves; used
@@ -211,6 +221,21 @@ export function useBattleSimulation({
    */
   const lastBattleArgsRef = useRef<BattleArgs | null>(null);
 
+  /**
+   * Cooperative pause/resume handle for the in-flight pausable run (Overdrive
+   * off), or null when the run is not pausable or has finished. Set by the
+   * runner's `onPacingHandle` once the worker starts; cleared on each new run
+   * and on completion. `holdSim`/`releaseSim` message through it.
+   */
+  const pacingHandleRef = useRef<PacingHandle | null>(null);
+
+  /**
+   * Ref mirror of `computedTicks` (the streamed leading edge) so the route's
+   * pacing rAF can read the current lead without a stale closure and without
+   * per-frame re-renders. Updated wherever `setComputedTicks` is.
+   */
+  const computedTicksRef = useRef(0);
+
   // Abort any in-flight run when the route unmounts so a stream can't keep
   // appending frames into a torn-down component. Cancel any pending rAF flush
   // so a deferred batch does not fire after teardown.
@@ -288,6 +313,28 @@ export function useBattleSimulation({
       void runCompute(lastBattleArgsRef.current, { fresh: false });
     }
   }
+
+  /**
+   * Cooperatively hold the in-flight simulation at its next batch boundary
+   * (Overdrive off, while playback is playing and the lead is large). Distinct
+   * from {@link pauseComputation}: this does NOT abort the run or release the
+   * worker — it sends a control message, so no progress is lost and no
+   * checkpoint recompute happens on resume. No-op without a pausable handle
+   * (Overdrive on, or the run has finished). Memoised so the route's pacing
+   * effect can depend on it without re-arming every render.
+   */
+  const holdSim = useCallback((): void => {
+    pacingHandleRef.current?.pause();
+  }, []);
+
+  /**
+   * Release a cooperatively-held simulation so it resumes computing.
+   * Counterpart to {@link holdSim}; no-op without a pausable handle. Memoised
+   * for the same reason as {@link holdSim}.
+   */
+  const releaseSim = useCallback((): void => {
+    pacingHandleRef.current?.resume();
+  }, []);
 
   /**
    * Internal compute driver shared by fresh starts and resumes. The `fresh`
@@ -376,6 +423,9 @@ export function useBattleSimulation({
     pendingBatchesRef.current = [];
     const controller = new AbortController();
     runAbortRef.current = controller;
+    // Drop any pacing handle from a previous run; a fresh one arrives (if this
+    // run is pausable) via `onPacingHandle` once the worker starts.
+    pacingHandleRef.current = null;
 
     if (fresh) {
       // Reset every streaming accumulator for the fresh run. The cross-hook
@@ -387,6 +437,7 @@ export function useBattleSimulation({
       setDeploymentFrame(null);
       setRawBounds(null);
       setComputedTicks(0);
+      computedTicksRef.current = 0;
       simTickRateRef.current = 0;
       lastBatchRef.current = null;
       setResult(null);
@@ -513,6 +564,7 @@ export function useBattleSimulation({
 
         setFrameCount(framesRef.current.length);
         setComputedTicks(streamedTicks);
+        computedTicksRef.current = streamedTicks;
 
         if (firstFrame !== undefined) {
           // Capture the tick-0 deployment frame for the HP-bar maxima.
@@ -566,12 +618,26 @@ export function useBattleSimulation({
           seed: chosenSeed,
           ...(points.size > 0 ? { points } : {}),
         },
-        { signal: controller.signal, onFrames },
+        {
+          signal: controller.signal,
+          onFrames,
+          // Overdrive off: start the worker in pausable mode and capture its
+          // cooperative pause/resume handle so the route's auto-pacer can hold
+          // the sim to the playback playhead. Overdrive on: tight, non-pausable.
+          pausable: !overdrive,
+          onPacingHandle: overdrive
+            ? undefined
+            : (handle: PacingHandle) => {
+                if (!controller.signal.aborted) pacingHandleRef.current = handle;
+              },
+        },
       );
       // A superseded run that resolves anyway must not clobber the current one.
       if (controller.signal.aborted) return;
       setResult(battle);
       setComputeStatus("complete");
+      // The run is done — drop the pacing handle (the worker is gone).
+      pacingHandleRef.current = null;
       // Reconcile the descriptor map against the authoritative complete list on
       // the result, so any instance the stream did not surface (or a replay that
       // never streamed) is present for rendering.
@@ -609,5 +675,8 @@ export function useBattleSimulation({
     startBattle,
     pauseComputation,
     resumeComputation,
+    holdSim,
+    releaseSim,
+    computedTicksRef,
   };
 }
