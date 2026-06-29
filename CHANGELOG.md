@@ -1,3 +1,24 @@
+# [1.31.0](https://github.com/Mearman/FleetArchitect/compare/v1.30.6...v1.31.0) (2026-06-29)
+
+
+### Bug Fixes
+
+* **sim:** drive the sim-speed bar from the delivered rate ([350f691](https://github.com/Mearman/FleetArchitect/commit/350f69158d56ae70dfb4fb2c32bed4e4876c3869))
+* **sim:** widen overdrive-off pacing lead to stop playback stutter ([b4a42b5](https://github.com/Mearman/FleetArchitect/commit/b4a42b563283282afc567dc162f4dd255a1692d6))
+* **ui:** wire in medium trails and weapon particle glow overlays ([03146bc](https://github.com/Mearman/FleetArchitect/commit/03146bc7e92a79125d3a6d36803cc9a50fdf763b))
+
+
+### Features
+
+* **sim:** add inter-ship separation steering ([51e8434](https://github.com/Mearman/FleetArchitect/commit/51e84349a5bfe228878eb3197884d8ce9cc90d17))
+* **sim:** add overdrive toggle to pace the simulation to playback ([7b63c2c](https://github.com/Mearman/FleetArchitect/commit/7b63c2c30da2d756c762ff94c5d86f65d25a355b))
+* **ui:** playback speed slider with sim-speed telemetry ([094ee09](https://github.com/Mearman/FleetArchitect/commit/094ee093cfc1470676914ce55499f11e09ba8e32))
+
+
+### Performance Improvements
+
+* **ui:** foveated weapon-particle density by energy variance ([41df54c](https://github.com/Mearman/FleetArchitect/commit/41df54cd235729fae2a9a70546c036bf47054392))
+
 ## [1.30.6](https://github.com/Mearman/FleetArchitect/compare/v1.30.5...v1.30.6) (2026-06-29)
 
 
