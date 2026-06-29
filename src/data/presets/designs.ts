@@ -36,7 +36,9 @@ const F_CARRION  = 2;   // 7 m × 2 → 14 m (fighter)
 const F_RAVAGER  = 3;   // 9 m × 3 → 27 m (frigate)
 const F_SPITTER  = 3;   // 10 m × 3 → 30 m (frigate)
 const F_HIVE_LORD = 5;  // 13 m × 5 → 65 m (cruiser)
-const F_SHARD    = 4;   // 6 m × 4 → 24 m (frigate)
+const F_SHARD    = 4;   // 11 m × 4 → 44 m (frigate)
+const F_SPLINTER = 2;   // 8 m × 2 → 16 m (fighter)
+const F_MONOLITH = 12;  // 13 m × 12 → 156 m (dreadnought)
 const F_INGOT    = 4;   // 5 m × 4 → 20 m (fighter)
 const F_ANVIL    = 3;   // 7 m × 3 → 21 m (frigate)
 const F_BATTLERAM = 6;  // 11 m × 6 → 66 m (cruiser)
@@ -217,7 +219,7 @@ export const designData: ShipDesignInput[] = [
     // stern (left) → crew/reactor spine → corridors → magazines → weapons → prow
     // Merged: keeps the omni transceivers (O, prow tips rows 0/6) and the laser
     // backbone links (b, rows 2/4 col 13) for fleet squad-net, and adds RCS (J)
-    // plus reaction wheels (W) on the spine so the capital can come about.
+    // plus reaction wheel (W) on the spine so the capital can come about.
     grid: subdivideGrid(gridFromMap([
       ".>JWSTRL..",
       ".EXCCTRRLO",
@@ -384,14 +386,68 @@ export const designData: ShipDesignInput[] = [
     id: "preset-ship-shard",
     name: "Shard",
     faction: "Crystalline",
-    // A frigate built to phase in and out: an adaptive shield and prism beam
-    // over a crystal spine, with a blink drive to reposition and a phase-cloak
-    // to close unobserved. Brittle hull — it relies on shields and mobility.
+    // A phase skirmisher built to blink in, strike, and cloak out. A power
+    // crystal (F, command) and two resonator cores (C×2, 10 berths for 7 crew)
+    // anchor a spine carrying an adaptive shield (S), a prism beam (L) and a
+    // phase lance (H) as a twin beam battery, a blink drive (B), a resonance
+    // sensor (v), and a phase-cloak (K). Balanced drives — an aft resonance
+    // thruster (E) plus a forward-firing brake (e) — let it hold a kite. The
+    // flanking armour caps (##) form its brittle crystal silhouette; it relies
+    // on shields and mobility, not hull. Grid (11 cols × 3 rows), subdivided ×4
+    // → 44 m frigate.
     grid: subdivideGrid(crystalGrid([
-      "..##..",
-      "ECSFLK",
-      "..##..",
+      "###....####",
+      "EeFCCSBKvLH",
+      "###....####",
     ]), F_SHARD),
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
+  },
+  {
+    id: "preset-ship-splinter",
+    name: "Splinter",
+    faction: "Crystalline",
+    // A fast phase fighter: a glass needle that closes under cloak, lands a
+    // prism beam strike, and blinks away before the point defences track it.
+    // A power crystal (F, command) and one resonator core (C, 5 berths for 4
+    // crew) feed a prism beam (L), a blink drive (B), a phase-cloak (K), and a
+    // resonance sensor (v). Balanced drives — an aft resonance thruster (E)
+    // and a forward brake (e). Brittle armour caps (##) give it its dart
+    // silhouette. Grid (8 cols × 3 rows), subdivided ×2 → 16 m fighter.
+    grid: subdivideGrid(crystalGrid([
+      "##....##",
+      "EeFCvKBL",
+      "##....##",
+    ]), F_SPLINTER),
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
+  },
+  {
+    id: "preset-ship-monolith",
+    name: "Monolith",
+    faction: "Crystalline",
+    // A capital phase dreadnought: a crystal slab that throws a devastating
+    // spinal-lance broadside from behind a wall of adaptive shields, then
+    // blinks to a new bearing. A quantum lattice (X, command, 5 GW) drives two
+    // spinal resonance lances (Z×2, fixed-forward) and two phase lances (H×2)
+    // as the main battery, two adaptive bulwarks Mk II (D×2) for defence, a
+    // blink drive (B), a resonance sensor (v), and four resonator cores (C×4,
+    // 20 berths for 17 crew). Balanced drives — three aft resonance thrusters
+    // (E×3) and a forward brake (e). An armour prow of crystal plate (#) caps
+    // the weapon face; the rest is deck over a grown-crystal hull that relies
+    // on its shields rather than bulk. Grid (13 cols × 5 rows), subdivided ×12
+    // → 156 m dreadnought.
+    grid: subdivideGrid(crystalGrid([
+      "..###~~~~####",
+      "E~#CCD~H~~~~Z",
+      "Ee#X~Bv~~####",
+      "E~#CCD~H~~~~Z",
+      "..###~~~~####",
+    ]), F_MONOLITH),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
