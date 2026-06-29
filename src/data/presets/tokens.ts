@@ -234,13 +234,16 @@ const CRYSTAL_TOKENS: Record<string, GridCell> = {
   "C": deckEquip("cry-resonator-core", 0),
   "L": deckEquip("cry-prism-beam", 0),
   "H": deckEquip("cry-phase-lance", 0),
+  "Z": deckEquip("cry-spinal-lance", 0), // Spinal Resonance Lance (1 GW capital spinal beam)
   "S": deckEquip("cry-adaptive-shield-mk1", 0),
+  "D": deckEquip("cry-adaptive-shield-mk2", 0), // Adaptive Bulwark Mk II (600 MJ capital shield)
   "E": deckEquip("cry-thruster", Math.PI),
   "e": deckEquip("cry-thruster", 0),
   ">": deckEquip("cry-thruster", -Math.PI / 2),
   "<": deckEquip("cry-thruster", Math.PI / 2),
   "B": deckEquip("cry-blink-drive", 0),
   "K": deckEquip("cry-phase-cloak", 0),
+  "v": deckEquip("cry-resonance-sensor", 0), // Resonance Sensor (omni passive array, matches Terran `v`)
 };
 
 /** Single-character tokens for the ASCII grid authoring map — Foundry parts.
