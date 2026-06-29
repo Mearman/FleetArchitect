@@ -631,6 +631,7 @@ export function BattleRoute() {
             <PlaybackControls
               playing={playback.playing}
               speed={playback.speed}
+              simSpeed={playback.simSpeed}
               currentTick={currentTick}
               playbackTick={playbackTick}
               maxTick={maxTick}

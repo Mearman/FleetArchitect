@@ -1,6 +1,8 @@
 import { Group, SegmentedControl, Slider, Stack, Text, Tooltip } from "@mantine/core";
 import { IconFocus2, IconPlayerPause, IconPlayerPlay } from "@tabler/icons-react";
 import { AnnunciatorButton } from "@/ui/components/Annunciator";
+import { speedSliderLayer, speedSliderWrap } from "./PlaybackControls.css";
+import { formatSpeed, posToSpeed, speedMarks, speedToPos } from "./speedSlider";
 import type { Camera, ProjectionMode } from "./battleCamera";
 
 /** Narrow a SegmentedControl string value to a ProjectionMode without a cast. */
@@ -18,6 +20,12 @@ function toProjectionMode(value: string): ProjectionMode {
 export interface PlaybackControlsProps {
   playing: boolean;
   speed: number;
+  /**
+   * Measured simulation throughput as a speed multiplier, shown as a cyan bar on
+   * the speed slider's rail. Null hides the bar (no measurement yet, or the
+   * battle is fully computed and playback is unconstrained).
+   */
+  simSpeed: number | null;
   currentTick: number;
   /** Fractional tick position (for smooth slider scrubbing — sub-tick interpolation). */
   playbackTick: number;
@@ -43,6 +51,7 @@ export interface PlaybackControlsProps {
 export function PlaybackControls({
   playing,
   speed,
+  simSpeed,
   currentTick,
   playbackTick,
   maxTick,
@@ -99,19 +108,59 @@ export function PlaybackControls({
             onChange={(val) => onProjectionChange(toProjectionMode(val))}
           />
         </Tooltip>
-        <SegmentedControl
-          size="xs"
-          data={[
-            { value: "0.25", label: "0.25x" },
-            { value: "0.5", label: "0.5x" },
-            { value: "1", label: "1x" },
-            { value: "2", label: "2x" },
-            { value: "4", label: "4x" },
-            { value: "8", label: "8x" },
-          ]}
-          value={String(speed)}
-          onChange={(val) => onSpeedChange(Number(val))}
-        />
+        {/*
+          Speed control: a slider whose rail carries two bars sharing one
+          geometry. The amber bar + thumb (draggable) is the desired playback
+          speed, clamped to 8x. The cyan bar is the measured simulation
+          throughput (sim speed): it trails the thumb when the engine can't keep
+          up and pokes past it into the headroom when the engine is faster. The
+          rail is log-scaled (each doubling an equal distance) so 0.25x-1x are
+          not crammed into the first few percent.
+        */}
+        <Tooltip
+          multiline
+          maw={220}
+          label="Playback speed — drag to set. The cyan bar is how fast the battle is computing (sim speed): it sits under the thumb when the sim keeps up, trails it when the sim can't keep up, and pokes past it when the sim is faster."
+        >
+          <div className={speedSliderWrap}>
+            <Slider
+              size="xs"
+              classNames={{ root: speedSliderLayer }}
+              min={0}
+              max={1}
+              step={0.005}
+              value={speedToPos(speed)}
+              onChange={(pos) => onSpeedChange(posToSpeed(pos))}
+              marks={speedMarks()}
+              label={(pos) => formatSpeed(posToSpeed(pos))}
+              aria-label="Playback speed"
+            />
+            {simSpeed !== null && (
+              <Slider
+                size="xs"
+                color="cyan"
+                classNames={{ root: speedSliderLayer }}
+                min={0}
+                max={1}
+                step={0.005}
+                value={speedToPos(simSpeed)}
+                label={null}
+                aria-hidden
+                styles={{
+                  root: { pointerEvents: "none" },
+                  thumb: { display: "none" },
+                  track: { backgroundColor: "transparent" },
+                  bar: {
+                    height: 3,
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    borderRadius: 2,
+                  },
+                }}
+              />
+            )}
+          </div>
+        </Tooltip>
       </Group>
       {/*
         Smooth scrubbing: step 0.1 + fractional playbackTick keeps the thumb

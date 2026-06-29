@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { TICKS_PER_SECOND } from "@/domain/simulation/types";
 import { interpolateFrame } from "@/ui/interpolateFrame";
 import type { BattleFrame, BattleResult } from "@/schema/battle";
@@ -73,6 +73,19 @@ export function useBattlePlayback({
    * automatically as soon as more frames arrive.
    */
   const [buffering, setBuffering] = useState(false);
+
+  /**
+   * Measured simulation throughput as a speed multiplier (sim ticks produced per
+   * real second / {@link TICKS_PER_SECOND}), mirrored from `simTickRateRef` for
+   * the speed slider's telemetry bar. Null while no measurement exists or once
+   * the battle is fully computed (no production limit remains). Gated by
+   * {@link lastSimSpeedRef} so it only re-renders when the rounded value changes.
+   */
+  const [simSpeed, setSimSpeed] = useState<number | null>(null);
+  // Last rounded sim-speed multiplier mirrored into state, or -1 when hidden.
+  // A ref (not a loop-local) so the computed/no-measurement clear survives the
+  // effect re-running whenever `result` lands.
+  const lastSimSpeedRef = useRef(-1);
 
   // The status panel uses the discrete-nearest frame since it shows system HP
   // values, not positions — there is no meaningful interpolation for HP. It is
@@ -188,6 +201,29 @@ export function useBattlePlayback({
         }
       }
 
+      // Mirror the measured simulation throughput as a sim-speed multiplier for
+      // the speed slider's telemetry bar. Only meaningful while the battle is
+      // still computing; once `result` lands the simulation is done and the bar
+      // is hidden. -1 = hidden; updated only when the rounded value changes so
+      // the slider does not re-render every animation frame.
+      if (result === null) {
+        const rate = simTickRateRef.current;
+        if (rate > 0) {
+          const rounded = Math.round((rate / TICKS_PER_SECOND) * 10) / 10;
+          if (rounded !== lastSimSpeedRef.current) {
+            lastSimSpeedRef.current = rounded;
+            setSimSpeed(rounded);
+          }
+        } else if (lastSimSpeedRef.current !== -1) {
+          // Fresh run, no batches yet — drop any stale value from a prior battle.
+          lastSimSpeedRef.current = -1;
+          setSimSpeed(null);
+        }
+      } else if (lastSimSpeedRef.current !== -1) {
+        lastSimSpeedRef.current = -1;
+        setSimSpeed(null);
+      }
+
       rafId = requestAnimationFrame(loop);
     };
 
@@ -225,6 +261,7 @@ export function useBattlePlayback({
     setSpeed,
     buffering,
     setBuffering,
+    simSpeed,
     statusFrame,
   };
 }
