@@ -1,3 +1,16 @@
+## [1.32.1](https://github.com/Mearman/FleetArchitect/compare/v1.32.0...v1.32.1) (2026-06-29)
+
+
+### Bug Fixes
+
+* **sim:** keep supply accumulation order exact in recomputeAggregates ([84b1002](https://github.com/Mearman/FleetArchitect/commit/84b100223bfe98206af90255c903ee7700a37b77))
+
+
+### Performance Improvements
+
+* **sim:** fuse recomputeAggregates module scans ([956c3df](https://github.com/Mearman/FleetArchitect/commit/956c3df501ae1c8641fed6af554e8191199718e7))
+* **sim:** fuse the movement capability scans to one pass ([1fb29a2](https://github.com/Mearman/FleetArchitect/commit/1fb29a2e194180b2fbd78e1b1176568c5d18be53))
+
 # [1.32.0](https://github.com/Mearman/FleetArchitect/compare/v1.31.1...v1.32.0) (2026-06-29)
 
 
