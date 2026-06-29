@@ -347,10 +347,26 @@ export function cellWorldPosition(
   localX: number,
   localY: number,
 ): { wx: number; wy: number } {
-  const c = Math.cos(facing);
-  const s = Math.sin(facing);
+  return cellWorldPositionCs(shipX, shipY, Math.cos(facing), Math.sin(facing), localX, localY);
+}
+
+/**
+ * As {@link cellWorldPosition}, but takes the precomputed cosine and sine of the
+ * ship's facing. Hot callers that project every cell of one ship (the per-tick
+ * cell-hash build, the penetration path) pass `cos(facing)`/`sin(facing)` once
+ * per ship instead of re-running them per cell. Bit-identical to
+ * {@link cellWorldPosition}: same values, same arithmetic order.
+ */
+export function cellWorldPositionCs(
+  shipX: number,
+  shipY: number,
+  cosF: number,
+  sinF: number,
+  localX: number,
+  localY: number,
+): { wx: number; wy: number } {
   return {
-    wx: shipX + localX * c - localY * s,
-    wy: shipY + localX * s + localY * c,
+    wx: shipX + localX * cosF - localY * sinF,
+    wy: shipY + localX * sinF + localY * cosF,
   };
 }

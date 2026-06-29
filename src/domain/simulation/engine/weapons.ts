@@ -6,7 +6,7 @@
 import { CELL_SIZE } from "@/domain/grid";
 import { ranged } from "@/domain/simulation/rng";
 import type { Rng } from "@/domain/simulation/rng";
-import { cellWorldPosition } from "@/domain/simulation/spatial-hash";
+import { cellWorldPosition, cellWorldPositionCs } from "@/domain/simulation/spatial-hash";
 import type { BattleAnomalyKind, BattleSide } from "@/schema/battle";
 import { hasAnomaly } from "@/domain/anomaly";
 import type { PointDefenseEffect, WeaponEffect } from "@/schema/module";
@@ -512,9 +512,12 @@ export function penetrationPath(
   // cell at or beyond it, within half a cell laterally.
   const hitAlong = hitWx * dirX + hitWy * dirY;
   const onLine: { module: SimModule; along: number }[] = [];
+  // cos/sin of the ship's facing are invariant across its cells.
+  const cosF = Math.cos(ship.facing);
+  const sinF = Math.sin(ship.facing);
   for (const m of ship.modules) {
     if (!m.alive) continue;
-    const { wx, wy } = cellWorldPosition(ship.x, ship.y, ship.facing, m.x, m.y);
+    const { wx, wy } = cellWorldPositionCs(ship.x, ship.y, cosF, sinF, m.x, m.y);
     const along = wx * dirX + wy * dirY;
     if (along < hitAlong - CELL_SIZE / 2) continue; // in front of the entry cell
     const perp = Math.abs((wx - hitWx) * -dirY + (wy - hitWy) * dirX);

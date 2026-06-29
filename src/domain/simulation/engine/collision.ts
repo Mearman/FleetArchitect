@@ -4,7 +4,7 @@
  */
 
 import { CELL_SIZE } from "@/domain/grid";
-import { SpatialHash, cellWorldPosition } from "@/domain/simulation/spatial-hash";
+import { SpatialHash, cellWorldPositionCs } from "@/domain/simulation/spatial-hash";
 
 import { SIM, SPEED_OF_LIGHT_M_PER_TICK } from "./config";
 import { applyDamage } from "./damage";
@@ -35,9 +35,13 @@ export function buildShipCellHash(ships: readonly SimShip[]): SpatialHash<ShipCe
   const hash = new SpatialHash<ShipCell>();
   for (const ship of ships) {
     if (!ship.alive || ship.modules === undefined) continue;
+    // cos/sin of the ship's facing are invariant across its cells, so compute
+    // them once per ship instead of once per cell.
+    const cosF = Math.cos(ship.facing);
+    const sinF = Math.sin(ship.facing);
     for (const m of ship.modules) {
       if (!m.alive) continue;
-      const { wx, wy } = cellWorldPosition(ship.x, ship.y, ship.facing, m.x, m.y);
+      const { wx, wy } = cellWorldPositionCs(ship.x, ship.y, cosF, sinF, m.x, m.y);
       hash.insert({ ship, module: m, wx, wy }, wx, wy);
     }
   }
