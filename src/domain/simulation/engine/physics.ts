@@ -106,28 +106,32 @@ export function comTangentialVelocity(
 export function recomputeAggregates(ship: SimShip): void {
   if (ship.modules === undefined) return;
 
-  // 1. Supply. Two disjoint module classes contribute — alive, manned reactors
-  //    (output) and active overcharge modules (powerSurge, which lifts the
-  //    ceiling for the brownout below). They are accumulated in one pass but in
-  //    SEPARATE accumulators, then summed reactor-first, so the floating-point
-  //    addition order matches the original two scans: addition is not
-  //    associative, and a ship can interleave reactor and overcharge modules.
-  let supplyPower = 0;
-  let supplySurge = 0;
+  // 1. Supply from alive, manned reactors. A reactor that needs crew only
+  //    outputs when its cell is manned — an unmanned reactor is cold.
+  let supply = 0;
   for (const m of ship.modules) {
     if (m.alive && m.manned && m.effect.kind === "power") {
-      supplyPower += m.effect.output;
-    }
-    // Reactor overcharge (factions update): every active overcharge module lifts
-    // the power ceiling by its `powerSurge` for the duration of its window, so
-    // more consumers stay online through a brownout. Activation lives in
-    // `stepOvercharge`; here we only fold in the surge of modules already
-    // active. A ship with no active overcharge contributes nothing.
-    if (m.effect.kind === "overcharge" && m.techActive > 0 && isOperational(m)) {
-      supplySurge += m.effect.powerSurge;
+      supply += m.effect.output;
     }
   }
-  const supply = supplyPower + supplySurge;
+  // Reactor overcharge (factions update): every active overcharge module lifts
+  // the power ceiling by its `powerSurge` for the duration of its window, so
+  // more consumers stay online through a brownout. Activation lives in
+  // `stepOvercharge` (driven by the brownout below); here we only fold in the
+  // surge of modules already active. A ship with no active overcharge
+  // contributes nothing, so the power budget is unchanged.
+  //
+  // Two scans (not one fused pass) on purpose: the surges fold into the SAME
+  // running `supply` after the reactor total, in module order. Splitting
+  // reactor and surge into separate accumulators rejoined at the end would
+  // re-associate the floating-point sum ((S_r+o1)+o2 vs S_r+(o1+o2)) and drift
+  // for a ship with a reactor and two or more overcharge modules — a config no
+  // preset fleet exercises. Keep the association exact.
+  for (const m of ship.modules) {
+    if (m.effect.kind === "overcharge" && m.techActive > 0 && isOperational(m)) {
+      supply += m.effect.powerSurge;
+    }
+  }
 
   // 2. Powered flags, alive count, and demand in one pass. Each alive
   //    non-reactor starts powered (reactors draw nothing); the hungriest are

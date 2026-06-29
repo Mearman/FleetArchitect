@@ -403,4 +403,50 @@ describe("engine.aggregates — reference vs optimised recomputeAggregates equiv
     expect(getModule(sanity, "w2").powered, "second weapon must be cut").toBe(false);
     expect(getModule(sanity, "w3").powered, "lightest weapon stays online").toBe(true);
   });
+
+  // -------------------------------------------------------------------------
+  // Fixture 6: overcharge supply — two ACTIVE overcharge modules fold their
+  // `powerSurge` into the reactor total. This is the config that exposed a
+  // floating-point-association bug: summing the reactor total and the surges in
+  // separate accumulators rejoined at the end re-associates the sum
+  // ((S_r+o1)+o2 vs S_r+(o1+o2)) and can drift. The reference folds surges into
+  // the same running `supply` after the reactor total (two scans), so this
+  // guards any future re-split. The weapon's draw exceeds the reactor output
+  // alone but sits well under the surged supply, so the overcharge path
+  // determines whether it is cut.
+  // -------------------------------------------------------------------------
+  it("overcharge supply: two active surges fold into the reactor total identically", () => {
+    const ship = combatShip("overcharge-supply", "attacker", [
+      moduleOf("r1", { kind: "power", output: 10 }, 0, 0, 5_000, 5, true),
+      moduleOf(
+        "o1",
+        { kind: "overcharge", powerSurge: 100, duration: 5, cooldown: 10 },
+        1,
+        0,
+        5_000,
+        5,
+      ),
+      moduleOf(
+        "o2",
+        { kind: "overcharge", powerSurge: 100, duration: 5, cooldown: 10 },
+        2,
+        0,
+        5_000,
+        5,
+      ),
+      moduleOf("w1", WEAPON, 0, 1, 5_000, 5, false, 150),
+    ]);
+    const resolved = resolveToSim(ship);
+    // Activate both overcharge windows so their surges contribute to supply.
+    getModule(resolved, "o1").techActive = 5;
+    getModule(resolved, "o2").techActive = 5;
+    assertAggregatesEquivalent(resolved);
+
+    // Sanity: the surges (100+100) lift supply to 210, well above the weapon's
+    // 150 draw, so the weapon stays powered — proving the overcharge path ran
+    // and relieved what would otherwise be a brownout (reactor-only supply 10).
+    const sanity = structuredClone(resolved);
+    recomputeAggregates(sanity);
+    expect(getModule(sanity, "w1").powered, "surged supply must keep the weapon online").toBe(true);
+  });
 });
