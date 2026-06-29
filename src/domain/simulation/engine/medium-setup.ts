@@ -117,22 +117,21 @@ export interface ProjectileMediumEntry {
 /**
  * Build the arena medium field and its ISM-seeded initial state.
  *
- * The grid is a SQUARE spanning the LARGER deployment axis (every ship's centre
- * ± its broad-phase radius), rounded up to {@link MEDIUM_PITCH_M_DEFAULT}-metre
- * cells, centred on the world origin: cell `(col, row)` centre maps to world
- * `((col + 0.5 - widthM / 2) · pitch, (row + 0.5 - heightM / 2) · pitch)`. The
- * deployment is symmetric about the origin, so an origin-centred square of side
- * `max(spanX, spanY)` encloses the whole bounding box on both axes.
+ * The grid spans the deployment bounding box (every ship's centre ± its
+ * broad-phase radius) plus a {@link MEDIUM_GRID_MARGIN_CELLS} pad on every side,
+ * centred on the world origin (cell `(col, row)` centre → world
+ * `((col + 0.5 - widthM / 2) · pitch, (row + 0.5 - heightM / 2) · pitch)`).
  *
- * Why square, not the raw bounding box: head-to-head fleets separate on x but
- * cluster on y (a wall a few hundred metres tall), so the box is far wider than
- * tall. Sizing the grid to it collapsed `heightM` to 1 for real preset battles,
- * rendering the glow as a solid horizontal bar AND destabilising the solver
- * (every cell a boundary; `u = mx / ρ` unbounded in low-ρ cells → field blew up
- * to ~1e290). A square grid gives isotropic 2D extent so a plume diffuses
- * vertically instead of being trapped in one row; the extra cells are dark
- * vacuum. Self-sizing, no hard cap. ρ is seeded at ISM baseline; ε at zero; SI
- * coefficients from `medium-field.ts`, supplied explicitly.
+ * Why padded, not the raw box, and not squared to the larger span. Head-to-head
+ * fleets separate on x but cluster on y (a wall a few hundred metres tall), so
+ * the raw box collapses `heightM` to 1 — the glow renders as a horizontal bar
+ * AND the solver destabilises (every cell a boundary; `u = mx / ρ` unbounded in
+ * low-ρ cells). The pad lifts the short axis off 1 (a 1-cell span becomes
+ * `1 + 2·margin` rows) so a plume has 2D extent, and seats ships in the interior
+ * so the glow's clip edge falls behind them. NOT squared to `max(spanX, spanY)`:
+ * a chase battle can span ~1e7 m on one axis and ~0 on the other, and a square
+ * of that side is ~4e8 cells → OOM. ρ at ISM baseline; ε at zero; SI coefficients
+ * from `medium-field.ts`, supplied explicitly.
  */
 export function buildArenaMedium(ships: readonly SimShip[]): ArenaMedium {
   // Deployment bounding box: every ship's centre ± its broad-phase radius. The
@@ -167,11 +166,11 @@ export function buildArenaMedium(ships: readonly SimShip[]): ArenaMedium {
   const spanX = seen ? maxX - minX : 0;
   const spanY = seen ? maxY - minY : 0;
   const pitch = MEDIUM_PITCH_M_DEFAULT;
-  // Square grid covering the larger span + a padded margin so ships sit in the
-  // interior, not on the grid's hard clip edge. See header + MEDIUM_GRID_MARGIN_CELLS.
-  const spanCells = Math.max(1, Math.ceil(Math.max(spanX, spanY) / pitch));
-  const widthM = spanCells + 2 * MEDIUM_GRID_MARGIN_CELLS;
-  const heightM = spanCells + 2 * MEDIUM_GRID_MARGIN_CELLS;
+  // Bbox grid + padded margin: lifts the short axis off 1 (bar/solver fix) and
+  // seats ships interior (clip-edge fix). NOT squared — see header (OOM on
+  // extreme aspect ratios).
+  const widthM = Math.max(1, Math.ceil(spanX / pitch)) + 2 * MEDIUM_GRID_MARGIN_CELLS;
+  const heightM = Math.max(1, Math.ceil(spanY / pitch)) + 2 * MEDIUM_GRID_MARGIN_CELLS;
   const field = buildMediumField({
     widthM,
     heightM,
