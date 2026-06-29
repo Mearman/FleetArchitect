@@ -268,5 +268,8 @@ describe("engine relativistic-integrator determinism (N14)", () => {
     expect(b.frames).toEqual(a.frames);
     expect(b.winner).toBe(a.winner);
     expect(b.ticks).toBe(a.ticks);
-  });
+    // The relativistic rocket's per-tick displacement approaches c, so the swept
+    // collision is genuinely heavy each tick; this sustained double-run needs more
+    // than the 30s vitest default (cf. the preset determinism gates' 60s/300s).
+  }, 120000);
 });
