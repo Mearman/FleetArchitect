@@ -151,15 +151,10 @@ export function recomputeAggregates(ship: SimShip): void {
   //    weapons and PD first (PD is an active defence system, same priority
   //    class as offensive weapons), then shields.
   if (demand > supply) {
-    // Bounded cut: cutting a module only lowers demand, so the naive re-scan
-    // loop's sequence — repeatedly removing the hungriest powered
-    // weapon/PD/shield — is the candidate set in descending `powerDraw` order.
-    // Pre-sort the candidates once (O(C) + O(c log c)) and walk them, instead
-    // of re-scanning per cut. sort() is stable, so equal draws keep their
-    // array order — matching the naive re-scan's strict-`>` "first wins"
-    // tie-break. (The naive re-scan path is preserved as
-    // `recomputeAggregatesReference` in `./physics.reference` for the
-    // equivalence test to compare against; both yield the same victims.)
+    // Bounded cut: the candidate set is the powered weapon/PD/shield modules in
+    // descending `powerDraw` order (stable pre-sort; equal draws keep array
+    // order, matching the naive re-scan's strict-`>` tie-break, preserved as
+    // `recomputeAggregatesReference` in `./physics.reference`).
     const candidates: SimModule[] = [];
     for (const m of ship.modules) {
       if (!m.powered) continue;
@@ -195,6 +190,10 @@ export function recomputeAggregates(ship: SimShip): void {
   let shieldRechargeRate = 0;
   let shieldRechargeDelay = 0;
   let shieldAdaptiveRamp = 0;
+  // Deflector (momentum screen) aggregates, mirroring the shield locals.
+  let deflectorCapacity = 0;
+  let deflectorRechargeRate = 0;
+  let deflectorRechargeDelay = 0;
   const weapons: WeaponEffect[] = [];
   const cooldowns: number[] = [];
 
@@ -230,6 +229,12 @@ export function recomputeAggregates(ship: SimShip): void {
         if (effect.adaptiveRampRate !== undefined) {
           shieldAdaptiveRamp = Math.max(shieldAdaptiveRamp, effect.adaptiveRampRate);
         }
+        break;
+      case "deflector":
+        // Momentum screen (kg·m/s); mirrors the shield aggregation, no ramp.
+        deflectorCapacity += effect.capacity;
+        deflectorRechargeRate += effect.rechargeRate;
+        deflectorRechargeDelay = Math.max(deflectorRechargeDelay, effect.rechargeDelay);
         break;
       case "engine":
         // A flamed-out engine (dry tank) produces no thrust this tick.
@@ -269,6 +274,11 @@ export function recomputeAggregates(ship: SimShip): void {
   ship.shieldRechargeDelay = shieldRechargeDelay;
   ship.shieldAdaptiveRamp = shieldAdaptiveRamp;
   ship.shield = Math.min(ship.shield, shieldCapacity);
+  // Deflector (momentum screen): clamp the live pool to the new capacity.
+  ship.maxDeflector = deflectorCapacity;
+  ship.deflectorRechargeRate = deflectorRechargeRate;
+  ship.deflectorRechargeDelay = deflectorRechargeDelay;
+  ship.deflector = Math.min(ship.deflector, deflectorCapacity);
   ship.weapons = weapons;
   ship.weaponCooldowns = cooldowns;
 
@@ -301,35 +311,9 @@ export function recomputeAggregates(ship: SimShip): void {
   ship.radius = gridRadius(ship.modules);
 }
 
-/** Whether the ship has at least one alive command (bridge) module. Ships
- *  without any command module cannot fire. A module at 0 hp counts as
- *  destroyed even before its `alive` flag is flipped, since destruction is
- *  hp-driven. */
-export function hasAliveCommand(ship: SimShip): boolean {
-  if (ship.modules === undefined) return true;
-  for (const m of ship.modules) {
-    if (m.command && m.alive && m.hp > 0) return true;
-  }
-  return false;
-}
-
-/** Whether the ship has at least one alive reactor (power) module. A modular
- *  ship with no reactor cannot generate power and is destroyed by the
- *  reactor-loss death rule in the tick loop — without power it cannot fire,
- *  shield, or run life support, and the simulation has no other path that
- *  kills it, so leaving it alive would stall a battle on a mutual brownout
- *  (both sides' reactors gone). A module at 0 hp counts as destroyed even
- *  before its `alive` flag is flipped, since destruction is hp-driven. Legacy
- *  non-modular ships have no module power model and are unaffected. Uses
- *  structural loss (`alive`/`hp`), not the `manned` gate — an alive-but-unmanned
- *  reactor is a recoverable brownout, not a death sentence. */
-export function hasAliveReactor(ship: SimShip): boolean {
-  if (ship.modules === undefined) return true;
-  for (const m of ship.modules) {
-    if (m.alive && m.hp > 0 && m.effect.kind === "power") return true;
-  }
-  return false;
-}
+// Critical-module aliveness predicates (hasAliveCommand, hasAliveReactor) live
+// in ./alive-modules, re-exported here to keep this file under the lint cap.
+export { hasAliveCommand, hasAliveReactor } from "./alive-modules";
 
 /** Sum the per-engine force (in ship-local axes) and the resulting torque
  *  (z-component of the cross product `r × F`, in ship-local units) for a

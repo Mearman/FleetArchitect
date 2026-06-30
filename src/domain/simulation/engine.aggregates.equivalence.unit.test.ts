@@ -53,6 +53,9 @@ function stats(over: Partial<ShipStats> = {}): ShipStats {
     shieldCapacity: 0,
     shieldRechargeRate: 0,
     shieldRechargeDelay: 30,
+    deflectorCapacity: 0,
+    deflectorRechargeRate: 0,
+    deflectorRechargeDelay: 0,
     thrust: 0,
     turnRate: 0,
     weapons: [],
@@ -148,6 +151,9 @@ interface ShipSummary {
   maxShield: number;
   shieldRechargeRate: number;
   shieldRechargeDelay: number;
+  deflectorCapacity: 0,
+  deflectorRechargeRate: 0,
+  deflectorRechargeDelay: 0,
   shieldAdaptiveRamp: number;
   shield: number;
   armourReduction: number;
@@ -180,6 +186,9 @@ function summarise(ship: SimShip): ShipSummary {
     maxShield: ship.maxShield,
     shieldRechargeRate: ship.shieldRechargeRate,
     shieldRechargeDelay: ship.shieldRechargeDelay,
+    deflectorCapacity: 0,
+    deflectorRechargeRate: 0,
+    deflectorRechargeDelay: 0,
     shieldAdaptiveRamp: ship.shieldAdaptiveRamp,
     shield: ship.shield,
     armourReduction: ship.armourReduction,

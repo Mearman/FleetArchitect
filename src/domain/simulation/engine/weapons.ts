@@ -128,6 +128,10 @@ export function spawnProjectile(
     // its full tracking and an ECM-free battle is byte-identical.
     tracking: weapon.tracking * (1 + accuracyBonus) * (1 - netTrackingReduction(owner, target)),
     shieldPiercing: weapon.shieldPiercing,
+    // Deflector piercing: the weapon's authored fraction, or 0 (the deflector
+    // catches the full momentum) when unset. The per-type default is applied at
+    // catalogue authoring time where a weapon should punch the deflector.
+    deflectorPiercing: weapon.deflectorPiercing ?? 0,
     armourPiercing: weapon.armourPiercing,
     range: weapon.range,
     travelled: 0,

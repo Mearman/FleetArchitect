@@ -126,6 +126,9 @@ function modularShip(
     shieldCapacity: 0,
     shieldRechargeRate: 0,
     shieldRechargeDelay: 30,
+    deflectorCapacity: 0,
+    deflectorRechargeRate: 0,
+    deflectorRechargeDelay: 0,
     thrust: modules
       .filter((m) => m.effect.kind === "engine")
       .reduce((s, m) => s + (m.effect.kind === "engine" ? m.effect.thrust : 0), 0),
@@ -167,6 +170,9 @@ function dummy(id: string, x: number, y = 0): CombatShip {
     shieldCapacity: 0,
     shieldRechargeRate: 0,
     shieldRechargeDelay: 30,
+    deflectorCapacity: 0,
+    deflectorRechargeRate: 0,
+    deflectorRechargeDelay: 0,
     thrust: 0,
     turnRate: 0,
     weapons: [],

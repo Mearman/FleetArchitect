@@ -265,6 +265,9 @@ describe("engine.awareness — faithful fog (no omniscience)", () => {
       shieldCapacity: 0,
       shieldRechargeRate: 0,
       shieldRechargeDelay: 30,
+      deflectorCapacity: 0,
+      deflectorRechargeRate: 0,
+      deflectorRechargeDelay: 0,
       // Legacy (non-modular) path: movement.ts caps top speed at `thrust` and
       // sets per-tick accel to (thrust/mass)·ACCEL_PER_TICK_FROM_SI = (thrust/mass)/900.
       // 540 (= 0.6 × 900) restores the closing acceleration the advance-to-contact

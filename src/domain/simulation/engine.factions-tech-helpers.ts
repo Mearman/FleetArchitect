@@ -260,6 +260,9 @@ export function baseStats(over: Partial<ShipStats> = {}): ShipStats {
     shieldCapacity: 0,
     shieldRechargeRate: 0,
     shieldRechargeDelay: 30,
+    deflectorCapacity: 0,
+    deflectorRechargeRate: 0,
+    deflectorRechargeDelay: 0,
     thrust: 0.8,
     turnRate: 0.15,
     weapons: [],
@@ -493,6 +496,9 @@ export function modularShip(opts: {
     shieldCapacity,
     shieldRechargeRate: opts.shieldRechargeRate ?? 0,
     shieldRechargeDelay: opts.shieldRechargeDelay ?? 60,
+    deflectorCapacity: 0,
+    deflectorRechargeRate: 0,
+    deflectorRechargeDelay: 0,
     weapons: weapons.map((w) => ({ slotId: `${prefix}-w`, effect: w })),
   });
   return {
@@ -623,6 +629,9 @@ export function targetDummy(opts: {
     shieldCapacity,
     shieldRechargeRate: opts.shieldRechargeRate ?? 0,
     shieldRechargeDelay: opts.shieldRechargeDelay ?? 60,
+    deflectorCapacity: 0,
+    deflectorRechargeRate: 0,
+    deflectorRechargeDelay: 0,
     weapons: [],
   });
   return {

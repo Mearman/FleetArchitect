@@ -59,11 +59,11 @@ export const BattleConfig = z.object({
 });
 export type BattleConfig = z.infer<typeof BattleConfig>;
 
-/** The module kinds a cell can hold. Shared by the static cell descriptor and
- *  any consumer that switches on cell kind. */
+/** Module kinds a cell can hold (shared by the cell descriptor and cell-kind switches). */
 export const CellKind = z.enum([
   "weapon",
   "shield",
+  "deflector",
   "armour",
   "engine",
   "power",

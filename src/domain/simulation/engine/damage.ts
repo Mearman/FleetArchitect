@@ -684,33 +684,34 @@ export function makeChunkShip(
     x: parent.x,
     y: parent.y,
     facing: parent.facing,
-    // Linear velocity starts at the parent's; the tangential term from the
-    // parent's spin is added below, once recomputeAggregates has derived the
-    // chunk's own centre of mass.
+    // Linear velocity starts at the parent's; the tangential spin term is added
+    // below once recomputeAggregates derives the chunk's own centre of mass.
     velX: parent.velX,
     velY: parent.velY,
-    // Momentum is derived bookkeeping: the chunk moves through the same
-    // integrator as any ship, which re-derives `px`/`py` from the live velocity
-    // on its first movement tick before any snapshot reads them, so seeding 0
-    // here is sufficient.
+    // Momentum (px/py) is re-derived from velocity on the chunk's first move
+    // tick, so seeding 0 here is sufficient.
     px: 0,
     py: 0,
-    // Angular velocity is conserved verbatim — a rigid fragment leaves the
-    // parent spinning at the same rate it was spinning as part of the whole.
+    // Angular velocity is conserved — a rigid fragment leaves spinning at the
+    // parent's rate.
     angVel: parent.angVel,
     dilationFactor: 1,
     structure: chunkStructure,
     maxStructure: chunkStructure,
+    // Shield and deflector pools reset to zero on a fresh chunk;
+    // recomputeAggregates re-derives capacity from the chunk's own modules.
     shield: 0,
     maxShield: 0,
     shieldRechargeRate: 0,
     shieldRechargeDelay: 0,
     shieldRegenCountdown: 0,
-    // A fresh chunk starts with no shield (reset above) so its adaptive ramp and
-    // untouched streak begin at zero; recomputeAggregates re-derives the ramp
-    // from the chunk's own shield modules. Auras are recomputed each tick.
     shieldAdaptiveRamp: 0,
     shieldUntouchedTicks: 0,
+    deflector: 0,
+    maxDeflector: 0,
+    deflectorRechargeRate: 0,
+    deflectorRechargeDelay: 0,
+    deflectorRegenCountdown: 0,
     auraRangeBonus: 0,
     auraAccuracyBonus: 0,
     armourReduction: 0,
@@ -783,10 +784,12 @@ export function makeChunkShip(
   );
   chunk.velX = split.vx;
   chunk.velY = split.vy;
-  // A chunk's shield pool resets to zero — it has no recharge, and the
-  // parent's pooled shield doesn't carry over.
+  // Shield and deflector pools reset to zero — the parent's pools don't carry
+  // over; recomputeAggregates re-derives capacity from the chunk's own modules.
   chunk.shield = 0;
   chunk.maxShield = 0;
+  chunk.deflector = 0;
+  chunk.maxDeflector = 0;
   // Compute the chamfered hull outline from the chunk's armour cells.
   // Grid dimensions come from the parent's full module set so the resulting
   // vertices share the same ship-local coordinate frame as module.x/y.

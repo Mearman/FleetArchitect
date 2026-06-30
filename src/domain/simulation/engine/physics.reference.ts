@@ -100,6 +100,9 @@ export function recomputeAggregatesReference(ship: SimShip): void {
   let shieldRechargeRate = 0;
   let shieldRechargeDelay = 0;
   let shieldAdaptiveRamp = 0;
+  let deflectorCapacity = 0;
+  let deflectorRechargeRate = 0;
+  let deflectorRechargeDelay = 0;
   const weapons: WeaponEffect[] = [];
   const cooldowns: number[] = [];
 
@@ -123,6 +126,11 @@ export function recomputeAggregatesReference(ship: SimShip): void {
         if (effect.adaptiveRampRate !== undefined) {
           shieldAdaptiveRamp = Math.max(shieldAdaptiveRamp, effect.adaptiveRampRate);
         }
+        break;
+      case "deflector":
+        deflectorCapacity += effect.capacity;
+        deflectorRechargeRate += effect.rechargeRate;
+        deflectorRechargeDelay = Math.max(deflectorRechargeDelay, effect.rechargeDelay);
         break;
       case "engine":
         if (!m.fuelStarved) thrust += effect.thrust;
@@ -161,6 +169,10 @@ export function recomputeAggregatesReference(ship: SimShip): void {
   ship.shieldRechargeDelay = shieldRechargeDelay;
   ship.shieldAdaptiveRamp = shieldAdaptiveRamp;
   ship.shield = Math.min(ship.shield, shieldCapacity);
+  ship.maxDeflector = deflectorCapacity;
+  ship.deflectorRechargeRate = deflectorRechargeRate;
+  ship.deflectorRechargeDelay = deflectorRechargeDelay;
+  ship.deflector = Math.min(ship.deflector, deflectorCapacity);
   ship.weapons = weapons;
   ship.weaponCooldowns = cooldowns;
 

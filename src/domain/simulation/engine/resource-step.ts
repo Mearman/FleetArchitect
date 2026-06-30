@@ -749,6 +749,7 @@ function brownoutPriority(m: SimModule): number | undefined {
     case "sensor":
       return 1;
     case "shield":
+    case "deflector":
       return 2;
     case "engine":
       return 3;

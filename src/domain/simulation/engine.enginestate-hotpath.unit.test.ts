@@ -97,6 +97,9 @@ function ship(opts: {
     shieldCapacity: 0,
     shieldRechargeRate: 0,
     shieldRechargeDelay: 60,
+    deflectorCapacity: 0,
+    deflectorRechargeRate: 0,
+    deflectorRechargeDelay: 0,
     thrust: 0.5,
     turnRate: 0.1,
     weapons: [

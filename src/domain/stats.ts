@@ -45,6 +45,11 @@ export interface ShipStats {
   shieldCapacity: number;
   shieldRechargeRate: number;
   shieldRechargeDelay: number;
+  /** Deflector (momentum screen) aggregates, mirroring the shield fields above
+   *  but in kg·m/s. 0 when the ship mounts no deflector modules. */
+  deflectorCapacity: number;
+  deflectorRechargeRate: number;
+  deflectorRechargeDelay: number;
   thrust: number;
   turnRate: number;
   weapons: readonly ResolvedWeapon[];
@@ -151,6 +156,9 @@ function emptyStats(): MutableStats {
     shieldCapacity: 0,
     shieldRechargeRate: 0,
     shieldRechargeDelay: 0,
+    deflectorCapacity: 0,
+    deflectorRechargeRate: 0,
+    deflectorRechargeDelay: 0,
     thrust: 0,
     turnRate: 0,
     weapons: [],
@@ -179,6 +187,15 @@ function applyModule(
       // Use the worst (longest) recharge delay across shield generators.
       stats.shieldRechargeDelay = Math.max(
         stats.shieldRechargeDelay,
+        effect.rechargeDelay,
+      );
+      break;
+    case "deflector":
+      // Momentum screen: capacity in kg·m/s, rechargeRate in kg·m/s per second.
+      stats.deflectorCapacity += effect.capacity;
+      stats.deflectorRechargeRate += effect.rechargeRate;
+      stats.deflectorRechargeDelay = Math.max(
+        stats.deflectorRechargeDelay,
         effect.rechargeDelay,
       );
       break;

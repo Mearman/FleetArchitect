@@ -93,6 +93,9 @@ export const MODULE_APPEARANCE: Record<CellKind, ModuleAppearance> = {
 
   // --- Defence: cool cyan/blue family. ---
   shield: { colour: NEON_CYAN, group: "defence", glyph: "shield", height: 0.5, label: "Shield" },
+  // Deflector — the momentum screen (shields are the energy screen). A bluer
+  // tone and wave glyph distinguish it from the cyan energy shield.
+  deflector: { colour: "#5aa0ff", group: "defence", glyph: "wave", height: 0.5, label: "Deflector" },
   repair: { colour: "#3ad6a0", group: "defence", glyph: "wrench", height: 0.35, label: "Repair bay" },
 
   // --- Propulsion: green family. ---

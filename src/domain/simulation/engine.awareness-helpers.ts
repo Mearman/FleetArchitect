@@ -40,6 +40,9 @@ export function statsFor(structure: number, cost = 100): ShipStats {
     shieldCapacity: 0,
     shieldRechargeRate: 0,
     shieldRechargeDelay: 30,
+    deflectorCapacity: 0,
+    deflectorRechargeRate: 0,
+    deflectorRechargeDelay: 0,
     // Zero thrust and turn rate keep every fixture ship stationary so the
     // geometry the awareness assertions rely on never drifts.
     thrust: 0,

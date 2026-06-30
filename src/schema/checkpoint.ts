@@ -219,6 +219,12 @@ const CheckpointShip = z.object({
   shieldRegenCountdown: z.number(),
   shieldAdaptiveRamp: z.number(),
   shieldUntouchedTicks: z.number(),
+  // Deflector (momentum screen) state, mirroring the shield fields above.
+  deflector: z.number(),
+  maxDeflector: z.number(),
+  deflectorRechargeRate: z.number(),
+  deflectorRechargeDelay: z.number(),
+  deflectorRegenCountdown: z.number(),
   auraRangeBonus: z.number(),
   auraAccuracyBonus: z.number(),
   armourReduction: z.number(),
@@ -288,6 +294,7 @@ const CheckpointProjectile = z.object({
   damage: z.number(),
   tracking: z.number(),
   shieldPiercing: z.number(),
+  deflectorPiercing: z.number(),
   armourPiercing: z.number(),
   range: z.number(),
   travelled: z.number(),
@@ -406,8 +413,11 @@ const DeploymentReference = z.object({
  *  battle keeps its formation grouping. v6 removes the no-progress
  *  `StalemateWatch` — the termination guarantee is now the reactor-loss death
  *  rule (a modular ship with no alive reactor is destroyed), which carries no
- *  per-battle state, so the uncapped-battle watch is no longer captured. */
-export const CHECKPOINT_VERSION = 6;
+ *  per-battle state, so the uncapped-battle watch is no longer captured. v7 adds
+ *  the deflector (momentum-screen) state to {@link CheckpointShip} and
+ *  `deflectorPiercing` to {@link CheckpointProjectile} for the unified
+ *  (energy, momentum) damage model. */
+export const CHECKPOINT_VERSION = 7;
 
 /**
  * A complete engine checkpoint: everything needed to resume `simulateBattle`

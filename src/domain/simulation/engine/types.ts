@@ -8,7 +8,7 @@
 
 import type { ShipClassification } from "@/schema/armor";
 import type { CellEdges, SurfaceKind } from "@/schema/grid";
-import type { ModuleEffect, WeaponEffect, WeaponType } from "@/schema/module";
+import type { ModuleEffect, WeaponEffect } from "@/schema/module";
 import type { Doctrine, FireDiscipline, ShipStance, SpatialObjective, TargetingMode } from "@/schema/ai";
 import type { ResolvedHardwire, SimCrew } from "../types";
 
@@ -148,6 +148,15 @@ export interface SimShip {
    * adaptive shield, since the regen step only ramps when `shieldAdaptiveRamp > 0`.
    */
   shieldUntouchedTicks: number;
+  /** Deflector — the momentum screen (the shield above is the energy screen) of
+   *  the unified (energy, momentum) model. Absorbs an impact's kg·m/s before it
+   *  reaches armour; mirrors the shield fields with no adaptive ramp. `maxDeflector
+   *  = 0` (no deflector modules) ⇒ inert, model reduces to today. */
+  deflector: number;
+  maxDeflector: number;
+  deflectorRechargeRate: number;
+  deflectorRechargeDelay: number;
+  deflectorRegenCountdown: number;
   /**
    * Command aura (factions update). The best (max) friendly aura bonuses
    * covering this ship this tick: an added fraction to weapon range
@@ -750,51 +759,10 @@ export interface SimModule {
   transportIndex?: number;
 }
 
-/** Mutable in-flight projectile. */
-export interface SimProjectile {
-  /** Stable id for interpolation matching across frames. Assigned from a
-   *  deterministic per-battle counter at spawn time so two same-seed runs
-   *  produce byte-identical ids (the counter increments in spawn order, which
-   *  is fixed by the seeded RNG and tick update order). */
-  id: string;
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  kind: WeaponType;
-  /** Projectile mass — carried so the hit-impulse step knows the momentum
-   *  to transfer without re-deriving it from the owning weapon. */
-  mass: number;
-  /** Ship-local position of the muzzle that fired this projectile, relative
-   *  to the firing ship's centre. Used by the firing-recoil step to compute
-   *  the lever arm against the firing ship's CoM. */
-  muzzleLocalX: number;
-  muzzleLocalY: number;
-  damage: number;
-  tracking: number;
-  shieldPiercing: number;
-  armourPiercing: number;
-  range: number;
-  travelled: number;
-  ttl: number;
-  ownerId: string;
-  ownerSide: "attacker" | "defender";
-  targetId: string;
-  // Powered×guided taxonomy (finite-burn motors), resolved from the optional
-  // WeaponEffect fields at spawn. powered/guided fixed for life; thrust is the
-  // SI m·s⁻² applied while burnTicks > 0. burnTicks is MUTABLE (decremented
-  // each burning tick). Unpowered rounds (cannon/plasma) carry false/0. The
-  // medium exhaust source reads burnTicks > 0 to inject the plume.
-  powered: boolean;
-  guided: boolean;
-  thrust: number;
-  burnTicks: number;
-}
-
 /**
- * Deployed proximity mines and in-flight boarding pods — the non-ship, non-
- * module world entities. Defined in `./world-entities` and re-exported here so
- * the engine's existing `import { SimMine, SimPod } from "./types"` callers are
- * unchanged. Extracted to keep this module under the lint line cap.
+ * Deployed proximity mines, in-flight boarding pods, and in-flight projectiles —
+ * the non-ship, non-module world entities. Defined in `./world-entities` and
+ * re-exported here so the engine's existing `import { ... } from "./types"`
+ * callers are unchanged. Extracted to keep this module under the lint line cap.
  */
-export type { SimMine, SimPod } from "./world-entities";
+export type { SimMine, SimPod, SimProjectile } from "./world-entities";

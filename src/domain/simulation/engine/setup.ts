@@ -251,6 +251,14 @@ export function toSimShip(ship: CombatShip, rng: Rng): SimShip {
     // no module to carry an adaptiveRampRate, so it stays 0 and unchanged.
     shieldAdaptiveRamp: 0,
     shieldUntouchedTicks: 0,
+    // Deflector (momentum screen): seeded from stats, starts full. With no
+    // deflector modules stats.deflectorCapacity is 0 ⇒ inert. recomputeAggregates
+    // re-derives maxDeflector from the module set each tick.
+    deflector: ship.stats.deflectorCapacity,
+    maxDeflector: ship.stats.deflectorCapacity,
+    deflectorRechargeRate: ship.stats.deflectorRechargeRate,
+    deflectorRechargeDelay: ship.stats.deflectorRechargeDelay,
+    deflectorRegenCountdown: 0,
     auraRangeBonus: 0,
     auraAccuracyBonus: 0,
     armourReduction: ship.stats.damageReduction,
@@ -329,6 +337,8 @@ export function toSimShip(ship: CombatShip, rng: Rng): SimShip {
     // Shield starts full at the (recomputed) capacity; structure is the
     // hull's base integrity, independent of module HP.
     base.shield = base.maxShield;
+    // Deflector likewise starts full at its (recomputed) capacity.
+    base.deflector = base.maxDeflector;
     base.structure = ship.stats.structure;
     base.maxStructure = ship.stats.structure;
     // Newtonian initial momentum now that the grid mass is settled: p = m·v with

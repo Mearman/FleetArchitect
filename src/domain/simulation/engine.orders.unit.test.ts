@@ -227,6 +227,9 @@ function stats(opts: {
     shieldCapacity: opts.shield ?? 0,
     shieldRechargeRate: 0,
     shieldRechargeDelay: 999,
+    deflectorCapacity: 0,
+    deflectorRechargeRate: 0,
+    deflectorRechargeDelay: 0,
     // Thrust and turn rate come from the engine module (per-module path); the
     // stats scalar is only read by the legacy aggregated path, which these
     // ships do not use once `modules` is defined.

@@ -47,6 +47,7 @@ export type CrewPriority = z.infer<typeof CrewPriority>;
 export const ModuleKind = z.enum([
   "weapon",
   "shield",
+  "deflector",
   "engine",
   "power",
   "crew",

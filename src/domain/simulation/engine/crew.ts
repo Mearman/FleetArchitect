@@ -360,6 +360,7 @@ export function stationNeedsCrew(m: SimModule): boolean {
     case "weapon":
     case "engine":
     case "shield":
+    case "deflector":
     case "pointDefense":
     case "power":
     case "magazine":

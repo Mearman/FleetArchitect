@@ -51,6 +51,13 @@ export const WeaponEffect = z.object({
   tracking: z.number().min(0),
   shieldPiercing: zeroToOne,
   armourPiercing: zeroToOne,
+  /**
+   * Fraction (0..1) of the impact's MOMENTUM that bypasses the deflector screen
+   * in the unified (energy, momentum) damage model (see engine/impact-profile).
+   * Omitted ⇒ the per-type default (`DEFLECTOR_PIERCING_DEFAULT` in
+   * `@/data/catalog/combat-scale`): torpedoes punch the deflector, most other
+   * weapons' momentum is fully offered to it. */
+  deflectorPiercing: zeroToOne.optional(),
   spread: z.number().min(0),
   /**
    * Powered×guided taxonomy. The old `WeaponType` enum conflated two independent
@@ -152,6 +159,24 @@ export const ShieldEffect = z.object({
   adaptiveRampRate: z.number().min(0).optional(),
 });
 export type ShieldEffect = z.infer<typeof ShieldEffect>;
+
+/**
+ * A deflector — the MOMENTUM screen in the unified (energy, momentum) damage
+ * model (the shield is the energy screen). It absorbs an impact's directed
+ * momentum, in kg·m/s, before that momentum reaches armour as kinetic work
+ * (`p²/2m`). Mirrors {@link ShieldEffect}: the same three capacity/recharge
+ * fields, but `capacity` is in kg·m/s and `rechargeRate` is a momentum-rebuild
+ * rate (kg·m/s per second) rather than watts. No adaptive ramp in v1.
+ */
+export const DeflectorEffect = z.object({
+  kind: z.literal("deflector"),
+  /** Momentum the field arrests before collapsing, in kg·m/s. */
+  capacity: z.number().min(0),
+  /** Momentum-rebuild rate, in kg·m/s per second. */
+  rechargeRate: z.number().min(0),
+  rechargeDelay: z.number().int().min(0),
+});
+export type DeflectorEffect = z.infer<typeof DeflectorEffect>;
 
 /**
  * Effect payload for a propulsion module.
@@ -574,6 +599,7 @@ export type BoardingEffect = z.infer<typeof BoardingEffect>;
 export const ModuleEffect = z.discriminatedUnion("kind", [
   WeaponEffect,
   ShieldEffect,
+  DeflectorEffect,
   EngineEffect,
   PowerPlantEffect,
   CrewEffect,

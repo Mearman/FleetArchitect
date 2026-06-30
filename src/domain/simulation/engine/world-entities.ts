@@ -1,9 +1,12 @@
 /**
  * Mutable world entities that are not ships or modules: deployed proximity
- * mines and in-flight boarding pods. Extracted from `types.ts` to keep that
- * module under the 800-line lint cap. `types.ts` re-exports them so existing
- * `import { SimMine, SimPod } from "./types"` callers are unchanged.
+ * mines, in-flight boarding pods, and in-flight projectiles. Extracted from
+ * `types.ts` to keep that module under the 800-line lint cap. `types.ts`
+ * re-exports them so existing `import { SimMine, SimPod, SimProjectile } from
+ * "./types"` callers are unchanged.
  */
+
+import type { WeaponType } from "@/schema/module";
 
 /**
  * A deployed proximity mine (factions update — mine-layer module). A static
@@ -47,4 +50,51 @@ export interface SimPod {
   y: number;
   targetInstanceId: string;
   troops: number;
+}
+
+/**
+ * A mutable in-flight projectile. Carried in the world array, advanced each
+ * tick (travel, homing, deflection), and routed into `applyDamage` on a hit.
+ * Fields are plain serialisable data so a checkpoint captures the array whole.
+ */
+export interface SimProjectile {
+  /** Stable id for interpolation matching across frames. Assigned from a
+   *  deterministic per-battle counter at spawn time so two same-seed runs
+   *  produce byte-identical ids (the counter increments in spawn order, which
+   *  is fixed by the seeded RNG and tick update order). */
+  id: string;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  kind: WeaponType;
+  /** Projectile mass — carried so the hit-impulse step knows the momentum
+   *  to transfer without re-deriving it from the owning weapon. */
+  mass: number;
+  /** Ship-local position of the muzzle that fired this projectile, relative
+   *  to the firing ship's centre. Used by the firing-recoil step to compute
+   *  the lever arm against the firing ship's CoM. */
+  muzzleLocalX: number;
+  muzzleLocalY: number;
+  damage: number;
+  tracking: number;
+  shieldPiercing: number;
+  /** Fraction (0..1) of this projectile's momentum bypassing the deflector. */
+  deflectorPiercing: number;
+  armourPiercing: number;
+  range: number;
+  travelled: number;
+  ttl: number;
+  ownerId: string;
+  ownerSide: "attacker" | "defender";
+  targetId: string;
+  // Powered×guided taxonomy (finite-burn motors), resolved from the optional
+  // WeaponEffect fields at spawn. powered/guided fixed for life; thrust is the
+  // SI m·s⁻² applied while burnTicks > 0. burnTicks is MUTABLE (decremented
+  // each burning tick). Unpowered rounds (cannon/plasma) carry false/0. The
+  // medium exhaust source reads burnTicks > 0 to inject the plume.
+  powered: boolean;
+  guided: boolean;
+  thrust: number;
+  burnTicks: number;
 }
