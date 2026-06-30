@@ -84,6 +84,8 @@ export type ProjectionMode = "flat" | "isometric";
 export interface Projection {
   mode: ProjectionMode;
   project: (dx: number, dy: number) => { x: number; y: number };
+  /** As `project`, but writes the screen-space delta into `out` (no allocation). */
+  projectInto: (out: { x: number; y: number }, dx: number, dy: number) => { x: number; y: number };
   unproject: (sx: number, sy: number) => { x: number; y: number };
   depth: (dx: number, dy: number) => number;
 }
@@ -92,6 +94,11 @@ export interface Projection {
 export const FLAT_PROJECTION: Projection = {
   mode: "flat",
   project: (dx, dy) => ({ x: dx, y: dy }),
+  projectInto: (out, dx, dy) => {
+    out.x = dx;
+    out.y = dy;
+    return out;
+  },
   unproject: (sx, sy) => ({ x: sx, y: sy }),
   depth: (_dx, dy) => dy,
 };
@@ -116,6 +123,11 @@ const ISO_B = ISO_A / 2;
 export const ISO_PROJECTION: Projection = {
   mode: "isometric",
   project: (dx, dy) => ({ x: (dx - dy) * ISO_A, y: (dx + dy) * ISO_B }),
+  projectInto: (out, dx, dy) => {
+    out.x = (dx - dy) * ISO_A;
+    out.y = (dx + dy) * ISO_B;
+    return out;
+  },
   unproject: (sx, sy) => ({
     x: sx / (2 * ISO_A) + sy / (2 * ISO_B),
     y: -sx / (2 * ISO_A) + sy / (2 * ISO_B),
@@ -141,6 +153,9 @@ export interface Transform {
   height: number;
   projection: Projection;
   project: (wx: number, wy: number) => { x: number; y: number };
+  /** As `project`, but writes the screen point into `out` (no allocation). For
+   *  the hot draw loops that project thousands of points per frame. */
+  projectInto: (out: { x: number; y: number }, wx: number, wy: number) => { x: number; y: number };
   sx: (wx: number) => number;
   sy: (wy: number) => number;
 }
@@ -162,13 +177,20 @@ export function makeTransform(
   centreY: number,
   projection: Projection = FLAT_PROJECTION,
 ): Transform {
-  const project = (wx: number, wy: number) => {
-    const d = projection.project(wx - centreX, wy - centreY);
-    return { x: width / 2 + d.x * scale, y: height / 2 + d.y * scale };
+  // Closure-private scratch for the projection delta, reused across every
+  // projectInto call so the hot draw loops allocate nothing per projection.
+  // Safe because each projectInto fully consumes it before returning.
+  const projScratch = { x: 0, y: 0 };
+  const projectInto = (out: { x: number; y: number }, wx: number, wy: number) => {
+    projection.projectInto(projScratch, wx - centreX, wy - centreY);
+    out.x = width / 2 + projScratch.x * scale;
+    out.y = height / 2 + projScratch.y * scale;
+    return out;
   };
+  const project = (wx: number, wy: number) => projectInto({ x: 0, y: 0 }, wx, wy);
   const sx = (wx: number) => project(wx, centreY).x;
   const sy = (wy: number) => project(centreX, wy).y;
-  return { scale, centreX, centreY, width, height, projection, project, sx, sy };
+  return { scale, centreX, centreY, width, height, projection, project, projectInto, sx, sy };
 }
 
 /** Centre of a bounds box. */

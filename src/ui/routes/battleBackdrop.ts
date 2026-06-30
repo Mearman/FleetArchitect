@@ -138,21 +138,25 @@ export function drawBackdrop(
     // once, rather than issuing a separate beginPath/stroke per line (up to
     // ~480 strokes otherwise). The endpoints are still projected per line —
     // only the stroke submission is batched.
+    // Two reusable endpoint scratches shared across every gridline of both axes
+    // (consumed per line) — avoids two {x,y} allocations per line per frame.
+    const ga = { x: 0, y: 0 };
+    const gb = { x: 0, y: 0 };
     const xGrid = new Path2D();
     for (let i = gx0; i <= gx1; i += 1) {
       const wx = i * GRID_WORLD_SPACING;
-      const a = t.project(wx, top);
-      const b = t.project(wx, bottom);
-      xGrid.moveTo(a.x, a.y);
-      xGrid.lineTo(b.x, b.y);
+      t.projectInto(ga, wx, top);
+      t.projectInto(gb, wx, bottom);
+      xGrid.moveTo(ga.x, ga.y);
+      xGrid.lineTo(gb.x, gb.y);
     }
     const yGrid = new Path2D();
     for (let i = gy0; i <= gy1; i += 1) {
       const wy = i * GRID_WORLD_SPACING;
-      const a = t.project(left, wy);
-      const b = t.project(right, wy);
-      yGrid.moveTo(a.x, a.y);
-      yGrid.lineTo(b.x, b.y);
+      t.projectInto(ga, left, wy);
+      t.projectInto(gb, right, wy);
+      yGrid.moveTo(ga.x, ga.y);
+      yGrid.lineTo(gb.x, gb.y);
     }
     ctx.stroke(xGrid);
     ctx.stroke(yGrid);
@@ -181,6 +185,8 @@ export function drawBackdrop(
     const density = Math.min(1, STAR_CELL_CAP / cellCount);
     ctx.save();
     ctx.fillStyle = "rgba(201,212,196,1)";
+    // One reusable scratch per drawn star (up to STAR_CELL_CAP/frame).
+    const sp = { x: 0, y: 0 };
     for (let ix = sx0; ix <= sx1; ix += 1) {
       for (let iy = sy0; iy <= sy1; iy += 1) {
         // Organic fade: a star's alpha ramps (smoothstep) as the zoom-dependent
@@ -196,7 +202,7 @@ export function drawBackdrop(
         const fadeMul = fade * fade * (3 - 2 * fade);
         const wx = (ix + cellHash(ix, iy, 0)) * cell;
         const wy = (iy + cellHash(ix, iy, 1)) * cell;
-        const sp = t.project(wx, wy);
+        t.projectInto(sp, wx, wy);
         if (sp.x < 0 || sp.x > width || sp.y < 0 || sp.y > height) continue;
         ctx.globalAlpha = (0.3 + cellHash(ix, iy, 2) * 0.6) * fadeMul;
         const radius = 0.8 + cellHash(ix, iy, 3) * 0.7;

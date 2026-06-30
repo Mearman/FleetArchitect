@@ -162,10 +162,11 @@ function drawParticleGlow(c: OverlayCtx): void {
     cell: number;
     key: number;
   }[] = [];
+  const screen = { x: 0, y: 0 };
   for (const p of particles) {
     const intensity = Math.max(0, Math.min(1, p.intensity * fxGain));
     if (intensity < PARTICLE_DRAW_THRESHOLD) continue;
-    const screen = t.project(p.x, p.y);
+    t.projectInto(screen, p.x, p.y);
     const sx = screen.x;
     const sy = screen.y;
     if (sx < 0 || sx >= width || sy < 0 || sy >= height) continue;

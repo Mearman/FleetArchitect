@@ -35,9 +35,13 @@ export function appendWorldArc(
 ): void {
   const span = Math.abs(a1 - a0);
   const n = Math.max(6, Math.ceil((segments * span) / (Math.PI * 2)));
+  // One reusable scratch per arc (not per segment) — appendWorldArc is the
+  // hottest projection site (~65 segments/arc), so this avoids ~65 allocations
+  // per arc per frame.
+  const p = { x: 0, y: 0 };
   for (let i = 0; i <= n; i += 1) {
     const a = a0 + ((a1 - a0) * i) / n;
-    const p = t.project(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+    t.projectInto(p, cx + Math.cos(a) * r, cy + Math.sin(a) * r);
     if (i === 0) ctx.moveTo(p.x, p.y);
     else ctx.lineTo(p.x, p.y);
   }

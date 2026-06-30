@@ -223,14 +223,13 @@ export function useBattleCanvas({
       // Under-ship layer: focus ring, sensor coverage, movement trail.
       drawOverlays(UNDER_SHIP_IDS);
 
-      // Projectiles (kinetic rounds: cannon, missile, torpedo). Drawn as dots
-      // at their interpolated position; interpolateFrame glides them smoothly
-      // between ticks so they don't snap. Energy weapons (beams) are hitscan
-      // and rendered separately — as emission-duration lines, not dots.
+      // Projectiles (kinetic rounds: cannon, missile, torpedo) drawn as dots at
+      // their interpolated position; beams are hitscan, rendered separately.
+      const pp = { x: 0, y: 0 };
       for (const p of frame.projectiles) {
         const colour = PROJECTILE_COLOUR[p.kind];
         if (colour === undefined) continue;
-        const pp = t.project(p.x, p.y);
+        t.projectInto(pp, p.x, p.y);
         ctx.fillStyle = colour;
         ctx.fillRect(pp.x - 1, pp.y - 1, 2.5, 2.5);
       }

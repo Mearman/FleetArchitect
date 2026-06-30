@@ -146,6 +146,27 @@ describe("battleCamera", () => {
       }
     });
 
+    it("projectInto writes the same point as project (flat + iso), reusing one scratch", () => {
+      const out = { x: 0, y: 0 };
+      const cases: ReadonlyArray<readonly [number, number]> = [
+        [100, 200],
+        [140, 260],
+        [-37, 84],
+        [0, 0],
+      ];
+      for (const proj of [FLAT_PROJECTION, ISO_PROJECTION]) {
+        const t = makeTransform(800, 600, 5, 100, 200, proj);
+        for (const [wx, wy] of cases) {
+          const p = t.project(wx, wy);
+          const ret = t.projectInto(out, wx, wy);
+          expect(out.x).toBe(p.x);
+          expect(out.y).toBe(p.y);
+          // Returns the caller's scratch (no allocation).
+          expect(ret).toBe(out);
+        }
+      }
+    });
+
     it("screenToWorld is the exact inverse of project", () => {
       const t = makeTransform(800, 600, 5, 100, 200);
       const cases: ReadonlyArray<readonly [number, number]> = [
