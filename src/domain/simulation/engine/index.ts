@@ -184,6 +184,9 @@ export function* simulateBattle(
         }
       : undefined;
 
+  // No-progress counter for the reactor-loss stalemate breaker (resets on death).
+  let ticksSinceLastDeath = 0;
+
   for (let tick = startTick; inputs.maxTicks === undefined || tick <= inputs.maxTicks; tick++) {
     // 0. Awareness phase (sensors, comms, fog of war). Runs first so the
     //    targeting pass below reads each ship's freshly computed `awareness`.
@@ -555,20 +558,19 @@ export function* simulateBattle(
       }
     }
 
-    // 4d-reactor. A modular ship that has lost every reactor is a powerless
-    //     derelict — without power it cannot fire, shield, or run life support,
-    //     and the simulation has no other path that kills it. Destroy it through
-    //     the same death path as the bridge rule above so a disarmed side
-    //     resolves by elimination rather than stalling the battle on a mutual
-    //     brownout (both sides' reactors gone) indefinitely. Runs after
-    //     break-apart so a split that carries off the last reactor still produces
-    //     chunks first. Legacy non-modular ships are unaffected (hasAliveReactor
-    //     returns true when there are no modules).
-    for (const ship of state.ships) {
-      if (!ship.alive) continue;
-      if (ship.modules !== undefined && !hasAliveReactor(ship)) {
-        ship.alive = false;
-        ship.structure = 0;
+    // 4d-reactor. Gate the reactor-loss death rule on no-progress (1200 idle
+    //     ticks since the last real-ship death) so it breaks stalemates without
+    //     ending active combat prematurely.
+    for (const s of state.ships) {
+      if (!s.alive && aliveAtTickStart.has(s.instanceId)) { ticksSinceLastDeath = -1; break; }
+    }
+    ticksSinceLastDeath += 1;
+    if (ticksSinceLastDeath >= 1200) {
+      for (const ship of state.ships) {
+        if (ship.alive && ship.modules !== undefined && !hasAliveReactor(ship)) {
+          ship.alive = false;
+          ship.structure = 0;
+        }
       }
     }
 
