@@ -132,6 +132,10 @@ export function useBattlePlayback({
     // Tracks the last integer tick mirrored into `statusFrame`, so the panel's
     // state is updated only when the discrete tick changes, not every frame.
     let lastStatusTick = -1;
+    // Last integer decisecond mirrored into the `playbackTime` state, so the
+    // readout updates only when the displayed decisecond changes — not every
+    // animation frame (see the mirror block at the end of the `playing` branch).
+    let lastMirroredDecis = -1;
 
     const loop = (now: number) => {
       if (lastTimestamp !== null) {
@@ -153,13 +157,11 @@ export function useBattlePlayback({
             const maxTime = result.ticks / TICKS_PER_SECOND;
             if (newTime >= maxTime) {
               playbackTimeRef.current = maxTime;
-              setPlaybackTime(maxTime);
               setPlaying(false);
               setBuffering(false);
               bufferingRef.current = false;
             } else {
               playbackTimeRef.current = newTime;
-              setPlaybackTime(newTime);
               if (bufferingRef.current) {
                 bufferingRef.current = false;
                 setBuffering(false);
@@ -182,21 +184,29 @@ export function useBattlePlayback({
                 bufferingRef.current = false;
                 setBuffering(false);
                 playbackTimeRef.current = newTime;
-                setPlaybackTime(newTime);
               } else {
                 playbackTimeRef.current = Math.min(playbackTimeRef.current, edgeTime);
-                setPlaybackTime(playbackTimeRef.current);
               }
             } else if (newTime >= edgeTime) {
               // Caught the leading edge — clamp and start buffering.
               playbackTimeRef.current = edgeTime;
-              setPlaybackTime(edgeTime);
               bufferingRef.current = true;
               setBuffering(true);
             } else {
               playbackTimeRef.current = newTime;
-              setPlaybackTime(newTime);
             }
+          }
+
+          // Mirror the clock into state at decisecond resolution so the seeker
+          // slider and tick counter stay in sync without re-rendering the route
+          // on every animation frame. The draw loop reads playbackTimeRef.current
+          // directly (below), so playback smoothness is unaffected; only the UI
+          // readout is throttled to ~10 Hz. The slider's own onSeek still sets
+          // the state directly, so dragging the thumb stays responsive.
+          const decis = Math.floor(playbackTimeRef.current * 10);
+          if (decis !== lastMirroredDecis) {
+            lastMirroredDecis = decis;
+            setPlaybackTime(playbackTimeRef.current);
           }
         }
       }

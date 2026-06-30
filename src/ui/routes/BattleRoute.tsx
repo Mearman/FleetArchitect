@@ -205,6 +205,7 @@ export function BattleRoute() {
   const drawFrame = useBattleCanvas({
     canvasRef,
     cameraRef,
+    canvasSize: camera.canvasSize,
     bounds: camera.bounds,
     maxHp,
     activeAnomalies: simulation.activeAnomalies,

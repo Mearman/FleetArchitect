@@ -78,6 +78,12 @@ function vignetteGradient(
 export interface UseBattleCanvasProps {
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
   cameraRef: React.RefObject<Camera>;
+  /** CSS-pixel canvas size from the ResizeObserver (useBattleCamera). Read on
+   *  every draw instead of `canvas.clientWidth`/`clientHeight` so the draw never
+   *  forces a synchronous layout reflow mid-animation; `null` only before the
+   *  first observer callback, in which case the draw falls back to a one-off
+   *  layout read. */
+  canvasSize: { width: number; height: number } | null;
   bounds: Bounds;
   maxHp: Map<string, { structure: number; shield: number }>;
   activeAnomalies: readonly BattleAnomalyKind[];
@@ -105,6 +111,7 @@ export interface UseBattleCanvasProps {
 export function useBattleCanvas({
   canvasRef,
   cameraRef,
+  canvasSize,
   bounds,
   maxHp,
   activeAnomalies,
@@ -139,8 +146,13 @@ export function useBattleCanvas({
 
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      const width = canvas.clientWidth;
-      const height = canvas.clientHeight;
+      // Canvas size comes from the ResizeObserver (updated on resize, not read
+      // here per frame), so the draw never forces a synchronous layout reflow
+      // mid-animation. Fall back to a one-off clientWidth/Height read only
+      // before the first observer callback has populated canvasSize; once it is
+      // set the `??` short-circuits and no layout property is touched.
+      const width = canvasSize?.width ?? canvas.clientWidth;
+      const height = canvasSize?.height ?? canvas.clientHeight;
       if (width === 0 || height === 0) return;
       // No explicit clear: the backdrop fill below is opaque and covers the
       // whole canvas, so a clear here would be painted straight over.
@@ -780,7 +792,7 @@ export function useBattleCanvas({
       // Over-ship layer: target lock, damage pulse, sensor pulses, boarding/debris.
       drawOverlays(OVER_SHIP_IDS);
     },
-    [bounds, maxHp, activeAnomalies, activeSeed, showFog, factionByInstance, overlays, descriptors, formationColourByInstance, canvasRef, cameraRef],
+    [bounds, maxHp, activeAnomalies, activeSeed, showFog, factionByInstance, overlays, descriptors, formationColourByInstance, canvasRef, cameraRef, canvasSize],
   );
 }
 
