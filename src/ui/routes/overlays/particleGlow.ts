@@ -132,6 +132,41 @@ function resolveParticles(
  * and large and a cooling one dim and small. See the file header for the
  * foveated-density rationale.
  */
+/** Number of prerendered glow sprites (intensity buckets). 16 gives ~6% steps —
+ *  imperceptible on an additive glow blob. */
+const ATLAS_BUCKETS = 16;
+/** Sprite canvas diameter (the max particle glow diameter in pixels). */
+const ATLAS_DIAMETER = Math.ceil(PARTICLE_RADIUS_PX * 2);
+/** Lazily-initialised prerendered glow atlas: one sprite per intensity bucket,
+ *  each a radial gradient with the palette colour and alpha profile baked in.
+ *  Eliminates per-particle createRadialGradient + string-built addColorStop. */
+let glowAtlas: readonly HTMLCanvasElement[] | null = null;
+
+function glowAtlasSprites(): readonly HTMLCanvasElement[] | null {
+  if (glowAtlas !== null) return glowAtlas;
+  const sprites: HTMLCanvasElement[] = [];
+  const half = ATLAS_DIAMETER / 2;
+  for (let i = 0; i < ATLAS_BUCKETS; i += 1) {
+    const intensity = i / (ATLAS_BUCKETS - 1);
+    const [r, g, b] = paletteSample(intensity);
+    const alphaCore = Math.min(1, intensity * 1.2);
+    const canvas = document.createElement("canvas");
+    canvas.width = ATLAS_DIAMETER;
+    canvas.height = ATLAS_DIAMETER;
+    const actx = canvas.getContext("2d");
+    if (actx === null) return null;
+    const grad = actx.createRadialGradient(half, half, 0, half, half, half);
+    grad.addColorStop(0, `rgba(${r | 0},${g | 0},${b | 0},${alphaCore})`);
+    grad.addColorStop(0.5, `rgba(${r | 0},${g | 0},${b | 0},${intensity * 0.4})`);
+    grad.addColorStop(1, `rgba(${r | 0},${g | 0},${b | 0},0)`);
+    actx.fillStyle = grad;
+    actx.fillRect(0, 0, ATLAS_DIAMETER, ATLAS_DIAMETER);
+    sprites.push(canvas);
+  }
+  glowAtlas = sprites;
+  return glowAtlas;
+}
+
 function drawParticleGlow(c: OverlayCtx): void {
   const { ctx, t, tick, frames } = c;
 
@@ -228,20 +263,18 @@ function drawParticleGlow(c: OverlayCtx): void {
   ctx.save();
   ctx.globalCompositeOperation = "lighter"; // additive: glow brightens space
 
+  const atlas = glowAtlasSprites();
   for (const v of visible) {
     if (v.key >= keepProbGrid[v.cell]!) continue;
-    const [r, g, b] = paletteSample(v.intensity);
     const radius = PARTICLE_RADIUS_PX * (0.4 + 0.6 * v.intensity);
-    const alphaCore = Math.min(1, v.intensity * 1.2);
-
-    const grad = ctx.createRadialGradient(v.sx, v.sy, 0, v.sx, v.sy, radius);
-    grad.addColorStop(0, `rgba(${r | 0},${g | 0},${b | 0},${alphaCore})`);
-    grad.addColorStop(0.5, `rgba(${r | 0},${g | 0},${b | 0},${v.intensity * 0.4})`);
-    grad.addColorStop(1, `rgba(${r | 0},${g | 0},${b | 0},0)`);
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.arc(v.sx, v.sy, radius, 0, Math.PI * 2);
-    ctx.fill();
+    // Blit the nearest-bucket sprite (drawImage is far cheaper than
+    // createRadialGradient + 3 addColorStop + arc/fill per particle).
+    const bucket = Math.min(ATLAS_BUCKETS - 1, Math.round(v.intensity * (ATLAS_BUCKETS - 1)));
+    const bucketIntensity = bucket / (ATLAS_BUCKETS - 1);
+    const sprite = atlas === null ? undefined : atlas[bucket];
+    if (sprite === undefined) continue;
+    ctx.globalAlpha = bucketIntensity > 0 ? Math.min(1, v.intensity / bucketIntensity) : 0;
+    ctx.drawImage(sprite, v.sx - radius, v.sy - radius, radius * 2, radius * 2);
   }
 
   ctx.restore();
