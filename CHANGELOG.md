@@ -1,3 +1,33 @@
+# [1.33.0](https://github.com/Mearman/FleetArchitect/compare/v1.32.5...v1.33.0) (2026-06-30)
+
+
+### Bug Fixes
+
+* **sim:** gate reactor-loss death rule on no-progress ([643e976](https://github.com/Mearman/FleetArchitect/commit/643e9760402ef7168f341dd680abc0dbee9cf835))
+* **sim:** route hitscan beams through the armour penetration path ([5c78886](https://github.com/Mearman/FleetArchitect/commit/5c788867018895fd0b2afffd5f39f4aa90bbc1c8))
+* **test:** update cellhit penetration assertion for the (E,p) damage model ([3ebf2ba](https://github.com/Mearman/FleetArchitect/commit/3ebf2ba77982aa3896b3952d5b09f5e363a94255))
+* **test:** update test fixtures for the (E,p) damage model ([66261c9](https://github.com/Mearman/FleetArchitect/commit/66261c963cb1780da2abd3d690000f549bfc0ec7)), closes [hi#output](https://github.com/hi/issues/output)
+
+
+### Features
+
+* **presets:** mount deflectors on shield-bearing preset ships ([a4e6d69](https://github.com/Mearman/FleetArchitect/commit/a4e6d695ec2e733e5c3314323d704bdc973f5205))
+* **sim:** (E,p)-aware armour — surface vs reactive per energy/mass ([42a7e4e](https://github.com/Mearman/FleetArchitect/commit/42a7e4ed4571a3d25687e58290c7f726456581e8))
+* **sim:** activate unified (E,p) damage model (Phase 5) ([299eb13](https://github.com/Mearman/FleetArchitect/commit/299eb1338b498ff5623575bd3ee746c70affb8ed))
+* **sim:** add applyImpact defence maths (Phase 3) ([b864c39](https://github.com/Mearman/FleetArchitect/commit/b864c396ba2154412e7fee7fcdd08d6047bebf20))
+* **sim:** add deflector modules to catalogue (Phase 4) ([31931c2](https://github.com/Mearman/FleetArchitect/commit/31931c2c759ad2934f22a219df8dfffd0760c2e4))
+* **sim:** add deflector modules to Foundry and Swarm ([199f4f3](https://github.com/Mearman/FleetArchitect/commit/199f4f3b346346cca53595687aaaff540c4e11e3))
+* **sim:** add deflector state model (Phase 2) ([4b5d455](https://github.com/Mearman/FleetArchitect/commit/4b5d45575e58d0b062e4f5517a7d6f181ccf16d8))
+* **sim:** add unified (energy, momentum) impact profiles ([7339465](https://github.com/Mearman/FleetArchitect/commit/7339465c827c1e0cfc1be128bdd9aa5b44c05954))
+* **sim:** replace no-progress watchdog with reactor-loss death rule ([a7c346a](https://github.com/Mearman/FleetArchitect/commit/a7c346a54b7010a023f72e3242e8931a3bd6a1f1))
+
+
+### Performance Improvements
+
+* **sim:** pool the spatial-hash entry objects across ticks ([7c4b09c](https://github.com/Mearman/FleetArchitect/commit/7c4b09cb1a0988c699c1ac38f4bebf8ec467245f))
+* **ui:** bake the module glyph into the ship sprite ([e432d92](https://github.com/Mearman/FleetArchitect/commit/e432d9268f2e3811c9a294007da2e66fecd73a4d))
+* **ui:** prerender the particle-glow atlas, blit instead of per-particle gradient ([50858cc](https://github.com/Mearman/FleetArchitect/commit/50858cc2819732e6d721d46c944e211a9c611d14))
+
 ## [1.32.5](https://github.com/Mearman/FleetArchitect/compare/v1.32.4...v1.32.5) (2026-06-30)
 
 
