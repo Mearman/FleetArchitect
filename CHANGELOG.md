@@ -1,3 +1,11 @@
+## [1.32.2](https://github.com/Mearman/FleetArchitect/compare/v1.32.1...v1.32.2) (2026-06-30)
+
+
+### Performance Improvements
+
+* **storage:** keep the result-cache durable write off the playback rAF ([46b9ce4](https://github.com/Mearman/FleetArchitect/commit/46b9ce42f20c5d69bd80bec8bf0bc556b7d9d0b9))
+* **ui:** throttle per-frame playback state and read canvas size from the observer ([9d4f08b](https://github.com/Mearman/FleetArchitect/commit/9d4f08b6d7d9d7e32705485fbf8258bd91ba4536))
+
 ## [1.32.1](https://github.com/Mearman/FleetArchitect/compare/v1.32.0...v1.32.1) (2026-06-29)
 
 
