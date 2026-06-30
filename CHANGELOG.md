@@ -1,3 +1,11 @@
+## [1.32.3](https://github.com/Mearman/FleetArchitect/compare/v1.32.2...v1.32.3) (2026-06-30)
+
+
+### Performance Improvements
+
+* **ui:** add Transform.projectInto and migrate the hot draw loops ([122c4cf](https://github.com/Mearman/FleetArchitect/commit/122c4cf8b72ec6e4110051c20857aedae9512877))
+* **ui:** reuse the per-ship RenderCell buffer across frames ([1661fbe](https://github.com/Mearman/FleetArchitect/commit/1661fbeb7e560aa27863a42e7b2395c21c205eab))
+
 ## [1.32.2](https://github.com/Mearman/FleetArchitect/compare/v1.32.1...v1.32.2) (2026-06-30)
 
 
