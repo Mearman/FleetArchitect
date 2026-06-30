@@ -2,8 +2,16 @@ import type { CellEdges } from "@/schema/grid";
 import { describe, expect, it } from "vitest";
 import { CELL_SIZE } from "@/domain/grid";
 import { mulberry32 } from "@/domain/simulation/rng";
-import { computeMovementInputs, type MovementInputs } from "@/domain/simulation/engine/movement-dynamics";
-import { computeMovementInputsReference } from "@/domain/simulation/engine/movement.reference";
+import {
+  computeForceAndLateral,
+  computeMovementInputs,
+  type ForceAndLateral,
+  type MovementInputs,
+} from "@/domain/simulation/engine/movement-dynamics";
+import {
+  computeForceAndLateralReference,
+  computeMovementInputsReference,
+} from "@/domain/simulation/engine/movement.reference";
 import { toSimShip } from "@/domain/simulation/engine/setup";
 import type { CombatShip, ResolvedModule } from "@/domain/simulation/types";
 import type { ModuleEffect } from "@/schema/module";
@@ -263,5 +271,109 @@ describe("engine.movement-dynamics — reference vs optimised movement-capabilit
     expect(opt.mct, "starved engine gives no gimbal authority").toBe(0);
     expect(opt.geoTorque, "starved engine gives no geometric torque").toBe(0);
     expect(opt.latBudget, "starved engine gives no lateral budget").toBe(0);
+  });
+});
+
+describe("engine.movement-dynamics — force+lateral fusion equivalence", () => {
+  /** Run the fused force+lateral scan and the two-scan reference on independent
+   *  clones and assert every field matches byte-for-byte. */
+  function assertForceEquivalent(
+    ship: SimShip,
+    turnSign: number,
+    engineFire: boolean,
+    thrustMode: "all" | "prograde" | "retrograde",
+    lateralCmd: number,
+  ): ForceAndLateral {
+    const ref = computeForceAndLateralReference(
+      structuredClone(ship),
+      turnSign,
+      engineFire,
+      thrustMode,
+      lateralCmd,
+    );
+    const opt = computeForceAndLateral(
+      structuredClone(ship),
+      turnSign,
+      engineFire,
+      thrustMode,
+      lateralCmd,
+    );
+    expect(opt.fx, "fx").toBe(ref.fx);
+    expect(opt.fy, "fy").toBe(ref.fy);
+    expect(opt.torque, "torque").toBe(ref.torque);
+    expect(opt.latFx, "latFx").toBe(ref.latFx);
+    expect(opt.latFy, "latFy").toBe(ref.latFy);
+    expect(opt.latTorque, "latTorque").toBe(ref.latTorque);
+    return opt;
+  }
+
+  it("gimbal + fore/aft engines thrusting: engine force + gimbal torque, no lateral", () => {
+    const resolved = resolveToSim(
+      combatShip("fa-engines", [
+        moduleOf("r1", REACTOR, 0, 0),
+        moduleOf("g1", gimbalEngine(Math.PI), 2, 1),
+        moduleOf("f1", fixedEngine(Math.PI), -2, 1),
+      ]),
+    );
+    const opt = assertForceEquivalent(resolved, 1, true, "all", 0);
+    expect(opt.fx, "rear engines push forward").not.toBe(0);
+    expect(opt.latFy, "fore/aft engines contribute no lateral").toBe(0);
+  });
+
+  it("thrustMode filter selects opposite engines between prograde and retrograde", () => {
+    const resolved = resolveToSim(
+      combatShip("thrustmode", [
+        moduleOf("r1", REACTOR, 0, 0),
+        moduleOf("fwd", fixedEngine(Math.PI), 1, 0), // exhaust aft ⇒ +x force (prograde)
+        moduleOf("aft", fixedEngine(0), -1, 0), // exhaust fwd ⇒ -x force (retrograde)
+      ]),
+    );
+    const prograde = assertForceEquivalent(resolved, 0, true, "prograde", 0);
+    const retrograde = assertForceEquivalent(resolved, 0, true, "retrograde", 0);
+    expect(Math.sign(prograde.fx), "prograde vs retrograde flip the fired engine").not.toBe(
+      Math.sign(retrograde.fx),
+    );
+  });
+
+  it("lateral engine is double-counted: engine force AND damper channel", () => {
+    // Exhaust at -π/2 ⇒ force +y (lyUnit = 1). With engineFire + thrustMode
+    // "all" it contributes to fy (engine force), and with lateralCmd = 1 it also
+    // contributes to latFy (damper) — the intentional double-count the fusion
+    // must preserve as two separate running sums.
+    const resolved = resolveToSim(
+      combatShip("lateral-dbl", [
+        moduleOf("r1", REACTOR, 0, 0),
+        moduleOf("lat", fixedEngine(-Math.PI / 2), 1, 0),
+      ]),
+    );
+    const opt = assertForceEquivalent(resolved, 0, true, "all", 1);
+    expect(opt.fy, "lateral engine contributes to engine force").not.toBe(0);
+    expect(opt.latFy, "lateral engine contributes to damper channel").not.toBe(0);
+  });
+
+  it("RCS: commandable torque (turnSign * torque), no linear force", () => {
+    const resolved = resolveToSim(
+      combatShip("rcs", [
+        moduleOf("r1", REACTOR, 0, 0),
+        moduleOf("rcs1", { kind: "rcs", torque: 9 }, 1, 0),
+      ]),
+    );
+    const opt = assertForceEquivalent(resolved, 1, false, "all", 0);
+    expect(opt.torque, "rcs torque = turnSign * effect.torque").toBe(9);
+    expect(opt.fx).toBe(0);
+    expect(opt.fy).toBe(0);
+  });
+
+  it("fuel-starved engine contributes nothing on either channel", () => {
+    const resolved = resolveToSim(
+      combatShip("fa-starved", [
+        moduleOf("r1", REACTOR, 0, 0),
+        moduleOf("lat", fixedEngine(-Math.PI / 2), 1, 0),
+      ]),
+    );
+    getModule(resolved, "lat").fuelStarved = true;
+    const opt = assertForceEquivalent(resolved, 0, true, "all", 1);
+    expect(opt.fy).toBe(0);
+    expect(opt.latFy).toBe(0);
   });
 });

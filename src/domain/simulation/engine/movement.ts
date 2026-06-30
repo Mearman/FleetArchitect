@@ -15,13 +15,8 @@ import { sampleLocalRhoKgPerM3 } from "./medium-setup";
 import { GAS_DRAG_CROSS_SECTION_SHIP_M2, SIM, THRUST_ALIGNMENT_RAD } from "./config";
 import { TICKS_PER_SECOND } from "../types";
 import { combinedDilation } from "./proper-time";
-import {
-  bangBangTurnSign,
-  lateralForceAndTorque,
-  maxCommandableTorque,
-  shipForceAndTorque,
-} from "./physics";
-import { computeMovementInputs } from "./movement-dynamics";
+import { bangBangTurnSign, maxCommandableTorque } from "./physics";
+import { computeForceAndLateral, computeMovementInputs } from "./movement-dynamics";
 import { relativisticMomentumStep } from "./relativistic-momentum";
 import { angleDifference, angularAccelPerTick, blackHoleAvoidWeight, rotateLocal } from "./setup";
 import { hasAnomaly } from "@/domain/anomaly";
@@ -558,35 +553,15 @@ export function moveShips(
       const alignedForThrust =
         Math.abs(angleDifference(ship.facing, desiredFacing)) <= THRUST_ALIGNMENT_RAD;
       const engineFire = shouldThrust && (alignedForThrust || forceFire);
-      const { fx, fy, torque } = shipForceAndTorque(ship, turnSign, engineFire, thrustMode);
-      // Afterburner scales the net engine force (and the resulting torque) for
-      // the duration of its window; identity multiplier leaves it untouched.
-      // Throttle scales it further so a fine correction (cancelling a small
-      // residual under recoil) does not slam full thrust and over-correct.
-      const throttle = cmd.throttle ?? 1;
-      const lx = engineFire ? fx * boost.thrust * throttle : 0;
-      const ly = engineFire ? fy * boost.thrust * throttle : 0;
-      // Record the effective throttle (with afterburner) for the resource step's
-      // propellant burn: fuel is consumed in proportion to the thrust actually
-      // produced this tick, not the rated thrust of every engine every tick.
-      if (engineFire) ship.engineThrottle = boost.thrust * throttle;
-      // Universal lateral (RCS) damper: cancel the velocity perpendicular to
-      // the ship's facing, every tick, independent of the radial translation
-      // controller. This is what keeps a ship from drifting sideways — lateral
-      // thrusters fire to oppose perpendicular motion (recoil, turn-coupling)
-      // without turning the ship, so it stays aimed at its target. The command
-      // is the proportional throttle that arrests `vPerp` in one tick, clamped
-      // to the lateral budget. Pure CoM translation (no torque — see
-      // `lateralForceAndTorque`), so it never spins the ship.
-      // latBudget (the symmetric lateral thrust budget) was computed above in
-      // computeMovementInputs.
-      // Per-tick lateral Δv capacity (m/tick²): F/m is an SI acceleration
-      // (m/s²); ACCEL_PER_TICK_FROM_SI rescales it into the m/tick velocity
-      // clock so the `vPerp / aLat` throttle below compares like with like
-      // (vPerp is m/tick). Without the factor the damper thinks it has 900× the
-      // authority it really does and saturates instantly.
-      const aLat =
-        (latBudget / Math.max(ship.mass, 1)) * ACCEL_PER_TICK_FROM_SI;
+      // Lateral (RCS) damper command, computed before the fused force call
+      // below (it needs lateralCmd). The damper cancels velocity perpendicular
+      // to the facing every tick — lateral thrusters fire to oppose perpendicular
+      // drift (recoil, turn-coupling) without spinning the ship. `lateralCmd` is
+      // the proportional throttle that arrests `vPerp` in one tick, clamped to
+      // the lateral budget (latBudget, from computeMovementInputs). aLat is the
+      // per-tick lateral Δv capacity (F/m rescaled by ACCEL_PER_TICK_FROM_SI so
+      // vPerp/aLat compares like-with-like in the m/tick clock).
+      const aLat = (latBudget / Math.max(ship.mass, 1)) * ACCEL_PER_TICK_FROM_SI;
       let lateralCmd = 0;
       if (aLat > 0) {
         const perpX = -Math.sin(ship.facing);
@@ -594,8 +569,25 @@ export function moveShips(
         const vPerp = ship.velX * perpX + ship.velY * perpY;
         lateralCmd = Math.max(-1, Math.min(1, -vPerp / aLat));
       }
-      const lat = lateralForceAndTorque(ship, lateralCmd);
-      const worldForce = rotateLocal(ship.facing, lx + lat.fx, ly + lat.fy);
+      // Fused force + lateral scan: one pass replaces shipForceAndTorque and
+      // lateralForceAndTorque. `fy` is the engine force (boost/throttle-scaled
+      // below); `latFy` is the lateral damper force (applied raw).
+      const { fx, fy, torque, latFx, latFy, latTorque } = computeForceAndLateral(
+        ship,
+        turnSign,
+        engineFire,
+        thrustMode,
+        lateralCmd,
+      );
+      // Afterburner/throttle scale the net engine force (and its torque) for the
+      // window / a fine correction that does not slam full thrust.
+      const throttle = cmd.throttle ?? 1;
+      const lx = engineFire ? fx * boost.thrust * throttle : 0;
+      const ly = engineFire ? fy * boost.thrust * throttle : 0;
+      // Effective throttle (with afterburner) for the resource step's propellant
+      // burn: fuel consumed in proportion to the thrust actually produced.
+      if (engineFire) ship.engineThrottle = boost.thrust * throttle;
+      const worldForce = rotateLocal(ship.facing, lx + latFx, ly + latFy);
       // Engine forces are catalogue Newtons, so F/m is an SI acceleration
       // (m/s²). World velocity is metres-per-TICK, so the per-tick velocity
       // increment is (F/m) / TICKS_PER_SECOND² (m/tick²) — acceleration crosses
@@ -639,7 +631,7 @@ export function moveShips(
       // ACCEL_PER_TICK_FROM_SI. The lateral engines' torque is included so the
       // attitude controller sees (and counters) any unbalanced lateral firing; a
       // balanced RCS pair contributes none.
-      const totalTorque = torque + lat.torque;
+      const totalTorque = torque + latTorque;
       ship.angVel += angularAccelPerTick(totalTorque, ship.momentOfInertia);
     } else {
       // Legacy aggregated ship: no module geometry, so its commandable torque

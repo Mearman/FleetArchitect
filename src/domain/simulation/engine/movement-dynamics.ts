@@ -27,7 +27,7 @@
  */
 
 import { isOperational } from "./crew";
-import { gimbalTorque } from "./physics";
+import { gimbalTorque, type ThrustMode } from "./physics";
 import type { SimShip } from "./types";
 
 export interface MovementInputs {
@@ -127,4 +127,104 @@ export function computeMovementInputs(ship: SimShip, shouldThrust: boolean): Mov
     latBudget: Math.min(latPlus, latMinus),
     boost: { thrust: boostThrust, turn: boostTurn },
   };
+}
+
+/** Net engine force/torque (from `shipForceAndTorque`) and the lateral RCS
+ *  damper force (from `lateralForceAndTorque`), fused into one module pass.
+ *  `fy` is the engine force; `latFy` is the lateral damper force — kept as
+ *  SEPARATE running sums (lateral engines are intentionally double-counted:
+ *  the engine force channel and the damper channel both fire them), so the
+ *  caller's `fy-scaled + latFy` association matches the original two scans. */
+export interface ForceAndLateral {
+  fx: number;
+  fy: number;
+  torque: number;
+  latFx: number;
+  latFy: number;
+  latTorque: number;
+}
+
+/**
+ * Fused `shipForceAndTorque` + `lateralForceAndTorque` — one module pass. Each
+ * accumulator is a single running sum in module-array order, byte-identical to
+ * its separate scan. The thrustMode filter and the lateral classification are
+ * evaluated independently per engine (a lateral engine contributes to BOTH the
+ * engine force — when it passes thrustMode — and the damper channel — when it
+ * matches the lateral direction), exactly as the two original functions did.
+ * `maxTorque` (discarded by `moveShips`) is not computed.
+ */
+export function computeForceAndLateral(
+  ship: SimShip,
+  turnSign: number,
+  engineFire: boolean,
+  thrustMode: ThrustMode,
+  lateralCmd: number,
+): ForceAndLateral {
+  const modules = ship.modules;
+  if (modules === undefined) {
+    return { fx: 0, fy: 0, torque: 0, latFx: 0, latFy: 0, latTorque: 0 };
+  }
+  const comX = ship.comX;
+  const comY = ship.comY;
+  let fx = 0;
+  let fy = 0;
+  let torque = 0;
+  let latFy = 0;
+  const lateralActive = lateralCmd !== 0;
+  const lateralThrottle = lateralActive ? Math.min(1, Math.abs(lateralCmd)) : 0;
+
+  for (const m of modules) {
+    if (!isOperational(m)) continue;
+    const effect = m.effect;
+    if (effect.kind === "engine") {
+      if (m.fuelStarved) continue;
+      const t = effect.thrust;
+      if (t <= 0) continue;
+      const lxUnit = -Math.cos(m.facing);
+      const lyUnit = -Math.sin(m.facing);
+
+      // Engine force channel (shipForceAndTorque): fires only when the ship is
+      // thrusting AND the engine passes the thrustMode direction filter.
+      if (engineFire) {
+        const thrustModeExcludes =
+          (thrustMode === "prograde" && lxUnit <= 0) ||
+          (thrustMode === "retrograde" && lxUnit >= 0);
+        if (!thrustModeExcludes) {
+          const lx = lxUnit * t;
+          const ly = lyUnit * t;
+          fx += lx;
+          fy += ly;
+          const rx = m.x - comX;
+          const ry = m.y - comY;
+          const nominalTorque = rx * ly - ry * lx;
+          torque += nominalTorque;
+          const gimbalArc = effect.gimbalArc ?? 0;
+          if (gimbalArc > 0) {
+            const thrustDir = m.facing + Math.PI;
+            const ccw = gimbalTorque(rx, ry, t, thrustDir, gimbalArc);
+            const cw = gimbalTorque(rx, ry, t, thrustDir, -gimbalArc);
+            const extraCcw = ccw - nominalTorque;
+            const extraCw = cw - nominalTorque;
+            if (turnSign > 0 && extraCcw > 0) torque += extraCcw;
+            else if (turnSign < 0 && extraCw < 0) torque += extraCw;
+          }
+        }
+      }
+
+      // Lateral damper channel (lateralForceAndTorque): fires regardless of
+      // engineFire/thrustMode. Only lateral-classified engines (|ly| > |lx|)
+      // that push the commanded direction contribute.
+      if (lateralActive && Math.abs(lyUnit) > Math.abs(lxUnit)) {
+        const lateralExcludes =
+          (lateralCmd > 0 && lyUnit <= 0) || (lateralCmd < 0 && lyUnit >= 0);
+        if (!lateralExcludes) {
+          latFy += lyUnit * t * lateralThrottle;
+        }
+      }
+    } else if (effect.kind === "rcs" || effect.kind === "reactionWheel") {
+      torque += turnSign * effect.torque;
+    }
+  }
+
+  return { fx, fy, torque, latFx: 0, latFy, latTorque: 0 };
 }
