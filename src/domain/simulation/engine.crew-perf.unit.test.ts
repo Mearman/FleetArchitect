@@ -125,9 +125,10 @@ describe("engine.crew-perf — preset matchups still resolve", () => {
     //
     // After armour hull growth, the Drone Swarm vs Hive Assault fleet has
     // ~9061 modules (was ~7553); each tick costs ~967 ms. Ships need ~370 ticks
-    // to close and produce kills, so the result is a stalemate decided by
-    // remaining HP — expected at this scale. 30 ticks ≈ 29 s isolated; raised
-    // to 300 s to absorb full-suite CPU contention (5× = 145 s < 300 s).
+    // to close and produce kills, so the result is decided by the tick-cap
+    // fallback on remaining HP — expected at this scale. 30 ticks ≈ 29 s
+    // isolated; raised to 300 s to absorb full-suite CPU contention (5× = 145 s
+    // < 300 s).
     const result = runBattle(
       buildInputs("preset-fleet-hive-assault", "preset-fleet-drone-swarm", 42, PRESET_CREWLESS_TICKS),
     );

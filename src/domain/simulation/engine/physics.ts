@@ -313,6 +313,24 @@ export function hasAliveCommand(ship: SimShip): boolean {
   return false;
 }
 
+/** Whether the ship has at least one alive reactor (power) module. A modular
+ *  ship with no reactor cannot generate power and is destroyed by the
+ *  reactor-loss death rule in the tick loop — without power it cannot fire,
+ *  shield, or run life support, and the simulation has no other path that
+ *  kills it, so leaving it alive would stall a battle on a mutual brownout
+ *  (both sides' reactors gone). A module at 0 hp counts as destroyed even
+ *  before its `alive` flag is flipped, since destruction is hp-driven. Legacy
+ *  non-modular ships have no module power model and are unaffected. Uses
+ *  structural loss (`alive`/`hp`), not the `manned` gate — an alive-but-unmanned
+ *  reactor is a recoverable brownout, not a death sentence. */
+export function hasAliveReactor(ship: SimShip): boolean {
+  if (ship.modules === undefined) return true;
+  for (const m of ship.modules) {
+    if (m.alive && m.hp > 0 && m.effect.kind === "power") return true;
+  }
+  return false;
+}
+
 /** Sum the per-engine force (in ship-local axes) and the resulting torque
  *  (z-component of the cross product `r × F`, in ship-local units) for a
  *  modular ship. Engines that are not alive contribute nothing — a

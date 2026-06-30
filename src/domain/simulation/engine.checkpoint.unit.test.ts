@@ -16,7 +16,6 @@ import {
   buildArenaMedium,
   restoreArenaMedium,
 } from "@/domain/simulation/engine/medium-setup";
-import { createStalemateWatch } from "@/domain/simulation/engine/stalemate";
 import { fleetCentroid } from "@/domain/simulation/engine/movement";
 import type { EngineState } from "@/domain/simulation/engine/state";
 import type {
@@ -45,9 +44,9 @@ function isUnknownArray(value: unknown): value is unknown[] {
  * battles, so it must:
  *  - preserve the AUTHORITATIVE state exactly (a captured-then-restored-then-
  *    recaptured checkpoint is deep-equal: capture and restore are inverse), and
- *  - preserve `±Infinity` / `-0` that JSON would silently discard
- *    (`lastFiredTick = -Infinity`, the stalemate watch's lows = `+Infinity`),
- *    which is why capture uses `structuredClone`, not `JSON`, and
+ *  - preserve `-Infinity` / `-0` that JSON would silently discard
+ *    (`lastFiredTick = -Infinity`), which is why capture uses
+ *    `structuredClone`, not `JSON`, and
  *  - round-trip through the Zod schema, which parses a captured checkpoint.
  *
  * Derived caches (the crew path cache and its UNREACHABLE Symbol, the awareness
@@ -301,17 +300,18 @@ function makeState(): { state: EngineState; rng: ReturnType<typeof mulberry32> }
 describe("captureCheckpoint / restoreCheckpoint", () => {
   it("parses against the EngineCheckpoint schema", () => {
     const { state, rng } = makeState();
-    const stalemate = createStalemateWatch(state.ships);
-    const cp = captureCheckpoint(state, rng, 3, stalemate);
+    const cp = captureCheckpoint(state, rng, 3);
     // Zod accepts the captured checkpoint as-is (the schema is the storage
     // boundary contract). A throw here means the schema and the capture drifted.
     expect(() => EngineCheckpoint.parse(cp)).not.toThrow();
+    // The no-progress stalemate watch is gone (the termination guarantee is now
+    // the reactor-loss death rule, which carries no per-battle state).
+    expect("stalemate" in cp).toBe(false);
   });
 
-  it("preserves ±Infinity the JSON path would lose", () => {
+  it("preserves -Infinity the JSON path would lose", () => {
     const { state, rng } = makeState();
-    const stalemate = createStalemateWatch(state.ships);
-    const cp = captureCheckpoint(state, rng, 3, stalemate);
+    const cp = captureCheckpoint(state, rng, 3);
 
     // The defender never fired: -Infinity must survive verbatim.
     const defender = cp.ships.find((s) => s.instanceId === "d1");
@@ -319,11 +319,8 @@ describe("captureCheckpoint / restoreCheckpoint", () => {
     // The attacker fired on tick 7: the finite value survives too.
     const attacker = cp.ships.find((s) => s.instanceId === "a1");
     expect(attacker?.lastFiredTick).toBe(7);
-    // The stalemate watch's all-time lows begin at +Infinity.
-    expect(cp.stalemate?.enemyDistLow).toBe(Number.POSITIVE_INFINITY);
-    expect(cp.stalemate?.mineDistLow).toBe(Number.POSITIVE_INFINITY);
 
-    // JSON would have turned all three into `null` — prove the hazard is real.
+    // JSON would have turned -Infinity into `null` — prove the hazard is real.
     const viaJson: unknown = JSON.parse(JSON.stringify(cp));
     if (
       typeof viaJson !== "object" ||
@@ -346,8 +343,7 @@ describe("captureCheckpoint / restoreCheckpoint", () => {
 
   it("round-trips: capture ∘ restore ∘ capture is idempotent", () => {
     const { state, rng } = makeState();
-    const stalemate = createStalemateWatch(state.ships);
-    const first = captureCheckpoint(state, rng, 3, stalemate);
+    const first = captureCheckpoint(state, rng, 3);
 
     // Restore into a fresh engine, rebuild a matching EngineState, and re-capture.
     const restored = restoreCheckpoint(first);
@@ -390,7 +386,7 @@ describe("captureCheckpoint / restoreCheckpoint", () => {
       projectileMediumScratch: [],
       awarenessScratch: freshAwarenessScratch(),
     };
-    const second = captureCheckpoint(reState, resumedRng, restored.tick, restored.stalemate);
+    const second = captureCheckpoint(reState, resumedRng, restored.tick);
 
     // The two checkpoints must be deep-equal: capture and restore are inverse,
     // and no authoritative field was lost, mangled, or re-derived differently.
@@ -401,7 +397,7 @@ describe("captureCheckpoint / restoreCheckpoint", () => {
 
   it("leaves derived caches undefined and awareness empty on a restored ship", () => {
     const { state, rng } = makeState();
-    const cp = captureCheckpoint(state, rng, 3, undefined);
+    const cp = captureCheckpoint(state, rng, 3);
     const restored = restoreCheckpoint(cp);
     const ship = restored.ships[0];
     if (ship === undefined) throw new Error("no ship");

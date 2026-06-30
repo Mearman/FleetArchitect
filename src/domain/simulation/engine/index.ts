@@ -12,9 +12,7 @@ import type { Disc } from "@/domain/occluders";
 import { hasAnomaly } from "@/domain/anomaly";
 import type { BattleFrame, BattleResult, ShipDescriptor } from "@/schema/battle";
 import type { BattleInputs, BattleSummary } from "../types";
-import { buildShipRoster, STALEMATE_IDLE_TICKS, TICKS_PER_SECOND } from "../types";
-import { createStalemateWatch, tickStalemateWatch } from "./stalemate";
-import type { StalemateWatch } from "./stalemate";
+import { buildShipRoster, TICKS_PER_SECOND } from "../types";
 
 import { computeAwareness } from "./awareness";
 import { stepAi } from "./ai-step";
@@ -44,7 +42,7 @@ import { moveShips } from "./movement";
 import { launchDecoys, launchDrones, stepPhantoms } from "./phantoms";
 import { stepPulses } from "./pulse-step";
 import { aggregatesChanged } from "./aggregates-fingerprint";
-import { hasAliveCommand, recomputeAggregates } from "./physics";
+import { hasAliveCommand, hasAliveReactor, recomputeAggregates } from "./physics";
 import { electFocusTarget, pickTarget } from "./targeting";
 import { refreshRosterIncremental } from "./roster";
 import { applyBlink, applyCommandAuras, stepOvercharge } from "./tech";
@@ -124,12 +122,10 @@ export function* simulateBattle(
 
   // Assemble the initial engine state: built fresh from the resolved ships on a
   // cold start, or rebuilt from the checkpoint on resume. `startTick` is 1 on a
-  // cold start or `checkpoint.tick + 1` on resume; `stalemate` is undefined on
-  // a cold start (the frame-0 prologue below creates it) and restored on resume.
+  // cold start or `checkpoint.tick + 1` on resume.
   const bootstrap = bootstrapEngine(inputs, rng, resumeFrom);
   const state = bootstrap.state;
   const startTick = bootstrap.startTick;
-  let stalemate: StalemateWatch | undefined = bootstrap.stalemate;
 
   // Deterministic id minters. Each consumes one slot from a monotonic counter
   // on the EngineState, combining it with the spawning ship's id, the kind, and
@@ -152,9 +148,8 @@ export function* simulateBattle(
   // every snapshot. This keeps the awareness phase from touching the battle rng.
   const occluders = computeOccluders(inputs.anomalies, inputs.seed >>> 0);
 
-  // Frame 0 + stalemate watch: the cold-start prologue only. On resume neither
-  // runs again (frame 0 was yielded, the watch restored) — re-running would
-  // diverge from a fresh run's tail.
+  // Frame 0: the cold-start prologue only. On resume it does not run again
+  // (frame 0 was yielded) — re-running would diverge from a fresh run's tail.
   if (resumeFrom === undefined) {
     // Frame 0: run the awareness phase once so the opening snapshot carries the
     // same fog-of-war data every later frame does, and so each ship's `awareness`
@@ -170,12 +165,6 @@ export function* simulateBattle(
 
     captureDescriptors(state.ships);
     yield snapshot(0, state.ships, state.projectiles, frame0Awareness, state.mines, state.pods, state.pulses, state.emissions, state.debris, state.beams, state.particles, state.medium);
-
-    // No-progress stalemate watchdog (see ./stalemate) — the termination
-    // guarantee for an uncapped battle, created only when there is no explicit
-    // `maxTicks` (a focused test passing a cap runs the legacy fixed-length loop).
-    stalemate =
-      inputs.maxTicks === undefined ? createStalemateWatch(state.ships) : undefined;
   }
 
   // Both `checkpointEvery` (a positive cadence) and `onCheckpoint` must be
@@ -188,7 +177,7 @@ export function* simulateBattle(
     checkpointEvery !== undefined && checkpointEvery > 0 && onCheckpoint !== undefined
       ? (tick: number): void => {
           if (tick % checkpointEvery === 0) {
-            onCheckpoint(captureCheckpoint(state, rng, tick, stalemate));
+            onCheckpoint(captureCheckpoint(state, rng, tick));
           }
         }
       : undefined;
@@ -567,6 +556,23 @@ export function* simulateBattle(
       }
     }
 
+    // 4d-reactor. A modular ship that has lost every reactor is a powerless
+    //     derelict — without power it cannot fire, shield, or run life support,
+    //     and the simulation has no other path that kills it. Destroy it through
+    //     the same death path as the bridge rule above so a disarmed side
+    //     resolves by elimination rather than stalling the battle on a mutual
+    //     brownout (both sides' reactors gone) indefinitely. Runs after
+    //     break-apart so a split that carries off the last reactor still produces
+    //     chunks first. Legacy non-modular ships are unaffected (hasAliveReactor
+    //     returns true when there are no modules).
+    for (const ship of state.ships) {
+      if (!ship.alive) continue;
+      if (ship.modules !== undefined && !hasAliveReactor(ship)) {
+        ship.alive = false;
+        ship.structure = 0;
+      }
+    }
+
     // 4e-salvage. Salvage mechanics: debris collection and hull claiming. Runs
     //     BEFORE this tick's wreckage is spawned, so it sweeps only the fragments
     //     that drifted in from earlier ticks — a fragment is therefore snapshotted
@@ -718,31 +724,18 @@ export function* simulateBattle(
       break;
     }
 
-    // 7. No-progress watchdog (uncapped battles only). Runs after the
-    //    elimination checks so a decisive kill always wins over a stalemate
-    //    call. STALEMATE_IDLE_TICKS ticks with no progress means neither side
-    //    can finish the other — decide it on remaining HP.
-    if (
-      stalemate !== undefined &&
-      tickStalemateWatch(stalemate, state.ships, state.attackers, state.defenders, state.mines, STALEMATE_IDLE_TICKS)
-    ) {
-      state.winner = leadingSide(state.attackers, state.defenders);
-      state.resolved = true;
-      break;
-    }
-
-    // 8. Checkpoint emission (resume support). Capture an end-of-tick checkpoint
+    // 7. Checkpoint emission (resume support). Capture an end-of-tick checkpoint
     //    on the requested cadence, AFTER the frame is yielded and the termination
     //    checks have run — so a checkpoint is only ever taken for a tick the
-    //    battle survived. The capture reads the live EngineState, the RNG
-    //    position, and the stalemate watch, so resuming reproduces the tail
-    //    byte-identically. Skipped unless both `checkpointEvery` and
-    //    `onCheckpoint` are set, so the no-options path is zero-cost.
+    //    battle survived. The capture reads the live EngineState and the RNG
+    //    position, so resuming reproduces the tail byte-identically. Skipped
+    //    unless both `checkpointEvery` and `onCheckpoint` are set, so the
+    //    no-options path is zero-cost.
     if (emitCheckpoint !== undefined) emitCheckpoint(tick);
   }
 
   // Hit an explicit `maxTicks` early-stop without a decisive end (focused tests
-  // only): decide by remaining hit points, as the watchdog would.
+  // only): decide by remaining hit points.
   if (!state.resolved) {
     state.winner = leadingSide(state.attackers, state.defenders);
   }

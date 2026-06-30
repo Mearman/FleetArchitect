@@ -175,7 +175,7 @@ describe("engagement: ships close and fight", () => {
  * is byte-identical across two same-seed runs.
  */
 // Three attackers gang up on a single defender — a guaranteed kill rather than
-// the symmetric stalemate the mirror match settles into. The fleet/ship ids are
+// the mutual-brownout draw a mirror match settles into. The fleet/ship ids are
 // fixed (not freshly generated per call) so two same-seed runs over the same
 // inputs produce identical debris ids — the determinism contract is "same
 // inputs, same output", and the ids derive from the destroyed ship's instanceId.

@@ -22,22 +22,17 @@ import { buildArenaMedium, restoreArenaMedium } from "./medium-setup";
 import { fleetCentroid } from "./movement";
 import { toSimShip } from "./setup";
 import type { Rng } from "@/domain/simulation/rng";
-import type { StalemateWatch } from "./stalemate";
 import { freshAwarenessScratch } from "./awareness";
 import type { EngineState } from "./state";
 
 /**
- * The initial engine state plus the loop's entry tick and (for an uncapped
- * battle) the stalemate watch. On a cold start `startTick` is 1 (the tick after
- * frame 0) and `stalemate` is left undefined for the generator's cold-start
- * prologue to create; on resume `startTick` is `checkpoint.tick + 1` and the
- * watch is restored from the checkpoint so its accumulated idle progress carries
- * over.
+ * The initial engine state plus the loop's entry tick. On a cold start
+ * `startTick` is 1 (the tick after frame 0); on resume `startTick` is
+ * `checkpoint.tick + 1`.
  */
 export interface EngineBootstrap {
   state: EngineState;
   startTick: number;
-  stalemate: StalemateWatch | undefined;
 }
 
 /**
@@ -154,11 +149,11 @@ export function bootstrapEngine(
       projectileMediumScratch: [],
       awarenessScratch: freshAwarenessScratch(),
     };
-    return { state, startTick: 1, stalemate: undefined };
+    return { state, startTick: 1 };
   }
 
   // Resume: restore the projectile counter, then rebuild the live entities,
-  // counters, deployment and stalemate watch from the checkpoint.
+  // counters and deployment from the checkpoint.
   setProjectileCounter(resumeFrom.counters.projectile);
   const restored = restoreCheckpoint(resumeFrom);
   // Rebuild the medium field from the captured scalars (the grid connectivity is
@@ -210,5 +205,5 @@ export function bootstrapEngine(
     projectileMediumScratch: [],
     awarenessScratch: freshAwarenessScratch(),
   };
-  return { state, startTick: restored.tick + 1, stalemate: restored.stalemate };
+  return { state, startTick: restored.tick + 1 };
 }

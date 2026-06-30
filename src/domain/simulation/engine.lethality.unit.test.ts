@@ -257,11 +257,10 @@ describe("engine.lethality — fast uncapped terminal-state guard", () => {
     //     is deterministic across seeds — all 8 tested seeds (0, 1, 42, 100,
     //     123, 999, 7777, 12345) produce attacker wins at tick ~629, 2.5–4.6 s
     //     isolated (verified on the development machine).
-    //   - 629 ticks is well below the 1200-tick no-progress stalemate threshold
-    //     (STALEMATE_IDLE_TICKS), confirming the battle terminates via the
-    //     elimination check in step 6 of the engine loop, not the HP-tiebreak
-    //     watchdog. The losing side has 0 alive ships, not "fewer HP than the
-    //     winner" — this is the strongest possible terminal-state assertion.
+    //   - 629 ticks confirms the battle terminates via the elimination check in
+    //     step 6 of the engine loop (no tick cap is set), not by any early-stop.
+    //     The losing side has 0 alive ships, not "fewer HP than the winner" —
+    //     this is the strongest possible terminal-state assertion.
     //
     // Why the preset Strike vs Picket uncapped test was retired:
     //   Auto-derived armour hull growth added ~1.5× more modules per frigate,
@@ -272,7 +271,8 @@ describe("engine.lethality — fast uncapped terminal-state guard", () => {
     //
     // Timeout: ~5 s isolated × 5 CI contention factor = ~25 s; set to 60 s for
     // headroom — no tuning needed if per-tick cost grows, because the tick count
-    // stays at ~629 (the elimination check fires before stalemate).
+    // stays at ~629 (the elimination check fires at the same tick regardless of
+    // host speed).
     const atkFleet = buildMinimalFleet(
       "lethality-carrion",
       "Swarm",

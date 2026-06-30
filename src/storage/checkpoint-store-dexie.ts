@@ -13,9 +13,9 @@ import { isUncloneable } from "@/storage/idb-errors";
  * in-progress state is subsumed.
  *
  * Dexie / IndexedDB uses structured clone across the thread boundary, so the
- * checkpoint's `±Infinity` / `-0` fields (a ship that has never fired carries
- * `lastFiredTick = -Infinity`; the stalemate watch's all-time lows begin at
- * `+Infinity`) survive exactly — the reason this store never goes through JSON.
+ * checkpoint's `-Infinity` / `-0` fields (a ship that has never fired carries
+ * `lastFiredTick = -Infinity`) survive exactly — the reason this store never
+ * goes through JSON.
  *
  * On read, `EngineCheckpoint.safeParse` is the shape-drift guard: a stored
  * checkpoint whose schema no longer matches (after a version bump) is a miss,

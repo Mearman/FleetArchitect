@@ -93,17 +93,20 @@ describe("battle pipeline (resolve -> runBattle)", () => {
       defenderFleetId: defender.id,
       anomalies: [],
       seed: 1,
+      maxTicks: 600,
     });
 
     // One deployment frame plus one per simulated tick.
     expect(result.frames).toHaveLength(result.ticks + 1);
     expect(result.frames[0]?.tick).toBe(0);
     expect(result.frames[0]?.ships.every((s) => s.alive)).toBe(true);
-    // Run with no tick cap: the battle terminates on its own. With the
-    // per-module power grid a symmetric mirror match stalemates — both reactors
-    // die, every weapon goes unpowered, neither can finish the other off — and
-    // the no-progress watchdog ends it as a legitimate draw rather than letting
-    // it run forever. (The test completing at all proves it terminates.)
+    // The minimal armedFighter (no engines, ~990 MJ structure, pea-shooter
+    // laser) is a non-resolving configuration: it deals no damage, so neither
+    // the elimination check nor the reactor-loss death rule ever fires. With the
+    // no-progress watchdog removed, such a degenerate matchup has no internal
+    // termination — so this pipeline test caps it (`maxTicks`) and asserts the
+    // pipeline still yields a well-formed result via the cap fallback. Resolving
+    // preset matchups are covered by the lethality suite.
     expect(result.ticks).toBeGreaterThan(0);
     expect(["attacker", "defender", "draw"]).toContain(result.winner);
 
@@ -139,7 +142,7 @@ describe("battle pipeline (resolve -> runBattle)", () => {
     // Determinism is a property of identical inputs, not of battle length: a
     // few hundred ticks exercise every code path (movement, weapons, crew,
     // power, awareness) far enough to prove byte-identity without running the
-    // full stalemate cap twice. `DEFAULT_MAX_TICKS` is sized for light-lag
+    // full battle out twice. `DEFAULT_MAX_TICKS` is sized for light-lag
     // battles; running it twice here would time out the test for no gain.
     const DETERMINISM_TICKS = 600;
     const resultA = runBattle({ ships: shipsA, attackerFleetId: attacker.id, defenderFleetId: defender.id, anomalies: [], seed: 7, maxTicks: DETERMINISM_TICKS });
@@ -158,11 +161,12 @@ describe("battle pipeline (resolve -> runBattle)", () => {
       ...resolveFleetToCombatShips(attacker, designs, catalog(), "attacker"),
       ...resolveFleetToCombatShips(defender, designs, catalog(), "defender"),
     ];
-    const result = runBattle({ ships, attackerFleetId: attacker.id, defenderFleetId: defender.id, anomalies: [], seed: 42 });
-    // The per-module power grid makes a symmetric single-reactor mirror
-    // match draw: both reactors die, weapons go unpowered, neither side
-    // can land a killing blow. The pipeline still produces a well-formed
-    // result with a valid winner label and at least one frame.
+    const result = runBattle({ ships, attackerFleetId: attacker.id, defenderFleetId: defender.id, anomalies: [], seed: 42, maxTicks: 600 });
+    // The minimal armedFighter is a non-resolving degenerate matchup (see the
+    // test above): it deals no damage, so without the removed watchdog it has no
+    // internal termination. The test caps it and asserts the pipeline still
+    // produces a well-formed result with a valid winner label and at least one
+    // frame.
     expect(["attacker", "defender", "draw"]).toContain(result.winner);
     const last = result.frames.at(-1);
     expect(last).toBeDefined();

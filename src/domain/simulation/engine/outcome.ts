@@ -1,10 +1,10 @@
 /**
  * Pure battle-outcome scoring. `leadingSide` decides which side is ahead by
- * remaining hit points — the tie-break the loop uses when a battle ends by the
- * no-progress watchdog or a focused test's explicit `maxTicks` cap rather than by
- * a decisive elimination. No simulation state, no side effects: a pure function
- * of the two ship lists, kept out of the loop module so the tick loop reads as
- * the simulation and this reads as the verdict.
+ * remaining hit points — the tie-break the loop uses when a focused test's
+ * explicit `maxTicks` cap ends a battle without a decisive elimination. No
+ * simulation state, no side effects: a pure function of the two ship lists,
+ * kept out of the loop module so the tick loop reads as the simulation and this
+ * reads as the verdict.
  */
 
 import type { BattleSide } from "@/schema/battle";

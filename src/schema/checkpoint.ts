@@ -20,12 +20,11 @@
  * the resumed tick before anything reads them, so they are not captured.
  *
  * Capture and restore round-trip through `structuredClone`, never JSON: a
- * checkpoint legitimately carries `±Infinity` (`lastFiredTick` begins at
- * `-Infinity`; the stalemate watch's all-time lows begin at `+Infinity`) and
- * `-0`, all of which JSON discards. The Zod schemas below model those numeric
- * fields as `z.number()` (which admits the non-finite IEEE-754 values) and are
- * applied only at the storage boundary — capture/restore inside the engine work
- * on cloned plain data directly.
+ * checkpoint legitimately carries `-Infinity` (`lastFiredTick` begins at
+ * `-Infinity`) and `-0`, both of which JSON discards. The Zod schemas below
+ * model those numeric fields as `z.number()` (which admits the non-finite
+ * IEEE-754 values) and are applied only at the storage boundary —
+ * capture/restore inside the engine work on cloned plain data directly.
  *
  * The runtime `SimShip` / `SimModule` types in `engine/types.ts` stay the single
  * authoritative definition of the live state; the `restoreShip` / `restoreModule`
@@ -45,13 +44,12 @@ import { ModuleEffect, WeaponEffect, WeaponType } from "./module";
 const CombatantSide = z.enum(["attacker", "defender"]);
 
 /**
- * A number that may legitimately be `±Infinity`. Zod 4's `z.number()` rejects
- * non-finite values, but a checkpoint genuinely carries them: a ship that has
- * never fired has `lastFiredTick = -Infinity`, and the stalemate watch's
- * all-time lows begin at `+Infinity`. Capturing those exactly (via
+ * A number that may legitimately be `-Infinity`. Zod 4's `z.number()` rejects
+ * non-finite values, but a checkpoint genuinely carries one: a ship that has
+ * never fired has `lastFiredTick = -Infinity`. Capturing it exactly (via
  * `structuredClone`, not JSON) is the whole reason the checkpoint store uses
- * structured clone, so the schema must admit them rather than reject them at
- * the storage boundary. `z.custom` validates the JS type without a cast.
+ * structured clone, so the schema must admit it rather than reject it at the
+ * storage boundary. `z.custom` validates the JS type without a cast.
  */
 const ExtendedNumber = z.custom<number>((v) => typeof v === "number");
 
@@ -401,22 +399,15 @@ const DeploymentReference = z.object({
   defender: z.object({ x: z.number(), y: z.number() }).optional(),
 });
 
-/** The no-progress stalemate watch (`StalemateWatch`). Present only on an
- *  uncapped battle. Its all-time lows begin at `+Infinity`, so they are
- *  `z.number()`. */
-const StalemateWatch = z.object({
-  hpLow: ExtendedNumber,
-  enemyDistLow: ExtendedNumber,
-  mineDistLow: ExtendedNumber,
-  idleTicks: z.number(),
-});
-
 /** The schema version. Bumped when the checkpoint shape changes so a stored
  *  checkpoint from an older shape is rejected at the storage boundary rather
  *  than silently mis-read. v4 adds formation identity (formationId,
  *  formationChain, role) to {@link CheckpointShip} so a resumed doctrine-active
- *  battle keeps its formation grouping. */
-export const CHECKPOINT_VERSION = 5;
+ *  battle keeps its formation grouping. v6 removes the no-progress
+ *  `StalemateWatch` — the termination guarantee is now the reactor-loss death
+ *  rule (a modular ship with no alive reactor is destroyed), which carries no
+ *  per-battle state, so the uncapped-battle watch is no longer captured. */
+export const CHECKPOINT_VERSION = 6;
 
 /**
  * A complete engine checkpoint: everything needed to resume `simulateBattle`
@@ -446,8 +437,6 @@ export const EngineCheckpoint = z.object({
   ticks: z.number(),
   /** Each side's deployment centroid, captured (not re-derivable). */
   deployment: DeploymentReference,
-  /** The stalemate watch, present only on an uncapped battle. */
-  stalemate: StalemateWatch.optional(),
   ships: z.array(CheckpointShip),
   projectiles: z.array(CheckpointProjectile),
   mines: z.array(CheckpointMine),

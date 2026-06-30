@@ -45,7 +45,6 @@ import {
 } from "@/domain/simulation/engine/separation";
 import {
   ACCEL_PER_TICK_FROM_SI,
-  STALEMATE_IDLE_TICKS,
   TICKS_PER_SECOND,
 } from "@/domain/simulation/types";
 
@@ -59,8 +58,8 @@ import {
  *  - The arena gravitational constant drives the N-body field.
  *  - The crew HP anchor, thrust-alignment band, and arrival epsilon drive crew,
  *    movement, and the translation controller.
- *  - The tick rate, the SI→tick acceleration rescale, and the stalemate window
- *    are read from `simulation/types.ts` and govern integration and termination.
+ *  - The tick rate and the SI→tick acceleration rescale are read from
+ *    `simulation/types.ts` and govern integration.
  *  - The separation steering field (clearance factor, edge weight, burn
  *    threshold) drives inter-ship collision avoidance in `movement.ts`.
  */
@@ -75,7 +74,6 @@ export interface SimConstants {
   readonly ARRIVAL_CLOSING_SPEED_MPS: number;
   readonly TICKS_PER_SECOND: number;
   readonly ACCEL_PER_TICK_FROM_SI: number;
-  readonly STALEMATE_IDLE_TICKS: number;
   readonly SEPARATION_CLEARANCE_FACTOR: number;
   readonly SEPARATION_EDGE_WEIGHT: number;
   readonly SEPARATION_BURN_THRESHOLD: number;
@@ -114,7 +112,6 @@ export function getSimConfig(): SimConfig {
       ARRIVAL_CLOSING_SPEED_MPS,
       TICKS_PER_SECOND,
       ACCEL_PER_TICK_FROM_SI,
-      STALEMATE_IDLE_TICKS,
       SEPARATION_CLEARANCE_FACTOR,
       SEPARATION_EDGE_WEIGHT,
       SEPARATION_BURN_THRESHOLD,

@@ -26,7 +26,7 @@ import type { BattleFrame, BattleResult, BattleSide } from "@/schema/battle";
 /** Tick cap per battle. Sized so the full 36-battle matrix completes well
  *  inside the CI window; ships deploy within mutual weapon/sight reach (see
  *  `computeEdgeInsetM`), so this is enough ticks for fleets to close, fire, and
- *  resolve without running the full stalemate budget. */
+ *  resolve within the cap. */
 const MAX_TICKS = 300;
 /** Shared seed so the matrix is reproducible run-to-run. */
 const SEED = 42;

@@ -21,7 +21,6 @@ import {
 } from "@/domain/simulation/engine/separation";
 import {
   ACCEL_PER_TICK_FROM_SI,
-  STALEMATE_IDLE_TICKS,
   TICKS_PER_SECOND,
 } from "@/domain/simulation/types";
 
@@ -63,7 +62,6 @@ describe("getSimConfig — determinant completeness", () => {
       ARRIVAL_CLOSING_SPEED_MPS,
       TICKS_PER_SECOND,
       ACCEL_PER_TICK_FROM_SI,
-      STALEMATE_IDLE_TICKS,
       SEPARATION_CLEARANCE_FACTOR,
       SEPARATION_EDGE_WEIGHT,
       SEPARATION_BURN_THRESHOLD,

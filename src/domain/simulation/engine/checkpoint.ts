@@ -30,7 +30,6 @@ import { CHECKPOINT_VERSION } from "@/schema/checkpoint";
 import type { Rng } from "@/domain/simulation/rng";
 import { getProjectileCounter } from "./projectile-id";
 import { buildHeatCapacity } from "./resource-step";
-import type { StalemateWatch } from "./stalemate";
 import type { EngineState } from "./state";
 import type {
   SimMine,
@@ -200,7 +199,6 @@ export function captureCheckpoint(
   state: EngineState,
   rng: Rng,
   tick: number,
-  stalemate: StalemateWatch | undefined,
 ): EngineCheckpoint {
   const ships = state.ships.map(snapshotShip);
   const checkpoint: EngineCheckpoint = {
@@ -257,7 +255,6 @@ export function captureCheckpoint(
       birthTick: [...state.medium.birthTicks],
     },
   };
-  if (stalemate !== undefined) checkpoint.stalemate = stalemate;
   // Deep-clone the whole assembled structure once: it severs every alias to the
   // live arrays/objects above and preserves the non-finite floats and -0 that
   // JSON would discard. The structure is Symbol-free by construction.
@@ -463,7 +460,6 @@ export interface RestoredEngine {
   emissionSeq: number;
   debrisSeq: number;
   ticks: number;
-  stalemate: StalemateWatch | undefined;
   rngState: number;
   projectileCounter: number;
   tick: number;
@@ -506,7 +502,6 @@ export function restoreCheckpoint(cp: EngineCheckpoint): RestoredEngine {
     emissionSeq: clone.counters.emission,
     debrisSeq: clone.counters.debris,
     ticks: clone.ticks,
-    stalemate: clone.stalemate,
     rngState: clone.rngState,
     projectileCounter: clone.counters.projectile,
     tick: clone.tick,
