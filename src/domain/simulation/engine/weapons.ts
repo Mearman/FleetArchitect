@@ -6,13 +6,14 @@
 import { CELL_SIZE } from "@/domain/grid";
 import { ranged } from "@/domain/simulation/rng";
 import type { Rng } from "@/domain/simulation/rng";
-import { cellWorldPosition, cellWorldPositionCs } from "@/domain/simulation/spatial-hash";
+import { type SpatialHash, cellWorldPosition, cellWorldPositionCs } from "@/domain/simulation/spatial-hash";
 import type { BattleAnomalyKind, BattleSide } from "@/schema/battle";
 import { hasAnomaly } from "@/domain/anomaly";
 import type { PointDefenseEffect, WeaponEffect } from "@/schema/module";
 import type { BattleInputs } from "../types";
 
 import { CELL_CONTACT_DISTANCE, buildShipCellHash, nearestCellAlongSegment } from "./collision";
+import type { ShipCell } from "./collision";
 import { SIM, GAS_DRAG_CROSS_SECTION_PROJECTILE_M2, claimProjectileId } from "./config";
 import { TICKS_PER_SECOND } from "../types";
 import { POWERED_SPAWN_FRACTION_OF_CRUISE } from "@/data/catalog/ordnance-motor";
@@ -544,6 +545,9 @@ export function updateProjectiles(
   anomalies: BattleInputs["anomalies"],
   rng: Rng,
   medium?: { field: MediumField; state: MediumState },
+  /** Reusable cell-hash scratch (`state.shipCellHashScratch`) — cleared and
+   *  refilled by `buildShipCellHash`. When omitted a fresh hash is allocated. */
+  cellHashScratch?: SpatialHash<ShipCell>,
 ): SimProjectile[] {
   const survivors: SimProjectile[] = [];
   if (projectiles.length === 0) return survivors;
@@ -552,7 +556,7 @@ export function updateProjectiles(
   // query this for the frontmost occupied cell on the path instead of scanning
   // every ship. Built once per tick from the post-movement, post-collision
   // positions so a projectile strikes a cell where it actually is.
-  const cellHash = buildShipCellHash([...byId.values()]);
+  const cellHash = buildShipCellHash([...byId.values()], cellHashScratch);
 
   for (const p of projectiles) {
     // Point-defence intercept: PD modules on the opposing side get a chance

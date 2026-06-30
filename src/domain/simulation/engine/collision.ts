@@ -31,8 +31,14 @@ export interface ShipCell {
  * backs both projectile-vs-cell hits and ship-vs-ship collision so the two
  * agree on where every cell is.
  */
-export function buildShipCellHash(ships: readonly SimShip[]): SpatialHash<ShipCell> {
-  const hash = new SpatialHash<ShipCell>();
+export function buildShipCellHash(
+  ships: readonly SimShip[],
+  scratch?: SpatialHash<ShipCell>,
+): SpatialHash<ShipCell> {
+  // Reuse the scratch (cleared + refilled — entry objects recycled via the
+  // free-list) or allocate fresh. `clear()` is a no-op on an empty fresh hash.
+  const hash = scratch ?? new SpatialHash<ShipCell>();
+  hash.clear();
   for (const ship of ships) {
     if (!ship.alive || ship.modules === undefined) continue;
     // cos/sin of the ship's facing are invariant across its cells, so compute

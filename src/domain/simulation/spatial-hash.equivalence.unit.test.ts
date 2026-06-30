@@ -182,4 +182,40 @@ describe("spatial-hash — integer vs string key equivalence", () => {
     const { opt, ref } = buildBoth(points);
     expect(seq(opt.entries())).toEqual(seq(ref.entries()));
   });
+
+  it("clear() + re-insert reproduces identical candidate sequences (entry-pooling byte-identity)", () => {
+    // The production hot path clears a pooled SpatialHash and refills it from
+    // the live ship cells each tick. Entry objects are recycled via the
+    // free-list and bucket arrays are emptied in place — so clear+refill with
+    // the same points in the same order must reproduce a byte-identical
+    // candidate walk (the walk is the integer-coord block + within-bucket
+    // insertion order, never Map iteration).
+    const rng = mulberry32(2024);
+    const points = makePoints(rng, 300, WORLD_BUCKET_M * 6);
+    const { opt, ref } = buildBoth(points);
+    const queries: Array<{ qx: number; qy: number; r: number }> = [];
+    for (let q = 0; q < 50; q += 1) {
+      queries.push({
+        qx: (rng() * 2 - 1) * WORLD_BUCKET_M * 6,
+        qy: (rng() * 2 - 1) * WORLD_BUCKET_M * 6,
+        r: rng() * WORLD_BUCKET_M * 3 + 1,
+      });
+    }
+    const preOpt = queries.map((q) => seq(opt.candidates(q.qx, q.qy, q.r)));
+    const preRef = queries.map((q) => seq(ref.candidates(q.qx, q.qy, q.r)));
+    opt.clear();
+    ref.clear();
+    for (const p of points) {
+      opt.insert(p.id, p.x, p.y);
+      ref.insert(p.id, p.x, p.y);
+    }
+    for (let q = 0; q < queries.length; q += 1) {
+      const query = queries[q]!;
+      const postOpt = seq(opt.candidates(query.qx, query.qy, query.r));
+      const postRef = seq(ref.candidates(query.qx, query.qy, query.r));
+      expect(postOpt, `opt clear+refill must match pre-clear at query ${q}`).toEqual(preOpt[q]);
+      expect(postRef, `ref clear+refill must match pre-clear at query ${q}`).toEqual(preRef[q]);
+      expect(postOpt, `opt vs ref after clear at query ${q}`).toEqual(postRef);
+    }
+  });
 });

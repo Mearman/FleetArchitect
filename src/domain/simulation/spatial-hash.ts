@@ -80,6 +80,9 @@ interface BucketStore<S> {
   get(bx: number, by: number): WorldCellEntry<S>[] | undefined;
   /** Record a (possibly empty-then-filled) bucket at `(bx, by)`. */
   set(bx: number, by: number, bucket: WorldCellEntry<S>[]): void;
+  /** Empty every bucket array in place (`length = 0`), keeping the Map and
+   *  array objects alive for reuse. Called by the core's `clear()`. */
+  clearBuckets(): void;
 }
 
 /**
@@ -105,6 +108,12 @@ class IntegerBucketStore<S> implements BucketStore<S> {
     }
     inner.set(by, bucket);
   }
+
+  clearBuckets(): void {
+    for (const inner of this.outer.values()) {
+      for (const arr of inner.values()) arr.length = 0;
+    }
+  }
 }
 
 /**
@@ -129,6 +138,10 @@ class StringBucketStore<S> implements BucketStore<S> {
   set(bx: number, by: number, bucket: WorldCellEntry<S>[]): void {
     this.buckets.set(this.key(bx, by), bucket);
   }
+
+  clearBuckets(): void {
+    for (const arr of this.buckets.values()) arr.length = 0;
+  }
 }
 
 /**
@@ -149,17 +162,37 @@ class StringBucketStore<S> implements BucketStore<S> {
  */
 abstract class SpatialHashCore<S> {
   private readonly all: WorldCellEntry<S>[] = [];
+  /** Recycled entry objects — drained from `all` on `clear()` and popped on
+   *  `insert()`, so a reused hash allocates no entry objects after warmup. */
+  private readonly freeList: WorldCellEntry<S>[] = [];
   protected constructor(private readonly buckets: BucketStore<S>) {}
 
   /** Insert one world-space cell entry. */
   insert(payload: S, wx: number, wy: number): void {
-    const entry: WorldCellEntry<S> = { payload, wx, wy };
+    const entry: WorldCellEntry<S> = this.freeList.pop() ?? { payload, wx, wy };
+    entry.payload = payload;
+    entry.wx = wx;
+    entry.wy = wy;
     this.all.push(entry);
     const bx = bucketCoord(wx);
     const by = bucketCoord(wy);
     const bucket = this.buckets.get(bx, by);
     if (bucket === undefined) this.buckets.set(bx, by, [entry]);
     else bucket.push(entry);
+  }
+
+  /**
+   * Reset the hash for reuse: recycle every entry into the free-list, zero the
+   * flat `all` array, and clear each bucket array in place (keeping the Map and
+   * array objects). After `clear()`, inserting the same points in the same order
+   * reproduces a byte-identical candidate walk (the walk is the integer-coord
+   * block + within-bucket insertion order, never Map iteration — see the class
+   * doc). Used by the per-tick `buildShipCellHash` scratch on `EngineState`.
+   */
+  clear(): void {
+    for (const entry of this.all) this.freeList.push(entry);
+    this.all.length = 0;
+    this.buckets.clearBuckets();
   }
 
   /** Every entry inserted, in insertion order. */

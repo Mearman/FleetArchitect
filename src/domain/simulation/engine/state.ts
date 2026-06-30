@@ -18,6 +18,8 @@ import type { Emission } from "./emissions";
 import type { ExhaustParticle } from "./exhaust-particles";
 import type { ArenaMedium, ProjectileMediumEntry } from "./medium-setup";
 import type { AwarenessScratch } from "./awareness";
+import type { ShipCell } from "./collision";
+import type { SpatialHash } from "../spatial-hash";
 import type { DeploymentReference } from "./movement";
 import type { SimPulse } from "./pulses";
 import type { SimMine, SimPod, SimProjectile, SimShip } from "./types";
@@ -130,4 +132,8 @@ export interface EngineState {
    *  per-ship pool/received/linkedSlots/adjacency Maps + the inner-loop buffers,
    *  cleared-and-reused across ticks. Not captured on the checkpoint. */
   awarenessScratch: AwarenessScratch;
+  /** Reusable `SpatialHash<ShipCell>` for `buildShipCellHash` (built twice per
+   *  tick: ship-ship collision + projectile-cell hits). Entry objects recycled
+   *  via the free-list; cleared-and-reused across ticks. Not checkpointed. */
+  shipCellHashScratch: SpatialHash<ShipCell>;
 }

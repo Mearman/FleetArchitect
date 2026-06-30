@@ -13,6 +13,8 @@ import { mulberry32 } from "@/domain/simulation/rng";
 import { buildArenaMedium } from "@/domain/simulation/engine/medium-setup";
 import { toSimShip } from "@/domain/simulation/engine/setup";
 import { freshAwarenessScratch } from "@/domain/simulation/engine/awareness";
+import { SpatialHash } from "@/domain/simulation/spatial-hash";
+import type { ShipCell } from "@/domain/simulation/engine/collision";
 import {
   refreshRosterIncremental,
   refreshRosterReference,
@@ -142,6 +144,7 @@ function stateWith(ships: SimShip[]): EngineState {
     aliveRealSortedScratch: [],
     projectileMediumScratch: [],
     awarenessScratch: freshAwarenessScratch(),
+    shipCellHashScratch: new SpatialHash<ShipCell>(),
   };
 }
 

@@ -307,7 +307,7 @@ export function* simulateBattle(
     //     impulse plus positional separation, so ships can't drive through each
     //     other. All sides are solid — friendlies collide too. The resolved
     //     contacts feed the kinetic-damage step below.
-    const shipContacts = resolveShipCollisions(buildShipCellHash(state.ships));
+    const shipContacts = resolveShipCollisions(buildShipCellHash(state.ships, state.shipCellHashScratch));
 
     // 2b-kinetic. Kinetic collision damage (realism overhaul, Phase 4). Convert
     //     a fraction of each contact's collision kinetic energy into structural
@@ -416,7 +416,7 @@ export function* simulateBattle(
     }
 
     // 4. Projectile travel, homing, asteroid deflection, and collision.
-    state.projectiles = updateProjectiles(state.projectiles, state.byId, inputs.anomalies, rng, state.medium);
+    state.projectiles = updateProjectiles(state.projectiles, state.byId, inputs.anomalies, rng, state.medium, state.shipCellHashScratch);
 
     // 4-mines. Mines (factions update). Arm down, then detonate any armed mine
     //     with an enemy in range against the nearest (via applyDamage). Runs in
