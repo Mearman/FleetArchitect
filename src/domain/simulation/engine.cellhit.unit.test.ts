@@ -273,9 +273,11 @@ describe("engine.cellhit — penetration", () => {
     if (f === undefined) throw new Error("no penetration frame");
     // Front cell destroyed by the round that penetrated.
     expect(cellHp(f, frontIdx) ?? 1, "front cell destroyed before overflow").toBe(0);
-    // The cell behind took exactly the 15 overflow on this first penetration.
+    // Under the unified (E,p) damage model the cannon round's damage is its
+    // kinetic energy ½mv², not the legacy scalar `damage` field. The overflow
+    // past the 5-HP front cell is ½mv² − 5, which the rear cell absorbs.
     expect(cellHp(f, backIdx) ?? 100, "overflow penetrated to the cell behind").toBeCloseTo(
-      85,
+      48.75,
       5,
     );
   });
