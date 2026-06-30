@@ -19,6 +19,8 @@
 import { CELL_SIZE } from "@/domain/grid";
 import type { RenderCell } from "@/ui/cellLayout";
 import { MODULE_COLOUR } from "./battleConstants";
+import { glyphPath2D } from "@/ui/render/moduleGlyphs";
+import { appearanceOf } from "@/ui/render/moduleAppearance";
 
 /** Pixels per grid cell in the rasterised sprite. Chosen well above the largest
  *  on-screen cell size so a zoomed-in capital ship's baked cells never look soft
@@ -161,6 +163,18 @@ export function rasteriseShipSprite(
     ctx.globalAlpha = 0.22;
     ctx.fillStyle = base;
     ctx.fillRect(left, top, SPRITE_CELL_PX, SPRITE_CELL_PX);
+    // Glyph: bake the module's mark (a static function of kind) so the blit
+    // carries it — no per-frame save/translate/scale/stroke per cell.
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(SPRITE_CELL_PX, SPRITE_CELL_PX);
+    ctx.globalAlpha = 0.78;
+    ctx.strokeStyle = "rgba(8, 10, 8, 1)";
+    ctx.lineWidth = 0.08;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.stroke(glyphPath2D(appearanceOf(c.kind).glyph));
+    ctx.restore();
   }
   ctx.globalAlpha = 1;
 

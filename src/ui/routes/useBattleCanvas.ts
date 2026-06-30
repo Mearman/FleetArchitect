@@ -600,10 +600,9 @@ export function useBattleCanvas({
                 ctx.stroke();
               }
 
-              // Glyph: engrave the module's mark on the cell, in local units so
-              // the composed matrix scales it with the hull. Only on alive cells
-              // big enough on screen to read it.
-              if (m.alive && CELL_SIZE * scale > 12) {
+              // Glyph: baked into the sprite for non-starved alive cells; only
+              // starved cells (knocked out of the sprite) draw it live.
+              if (m.alive && isStarved && CELL_SIZE * scale > 12) {
                 ctx.save();
                 ctx.translate(lx, ly);
                 ctx.scale(CELL_SIZE, CELL_SIZE);
