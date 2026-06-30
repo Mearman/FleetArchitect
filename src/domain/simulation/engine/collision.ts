@@ -6,8 +6,8 @@
 import { CELL_SIZE } from "@/domain/grid";
 import { SpatialHash, cellWorldPositionCs } from "@/domain/simulation/spatial-hash";
 
-import { SIM, SPEED_OF_LIGHT_M_PER_TICK } from "./config";
-import { applyDamage } from "./damage";
+import { applyImpact } from "./damage-impact";
+import { ramImpactProfile } from "./impact-profile";
 import { outerWorldLoop, polygonsContact } from "./poly-collision";
 import { localPointToWorld, worldToLocal } from "./setup";
 import type { SimModule, SimShip } from "./types";
@@ -465,28 +465,19 @@ export function applyCollisionDamage(contacts: readonly ShipContact[]): void {
     const reducedMass = (ma * mb) / (ma + mb);
     const relSpeedSq = c.relVx * c.relVx + c.relVy * c.relVy;
     if (relSpeedSq <= 0) continue;
-    // Relativistic KE using the numerically stable identity:
-    //   (γ − 1) · c² = v² / (√(1 − β²) · (1 + √(1 − β²)))
-    // This avoids catastrophic cancellation in (γ − 1) when β ≪ 1, and
-    // reduces to the Newtonian ½v² at sub-light speeds to full floating-point
-    // precision. β² is clamped strictly below 1 to guard against rounding
-    // overshoot — in practice sim speeds are many orders of magnitude below c.
-    const cSq = SPEED_OF_LIGHT_M_PER_TICK * SPEED_OF_LIGHT_M_PER_TICK;
-    const betaSq = Math.min(relSpeedSq / cSq, 1 - Number.EPSILON);
-    const sqrtOneMinusBetaSq = Math.sqrt(1 - betaSq);
-    const collisionKE = (reducedMass * relSpeedSq) / (sqrtOneMinusBetaSq * (1 + sqrtOneMinusBetaSq));
-    const totalDamage = collisionKE * SIM.collisionDamageFraction;
-    if (totalDamage <= 0) continue;
+    const relSpeed = Math.sqrt(relSpeedSq);
     // Split inversely to mass: the lighter ship takes the larger share. Shares
-    // sum to 1, so the pair dissipates exactly `totalDamage` between them.
+    // sum to 1, so the pair dissipates the collision energy between them.
     const totalInvMass = 1 / ma + 1 / mb;
     const aShare = (1 / ma) / totalInvMass;
     const bShare = (1 / mb) / totalInvMass;
-    // Strike the contact-side cells: aim each ship's hit at the shared world
-    // contact point, so applyDamage's nearest-cell selection lands on the cells
-    // closest to the point of contact on each hull.
-    applyDamage(c.a, totalDamage * aShare, 0, 0, c.px, c.py);
-    applyDamage(c.b, totalDamage * bShare, 0, 0, c.px, c.py);
+    // Each ship takes a pure-momentum ram impact at its mass-share: the armour
+    // term p²/2m × collisionDamageFraction × share = ½·mRed·v² × fraction ×
+    // share — the classical collision energy × share, byte-identical to the old
+    // scalar path for ships with no deflector. A deflector arrests the momentum
+    // first.
+    applyImpact(c.a, ramImpactProfile({ reducedMassKg: reducedMass, relSpeedMps: relSpeed, share: aShare }), c.px, c.py);
+    applyImpact(c.b, ramImpactProfile({ reducedMassKg: reducedMass, relSpeedMps: relSpeed, share: bShare }), c.px, c.py);
   }
 }
 

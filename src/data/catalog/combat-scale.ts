@@ -41,6 +41,7 @@
  */
 
 import { TICKS_PER_SECOND } from "@/domain/simulation/types";
+import type { WeaponType } from "@/schema/module";
 import {
   ANTIMATTER_ADVANCED_POWER_DENSITY_W_PER_M3,
   ANTIMATTER_POWER_DENSITY_W_PER_M3,
@@ -625,6 +626,8 @@ export const DEFLECTOR_CAPACITY_KG_MPS = {
 export const DEFLECTOR_RECHARGE_KG_MPS_PER_S = {
   pd: 1e4, light: 2.5e4, medium: 5e4, heavy: 1e5, capital: 2e5,
 };
+/** Default deflector-piercing per weapon type (torpedoes punch; others mostly caught). */
+export const DEFLECTOR_PIERCING_DEFAULT: Record<WeaponType, number> = { beam: 0, cannon: 0.1, missile: 0.1, torpedo: 0.3, plasma: 0.1 };
 
 // ---------------------------------------------------------------------------
 // Attitude-control slew spec (radians per second, seconds, newton-metres).

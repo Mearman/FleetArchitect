@@ -18,7 +18,8 @@
 import { CELL_SIZE } from "@/domain/grid";
 
 import { SIM } from "./config";
-import { applyDamage } from "./damage";
+import { applyImpact } from "./damage-impact";
+import { energyImpactProfile, internalBlastImpactProfile } from "./impact-profile";
 import { localPointToWorld } from "./setup";
 import type { SimModule, SimShip } from "./types";
 
@@ -284,7 +285,7 @@ function detonate(
     // The target cell's world position so applyDamage's nearest-cell selection
     // lands the hit on it. Internal blast: pierce shields and armour fully.
     const world = localPointToWorld(ship, target.x, target.y);
-    applyDamage(ship, damage, 1, 1, world.x, world.y);
+    applyImpact(ship, internalBlastImpactProfile({ energyJ: damage }), world.x, world.y);
   }
 
   // Cross-ship blast: the explosion's world-space centre (the exploding cell's
@@ -309,7 +310,7 @@ function detonate(
     // Omnidirectional external blast: no shield or armour piercing. No impact
     // point specified so applyDamage routes the hit through the nearest-alive
     // module heuristic, appropriate for an undirected shockwave.
-    applyDamage(other, damage, 0, 0);
+    applyImpact(other, energyImpactProfile({ energyJ: damage, shieldPiercing: 0, armourPiercing: 0 }));
   }
 }
 

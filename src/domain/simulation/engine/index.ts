@@ -36,7 +36,9 @@ import { resourceStep } from "./resource-step";
 import { spawnDebris, stepDebris } from "./debris";
 import { claimHulls, collectDebris, isClaimed, summariseSalvage } from "./salvage";
 import { resolveChainReactions } from "./chain-reaction";
-import { applyDamage, splitBreakApart } from "./damage";
+import { splitBreakApart } from "./damage";
+import { applyImpact } from "./damage-impact";
+import { debrisImpactProfile } from "./impact-profile";
 import { layMines, stepTechCooldowns, updateMines } from "./mines";
 import { moveShips } from "./movement";
 import { launchDecoys, launchDrones, stepPhantoms } from "./phantoms";
@@ -345,13 +347,10 @@ export function* simulateBattle(
           const relVy = d.velY - s.velY;
           const relSpeedSq = relVx * relVx + relVy * relVy;
           if (relSpeedSq <= SIM.debrisMinRelSpeed * SIM.debrisMinRelSpeed) continue;
-          // Kinetic energy transferred: KE = ½ · m · v_rel²
-          // (sub-light debris, no relativistic correction needed here — a debris
-          // fragment moves at hull momentum / hull mass, well below c).
-          const ke = 0.5 * d.mass * relSpeedSq;
-          const damage = ke * SIM.debrisCollisionDamageFraction;
-          if (damage <= 0) continue;
-          applyDamage(s, damage, 0, 0, d.x, d.y);
+          // Debris hazard: a pure-momentum impact (sub-light, no relativistic
+          // correction). debrisImpactProfile's p²/2m × debrisCollisionDamageFraction
+          // = ½·m·v² × fraction, byte-identical to the old scalar damage.
+          applyImpact(s, debrisImpactProfile({ massKg: d.mass, relSpeedMps: Math.sqrt(relSpeedSq) }), d.x, d.y);
         }
       }
     }

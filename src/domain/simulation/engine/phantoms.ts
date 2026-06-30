@@ -9,7 +9,8 @@ import { Doctrine } from "@/schema/ai";
 import { defaultAiDecisions } from "./ai-step";
 import { SIM } from "./config";
 import { isOperational } from "./crew";
-import { applyDamage } from "./damage";
+import { applyImpact } from "./damage-impact";
+import { energyImpactProfile } from "./impact-profile";
 import { cellWorldPosition } from "@/domain/simulation/spatial-hash";
 import type { SimShip } from "./types";
 
@@ -289,7 +290,7 @@ export function stepPhantoms(ships: readonly SimShip[]): void {
         s.x += (dx / (dist || 1)) * step;
         s.y += (dy / (dist || 1)) * step;
         if (dist <= ph.range) {
-          applyDamage(nearest, ph.damage, 0, 0, s.x, s.y);
+          applyImpact(nearest, energyImpactProfile({ energyJ: ph.damage, shieldPiercing: 0, armourPiercing: 0 }), s.x, s.y);
         }
       }
     }

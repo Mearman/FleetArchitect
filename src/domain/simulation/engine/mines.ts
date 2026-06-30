@@ -4,7 +4,8 @@
  */
 
 import { isOperational } from "./crew";
-import { applyDamage } from "./damage";
+import { applyImpact } from "./damage-impact";
+import { energyImpactProfile } from "./impact-profile";
 import { cellWorldPosition } from "@/domain/simulation/spatial-hash";
 import type { SimMine, SimShip } from "./types";
 
@@ -153,7 +154,7 @@ export function updateMines(
       continue;
     }
     // Detonate: damage the nearest enemy and consume the mine (drop it).
-    applyDamage(nearest, mine.damage, 0, 0, mine.x, mine.y);
+    applyImpact(nearest, energyImpactProfile({ energyJ: mine.damage, shieldPiercing: 0, armourPiercing: 0 }), mine.x, mine.y);
   }
   return survivors;
 }

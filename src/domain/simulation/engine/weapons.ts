@@ -19,7 +19,13 @@ import { POWERED_SPAWN_FRACTION_OF_CRUISE } from "@/data/catalog/ordnance-motor"
 import { ACCEL_PER_TICK_FROM_SI } from "../types";
 import { beamDamageFactor, lensingDeflection } from "./optics";
 import { isCharged } from "./crew";
-import { applyDamage } from "./damage";
+import { applyImpact } from "./damage-impact";
+import { DEFLECTOR_PIERCING_DEFAULT } from "@/data/catalog/combat-scale";
+import {
+  beamImpactProfile,
+  kineticImpactProfile,
+  warheadImpactProfile,
+} from "./impact-profile";
 import { outerWorldLoop, rayPolygonEntry } from "./poly-collision";
 import { isRetreating } from "./movement";
 import { hasAliveCommand } from "./physics";
@@ -131,7 +137,7 @@ export function spawnProjectile(
     // Deflector piercing: the weapon's authored fraction, or 0 (the deflector
     // catches the full momentum) when unset. The per-type default is applied at
     // catalogue authoring time where a weapon should punch the deflector.
-    deflectorPiercing: weapon.deflectorPiercing ?? 0,
+    deflectorPiercing: weapon.deflectorPiercing ?? DEFLECTOR_PIERCING_DEFAULT[weapon.weaponType],
     armourPiercing: weapon.armourPiercing,
     range: weapon.range,
     travelled: 0,
@@ -408,7 +414,7 @@ export function fireOne(
       ix = target.x + dirX * target.radius;
       iy = target.y + dirY * target.radius;
     }
-    applyDamage(target, damage, weapon.shieldPiercing, weapon.armourPiercing, ix, iy, strikeAngle);
+    applyImpact(target, beamImpactProfile({ damageJ: damage, shieldPiercing: weapon.shieldPiercing, armourPiercing: weapon.armourPiercing, deflectorPiercing: weapon.deflectorPiercing ?? DEFLECTOR_PIERCING_DEFAULT.beam }), ix, iy, strikeAngle);
     // Emit a visible beam event so the renderer can draw the line. The source is
     // the firing gun cell's WORLD position (rotated by the ship's heading), not
     // the ship centre: a beam leaves the gun that fired it, so an off-centre
@@ -741,7 +747,15 @@ export function updateProjectiles(
       // The projectile's velocity gives the shot direction; that's what
       // directional shields see.
       const shotAngle = Math.atan2(p.vy, p.vx);
-      applyDamage(hit, p.damage, p.shieldPiercing, p.armourPiercing, hitWx, hitWy, shotAngle, path);
+      // Unified (E,p) impact: cannons are pure momentum (energyJ 0, so they
+      // bypass the shield and hit the deflector); powered ordnance carries its
+      // warhead yield as energy AND body momentum. Speed is SI (m/tick × TPS) so
+      // the armour term p²/2m matches the weapon's authored SI damage.
+      const speedMps = Math.hypot(p.vx, p.vy) * TICKS_PER_SECOND;
+      const profile = p.kind === "cannon"
+        ? kineticImpactProfile({ massKg: p.mass, speedMps, shieldPiercing: p.shieldPiercing, armourPiercing: p.armourPiercing, deflectorPiercing: p.deflectorPiercing })
+        : warheadImpactProfile({ massKg: p.mass, speedMps, energyJ: p.damage, shieldPiercing: p.shieldPiercing, armourPiercing: p.armourPiercing, deflectorPiercing: p.deflectorPiercing });
+      applyImpact(hit, profile, hitWx, hitWy, shotAngle, path);
       // Hit impulse: the target absorbs the projectile's momentum RELATIVE to
       // itself at the impact point — delta_v = +m_p * (v_p − v_target) / M_target.
       // A target moving with the projectile feels only the relative impact; the

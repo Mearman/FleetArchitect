@@ -120,7 +120,12 @@ export function warheadImpactProfile(opts: {
 export function ramImpactProfile(opts: {
   reducedMassKg: number;
   relSpeedMps: number;
+  /** Per-ship mass-share of the collision (0..1). The collision code splits the
+   *  total damage inversely to mass; `share` multiplies `armourScale` so each
+   *  ship takes its share. Default 1 (the full collision fraction). */
+  share?: number;
 }): ImpactProfile {
+  const share = opts.share ?? 1;
   return {
     energyJ: 0,
     momentumKgMps: opts.reducedMassKg * opts.relSpeedMps,
@@ -128,7 +133,7 @@ export function ramImpactProfile(opts: {
     shieldPiercing: 0,
     deflectorPiercing: 0,
     armourPiercing: 0,
-    armourScale: SIM.collisionDamageFraction,
+    armourScale: SIM.collisionDamageFraction * share,
   };
 }
 
