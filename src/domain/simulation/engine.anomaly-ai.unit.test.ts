@@ -23,6 +23,14 @@ import { modularShip, targetDummy } from "./engine.factions-tech-helpers";
  * with a baseline anomalies so the assertion is robust to the rest of the engine.
  */
 
+// The weapon is a prop for engagement behaviour (the attacker needs something
+// to fire so it acquires a target and stands off), not the thing under test.
+// Under the (E,p) model a cannon's hit deals ½·m·v² joules AND imparts an
+// m·v momentum impulse, so a 0.5 kg round at 8 m/tick would both destroy the
+// stationary defender's command module in a handful of hits and push its
+// thrust-less hull hundreds of metres — masking the stand-off range these
+// tests measure. A near-massless round keeps the firing/stand-off behaviour
+// while dealing negligible damage and push.
 function weapon(over: Partial<WeaponEffect> = {}): WeaponEffect {
   return {
     kind: "weapon",
@@ -31,7 +39,7 @@ function weapon(over: Partial<WeaponEffect> = {}): WeaponEffect {
     range: 600,
     cooldown: 1,
     projectileSpeed: 8,
-    projectileMass: 0.5,
+    projectileMass: 1e-5,
     tracking: 0,
     shieldPiercing: 0,
     armourPiercing: 0,
