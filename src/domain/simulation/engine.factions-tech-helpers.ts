@@ -130,6 +130,39 @@ const OPEN_EDGES: CellEdges = {
   doorStates: {},
 };
 
+/** A bounding-box hull outline (design-space metres) for a hand-built fixture's
+ *  modules. Real ships get their chamfered outline from `computeOutline` at
+ *  resolve time; these helpers build CombatShips directly, so without this a
+ *  fixture has no outline and a hitscan beam falls back to the bounding-circle
+ *  far-edge + nearest-module heuristic — which scatters overflow module to
+ *  module instead of along the beam's line of fire, so an armour cell on the
+ *  firing line is never struck and its overflow never reaches hull structure.
+ *  A tight axis-aligned box around the cell footprint is enough to route the
+ *  beam through the penetration path: the box only sets the entry point that
+ *  `rayPolygonEntry` finds; `penetrationPath` then uses the real module
+ *  positions to walk the on-line cells front to back. */
+function moduleOutline(modules: readonly ResolvedModule[]): { x: number; y: number }[][] {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  const half = FIXTURE_CELL_PITCH / 2;
+  for (const m of modules) {
+    if (m.x - half < minX) minX = m.x - half;
+    if (m.x + half > maxX) maxX = m.x + half;
+    if (m.y - half < minY) minY = m.y - half;
+    if (m.y + half > maxY) maxY = m.y + half;
+  }
+  return [
+    [
+      { x: minX, y: minY },
+      { x: maxX, y: minY },
+      { x: maxX, y: maxY },
+      { x: minX, y: maxY },
+    ],
+  ];
+}
+
 export function beam(over: Partial<WeaponEffect> = {}): WeaponEffect {
   return {
     kind: "weapon",
@@ -658,6 +691,7 @@ export function targetDummy(opts: {
     doctrine: ordersToDoctrine(opts.orders),
     classification: opts.classification ?? "frigate",
     modules,
+    outline: moduleOutline(modules),
   };
 }
 

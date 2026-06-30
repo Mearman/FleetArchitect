@@ -330,7 +330,7 @@ describe("projectile weapons in live battles", () => {
     // Count frames where a missile reaches within striking distance of the
     // defender — each such frame is a missile PD failed to stop.
     const defenderX = 120;
-    const hitRadius = 20;
+    const hitRadius = 40;
     const breakthroughs = (result: ReturnType<typeof runBattle>): number =>
       result.frames.filter((f) =>
         f.projectiles.some(

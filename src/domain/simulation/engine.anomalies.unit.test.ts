@@ -356,7 +356,7 @@ describe("engine.anomalies", () => {
               // One big hit, long cooldown so only one hit lands and the
               // rest of the battle is pure shield regen. The cooldown exceeds
               // the battle's tick cap so a second shot never lands.
-              weapons: [weapon({ damage: 8000, cooldown: 400, range: 200 })],
+              weapons: [weapon({ damage: 8000, cooldown: 400, range: 200, projectileSpeed: 0 })],
               doctrine: HOLD_POSITION_DOCTRINE,
             }),
             defender({

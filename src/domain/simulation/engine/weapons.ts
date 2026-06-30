@@ -415,7 +415,14 @@ export function fireOne(
       ix = target.x + dirX * target.radius;
       iy = target.y + dirY * target.radius;
     }
-    applyImpact(target, beamImpactProfile({ damageJ: damage, shieldPiercing: weapon.shieldPiercing, armourPiercing: weapon.armourPiercing, deflectorPiercing: weapon.deflectorPiercing ?? DEFLECTOR_PIERCING_DEFAULT.beam }), ix, iy, strikeAngle);
+    // Compute the penetration path for the beam from its entry point — matching
+    // the projectile path at line 726. Only when the target has a chamfered
+    // outline (rayPolygonEntry gave us the true hull entry); without an outline
+    // the bounding-circle fallback places ix/iy at the far edge, which
+    // penetrationPath would treat as "all cells behind the entry" → empty path.
+    // In that case fall back to applyModuleDamage's nearest-alive heuristic.
+    const beamPath = outline !== undefined ? penetrationPath(target, ix, iy, dirX, dirY) : undefined;
+    applyImpact(target, beamImpactProfile({ damageJ: damage, shieldPiercing: weapon.shieldPiercing, armourPiercing: weapon.armourPiercing, deflectorPiercing: weapon.deflectorPiercing ?? DEFLECTOR_PIERCING_DEFAULT.beam }), ix, iy, strikeAngle, beamPath);
     // Emit a visible beam event so the renderer can draw the line. The source is
     // the firing gun cell's WORLD position (rotated by the ship's heading), not
     // the ship centre: a beam leaves the gun that fired it, so an off-centre

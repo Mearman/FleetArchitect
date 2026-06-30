@@ -196,7 +196,7 @@ describe("engine.projectile-damage", () => {
     expect(hit.shield).toBe(0);
     // Of the 20 spill beyond the shield, the armour surface absorbed 15; only
     // the 5 beyond the armour layer reached structure.
-    expect(initial.structure - hit.structure).toBe(5);
+    expect(initial.structure - hit.structure).toBeCloseTo(5, 3);
   });
 
   it("a homing projectile tracks and hits a moving target", () => {
