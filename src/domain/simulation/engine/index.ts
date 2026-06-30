@@ -639,9 +639,8 @@ export function* simulateBattle(
     const regenFactor = hasAnomaly(inputs.anomalies, "nebula") ? SIM.nebulaRegenFactor : 1;
     for (const ship of state.ships) {
       if (!ship.alive) continue;
-      // Adaptive shields: count ticks since the shield was last touched (a hit
-      // this tick already reset the streak to 0 in applyDamage). Only the regen
-      // below reads it, and only when the ramp is non-zero. Bounded by the cap.
+      // Adaptive shields: ticks since last touched (a hit reset it to 0 in
+      // applyDamage); bounded by the ramp's cap, read only by the regen below.
       if (ship.shieldAdaptiveRamp > 0) {
         const cap = Math.ceil(
           (SIM.adaptiveShieldMaxMultiple - 1) / ship.shieldAdaptiveRamp,
@@ -652,17 +651,23 @@ export function* simulateBattle(
       if (ship.shieldRegenCountdown > 0) {
         ship.shieldRegenCountdown -= ship.dilationFactor;
       } else {
-        // Effective rate ramps with the untouched streak, capped at the max
-        // multiple; scaled by `dilationFactor` so a relativistic frame regens at
-        // the same slowed rate as it fires. `shieldRechargeRate` is watts;
-        // /TICKS_PER_SECOND gives joules-per-tick.
-        const rampMultiple = Math.min(
-          SIM.adaptiveShieldMaxMultiple,
-          1 + ship.shieldAdaptiveRamp * ship.shieldUntouchedTicks,
-        );
+        // Rate ramps with the untouched streak (capped), scaled by dilationFactor;
+        // shieldRechargeRate is watts → /TICKS_PER_SECOND gives joules-per-tick.
+        const rampMultiple = Math.min(SIM.adaptiveShieldMaxMultiple, 1 + ship.shieldAdaptiveRamp * ship.shieldUntouchedTicks);
         const rechargeJoulesThisTick =
           (ship.shieldRechargeRate / TICKS_PER_SECOND) * rampMultiple * regenFactor * ship.dilationFactor;
         ship.shield = Math.min(ship.maxShield, ship.shield + rechargeJoulesThisTick);
+      }
+    }
+
+    // 5a-deflector. Deflector (momentum screen) regen; mirrors shield regen, no adaptive ramp, inert while maxDeflector is 0.
+    for (const ship of state.ships) {
+      if (!ship.alive || ship.deflector >= ship.maxDeflector) continue;
+      if (ship.deflectorRegenCountdown > 0) {
+        ship.deflectorRegenCountdown -= ship.dilationFactor;
+      } else {
+        const recharge = (ship.deflectorRechargeRate / TICKS_PER_SECOND) * ship.dilationFactor;
+        ship.deflector = Math.min(ship.maxDeflector, ship.deflector + recharge);
       }
     }
 
