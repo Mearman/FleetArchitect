@@ -57,11 +57,16 @@ export function applyImpact(
   const kineticEq = profile.effectiveMassKg === Infinity
     ? 0
     : (pResidual * pResidual) / (2 * profile.effectiveMassKg);
-  const rawStructure = (eResidual + kineticEq) * profile.armourScale;
+  const totalPreArmour = eResidual + kineticEq;
+  const rawStructure = totalPreArmour * profile.armourScale;
   if (rawStructure <= 0) return;
+  // Energy/mass composition for the (E,p)-aware armour: surfaceReduction scales
+  // with the energy fraction, reactiveReduction with the momentum fraction.
+  const eFrac = totalPreArmour > 0 ? eResidual / totalPreArmour : 1;
+  const pFrac = totalPreArmour > 0 ? kineticEq / totalPreArmour : 0;
 
   if (ship.modules !== undefined) {
-    applyModuleDamage(ship, rawStructure, profile.armourPiercing, impactX, impactY, shotAngle, path);
+    applyModuleDamage(ship, rawStructure, profile.armourPiercing, impactX, impactY, shotAngle, path, eFrac, pFrac);
     return;
   }
   // Legacy aggregated path (no modules): ship-wide armour, uniform reduction.

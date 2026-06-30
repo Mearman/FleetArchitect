@@ -125,6 +125,8 @@ export function applyModuleDamage(
   impactY?: number,
   shotAngle?: number,
   path?: readonly SimModule[],
+  eFrac = 1,
+  pFrac = 1,
 ): void {
   // Transform the world-space impact point into ship-local (design)
   // coordinates so it lines up with module.x/module.y.
@@ -180,7 +182,7 @@ export function applyModuleDamage(
           }
         }
       }
-      remaining = damageCell(cell, remaining, armourPiercing);
+      remaining = damageCell(cell, remaining, armourPiercing, eFrac, pFrac);
       if (remaining <= 0) return; // this cell absorbed the rest
     }
     // Overflow past the last cell on the path falls to the hull structure.
@@ -195,35 +197,24 @@ export function applyModuleDamage(
       spillToStructure(ship, remaining, armourPiercing);
       return;
     }
-    remaining = damageCell(target, remaining, armourPiercing);
+    remaining = damageCell(target, remaining, armourPiercing, eFrac, pFrac);
   }
 }
 
-/**
- * Apply damage to a single cell, depleting outer layer first: surface HP
- * (armor or deck) before substrate HP (`hp`). Returns the leftover damage that
- * spills onward once the cell is destroyed (substrate HP exhausted). While the
- * surface survives the cell stays alive and nothing spills — only substrate
- * destruction kills the cell and severs the graph.
- *
- * The cell's armour absorbs a fraction of the hit before depleting surface HP:
- * the passive `surfaceReduction` always, plus `reactiveReduction` while the plate
- * is charged (`reactiveCharge === 0`) — which then spends its charge
- * (`reactiveWindow`, counted down by `stepTechCooldowns`). Both scale by the
- * hit's `armourPiercing`. Damage and the material `hp` share energy units, so
- * the subtraction is an energy balance; past the surface the substrate is undimmed.
- */
-function damageCell(cell: SimModule, amount: number, armourPiercing: number): number {
+/** Apply damage to a cell, depleting surface HP before substrate. Returns the
+ *  leftover that spills onward. `eFrac`/`pFrac` are the hit's energy/momentum
+ *  composition (default 1/1 = uniform): the passive `surfaceReduction` scales
+ *  with `eFrac`, the reactive plate (spent only on a kinetic hit, `pFrac > 0`)
+ *  with `pFrac`. applyImpact passes the real split so energy weapons ignore the
+ *  reactive plate and kinetics ignore the passive coating. */
+function damageCell(cell: SimModule, amount: number, armourPiercing: number, eFrac = 1, pFrac = 1): number {
   let remaining = amount;
-  // Surface layer first; bare cells (maxSurfaceHp 0) skip straight to substrate.
   if (cell.surfaceHp > 0) {
-    // Armour absorption: passive plate plus, while charged, the reactive bonus —
-    // both pierce-scaled, clamped to [0, 1] so a hit can never become healing.
     const pierce = 1 - armourPiercing;
-    let reduction = cell.surfaceReduction * pierce;
-    if (cell.reactiveReduction > 0 && cell.reactiveCharge === 0) {
-      reduction += cell.reactiveReduction * pierce;
-      cell.reactiveCharge = cell.reactiveWindow; // spend it; recharges over the window
+    let reduction = cell.surfaceReduction * pierce * eFrac;
+    if (pFrac > 0 && cell.reactiveReduction > 0 && cell.reactiveCharge === 0) {
+      reduction += cell.reactiveReduction * pierce * pFrac;
+      cell.reactiveCharge = cell.reactiveWindow;
     }
     if (reduction > 1) reduction = 1;
     remaining *= 1 - reduction;
@@ -231,10 +222,6 @@ function damageCell(cell: SimModule, amount: number, armourPiercing: number): nu
     if (cell.surfaceHp > 0) return 0;
     remaining = -cell.surfaceHp;
     cell.surfaceHp = 0;
-    // Armour stripped: the cell has lost its armour plate and is now bare substrate —
-    // mark the transition so the renderer can show the stripped tier. Deck cells keep
-    // their surface label even when their deck HP is exhausted, so the walkability
-    // and hull-outline geometry are preserved correctly.
     if (cell.surface === "armor") cell.surface = "bare";
   }
   // Substrate layer next.
