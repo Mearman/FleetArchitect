@@ -1,8 +1,8 @@
 import { useCallback, useMemo, useRef } from "react";
 import { CELL_SIZE } from "@/domain/grid";
 import type { BattleAnomalyKind, BattleFrame } from "@/schema/battle";
-import type { DescriptorMap } from "@/ui/cellLayout";
-import { hullRadiusWorld, renderCells } from "@/ui/cellLayout";
+import type { DescriptorMap, RenderCell } from "@/ui/cellLayout";
+import { hullRadiusWorld, renderCellsInto } from "@/ui/cellLayout";
 import { interpolateFrame } from "@/ui/interpolateFrame";
 import { orderShipsForRender } from "@/ui/renderOrder";
 import { NEON_MAGENTA, PHOSPHOR_AMBER, PHOSPHOR_GREEN } from "@/ui/theme/tokens";
@@ -121,18 +121,14 @@ export function useBattleCanvas({
   overlays,
   descriptors,
 }: UseBattleCanvasProps) {
-  // Per-ship cache of the rasterised static cell layer. Survives across frames
-  // (a ref, not state, so it never triggers a re-render) and is re-rasterised
-  // for a ship only when its alive-cell set or base colour changes. Keyed by
-  // instance id; a stale entry whose ship has left the battle is simply never
-  // read again (the map is small — one entry per live ship).
+  // Per-ship rasterised-sprite cache (re-rasterised on alive-set/colour change)
+  // and a reusable RenderCell[] buffer (renderCellsInto rewrites it in place).
+  // Both are refs keyed by instance id, so the per-frame draw reuses objects
+  // instead of allocating.
   const spriteCache = useRef<Map<string, ShipSprite>>(new Map());
-  // Per-battle formation colour per instance id (Phase E replay grouping).
-  // Descriptors are emitted once per battle and never mutate, so this map is
-  // derived once and read on the hot draw path without re-hashing per ship per
-  // frame. Empty for a pre-formation battle (every ship lacks formationId), in
-  // which case formation tinting and centroid markers are no-ops and the frame
-  // renders byte-identically to before.
+  const cellBufferRef = useRef<Map<string, RenderCell[]>>(new Map());
+  // Per-battle formation colour per instance id, derived once (descriptors never
+  // mutate); a no-op (byte-identical frames) for a pre-formation battle.
   const formationColourByInstance = useMemo(
     () => buildFormationColourByInstance(descriptors),
     [descriptors],
@@ -251,7 +247,12 @@ export function useBattleCanvas({
         // Static layout for this ship (cell offsets + outline), emitted once per
         // battle; the cells are reconstructed in world space from the ship pose.
         const descriptor = descriptors.get(s.instanceId);
-        const cells = renderCells(s, descriptor);
+        let cellBuffer = cellBufferRef.current.get(s.instanceId);
+        if (cellBuffer === undefined) {
+          cellBuffer = [];
+          cellBufferRef.current.set(s.instanceId, cellBuffer);
+        }
+        const cells = renderCellsInto(cellBuffer, s, descriptor);
         // Faction accent tints the hull; the side colour is shown separately as
         // an outline ring so allegiance stays legible in a mirror match. Falls
         // back to the side colour for replays recorded before the factions update.

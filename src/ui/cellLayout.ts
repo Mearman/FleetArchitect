@@ -69,16 +69,28 @@ export interface RenderCell {
  * values (0=none, 1=open, 2=closed) are reconstructed into a RenderDoorStates
  * object.
  */
-export function renderCells(
+/**
+ * As {@link renderCells}, but writes into a caller-supplied `buffer` and REUSES
+ * the `RenderCell` objects already in it (updating their fields in place) instead
+ * of allocating a fresh array of fresh objects every call. For the per-frame
+ * battle draw loop, which rebuilds every ship's cells every rAF — the buffer,
+ * held in a ref keyed by instance id, allocates only on the first frame (or when
+ * a ship's cell count grows) and is otherwise allocation-free. `renderCells`
+ * (below) is the fresh-allocating thin wrapper for non-hot callers.
+ */
+export function renderCellsInto(
+  buffer: RenderCell[],
   ship: ShipSnapshot,
   descriptor: ShipDescriptor | undefined,
 ): RenderCell[] | undefined {
   const cells = ship.cells;
   const layout = descriptor?.cells;
-  if (cells === undefined || layout === undefined) return undefined;
-
+  if (cells === undefined || layout === undefined) {
+    buffer.length = 0;
+    return undefined;
+  }
   const n = Math.min(cells.cellHp.length, layout.length);
-  const merged: RenderCell[] = [];
+  let out = 0;
   for (let i = 0; i < n; i += 1) {
     const l = layout[i];
     if (l === undefined) continue;
@@ -86,26 +98,74 @@ export function renderCells(
     const mannedRaw = cells.cellManned?.[i];
     const ammoRaw = cells.cellAmmo?.[i];
     const charge = cells.cellCharge?.[i];
-    merged.push({
-      slotId: l.slotId,
-      ox: l.ox,
-      oy: l.oy,
-      kind: l.kind,
-      maxHp: l.maxHp,
-      surface: l.surface,
-      maxSurfaceHp: l.maxSurfaceHp,
-      hasTurret: l.hasTurret === true,
-      hp: cells.cellHp[i] ?? 0,
-      alive: (cells.cellAlive[i] ?? 0) !== 0,
-      surfaceHp: cells.cellSurfaceHp[i],
-      turretAngle: turretAngle !== undefined && Number.isNaN(turretAngle) ? undefined : turretAngle,
-      manned: mannedRaw === undefined ? undefined : mannedRaw !== 0,
-      ammo: ammoRaw === undefined || ammoRaw < 0 ? undefined : ammoRaw,
-      charge: charge !== undefined && Number.isNaN(charge) ? undefined : charge,
-      doorStates: readDoorStates(cells, i),
-    });
+    // Resolve every field once, then either push a new object (first frame / a
+    // grown ship) or overwrite the reused object's fields in place.
+    const slotId = l.slotId;
+    const ox = l.ox;
+    const oy = l.oy;
+    const kind = l.kind;
+    const maxHp = l.maxHp;
+    const surface = l.surface;
+    const maxSurfaceHp = l.maxSurfaceHp;
+    const hasTurret = l.hasTurret === true;
+    const hp = cells.cellHp[i] ?? 0;
+    const alive = (cells.cellAlive[i] ?? 0) !== 0;
+    const surfaceHp = cells.cellSurfaceHp[i];
+    const turretAngleResolved =
+      turretAngle !== undefined && Number.isNaN(turretAngle) ? undefined : turretAngle;
+    const manned = mannedRaw === undefined ? undefined : mannedRaw !== 0;
+    const ammo = ammoRaw === undefined || ammoRaw < 0 ? undefined : ammoRaw;
+    const chargeResolved = charge !== undefined && Number.isNaN(charge) ? undefined : charge;
+    const doorStates = readDoorStates(cells, i);
+    const existing = buffer[out];
+    if (existing === undefined) {
+      buffer.push({
+        slotId,
+        ox,
+        oy,
+        kind,
+        maxHp,
+        surface,
+        maxSurfaceHp,
+        hasTurret,
+        hp,
+        alive,
+        surfaceHp,
+        turretAngle: turretAngleResolved,
+        manned,
+        ammo,
+        charge: chargeResolved,
+        doorStates,
+      });
+    } else {
+      existing.slotId = slotId;
+      existing.ox = ox;
+      existing.oy = oy;
+      existing.kind = kind;
+      existing.maxHp = maxHp;
+      existing.surface = surface;
+      existing.maxSurfaceHp = maxSurfaceHp;
+      existing.hasTurret = hasTurret;
+      existing.hp = hp;
+      existing.alive = alive;
+      existing.surfaceHp = surfaceHp;
+      existing.turretAngle = turretAngleResolved;
+      existing.manned = manned;
+      existing.ammo = ammo;
+      existing.charge = chargeResolved;
+      existing.doorStates = doorStates;
+    }
+    out += 1;
   }
-  return merged;
+  buffer.length = out;
+  return buffer;
+}
+
+export function renderCells(
+  ship: ShipSnapshot,
+  descriptor: ShipDescriptor | undefined,
+): RenderCell[] | undefined {
+  return renderCellsInto([], ship, descriptor);
 }
 
 /**
