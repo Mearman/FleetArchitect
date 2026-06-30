@@ -364,36 +364,37 @@ export function resolveFleetToCombatShips(
   catalog: Catalog,
   side: "attacker" | "defender",
 ): CombatShip[] {
-  // Resolve every deployable design first, carrying its radius and weapon
-  // effects so the column can be spaced by actual ship size and the edge
-  // inset derived from the fleet's longest weapon reach. The formation tree is
-  // walked in pre-order DFS via `collectFormationLeaves` — for a flat root of
-  // ship leaves (no layout) this yields exactly the legacy `fleet.ships` order,
-  // so the column and every instanceId are byte-identical to the pre-formation
-  // resolve. Each leaf also carries its formation identity (formationId, chain,
-  // role), stamped onto the resolved CombatShip below.
+  // Resolve every deployable design (carrying radius + weapon effects for
+  // column spacing/edge inset). collectFormationLeaves is pre-order DFS; a flat
+  // root yields the legacy fleet.ships order, byte-identical to pre-formation.
+  // Per-call design.id cache: a fleet of N identical ships resolves the design
+  // once. The cached values are read-only design data shared across leaves (the
+  // engine mutates SimModule, never these), so sharing is byte-identical.
+  const designCache = new Map<string, Omit<ResolvedEntry, "leaf">>();
+  const resolveDesign = (design: ShipDesign): Omit<ResolvedEntry, "leaf"> => {
+    const cached = designCache.get(design.id);
+    if (cached !== undefined) return cached;
+    // analyseShipDesign grows internally, so pass the raw design (no double-grow).
+    const grownDesign = { ...design, grid: growArmourHull(padGrid(design.grid, 1)) };
+    const { stats } = analyseShipDesign(design, catalog);
+    const resolvedDesign: Omit<ResolvedEntry, "leaf"> = {
+      design,
+      grownDesign,
+      stats,
+      radius: deriveRadius(grownDesign.grid),
+      weapons: stats.weapons.map((w) => w.effect),
+      sightReachM: maxSightReach(design, catalog),
+      accelMps2: stats.thrust / Math.max(stats.mass, 1),
+    };
+    designCache.set(design.id, resolvedDesign);
+    return resolvedDesign;
+  };
   const leaves = collectFormationLeaves(fleet.formation);
   const resolved: ResolvedEntry[] = leaves
     .map((leaf): ResolvedEntry | undefined => {
       const design = designs.get(leaf.ship.designId);
       if (design === undefined) return undefined;
-      // Derive the grown design once per ship so stats, radius, and the main
-      // loop all work from the same expanded grid.
-      const grownDesign = { ...design, grid: growArmourHull(padGrid(design.grid, 1)) };
-      // Pass the raw design: analyseShipDesign grows once internally, so feeding
-      // it the grown grid would double-grow. resolveModules below takes the
-      // already-grown grid (single-grow on both paths).
-      const { stats } = analyseShipDesign(design, catalog);
-      return {
-        leaf,
-        design,
-        grownDesign,
-        stats,
-        radius: deriveRadius(grownDesign.grid),
-        weapons: stats.weapons.map((w) => w.effect),
-        sightReachM: maxSightReach(design, catalog),
-        accelMps2: stats.thrust / Math.max(stats.mass, 1),
-      };
+      return { leaf, ...resolveDesign(design) };
     })
     .filter((entry): entry is ResolvedEntry => entry !== undefined);
 
