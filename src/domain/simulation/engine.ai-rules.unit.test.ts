@@ -79,7 +79,7 @@ function retreatBattle(seed: number, maxTicks: number): BattleInputs {
       // threshold within the tick budget.
       thrust: 7200,
       turnRate: 0.05,
-      weapons: [cannon()],
+      weapons: [cannon({ projectileSpeed: 0 })],
       orders: { engageRange: "medium" },
     }),
     doctrine: { base: { spatial: mediumEngageSpatial }, rules: [aggressiveRule] },

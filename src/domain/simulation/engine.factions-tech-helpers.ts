@@ -466,6 +466,19 @@ export function modularShip(opts: {
     if (w === undefined) continue;
     modules.push(moduleOf(`${prefix}-w${i}`, w, -2 - i, 0, moduleHp, 5, 0));
   }
+  // Power reactor — a ship needs power to fire, shield, and run life support.
+  // A high-output reactor so the test fixtures never brownout.
+  modules.push(
+    moduleOf(
+      `${prefix}-pwr`,
+      { kind: "power", output: 9999 },
+      1,
+      1,
+      moduleHp,
+      5,
+      0,
+    ),
+  );
   // Shield module — its `capacity` becomes the ship's shield pool. The
   // stats-level shieldCapacity mirrors it so the initial shield value
   // (set in toSimShip before recompute) already matches the pool ceiling.

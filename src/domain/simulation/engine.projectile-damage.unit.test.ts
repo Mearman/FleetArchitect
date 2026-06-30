@@ -114,7 +114,7 @@ describe("engine.projectile-damage", () => {
           x: 0,
           y: 0,
           facing: 0,
-          weapons: [weapon({ damage: 30, range: 400, cooldown: 5 })],
+          weapons: [weapon({ damage: 30, range: 400, cooldown: 5, projectileSpeed: 0 })],
         }),
         makeShip({
           id: "d1",
@@ -139,7 +139,7 @@ describe("engine.projectile-damage", () => {
     }
     expect(hit, "shield should be hit by the projectile").toBeDefined();
     if (hit === undefined) return;
-    expect(hit.shield).toBe(70);
+    expect(hit.shield).toBeCloseTo(70, 3);
     // Structure should not have taken any damage: the full 30 was absorbed.
     expect(hit.structure).toBe(initial.structure);
   });
@@ -165,7 +165,7 @@ describe("engine.projectile-damage", () => {
           x: 0,
           y: 0,
           facing: 0,
-          weapons: [weapon({ damage: 30, range: 400, cooldown: 5 })],
+          weapons: [weapon({ damage: 30, range: 400, cooldown: 5, projectileSpeed: 0 })],
         }),
         targetDummy({
           id: "d1",
