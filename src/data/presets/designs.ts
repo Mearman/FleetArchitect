@@ -129,7 +129,7 @@ export const designData: ShipDesignInput[] = [
     // light armour shoulder (#) caps each prow corner ahead of the railguns.
     grid: subdivideGrid(gridFromMap([
       ".>JsRL#.",
-      ".EFC~sWR",
+      ".EFC~YWR",
       "EFFCGv#R",
       ".EFC~sWR",
       ".<JeRL#.",
@@ -148,7 +148,7 @@ export const designData: ShipDesignInput[] = [
     // triple fusion reactors and a deep crew and engine block run it.
     grid: subdivideGrid(gridFromMap([
       ".>JWS~L.",
-      ".EFCSS~L",
+      ".EFCYS~L",
       "EEFFCSvL",
       ".EFCSS~L",
       ".<JeWS~e",
@@ -168,7 +168,7 @@ export const designData: ShipDesignInput[] = [
     // prow column caps the front of the railgun battery so incoming fire strikes
     // plate before it reaches the guns.
     grid: subdivideGrid(gridFromMap([
-      ".>J~~sR#.",
+      ".>J~~YR#.",
       ".EFCCGsR#",
       "EXEFWGvR#",
       ".EFCCGsR#",
@@ -218,7 +218,7 @@ export const designData: ShipDesignInput[] = [
     // Layout (13 cols × 5 rows), subdivided ×7 → 91 m cruiser:
     // stern (left) → crew/reactor spine → corridors → magazine → weapons → prow
     grid: subdivideGrid(gridFromMap([
-      ".>JWSTRL..#..",
+      ".>JWUTRL..#..",
       ".EXCCTRRLO##.",
       "EXFCCGvRRL###",
       ".EXCCTRRLO##.",
@@ -248,7 +248,7 @@ export const designData: ShipDesignInput[] = [
     // C cells (crew quarters) line the central corridor; the G (magazine) cell
     // sits between the crew block and the weapon batteries so crew can haul ammo.
     grid: subdivideGrid(gridFromMap([
-      "..>JWSvRML#..",
+      "..>JWUvRML#..",
       ".EXCCW~RRML#.",
       "EXFCCG~RRMML#",
       ".EXCCW~RRML#.",
@@ -397,7 +397,7 @@ export const designData: ShipDesignInput[] = [
     // → 44 m frigate.
     grid: subdivideGrid(crystalGrid([
       "###....####",
-      "EeFCCSBKvLH",
+      "EeFCCSBKvRH",
       "###....####",
     ]), F_SHARD),
     createdAt: PRESET_TIME,
@@ -443,7 +443,7 @@ export const designData: ShipDesignInput[] = [
     // → 156 m dreadnought.
     grid: subdivideGrid(crystalGrid([
       "..###~~~~####",
-      "E~#CCD~H~~~~Z",
+      "E~#CCQ~H~~~~Z",
       "Ee#X~Bv~~####",
       "E~#CCD~H~~~~Z",
       "..###~~~~####",

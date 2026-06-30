@@ -116,6 +116,8 @@ const TOKENS: Record<string, GridCell> = {
   "T": deckEquip("mod-plasma-torpedo", 0),
   "s": deckEquip("mod-shield-mk1", 0),
   "S": deckEquip("mod-shield-mk2", 0),
+  "Y": deckEquip("mod-deflector-mk1", 0),
+  "U": deckEquip("mod-deflector-mk2", 0),
   // Armour tokens (`A`, `D`) formerly mapped to armour equipment modules.
   // Armour is now a cell surface; both map to an armor cell.
   "A": armorCell(),
@@ -237,6 +239,8 @@ const CRYSTAL_TOKENS: Record<string, GridCell> = {
   "Z": deckEquip("cry-spinal-lance", 0), // Spinal Resonance Lance (1 GW capital spinal beam)
   "S": deckEquip("cry-adaptive-shield-mk1", 0),
   "D": deckEquip("cry-adaptive-shield-mk2", 0), // Adaptive Bulwark Mk II (600 MJ capital shield)
+  "R": deckEquip("cry-resonance-bulwark-mk1", 0),
+  "Q": deckEquip("cry-resonance-bulwark-mk2", 0),
   "E": deckEquip("cry-thruster", Math.PI),
   "e": deckEquip("cry-thruster", 0),
   ">": deckEquip("cry-thruster", -Math.PI / 2),
