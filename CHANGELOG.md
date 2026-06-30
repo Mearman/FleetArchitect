@@ -1,3 +1,10 @@
+## [1.32.5](https://github.com/Mearman/FleetArchitect/compare/v1.32.4...v1.32.5) (2026-06-30)
+
+
+### Performance Improvements
+
+* **sim:** pool the awareness comms-flood scratch across ticks ([7ab2d55](https://github.com/Mearman/FleetArchitect/commit/7ab2d55764bbe2571051f24b900997d3b8e59db6))
+
 ## [1.32.4](https://github.com/Mearman/FleetArchitect/compare/v1.32.3...v1.32.4) (2026-06-30)
 
 
