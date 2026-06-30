@@ -3,8 +3,9 @@ import fakeIndexedDB, { IDBKeyRange } from "fake-indexeddb";
 import type { Table } from "dexie";
 import { FleetArchitectDatabase, _setDatabaseForTesting } from "@/storage/db";
 import type { SimCacheRecord } from "@/storage/db";
-import { DexieSimCache } from "@/storage/sim-cache-dexie";
+import { DexieSimCache, estimateResultBytes } from "@/storage/sim-cache-dexie";
 import { sampleResult } from "@/domain/cache/test-fixtures";
+import type { BattleFrame } from "@/schema/battle";
 
 /** A budget large enough never to trigger byte eviction in count-cap tests. */
 const DEFAULT_LARGE_BYTES = 1024 * 1024 * 1024;
@@ -151,11 +152,13 @@ describe("DexieSimCache", () => {
   });
 
   it("evicts oldest-lastAccess rows past the byte budget", async () => {
-    // The freshly-set row "c" measures its own JSON bytes; the two pre-seeded
-    // rows carry large explicit byte sizes. Budget = (c's measured size) + 1, so
-    // the two large old rows must both be evicted to fit "c" while "c" survives.
+    // The freshly-set row "c" measures its own bytes via the cache's estimator
+    // (typed-array buffers + per-entity scalar — never a JSON serialisation);
+    // the two pre-seeded rows carry large explicit byte sizes. Budget = (c's
+    // measured size) + 1, so the two large old rows must both be evicted to fit
+    // "c" while "c" survives.
     const cResult = sampleResult("c");
-    const cBytes = new TextEncoder().encode(JSON.stringify(cResult)).length;
+    const cBytes = estimateResultBytes(cResult);
     const cache = new DexieSimCache(db.simCache, cBytes + 1, DEFAULT_LARGE_ENTRIES);
     await db.simCache.put({
       key: "a",
@@ -210,42 +213,24 @@ describe("DexieSimCache", () => {
     expect(await cache.has("oversized")).toBe(false);
   });
 
-  it("swallows a RangeError from estimateBytes as a capacity boundary", async () => {
-    // `estimateBytes` runs `JSON.stringify`; for a genuinely huge result that
-    // exceeds the V8 string limit it throws RangeError. We trigger the branch
-    // deterministically by attaching a `toJSON` that throws RangeError, which
-    // `JSON.stringify` propagates. The durable write is skipped, no throw, no
-    // eviction.
-    await db.simCache.put({
-      key: "existing",
-      result: sampleResult("existing"),
-      bytes: 10,
-      lastAccess: 1000,
-    });
-    let putCalls = 0;
-    const table = withPutStub(db.simCache, () => {
-      putCalls += 1;
-      return Promise.resolve();
-    });
-    const cache = new DexieSimCache(table);
-    // Attach a toJSON that fails the way an oversized result fails the string
-    // limit. Object.assign broadens the type with toJSON, which is assignable
-    // to BattleResult.
-    const oversized = Object.assign(sampleResult("r1"), {
-      toJSON(): never {
-        const error = new Error("invalid string length");
-        error.name = "RangeError";
-        throw error;
-      },
-    });
-
-    await expect(cache.set("oversized", oversized)).resolves.toBeUndefined();
-
-    // The bytes estimate threw before put was reached.
-    expect(putCalls).toBe(0);
-    // The pre-existing row survives.
-    expect(await cache.has("existing")).toBe(true);
-    expect(await cache.has("oversized")).toBe(false);
+  it("estimates bytes without serialising: stable, monotonic, positive", () => {
+    // The estimator sums typed-array buffer lengths plus per-entity scalars —
+    // never a JSON serialisation — so the V8 string-limit RangeError that the
+    // old JSON.stringify-based estimate could throw on a huge result is gone
+    // (an oversized result now fails at the structured-clone `put` instead,
+    // covered by the DataCloneError test above). The eviction contract only
+    // needs a stable, monotonic proxy; assert those properties hold.
+    const emptyFrame = (): BattleFrame => ({ tick: 0, ships: [], projectiles: [] });
+    // Positive even for a 0-frame recorded battle (the result-envelope overhead).
+    expect(estimateResultBytes(sampleResult("r0"))).toBeGreaterThan(0);
+    // Monotonic in frame count: the per-frame overhead scales the estimate.
+    const small = sampleResult("r1", { frames: [emptyFrame(), emptyFrame(), emptyFrame()] });
+    const large = sampleResult("r2", { frames: Array.from({ length: 30 }, emptyFrame) });
+    const a = estimateResultBytes(small);
+    const b = estimateResultBytes(large);
+    expect(b).toBeGreaterThan(a);
+    // Stable: the same result estimates to the same value every call.
+    expect(estimateResultBytes(small)).toBe(a);
   });
 
   it("still retries with eviction on a QuotaExceededError", async () => {
