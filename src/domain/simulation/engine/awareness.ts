@@ -31,6 +31,40 @@ import {
 } from "./sensors";
 import type { Contact, GhostContact, SimShip } from "./types";
 
+/** Reusable scratch for {@link propagateContacts}, held on
+ *  `EngineState.awarenessScratch` so the per-ship pool/received/linkedSlots/
+ *  adjacency Maps and the per-round inner-loop buffers are cleared-and-reused
+ *  across ticks instead of reallocated. The per-ship inner Maps/Sets/arrays are
+ *  reused by instanceId (get-or-create + clear); a dead ship's entry is left
+ *  stale (never read — only alive ships are iterated — and bounded by the
+ *  battle's ship/chunk count). Not captured on the checkpoint (a resume
+ *  re-derives awareness from the restored state on the first tick). */
+export interface AwarenessScratch {
+  poolByShip: Map<string, Map<string, Contact>>;
+  receivedByShip: Map<string, Map<string, Contact>>;
+  linkedSlotsByShip: Map<string, Set<string>>;
+  adjacencyByShip: Map<string, { neighbour: string; bandwidth: number }[]>;
+  isRelay: Map<string, boolean>;
+  outboundMap: Map<string, Contact>;
+  outbound: Contact[];
+  forwarded: Contact[];
+  ids: string[];
+}
+
+export function freshAwarenessScratch(): AwarenessScratch {
+  return {
+    poolByShip: new Map(),
+    receivedByShip: new Map(),
+    linkedSlotsByShip: new Map(),
+    adjacencyByShip: new Map(),
+    isRelay: new Map(),
+    outboundMap: new Map(),
+    outbound: [],
+    forwarded: [],
+    ids: [],
+  };
+}
+
 /**
  * Compute the live awareness for every ship this tick. Mutates each ship's
  * `ghosts` (refresh/decay/drop) and `awareness` (rebuilt) and each manned
@@ -71,6 +105,13 @@ export function computeAwareness(
    * standalone. Same array, same row-major order, byte-identical contacts.
    */
   precomputedEmissions?: readonly Emission[],
+  /**
+   * Reusable propagation scratch (the per-ship pool/received/linkedSlots/
+   * adjacency Maps and the inner-loop buffers), held on `EngineState` so they
+   * are cleared-and-reused across ticks. When omitted a fresh one is allocated
+   * (tests); production passes `state.awarenessScratch`.
+   */
+  scratch?: AwarenessScratch,
 ): AwarenessSnapshot {
   // Alive ships in instanceId order — the canonical order for every pass.
   const alive = [...ships]
@@ -220,7 +261,7 @@ export function computeAwareness(
   //     pool seeded with its direct contacts; relays forward third-party
   //     contacts along links, bandwidth-capped, to a fixed point. There is NO
   //     side-wide union — two ships with no comms path share nothing.
-  const liveByShip = propagateContacts(alive, directContacts, links);
+  const liveByShip = propagateContacts(alive, directContacts, links, scratch);
 
   // (f) Per-ship awareness + ghost memory. The live pool drives ghost refresh;
   //     the merged awareness (live ∪ surviving ghosts) is what targeting reads.
@@ -396,26 +437,52 @@ export function propagateContacts(
   alive: readonly SimShip[],
   directContacts: ReadonlyMap<string, Contact[]>,
   links: readonly CommsLink[],
+  scratch?: AwarenessScratch,
 ): Map<string, Map<string, Contact>> {
-  // Pools: each ship's accumulating contact set, keyed by enemyId.
-  const pool = new Map<string, Map<string, Contact>>();
+  // Per-ship structures are reused across ticks when a scratch is supplied
+  // (get-or-create + clear); otherwise allocated fresh (the standalone/test
+  // path). The returned `pool` is read within the same tick and discarded, so
+  // reusing its buffers is safe.
+  const pool = scratch?.poolByShip ?? new Map<string, Map<string, Contact>>();
   // receivedThirdParty[shipId]: contacts that arrived from elsewhere (origin
   // != this ship), the only contacts a relay may forward onward.
-  const received = new Map<string, Map<string, Contact>>();
+  const received = scratch?.receivedByShip ?? new Map<string, Map<string, Contact>>();
   for (const ship of alive) {
-    const p = new Map<string, Contact>();
+    let p = pool.get(ship.instanceId);
+    if (p === undefined) {
+      p = new Map();
+      pool.set(ship.instanceId, p);
+    } else {
+      p.clear();
+    }
     for (const c of directContacts.get(ship.instanceId) ?? []) p.set(c.enemyId, c);
-    pool.set(ship.instanceId, p);
-    received.set(ship.instanceId, new Map());
+    let r = received.get(ship.instanceId);
+    if (r === undefined) {
+      r = new Map();
+      received.set(ship.instanceId, r);
+    } else {
+      r.clear();
+    }
   }
 
   // relay[shipId]: a ship with >= 2 of its comms units appearing in any link.
-  // Count distinct (slotId) per ship across both link endpoints.
-  const linkedSlots = new Map<string, Set<string>>();
-  const adjacency = new Map<string, { neighbour: string; bandwidth: number }[]>();
+  const linkedSlots = scratch?.linkedSlotsByShip ?? new Map<string, Set<string>>();
+  const adjacency = scratch?.adjacencyByShip ?? new Map<string, { neighbour: string; bandwidth: number }[]>();
   for (const ship of alive) {
-    linkedSlots.set(ship.instanceId, new Set());
-    adjacency.set(ship.instanceId, []);
+    let ls = linkedSlots.get(ship.instanceId);
+    if (ls === undefined) {
+      ls = new Set();
+      linkedSlots.set(ship.instanceId, ls);
+    } else {
+      ls.clear();
+    }
+    let adj = adjacency.get(ship.instanceId);
+    if (adj === undefined) {
+      adj = [];
+      adjacency.set(ship.instanceId, adj);
+    } else {
+      adj.length = 0;
+    }
   }
   for (const link of links) {
     const aId = link.a.ship.instanceId;
@@ -426,7 +493,8 @@ export function propagateContacts(
     adjacency.get(aId)?.push({ neighbour: bId, bandwidth });
     adjacency.get(bId)?.push({ neighbour: aId, bandwidth });
   }
-  const isRelay = new Map<string, boolean>();
+  const isRelay = scratch?.isRelay ?? new Map<string, boolean>();
+  isRelay.clear();
   for (const ship of alive) {
     isRelay.set(ship.instanceId, (linkedSlots.get(ship.instanceId)?.size ?? 0) >= 2);
   }
@@ -438,14 +506,20 @@ export function propagateContacts(
 
   // Bounded flood to a fixed point: at most `alive.length` rounds (any contact
   // can traverse at most that many hops before the pools stop growing).
-  const ids = alive.map((s) => s.instanceId);
+  const ids = scratch?.ids ?? [];
+  ids.length = 0;
+  for (const s of alive) ids.push(s.instanceId);
+  // Inner-loop buffers, reused across every ship/round iteration when pooled.
+  const outboundMap = scratch?.outboundMap ?? new Map<string, Contact>();
+  const outbound = scratch?.outbound ?? [];
+  const forwarded = scratch?.forwarded ?? [];
   for (let round = 0; round < ids.length; round++) {
     let changed = false;
     for (const shipId of ids) {
       const direct = directContacts.get(shipId) ?? [];
       const relay = isRelay.get(shipId) === true;
       // Outbound = own direct contacts, plus received third-party only if relay.
-      const outboundMap = new Map<string, Contact>();
+      outboundMap.clear();
       for (const c of direct) outboundMap.set(c.enemyId, c);
       if (relay) {
         for (const [enemyId, c] of received.get(shipId) ?? []) {
@@ -456,12 +530,17 @@ export function propagateContacts(
         }
       }
       // Sort outbound by (threat desc, enemyId asc) for the bandwidth cut.
-      const outbound = [...outboundMap.values()].sort((p, q) => {
+      outbound.length = 0;
+      for (const c of outboundMap.values()) outbound.push(c);
+      outbound.sort((p, q) => {
         if (q.threat !== p.threat) return q.threat - p.threat;
         return p.enemyId < q.enemyId ? -1 : p.enemyId > q.enemyId ? 1 : 0;
       });
       for (const { neighbour, bandwidth } of adjacency.get(shipId) ?? []) {
-        const forwarded = outbound.slice(0, bandwidth);
+        forwarded.length = 0;
+        for (let i = 0; i < bandwidth && i < outbound.length; i += 1) {
+          forwarded.push(outbound[i]!);
+        }
         const nPool = pool.get(neighbour);
         const nRecv = received.get(neighbour);
         if (nPool === undefined || nRecv === undefined) continue;
@@ -485,8 +564,6 @@ export function propagateContacts(
     if (!changed) break;
   }
 
-  // Return the settled live pools; the caller merges in ghost memory before
-  // writing the final awareness each ship's targeting reads.
   return pool;
 }
 

@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 import { mulberry32 } from "@/domain/simulation/rng";
 import { buildArenaMedium } from "@/domain/simulation/engine/medium-setup";
 import { toSimShip } from "@/domain/simulation/engine/setup";
+import { freshAwarenessScratch } from "@/domain/simulation/engine/awareness";
 import {
   refreshRosterIncremental,
   refreshRosterReference,
@@ -137,6 +138,7 @@ function stateWith(ships: SimShip[]): EngineState {
     aliveAtTickStartScratch: new Set(),
     aliveRealSortedScratch: [],
     projectileMediumScratch: [],
+    awarenessScratch: freshAwarenessScratch(),
   };
 }
 

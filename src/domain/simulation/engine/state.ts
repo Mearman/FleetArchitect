@@ -17,6 +17,7 @@ import type { Debris } from "./debris";
 import type { Emission } from "./emissions";
 import type { ExhaustParticle } from "./exhaust-particles";
 import type { ArenaMedium, ProjectileMediumEntry } from "./medium-setup";
+import type { AwarenessScratch } from "./awareness";
 import type { DeploymentReference } from "./movement";
 import type { SimPulse } from "./pulses";
 import type { SimMine, SimPod, SimProjectile, SimShip } from "./types";
@@ -125,4 +126,8 @@ export interface EngineState {
   aliveAtTickStartScratch: Set<string>;
   aliveRealSortedScratch: SimShip[];
   projectileMediumScratch: ProjectileMediumEntry[];
+  /** Reusable scratch for the awareness comms-flood (`propagateContacts`):
+   *  per-ship pool/received/linkedSlots/adjacency Maps + the inner-loop buffers,
+   *  cleared-and-reused across ticks. Not captured on the checkpoint. */
+  awarenessScratch: AwarenessScratch;
 }

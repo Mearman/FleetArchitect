@@ -23,6 +23,7 @@ import { fleetCentroid } from "./movement";
 import { toSimShip } from "./setup";
 import type { Rng } from "@/domain/simulation/rng";
 import type { StalemateWatch } from "./stalemate";
+import { freshAwarenessScratch } from "./awareness";
 import type { EngineState } from "./state";
 
 /**
@@ -151,6 +152,7 @@ export function bootstrapEngine(
       aliveAtTickStartScratch: new Set(),
       aliveRealSortedScratch: [],
       projectileMediumScratch: [],
+      awarenessScratch: freshAwarenessScratch(),
     };
     return { state, startTick: 1, stalemate: undefined };
   }
@@ -206,6 +208,7 @@ export function bootstrapEngine(
     aliveAtTickStartScratch: new Set(),
     aliveRealSortedScratch: [],
     projectileMediumScratch: [],
+    awarenessScratch: freshAwarenessScratch(),
   };
   return { state, startTick: restored.tick + 1, stalemate: restored.stalemate };
 }

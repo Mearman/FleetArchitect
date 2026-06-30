@@ -231,7 +231,7 @@ export function* simulateBattle(
       if (s.alive && s.phantom === undefined) aliveRealSorted.push(s);
     }
     aliveRealSorted.sort((a, b) => (a.instanceId < b.instanceId ? -1 : a.instanceId > b.instanceId ? 1 : 0));
-    const awareness = computeAwareness(state.ships, state.byId, dynamicOccluders, inputs.anomalies, state.medium, tick, mediumEmissions);
+    const awareness = computeAwareness(state.ships, state.byId, dynamicOccluders, inputs.anomalies, state.medium, tick, mediumEmissions, state.awarenessScratch);
     // 0a. Record the continuous EM emission log for this tick (Phase 9), behind
     //     the monotonic emission counter. Rebuilt from scratch each tick. The
     //     alive-real-sorted list and medium emissions are threaded in from the

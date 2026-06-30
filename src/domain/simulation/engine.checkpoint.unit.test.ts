@@ -11,6 +11,7 @@ import {
   restoreCheckpoint,
 } from "@/domain/simulation/engine/checkpoint";
 import { toSimShip } from "@/domain/simulation/engine/setup";
+import { freshAwarenessScratch } from "@/domain/simulation/engine/awareness";
 import {
   buildArenaMedium,
   restoreArenaMedium,
@@ -290,6 +291,7 @@ function makeState(): { state: EngineState; rng: ReturnType<typeof mulberry32> }
     aliveAtTickStartScratch: new Set(),
     aliveRealSortedScratch: [],
     projectileMediumScratch: [],
+    awarenessScratch: freshAwarenessScratch(),
   };
   // Advance the projectile counter so capture records a non-zero value.
   setProjectileCounter(1);
@@ -386,6 +388,7 @@ describe("captureCheckpoint / restoreCheckpoint", () => {
       aliveAtTickStartScratch: new Set(),
       aliveRealSortedScratch: [],
       projectileMediumScratch: [],
+      awarenessScratch: freshAwarenessScratch(),
     };
     const second = captureCheckpoint(reState, resumedRng, restored.tick, restored.stalemate);
 
