@@ -8,6 +8,7 @@ import {
   magazineMass,
   reactorMass,
   shieldMass,
+  deflectorMass,
 } from "../physics";
 import {
   ACTIVE_SENSOR_EMISSION_SCALE,
@@ -26,6 +27,8 @@ import {
   RELOAD_THERMAL_TIME_S,
   SHIELD_CAPACITY_J,
   SHIELD_RECHARGE_W,
+  DEFLECTOR_CAPACITY_KG_MPS,
+  DEFLECTOR_RECHARGE_KG_MPS_PER_S,
   TORPEDO_RANGE_M,
   beamDamageJoules,
   cooldownTicks,
@@ -333,8 +336,7 @@ export const terranModules: ModuleDefinition[] = [
     name: "Deflector Shield Mk I",
     description: "Regenerating energy shield. Absorbs hits before they reach the hull.",
     category: "defence",
-    // Deflector Mk I: 200 MJ field (the legacy `light` band).
-    // mass = shieldMass(2e8) = 2000 × (2e8 / 1.3e7) ≈ 30,769 kg (~31 t).
+    // Deflector Mk I: 200 MJ field (light band); mass ≈ 31 t.
     mass: shieldMass(SHIELD_CAPACITY_J.light),
     cost: 70,
     // A shield's draw IS its recharge wattage, so rebuilding the field competes
@@ -370,6 +372,33 @@ export const terranModules: ModuleDefinition[] = [
       rechargeRate: SHIELD_RECHARGE_W.heavy,
       rechargeDelay: 150,
     },
+  },
+  // --- Defence: deflectors (momentum screens; kg·m/s capacity) ---
+  {
+    id: "mod-deflector-mk1",
+    faction: "Terran",
+    name: "Deflector Screen Mk I",
+    description: "Momentum screen. Arrests kinetic rounds and rams before they reach the hull.",
+    category: "defence",
+    mass: deflectorMass(DEFLECTOR_CAPACITY_KG_MPS.light),
+    cost: 70,
+    powerDraw: DEFLECTOR_RECHARGE_KG_MPS_PER_S.light,
+    crewRequired: 1,
+    techLevel: 1,
+    effect: { kind: "deflector", capacity: DEFLECTOR_CAPACITY_KG_MPS.light, rechargeRate: DEFLECTOR_RECHARGE_KG_MPS_PER_S.light, rechargeDelay: 120 },
+  },
+  {
+    id: "mod-deflector-mk2",
+    faction: "Terran",
+    name: "Deflector Screen Mk II",
+    description: "Heavy momentum screen with greater capacity. Stops capital-grade kinetics.",
+    category: "defence",
+    mass: deflectorMass(DEFLECTOR_CAPACITY_KG_MPS.heavy),
+    cost: 150,
+    powerDraw: DEFLECTOR_RECHARGE_KG_MPS_PER_S.heavy,
+    crewRequired: 2,
+    techLevel: 3,
+    effect: { kind: "deflector", capacity: DEFLECTOR_CAPACITY_KG_MPS.heavy, rechargeRate: DEFLECTOR_RECHARGE_KG_MPS_PER_S.heavy, rechargeDelay: 150 },
   },
   // --- Defence: armour ---    // --- Propulsion ---
   {

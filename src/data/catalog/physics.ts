@@ -272,6 +272,8 @@ export const MODULE_DENSITY: Record<string, number> = {
   pointDefense: 2500,
   // Defence — shield projector: energy equipment, lighter than a gun.
   shield: 2000,
+  // Defence — deflector projector (momentum screen): same class as a shield.
+  deflector: 2000,
   // Propulsion — engine: nozzle + power conditioning.
   engine: 3000,
   rcs: 1500, // RCS jets: small mechanisms
@@ -445,6 +447,14 @@ export const ENGINE_THRUST_DENSITY_N_PER_M3 = 5e3;
 export const SHIELD_ENERGY_DENSITY_J_PER_M3 = 1.3e7;
 
 /**
+ * Volumetric momentum-storage density of a deflector projector (field generator
+ * + emitters), in kg·m/s per m³. THE anchor a deflector's installed mass is
+ * derived from, mirroring the shield energy density so a deflector masses
+ * comparably to a shield of equivalent tier.
+ */
+export const DEFLECTOR_MOMENTUM_DENSITY_KG_MPS_PER_M3 = 1.5e4;
+
+/**
  * Volumetric storage density of a magazine (stored rounds per m³ of ordnance
  * bay). ~30 rounds/m³ gives a 1200-round frigate magazine a ~40 m³ envelope
  * (matching the legacy band) and a 250-round fighter store a ~8 m³ one. THE
@@ -525,6 +535,19 @@ export function shieldMass(
   densityKgPerM3: number = moduleDensity("shield"),
 ): number {
   return densityKgPerM3 * (capacityJ / SHIELD_ENERGY_DENSITY_J_PER_M3);
+}
+
+/**
+ * Installed mass (kg) of a deflector projector, DERIVED from its field capacity:
+ * `density × (capacity / DEFLECTOR_MOMENTUM_DENSITY)` — the momentum-screen
+ * analogue of `shieldMass`, so a deflector masses comparably to a shield of the
+ * same tier.
+ */
+export function deflectorMass(
+  capacityKgMps: number,
+  densityKgPerM3: number = moduleDensity("deflector"),
+): number {
+  return densityKgPerM3 * (capacityKgMps / DEFLECTOR_MOMENTUM_DENSITY_KG_MPS_PER_M3);
 }
 
 /**
