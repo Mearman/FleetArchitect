@@ -6,6 +6,7 @@ import {
   kineticWeaponMass,
   magazineMass,
   reactorMass,
+  deflectorMass,
 } from "../physics";
 import {
   ANTIMATTER_POWER_DENSITY_W_PER_M3,
@@ -16,6 +17,8 @@ import {
   PROJECTILE_MASS_KG,
   RELOAD_THERMAL_TIME_S,
   TORPEDO_RANGE_M,
+  DEFLECTOR_CAPACITY_KG_MPS,
+  DEFLECTOR_RECHARGE_KG_MPS_PER_S,
   cooldownTicks,
   kineticDamageJoules,
   kineticRangeM,
@@ -376,6 +379,19 @@ export const foundryModules: ModuleDefinition[] = [
       tracking: 1.8,
     },
     pointDefense: true,
+  },
+  {
+    id: "fnd-bulwark-deflector",
+    faction: "Foundry",
+    name: "Bulwark Deflector",
+    description: "A heavy forged momentum screen. The Foundry's answer to mass-driver rounds — arrests kinetic strikes that would punch through bulk armour.",
+    category: "defence",
+    mass: deflectorMass(DEFLECTOR_CAPACITY_KG_MPS.heavy),
+    cost: 130,
+    powerDraw: DEFLECTOR_RECHARGE_KG_MPS_PER_S.heavy,
+    crewRequired: 1,
+    techLevel: 3,
+    effect: { kind: "deflector", capacity: DEFLECTOR_CAPACITY_KG_MPS.heavy, rechargeRate: DEFLECTOR_RECHARGE_KG_MPS_PER_S.heavy, rechargeDelay: 140 },
   },
   // --- Propulsion: deliberately slow ---
   {

@@ -6,6 +6,7 @@ import {
   kineticWeaponMass,
   magazineMass,
   reactorMass,
+  deflectorMass,
 } from "../physics";
 import {
   ANTIMATTER_POWER_DENSITY_W_PER_M3,
@@ -21,6 +22,8 @@ import {
   RCS_TORQUE_N_M,
   REACTION_WHEEL_TORQUE_N_M,
   RELOAD_THERMAL_TIME_S,
+  DEFLECTOR_CAPACITY_KG_MPS,
+  DEFLECTOR_RECHARGE_KG_MPS_PER_S,
   beamDamageJoules,
   cooldownTicks,
   kineticDamageJoules,
@@ -318,6 +321,19 @@ export const swarmModules: ModuleDefinition[] = [
       tracking: 1.5,
     },
     pointDefense: true,
+  },
+  {
+    id: "swm-carapace-screen",
+    faction: "Swarm",
+    name: "Carapace Screen",
+    description: "A dense organic membrane that arrests kinetic strikes — the Swarm's living answer to mass-driver rounds.",
+    category: "defence",
+    mass: deflectorMass(DEFLECTOR_CAPACITY_KG_MPS.light),
+    cost: 55,
+    powerDraw: DEFLECTOR_RECHARGE_KG_MPS_PER_S.light,
+    crewRequired: 0,
+    techLevel: 1,
+    effect: { kind: "deflector", capacity: DEFLECTOR_CAPACITY_KG_MPS.light, rechargeRate: DEFLECTOR_RECHARGE_KG_MPS_PER_S.light, rechargeDelay: 100 },
   },
   // --- Propulsion ---
   {
