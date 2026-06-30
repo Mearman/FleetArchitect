@@ -1,3 +1,11 @@
+## [1.32.4](https://github.com/Mearman/FleetArchitect/compare/v1.32.3...v1.32.4) (2026-06-30)
+
+
+### Performance Improvements
+
+* **resolve:** memoise the per-design resolution within a fleet ([a8eb383](https://github.com/Mearman/FleetArchitect/commit/a8eb383a463fb3f3e89d518bbcb05c9fc048e805))
+* **sim:** fuse shipForceAndTorque and lateralForceAndTorque (moveShips Pass B) ([6857aac](https://github.com/Mearman/FleetArchitect/commit/6857aac834947904ce93417ffb1091d788f1aea2))
+
 ## [1.32.3](https://github.com/Mearman/FleetArchitect/compare/v1.32.2...v1.32.3) (2026-06-30)
 
 
