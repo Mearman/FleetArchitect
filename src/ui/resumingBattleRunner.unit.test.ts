@@ -61,6 +61,7 @@ function checkpoint(tick: number): EngineCheckpoint {
       debris: 0,
     },
     ticks: tick,
+    ticksSinceLastDeath: 0,
     deployment: {},
     ships: [],
     projectiles: [],

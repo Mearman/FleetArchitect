@@ -184,8 +184,9 @@ export function* simulateBattle(
         }
       : undefined;
 
-  // No-progress counter for the reactor-loss stalemate breaker (resets on death).
-  let ticksSinceLastDeath = 0;
+  // The reactor-loss stalemate breaker's no-progress counter lives on EngineState
+  // (state.ticksSinceLastDeath) so the checkpoint captures it and a resumed run
+  // reaches the 1200-tick threshold at the same absolute tick as the cold run.
 
   for (let tick = startTick; inputs.maxTicks === undefined || tick <= inputs.maxTicks; tick++) {
     // 0. Awareness phase (sensors, comms, fog of war). Runs first so the
@@ -562,10 +563,10 @@ export function* simulateBattle(
     //     ticks since the last real-ship death) so it breaks stalemates without
     //     ending active combat prematurely.
     for (const s of state.ships) {
-      if (!s.alive && aliveAtTickStart.has(s.instanceId)) { ticksSinceLastDeath = -1; break; }
+      if (!s.alive && aliveAtTickStart.has(s.instanceId)) { state.ticksSinceLastDeath = -1; break; }
     }
-    ticksSinceLastDeath += 1;
-    if (ticksSinceLastDeath >= 1200) {
+    state.ticksSinceLastDeath += 1;
+    if (state.ticksSinceLastDeath >= 1200) {
       for (const ship of state.ships) {
         if (ship.alive && ship.modules !== undefined && !hasAliveReactor(ship)) {
           ship.alive = false;

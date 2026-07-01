@@ -419,7 +419,7 @@ const DeploymentReference = z.object({
  *  `deflectorPiercing` to {@link CheckpointProjectile} for the unified
  *  (energy, momentum) damage model. v8 adds `damageJ` to {@link CheckpointBeam},
  *  threading real beam energy (Joules) into the particle-intensity model. */
-export const CHECKPOINT_VERSION = 8;
+export const CHECKPOINT_VERSION = 9;
 
 /**
  * A complete engine checkpoint: everything needed to resume `simulateBattle`
@@ -447,6 +447,11 @@ export const EngineCheckpoint = z.object({
   }),
   /** Count of post-initial frames yielded so far (excludes the tick-0 frame). */
   ticks: z.number(),
+  /** No-progress counter for the reactor-loss stalemate breaker (ticks since
+   *  the last real-ship death). Required since CHECKPOINT_VERSION 9: a resumed
+   *  run must reach the 1200-tick threshold at the same absolute tick as the
+   *  cold run or it byte-diverges for any battle the rule ends. */
+  ticksSinceLastDeath: z.number(),
   /** Each side's deployment centroid, captured (not re-derivable). */
   deployment: DeploymentReference,
   ships: z.array(CheckpointShip),

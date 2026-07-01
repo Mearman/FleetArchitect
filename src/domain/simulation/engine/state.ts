@@ -110,6 +110,12 @@ export interface EngineState {
   emissionSeq: number;
   debrisSeq: number;
   ticks: number;
+  /** No-progress counter for the reactor-loss stalemate breaker: ticks since
+   *  the last real-ship death (-1 the tick a death occurs, then +1 to 0, so a
+   *  death resets it). Authoritative — captured by the checkpoint so a resumed
+   *  run reaches the 1200-tick threshold at the same absolute tick as the cold
+   *  run (otherwise resume byte-diverges for any battle the rule ends). */
+  ticksSinceLastDeath: number;
   winner: BattleSide;
   resolved: boolean;
   /**

@@ -221,6 +221,7 @@ export function captureCheckpoint(
       debris: state.debrisSeq,
     },
     ticks: state.ticks,
+    ticksSinceLastDeath: state.ticksSinceLastDeath,
     deployment: state.deployment,
     ships,
     projectiles: state.projectiles,
@@ -470,6 +471,7 @@ export interface RestoredEngine {
   emissionSeq: number;
   debrisSeq: number;
   ticks: number;
+  ticksSinceLastDeath: number;
   rngState: number;
   projectileCounter: number;
   tick: number;
@@ -512,6 +514,7 @@ export function restoreCheckpoint(cp: EngineCheckpoint): RestoredEngine {
     emissionSeq: clone.counters.emission,
     debrisSeq: clone.counters.debris,
     ticks: clone.ticks,
+    ticksSinceLastDeath: clone.ticksSinceLastDeath,
     rngState: clone.rngState,
     projectileCounter: clone.counters.projectile,
     tick: clone.tick,

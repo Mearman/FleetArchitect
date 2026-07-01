@@ -141,6 +141,7 @@ export function bootstrapEngine(
       // Number of post-initial frames yielded, matching the previous
       // `frames.length - 1`: the tick-0 frame is excluded from the count.
       ticks: 0,
+      ticksSinceLastDeath: 0,
       winner: "draw",
       resolved: false,
       // Per-tick scratch buffers — empty here, cleared and refilled each tick.
@@ -198,6 +199,7 @@ export function bootstrapEngine(
     emissionSeq: restored.emissionSeq,
     debrisSeq: restored.debrisSeq,
     ticks: restored.ticks,
+    ticksSinceLastDeath: restored.ticksSinceLastDeath,
     winner: "draw",
     resolved: false,
     // Per-tick scratch buffers — empty here, cleared and refilled each tick.

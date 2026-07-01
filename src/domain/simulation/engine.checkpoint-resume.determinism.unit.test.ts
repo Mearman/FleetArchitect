@@ -197,6 +197,57 @@ function toughTarget(
   };
 }
 
+/** A reactor-bearing survivor: command + power reactor, unarmed and stationary,
+ *  so it stays alive (the reactor-loss rule never targets it) and never kills. */
+function reactorSurvivor(
+  id: string,
+  side: "attacker" | "defender",
+  x: number,
+): CombatShip {
+  const modules: ResolvedModule[] = [
+    moduleOf(`${id}-cmd`, { kind: "power", output: 1000 }, 0, 0, 99999, {
+      command: true,
+    }),
+  ];
+  return {
+    instanceId: id,
+    designId: `d-${id}`,
+    faction: "Terran",
+    side,
+    stats: statsFor(99999),
+    position: { x, y: 0 },
+    facing: 0,
+    doctrine: HOLD_DOCTRINE,
+    classification: "frigate",
+    modules,
+  };
+}
+
+/** A reactor-less derelict: a command module (so it survives the command-death
+ *  rule) but NO power reactor, so the reactor-loss stalemate breaker kills it
+ *  after 1200 idle ticks. Unarmed and stationary, so it never causes a death. */
+function reactorlessDerelict(
+  id: string,
+  side: "attacker" | "defender",
+  x: number,
+): CombatShip {
+  const modules: ResolvedModule[] = [
+    moduleOf(`${id}-cmd`, { kind: "hull" }, 0, 0, 99999, { command: true }),
+  ];
+  return {
+    instanceId: id,
+    designId: `d-${id}`,
+    faction: "Terran",
+    side,
+    stats: statsFor(99999),
+    position: { x, y: 0 },
+    facing: 0,
+    doctrine: HOLD_DOCTRINE,
+    classification: "frigate",
+    modules,
+  };
+}
+
 function battle(ships: CombatShip[], seed: number, maxTicks: number): BattleInputs {
   return {
     ships,
@@ -317,4 +368,38 @@ describe("engine checkpoint-resume determinism", () => {
     expect(withCheckpointing).toEqual(plain);
     expect(frameHash(withCheckpointing)).toBe(frameHash(plain));
   });
+
+  it("resume is byte-identical across the reactor-loss stalemate window", () => {
+    // A reactor-less derelict alongside a reactor-bearing survivor, both unarmed:
+    // no death ever occurs, so the reactor-loss stalemate breaker fires at the
+    // 1200-idle-tick threshold and kills the derelict. The checkpoint at C=600
+    // carries ticksSinceLastDeath=600; a resumed run must fire the rule at the
+    // SAME absolute tick (1200), which only holds if the counter is captured —
+    // otherwise resume resets it and the derelict survives to the tick cap,
+    // byte-diverging from the cold run (the existing crewed fixture never enters
+    // a 1200-idle-tick window, so it cannot catch this).
+    const ships = [
+      reactorSurvivor("alive", "attacker", 0),
+      reactorlessDerelict("derelict", "defender", 200),
+    ];
+    const inputs = battle(ships, 7, 1300);
+    const C = 600;
+    let checkpoint: EngineCheckpoint | undefined;
+    const freshFrames = drain(inputs, {
+      checkpointEvery: 600,
+      onCheckpoint: (cp) => {
+        if (cp.tick === C) checkpoint = cp;
+      },
+    });
+    expect(checkpoint, `a checkpoint must be captured at tick ${C}`).toBeDefined();
+    const resumed = drain(inputs, { resumeFrom: checkpoint });
+    const freshTail = freshFrames.filter((f) => f.tick > C);
+    expect(resumed.length, "resume yields one frame per fresh tick > C").toBe(
+      freshTail.length,
+    );
+    expect(resumed, "every resumed frame is byte-identical to the fresh tail").toEqual(
+      freshTail,
+    );
+    expect(frameHash(resumed)).toBe(frameHash(freshTail));
+  }, 60000);
 });
