@@ -147,4 +147,31 @@ describe("grid-codec round-trip", () => {
     corrupt[0] = 99;
     expect(() => decodeGrid(corrupt)).toThrow(/unsupported codec version/);
   });
+
+  it("rejects an oversized grid (DoS guard on attacker-controlled dimensions)", () => {
+    // Craft a buffer whose cols/rows varints exceed the per-dimension ceiling,
+    // before any cell data. A crafted share must not be able to force a huge
+    // allocation by lying about the grid dimensions.
+    const varint = (v: number): number[] => {
+      const out: number[] = [];
+      do {
+        let b = v & 0x7f;
+        v = Math.floor(v / 128);
+        if (v > 0) b |= 0x80;
+        out.push(b);
+      } while (v > 0);
+      return out;
+    };
+    const real = encodeGrid(
+      TileGrid.parse({
+        cols: 1,
+        rows: 1,
+        cells: [{ kind: "solid", substrate: true, surface: "bare" }],
+      }),
+    );
+    const version = real[0];
+    if (version === undefined) throw new Error("encoded grid has no version byte");
+    const oversized = new Uint8Array([version, ...varint(100_000), ...varint(1)]);
+    expect(() => decodeGrid(oversized)).toThrow(/exceed|too large/i);
+  });
 });

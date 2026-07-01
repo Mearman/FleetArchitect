@@ -57,6 +57,13 @@ import {
 
 const CODEC_VERSION = 1;
 
+/** Per-axis ceiling on a decoded grid's dimensions. The largest authored ship is
+ *  well under 100 cells on a side, so 1000 is a generous margin (a 1000x1000
+ *  grid is ~1e6 cells, a few MB — safe) while bounding `cols`/`rows` read from
+ *  an attacker-controlled share before any allocation loop runs. Without it a
+ *  crafted payload declaring cols=rows=1e9 forces a 1e18-entry allocation. */
+const MAX_GRID_DIMENSION = 1000;
+
 const SURFACE_TO_CODE: Record<SurfaceKind, number> = {
   bare: 0,
   deck: 1,
@@ -467,6 +474,11 @@ export function decodeGrid(bytes: Uint8Array): TileGrid {
   }
   const cols = reader.varint();
   const rows = reader.varint();
+  if (cols > MAX_GRID_DIMENSION || rows > MAX_GRID_DIMENSION) {
+    throw new Error(
+      `grid codec: grid dimensions ${cols}x${rows} exceed the ${MAX_GRID_DIMENSION}-cell limit`,
+    );
+  }
   const cellCount = cols * rows;
 
   // Occupancy bitmap.
