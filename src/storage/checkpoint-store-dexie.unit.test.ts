@@ -58,6 +58,7 @@ function minimalCheckpoint(tick: number): EngineCheckpoint {
       debris: 0,
     },
     ticks: tick,
+    ticksSinceLastDeath: 0,
     deployment: {},
     ships: [],
     projectiles: [],
@@ -146,6 +147,7 @@ describe("DexieCheckpointStore", () => {
       checkpoint: corrupt,
       preFrames: [],
       updatedAt: Date.now(),
+      bytes: 0,
     });
 
     // The record fails EngineCheckpoint.safeParse (missing required `tick`), so
@@ -221,5 +223,19 @@ describe("DexieCheckpointStore", () => {
     await expect(
       storeWithFailingPut.put("k1", minimalCheckpoint(20), [frame(0)]),
     ).rejects.toThrow("a real IDB failure");
+  });
+
+  it("evicts the oldest checkpoint past the entry-count cap", async () => {
+    // Without eviction every distinct matchup adds a row that only a completed
+    // run removes, so abandoned battles accumulate without bound. A store with a
+    // 2-entry cap drops the oldest (LRU by updatedAt) when a third arrives.
+    const store = new DexieCheckpointStore(db.checkpoints, Number.MAX_SAFE_INTEGER, 2);
+    await store.put("k1", minimalCheckpoint(1), []);
+    await store.put("k2", minimalCheckpoint(2), []);
+    await store.put("k3", minimalCheckpoint(3), []);
+    expect(await store.get("k1"), "oldest key evicted").toBeUndefined();
+    expect(await store.get("k2"), "recent keys retained").toBeDefined();
+    expect(await store.get("k3"), "recent keys retained").toBeDefined();
+    expect(await db.checkpoints.count(), "only the cap remains").toBe(2);
   });
 });

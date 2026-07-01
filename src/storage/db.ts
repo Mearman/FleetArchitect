@@ -73,6 +73,9 @@ export interface CheckpointRecord {
   checkpoint: EngineCheckpoint;
   preFrames: BattleFrame[];
   updatedAt: number;
+  /** Serialised size estimate (typed-array bytes + coarse overhead) for the
+   *  byte-budget eviction, mirroring `SimCacheRecord.bytes`. */
+  bytes: number;
 }
 
 /**

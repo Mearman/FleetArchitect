@@ -1,5 +1,6 @@
 import type { Table } from "dexie";
-import type { BattleResult } from "@/schema/battle";
+import type { BattleFrame, BattleResult } from "@/schema/battle";
+import type { EngineCheckpoint } from "@/schema/checkpoint";
 import type { SimCache } from "@/domain/cache/contract";
 import type { SimCacheRecord } from "@/storage/db";
 import { isQuotaExceeded, isUncloneable } from "@/storage/idb-errors";
@@ -92,8 +93,18 @@ function typedBytes(value: unknown): number {
  * not expose.
  */
 export function estimateResultBytes(result: BattleResult): number {
-  let total = RESULT_OVERHEAD_BYTES;
-  for (const frame of result.frames) {
+  return RESULT_OVERHEAD_BYTES + estimateFramesBytes(result.frames);
+}
+
+/** Stable, monotonic size estimate for a sequence of {@link BattleFrame}s: the
+ *  typed-array buffer lengths (cell/resource/medium state) plus a coarse
+ *  per-frame / per-ship / per-projectile scalar. Shared by the result cache
+ *  (over a BattleResult's frames) and the checkpoint store (over a resume
+ *  checkpoint's pre-frames, the dominant component of its size). Never
+ *  serialises — same no-RangeError property as {@link estimateResultBytes}. */
+export function estimateFramesBytes(frames: readonly BattleFrame[]): number {
+  let total = 0;
+  for (const frame of frames) {
     total += FRAME_OVERHEAD_BYTES;
     for (const ship of frame.ships) {
       total += SHIP_OVERHEAD_BYTES;
@@ -114,6 +125,34 @@ export function estimateResultBytes(result: BattleResult): number {
     total += frame.projectiles.length * PROJECTILE_OVERHEAD_BYTES;
   }
   return total;
+}
+
+/** Coarse envelope for the checkpoint object itself (version, rng, counters,
+ *  deployment): the plain-object fields present even for a 0-pre-frame
+ *  checkpoint, so the estimate is always positive. */
+const CHECKPOINT_OVERHEAD_BYTES = 1024;
+
+/** Stable, monotonic size estimate for a resume checkpoint: the per-frame sum
+ *  over its `preFrames` (the dominant component — the full frame history up to
+ *  the checkpoint tick) plus a coarse scalar for the live ship/projectile
+ *  snapshot and the medium field. Used by {@link DexieCheckpointStore}'s
+ *  byte-budget eviction; never serialises the checkpoint. */
+export function estimateCheckpointBytes(
+  checkpoint: EngineCheckpoint,
+  preFrames: readonly BattleFrame[],
+): number {
+  let total = CHECKPOINT_OVERHEAD_BYTES;
+  total += checkpoint.ships.length * SHIP_OVERHEAD_BYTES;
+  total += checkpoint.projectiles.length * PROJECTILE_OVERHEAD_BYTES;
+  const medium = checkpoint.medium;
+  if (medium !== undefined) {
+    total += typedBytes(medium.rho);
+    total += typedBytes(medium.eps);
+    total += typedBytes(medium.epsVis);
+    total += typedBytes(medium.mx);
+    total += typedBytes(medium.my);
+  }
+  return total + estimateFramesBytes(preFrames);
 }
 
 /**
