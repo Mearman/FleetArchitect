@@ -139,13 +139,18 @@ export interface ResolvedModule {
   surfaceReduction: number;
   /**
    * Reactive-armour behaviour carried from the armour material. When
-   * `reactiveReduction > 0` the cell's surface layer, while charged, absorbs an
-   * extra `reactiveReduction` fraction of a hit and then spends its charge,
-   * recharging over `reactiveWindow` ticks. Both zero for bare/deck cells and
-   * for passive (non-reactive) armour, so the reactive path stays inert there.
+   * `reactiveReduction > 0` the cell carries a finite reactive plate
+   * (`maxReactiveHp` HP, derived as `maxSurfaceHp · reactiveReduction`) that a
+   * momentum hit depletes; once empty it recharges over `reactiveWindow` ticks.
+   * All three are zero for bare/deck cells and for passive (non-reactive)
+   * armour, so the reactive path stays inert there. No live `reactiveHp` here —
+   * that is runtime state on the `SimModule`.
    */
   reactiveReduction: number;
   reactiveWindow: number;
+  /** Maximum (and starting) HP of the reactive plate, `maxSurfaceHp ·
+   *  reactiveReduction`. Zero for passive/bare/deck cells. */
+  maxReactiveHp: number;
   /** Mass contributed to the ship's total mass. */
   mass: number;
   /** Power drawn from the reactor each tick to run this module. */

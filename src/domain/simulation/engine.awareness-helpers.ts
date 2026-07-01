@@ -92,6 +92,7 @@ export function moduleOf(
     surfaceReduction: 0,
     reactiveReduction: 0,
     reactiveWindow: 0,
+    maxReactiveHp: 0,
     mass: 5,
     powerDraw: opts.powerDraw ?? 0,
     crewRequired: opts.crewRequired ?? 0,

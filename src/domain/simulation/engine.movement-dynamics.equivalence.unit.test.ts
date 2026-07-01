@@ -74,6 +74,7 @@ function moduleOf(slotId: string, effect: ModuleEffect, col: number, row: number
     surfaceReduction: 0,
     reactiveReduction: 0,
     reactiveWindow: 0,
+    maxReactiveHp: 0,
     surface: "bare",
     edges: OPEN_EDGES,
     mass,

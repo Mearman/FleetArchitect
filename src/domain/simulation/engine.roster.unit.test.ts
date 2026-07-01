@@ -46,6 +46,7 @@ function hullModule(slotId: string): ResolvedModule {
     surfaceReduction: 0,
     reactiveReduction: 0,
     reactiveWindow: 0,
+    maxReactiveHp: 0,
     mass: 5,
     powerDraw: 0,
     crewRequired: 0,

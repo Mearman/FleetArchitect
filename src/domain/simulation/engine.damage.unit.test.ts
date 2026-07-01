@@ -6,7 +6,6 @@ import type { ShipContact } from "@/domain/simulation/engine/collision";
 import { sumCellHp } from "@/domain/simulation/test-cell-helpers";
 import { resolveChainReactions } from "@/domain/simulation/engine/chain-reaction";
 import { applyDamage } from "@/domain/simulation/engine/damage";
-import { stepTechCooldowns } from "@/domain/simulation/engine/mines";
 import { toSimShip } from "@/domain/simulation/engine/setup";
 import type { SimShip } from "@/domain/simulation/engine/types";
 import { mulberry32 } from "@/domain/simulation/rng";
@@ -91,6 +90,7 @@ function moduleOf(
     surfaceReduction: 0,
     reactiveReduction: 0,
     reactiveWindow: 0,
+    maxReactiveHp: 0,
     mass,
     powerDraw: 0,
     crewRequired: 0,
@@ -647,10 +647,11 @@ describe("engine.damage — per-cell armour reduction and reactive plating", () 
     expect(cell.surfaceHp).toBeCloseTo(before - 50, 6);
   });
 
-  it("a charged reactive plate stacks its bonus on the first hit, then spends its charge", () => {
-    // Passive 0.5 + reactive 0.3 = 0.8 absorbed on the first hit; the plate then
-    // recharges over 90 ticks. With reactiveCharge > 0 only the passive 0.5
-    // applies, so the second (in-window) hit lands harder.
+  it("a pure-energy hit depletes surfaceHp but not the reactive plate", () => {
+    // The legacy scalar applyDamage path routes the full amount as energy
+    // (eFrac=1, pFrac=0). The energy stream ablates the surface coating
+    // (surfaceHp -= amount × (1 − surfaceReduction)); the reactive plate is
+    // untouched (no momentum component to arrest).
     const ship = armourCell({
       surfaceReduction: 0.5,
       reactiveReduction: 0.3,
@@ -660,33 +661,34 @@ describe("engine.damage — per-cell armour reduction and reactive plating", () 
     expect(cell.reactiveCharge).toBe(0); // born ready
 
     const h0 = cell.surfaceHp;
-    applyDamage(ship, 100, 0, 0, ship.x, ship.y, 0); // 100 * (1 - 0.8) = 20 lands
-    expect(cell.surfaceHp).toBeCloseTo(h0 - 20, 6);
-    expect(cell.reactiveCharge).toBe(90); // charge spent
+    const r0 = cell.reactiveHp;
+    applyDamage(ship, 100, 0, 0, ship.x, ship.y, 0); // 100 × (1 − 0.5) = 50 ablates
+    expect(cell.surfaceHp).toBeCloseTo(h0 - 50, 6);
+    // The reactive plate is inert for pure-energy damage.
+    expect(cell.reactiveHp).toBe(r0);
+    expect(cell.reactiveCharge).toBe(0);
 
+    // A second energy hit: still no reactive depletion.
     const h1 = cell.surfaceHp;
-    applyDamage(ship, 100, 0, 0, ship.x, ship.y, 0); // reactive on cooldown → 100 * (1 - 0.5) = 50
+    applyDamage(ship, 100, 0, 0, ship.x, ship.y, 0);
     expect(cell.surfaceHp).toBeCloseTo(h1 - 50, 6);
+    expect(cell.reactiveHp).toBe(r0);
+    expect(cell.reactiveCharge).toBe(0);
   });
 
-  it("the reactive plate recharges over its window and absorbs the extra fraction again", () => {
+  it("the reactive plate stays charged under repeated energy-only hits", () => {
     const ship = armourCell({
       surfaceReduction: 0.5,
       reactiveReduction: 0.3,
       reactiveWindow: 3,
     });
     const cell = findModule(ship, "c1");
+    const r0 = cell.reactiveHp;
     applyDamage(ship, 100, 0, 0, ship.x, ship.y, 0);
-    expect(cell.reactiveCharge).toBe(3);
-    // Three ticks of recharge bring it back to ready (0).
-    stepTechCooldowns(ship);
-    stepTechCooldowns(ship);
-    stepTechCooldowns(ship);
+    applyDamage(ship, 100, 0, 0, ship.x, ship.y, 0);
+    // Energy-only hits never deplete the reactive plate or arm the cooldown.
+    expect(cell.reactiveHp).toBe(r0);
     expect(cell.reactiveCharge).toBe(0);
-
-    const h = cell.surfaceHp;
-    applyDamage(ship, 100, 0, 0, ship.x, ship.y, 0); // reactive ready again → 0.8 absorbed
-    expect(cell.surfaceHp).toBeCloseTo(h - 20, 6);
   });
 
   it("armour-piercing scales the per-cell reduction down", () => {

@@ -84,6 +84,7 @@ function moduleOf(
     surfaceReduction: opts.surfaceReduction ?? 0,
     reactiveReduction: 0,
     reactiveWindow: 0,
+    maxReactiveHp: 0,
     mass: opts.mass ?? 5,
     powerDraw: 0,
     crewRequired: 0,

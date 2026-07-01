@@ -134,6 +134,8 @@ const CheckpointModule = z.object({
   surfaceReduction: z.number(),
   reactiveReduction: z.number(),
   reactiveWindow: z.number(),
+  reactiveHp: z.number(),
+  maxReactiveHp: z.number(),
   hp: z.number(),
   maxHp: z.number(),
   mass: z.number(),
@@ -418,8 +420,11 @@ const DeploymentReference = z.object({
  *  the deflector (momentum-screen) state to {@link CheckpointShip} and
  *  `deflectorPiercing` to {@link CheckpointProjectile} for the unified
  *  (energy, momentum) damage model. v8 adds `damageJ` to {@link CheckpointBeam},
- *  threading real beam energy (Joules) into the particle-intensity model. */
-export const CHECKPOINT_VERSION = 9;
+ *  threading real beam energy (Joules) into the particle-intensity model. v9 adds
+ *  `ticksSinceLastDeath` for the reactor-loss stalemate threshold. v10 adds
+ *  `reactiveHp`/`maxReactiveHp` to {@link CheckpointModule} for the finite
+ *  reactive-plate (E,p-aware armour) model. */
+export const CHECKPOINT_VERSION = 10;
 
 /**
  * A complete engine checkpoint: everything needed to resume `simulateBattle`

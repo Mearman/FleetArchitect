@@ -517,15 +517,23 @@ export interface SimModule {
    */
   surfaceReduction: number;
   /**
-   * Reactive-armour fields carried from the armour material. While the cell has
-   * a surface layer and `reactiveCharge === 0` (ready), a surface hit absorbs an
-   * extra `reactiveReduction` fraction (pierce-scaled) and then sets
-   * `reactiveCharge = reactiveWindow`, recharging over that many ticks (counted
-   * down in `stepTechCooldowns`). Both zero for passive armour and bare/deck
-   * cells, so the reactive path is inert for them.
+   * Reactive-armour fields carried from the armour material. The reactive plate
+   * has finite capacity (`reactiveHp`): a momentum hit cancels `min(pPart ·
+   * reactiveReduction, reactiveHp)` and depletes the plate by that much. When the
+   * plate empties, `reactiveCharge` is set to `reactiveWindow` and `stepTechCooldowns`
+   * refills `reactiveHp` over that many ticks (rate `maxReactiveHp / reactiveWindow`
+   * per tick). `reactiveReduction`/`reactiveWindow`/`maxReactiveHp` are all zero for
+   * passive armour and bare/deck cells, so the reactive path is inert there.
    */
   reactiveReduction: number;
   reactiveWindow: number;
+  /** Current HP of the reactive (explosive) plate. Depleted by momentum hits,
+   *  refilled during the `reactiveCharge` cooldown window. Equals `maxReactiveHp`
+   *  at spawn and when fully recharged. Zero for passive/bare/deck cells. */
+  reactiveHp: number;
+  /** Maximum (and starting) HP of the reactive plate. Derived by the resolver as
+   *  `maxSurfaceHp · reactiveReduction`. Zero for passive/bare/deck cells. */
+  maxReactiveHp: number;
   /** Current HP of the substrate layer. When this reaches zero the cell is
    *  destroyed (`alive = false`) and break-apart may sever the graph. */
   hp: number;

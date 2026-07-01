@@ -457,8 +457,7 @@ export function resolveFleetToCombatShips(
  */
 function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] {
   const grid = design.grid;
-  // Per-cell coverage fraction (the bevelled outline clips edge cells): a partial
-  // tile carries proportional layer HP/mass. Equipment mass stays whole.
+  // Per-cell coverage fraction (bevelled outline clips edge cells): partial tiles carry proportional layer HP/mass; equipment mass stays whole.
   const coverage = cellCoverageFractions(grid);
   // Per-faction substrate; throw if unknown (else silent 0 HP/mass — analyseShipDesign faults it).
   const substrate = catalog.substrateMaterial(design.faction);
@@ -480,20 +479,18 @@ function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] 
     const maxSubstrateHp = substrate.hp * frac;
     const surfaceMass = surface?.mass ?? 0;
     const substrateMass = substrate.mass;
-    // The cell's surface (armour) damage-reduction and reactive-armour fields,
-    // carried so the per-cell damage pipeline can absorb a fraction of each hit
-    // and spend a reactive charge. Zero for bare/deck cells and for armour
-    // materials with no reactive plating.
+    // Surface (armour) damage-reduction and reactive-armour fields, carried so the
+    // per-cell damage pipeline can absorb a fraction of each hit. Zero for bare/deck.
     const surfaceReduction = surface?.damageReduction ?? 0;
     const reactiveReduction = surface?.reactiveReduction ?? 0;
     const reactiveWindow = surface?.reactiveWindow ?? 0;
+    // Reactive-plate capacity scales with the surface layer it plates. Zero for bare/deck and passive armour.
+    const maxReactiveHp = maxSurfaceHp * reactiveReduction;
 
     const equipment = cell.equipment;
     const moduleDef = equipment !== undefined ? catalog.module(equipment.moduleId) : undefined;
     if (equipment !== undefined && moduleDef === undefined) {
-      // Unknown equipment is reported as a fault by analyseShipDesign; here we
-      // still emit a module so the cell exists in the engine's grid, with a
-      // hull-effect placeholder carrying the layer masses/HPs.
+      // Unknown equipment: analyseShipDesign reports the fault; here we still emit a module (hull-effect placeholder) so the cell exists in the engine's grid.
       out.push({
         slotId,
         moduleId: equipment.moduleId,
@@ -509,6 +506,7 @@ function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] 
         surfaceReduction,
         reactiveReduction,
         reactiveWindow,
+        maxReactiveHp,
         mass: (surfaceMass + substrateMass) * frac,
         powerDraw: 0,
         crewRequired: 0,
@@ -547,6 +545,7 @@ function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] 
         surfaceReduction,
         reactiveReduction,
         reactiveWindow,
+        maxReactiveHp,
         mass: (surfaceMass + substrateMass) * frac,
         powerDraw: 0,
         crewRequired: 0,
@@ -581,6 +580,7 @@ function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] 
       surfaceReduction,
       reactiveReduction,
       reactiveWindow,
+      maxReactiveHp,
       mass: moduleDef.mass + (surfaceMass + substrateMass) * frac,
       powerDraw: moduleDef.powerDraw,
       crewRequired: moduleDef.crewRequired,

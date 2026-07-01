@@ -113,8 +113,8 @@ export type CellKind = z.infer<typeof CellKind>;
  *    present (every cell has hp and an alive flag).
  *  - The remaining arrays are OPTIONAL: present only when at least one cell on
  *    the ship carries that field. Sentinel values fill the cells without it:
- *    NaN for `cellTurretAngle`/`cellCharge`; -1 for `cellAmmo`; 0 (meaning
- *    "no door on this edge") for the door arrays.
+ *    NaN for `cellTurretAngle`/`cellCharge`/`cellReactiveHp`; -1 for `cellAmmo`;
+ *    0 (meaning "no door on this edge") for the door arrays.
  *  - The door state is flattened to four Uint8Array per direction
  *    (cellDoorN/E/S/W), present only when the ship has at least one door.
  *    Each value is 0 = no door, 1 = open, 2 = closed.
@@ -126,19 +126,16 @@ export interface CellStateArrays {
   cellAlive: Uint8Array<ArrayBuffer>;
   /** Current surface-layer HP per cell. Always present (0 for bare cells). */
   cellSurfaceHp: Float64Array<ArrayBuffer>;
-  /** Live turret barrel angle (radians, ship-local) per cell. Present when the
-   *  ship has at least one turreted weapon; NaN for non-turret cells. */
+  /** Live turret barrel angle (radians, ship-local) per cell. Present when the ship
+   *  has at least one turreted weapon; NaN for non-turret cells. */
   cellTurretAngle?: Float64Array<ArrayBuffer>;
   /** Manning flag per cell (0/1). Present when the ship has crewed modules. */
   cellManned?: Uint8Array<ArrayBuffer>;
-  /** Ammo remaining per cell. Present when the ship has ammo weapons; -1 for
-   *  cells without. */
+  /** Ammo remaining per cell. Present when the ship has ammo weapons; -1 for cells without. */
   cellAmmo?: Int32Array<ArrayBuffer>;
-  /** Charge level per cell. Present when the ship has chargeable modules; NaN
-   *  for cells without. */
+  /** Charge level per cell. Present when the ship has chargeable modules; NaN for cells without. */
   cellCharge?: Float64Array<ArrayBuffer>;
-  /** Per-edge door state, north edge (0=none, 1=open, 2=closed). Present when
-   *  the ship has at least one door. */
+  /** Per-edge door state, north edge (0=none, 1=open, 2=closed). Present when the ship has a door. */
   cellDoorN?: Uint8Array<ArrayBuffer>;
   /** Per-edge door state, east edge. Present when the ship has doors. */
   cellDoorE?: Uint8Array<ArrayBuffer>;
@@ -146,6 +143,8 @@ export interface CellStateArrays {
   cellDoorS?: Uint8Array<ArrayBuffer>;
   /** Per-edge door state, west edge. Present when the ship has doors. */
   cellDoorW?: Uint8Array<ArrayBuffer>;
+  /** Reactive-plate HP per cell. Present when the ship has reactive armour; NaN otherwise. */
+  cellReactiveHp?: Float64Array<ArrayBuffer>;
 }
 
 /** Zod schema for the per-cell typed-array state. Uses z.instanceof to validate
@@ -166,6 +165,7 @@ export const CellStateArraysSchema = z.object({
   cellDoorE: uint8ArraySchema.optional(),
   cellDoorS: uint8ArraySchema.optional(),
   cellDoorW: uint8ArraySchema.optional(),
+  cellReactiveHp: float64ArraySchema.optional(),
 });
 
 /** One ship's state at a single tick of a recorded battle. */

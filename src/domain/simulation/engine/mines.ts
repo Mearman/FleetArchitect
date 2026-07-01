@@ -24,8 +24,16 @@ export function stepTechCooldowns(ship: SimShip): void {
     if (m.techActive > 0) m.techActive -= 1;
     if (m.techCooldown > 0) m.techCooldown -= 1;
     // Reactive armour layer recharges toward ready (0). Only ever above 0 on an
-    // armour module that has just absorbed a hit, so this is inert otherwise.
+    // armour module whose reactive plate has just been emptied by a momentum hit,
+    // so this is inert otherwise.
     if (m.reactiveCharge > 0) m.reactiveCharge -= 1;
+    // While inside the cooldown window, refill the reactive plate at a uniform
+    // maxReactiveHp / reactiveWindow per tick so it returns to full capacity as
+    // the charge counter reaches 0. Inert on passive/bare/deck cells
+    // (maxReactiveHp === 0) and on a plate that is already full.
+    if (m.reactiveCharge > 0 && m.maxReactiveHp > 0 && m.reactiveHp < m.maxReactiveHp) {
+      m.reactiveHp = Math.min(m.maxReactiveHp, m.reactiveHp + m.maxReactiveHp / m.reactiveWindow);
+    }
     // Mine-layer recharges toward ready (0). Only ever above 0 on a mine-layer
     // that has just laid a batch, so this is inert otherwise.
     if (m.mineCooldown > 0) m.mineCooldown -= 1;

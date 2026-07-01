@@ -108,6 +108,7 @@ function moduleOf(
     surfaceReduction: 0,
     reactiveReduction: 0,
     reactiveWindow: 0,
+    maxReactiveHp: 0,
     mass,
     powerDraw,
     crewRequired: 0,

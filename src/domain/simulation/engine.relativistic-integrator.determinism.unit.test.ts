@@ -116,6 +116,7 @@ function moduleOf(
     surfaceReduction: 0,
     reactiveReduction: 0,
     reactiveWindow: 0,
+    maxReactiveHp: 0,
     surface: "deck",
     edges: OPEN_EDGES,
     mass: 5,

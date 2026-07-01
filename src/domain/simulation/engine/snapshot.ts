@@ -377,6 +377,7 @@ function mediumSnapshot(medium: {
  *  - `cellCharge` (Float64Array) — NaN for cells without charge.
  *  - `cellDoorN/E/S/W` (Uint8Array) — 0=no door, 1=open, 2=closed. Allocated
  *    only when the ship has at least one door.
+ *  - `cellReactiveHp` (Float64Array) — NaN for non-reactive cells.
  */
 function buildCellArrays(modules: readonly SimModule[]): CellStateArrays {
   const n = modules.length;
@@ -392,6 +393,7 @@ function buildCellArrays(modules: readonly SimModule[]): CellStateArrays {
   let hasAmmo = false;
   let hasCharge = false;
   let hasDoors = false;
+  let hasReactiveHp = false;
   for (let i = 0; i < n; i += 1) {
     const m = modules[i];
     if (m === undefined) continue;
@@ -399,6 +401,7 @@ function buildCellArrays(modules: readonly SimModule[]): CellStateArrays {
     if (m.crewRequired > 0) hasManned = true;
     if (m.effect.kind === "weapon" && m.effect.ammoCapacity !== undefined) hasAmmo = true;
     if (m.powerDraw > 0) hasCharge = true;
+    if (m.reactiveReduction > 0) hasReactiveHp = true;
     const ds = m.edges.doorStates;
     if (ds.n !== undefined || ds.e !== undefined || ds.s !== undefined || ds.w !== undefined)
       hasDoors = true;
@@ -412,6 +415,8 @@ function buildCellArrays(modules: readonly SimModule[]): CellStateArrays {
   if (cellAmmo !== undefined) cellAmmo.fill(-1);
   const cellCharge = hasCharge ? new Float64Array(n) : undefined;
   if (cellCharge !== undefined) cellCharge.fill(NaN);
+  const cellReactiveHp = hasReactiveHp ? new Float64Array(n) : undefined;
+  if (cellReactiveHp !== undefined) cellReactiveHp.fill(NaN);
   const cellDoorN = hasDoors ? new Uint8Array(n) : undefined;
   const cellDoorE = hasDoors ? new Uint8Array(n) : undefined;
   const cellDoorS = hasDoors ? new Uint8Array(n) : undefined;
@@ -436,6 +441,9 @@ function buildCellArrays(modules: readonly SimModule[]): CellStateArrays {
     if (cellCharge !== undefined && m.powerDraw > 0) {
       cellCharge[i] = m.charge;
     }
+    if (cellReactiveHp !== undefined && m.reactiveReduction > 0) {
+      cellReactiveHp[i] = m.reactiveHp;
+    }
     if (cellDoorN !== undefined && cellDoorE !== undefined && cellDoorS !== undefined && cellDoorW !== undefined) {
       const ds = m.edges.doorStates;
       if (ds.n !== undefined) cellDoorN[i] = ds.n === "open" ? 1 : 2;
@@ -450,6 +458,7 @@ function buildCellArrays(modules: readonly SimModule[]): CellStateArrays {
   if (cellManned !== undefined) result.cellManned = cellManned;
   if (cellAmmo !== undefined) result.cellAmmo = cellAmmo;
   if (cellCharge !== undefined) result.cellCharge = cellCharge;
+  if (cellReactiveHp !== undefined) result.cellReactiveHp = cellReactiveHp;
   if (cellDoorN !== undefined) {
     result.cellDoorN = cellDoorN;
     result.cellDoorE = cellDoorE;

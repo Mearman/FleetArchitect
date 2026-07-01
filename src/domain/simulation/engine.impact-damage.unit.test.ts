@@ -29,7 +29,7 @@ const OPEN_EDGES: CellEdges = { n: "open", e: "open", s: "open", w: "open", door
 function moduleOf(slotId: string, effect: ModuleEffect, col: number, maxHp = 50): ResolvedModule {
   return {
     slotId, moduleId: `mod-${slotId}`, kind: effect.kind, col, row: 0, x: col * 24, y: 0,
-    maxSurfaceHp: 0, maxSubstrateHp: maxHp, surfaceReduction: 0, reactiveReduction: 0, reactiveWindow: 0,
+    maxSurfaceHp: 0, maxSubstrateHp: maxHp, surfaceReduction: 0, reactiveReduction: 0, reactiveWindow: 0, maxReactiveHp: 0,
     surface: "deck", edges: OPEN_EDGES, mass: 5, powerDraw: 0, crewRequired: 0, effect,
     command: effect.kind === "hull", repairRate: 0, shieldArc: Math.PI * 2, shieldFacing: 0,
     facing: 0, weaponFacing: 0, turretArc: 0, turretTurnRate: 0, channel: 0, commsBearing: 0, sensorBearing: 0,

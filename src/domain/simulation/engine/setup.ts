@@ -373,6 +373,9 @@ export function toSimModule(m: ResolvedModule, rng: Rng): SimModule {
     surfaceReduction: m.surfaceReduction,
     reactiveReduction: m.reactiveReduction,
     reactiveWindow: m.reactiveWindow,
+    // Reactive plate starts full; passive/bare/deck cells carry 0 capacity.
+    reactiveHp: m.maxReactiveHp,
+    maxReactiveHp: m.maxReactiveHp,
     hp: m.maxSubstrateHp,
     maxHp: m.maxSubstrateHp,
     mass: m.mass,

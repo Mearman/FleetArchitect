@@ -614,17 +614,17 @@ export const SHIELD_RECHARGE_W = {
   capital: 1e8,
 };
 
-// Deflector capacity (kg·m/s) per class — the momentum screen arrests this much
-// before collapsing. Sized against a railgun slug's momentum
-// (PROJECTILE_MASS_KG.railgun × MUZZLE_VELOCITY_M_PER_S.railgun = 80 000) so a
-// field absorbs a few such hits; on the same kg·m/s scale as the kinetics it stops.
+// Deflector capacity (kg·m/s) per class — the momentum screen arrests this much before collapsing.
+// Sized vs a railgun slug's momentum (PROJECTILE_MASS_KG.railgun × MUZZLE_VELOCITY_M_PER_S.railgun
+// = 80 000) so a field absorbs a few such hits. Light/heavy (Terran Mk I/Mk II) bumped ~×2 for
+// (E,p)-aware armour: kinetics now deplete a finite reactive plate, not a free fractional discount.
 export const DEFLECTOR_CAPACITY_KG_MPS = {
-  pd: 1e5, light: 2.5e5, medium: 5e5, heavy: 1e6, capital: 2e6,
+  pd: 1e5, light: 5e5, medium: 5e5, heavy: 2e6, capital: 2e6,
 };
 // Deflector recharge (kg·m/s per second) — the projector's momentum-rebuild rate
-// (~capacity/10, a 10 s rebuild mirroring shields). The engine converts to per-tick.
+// (~capacity/10, a 10 s rebuild mirroring shields).
 export const DEFLECTOR_RECHARGE_KG_MPS_PER_S = {
-  pd: 1e4, light: 2.5e4, medium: 5e4, heavy: 1e5, capital: 2e5,
+  pd: 1e4, light: 5e4, medium: 5e4, heavy: 2e5, capital: 2e5,
 };
 /** Default deflector-piercing per weapon type (torpedoes punch; others mostly caught). */
 export const DEFLECTOR_PIERCING_DEFAULT: Record<WeaponType, number> = { beam: 0, cannon: 0.1, missile: 0.1, torpedo: 0.3, plasma: 0.1 };

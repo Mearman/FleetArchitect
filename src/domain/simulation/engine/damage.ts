@@ -85,7 +85,8 @@ export function applyDamage(
   const rawStructure = bypass + spill;
 
   if (ship.modules !== undefined) {
-    applyModuleDamage(ship, rawStructure, armourPiercing, impactX, impactY, shotAngle, path);
+    // Legacy scalar = pure energy (no momentum): avoid doubling via the split.
+    applyModuleDamage(ship, rawStructure, armourPiercing, impactX, impactY, shotAngle, path, 1, 0);
     return;
   }
 
@@ -201,36 +202,49 @@ export function applyModuleDamage(
   }
 }
 
-/** Apply damage to a cell, depleting surface HP before substrate. Returns the
- *  leftover that spills onward. `eFrac`/`pFrac` are the hit's energy/momentum
- *  composition (default 1/1 = uniform): the passive `surfaceReduction` scales
- *  with `eFrac`, the reactive plate (spent only on a kinetic hit, `pFrac > 0`)
- *  with `pFrac`. applyImpact passes the real split so energy weapons ignore the
- *  reactive plate and kinetics ignore the passive coating. */
+/** Apply damage to a cell via two streams meeting at the substrate, returning
+ *  the leftover that spills onward. `eFrac`/`pFrac` are the hit's energy/momentum
+ *  split (default 1/1): energy ablates the passive coating (`surfaceHp`), momentum
+ *  depletes the finite reactive plate (`reactiveHp`); both overflow to substrate. */
 function damageCell(cell: SimModule, amount: number, armourPiercing: number, eFrac = 1, pFrac = 1): number {
-  let remaining = amount;
-  if (cell.surfaceHp > 0) {
-    const pierce = 1 - armourPiercing;
-    let reduction = cell.surfaceReduction * pierce * eFrac;
-    if (pFrac > 0 && cell.reactiveReduction > 0 && cell.reactiveCharge === 0) {
-      reduction += cell.reactiveReduction * pierce * pFrac;
-      cell.reactiveCharge = cell.reactiveWindow;
+  const pierce = 1 - armourPiercing;
+  const ePart = amount * eFrac; // energy stream
+  const pPart = amount * pFrac; // momentum stream
+  let overflow = 0;
+
+  // Energy → ablative surface coating (ePart is the energy fraction; surfaceReduction is not re-scaled by eFrac).
+  if (ePart > 0) {
+    if (cell.surfaceHp > 0) {
+      const sRed = Math.min(cell.surfaceReduction * pierce, 1);
+      cell.surfaceHp -= ePart * (1 - sRed);
+      if (cell.surfaceHp <= 0) {
+        overflow += -cell.surfaceHp;
+        cell.surfaceHp = 0;
+        if (cell.surface === "armor") cell.surface = "bare";
+      }
+    } else {
+      overflow += ePart;
     }
-    if (reduction > 1) reduction = 1;
-    remaining *= 1 - reduction;
-    cell.surfaceHp -= remaining;
-    if (cell.surfaceHp > 0) return 0;
-    remaining = -cell.surfaceHp;
-    cell.surfaceHp = 0;
-    if (cell.surface === "armor") cell.surface = "bare";
   }
-  // Substrate layer next.
-  cell.hp -= remaining;
+
+  // Momentum → finite reactive plate; emptying it arms the cooldown.
+  if (pPart > 0) {
+    if (cell.reactiveHp > 0) {
+      const cancel = Math.min(pPart * Math.min(cell.reactiveReduction * pierce, 1), cell.reactiveHp);
+      cell.reactiveHp -= cancel;
+      if (cell.reactiveHp === 0) cell.reactiveCharge = cell.reactiveWindow;
+      overflow += pPart - cancel;
+    } else {
+      overflow += pPart;
+    }
+  }
+
+  cell.hp -= overflow;
   if (cell.hp > 0) return 0;
-  remaining = -cell.hp;
+  const spill = -cell.hp;
   cell.hp = 0;
   cell.alive = false;
-  return remaining;
+  return spill;
 }
 
 /** Apply leftover structural damage to the hull, armour-reduced, and kill the

@@ -31,6 +31,8 @@ function moduleAt(col: number, row: number, effect: ModuleEffect, surface: "deck
     surfaceReduction: 0,
     reactiveReduction: 0,
     reactiveWindow: 0,
+    reactiveHp: 0,
+    maxReactiveHp: 0,
     hp: 100,
     maxHp: 100,
     mass: 1,
