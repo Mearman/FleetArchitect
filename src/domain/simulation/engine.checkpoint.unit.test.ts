@@ -14,6 +14,8 @@ import { toSimShip } from "@/domain/simulation/engine/setup";
 import { freshAwarenessScratch } from "@/domain/simulation/engine/awareness";
 import { SpatialHash } from "@/domain/simulation/spatial-hash";
 import type { ShipCell } from "@/domain/simulation/engine/collision";
+import type { SimBeam } from "@/domain/simulation/engine/beams";
+import type { ExhaustParticle } from "@/domain/simulation/engine/exhaust-particles";
 import {
   buildArenaMedium,
   restoreArenaMedium,
@@ -261,6 +263,32 @@ function makeState(): { state: EngineState; rng: ReturnType<typeof mulberry32> }
     radius: 2,
     salvageable: true,
   };
+  // A live beam carrying a real strike energy (damageJ). This is the field the
+  // engine stage threaded onto SimBeam for the particle-intensity model; it
+  // MUST round-trip through the checkpoint schema or a resumed battle's beam
+  // channel/impact glow would silently drop to zero (the renderer reads
+  // damageJ via the particle sources).
+  const beam: SimBeam = {
+    sourceId: "a1",
+    sourceX: -100,
+    sourceY: 0,
+    targetX: 80,
+    targetY: 5,
+    kind: "beam",
+    damageJ: 1.2e9,
+    emissionTicks: 3,
+  };
+  // A live exhaust particle (the type the engine stage left UNCHANGED — no
+  // energyJ field, intensity is already the normalised glow). Captured so a
+  // resumed battle's plume continues from the live set.
+  const particle: ExhaustParticle = {
+    x: -90,
+    y: 0,
+    vx: 3000,
+    vy: 0,
+    intensity: 0.7,
+    age: 0.4,
+  };
 
   const state: EngineState = {
     ships,
@@ -278,8 +306,8 @@ function makeState(): { state: EngineState; rng: ReturnType<typeof mulberry32> }
     pulses: [pulse],
     emissions: [emission],
     debris: [debris],
-    beams: [],
-    particles: [],
+    beams: [beam],
+    particles: [particle],
     medium: buildArenaMedium(ships),
     chunkSeq: 1,
     mineSeq: 1,
@@ -314,6 +342,39 @@ describe("captureCheckpoint / restoreCheckpoint", () => {
     // The no-progress stalemate watch is gone (the termination guarantee is now
     // the reactor-loss death rule, which carries no per-battle state).
     expect("stalemate" in cp).toBe(false);
+  });
+
+  it("preserves SimBeam.damageJ through capture→schema-parse→restore (not silently stripped)", () => {
+    // The hazard: CheckpointBeam is NOT a .strict() object, so if a new
+    // authoritative field were added to SimBeam but NOT mirrored onto
+    // CheckpointBeam, the storage-boundary parse would SILENTLY STRIP it
+    // instead of erroring — a resumed battle would then read `undefined` and
+    // (for damageJ) drop the beam's channel/impact glow to zero with no signal.
+    // The engine stage mirrored damageJ onto CheckpointBeam; this test locks
+    // that the mirror survives, going through the realistic capture→parse→
+    // restore path the storage layer walks.
+    const { state, rng } = makeState();
+    const originalBeam = state.beams[0];
+    if (originalBeam === undefined) throw new Error("fixture missing beam");
+
+    const cp = captureCheckpoint(state, rng, 3);
+    const parsed = EngineCheckpoint.safeParse(cp);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) throw new Error("EngineCheckpoint.safeParse failed");
+    const restored = restoreCheckpoint(parsed.data);
+
+    // damageJ round-trips exactly — not stripped to undefined by the parse.
+    expect(restored.beams).toHaveLength(1);
+    const restoredBeam = restored.beams[0];
+    if (restoredBeam === undefined) throw new Error("no restored beam");
+    expect(restoredBeam.damageJ).toBe(originalBeam.damageJ);
+    expect(restoredBeam.damageJ).toBe(1.2e9);
+
+    // The captured beam's own damageJ also survives in the raw checkpoint (the
+    // parse did not drop it from the serialised form either).
+    const cpBeam = cp.beams[0];
+    if (cpBeam === undefined) throw new Error("no captured beam");
+    expect(cpBeam.damageJ).toBe(originalBeam.damageJ);
   });
 
   it("preserves -Infinity the JSON path would lose", () => {
