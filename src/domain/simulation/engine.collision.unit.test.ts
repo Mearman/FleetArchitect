@@ -6,6 +6,13 @@ import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
 import type { ModuleEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
+import {
+  applyCollisionDamage,
+  buildShipCellHash,
+  resolveShipCollisions,
+} from "@/domain/simulation/engine/collision";
+import { toSimShip } from "@/domain/simulation/engine/setup";
+import { mulberry32 } from "@/domain/simulation/rng";
 
 
 const OPEN_EDGES: CellEdges = {
@@ -324,5 +331,35 @@ describe("engine.collision — ship-vs-ship", () => {
     // They started overlapping; after one tick of separation the gap must have
     // grown toward a non-overlapping distance.
     expect(gap, "overlapping allies must be pushed apart").toBeGreaterThan(START_GAP);
+  });
+
+  it("same-side collisions deal structure damage to both ships (ram damage is side-agnostic)", () => {
+    // The collision resolver is all-vs-all — friendlies collide — and the
+    // kinetic damage step (applyCollisionDamage) routes a ram impact into BOTH
+    // ships in a contact regardless of side: Newton's third law, applied
+    // without a side check (collision.ts ramImpactProfile call). Two SAME-SIDE
+    // coasting bodies placed overlapping and closing at speed form a contact;
+    // the ram's kinetic energy must punch through each hull's cell buffer and
+    // into structure. Coasters have no engine, so the pair is a closed system
+    // whose only interaction is the contact — a clean isolation of the damage
+    // step, driven directly through resolveShipCollisions + applyCollisionDamage
+    // (the same two calls the engine makes per tick).
+    const SPEED = 100; // world/tick each → 200 closing speed
+    const a = coaster("c1", "attacker", { x: -CELL_SIZE * 0.25, y: 0 }, { x: SPEED, y: 0 });
+    const b = coaster("c2", "attacker", { x: CELL_SIZE * 0.25, y: 0 }, { x: -SPEED, y: 0 });
+    const rng = mulberry32(7);
+    const sim = [a, b].map((s) => toSimShip(s, rng));
+    const shipA = sim[0];
+    const shipB = sim[1];
+    if (shipA === undefined || shipB === undefined) throw new Error("sim ships missing");
+    const structBeforeA = shipA.structure;
+    const structBeforeB = shipB.structure;
+
+    const contacts = resolveShipCollisions(buildShipCellHash(sim));
+    expect(contacts.length, "overlapping same-side ships must produce a contact").toBeGreaterThan(0);
+    applyCollisionDamage(contacts);
+
+    expect(shipA.structure, "the same-side ram must damage ship A's structure").toBeLessThan(structBeforeA);
+    expect(shipB.structure, "the same-side ram must damage ship B's structure").toBeLessThan(structBeforeB);
   });
 });

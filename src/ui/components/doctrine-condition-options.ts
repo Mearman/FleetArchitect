@@ -39,6 +39,8 @@ const CONDITION_GROUPS: { group: string; items: { value: Condition["kind"]; labe
       { value: "crossingLine", label: "Crossing a line" },
       { value: "flanking", label: "Flanking" },
       { value: "localSuperiority", label: "Local superiority" },
+      { value: "friendlyInLineOfFire", label: "Friendly in line of fire" },
+      { value: "friendlyProximity", label: "Friendly proximity" },
     ],
   },
   {
@@ -123,6 +125,10 @@ export function defaultCondition(kind: Condition["kind"]): Condition {
       return { kind: "flanking", reference: { kind: "self" } };
     case "localSuperiority":
       return { kind: "localSuperiority", reference: { kind: "self" }, minRatio: 1.5 };
+    case "friendlyInLineOfFire":
+      return { kind: "friendlyInLineOfFire", toleranceDeg: 5 };
+    case "friendlyProximity":
+      return { kind: "friendlyProximity", threshold: 50, direction: "within" };
     case "phase":
       return { kind: "phase", phase: "contact" };
     case "tickAfter":

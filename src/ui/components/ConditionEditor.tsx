@@ -417,6 +417,45 @@ export function ConditionEditor({
           />
         </Stack>
       );
+    case "friendlyInLineOfFire":
+      return (
+        <NumberInput
+          label="Tolerance (degrees)"
+          size="xs"
+          min={0}
+          max={180}
+          step={1}
+          value={condition.toleranceDeg}
+          onChange={(v) => onChange({ ...condition, toleranceDeg: Math.max(0, toNumber(v, 5)) })}
+        />
+      );
+    case "friendlyProximity":
+      return (
+        <Group grow>
+          <NumberInput
+            label="Threshold (m)"
+            size="xs"
+            min={0}
+            step={10}
+            value={condition.threshold}
+            onChange={(v) => onChange({ ...condition, threshold: Math.max(0, toNumber(v)) })}
+          />
+          <Select
+            label="Direction"
+            size="xs"
+            data={[
+              { value: "within", label: "Within" },
+              { value: "beyond", label: "Beyond" },
+            ]}
+            value={condition.direction}
+            onChange={(v) =>
+              v === "within" || v === "beyond"
+                ? onChange({ ...condition, direction: v })
+                : undefined
+            }
+          />
+        </Group>
+      );
     case "phase":
       return (
         <Select

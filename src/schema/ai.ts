@@ -294,6 +294,22 @@ export type Condition =
     }
   | { kind: "flanking"; reference: FormationReference }
   | { kind: "localSuperiority"; reference: FormationReference; minRatio: number }
+  | {
+      kind: "friendlyInLineOfFire";
+      /** Angular tolerance in degrees: a friendly whose bearing from the
+       *  observer is within this of the observer→target bearing is "on the
+       *  line". Use with `then: { fire: "holdFire" }` to avoid shooting
+       *  through a friendly. */
+      toleranceDeg: number;
+    }
+  | {
+      kind: "friendlyProximity";
+      /** Distance threshold in metres from any alive same-side ship. */
+      threshold: number;
+      /** `within` fires when a friendly is closer than `threshold`; `beyond`
+       *  fires when the nearest friendly is farther than `threshold`. */
+      direction: "within" | "beyond";
+    }
   | { kind: "phase"; phase: "opening" | "contact" | "closing" | "mopUp" }
   | { kind: "tickAfter"; tick: number }
   | { kind: "all"; of: Condition[] }
@@ -335,6 +351,12 @@ export const Condition: z.ZodType<Condition> = z.lazy(() =>
     }),
     z.object({ kind: z.literal("flanking"), reference: FormationReference }),
     z.object({ kind: z.literal("localSuperiority"), reference: FormationReference, minRatio: z.number() }),
+    z.object({ kind: z.literal("friendlyInLineOfFire"), toleranceDeg: z.number().min(0) }),
+    z.object({
+      kind: z.literal("friendlyProximity"),
+      threshold: z.number().min(0),
+      direction: z.enum(["within", "beyond"]),
+    }),
     // Temporal / phase.
     z.object({ kind: z.literal("phase"), phase: z.enum(["opening", "contact", "closing", "mopUp"]) }),
     z.object({ kind: z.literal("tickAfter"), tick: z.number().int().min(0) }),

@@ -596,6 +596,50 @@ function formationConditionSatisfied(
       if (nearestEnemyAgg === undefined) return false;
       return friendlyAgg.strengthFraction >= nearestEnemyAgg.strengthFraction * condition.minRatio;
     }
+    case "friendlyInLineOfFire": {
+      // A friendly is on the observer→target firing line. Requires a target
+      // this tick (the pass runs BEFORE targeting, so `ship.target` is the
+      // prior tick's acquisition). For each alive same-side ship (excluding the
+      // observer): (a) its projection onto the observer→target segment must be
+      // strictly inside (0, segLen) so a friendly behind the observer or past
+      // the target does not count; (b) its angular offset from the segment —
+      // atan2(perpDist, proj), the angle at the observer — must be ≤ the
+      // tolerance cone. `sortedById` iteration keeps the scan deterministic.
+      if (ship.target === undefined) return false;
+      const target = ctx.byId.get(ship.target);
+      if (target === undefined) return false;
+      const sdx = target.x - ship.x;
+      const sdy = target.y - ship.y;
+      const segLen = Math.hypot(sdx, sdy);
+      if (segLen <= 0) return false;
+      const tolRad = (condition.toleranceDeg * Math.PI) / 180;
+      for (const f of ctx.sortedById) {
+        if (f.phantom !== undefined || !f.alive) continue;
+        if (f.side !== ship.side || f.instanceId === ship.instanceId) continue;
+        const fdx = f.x - ship.x;
+        const fdy = f.y - ship.y;
+        const proj = (fdx * sdx + fdy * sdy) / segLen;
+        if (proj <= 0 || proj >= segLen) continue;
+        const perp = Math.abs(fdx * sdy - fdy * sdx) / segLen;
+        if (Math.atan2(perp, proj) <= tolRad) return true;
+      }
+      return false;
+    }
+    case "friendlyProximity": {
+      // Any alive friendly within (or beyond) `threshold` metres. `sortedById`
+      // iteration keeps the scan deterministic.
+      for (const f of ctx.sortedById) {
+        if (f.phantom !== undefined || !f.alive) continue;
+        if (f.side !== ship.side || f.instanceId === ship.instanceId) continue;
+        const dist = Math.hypot(f.x - ship.x, f.y - ship.y);
+        if (condition.direction === "within") {
+          if (dist <= condition.threshold) return true;
+        } else if (dist > condition.threshold) {
+          return true;
+        }
+      }
+      return false;
+    }
     case "phase": {
       return derivePhase(ship, ctx) === condition.phase;
     }

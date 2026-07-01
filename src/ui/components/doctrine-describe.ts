@@ -152,6 +152,10 @@ export function conditionDescription(condition: Condition): string {
       return `${referenceDescription(condition.reference)} flanking`;
     case "localSuperiority":
       return `local superiority at ${referenceDescription(condition.reference)} ≥ ${condition.minRatio.toFixed(1)}`;
+    case "friendlyInLineOfFire":
+      return `friendly in line of fire (±${condition.toleranceDeg}°)`;
+    case "friendlyProximity":
+      return `friendly ${condition.direction} ${condition.threshold}m`;
     case "phase":
       return `phase is ${condition.phase}`;
     case "tickAfter":
