@@ -3,7 +3,7 @@ import type { BattleFrame, ParticleSnapshot } from "@/schema/battle";
 import type { OverlayCtx, OverlayDef } from "./types";
 
 // ---------------------------------------------------------------------------
-// Weapon-source particle glow: the visible transferred material (foveated)
+// Weapon-source particle glow: the visible transferred material
 // ---------------------------------------------------------------------------
 //
 // Draws the live exhaust/plume particles the deterministic engine ticks into
@@ -13,16 +13,18 @@ import type { OverlayCtx, OverlayDef } from "./types";
 // (a stream leaving a thrusting engine, a flash at a strike point) rather than
 // a field layered on top. Where the particles actually are is what shines.
 //
-// Each particle is a fresh radial gradient, so a weapon-heavy battle (up to
-// MAX_LIVE_PARTICLES) is expensive. To stay affordable the rendered DENSITY is
-// content-adaptive: full where the particle-energy field has high local spatial
-// VARIANCE — the transitions the eye keys on (cluster edges, a plume's leading
-// edge, fresh impacts, beam channels) — and sparse where it is uniform (flat
-// cloud interiors, empty space), where overlapping blobs still read as a
-// continuous glow even when most are dropped. Density is decided per cell of a
-// coarse screen grid; within a cell the survivors are chosen by a stable
-// per-particle key, so a region thins smoothly as it goes uniform without
-// individuals popping in and out.
+// Every on-screen particle above PARTICLE_DRAW_THRESHOLD is drawn — no density
+// thinning. (A prior revision added content-adaptive "foveated" thinning,
+// keyed on per-cell energy variance normalised against the frame's max, to
+// bound per-particle draw cost; it was removed because sparse-but-structural
+// sources — beam channels, thruster exhaust — emit only ~1 particle per screen
+// grid-cell, so they have no redundant overlap to survive 85% thinning and
+// rendered as disconnected dots instead of a continuous line/trail. The
+// prerendered sprite atlas below (glowAtlasSprites) already makes per-particle
+// draw cost a cheap drawImage blit, so thinning bought little at a real
+// correctness cost. If a future extreme-scale battle needs a render-cost
+// lever, use the FX-level LOW/OFF toggle (mediumShared.readFxLevel/
+// fxGainFor), not a per-overlay density heuristic.)
 //
 // Drawn beneath the ship layer so hulls sit on top of their own exhaust.
 
@@ -32,77 +34,6 @@ const PARTICLE_RADIUS_PX = 7;
 
 /** Particles dimmer than this are skipped, bounding the paint count. */
 const PARTICLE_DRAW_THRESHOLD = 0.02;
-
-// ---------------------------------------------------------------------------
-// Foveated density: keep particles where the energy field VARIES
-// ---------------------------------------------------------------------------
-//
-// The canvas is divided into a GRID_CELLS × GRID_CELLS grid (one cell per
-// screen region). Each cell's ENERGY is the sum of its particles' intensities;
-// each cell's KEEP PROBABILITY is driven by the spatial VARIANCE of that energy
-// over its 3×3 neighbourhood (high where energy transitions — the structure the
-// eye reads — low where it is uniform), normalised by the frame's max so the
-// threshold adapts to how busy the scene is. Particles in low-variance cells are
-// subsampled away; the survivors are chosen by a stable per-particle key
-// (particleKeepKey), so the thinning is steady rather than flickery. Off-screen
-// particles are culled entirely.
-
-/** Grid resolution per screen axis. Coarse enough that the variance is stable,
- *  fine enough to localise transitions. */
-const GRID_CELLS = 32;
-const GRID_SIZE = GRID_CELLS * GRID_CELLS;
-
-/** Minimum keep probability — in the most uniform/empty cells. Overlapping blobs
- *  there still read as a continuous glow, so most can be dropped. */
-const FOVEA_FLOOR = 0.15;
-
-/** Normalised-variance ramp endpoints: at/below VAR_LOW → floor, at/above
- *  VAR_HIGH → full density, linear between. */
-const VAR_LOW = 0.08;
-const VAR_HIGH = 0.35;
-
-/** Below this max variance the whole field is treated as uniform (no transitions
- *  to preserve) and thinned to the floor everywhere. */
-const VARIANCE_EPS = 1e-9;
-
-/** Per-frame scratch, indexed `cj * GRID_CELLS + ci`. `energyGrid` holds cell
- *  energy during pass 1 (zeroed each draw); `keepProbGrid` holds cell
- *  keep-probability during pass 2 (fully overwritten). Reused across frames. */
-const energyGrid = new Float64Array(GRID_SIZE);
-const keepProbGrid = new Float64Array(GRID_SIZE);
-
-/**
- * Deterministic [0, 1) keep-key for one particle, hashed from its
- * lifetime-stable invariants: the exact spawn point `(x − vx·age, y − vy·age)`
- * — velocity is constant (`stepExhaustParticle` transports ballistically, with
- * no drag), so this is an exact invariant that never changes across the
- * particle's life — plus its velocity `(vx, vy)`. Distinct emissions have
- * distinct spawn points/velocities (one particle per nozzle per tick; beam
- * samples spaced along the line; impact-burst siblings share a spawn but differ
- * in velocity), so no two particles share a key. The result: the subsample is
- * flicker-free (a survivor stays one until its cell's keep-probability drops
- * below its key) and free of clumping, while remaining a pure function of
- * per-frame state (scrub-consistent).
- */
-function particleKeepKey(
-  x: number,
-  y: number,
-  vx: number,
-  vy: number,
-  age: number,
-): number {
-  const spawnX = Math.round(x - vx * age) | 0;
-  const spawnY = Math.round(y - vy * age) | 0;
-  const ux = Math.round(vx) | 0;
-  const uy = Math.round(vy) | 0;
-  let h = Math.imul(spawnX ^ ux, 374761393);
-  h = Math.imul(h ^ spawnY, 668265263);
-  h = Math.imul(h ^ uy, 1274126177);
-  h ^= h >>> 13;
-  h = Math.imul(h, 1274126177);
-  h ^= h >>> 16;
-  return (h >>> 0) / 4294967296;
-}
 
 /**
  * Resolve the live particle set for `tick` from the discrete frame history: the
@@ -126,11 +57,11 @@ function resolveParticles(
 }
 
 /**
- * Particle glow: one additive radial-gradient blob per live particle that
- * survives the energy-variance density filter, coloured by the shared hot palette
- * at its (FX-scaled) intensity and sized by it, so a fresh parcel reads bright
- * and large and a cooling one dim and small. See the file header for the
- * foveated-density rationale.
+ * Particle glow: one additive glow blot per live particle, coloured by the
+ * shared hot palette at its (FX-scaled) intensity and sized by it, so a fresh
+ * parcel reads bright and large and a cooling one dim and small. Drawn via a
+ * prerendered sprite atlas (see glowAtlasSprites) rather than a fresh
+ * createRadialGradient per particle.
  */
 /** Number of prerendered glow sprites (intensity buckets). 16 gives ~6% steps —
  *  imperceptible on an additive glow blob. */
@@ -182,21 +113,11 @@ function drawParticleGlow(c: OverlayCtx): void {
 
   const width = t.width;
   const height = t.height;
-  const cellW = width / GRID_CELLS;
-  const cellH = height / GRID_CELLS;
+  const atlas = glowAtlasSprites();
 
-  // Pass 1 — bin on-screen, above-threshold particles into the energy grid and
-  // stash their screen position, intensity, cell, and stable keep-key for pass 2.
-  // Off-screen particles are culled here: they would otherwise waste a fresh
-  // radial gradient + fill entirely outside the canvas.
-  energyGrid.fill(0);
-  const visible: {
-    sx: number;
-    sy: number;
-    intensity: number;
-    cell: number;
-    key: number;
-  }[] = [];
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter"; // additive: glow brightens space
+
   const screen = { x: 0, y: 0 };
   for (const p of particles) {
     const intensity = Math.max(0, Math.min(1, p.intensity * fxGain));
@@ -205,76 +126,16 @@ function drawParticleGlow(c: OverlayCtx): void {
     const sx = screen.x;
     const sy = screen.y;
     if (sx < 0 || sx >= width || sy < 0 || sy >= height) continue;
-    const ci = Math.floor(sx / cellW);
-    const cj = Math.floor(sy / cellH);
-    const cell = cj * GRID_CELLS + ci;
-    energyGrid[cell] = energyGrid[cell]! + intensity;
-    visible.push({
-      sx,
-      sy,
-      intensity,
-      cell,
-      key: particleKeepKey(p.x, p.y, p.vx, p.vy, p.age),
-    });
-  }
-  if (visible.length === 0) return;
 
-  // Per-cell spatial variance of energy over the clamped 3×3 neighbourhood, then
-  // a keep-probability per cell. Normalised by the frame's max variance so the
-  // ramp adapts to how busy the scene is.
-  let vMax = 0;
-  for (let cj = 0; cj < GRID_CELLS; cj += 1) {
-    const j0 = cj > 0 ? cj - 1 : 0;
-    const j1 = cj < GRID_CELLS - 1 ? cj + 1 : cj;
-    for (let ci = 0; ci < GRID_CELLS; ci += 1) {
-      const i0 = ci > 0 ? ci - 1 : 0;
-      const i1 = ci < GRID_CELLS - 1 ? ci + 1 : ci;
-      let sum = 0;
-      let sumSq = 0;
-      for (let nj = j0; nj <= j1; nj += 1) {
-        for (let ni = i0; ni <= i1; ni += 1) {
-          const e = energyGrid[nj * GRID_CELLS + ni]!;
-          sum += e;
-          sumSq += e * e;
-        }
-      }
-      const n = (j1 - j0 + 1) * (i1 - i0 + 1);
-      const mean = sum / n;
-      const variance = sumSq / n - mean * mean;
-      keepProbGrid[cj * GRID_CELLS + ci] = variance;
-      if (variance > vMax) vMax = variance;
-    }
-  }
-  if (vMax < VARIANCE_EPS) {
-    // Uniform field — no transitions to preserve; thin to the floor everywhere.
-    keepProbGrid.fill(FOVEA_FLOOR);
-  } else {
-    const span = VAR_HIGH - VAR_LOW;
-    for (let k = 0; k < GRID_SIZE; k += 1) {
-      const nv = keepProbGrid[k]! / vMax;
-      const ramp = nv <= VAR_LOW ? 0 : nv >= VAR_HIGH ? 1 : (nv - VAR_LOW) / span;
-      keepProbGrid[k] = FOVEA_FLOOR + (1 - FOVEA_FLOOR) * ramp;
-    }
-  }
-
-  // Pass 2 — render the survivors. A particle is kept iff its stable key is below
-  // its cell's keep-probability, so a region thins smoothly as it becomes uniform
-  // and re-densifies as structure appears, without individuals popping.
-  ctx.save();
-  ctx.globalCompositeOperation = "lighter"; // additive: glow brightens space
-
-  const atlas = glowAtlasSprites();
-  for (const v of visible) {
-    if (v.key >= keepProbGrid[v.cell]!) continue;
-    const radius = PARTICLE_RADIUS_PX * (0.4 + 0.6 * v.intensity);
+    const radius = PARTICLE_RADIUS_PX * (0.4 + 0.6 * intensity);
     // Blit the nearest-bucket sprite (drawImage is far cheaper than
     // createRadialGradient + 3 addColorStop + arc/fill per particle).
-    const bucket = Math.min(ATLAS_BUCKETS - 1, Math.round(v.intensity * (ATLAS_BUCKETS - 1)));
+    const bucket = Math.min(ATLAS_BUCKETS - 1, Math.round(intensity * (ATLAS_BUCKETS - 1)));
     const bucketIntensity = bucket / (ATLAS_BUCKETS - 1);
     const sprite = atlas === null ? undefined : atlas[bucket];
     if (sprite === undefined) continue;
-    ctx.globalAlpha = bucketIntensity > 0 ? Math.min(1, v.intensity / bucketIntensity) : 0;
-    ctx.drawImage(sprite, v.sx - radius, v.sy - radius, radius * 2, radius * 2);
+    ctx.globalAlpha = bucketIntensity > 0 ? Math.min(1, intensity / bucketIntensity) : 0;
+    ctx.drawImage(sprite, sx - radius, sy - radius, radius * 2, radius * 2);
   }
 
   ctx.restore();
@@ -283,8 +144,10 @@ function drawParticleGlow(c: OverlayCtx): void {
 /** Overlay definition: weapon-source particle glow (exhaust, plumes, channels,
  *  impacts), drawn beneath the ship layer. On by default so strikes and exhaust
  *  are visible — the broad medium glow is too coarse (500 m/cell) to resolve
- *  them. FX-gated (off/reduced/full) and the live set is capped
- *  (MAX_LIVE_PARTICLES), so the cost is bounded. */
+ *  them. FX-gated (off/reduced/full); the live set is capped
+ *  (MAX_LIVE_PARTICLES) and each particle draws via a cheap prerendered-sprite
+ *  blit (see glowAtlasSprites), so per-frame cost stays bounded without density
+ *  thinning. */
 export const particleGlow: OverlayDef = {
   id: "particle-glow",
   label: "Weapon particles (exhaust / plumes / impacts)",
