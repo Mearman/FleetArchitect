@@ -416,7 +416,10 @@ export function BattleRoute() {
       if (
         target instanceof HTMLInputElement ||
         target instanceof HTMLTextAreaElement ||
-        target instanceof HTMLButtonElement
+        target instanceof HTMLButtonElement ||
+        target instanceof HTMLSelectElement ||
+        target instanceof HTMLAnchorElement ||
+        (target instanceof HTMLElement && target.isContentEditable)
       ) {
         return;
       }

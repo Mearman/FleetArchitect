@@ -72,6 +72,7 @@ export function ImportRoute() {
       // Formation templates keep their original ids: they are upserted by id so
       // re-importing a link is idempotent (bundled templates are dependencies).
       const now = new Date().toISOString();
+      try {
       if (shareable.kind === "shipDesign") {
         await saveShipDesign({
           ...shareable.value,
@@ -108,6 +109,19 @@ export function ImportRoute() {
           message: `${savedName} added to your collection.`,
           color: "teal",
         });
+      }
+      } catch (error) {
+        // A storage failure (e.g. IndexedDB quota) must not leave the spinner
+        // spinning forever — surface it as an error state.
+        if (!cancelled) {
+          setStatus({
+            state: "error",
+            message:
+              error instanceof Error
+                ? error.message
+                : "Could not save the imported share.",
+          });
+        }
       }
     })();
 
