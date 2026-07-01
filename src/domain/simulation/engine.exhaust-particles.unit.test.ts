@@ -43,6 +43,7 @@ describe("engine.exhaust-particles", () => {
       dirY: 0,
       exhaustSpeed: 3000,
       throttle: 1,
+      energyJ: 1e8,
       dt: MEDIUM_DT_S,
     });
 
@@ -63,6 +64,7 @@ describe("engine.exhaust-particles", () => {
       dirY: 0,
       exhaustSpeed: 3000,
       throttle: 0,
+      energyJ: 1e8,
       dt: MEDIUM_DT_S,
     });
     expect(parts).toEqual([]);
@@ -99,6 +101,7 @@ describe("engine.exhaust-particles", () => {
       sourceY: 0,
       targetX: 1000,
       targetY: 0,
+      energyJ: 1e8,
       dt: MEDIUM_DT_S,
     });
     expect(parts.length).toBeGreaterThan(1);
@@ -117,6 +120,7 @@ describe("engine.exhaust-particles", () => {
     const parts = emitProjectileWakeParticles({
       x: 500,
       y: 0,
+      energyJ: 1e8,
       dt: MEDIUM_DT_S,
     });
     expect(parts).toHaveLength(1);
@@ -128,6 +132,7 @@ describe("engine.exhaust-particles", () => {
     const parts = emitImpactBurstParticles({
       x: 0,
       y: 0,
+      energyJ: 1e8,
       dt: MEDIUM_DT_S,
     });
     expect(parts.length).toBeGreaterThan(1);
@@ -148,11 +153,11 @@ describe("engine.exhaust-particles", () => {
     const out = gatherParticles(
       {
         thrusters: [
-          { nozzleX: 0, nozzleY: 0, dirX: 1, dirY: 0, exhaustSpeed: 3000, throttle: 1 },
+          { nozzleX: 0, nozzleY: 0, dirX: 1, dirY: 0, exhaustSpeed: 3000, throttle: 1, energyJ: 1e8 },
         ],
-        beams: [{ sourceX: 0, sourceY: 0, targetX: 500, targetY: 0 }],
-        projectiles: [{ x: 100, y: 0 }],
-        impacts: [{ x: 500, y: 0 }],
+        beams: [{ sourceX: 0, sourceY: 0, targetX: 500, targetY: 0, energyJ: 1e8 }],
+        projectiles: [{ x: 100, y: 0, energyJ: 1e8 }],
+        impacts: [{ x: 500, y: 0, energyJ: 1e8 }],
       },
       MEDIUM_DT_S,
     );

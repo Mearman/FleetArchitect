@@ -31,6 +31,10 @@ export interface SimBeam {
   targetY: number;
   /** Weapon type that produced the beam, for colour lookup. */
   kind: WeaponType;
+  /** Real energy the beam deposited at its strike, Joules (the range-scaled
+   *  damage applied in `fireOne`). Threads the strike's energy into the
+   *  particle-intensity model for the channel-glow and impact-burst emitters. */
+  damageJ: number;
   /** Ticks remaining before the emission expires (renderer fades the line). */
   emissionTicks: number;
 }

@@ -439,6 +439,7 @@ export function fireOne(
       targetX: ix,
       targetY: iy,
       kind: weapon.weaponType,
+      damageJ: damage,
       emissionTicks: SIM.beamEmissionTicks,
     });
   } else {

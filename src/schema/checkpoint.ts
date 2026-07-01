@@ -383,6 +383,7 @@ const CheckpointBeam = z.object({
   targetX: z.number(),
   targetY: z.number(),
   kind: WeaponType,
+  damageJ: z.number(),
   emissionTicks: z.number(),
 });
 
@@ -416,8 +417,9 @@ const DeploymentReference = z.object({
  *  per-battle state, so the uncapped-battle watch is no longer captured. v7 adds
  *  the deflector (momentum-screen) state to {@link CheckpointShip} and
  *  `deflectorPiercing` to {@link CheckpointProjectile} for the unified
- *  (energy, momentum) damage model. */
-export const CHECKPOINT_VERSION = 7;
+ *  (energy, momentum) damage model. v8 adds `damageJ` to {@link CheckpointBeam},
+ *  threading real beam energy (Joules) into the particle-intensity model. */
+export const CHECKPOINT_VERSION = 8;
 
 /**
  * A complete engine checkpoint: everything needed to resume `simulateBattle`

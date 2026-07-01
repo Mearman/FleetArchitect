@@ -10,15 +10,33 @@
  *  the source, fading to nothing a couple of seconds back. */
 export const EXHAUST_COOLING_TIMESCALE_S = 2;
 
-/** Normalised glow intensity [0, 1] a FRESH parcel of each source radiates. The
- *  renderer maps `intensity` to brightness; it decays with cooling. Authored per
- *  source so every source reads at a sensible brightness regardless of the
- *  physical energy scale (a thruster's jet power and a wake's are ~6 orders of
- *  magnitude apart — a single physical gain could not give both a visible fade). */
-export const EXHAUST_BRIGHTNESS = 0.9;
-export const BEAM_BRIGHTNESS = 0.7;
-export const WAKE_BRIGHTNESS = 0.25;
-export const IMPACT_BRIGHTNESS = 1.0;
+/** Half-saturation energy per source, Joules: the real emitted energy at which a
+ *  fresh parcel glows at intensity 0.5 on the saturating curve below. Set per
+ *  source because the physical energies are ~6 orders of magnitude apart (a
+ *  thruster's per-tick jet energy ~2e7–3e8 J, beam/impact damage per hit
+ *  ~1e7–1.6e9 J, projectile kinetic energy ~8e6–8.6e9 J) — a single half-sat
+ *  could not put both a thruster and a wake in a legible brightness range.
+ *  Starting anchors derived from catalogue magnitudes; a later stage tunes them
+ *  visually. */
+export const EXHAUST_ENERGY_HALFSAT_J = 5e7;
+export const BEAM_ENERGY_HALFSAT_J = 3e8;
+export const WAKE_ENERGY_HALFSAT_J = 5e7;
+export const IMPACT_ENERGY_HALFSAT_J = 3e8;
+
+/**
+ * Map a source's real emitted energy (Joules) to a normalised [0, 1] glow
+ * intensity via a saturating (Michaelis–Menten-style) response,
+ * `energyJ / (energyJ + halfSatJ)` — the same eps/(eps + halfSat) shape as
+ * `mediumCellIntensity`, minus the density/gain terms (applied later, in the
+ * renderer). Each source passes its own `halfSatJ` so sources whose real
+ * energies span several orders of magnitude (a thruster's jet power vs a wake's
+ * kinetic energy) both land in a legible range: at `energyJ === halfSatJ` the
+ * intensity is 0.5, tending to 1 as energy grows and to 0 as it vanishes. Pure.
+ */
+export function particleIntensityFromEnergy(energyJ: number, halfSatJ: number): number {
+  if (energyJ <= 0) return 0;
+  return energyJ / (energyJ + halfSatJ);
+}
 
 /**
  * One particle: a parcel of glowing material moving through space. `intensity`
@@ -58,9 +76,10 @@ export function stepExhaustParticle(
 
 /**
  * Emit exhaust particles for one firing nozzle over `dt`. Each particle leaves
- * the nozzle at the exhaust speed in the exhaust direction. Intensity scales
- * with throttle (a partial-burn engine throws dimmer material); the throttle
- * gate means a non-firing engine emits nothing.
+ * the nozzle at the exhaust speed in the exhaust direction. Intensity is driven
+ * by `energyJ`, the parcel's real jet energy (throttle is already baked into
+ * that energy by the caller, so it is NOT reapplied here); the throttle gate
+ * means a non-firing engine emits nothing.
  */
 export function emitExhaustParticles(args: {
   nozzleX: number;
@@ -69,17 +88,17 @@ export function emitExhaustParticles(args: {
   dirY: number;
   exhaustSpeed: number;
   throttle: number;
+  energyJ: number;
   dt: number;
 }): ExhaustParticle[] {
   if (args.throttle <= 0) return [];
-  const t = Math.max(0, Math.min(1, args.throttle));
   return [
     {
       x: args.nozzleX,
       y: args.nozzleY,
       vx: args.dirX * args.exhaustSpeed,
       vy: args.dirY * args.exhaustSpeed,
-      intensity: EXHAUST_BRIGHTNESS * t,
+      intensity: particleIntensityFromEnergy(args.energyJ, EXHAUST_ENERGY_HALFSAT_J),
       age: 0,
     },
   ];
@@ -138,12 +157,14 @@ export function emitBeamChannelParticles(args: {
   sourceY: number;
   targetX: number;
   targetY: number;
+  energyJ: number;
   dt: number;
 }): ExhaustParticle[] {
   const dx = args.targetX - args.sourceX;
   const dy = args.targetY - args.sourceY;
   const len = Math.hypot(dx, dy);
   const n = Math.max(1, Math.ceil(len / BEAM_CHANNEL_SAMPLE_STEP_M));
+  const intensity = particleIntensityFromEnergy(args.energyJ, BEAM_ENERGY_HALFSAT_J);
   const out: ExhaustParticle[] = [];
   for (let i = 0; i <= n; i += 1) {
     const t = i / n;
@@ -152,7 +173,7 @@ export function emitBeamChannelParticles(args: {
       y: args.sourceY + dy * t,
       vx: 0,
       vy: 0,
-      intensity: BEAM_BRIGHTNESS,
+      intensity,
       age: 0,
     });
   }
@@ -168,6 +189,7 @@ export function emitBeamChannelParticles(args: {
 export function emitProjectileWakeParticles(args: {
   x: number;
   y: number;
+  energyJ: number;
   dt: number;
 }): ExhaustParticle[] {
   return [
@@ -176,7 +198,7 @@ export function emitProjectileWakeParticles(args: {
       y: args.y,
       vx: 0,
       vy: 0,
-      intensity: WAKE_BRIGHTNESS,
+      intensity: particleIntensityFromEnergy(args.energyJ, WAKE_ENERGY_HALFSAT_J),
       age: 0,
     },
   ];
@@ -198,9 +220,11 @@ export const IMPACT_BURST_SPEED_M_PER_S = 800;
 export function emitImpactBurstParticles(args: {
   x: number;
   y: number;
+  energyJ: number;
   dt: number;
 }): ExhaustParticle[] {
   const n = IMPACT_BURST_PARTICLE_COUNT;
+  const intensity = particleIntensityFromEnergy(args.energyJ, IMPACT_ENERGY_HALFSAT_J);
   const out: ExhaustParticle[] = [];
   for (let i = 0; i < n; i += 1) {
     const angle = (i / n) * Math.PI * 2;
@@ -209,7 +233,7 @@ export function emitImpactBurstParticles(args: {
       y: args.y,
       vx: Math.cos(angle) * IMPACT_BURST_SPEED_M_PER_S,
       vy: Math.sin(angle) * IMPACT_BURST_SPEED_M_PER_S,
-      intensity: IMPACT_BRIGHTNESS,
+      intensity,
       age: 0,
     });
   }
@@ -229,6 +253,8 @@ export interface ParticleThrusterSource {
   dirY: number;
   exhaustSpeed: number;
   throttle: number;
+  /** Real per-tick jet energy, Joules (throttle already baked in). */
+  energyJ: number;
 }
 
 /** One active beam's channel, extracted from a SimBeam. */
@@ -237,18 +263,24 @@ export interface ParticleBeamSource {
   sourceY: number;
   targetX: number;
   targetY: number;
+  /** Real beam energy applied this strike, Joules (SimBeam.damageJ). */
+  energyJ: number;
 }
 
 /** One projectile's wake sample, extracted from a SimProjectile. */
 export interface ParticleProjectileSource {
   x: number;
   y: number;
+  /** Round's kinetic energy, Joules (½·m·v²). */
+  energyJ: number;
 }
 
 /** One impact/strike point, extracted from a beam target or projectile hit. */
 export interface ParticleImpactSource {
   x: number;
   y: number;
+  /** Real energy dumped at the strike point, Joules (SimBeam.damageJ). */
+  energyJ: number;
 }
 
 /** The tick's particle sources: the engine extracts these slim structs from the
