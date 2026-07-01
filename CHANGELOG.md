@@ -1,3 +1,14 @@
+## [1.34.1](https://github.com/Mearman/FleetArchitect/compare/v1.34.0...v1.34.1) (2026-07-01)
+
+
+### Bug Fixes
+
+* **resolve,storage:** faction guard, hardwire endpoints, revision parse ([a931085](https://github.com/Mearman/FleetArchitect/commit/a931085d3b9ddc6118b6522da535969a2d510691))
+* **sharing:** bound decoded grid dimensions against share DoS ([d002b31](https://github.com/Mearman/FleetArchitect/commit/d002b3129f566fcb5f1a8f697ae5c62dc5eaa7d2))
+* **sharing:** stamp fresh ids on import to stop silent overwrites ([dc22132](https://github.com/Mearman/FleetArchitect/commit/dc221323f82a6058d3c02a5dc2dc2a996fbe8d76))
+* **sim:** checkpoint the reactor-loss counter for byte-identical resume ([6473222](https://github.com/Mearman/FleetArchitect/commit/64732226e8e08c999b57328e2b5e027777857731))
+* **storage:** bound the resume checkpoint store (byte budget + LRU) ([68589c1](https://github.com/Mearman/FleetArchitect/commit/68589c172cfd3c33efbf2c1c0bc21e0b044a1399))
+
 # [1.34.0](https://github.com/Mearman/FleetArchitect/compare/v1.33.1...v1.34.0) (2026-07-01)
 
 
