@@ -626,6 +626,7 @@ export function ShipDesignerRoute() {
                 cellPx={cellPx}
                 onPaint={paint}
                 onEdge={paintEdge}
+                onMoveCursor={(col, row) => setSelected({ col, row })}
               />
             </div>
           </div>

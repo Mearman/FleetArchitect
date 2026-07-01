@@ -1,4 +1,5 @@
 import {
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   useEffect,
   useId,
@@ -71,6 +72,7 @@ export function GridBoard({
   cellPx,
   onPaint,
   onEdge,
+  onMoveCursor,
 }: {
   grid: TileGrid;
   selected: { col: number; row: number } | null;
@@ -88,6 +90,8 @@ export function GridBoard({
   /** Paint the edge of the cell at (col, row) on the given side. Called for an
    *  edge-indicator click. */
   onEdge: (col: number, row: number, dir: "n" | "e" | "s" | "w") => void;
+  /** Move the keyboard cursor to (col, row). Called for arrow-key navigation. */
+  onMoveCursor: (col: number, row: number) => void;
 }) {
   /** True while the pointer is held down inside the board — enables
    *  drag-to-paint. */
@@ -231,6 +235,42 @@ export function GridBoard({
     builtCells.push({ col: idx % grid.cols, row: Math.floor(idx / grid.cols), cell });
   }
 
+  /** Keyboard navigation: arrow keys move the cursor (clamped to grid bounds),
+   *  Enter/Space paint the cell under the cursor. Opens the grid to keyboard and
+   *  screen-reader users — the pointer path is unchanged. */
+  function handleKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
+    if (selected === null) {
+      onMoveCursor(0, 0);
+      return;
+    }
+    const { col, row } = selected;
+    switch (e.key) {
+      case "ArrowLeft":
+        e.preventDefault();
+        onMoveCursor(Math.max(0, col - 1), row);
+        break;
+      case "ArrowRight":
+        e.preventDefault();
+        onMoveCursor(Math.min(grid.cols - 1, col + 1), row);
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        onMoveCursor(col, Math.max(0, row - 1));
+        break;
+      case "ArrowDown":
+        e.preventDefault();
+        onMoveCursor(col, Math.min(grid.rows - 1, row + 1));
+        break;
+      case "Enter":
+      case " ":
+        e.preventDefault();
+        onPaint(col, row);
+        break;
+      default:
+        break;
+    }
+  }
+
   return (
     <div style={{ position: "relative", width: "100%" }}>
       {/* Hidden SVG defining the hull clipPath. Zero layout footprint; the
@@ -268,6 +308,10 @@ export function GridBoard({
       <div
         ref={boardRef}
         className={gridBoard}
+        role="application"
+        tabIndex={0}
+        aria-label="Ship hull grid — arrow keys to move, Enter to paint"
+        onKeyDown={handleKeyDown}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         style={{
