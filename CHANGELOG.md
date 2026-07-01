@@ -1,3 +1,15 @@
+# [1.35.0](https://github.com/Mearman/FleetArchitect/compare/v1.34.1...v1.35.0) (2026-07-01)
+
+
+### Bug Fixes
+
+* **ui:** stop Space-bar hijack + handle import storage failure ([c2e123a](https://github.com/Mearman/FleetArchitect/commit/c2e123a76436b1e34c26548e7f523b4d7108bddf))
+
+
+### Features
+
+* **ui:** keyboard navigation for the ship designer grid ([1201307](https://github.com/Mearman/FleetArchitect/commit/12013070170969779b363b5fbf2fb3fcd37d8393))
+
 ## [1.34.1](https://github.com/Mearman/FleetArchitect/compare/v1.34.0...v1.34.1) (2026-07-01)
 
 
