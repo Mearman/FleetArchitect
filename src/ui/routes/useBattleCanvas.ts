@@ -7,7 +7,7 @@ import { interpolateFrame } from "@/ui/interpolateFrame";
 import { orderShipsForRender } from "@/ui/renderOrder";
 import { NEON_MAGENTA, PHOSPHOR_AMBER, PHOSPHOR_GREEN } from "@/ui/theme/tokens";
 import { drawAnomaly } from "./battleAnomaly";
-import { drawBackdrop } from "./battleBackdrop";
+import { drawBackdrop, vignetteGradient } from "./battleBackdrop";
 import { drawFogAndAwareness } from "./battleFog";
 import type { ShipScreenPositions } from "./battleFog";
 import { appendWorldArc, pathWorldCircle } from "./battleProject";
@@ -33,40 +33,6 @@ import type { ShipSprite } from "./shipSprite";
 
 /** Per-overlay on/scope state held by the route. */
 export type OverlayState = Record<string, { on: boolean; scope: OverlayScope }>;
-
-// Client-space vignette gradient, cached across frames. It depends only on the
-// canvas dimensions, so the radial gradient (a relatively expensive Canvas 2D
-// call) is rebuilt only on resize. Keyed by context identity too, so a canvas
-// remount (which yields a fresh context) rebuilds rather than reusing a stale
-// gradient bound to the old context.
-let vignetteCache: {
-  ctx: CanvasRenderingContext2D;
-  key: string;
-  grad: CanvasGradient;
-} | null = null;
-
-function vignetteGradient(
-  ctx: CanvasRenderingContext2D,
-  width: number,
-  height: number,
-): CanvasGradient {
-  const key = `${width}x${height}`;
-  if (vignetteCache !== null && vignetteCache.ctx === ctx && vignetteCache.key === key) {
-    return vignetteCache.grad;
-  }
-  const grad = ctx.createRadialGradient(
-    width / 2,
-    height / 2,
-    height * 0.3,
-    width / 2,
-    height / 2,
-    height * 0.85,
-  );
-  grad.addColorStop(0, "transparent");
-  grad.addColorStop(1, "rgba(0,0,0,0.45)");
-  vignetteCache = { ctx, key, grad };
-  return grad;
-}
 
 /**
  * Props for {@link useBattleCanvas}. The draw callback closes over the current
@@ -532,6 +498,29 @@ export function useBattleCanvas({
             // units. (The projection skew makes this exact only for the flat
             // mode; under iso it is the correct first-order width.)
             const strokePx = (px2: number) => px2 / scale;
+            // Batch the sprite knock-out: erase every starved/dead cell baked
+            // into the sprite in a single destination-out pass, instead of
+            // toggling the composite operation per cell. The knock-out cells are
+            // non-overlapping grid squares under the constant composed transform,
+            // so the erase is order-independent and pixel-identical to the
+            // per-cell toggle — but the state change happens once, not per cell.
+            if (sprite !== undefined) {
+              let knockedAny = false;
+              for (const m of cells) {
+                if (MODULE_COLOUR[m.kind] === undefined) continue;
+                const { isStarved } = cellState(m);
+                if (sprite.aliveSlots.has(m.slotId) && (!m.alive || isStarved)) {
+                  if (!knockedAny) {
+                    ctx.globalCompositeOperation = "destination-out";
+                    ctx.globalAlpha = 1;
+                    ctx.fillStyle = "#000";
+                    knockedAny = true;
+                  }
+                  ctx.fillRect(m.ox - half, m.oy - half, CELL_SIZE, CELL_SIZE);
+                }
+              }
+              if (knockedAny) ctx.globalCompositeOperation = "source-over";
+            }
             for (const m of cells) {
               // Cell centre in ship-local world units; the composed matrix
               // places it in screen space (with the projection tilt applied).
@@ -552,17 +541,9 @@ export function useBattleCanvas({
               // filled live, identically to the original path.
               const paintedBySprite = sprite !== undefined && m.alive && !isStarved;
               if (!paintedBySprite) {
-                // A starved/dead cell baked into the sprite must be knocked out
-                // before its dimmed version is drawn, or the bright baked fill
-                // would show through the lower-opacity overlay.
-                if (sprite !== undefined && sprite.aliveSlots.has(m.slotId)) {
-                  ctx.globalCompositeOperation = "destination-out";
-                  ctx.globalAlpha = 1;
-                  ctx.fillStyle = "#000";
-                  ctx.fillRect(lx - half, ly - half, CELL_SIZE, CELL_SIZE);
-                  ctx.globalCompositeOperation = "source-over";
-                }
-
+                // The bright baked fill for this starved/dead cell was already
+                // erased by the batched knock-out pass above; draw the dimmed
+                // overlay directly.
                 ctx.globalAlpha = m.alive ? (isStarved ? 0.45 : 1) : 0.18;
                 ctx.fillStyle = colour;
                 ctx.fillRect(lx - half, ly - half, CELL_SIZE, CELL_SIZE);

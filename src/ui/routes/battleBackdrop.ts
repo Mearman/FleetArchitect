@@ -2,6 +2,42 @@ import type { Transform } from "./battleCamera";
 import { screenToWorld } from "./battleCamera";
 import { BASE_PANEL, BASE_VOID } from "@/ui/theme/tokens";
 
+// Client-space vignette gradient, cached across frames. It depends only on the
+// canvas dimensions, so the radial gradient (a relatively expensive Canvas 2D
+// call) is rebuilt only on resize. Keyed by context identity too, so a canvas
+// remount (which yields a fresh context) rebuilds rather than reusing a stale
+// gradient bound to the old context.
+let vignetteCache: {
+  ctx: CanvasRenderingContext2D;
+  key: string;
+  grad: CanvasGradient;
+} | null = null;
+
+/** The cached radial vignette gradient for the given canvas size, rebuilt only
+ *  on resize or context remount. */
+export function vignetteGradient(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+): CanvasGradient {
+  const key = `${width}x${height}`;
+  if (vignetteCache !== null && vignetteCache.ctx === ctx && vignetteCache.key === key) {
+    return vignetteCache.grad;
+  }
+  const grad = ctx.createRadialGradient(
+    width / 2,
+    height / 2,
+    height * 0.3,
+    width / 2,
+    height / 2,
+    height * 0.85,
+  );
+  grad.addColorStop(0, "transparent");
+  grad.addColorStop(1, "rgba(0,0,0,0.45)");
+  vignetteCache = { ctx, key, grad };
+  return grad;
+}
+
 /** Grid spacing in world units for the parallax background grid. */
 const GRID_WORLD_SPACING = 100;
 
