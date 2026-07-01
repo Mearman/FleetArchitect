@@ -15,6 +15,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { saveFleet, saveFormationTemplate, saveShipDesign, storage } from "@/storage/db";
 import { ShareDecodeError, decodeShareable } from "@/sharing/data-url";
 import type { Shareable } from "@/sharing/data-url";
+import { createId } from "@/domain/id";
 import { contentRouteScroll } from "./contentRoute.css";
 
 type Status =
@@ -64,8 +65,21 @@ export function ImportRoute() {
       }
 
       let savedName: string;
+      // Decoded designs/fleets carry synthetic ids (d${i}, f-${name}) that
+      // collide across imports — every imported ship overwrites "d0", every
+      // same-named fleet overwrites its predecessor. Stamp a fresh id (and
+      // timestamps) at the import boundary so each import is a distinct record.
+      // Formation templates keep their original ids: they are upserted by id so
+      // re-importing a link is idempotent (bundled templates are dependencies).
+      const now = new Date().toISOString();
       if (shareable.kind === "shipDesign") {
-        await saveShipDesign(shareable.value);
+        await saveShipDesign({
+          ...shareable.value,
+          id: createId("design"),
+          createdAt: now,
+          updatedAt: now,
+          revision: 1,
+        });
         savedName = shareable.value.name;
       } else if (shareable.kind === "formationTemplate") {
         await saveFormationTemplate(shareable.value);
@@ -79,7 +93,12 @@ export function ImportRoute() {
         for (const template of shareable.value.templates) {
           await storage().formationTemplates.save(template);
         }
-        await saveFleet(shareable.value.fleet);
+        await saveFleet({
+          ...shareable.value.fleet,
+          id: createId("fleet"),
+          createdAt: now,
+          updatedAt: now,
+        });
         savedName = shareable.value.fleet.name;
       }
       if (!cancelled) {
