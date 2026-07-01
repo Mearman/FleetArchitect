@@ -421,9 +421,15 @@ export async function saveFleet(fleet: Fleet): Promise<void> {
     );
   }
   const instance = database();
-  const existing = await instance.fleets.get(fleet.id);
-  if (existing !== undefined && existing.source !== "preset") {
-    await instance.fleet_revisions.put(existing);
+  // Parse the existing row before reading .revision / .source: a legacy row can
+  // store revision in a shape that reads as NaN off the raw record, corrupting
+  // the next-revision counter. The revision archive stores the raw row (the
+  // history is format-faithful); the parsed Fleet drives the logic.
+  const existingRaw = await instance.fleets.get(fleet.id);
+  const existing =
+    existingRaw === undefined ? undefined : parseFleetRecord(existingRaw);
+  if (existingRaw !== undefined && existing?.source !== "preset") {
+    await instance.fleet_revisions.put(existingRaw);
   }
   const nextRevision =
     existing !== undefined ? existing.revision + 1 : fleet.revision;
@@ -572,9 +578,13 @@ export async function saveFormationTemplate(
     );
   }
   const instance = database();
-  const existing = await instance.formationTemplates.get(template.id);
-  if (existing !== undefined && existing.source !== "preset") {
-    await instance.formation_template_revisions.put(existing);
+  // Parse the existing row before reading .revision / .source (see saveFleet):
+  // a legacy row can read as NaN off the raw record and corrupt the counter.
+  const existingRaw = await instance.formationTemplates.get(template.id);
+  const existing =
+    existingRaw === undefined ? undefined : FormationTemplate.parse(existingRaw);
+  if (existingRaw !== undefined && existing?.source !== "preset") {
+    await instance.formation_template_revisions.put(existingRaw);
   }
   const nextRevision =
     existing !== undefined ? existing.revision + 1 : template.revision;

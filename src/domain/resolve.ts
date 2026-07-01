@@ -457,12 +457,16 @@ export function resolveFleetToCombatShips(
  */
 function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] {
   const grid = design.grid;
-  // Fraction of each cell inside the bevelled hull outline: a cell the render
-  // crop truncates to a partial tile carries proportional HP and proportional
-  // layer mass, so a corner cut to half its area hits like half a plate and
-  // carries half the substrate + surface mass. Equipment (module) mass stays
-  // whole — a module is wholly present regardless of the cell clip.
+  // Per-cell coverage fraction (the bevelled outline clips edge cells): a partial
+  // tile carries proportional layer HP/mass. Equipment mass stays whole.
   const coverage = cellCoverageFractions(grid);
+  // Per-faction substrate; throw if unknown (else silent 0 HP/mass — analyseShipDesign faults it).
+  const substrate = catalog.substrateMaterial(design.faction);
+  if (substrate === undefined) {
+    throw new Error(
+      `resolve: faction "${design.faction}" has no substrate material in the catalog`,
+    );
+  }
   const out: ResolvedModule[] = [];
   for (const { col, row } of footprint(grid)) {
     const cell = grid.cells[row * grid.cols + col];
@@ -470,13 +474,12 @@ function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] 
     const local = cellToLocal(col, row, grid);
     const slotId = `cell-${col}-${row}`;
 
-    const substrate = catalog.substrateMaterial(design.faction);
     const surface = surfaceMaterialFor(cell.surface, catalog, design.faction);
     const frac = coverage[row * grid.cols + col]!;
     const maxSurfaceHp = (surface?.hp ?? 0) * frac;
-    const maxSubstrateHp = (substrate?.hp ?? 0) * frac;
+    const maxSubstrateHp = substrate.hp * frac;
     const surfaceMass = surface?.mass ?? 0;
-    const substrateMass = substrate?.mass ?? 0;
+    const substrateMass = substrate.mass;
     // The cell's surface (armour) damage-reduction and reactive-armour fields,
     // carried so the per-cell damage pipeline can absorb a fraction of each hit
     // and spend a reactive charge. Zero for bare/deck cells and for armour
@@ -648,17 +651,9 @@ function surfaceMaterialFor(
   };
 }
 
-/**
- * Resolve the design grid's hardwire `connections` into per-ship link data the
- * engine can consume. Each connection's `from`/`to` cell coordinates are mapped
- * to the slot id of the module occupying that cell (the same `cell-<col>-<row>`
- * convention `resolveModules` uses). Only connections whose endpoints are both
- * equipment cells (present in `modules`) are resolved; the schema already
- * guarantees the endpoints are in-bounds and distinct, and the design validator
- * reports incompatible source/sink pairings, so well-formed links are resolved
- * directly here. A design with no connections yields an empty array, so an
- * unhardwired ship carries no hardwire data and the engine behaves identically.
- */
+/** Resolve the grid's hardwire connections into per-ship links: map each
+ *  connection's from/to cell to the occupying module's slot id. Only links whose
+ *  endpoints are both equipment cells resolve; analyseShipDesign reports the rest. */
 function resolveHardwires(
   design: ShipDesign,
   modules: readonly ResolvedModule[],
@@ -667,7 +662,11 @@ function resolveHardwires(
   if (connections.length === 0) return [];
 
   const slotByCell = new Map<string, string>();
-  for (const m of modules) slotByCell.set(`${m.col},${m.row}`, m.slotId);
+  // Only equipment cells are hardwire endpoints; exclude bare hull cells (kind === "hull").
+  for (const m of modules) {
+    if (m.kind === "hull") continue;
+    slotByCell.set(`${m.col},${m.row}`, m.slotId);
+  }
 
   const out: ResolvedHardwire[] = [];
   for (const c of connections) {
