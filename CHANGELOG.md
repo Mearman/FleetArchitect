@@ -1,3 +1,10 @@
+# [1.37.0](https://github.com/Mearman/FleetArchitect/compare/v1.36.0...v1.37.0) (2026-07-01)
+
+
+### Features
+
+* **sim:** friendly-fire/collision tests + AI rules for friendly awareness ([9dc4711](https://github.com/Mearman/FleetArchitect/commit/9dc4711479720fb0015a132c5cc9a1ec5b5039ec))
+
 # [1.36.0](https://github.com/Mearman/FleetArchitect/compare/v1.35.0...v1.36.0) (2026-07-01)
 
 
