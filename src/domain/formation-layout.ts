@@ -2,13 +2,14 @@
  * UI-side formation layout: generate per-child slot offsets from a pattern, and
  * resolve a formation tree to preview world positions for the spatial drag-canvas.
  *
- * The engine does NOT yet consume the `pattern` layout (it deploys the legacy
- * column via `resolveFleetToCombatShips`). These helpers exist so the fleet
- * builder can show a what-you-see-is-what-battles preview of the AUTHORED layout
- * — pattern offsets, explicit slots, and nested formation frames — and so a
- * player can "bake" a pattern into explicit slots for drag-tuning. When the
- * engine later consumes patterns, the formula here should match the engine's
- * resolver; for now it is the canonical preview.
+ * The engine consumes the `pattern` layout: `resolveFleetToCombatShips` branches
+ * on `hasPatternLayout` and delegates to `placeByPattern` (deploy.ts) when any
+ * formation in the tree carries a pattern. These helpers mirror that same
+ * geometry so the fleet builder shows a what-you-see-is-what-battles preview of
+ * the AUTHORED layout — pattern offsets, explicit slots, and nested formation
+ * frames — and so a player can "bake" a pattern into explicit slots for
+ * drag-tuning. The formula here must stay in lockstep with the engine's resolver
+ * (`placeByPattern`); it is the canonical preview.
  *
  * Pure and deterministic: every function is a pure function of its inputs, so
  * the preview is stable across renders and identical for the same tree.

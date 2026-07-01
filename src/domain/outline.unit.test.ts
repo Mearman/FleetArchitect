@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   computeOutline,
   edgeDirectionAllowed,
-  extractShellLegacy,
   isClockwise,
   outerLoopIndex,
   pointInPolygon,
@@ -317,24 +316,5 @@ describe("computeOutline — exact-geometry anchors", () => {
     expect(pointInPolygon(cellCentre(s, 1, 1), outer)).toBe(true);
     const hole = loops.find((l) => l !== outer)!;
     expect(pointInPolygon(cellCentre(s, 0, 0), hole)).toBe(false);
-  });
-});
-
-describe("extractShellLegacy", () => {
-  it("treats every non-empty cell as shell", () => {
-    const grid = {
-      cols: 2,
-      rows: 2,
-      cells: [
-        { kind: "hull" },
-        { kind: "empty" },
-        { kind: "module" },
-        { kind: "floor" },
-      ],
-    };
-    const s = extractShellLegacy(grid);
-    expect(s.cols).toBe(2);
-    expect(s.rows).toBe(2);
-    expect(Array.from(s.cells).sort((a, b) => a - b)).toEqual([0, 2, 3]);
   });
 });

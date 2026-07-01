@@ -5,7 +5,8 @@ import { applyCollisionDamage } from "@/domain/simulation/engine/collision";
 import type { ShipContact } from "@/domain/simulation/engine/collision";
 import { sumCellHp } from "@/domain/simulation/test-cell-helpers";
 import { resolveChainReactions } from "@/domain/simulation/engine/chain-reaction";
-import { applyDamage } from "@/domain/simulation/engine/damage";
+import { applyImpact } from "@/domain/simulation/engine/damage-impact";
+import { energyImpactProfile } from "@/domain/simulation/engine/impact-profile";
 import { toSimShip } from "@/domain/simulation/engine/setup";
 import type { SimShip } from "@/domain/simulation/engine/types";
 import { mulberry32 } from "@/domain/simulation/rng";
@@ -643,13 +644,13 @@ describe("engine.damage — per-cell armour reduction and reactive plating", () 
     const cell = findModule(ship, "c1");
     const before = cell.surfaceHp;
     // 100 damage at 0.5 reduction → 50 reaches the plate.
-    applyDamage(ship, 100, 0, 0, ship.x, ship.y, 0);
+    applyImpact(ship, energyImpactProfile({ energyJ: 100, shieldPiercing: 0, armourPiercing: 0 }), ship.x, ship.y, 0);
     expect(cell.surfaceHp).toBeCloseTo(before - 50, 6);
   });
 
   it("a pure-energy hit depletes surfaceHp but not the reactive plate", () => {
-    // The legacy scalar applyDamage path routes the full amount as energy
-    // (eFrac=1, pFrac=0). The energy stream ablates the surface coating
+    // A pure-energy impact (energyImpactProfile) routes the full amount as
+    // energy (eFrac=1, pFrac=0). The energy stream ablates the surface coating
     // (surfaceHp -= amount × (1 − surfaceReduction)); the reactive plate is
     // untouched (no momentum component to arrest).
     const ship = armourCell({
@@ -662,7 +663,7 @@ describe("engine.damage — per-cell armour reduction and reactive plating", () 
 
     const h0 = cell.surfaceHp;
     const r0 = cell.reactiveHp;
-    applyDamage(ship, 100, 0, 0, ship.x, ship.y, 0); // 100 × (1 − 0.5) = 50 ablates
+    applyImpact(ship, energyImpactProfile({ energyJ: 100, shieldPiercing: 0, armourPiercing: 0 }), ship.x, ship.y, 0); // 100 × (1 − 0.5) = 50 ablates
     expect(cell.surfaceHp).toBeCloseTo(h0 - 50, 6);
     // The reactive plate is inert for pure-energy damage.
     expect(cell.reactiveHp).toBe(r0);
@@ -670,7 +671,7 @@ describe("engine.damage — per-cell armour reduction and reactive plating", () 
 
     // A second energy hit: still no reactive depletion.
     const h1 = cell.surfaceHp;
-    applyDamage(ship, 100, 0, 0, ship.x, ship.y, 0);
+    applyImpact(ship, energyImpactProfile({ energyJ: 100, shieldPiercing: 0, armourPiercing: 0 }), ship.x, ship.y, 0);
     expect(cell.surfaceHp).toBeCloseTo(h1 - 50, 6);
     expect(cell.reactiveHp).toBe(r0);
     expect(cell.reactiveCharge).toBe(0);
@@ -684,8 +685,8 @@ describe("engine.damage — per-cell armour reduction and reactive plating", () 
     });
     const cell = findModule(ship, "c1");
     const r0 = cell.reactiveHp;
-    applyDamage(ship, 100, 0, 0, ship.x, ship.y, 0);
-    applyDamage(ship, 100, 0, 0, ship.x, ship.y, 0);
+    applyImpact(ship, energyImpactProfile({ energyJ: 100, shieldPiercing: 0, armourPiercing: 0 }), ship.x, ship.y, 0);
+    applyImpact(ship, energyImpactProfile({ energyJ: 100, shieldPiercing: 0, armourPiercing: 0 }), ship.x, ship.y, 0);
     // Energy-only hits never deplete the reactive plate or arm the cooldown.
     expect(cell.reactiveHp).toBe(r0);
     expect(cell.reactiveCharge).toBe(0);
@@ -696,7 +697,7 @@ describe("engine.damage — per-cell armour reduction and reactive plating", () 
     const ship = armourCell({ surfaceReduction: 0.5 });
     const cell = findModule(ship, "c1");
     const before = cell.surfaceHp;
-    applyDamage(ship, 100, 0, 0.5, ship.x, ship.y, 0);
+    applyImpact(ship, energyImpactProfile({ energyJ: 100, shieldPiercing: 0, armourPiercing: 0.5 }), ship.x, ship.y, 0);
     expect(cell.surfaceHp).toBeCloseTo(before - 75, 6);
   });
 });

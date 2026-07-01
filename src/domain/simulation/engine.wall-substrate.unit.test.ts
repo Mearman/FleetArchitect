@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { DOOR_STOPPING_J, WALL_STOPPING_J } from "@/data/catalog/combat-scale";
 import { CELL_SIZE } from "@/domain/grid";
 import { resolveChainReactions } from "@/domain/simulation/engine/chain-reaction";
-import { applyDamage } from "@/domain/simulation/engine/damage";
+import { applyImpact } from "@/domain/simulation/engine/damage-impact";
+import { energyImpactProfile } from "@/domain/simulation/engine/impact-profile";
 import { toSimShip } from "@/domain/simulation/engine/setup";
 import type { SimShip } from "@/domain/simulation/engine/types";
 import { mulberry32 } from "@/domain/simulation/rng";
@@ -174,7 +175,7 @@ describe("engine.wall-substrate — surface tier mutation", () => {
     ]);
     const cell = findModule(ship, "c1");
 
-    applyDamage(ship, 80, 0, 0, ship.x, ship.y, 0);
+    applyImpact(ship, energyImpactProfile({ energyJ: 80, shieldPiercing: 0, armourPiercing: 0 }), ship.x, ship.y, 0);
 
     expect(cell.alive).toBe(true);
     expect(cell.surface).toBe("bare");
@@ -196,7 +197,7 @@ describe("engine.wall-substrate — surface tier mutation", () => {
     ]);
     const cell = findModule(ship, "c1");
 
-    applyDamage(ship, 50, 0, 0, ship.x, ship.y, 0);
+    applyImpact(ship, energyImpactProfile({ energyJ: 50, shieldPiercing: 0, armourPiercing: 0 }), ship.x, ship.y, 0);
 
     // Surface still intact: surface should remain "armor".
     expect(cell.alive).toBe(true);
@@ -220,7 +221,7 @@ describe("engine.wall-substrate — surface tier mutation", () => {
     const cell = findModule(ship, "c1");
 
     // Hit with 30: deck HP (20) is exhausted, 10 spills to substrate (100 − 10 = 90).
-    applyDamage(ship, 30, 0, 0, ship.x, ship.y, 0);
+    applyImpact(ship, energyImpactProfile({ energyJ: 30, shieldPiercing: 0, armourPiercing: 0 }), ship.x, ship.y, 0);
 
     // Deck surface exhausted but cell still alive; surface stays "deck".
     expect(cell.alive).toBe(true);
@@ -269,7 +270,7 @@ describe("engine.wall-substrate — wall-edge projectile stopping", () => {
 
     // Provide an explicit penetration path so the wall-stopping path is exercised.
     const path = [cellA, cellB];
-    applyDamage(ship, FRONT_DAMAGE, 0, 0, 0, 0, undefined, path);
+    applyImpact(ship, energyImpactProfile({ energyJ: FRONT_DAMAGE, shieldPiercing: 0, armourPiercing: 0 }), 0, 0, undefined, path);
 
     // A should be dead (damage exceeds its HP).
     expect(cellA.alive).toBe(false);
@@ -297,7 +298,7 @@ describe("engine.wall-substrate — wall-edge projectile stopping", () => {
     const cellB = findModule(ship, "b");
 
     const path = [cellA, cellB];
-    applyDamage(ship, FRONT_DAMAGE, 0, 0, 0, 0, undefined, path);
+    applyImpact(ship, energyImpactProfile({ energyJ: FRONT_DAMAGE, shieldPiercing: 0, armourPiercing: 0 }), 0, 0, undefined, path);
 
     expect(cellA.alive).toBe(false);
     // SPILL − DOOR_STOPPING_J reaches B; B survives with REAR_HP minus that.
@@ -324,7 +325,7 @@ describe("engine.wall-substrate — wall-edge projectile stopping", () => {
     const cellB = findModule(ship, "b");
 
     const path = [cellA, cellB];
-    applyDamage(ship, FRONT_DAMAGE, 0, 0, 0, 0, undefined, path);
+    applyImpact(ship, energyImpactProfile({ energyJ: FRONT_DAMAGE, shieldPiercing: 0, armourPiercing: 0 }), 0, 0, undefined, path);
 
     expect(cellA.alive).toBe(false);
     expect(cellB.alive).toBe(true);

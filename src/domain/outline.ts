@@ -60,9 +60,8 @@ import type { Vec2 } from "@/schema/primitives";
 
 /**
  * The protective shell of a ship, expressed as a set of occupied integer cells
- * on a bounding grid. In the final layered model this is the union of armor
- * cells and the cells carrying wall/door edges; until that model lands, a
- * caller builds the shell explicitly (see `extractShellLegacy`).
+ * on a bounding grid: the union of armour cells and the cells carrying
+ * wall/door edges. `extractShell` builds this from a layered-cell grid.
  */
 export interface Shell {
   /** Bounding grid width (columns), so cell indices resolve. */
@@ -662,24 +661,6 @@ export function pointInPolygon(p: Vec2, poly: readonly Vec2[]): boolean {
     if (intersects) inside = !inside;
   }
   return inside;
-}
-
-/**
- * Placeholder shell extractor over the legacy `TileGrid`: treats every
- * occupied (non-empty) cell as shell. Integration replaces this with the real
- * armor + wall/door extractor once the layered cell model lands. Exported so
- * the algorithm has a default bridge to the current grid shape.
- */
-export function extractShellLegacy(grid: {
-  cols: number;
-  rows: number;
-  cells: ReadonlyArray<{ kind: string }>;
-}): Shell {
-  const cells = new Set<number>();
-  for (let i = 0; i < grid.cells.length; i += 1) {
-    if (grid.cells[i]!.kind !== "empty") cells.add(i);
-  }
-  return { cols: grid.cols, rows: grid.rows, cells };
 }
 
 // ---------------------------------------------------------------------------

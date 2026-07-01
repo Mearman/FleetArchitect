@@ -1,8 +1,8 @@
 /**
  * The unified (energy, momentum) impact absorption entry point. Extracted from
- * damage.ts to keep that module under the 800-line lint cap. applyDamage (the
- * scalar path) stays in damage.ts, byte-identical; applyImpact is the new
- * parallel entry point the call sites switch to in Phase 5.
+ * damage.ts to keep that module under the 800-line lint cap. Now the sole damage
+ * entry point: the legacy scalar `applyDamage` was removed once every call site
+ * switched to `applyImpact` + an impact profile.
  */
 
 import { applyModuleDamage } from "./damage";
