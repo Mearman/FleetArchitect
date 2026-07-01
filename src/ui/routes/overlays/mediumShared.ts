@@ -197,6 +197,43 @@ export function sampleMediumIntensity(
   return mediumCellIntensity(eps, rho, fxGain);
 }
 
+/**
+ * Sample the raw AMBIENT mass density ρ (kg per cell) at a world point — the
+ * `rho` substrate only, 0 outside the grid. Unlike {@link sampleMediumIntensity},
+ * which returns the ε-driven fused glow intensity, this returns the raw ρ
+ * component alone. Callers that have their OWN independently-sourced brightness
+ * (e.g. `particleGlow`'s self-luminous weapon particles, whose energy is the
+ * particle's own `intensity`, not the medium field's ε) sample ρ directly and
+ * apply {@link densityAmplifier} to it, rather than double-counting the medium
+ * field's separately-rendered ε contribution via `sampleMediumIntensity`.
+ */
+export function sampleMediumRho(
+  field: MediumSnapshot,
+  wx: number,
+  wy: number,
+): number {
+  const idx = worldToCellIndex(field, wx, wy);
+  if (idx < 0) return 0;
+  return field.rho[idx] ?? 0;
+}
+
+/**
+ * The density amplification factor for a self-luminous source's OWN brightness
+ * — the same ramp {@link mediumCellIntensity} applies internally (1× in vacuum,
+ * capped at `cap` in dense medium), exposed so an overlay carrying its own
+ * brightness (e.g. `particleGlow`'s weapon particles) reads "how much brighter a
+ * nebula makes things" identically to the ε-driven field glow. Multiply a
+ * source's own normalised intensity by this and re-clamp to [0, 1].
+ * `densityAmplifier(0)` is exactly 1, so a source in vacuum (or when no field is
+ * resolved) is unchanged. `cap` defaults to {@link RHO_AMPLIFIER_CAP}.
+ */
+export function densityAmplifier(
+  rho: number,
+  cap: number = RHO_AMPLIFIER_CAP,
+): number {
+  return Math.min(cap, 1 + rho / RHO_REF_KG);
+}
+
 // ---------------------------------------------------------------------------
 // FX level
 // ---------------------------------------------------------------------------

@@ -1,4 +1,11 @@
-import { fxGainFor, paletteSample, readFxLevel } from "./mediumShared";
+import {
+  densityAmplifier,
+  fxGainFor,
+  paletteSample,
+  readFxLevel,
+  resolveMediumField,
+  sampleMediumRho,
+} from "./mediumShared";
 import type { BattleFrame, ParticleSnapshot } from "@/schema/battle";
 import type { OverlayCtx, OverlayDef } from "./types";
 
@@ -12,6 +19,15 @@ import type { OverlayCtx, OverlayDef } from "./types";
 // that radiates as it cools, so the glow reads as emerging from the weapons
 // (a stream leaving a thrusting engine, a flash at a strike point) rather than
 // a field layered on top. Where the particles actually are is what shines.
+//
+// Colour and brightness are split, mirroring real emission physics: spectral
+// colour tracks the particle's own energy/temperature (its `intensity`, as
+// before), while total luminosity — brightness and radius — additionally scales
+// with the LOCAL AMBIENT mass density sampled from the live medium field at the
+// particle's position. Dense gas glows brighter for the same deposited energy;
+// near-vacuum stays dim regardless of how hot the particle is. The density ramp
+// is shared with the medium-glow overlay (`mediumShared.densityAmplifier`), so
+// "how much brighter a nebula makes things" reads identically across overlays.
 //
 // Every on-screen particle above PARTICLE_DRAW_THRESHOLD is drawn — no density
 // thinning. (A prior revision added content-adaptive "foveated" thinning,
@@ -58,10 +74,12 @@ function resolveParticles(
 
 /**
  * Particle glow: one additive glow blot per live particle, coloured by the
- * shared hot palette at its (FX-scaled) intensity and sized by it, so a fresh
- * parcel reads bright and large and a cooling one dim and small. Drawn via a
- * prerendered sprite atlas (see glowAtlasSprites) rather than a fresh
- * createRadialGradient per particle.
+ * shared hot palette at the particle's (FX-scaled) energy/temperature and sized
+ * by it, so a fresh parcel reads bright and large and a cooling one dim and
+ * small. Brightness and radius are additionally amplified by the ambient medium
+ * density at the particle's position (denser gas glows brighter for the same
+ * energy; vacuum stays dim). Drawn via a prerendered sprite atlas (see
+ * glowAtlasSprites) rather than a fresh createRadialGradient per particle.
  */
 /** Number of prerendered glow sprites (intensity buckets). 16 gives ~6% steps —
  *  imperceptible on an additive glow blob. */
@@ -111,6 +129,13 @@ function drawParticleGlow(c: OverlayCtx): void {
   const particles = resolveParticles(frames, tick);
   if (particles === undefined || particles.length === 0) return;
 
+  // Resolve the medium field ONCE per draw (not per particle) so the density
+  // sample in the loop is a cheap indexing lookup. `field` is undefined for a
+  // vacuum-anomaly battle or a pre-medium replay — `sampleMediumRho` is not
+  // called in that case (rho stays 0 → amp 1 → display brightness === colour),
+  // so the result is numerically identical to the pre-density behaviour.
+  const field = resolveMediumField(frames, tick);
+
   const width = t.width;
   const height = t.height;
   const atlas = glowAtlasSprites();
@@ -120,21 +145,32 @@ function drawParticleGlow(c: OverlayCtx): void {
 
   const screen = { x: 0, y: 0 };
   for (const p of particles) {
-    const intensity = Math.max(0, Math.min(1, p.intensity * fxGain));
-    if (intensity < PARTICLE_DRAW_THRESHOLD) continue;
+    // Colour tracks the particle's own energy/temperature only — the same calc
+    // as before, renamed. Brightness/radius below additionally fold in the local
+    // ambient density (denser gas glows brighter for the same energy).
+    const colorT = Math.max(0, Math.min(1, p.intensity * fxGain));
     t.projectInto(screen, p.x, p.y);
     const sx = screen.x;
     const sy = screen.y;
+    // Cheap off-screen cull before the density sample skips the field lookup for
+    // off-screen particles.
     if (sx < 0 || sx >= width || sy < 0 || sy >= height) continue;
 
-    const radius = PARTICLE_RADIUS_PX * (0.4 + 0.6 * intensity);
+    const rho = field === undefined ? 0 : sampleMediumRho(field, p.x, p.y);
+    const amp = densityAmplifier(rho);
+    const dispI = Math.max(0, Math.min(1, colorT * amp)); // density-amplified brightness
+    if (dispI < PARTICLE_DRAW_THRESHOLD) continue; // threshold checked POST-amplification
+
+    const radius = PARTICLE_RADIUS_PX * (0.4 + 0.6 * dispI);
     // Blit the nearest-bucket sprite (drawImage is far cheaper than
-    // createRadialGradient + 3 addColorStop + arc/fill per particle).
-    const bucket = Math.min(ATLAS_BUCKETS - 1, Math.round(intensity * (ATLAS_BUCKETS - 1)));
+    // createRadialGradient + 3 addColorStop + arc/fill per particle). The bucket
+    // — and therefore the baked-in palette colour — is keyed to colorT ONLY, so
+    // density changes brightness/size without shifting the spectral colour.
+    const bucket = Math.min(ATLAS_BUCKETS - 1, Math.round(colorT * (ATLAS_BUCKETS - 1)));
     const bucketIntensity = bucket / (ATLAS_BUCKETS - 1);
     const sprite = atlas === null ? undefined : atlas[bucket];
     if (sprite === undefined) continue;
-    ctx.globalAlpha = bucketIntensity > 0 ? Math.min(1, intensity / bucketIntensity) : 0;
+    ctx.globalAlpha = bucketIntensity > 0 ? Math.min(1, dispI / bucketIntensity) : 0;
     ctx.drawImage(sprite, sx - radius, sy - radius, radius * 2, radius * 2);
   }
 
@@ -144,10 +180,12 @@ function drawParticleGlow(c: OverlayCtx): void {
 /** Overlay definition: weapon-source particle glow (exhaust, plumes, channels,
  *  impacts), drawn beneath the ship layer. On by default so strikes and exhaust
  *  are visible — the broad medium glow is too coarse (500 m/cell) to resolve
- *  them. FX-gated (off/reduced/full); the live set is capped
- *  (MAX_LIVE_PARTICLES) and each particle draws via a cheap prerendered-sprite
- *  blit (see glowAtlasSprites), so per-frame cost stays bounded without density
- *  thinning. */
+ *  them. Colour tracks each particle's own energy/temperature; brightness and
+ *  radius are amplified by the ambient medium density (energy × density, like
+ *  the medium-glow overlay). FX-gated (off/reduced/full); the live set is
+ *  capped (MAX_LIVE_PARTICLES) and each particle draws via a cheap
+ *  prerendered-sprite blit (see glowAtlasSprites), so per-frame cost stays
+ *  bounded without density thinning. */
 export const particleGlow: OverlayDef = {
   id: "particle-glow",
   label: "Weapon particles (exhaust / plumes / impacts)",
