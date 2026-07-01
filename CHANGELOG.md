@@ -1,3 +1,16 @@
+# [1.34.0](https://github.com/Mearman/FleetArchitect/compare/v1.33.1...v1.34.0) (2026-07-01)
+
+
+### Bug Fixes
+
+* **ui:** stop weapon-particle glow rendering as disconnected dots ([3cb84e9](https://github.com/Mearman/FleetArchitect/commit/3cb84e909c4a37dd7642aea638f25a52103dcab6))
+
+
+### Features
+
+* **sim:** thread real SI energy into weapon-particle intensity ([091eca8](https://github.com/Mearman/FleetArchitect/commit/091eca8043c1a75be043e1350d05fb7d3199d013))
+* **ui:** drive weapon-particle brightness by local medium density ([3bead98](https://github.com/Mearman/FleetArchitect/commit/3bead98a3d401fb752a732f98e7a97627ace1257))
+
 ## [1.33.1](https://github.com/Mearman/FleetArchitect/compare/v1.33.0...v1.33.1) (2026-07-01)
 
 
