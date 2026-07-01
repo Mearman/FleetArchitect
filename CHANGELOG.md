@@ -1,3 +1,10 @@
+# [1.36.0](https://github.com/Mearman/FleetArchitect/compare/v1.35.0...v1.36.0) (2026-07-01)
+
+
+### Features
+
+* **sim:** (E,p)-aware armour split with finite reactive plates ([3edd09f](https://github.com/Mearman/FleetArchitect/commit/3edd09f354184514d01d3d5761bb8a9f6b0d4afa))
+
 # [1.35.0](https://github.com/Mearman/FleetArchitect/compare/v1.34.1...v1.35.0) (2026-07-01)
 
 
