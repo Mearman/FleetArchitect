@@ -1,3 +1,11 @@
+## [1.33.1](https://github.com/Mearman/FleetArchitect/compare/v1.33.0...v1.33.1) (2026-07-01)
+
+
+### Performance Improvements
+
+* **sim:** fast-hypot the hot N² distance loops ([eeb089c](https://github.com/Mearman/FleetArchitect/commit/eeb089ca5148f4f22b7b39ce2921b9035b9c3f3d))
+* **ui:** batch the sprite knock-out into one composite pass ([91e40f0](https://github.com/Mearman/FleetArchitect/commit/91e40f0cabcd616242579c1efcea4749bdecce01))
+
 # [1.33.0](https://github.com/Mearman/FleetArchitect/compare/v1.32.5...v1.33.0) (2026-06-30)
 
 
