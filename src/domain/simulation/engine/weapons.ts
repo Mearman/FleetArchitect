@@ -15,6 +15,7 @@ import type { BattleInputs } from "../types";
 import { CELL_CONTACT_DISTANCE, buildShipCellHash, nearestCellAlongSegment } from "./collision";
 import type { ShipCell } from "./collision";
 import { SIM, GAS_DRAG_CROSS_SECTION_PROJECTILE_M2, claimProjectileId } from "./config";
+import { fastHypot } from "./hypot";
 import { TICKS_PER_SECOND } from "../types";
 import { POWERED_SPAWN_FRACTION_OF_CRUISE } from "@/data/catalog/ordnance-motor";
 import { ACCEL_PER_TICK_FROM_SI } from "../types";
@@ -482,7 +483,7 @@ export function tryPointDefenseIntercept(
       const effect: PointDefenseEffect = m.effect;
       const dx = ship.x - p.x;
       const dy = ship.y - p.y;
-      if (Math.hypot(dx, dy) <= effect.range) pdCount += 1;
+      if (fastHypot(dx, dy) <= effect.range) pdCount += 1;
     }
   }
   if (pdCount === 0) return false;
@@ -502,7 +503,7 @@ export function tryPointDefenseIntercept(
       if (m.cooldown > 0) continue;
       const dx = ship.x - p.x;
       const dy = ship.y - p.y;
-      if (Math.hypot(dx, dy) > m.effect.range) continue;
+      if (fastHypot(dx, dy) > m.effect.range) continue;
       m.cooldown = m.effect.cooldown;
     }
   }

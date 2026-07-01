@@ -13,6 +13,7 @@
  */
 
 import { SPEED_OF_LIGHT_M_PER_TICK } from "./config";
+import { fastHypot } from "./hypot";
 
 /** A single EM emission event, appended to the per-battle log when it occurs.
  *  `strength` is the emitted power at the source; it attenuates with distance. */
@@ -58,7 +59,7 @@ export function isReaching(
   t: number,
 ): boolean {
   if (t < emission.t0) return false;
-  const dist = Math.hypot(receiver.x - emission.x, receiver.y - emission.y);
+  const dist = fastHypot(receiver.x - emission.x, receiver.y - emission.y);
   const sphere = lightSphereRadius(t, emission.t0);
   // The sphere swept past the receiver this tick: dist in (sphere - c, sphere].
   return dist > sphere - SPEED_OF_LIGHT_M_PER_TICK && dist <= sphere;
@@ -89,7 +90,7 @@ export function formsContact(
   t: number,
 ): boolean {
   if (!isReaching(emission, receiver, t)) return false;
-  const dist = Math.hypot(receiver.x - emission.x, receiver.y - emission.y);
+  const dist = fastHypot(receiver.x - emission.x, receiver.y - emission.y);
   return receivedStrength(emission, dist) > receiver.sensitivity / receiver.gain;
 }
 

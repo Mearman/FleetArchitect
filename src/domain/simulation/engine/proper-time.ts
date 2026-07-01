@@ -19,6 +19,7 @@
  */
 
 import { SPEED_OF_LIGHT_M_PER_S, SPEED_OF_LIGHT_M_PER_TICK } from "./config";
+import { fastHypot } from "./hypot";
 
 /** A massive body contributing to the gravitational potential. `gm` is the
  *  standard gravitational parameter GM (m^3/s^2) — real physics, looked up
@@ -72,7 +73,7 @@ export function gravitationalPotential(
 ): number {
   let phi = 0;
   for (const b of bodies) {
-    const r = Math.hypot(b.x - x, b.y - y);
+    const r = fastHypot(b.x - x, b.y - y);
     if (r > 0) phi -= b.gm / r;
   }
   return phi;

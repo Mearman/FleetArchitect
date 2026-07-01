@@ -36,6 +36,7 @@ import {
 } from "./em-anchors";
 import { SIM, SPEED_OF_LIGHT_M_PER_TICK } from "./config";
 import { continuousContact, type Emission } from "./emissions";
+import { fastHypot } from "./hypot";
 import {
   appendMediumEmissionsToSnapshot,
   collectMediumEmissions,
@@ -383,7 +384,7 @@ export function mediumReceives(
 ): number | undefined {
   const dx = emission.x - observer.x;
   const dy = emission.y - observer.y;
-  const dist = Math.hypot(dx, dy);
+  const dist = fastHypot(dx, dy);
   const strength = emission.strength;
 
   // STARTUP light-lag: a just-ignited burn is not yet visible at a distance.

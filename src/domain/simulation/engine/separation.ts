@@ -20,6 +20,7 @@
  * every cache key.
  */
 
+import { fastHypot } from "./hypot";
 import type { SimShip } from "./types";
 
 /**
@@ -143,7 +144,7 @@ export function separationHeading(
     if (o.id === ship.instanceId) continue;
     const dx = ship.x - o.x;
     const dy = ship.y - o.y;
-    const dist = Math.hypot(dx, dy);
+    const dist = fastHypot(dx, dy);
     const w = separationWeight(dist, ship.radius + o.radius);
     if (w <= 0 || dist <= 0) continue;
     sumX += (dx / dist) * w;

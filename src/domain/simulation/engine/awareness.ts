@@ -8,6 +8,7 @@ import type { Disc } from "@/domain/occluders";
 import type { AwarenessSnapshot, BattleAnomalyKind } from "@/schema/battle";
 
 import { SIM, SPEED_OF_LIGHT_M_PER_TICK } from "./config";
+import { fastHypot } from "./hypot";
 import { coverageShapes } from "./coverage";
 import {
   hullDazzleContribution,
@@ -371,7 +372,7 @@ function collectMediumContacts(
         // Threat is distance-dominated; with no underlying ship cost, the score
         // is just `-dist` (nearer cells score higher), which keeps snapshot row
         // ordering by distance consistent with ship contacts.
-        threat: -Math.hypot(emission.x - observer.x, emission.y - observer.y),
+        threat: -fastHypot(emission.x - observer.x, emission.y - observer.y),
         origin: observer.instanceId,
       });
     }

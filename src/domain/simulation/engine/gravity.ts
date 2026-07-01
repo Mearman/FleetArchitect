@@ -9,6 +9,7 @@
  */
 
 import { GRAVITY_CONSTANT_ARENA, SIM } from "./config";
+import { fastHypot } from "./hypot";
 import type { SimShip } from "./types";
 
 /**
@@ -97,7 +98,7 @@ export function gravityAcceleration(
     if (body.id === shipId) continue;
     const dx = body.x - shipX;
     const dy = body.y - shipY;
-    const dist = Math.hypot(dx, dy);
+    const dist = fastHypot(dx, dy);
     if (dist <= 0) continue;
     // Soften the singularity at r→0 by clamping the effective r to the lethal
     // radius, so the acceleration stays finite right next to a body — the same
