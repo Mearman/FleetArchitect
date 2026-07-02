@@ -1,3 +1,10 @@
+# [1.39.0](https://github.com/Mearman/FleetArchitect/compare/v1.38.0...v1.39.0) (2026-07-02)
+
+
+### Features
+
+* **sim:** chamfer-only armour growth, drop the orthogonal ring ([d6f8baf](https://github.com/Mearman/FleetArchitect/commit/d6f8bafa972a57a216c9b5a34c28f1ce3c5225b3))
+
 # [1.38.0](https://github.com/Mearman/FleetArchitect/compare/v1.37.0...v1.38.0) (2026-07-02)
 
 
