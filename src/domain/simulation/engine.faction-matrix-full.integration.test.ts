@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { runBattleCached } from "@/domain/cache/run-battle-cached";
-import { resolveFleetToCombatShips } from "@/domain/resolve";
+import { resolveFleetToCombatShipsCached, runBattleCached } from "@/domain/cache/run-battle-cached";
 import { catalog } from "@/data/catalog";
 import { presetDesigns, presetFleets } from "@/data/presets";
 import type { Fleet } from "@/schema/fleet";
@@ -95,8 +94,8 @@ async function resolveAndBattle(
     throw new Error(`preset fleet not found: ${defenderFleetId}`);
   }
   const ships = [
-    ...resolveFleetToCombatShips(attacker, designs, cat, "attacker"),
-    ...resolveFleetToCombatShips(defender, designs, cat, "defender"),
+    ...resolveFleetToCombatShipsCached(attacker, designs, cat, "attacker"),
+    ...resolveFleetToCombatShipsCached(defender, designs, cat, "defender"),
   ];
   return runBattleCached({
     ships,

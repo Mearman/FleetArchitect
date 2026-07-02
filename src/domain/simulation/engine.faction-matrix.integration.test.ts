@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { runBattleCached } from "@/domain/cache/run-battle-cached";
-import { resolveFleetToCombatShips } from "@/domain/resolve";
+import { resolveFleetToCombatShipsCached, runBattleCached } from "@/domain/cache/run-battle-cached";
 import { catalog } from "@/data/catalog";
 import { presetDesigns, presetFleets } from "@/data/presets";
 import type { Fleet } from "@/schema/fleet";
@@ -105,8 +104,8 @@ function runMatchup(m: Matchup): Promise<BattleResult> {
   const attacker = fleetById(m.attacker);
   const defender = fleetById(m.defender);
   const ships = [
-    ...resolveFleetToCombatShips(attacker, designs, catalog(), "attacker"),
-    ...resolveFleetToCombatShips(defender, designs, catalog(), "defender"),
+    ...resolveFleetToCombatShipsCached(attacker, designs, catalog(), "attacker"),
+    ...resolveFleetToCombatShipsCached(defender, designs, catalog(), "defender"),
   ];
   return runBattleCached({
     ships,
