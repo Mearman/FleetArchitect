@@ -159,6 +159,39 @@ export interface ShipContact {
   relVy: number;
 }
 
+/** A recycled world-space cell centre buffered in {@link CollisionScratch}. */
+interface CellPoint {
+  wx: number;
+  wy: number;
+}
+
+/**
+ * Per-tick reusable buffers for the optimised contact broad-phase
+ * ({@link generateCandidateContactsOptimised}): the per-ship cell list plus the
+ * pools that recycle its arrays and cell-point objects across ticks. Held on
+ * `EngineState.collisionScratch` (like the cell-hash scratch) so a tick
+ * allocates nothing after warmup. Not captured on the checkpoint.
+ */
+export interface CollisionScratch {
+  /** Ships in first-seen (hash insertion) order; the position in this array is
+   *  the dense integer index used by the unordered-pair key. */
+  shipOrder: SimShip[];
+  /** instanceId → that ship's alive cell centres for the per-pair narrow scan. */
+  shipCells: Map<string, CellPoint[]>;
+  /** Recycled per-ship arrays (drained here when the scratch resets). */
+  arrayPool: CellPoint[][];
+  /** Recycled cell-point objects (drained from the arrays when the scratch
+   *  resets). */
+  pointPool: CellPoint[];
+}
+
+/** Build a fresh, empty collision scratch — used to populate
+ *  `EngineState.collisionScratch` at bootstrap, and when no pooled scratch is
+ *  supplied (e.g. the equivalence unit tests, which are not the hot path). */
+export function newCollisionScratch(): CollisionScratch {
+  return { shipOrder: [], shipCells: new Map(), arrayPool: [], pointPool: [] };
+}
+
 /**
  * The contact-generation boundary: given the cell hash, produce the per-pair
  * deepest disc contact (before outline refine). Both implementations of
@@ -167,15 +200,22 @@ export interface ShipContact {
  * shared narrow-phase ({@link resolveCandidateContacts}), which refines by hull
  * outline, applies the impulse, and returns the ordered contact list.
  *
- * The map is keyed by the unordered pair key (`pairKey`) and holds, for each
- * pair, the deepest disc contact found (greatest `depth`). Both implementations
- * must produce the same map for any given hash: the same set of pair keys, and
- * for each the same `depth`, `px`, `py`, `nx`, `ny` (`relVx`/`relVy` are filled
- * later by the narrow-phase). The optimised implementation is a strict superset
- * at the candidate-pair level — it may visit extra pairs that the disc test
- * then rejects — so its surviving contacts match the reference exactly.
+ * The map is keyed by an INTEGER unordered-pair identity — the two ships' dense
+ * first-seen indices packed `lo * count + hi` (lo < hi) — and holds, for each
+ * pair, the deepest disc contact found (greatest `depth`). The integer key is
+ * used ONLY for Map identity (it sheds the per-candidate string allocation the
+ * former `${lo}|${hi}` key paid): the resolution sort in
+ * {@link resolveCandidateContacts} still orders contacts by the STRING
+ * {@link pairKey} comparator, so the emitted contact sequence is byte-identical
+ * to the string-keyed map — the lexicographic pair order is preserved exactly.
+ * Both implementations must produce the same map for any given hash: the same
+ * set of pair identities, and for each the same `depth`, `px`, `py`, `nx`, `ny`
+ * (`relVx`/`relVy` are filled later by the narrow-phase). The optimised
+ * implementation is a strict superset at the candidate-pair level — it may
+ * visit extra pairs that the disc test then rejects — so its surviving
+ * contacts match the reference exactly.
  */
-type CandidateContacts = Map<string, ShipContact>;
+type CandidateContacts = Map<number, ShipContact>;
 
 /**
  * Record a disc contact between two cells of ships `a` and `b` (a < b by
@@ -188,6 +228,7 @@ type CandidateContacts = Map<string, ShipContact>;
  */
 function recordDeepest(
   contacts: CandidateContacts,
+  key: number,
   a: SimShip,
   b: SimShip,
   wx: number,
@@ -218,7 +259,8 @@ function recordDeepest(
       ny = 0;
     }
   }
-  const key = pairKey(a, b);
+  // `key` is the caller-computed integer unordered-pair identity; the depth and
+  // normal geometry above are unchanged from the string-keyed version.
   const existing = contacts.get(key);
   if (existing === undefined || depth > existing.depth) {
     contacts.set(key, {
@@ -256,17 +298,35 @@ function recordDeepest(
  * common case where most ships never approach each other.
  */
 export function generateCandidateContactsReference(hash: SpatialHash<ShipCell>): CandidateContacts {
+  // Index every ship in the hash by a dense integer (first-seen order) so the
+  // per-pair Map identity is an integer, matching the optimised path's key
+  // shape. The reference is the oracle (not the hot path), so it builds this
+  // index fresh; only the optimised path pools its buffers across ticks.
+  const shipIndex = new Map<string, number>();
+  for (const entry of hash.entries()) {
+    const ship = entry.payload.ship;
+    if (!shipIndex.has(ship.instanceId)) {
+      shipIndex.set(ship.instanceId, shipIndex.size);
+    }
+  }
+  const n = shipIndex.size;
   const contacts: CandidateContacts = new Map();
   for (const entry of hash.entries()) {
     const { ship: a, wx, wy } = entry.payload;
     const x0 = wx - a.velX;
     const y0 = wy - a.velY;
+    // `a` came from the hash, so its index is guaranteed present (built above
+    // from the same entries).
+    const ai = shipIndex.get(a.instanceId)!;
     for (const other of hash.candidatesAlongSegment(x0, y0, wx, wy, CELL_CONTACT_DISTANCE)) {
       const b = other.payload.ship;
       if (a === b) continue;
       // Resolve each unordered pair once: only consider a < b by instanceId.
       if (a.instanceId >= b.instanceId) continue;
-      recordDeepest(contacts, a, b, wx, wy, other.wx, other.wy);
+      const bi = shipIndex.get(b.instanceId)!;
+      const lo = ai < bi ? ai : bi;
+      const hi = ai < bi ? bi : ai;
+      recordDeepest(contacts, lo * n + hi, a, b, wx, wy, other.wx, other.wy);
     }
   }
   return contacts;
@@ -301,30 +361,48 @@ export function generateCandidateContactsReference(hash: SpatialHash<ShipCell>):
  * runs once per A-cell per candidate pair, so the array allocation was a
  * measurable share of the profile.
  */
-export function generateCandidateContactsOptimised(hash: SpatialHash<ShipCell>): CandidateContacts {
+export function generateCandidateContactsOptimised(
+  hash: SpatialHash<ShipCell>,
+  scratch?: CollisionScratch,
+): CandidateContacts {
+  // Reuse the pooled scratch (the per-ship cell arrays and cell-point objects
+  // are recycled across ticks) or allocate a transient one. The reset drains
+  // the previous tick's per-ship arrays and their cell points back into the
+  // pools, so after warmup a tick allocates nothing here.
+  const s = scratch ?? newCollisionScratch();
+  for (const arr of s.shipCells.values()) {
+    for (const point of arr) s.pointPool.push(point);
+    arr.length = 0;
+    s.arrayPool.push(arr);
+  }
+  s.shipCells.clear();
+  s.shipOrder.length = 0;
+
   // Collect each ship's alive cells and bounding info in a single pass over the
   // hash. A ship appears in the hash iff it is modular and has at least one
   // alive cell, so the derived set is exactly the ships that can contact.
-  const shipOrder: SimShip[] = [];
-  const shipCells = new Map<string, { wx: number; wy: number }[]>();
   for (const entry of hash.entries()) {
     const ship = entry.payload.ship;
-    let list = shipCells.get(ship.instanceId);
+    let list = s.shipCells.get(ship.instanceId);
     if (list === undefined) {
-      list = [];
-      shipCells.set(ship.instanceId, list);
-      shipOrder.push(ship);
+      list = s.arrayPool.pop() ?? [];
+      s.shipCells.set(ship.instanceId, list);
+      s.shipOrder.push(ship);
     }
-    list.push({ wx: entry.wx, wy: entry.wy });
+    const point = s.pointPool.pop() ?? { wx: 0, wy: 0 };
+    point.wx = entry.wx;
+    point.wy = entry.wy;
+    list.push(point);
   }
 
+  const n = s.shipOrder.length;
   const contacts: CandidateContacts = new Map();
-  for (let i = 0; i < shipOrder.length; i += 1) {
-    const a = shipOrder[i]!;
-    const aCells = shipCells.get(a.instanceId)!;
-    for (let j = i + 1; j < shipOrder.length; j += 1) {
-      const b = shipOrder[j]!;
-      // Unordered pair key tie-break: only consider a < b by instanceId.
+  for (let i = 0; i < n; i += 1) {
+    const a = s.shipOrder[i]!;
+    const aCells = s.shipCells.get(a.instanceId)!;
+    for (let j = i + 1; j < n; j += 1) {
+      const b = s.shipOrder[j]!;
+      // Unordered pair tie-break: only consider a < b by instanceId.
       if (a.instanceId >= b.instanceId) continue;
       // Bounding-circle broad-phase: skip the pair unless the two discs,
       // expanded for the contact distance, overlap. `ship.radius` is the grid
@@ -334,6 +412,10 @@ export function generateCandidateContactsOptimised(hash: SpatialHash<ShipCell>):
       const centreDistSq = dx * dx + dy * dy;
       const reach = a.radius + b.radius + CELL_CONTACT_DISTANCE;
       if (centreDistSq > reach * reach) continue;
+      // Integer unordered-pair identity for the Map: i < j < n, so
+      // `i * n + j` is injective over the processed pairs. Used only for Map
+      // lookup; the resolution sort still orders by the string pairKey.
+      const key = i * n + j;
       // Narrow-phase: for each of A's cells, query the hash for B's nearby
       // cells and record the deepest disc contact for the pair. The query
       // returns entries from every ship (including A itself and unrelated
@@ -344,7 +426,7 @@ export function generateCandidateContactsOptimised(hash: SpatialHash<ShipCell>):
         // entry rather than materialising a fresh array per cell per pair.
         hash.forEachCandidate(cell.wx, cell.wy, CELL_CONTACT_DISTANCE, (other) => {
           if (other.payload.ship !== b) return;
-          recordDeepest(contacts, a, b, cell.wx, cell.wy, other.wx, other.wy);
+          recordDeepest(contacts, key, a, b, cell.wx, cell.wy, other.wx, other.wy);
         });
       }
     }
@@ -390,12 +472,17 @@ function resolveCandidateContacts(candidates: CandidateContacts): ShipContact[] 
  * Ship-vs-ship collision resolution (production path). Builds the per-pair
  * candidate contacts via the OPTIMISED ship-pair broad-phase
  * ({@link generateCandidateContactsOptimised}), then runs the shared
- * narrow-phase (outline refine, impulse, positional separation). The reference
- * implementation ({@link resolveShipCollisionsReference}) is kept as an oracle
- * for the equivalence test.
+ * narrow-phase (outline refine, impulse, positional separation). The pooled
+ * `scratch` ({@link CollisionScratch}) recycles the per-ship cell arrays and
+ * cell-point objects across ticks; omit it to allocate transiently. The
+ * reference implementation ({@link resolveShipCollisionsReference}) is kept as
+ * an oracle for the equivalence test.
  */
-export function resolveShipCollisions(hash: SpatialHash<ShipCell>): ShipContact[] {
-  return resolveCandidateContacts(generateCandidateContactsOptimised(hash));
+export function resolveShipCollisions(
+  hash: SpatialHash<ShipCell>,
+  scratch?: CollisionScratch,
+): ShipContact[] {
+  return resolveCandidateContacts(generateCandidateContactsOptimised(hash, scratch));
 }
 
 /**

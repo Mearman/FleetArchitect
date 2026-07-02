@@ -165,6 +165,25 @@ abstract class SpatialHashCore<S> {
   /** Recycled entry objects — drained from `all` on `clear()` and popped on
    *  `insert()`, so a reused hash allocates no entry objects after warmup. */
   private readonly freeList: WorldCellEntry<S>[] = [];
+  /**
+   * Pooled segment-walk dedup: the two-level `bx → (by → seen)` Map reused
+   * across `candidatesAlongSegment` calls, plus the pool that recycles the
+   * inner `Set<number>` objects. Each call drains its inner Sets into the pool
+   * and clears the outer Map, so a walk allocates nothing after warmup while
+   * memory stays bounded to the largest single walk.
+   *
+   * A flat generation-stamped array indexed by bucket coordinate is infeasible
+   * here: bucket coordinates span an unbounded relativistic arena (up to ~3e7
+   * either side — see the equivalence test's "no pack collision" case, anchored
+   * to `SPEED_OF_LIGHT_M_PER_TICK`), so no fixed array can address them without
+   * a silent index collision that would corrupt determinism. The pooled
+   * two-level Map realises the same no-per-call-allocation goal with bounded
+   * memory and the exact per-call dedup semantics (a fresh outer Map + fresh
+   * inner Sets), so the candidate sequence is byte-identical to the per-call
+   * allocation it replaces.
+   */
+  private readonly seenBuckets = new Map<number, Set<number>>();
+  private readonly seenBucketPool: Set<number>[] = [];
   protected constructor(private readonly buckets: BucketStore<S>) {}
 
   /** Insert one world-space cell entry. */
@@ -280,10 +299,14 @@ abstract class SpatialHashCore<S> {
   ): WorldCellEntry<S>[] {
     const pad = Math.max(0, Math.ceil(radius / WORLD_BUCKET_M));
     const out: WorldCellEntry<S>[] = [];
-    // Two-level integer seen-set: outer keyed by bx, inner by by. A Set of
-    // integer keys (two levels, no packing) — no string allocation and no
-    // precision ceiling, matching the bucket store's integer-key contract.
-    const seenBuckets = new Map<number, Set<number>>();
+    // Recycle the previous call's inner Sets into the pool and clear the outer
+    // Map, so this walk reuses the same Map and Set objects rather than
+    // allocating a fresh two-level seen-set per call (the segment query is the
+    // projectile-hit hot path). Semantics are byte-identical to a per-call
+    // `new Map<number, Set<number>>()` — see {@link seenBuckets} for why a flat
+    // generation-stamped array cannot address the unbounded bucket space.
+    for (const inner of this.seenBuckets.values()) this.seenBucketPool.push(inner);
+    this.seenBuckets.clear();
     const dx = x1 - x0;
     const dy = y1 - y0;
     const length = Math.hypot(dx, dy);
@@ -298,10 +321,11 @@ abstract class SpatialHashCore<S> {
       const cy = bucketCoord(sy);
       for (let bx = cx - pad; bx <= cx + pad; bx += 1) {
         for (let by = cy - pad; by <= cy + pad; by += 1) {
-          let inner = seenBuckets.get(bx);
+          let inner = this.seenBuckets.get(bx);
           if (inner === undefined) {
-            inner = new Set<number>();
-            seenBuckets.set(bx, inner);
+            inner = this.seenBucketPool.pop() ?? new Set<number>();
+            inner.clear();
+            this.seenBuckets.set(bx, inner);
           }
           if (inner.has(by)) continue;
           inner.add(by);

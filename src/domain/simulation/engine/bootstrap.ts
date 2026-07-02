@@ -23,6 +23,7 @@ import { fleetCentroid } from "./movement";
 import { toSimShip } from "./setup";
 import type { Rng } from "@/domain/simulation/rng";
 import { freshAwarenessScratch } from "./awareness";
+import { newCollisionScratch } from "./collision";
 import type { ShipCell } from "./collision";
 import { SpatialHash } from "../spatial-hash";
 import type { EngineState } from "./state";
@@ -160,6 +161,7 @@ export function bootstrapEngine(
       projectileMediumScratch: [],
       awarenessScratch: freshAwarenessScratch(),
       shipCellHashScratch: new SpatialHash<ShipCell>(),
+      collisionScratch: newCollisionScratch(),
     };
     return { state, startTick: 1 };
   }
@@ -224,6 +226,7 @@ export function bootstrapEngine(
     projectileMediumScratch: [],
     awarenessScratch: freshAwarenessScratch(),
     shipCellHashScratch: new SpatialHash<ShipCell>(),
+    collisionScratch: newCollisionScratch(),
   };
   return { state, startTick: restored.tick + 1 };
 }
