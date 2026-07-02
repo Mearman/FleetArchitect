@@ -1,3 +1,10 @@
+# [1.38.0](https://github.com/Mearman/FleetArchitect/compare/v1.37.0...v1.38.0) (2026-07-02)
+
+
+### Features
+
+* **presets:** give under-armoured ships an outer armour skin ([82a6866](https://github.com/Mearman/FleetArchitect/commit/82a6866497e7f2ba6ec56f8b2114a53058902806))
+
 # [1.37.0](https://github.com/Mearman/FleetArchitect/compare/v1.36.0...v1.37.0) (2026-07-01)
 
 
