@@ -20,26 +20,25 @@ if (rootEl === null) {
 
 const root = createRoot(rootEl);
 
-/**
- * Seed bundled starter ships and fleets before first paint, so a new player
- * lands on a populated roster. Seeding is idempotent and fast; a failure is
- * logged but must not block the app from loading.
- */
-void seedPresets()
-  .catch((error) => {
-    console.error("Failed to seed starter content:", error);
-  })
-  .finally(() => {
-    root.render(
-      <StrictMode>
-        <FxProvider>
-          <PreferencesProvider>
-            <MantineProvider theme={mantineTheme} defaultColorScheme="dark">
-              <Notifications position="top-right" />
-              <RouterProvider router={router} />
-            </MantineProvider>
-          </PreferencesProvider>
-        </FxProvider>
-      </StrictMode>,
-    );
-  });
+// Render the shell immediately so first paint is not blocked on IndexedDB
+// writes. Seeding is idempotent and runs in the background: the roster tables
+// are read through Dexie live queries, which re-render the relevant routes as
+// soon as the seed completes, so a new player still lands on a populated roster
+// without the seed gating first paint. A failure is logged but must not block
+// the app from loading.
+root.render(
+  <StrictMode>
+    <FxProvider>
+      <PreferencesProvider>
+        <MantineProvider theme={mantineTheme} defaultColorScheme="dark">
+          <Notifications position="top-right" />
+          <RouterProvider router={router} />
+        </MantineProvider>
+      </PreferencesProvider>
+    </FxProvider>
+  </StrictMode>,
+);
+
+void seedPresets().catch((error) => {
+  console.error("Failed to seed starter content:", error);
+});
