@@ -78,6 +78,14 @@ jobs:
     # when no release tag exists.
     needs: quality
     runs-on: ubuntu-latest
+    # `actions: write` (beyond the top-level set) lets the artifact-cleanup
+    # step below delete a `github-pages` artifact left by a prior failed
+    # attempt, so re-running this job never collides with a stale upload.
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+      actions: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -95,6 +103,23 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm build
       - uses: actions/configure-pages@v6
+      # A failed `deploy-pages` step (GitHub Pages' "Deployment failed, try
+      # again later" transient) leaves this run's uploaded `github-pages`
+      # artifact behind. Re-running the job then uploads a second one and
+      # `deploy-pages` refuses both ("Multiple artifacts named github-pages ...
+      # count is 2"). Drop any prior attempt's artifact before uploading so
+      # reruns are clean. No-op on the first attempt (nothing to delete).
+      - name: Remove prior github-pages artifacts from this run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts" \
+            --jq '.artifacts[] | select(.name=="github-pages") | .id' |
+            while read -r id; do
+              [ -z "$id" ] && continue
+              echo "Removing stale github-pages artifact $id from a prior attempt"
+              gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id"
+            done
       - uses: actions/upload-pages-artifact@v5
         with:
           path: dist
