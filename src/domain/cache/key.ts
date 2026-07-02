@@ -124,3 +124,32 @@ export async function deriveCacheKey(
   );
   return toHex(new Uint8Array(digest));
 }
+
+/**
+ * Memoised cache-key derivation. The {@link CachingBattleRunner} and
+ * {@link ResumingBattleRunner} are composed (`Caching(Resuming(inner))`), so on
+ * a result-cache MISS both derive the key from the SAME `inputs` object —
+ * canonicalising the (large) resolved fleet graph, JSON-encoding it, and
+ * SHA-256 hashing it twice on the main thread before a battle starts. The
+ * `SimConfig` ({@link getSimConfig} singleton) and algorithm signature are
+ * app-wide constants for a given run, so the key is a pure function of `inputs`
+ * alone; memoise on the `inputs` object so the canonicalisation runs once.
+ *
+ * Keyed by the `inputs` object reference: the decorator chain passes one
+ * reference through, so the inner runner's derivation hits the outer's entry.
+ * A different `inputs` object (a different battle) gets no false hit, and the
+ * entry is garbage-collected with the object.
+ */
+const keyByInputs = new WeakMap<BattleInputs, Promise<string>>();
+
+export function deriveCacheKeyMemoised(
+  inputs: BattleInputs,
+  simConfig: SimConfig,
+  algorithmSignature: string,
+): Promise<string> {
+  const cached = keyByInputs.get(inputs);
+  if (cached !== undefined) return cached;
+  const pending = deriveCacheKey(inputs, simConfig, algorithmSignature);
+  keyByInputs.set(inputs, pending);
+  return pending;
+}
