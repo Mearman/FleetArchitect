@@ -14,6 +14,7 @@ import { buildArenaMedium } from "@/domain/simulation/engine/medium-setup";
 import { toSimShip } from "@/domain/simulation/engine/setup";
 import { freshAwarenessScratch } from "@/domain/simulation/engine/awareness";
 import { SpatialHash } from "@/domain/simulation/spatial-hash";
+import { newCollisionScratch } from "@/domain/simulation/engine/collision";
 import type { ShipCell } from "@/domain/simulation/engine/collision";
 import {
   refreshRosterIncremental,
@@ -148,6 +149,7 @@ function stateWith(ships: SimShip[]): EngineState {
     projectileMediumScratch: [],
     awarenessScratch: freshAwarenessScratch(),
     shipCellHashScratch: new SpatialHash<ShipCell>(),
+    collisionScratch: newCollisionScratch(),
   };
 }
 

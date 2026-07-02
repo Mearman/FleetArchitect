@@ -4,6 +4,7 @@ import { CELL_SIZE } from "@/domain/grid";
 import { mulberry32 } from "@/domain/simulation/rng";
 import {
   buildShipCellHash,
+  newCollisionScratch,
   resolveShipCollisions,
   resolveShipCollisionsReference,
   type ShipCell,
@@ -274,5 +275,20 @@ describe("engine.collision broad-phase — reference vs optimised equivalence", 
     const opt = resolveShipCollisions(buildHash(optShips));
     expect(ref).toHaveLength(0);
     expect(opt).toHaveLength(0);
+  });
+
+  it("reusing the pooled CollisionScratch across calls is byte-stable", () => {
+    // The optimised broad-phase recycles its per-ship cell arrays and
+    // cell-point objects through CollisionScratch. Two consecutive runs over
+    // freshly cloned inputs sharing the same scratch must produce identical
+    // contacts — the per-call reset must not leak the previous tick's pooled
+    // arrays or cell points into the next.
+    const a = driftingShip("a1", "attacker", { x: 0, y: 0 }, 0);
+    const b = driftingShip("b1", "defender", { x: CELL_SIZE * 0.5, y: 0 }, 0);
+    const scratch = newCollisionScratch();
+    const first = resolveShipCollisions(buildHash(structuredClone(resolveToSim([a, b]))), scratch);
+    const second = resolveShipCollisions(buildHash(structuredClone(resolveToSim([a, b]))), scratch);
+    expect(first.length, "a contact must actually form").toBeGreaterThan(0);
+    expectEquivalent(first, second);
   });
 });

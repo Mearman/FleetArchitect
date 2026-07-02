@@ -18,7 +18,7 @@ import type { Emission } from "./emissions";
 import type { ExhaustParticle } from "./exhaust-particles";
 import type { ArenaMedium, ProjectileMediumEntry } from "./medium-setup";
 import type { AwarenessScratch } from "./awareness";
-import type { ShipCell } from "./collision";
+import type { CollisionScratch, ShipCell } from "./collision";
 import type { SpatialHash } from "../spatial-hash";
 import type { DeploymentReference } from "./movement";
 import type { SimPulse } from "./pulses";
@@ -149,4 +149,8 @@ export interface EngineState {
    *  tick: ship-ship collision + projectile-cell hits). Entry objects recycled
    *  via the free-list; cleared-and-reused across ticks. Not checkpointed. */
   shipCellHashScratch: SpatialHash<ShipCell>;
+  /** Reusable buffers for the optimised collision broad-phase
+   *  (`generateCandidateContactsOptimised`): per-ship cell arrays and
+   *  cell-point objects recycled across ticks. Not checkpointed. */
+  collisionScratch: CollisionScratch;
 }

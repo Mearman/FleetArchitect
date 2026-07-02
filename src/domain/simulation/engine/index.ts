@@ -311,7 +311,8 @@ export function* simulateBattle(
     //     impulse plus positional separation, so ships can't drive through each
     //     other. All sides are solid — friendlies collide too. The resolved
     //     contacts feed the kinetic-damage step below.
-    const shipContacts = resolveShipCollisions(buildShipCellHash(state.ships, state.shipCellHashScratch));
+    const cellHash = buildShipCellHash(state.ships, state.shipCellHashScratch);
+    const shipContacts = resolveShipCollisions(cellHash, state.collisionScratch);
 
     // 2b-kinetic. Kinetic collision damage (realism overhaul, Phase 4). Convert
     //     a fraction of each contact's collision kinetic energy into structural
