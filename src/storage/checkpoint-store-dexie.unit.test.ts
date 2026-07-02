@@ -2,8 +2,9 @@ import { beforeEach, describe, expect, it } from "vitest";
 import fakeIndexedDB, { IDBKeyRange } from "fake-indexeddb";
 import type { Table } from "dexie";
 import { FleetArchitectDatabase, _setDatabaseForTesting } from "@/storage/db";
-import type { CheckpointRecord } from "@/storage/db";
+import type { CheckpointDeltaRecord } from "@/storage/db";
 import { DexieCheckpointStore } from "@/storage/checkpoint-store-dexie";
+import { estimateCheckpointBytes } from "@/storage/sim-cache-dexie";
 import { EngineCheckpoint, CHECKPOINT_VERSION } from "@/schema/checkpoint";
 import type { BattleFrame } from "@/schema/battle";
 
@@ -23,16 +24,16 @@ function freshDatabase(): FleetArchitectDatabase {
 /**
  * Wrap a Dexie table so every property access forwards to the underlying table
  * except `put`, which is replaced by the supplied stub. Used to simulate the
- * capacity-boundary error a long-battle checkpoint triggers in the browser
- * (DataCloneError on the structured clone of `preFrames`) without having to
+ * capacity-boundary error a checkpoint delta triggers in the browser
+ * (DataCloneError on the structured clone of `deltaFrames`) without having to
  * build such a record. `Object.defineProperty` overrides `put` on the table
  * instance directly, keeping the full `Table` structural type so no assertion
  * is needed at the call site.
  */
 function withPutStub(
-  table: Table<CheckpointRecord, string>,
-  put: (record: CheckpointRecord) => Promise<void>,
-): Table<CheckpointRecord, string> {
+  table: Table<CheckpointDeltaRecord, [string, number]>,
+  put: (record: CheckpointDeltaRecord) => Promise<void>,
+): Table<CheckpointDeltaRecord, [string, number]> {
   return Object.defineProperty(table, "put", { value: put, configurable: true });
 }
 
@@ -71,7 +72,7 @@ function minimalCheckpoint(tick: number): EngineCheckpoint {
   });
 }
 
-/** A minimal `BattleFrame` carrying just the tick (enough for the preFrames
+/** A minimal `BattleFrame` carrying just the tick (enough for the delta
  *  round-trip — the store never inspects frame contents). */
 function frame(tick: number): BattleFrame {
   return {
@@ -84,6 +85,21 @@ function frame(tick: number): BattleFrame {
     emissions: [],
     debris: [],
   };
+}
+
+/** Frames 0..tick inclusive (the prefix a capture at `tick` passes as preFrames). */
+function framesThrough(tick: number): BattleFrame[] {
+  const out: BattleFrame[] = [];
+  for (let t = 0; t <= tick; t++) out.push(frame(t));
+  return out;
+}
+
+/** Count the delta rows stored for a matchup (read via the `key` index). */
+async function rowCountFor(
+  db: FleetArchitectDatabase,
+  key: string,
+): Promise<number> {
+  return db.checkpoints.where("key").equals(key).count();
 }
 
 describe("DexieCheckpointStore", () => {
@@ -107,65 +123,146 @@ describe("DexieCheckpointStore", () => {
     expect(got?.preFrames).toEqual(preFrames);
   });
 
-  it("put overwrites — one latest checkpoint per content key", async () => {
+  it("appends one delta per capture and reassembles the full prefix on get", async () => {
+    // The core delta behaviour: each capture appends ONLY the new frames, and
+    // get concatenates the deltas in seq order. preFrames is a strict
+    // prefix-extension across captures (frames 0..checkpoint.tick grow), so the
+    // store slices preFrames since the previously stored total.
     const store = new DexieCheckpointStore(db.checkpoints);
-    const first = minimalCheckpoint(10);
-    const second = minimalCheckpoint(20);
 
-    await store.put("k1", first, [frame(0)]);
-    await store.put("k1", second, [frame(0), frame(1)]);
+    await store.put("k1", minimalCheckpoint(30), framesThrough(30));
+    await store.put("k1", minimalCheckpoint(60), framesThrough(60));
+    await store.put("k1", minimalCheckpoint(90), framesThrough(90));
+
+    // Three delta rows for the matchup (one per capture), NOT one overwrite.
+    expect(await rowCountFor(db, "k1")).toBe(3);
 
     const got = await store.get("k1");
-    expect(got?.checkpoint.tick).toBe(20);
-    expect(got?.preFrames).toHaveLength(2);
-    // Only one row in the table — put overwrote, it did not append.
-    expect(await db.checkpoints.count()).toBe(1);
+    expect(got).toBeDefined();
+    // The latest capture's checkpoint is the resume point.
+    expect(got?.checkpoint.tick).toBe(90);
+    // The reassembled prefix is the full 0..90 timeline in tick order.
+    expect(got?.preFrames.map((f) => f.tick)).toEqual(
+      Array.from({ length: 91 }, (_, t) => t),
+    );
   });
 
-  it("delete removes the checkpoint", async () => {
+  it("only the NEW frames since the previous capture cross the clone boundary", async () => {
+    // A spy on the table's structured-clone (via the bytes estimate the store
+    // records) proves each delta carries only its slice, not the whole prefix.
+    // delta0 = frames 0..30 (31), delta1 = frames 31..60 (30), delta2 = 61..90 (30).
     const store = new DexieCheckpointStore(db.checkpoints);
-    await store.put("k1", minimalCheckpoint(5), []);
+    await store.put("k1", minimalCheckpoint(30), framesThrough(30));
+    await store.put("k1", minimalCheckpoint(60), framesThrough(60));
+    await store.put("k1", minimalCheckpoint(90), framesThrough(90));
+
+    const rows = await db.checkpoints.where("key").equals("k1").sortBy("seq");
+    expect(rows.map((r) => r.deltaFrames.length)).toEqual([31, 30, 30]);
+    expect(rows[0]?.deltaFrames.map((f) => f.tick)).toEqual(
+      Array.from({ length: 31 }, (_, t) => t),
+    );
+    expect(rows[1]?.deltaFrames.map((f) => f.tick)).toEqual(
+      Array.from({ length: 30 }, (_, i) => 31 + i),
+    );
+    expect(rows[2]?.deltaFrames.map((f) => f.tick)).toEqual(
+      Array.from({ length: 30 }, (_, i) => 61 + i),
+    );
+  });
+
+  it("resumes from a partial delta set (interrupted mid-run)", async () => {
+    // Simulate an interrupted run: deltas for captures at ticks 30 and 60 were
+    // written, but the run was interrupted before tick 90's capture. get must
+    // reassemble whatever complete deltas exist and resume from the latest one.
+    const store = new DexieCheckpointStore(db.checkpoints);
+    await store.put("k1", minimalCheckpoint(30), framesThrough(30));
+    await store.put("k1", minimalCheckpoint(60), framesThrough(60));
+
+    const got = await store.get("k1");
+    expect(got?.checkpoint.tick).toBe(60);
+    expect(got?.preFrames.map((f) => f.tick)).toEqual(
+      Array.from({ length: 61 }, (_, t) => t),
+    );
+  });
+
+  it("resumes from deltas written directly to the table (e.g. by a prior session)", async () => {
+    // A fresh store instance (meta not yet built) must reassemble deltas a
+    // previous instance wrote. Write two deltas directly, then construct the
+    // store and read.
+    const updatedAt = Date.now();
+    await db.checkpoints.put({
+      key: "k1",
+      seq: 0,
+      checkpoint: minimalCheckpoint(30),
+      deltaFrames: framesThrough(30),
+      updatedAt,
+      bytes: 1000,
+    });
+    await db.checkpoints.put({
+      key: "k1",
+      seq: 1,
+      checkpoint: minimalCheckpoint(60),
+      deltaFrames: framesThrough(60).slice(31),
+      updatedAt,
+      bytes: 1000,
+    });
+
+    const store = new DexieCheckpointStore(db.checkpoints);
+    const got = await store.get("k1");
+    expect(got?.checkpoint.tick).toBe(60);
+    expect(got?.preFrames.map((f) => f.tick)).toEqual(
+      Array.from({ length: 61 }, (_, t) => t),
+    );
+  });
+
+  it("delete removes every delta for the matchup", async () => {
+    const store = new DexieCheckpointStore(db.checkpoints);
+    await store.put("k1", minimalCheckpoint(30), framesThrough(30));
+    await store.put("k1", minimalCheckpoint(60), framesThrough(60));
+    expect(await rowCountFor(db, "k1")).toBe(2);
     expect(await store.get("k1")).toBeDefined();
 
     await store.delete("k1");
     expect(await store.get("k1")).toBeUndefined();
+    expect(await rowCountFor(db, "k1")).toBe(0);
   });
 
-  it("treats a schema-invalid stored checkpoint as a miss and evicts it", async () => {
-    const store = new DexieCheckpointStore(db.checkpoints);
-    // Store a record whose `checkpoint` violates the schema, simulating stored-
-    // shape drift (e.g. a version bump made an old checkpoint unreadable).
-    // `structuredClone` a valid checkpoint then `Reflect.deleteProperty` removes
-    // a required field at the JS level so the stored record fails
-    // `EngineCheckpoint.safeParse` — exactly the corruption the safeParse-on-read
-    // guard exists to catch.
+  it("treats a schema-invalid latest checkpoint as a miss and evicts all deltas", async () => {
+    // Store a delta whose `checkpoint` violates the schema, simulating stored-
+    // shape drift (a version bump made an old checkpoint unreadable). The latest
+    // delta fails EngineCheckpoint.safeParse, so the whole matchup is a miss and
+    // every delta is evicted.
     const corrupt = structuredClone(minimalCheckpoint(1));
     Reflect.deleteProperty(corrupt, "tick");
-
     await db.checkpoints.put({
       key: "broken",
+      seq: 0,
+      checkpoint: minimalCheckpoint(0),
+      deltaFrames: [frame(0)],
+      updatedAt: Date.now(),
+      bytes: 0,
+    });
+    await db.checkpoints.put({
+      key: "broken",
+      seq: 1,
       checkpoint: corrupt,
-      preFrames: [],
+      deltaFrames: [frame(1)],
       updatedAt: Date.now(),
       bytes: 0,
     });
 
-    // The record fails EngineCheckpoint.safeParse (missing required `tick`), so
-    // it is a miss and the stale row is evicted.
+    const store = new DexieCheckpointStore(db.checkpoints);
     expect(await store.get("broken")).toBeUndefined();
-    expect(await db.checkpoints.get("broken")).toBeUndefined();
+    expect(await rowCountFor(db, "broken")).toBe(0);
   });
 
-  it("swallows a DataCloneError from put as a capacity boundary and clears the stale row", async () => {
-    // On a long battle `preFrames` grows until `table.put` OOMs the structured
-    // clone with DataCloneError. That is a capacity boundary, not a bug — the
-    // resume feature is an optimisation, never a correctness path. The put is
-    // swallowed (no throw) and any pre-existing row for the key is cleared so a
-    // later resume does not read a partial/old checkpoint.
+  it("swallows a DataCloneError from put as a capacity boundary and clears the matchup", async () => {
+    // A delta too large to clone is a capacity boundary, not a bug — the resume
+    // feature is an optimisation, never a correctness path. The put is swallowed
+    // (no throw) and every pre-existing delta for the key is cleared so a later
+    // resume does not read a partial set.
     const store = new DexieCheckpointStore(db.checkpoints);
-    // Seed an existing row for the same key to prove the stale row is cleared.
-    await store.put("k1", minimalCheckpoint(10), [frame(0)]);
-    expect(await db.checkpoints.get("k1")).toBeDefined();
+    await store.put("k1", minimalCheckpoint(30), framesThrough(30));
+    expect(await rowCountFor(db, "k1")).toBe(1);
 
     const table = withPutStub(db.checkpoints, () => {
       const error = new Error("structured clone OOM");
@@ -174,25 +271,21 @@ describe("DexieCheckpointStore", () => {
     });
     const storeWithFailingPut = new DexieCheckpointStore(table);
 
-    // The put must not throw.
     await expect(
-      storeWithFailingPut.put("k1", minimalCheckpoint(20), [frame(0), frame(1)]),
+      storeWithFailingPut.put("k1", minimalCheckpoint(60), framesThrough(60)),
     ).resolves.toBeUndefined();
 
-    // No row survives: the stale row was cleared and the new one never landed.
-    expect(await db.checkpoints.get("k1")).toBeUndefined();
-    expect(await db.checkpoints.count()).toBe(0);
+    expect(await rowCountFor(db, "k1")).toBe(0);
   });
 
   it("swallows a Dexie-WRAPPED DataCloneError (the real runtime shape) too", async () => {
     // Dexie wraps the IDB DataCloneError as a DexieError whose `.name` is the
     // wrapper's, not "DataCloneError" — so the raw-name stub above does not
     // match the real failure. The signature survives in the message, which
-    // isUncloneable must detect. Caught by a real-browser run on the heaviest
-    // (~1731-tick) battle; the raw-name stub alone let the error propagate.
+    // isUncloneable must detect.
     const store = new DexieCheckpointStore(db.checkpoints);
-    await store.put("k1", minimalCheckpoint(10), [frame(0)]);
-    expect(await db.checkpoints.get("k1")).toBeDefined();
+    await store.put("k1", minimalCheckpoint(30), framesThrough(30));
+    expect(await rowCountFor(db, "k1")).toBe(1);
 
     const table = withPutStub(db.checkpoints, () => {
       const error = new Error(
@@ -204,10 +297,9 @@ describe("DexieCheckpointStore", () => {
     const storeWithFailingPut = new DexieCheckpointStore(table);
 
     await expect(
-      storeWithFailingPut.put("k1", minimalCheckpoint(20), [frame(0), frame(1)]),
+      storeWithFailingPut.put("k1", minimalCheckpoint(60), framesThrough(60)),
     ).resolves.toBeUndefined();
-    expect(await db.checkpoints.get("k1")).toBeUndefined();
-    expect(await db.checkpoints.count()).toBe(0);
+    expect(await rowCountFor(db, "k1")).toBe(0);
   });
 
   it("rethrows a non-capacity error from put unchanged", async () => {
@@ -221,21 +313,47 @@ describe("DexieCheckpointStore", () => {
     const storeWithFailingPut = new DexieCheckpointStore(table);
 
     await expect(
-      storeWithFailingPut.put("k1", minimalCheckpoint(20), [frame(0)]),
+      storeWithFailingPut.put("k1", minimalCheckpoint(30), framesThrough(30)),
     ).rejects.toThrow("a real IDB failure");
   });
 
-  it("evicts the oldest checkpoint past the entry-count cap", async () => {
-    // Without eviction every distinct matchup adds a row that only a completed
-    // run removes, so abandoned battles accumulate without bound. A store with a
-    // 2-entry cap drops the oldest (LRU by updatedAt) when a third arrives.
+  it("evicts the oldest MATCHUP past the entry-count cap (all its deltas)", async () => {
+    // The cap counts matchups (content keys), not delta rows: a single long
+    // battle accumulates many deltas for one key without counting against the
+    // cap. A store with a 2-matchup cap drops the oldest key's deltas (LRU by
+    // updatedAt) when a third matchup arrives.
     const store = new DexieCheckpointStore(db.checkpoints, Number.MAX_SAFE_INTEGER, 2);
-    await store.put("k1", minimalCheckpoint(1), []);
-    await store.put("k2", minimalCheckpoint(2), []);
-    await store.put("k3", minimalCheckpoint(3), []);
-    expect(await store.get("k1"), "oldest key evicted").toBeUndefined();
-    expect(await store.get("k2"), "recent keys retained").toBeDefined();
-    expect(await store.get("k3"), "recent keys retained").toBeDefined();
+    await store.put("k1", minimalCheckpoint(30), framesThrough(30));
+    await store.put("k1", minimalCheckpoint(60), framesThrough(60));
+    await store.put("k2", minimalCheckpoint(30), framesThrough(30));
+    // k1 has two deltas but counts as ONE matchup; k2 is the second.
+    expect(await rowCountFor(db, "k1")).toBe(2);
+
+    await store.put("k3", minimalCheckpoint(30), framesThrough(30));
+
+    expect(await store.get("k1"), "oldest matchup evicted").toBeUndefined();
+    expect(await store.get("k2"), "recent matchups retained").toBeDefined();
+    expect(await store.get("k3"), "recent matchups retained").toBeDefined();
+    // k1's two deltas were both removed; only the two retained matchups remain.
     expect(await db.checkpoints.count(), "only the cap remains").toBe(2);
+  });
+
+  it("evicts the oldest matchup past the byte budget (all its deltas)", async () => {
+    // The byte budget sums every delta's bytes per matchup. Calibrate the budget
+    // to one entry's estimated size + 1: one entry fits, two do not, so the
+    // oldest matchup is evicted when the second arrives.
+    const cp = minimalCheckpoint(30);
+    const oneEntry = estimateCheckpointBytes(cp, framesThrough(30));
+    const store = new DexieCheckpointStore(
+      db.checkpoints,
+      oneEntry + 1,
+      Number.MAX_SAFE_INTEGER,
+    );
+    await store.put("k1", cp, framesThrough(30));
+    await store.put("k2", cp, framesThrough(30));
+
+    expect(await store.get("k1"), "oldest matchup evicted on byte budget").toBeUndefined();
+    expect(await store.get("k2"), "newest matchup retained").toBeDefined();
+    expect(await db.checkpoints.count()).toBe(1);
   });
 });

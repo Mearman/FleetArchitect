@@ -58,23 +58,35 @@ export interface SimCacheRecord {
 }
 
 /**
- * One in-progress battle checkpoint, the resume state for an interrupted run.
- * Keyed by the same content `key` as {@link SimCacheRecord} (one latest
- * checkpoint per matchup — overwrite on each capture). `checkpoint` is the
- * engine snapshot to resume from; `preFrames` are the frames up to and including
- * `checkpoint.tick`, which the resume decorator stitches onto the resumed run's
- * tail (the resumed engine yields only frames `tick+1..end`) to reconstruct the
- * full `BattleResult`. `updatedAt` is an epoch-ms timestamp for diagnostics.
- * Stored via `structuredClone` semantics (Dexie / IndexedDB), never JSON, so
- * the checkpoint's `±Infinity` / `-0` fields survive exactly.
+ * One DELTA of an in-progress battle checkpoint, the resume state for an
+ * interrupted run. A run is stored as an ordered sequence of delta rows
+ * addressed by the composite `[key+seq]` primary key (one row per checkpoint
+ * capture, NOT one overwrite-per-key); `key` is the same content key as
+ * {@link SimCacheRecord}. Each row carries only the frames NEW since the
+ * previous delta (`deltaFrames`), so a capture structured-clones the ~30 new
+ * frames rather than the whole growing history — the old monolithic `preFrames`
+ * shape was O(T²) in clone cost over a run.
+ *
+ * `checkpoint` is the engine snapshot captured at this delta's tick; the
+ * resume path concatenates every delta's `deltaFrames` in `seq` order to
+ * reconstruct the full `0..checkpoint.tick` prefix and takes the LATEST delta's
+ * checkpoint as the resume point (older deltas' checkpoints are dead storage
+ * — ignored, never resumed from). `updatedAt` is an epoch-ms timestamp for
+ * diagnostics and eviction ranking. Stored via `structuredClone` semantics
+ * (Dexie / IndexedDB), never JSON, so the checkpoint's `±Infinity` / `-0`
+ * fields survive exactly.
  */
-export interface CheckpointRecord {
+export interface CheckpointDeltaRecord {
+  /** The content key shared by every delta of one matchup. */
   key: string;
+  /** Monotonic sequence within `key`; delta 0 holds the first capture's frames. */
+  seq: number;
   checkpoint: EngineCheckpoint;
-  preFrames: BattleFrame[];
+  /** Only the frames new since delta `seq-1` (delta 0: frames `0..first tick`). */
+  deltaFrames: BattleFrame[];
   updatedAt: number;
-  /** Serialised size estimate (typed-array bytes + coarse overhead) for the
-   *  byte-budget eviction, mirroring `SimCacheRecord.bytes`. */
+  /** Serialised size estimate (this delta's checkpoint + `deltaFrames` bytes)
+   *  for the byte-budget eviction, mirroring `SimCacheRecord.bytes`. */
   bytes: number;
 }
 
@@ -92,7 +104,7 @@ class FleetArchitectDatabase extends Dexie {
   fleet_revisions!: Table<FleetRevisionRecord, [string, number]>;
   formation_template_revisions!: Table<FormationTemplateRevisionRecord, [string, number]>;
   simCache!: Table<SimCacheRecord, string>;
-  checkpoints!: Table<CheckpointRecord, string>;
+  checkpoints!: Table<CheckpointDeltaRecord, [string, number]>;
 
   constructor(name = "fleet-architect", options?: DexieOptions) {
     super(name, options);
@@ -147,6 +159,20 @@ class FleetArchitectDatabase extends Dexie {
       formationTemplates: "id, name, updatedAt",
       formation_template_revisions: "[id+revision], id",
     });
+    // Checkpoints become incremental delta rows: primary key [key+seq] (one row
+    // per capture, not one overwrite-per-key), with `key` indexed so all deltas
+    // of a matchup are read back and concatenated on resume. The primary-key
+    // change from `key` to `[key+seq]` recreates the object store, so old
+    // monolithic `preFrames` records are DISCARDED (never mis-read as a delta);
+    // the upgrade also clears explicitly as belt-and-braces against any row that
+    // might survive the recreation.
+    this.version(9)
+      .stores({
+        checkpoints: "[key+seq], key, updatedAt",
+      })
+      .upgrade(async (tx) => {
+        await tx.table("checkpoints").clear();
+      });
   }
 }
 
@@ -178,19 +204,83 @@ export function _setDatabaseForTesting(instance: FleetArchitectDatabase): void {
 export { FleetArchitectDatabase };
 
 /**
+ * Revision-keyed parse cache, shared across the three repositories. A
+ * `useLiveQuery` re-runs its querier on every write to the observed table, so a
+ * single save re-`toArray()`s and re-parses EVERY row. Keying the cached parse
+ * on `(id, revision)` means unchanged rows (the save bumped only one row's
+ * revision) return the cached object and skip the Zod reparse that dominated
+ * that re-fire. The save paths (`saveShipDesign` / `saveFleet` /
+ * `saveFormationTemplate`) bump `revision` on every content change, so a
+ * matching revision is a guarantee the record is byte-identical to the cached
+ * parse.
+ *
+ * `revision` is read off the RAW record, so a legacy row whose revision reads
+ * `NaN` (documented for older fleet records) always misses — `NaN !== NaN` —
+ * and re-parses each time: correct, just uncached. Session-scoped: a deploy
+ * reloads the page and drops the map. Returning the same object reference for
+ * unchanged records is intended (React child memoisation benefits) and safe
+ * because these records are treated as immutable.
+ */
+interface ParseCacheEntry<T> {
+  revision: number | undefined;
+  parsed: T;
+}
+const shipParseCache = new Map<string, ParseCacheEntry<ShipDesign>>();
+const fleetParseCache = new Map<string, ParseCacheEntry<Fleet>>();
+const templateParseCache = new Map<string, ParseCacheEntry<FormationTemplate>>();
+
+/** Parse a stored design through the revision cache (hit → skip the reparse). */
+function parseDesignCached(record: SerializedShipDesign): ShipDesign {
+  const cached = shipParseCache.get(record.id);
+  if (cached !== undefined && cached.revision === record.revision) {
+    return cached.parsed;
+  }
+  const parsed = parseDesignRecord(record);
+  shipParseCache.set(record.id, { revision: record.revision, parsed });
+  return parsed;
+}
+
+/** Parse a stored fleet through the revision cache (hit → skip the reparse). */
+function parseFleetCached(record: Fleet): Fleet {
+  const cached = fleetParseCache.get(record.id);
+  if (cached !== undefined && cached.revision === record.revision) {
+    return cached.parsed;
+  }
+  const parsed = parseFleetRecord(record);
+  fleetParseCache.set(record.id, { revision: record.revision, parsed });
+  return parsed;
+}
+
+/** Parse a stored formation template through the revision cache (hit → skip). */
+function parseTemplateCached(record: FormationTemplate): FormationTemplate {
+  const cached = templateParseCache.get(record.id);
+  if (cached !== undefined && cached.revision === record.revision) {
+    return cached.parsed;
+  }
+  const parsed = FormationTemplate.parse(record);
+  templateParseCache.set(record.id, { revision: record.revision, parsed });
+  return parsed;
+}
+
+/**
  * Repository over ship designs. Designs are stored in the compacted
  * serialisation shape (solid cells may omit all-open `edges`) and reparsed
  * through `ShipDesign` on read so consumers always see a full design with its
  * defaults filled in.
+ *
+ * Reads parse through {@link parseDesignCached}, a revision-keyed cache so a
+ * `useLiveQuery` re-fire after a write re-parses ONLY the changed row(s);
+ * unchanged rows (same `id` + `revision`) return the cached object and skip the
+ * Zod reparse that was the cost of the full-table `toArray()` re-run.
  */
 function makeShipRepository(
   table: Table<SerializedShipDesign, string>,
 ): Repository<ShipDesign> {
   return {
-    list: async () => (await table.toArray()).map((d) => parseDesignRecord(d)),
+    list: async () => (await table.toArray()).map((d) => parseDesignCached(d)),
     get: async (id) => {
       const record = await table.get(id);
-      return record === undefined ? undefined : parseDesignRecord(record);
+      return record === undefined ? undefined : parseDesignCached(record);
     },
     save: async (entity) => {
       await table.put(compactDesignForSerialization(entity));
@@ -209,10 +299,10 @@ function makeShipRepository(
  */
 function makeFleetRepository(table: Table<Fleet, string>): Repository<Fleet> {
   return {
-    list: async () => (await table.toArray()).map(parseFleetRecord),
+    list: async () => (await table.toArray()).map((r) => parseFleetCached(r)),
     get: async (id) => {
       const record = await table.get(id);
-      return record === undefined ? undefined : parseFleetRecord(record);
+      return record === undefined ? undefined : parseFleetCached(record);
     },
     save: async (entity) => {
       await table.put(entity);
@@ -233,10 +323,10 @@ function makeFormationTemplateRepository(
   table: Table<FormationTemplate, string>,
 ): Repository<FormationTemplate> {
   return {
-    list: async () => (await table.toArray()).map((r) => FormationTemplate.parse(r)),
+    list: async () => (await table.toArray()).map((r) => parseTemplateCached(r)),
     get: async (id) => {
       const record = await table.get(id);
-      return record === undefined ? undefined : FormationTemplate.parse(record);
+      return record === undefined ? undefined : parseTemplateCached(record);
     },
     save: async (entity) => {
       await table.put(entity);
@@ -284,7 +374,7 @@ export function simCacheTable(): Table<SimCacheRecord, string> {
  * rebind the database via `_setDatabaseForTesting`, so this always resolves the
  * current instance.
  */
-export function checkpointsTable(): Table<CheckpointRecord, string> {
+export function checkpointsTable(): Table<CheckpointDeltaRecord, [string, number]> {
   return database().checkpoints;
 }
 
