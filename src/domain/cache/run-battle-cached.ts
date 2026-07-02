@@ -29,8 +29,12 @@ import { deriveCacheKey } from "@/domain/cache/key";
 import { engineAlgorithmSignature } from "@/domain/cache/algorithm-signature";
 import { getSimConfig } from "@/domain/cache/sim-config";
 import { runBattle } from "@/domain/simulation/engine";
-import type { BattleInputs } from "@/domain/simulation/types";
+import { resolveFleetToCombatShips } from "@/domain/resolve";
+import type { Catalog } from "@/domain/catalog";
+import type { BattleInputs, CombatShip } from "@/domain/simulation/types";
 import type { BattleResult } from "@/schema/battle";
+import type { Fleet } from "@/schema/fleet";
+import type { ShipDesign } from "@/schema/ship";
 
 /** Module-level cache so every call in a test run shares one disk tier. */
 const cache = new DiskSimCache();
@@ -56,4 +60,43 @@ export async function runBattleCached(
   });
   await cache.set(key, result);
   return result;
+}
+
+/**
+ * Resolved-ship template store keyed by fleet object then side.
+ * `resolveFleetToCombatShips` is pure (no `Math.random` / `Date`) and the
+ * `designs` / `catalog` are constant per test run, so the resolved template is
+ * reused across battles that deploy the same fleet on the same side. Every
+ * caller gets a `structuredClone` of the template, so each owns a fresh copy
+ * (safe even for direct-`runBattle` byte-identity tests); a clone is
+ * value-identical to a fresh resolve, so frames are unchanged.
+ */
+const resolveTemplates = new WeakMap<
+  Fleet,
+  Map<"attacker" | "defender", CombatShip[]>
+>();
+
+/**
+ * Cross-call resolve cache for tests: returns the resolved combat ships for a
+ * fleet/side, reusing a stored template and cloning it on every call. Mirrors
+ * {@link resolveFleetToCombatShips} exactly on a miss; the only difference
+ * across calls is that the work is done once per (fleet, side).
+ */
+export function resolveFleetToCombatShipsCached(
+  fleet: Fleet,
+  designs: ReadonlyMap<string, ShipDesign>,
+  catalog: Catalog,
+  side: "attacker" | "defender",
+): CombatShip[] {
+  let sideMap = resolveTemplates.get(fleet);
+  if (sideMap === undefined) {
+    sideMap = new Map<"attacker" | "defender", CombatShip[]>();
+    resolveTemplates.set(fleet, sideMap);
+  }
+  let template = sideMap.get(side);
+  if (template === undefined) {
+    template = resolveFleetToCombatShips(fleet, designs, catalog, side);
+    sideMap.set(side, template);
+  }
+  return structuredClone(template);
 }

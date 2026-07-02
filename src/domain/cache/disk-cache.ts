@@ -1,6 +1,6 @@
 import type * as FsPromises from "node:fs/promises";
 import type * as NodePath from "node:path";
-import { BattleResult } from "@/schema/battle";
+import { isBattleResult, type BattleResult } from "@/schema/battle";
 import type { SimCache } from "@/domain/cache/contract";
 
 /**
@@ -65,17 +65,19 @@ export class DiskSimCache implements SimCache {
       throw error;
     }
     const json: unknown = JSON.parse(raw);
-    const parsed = BattleResult.safeParse(json);
-    if (!parsed.success) {
+    if (!isBattleResult(json)) {
       // Shape drift: the stored result no longer matches the schema. Treat it
       // as a miss and evict the stale file so it is not re-read every lookup.
+      // The cheap shape guard suffices here — the cache key self-invalidates on
+      // schema/engine drift, so this only catches gross corruption — and avoids
+      // a deep Zod traversal of the full frame graph on every warm read.
       await fs.rm(file, { force: true });
       return undefined;
     }
     // Touch mtime so this entry is most-recently used for LRU eviction.
     const now = new Date();
     await fs.utimes(file, now, now);
-    return parsed.data;
+    return json;
   }
 
   async set(key: string, value: BattleResult): Promise<void> {

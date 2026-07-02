@@ -92,32 +92,18 @@ export const CellKind = z.enum([
 export type CellKind = z.infer<typeof CellKind>;
 
 /**
- * One cell's DYNAMIC state at a single tick, carried as a set of NAMED TYPED
- * ARRAYS index-matched to the static {@link ShipCellLayout} (both s.modules
- * order): for a ship with N modules, `cellHp[i]` / `cellAlive[i]` etc. describe
- * the i-th cell. The cell's static layout (kind, ship-local offset, max HP,
- * surface kind) lives once-per-battle in {@link ShipCellLayout}, keyed by the
- * same index. The renderer reconstructs each cell's world position from the
- * ship pose and the static offset, so it is not serialised every frame.
- *
- * The heavy per-cell fields are FLATTENED to typed arrays and transferred
+ * One cell's DYNAMIC state at a single tick, as NAMED TYPED ARRAYS index-matched
+ * to the static {@link ShipCellLayout} (same s.modules order): `cellHp[i]` etc.
+ * describe the i-th cell; the static layout (kind, offset, max HP, surface) lives
+ * once per battle in {@link ShipCellLayout}. The typed arrays are transferred
  * zero-copy across the worker boundary (postMessage `transfer` list), eliminating
- * the structured-clone cost that was the source of Chrome's `[Violation]
- * 'message' handler` warnings on the heaviest frames. Float64Array holds the
- * same IEEE-754 doubles the engine uses — no Float32 rounding, no determinism
- * risk. The engine itself is unchanged; only the snapshot's serialisation
- * changed from JS objects to flat typed arrays.
+ * the structured-clone cost behind Chrome's `[Violation] 'message' handler`
+ * warnings; Float64Array holds the engine's exact IEEE-754 doubles (no Float32
+ * rounding, no determinism risk).
  *
- * Field presence:
- *  - `cellHp` (Float64Array) and `cellAlive` (Uint8Array, 0/1) are ALWAYS
- *    present (every cell has hp and an alive flag).
- *  - The remaining arrays are OPTIONAL: present only when at least one cell on
- *    the ship carries that field. Sentinel values fill the cells without it:
- *    NaN for `cellTurretAngle`/`cellCharge`/`cellReactiveHp`; -1 for `cellAmmo`;
- *    0 (meaning "no door on this edge") for the door arrays.
- *  - The door state is flattened to four Uint8Array per direction
- *    (cellDoorN/E/S/W), present only when the ship has at least one door.
- *    Each value is 0 = no door, 1 = open, 2 = closed.
+ * Field presence: `cellHp`/`cellAlive`/`cellSurfaceHp` are ALWAYS present; the
+ * rest are OPTIONAL (present only when a cell carries that field) — see each
+ * field's sentinel note below.
  */
 export interface CellStateArrays {
   /** Current substrate/structure HP of each cell. Always present. */
@@ -749,6 +735,19 @@ export const BattleResult = z.object({
     .optional(),
 });
 export type BattleResult = z.infer<typeof BattleResult>;
+
+/** Cheap top-level shape guard for a {@link BattleResult}: narrows `unknown`
+ *  with `typeof` + `in`, no deep parse. Used by the disk and IndexedDB cache
+ *  tiers to skip a full Zod traversal on warm reads; only catches gross
+ *  corruption because the cache key self-invalidates on schema/engine drift. */
+export function isBattleResult(value: unknown): value is BattleResult {
+  if (typeof value !== "object" || value === null) return false;
+  if (!("id" in value) || typeof value.id !== "string") return false;
+  if (!("winner" in value) || typeof value.winner !== "string") return false;
+  if (!("ticks" in value) || typeof value.ticks !== "number") return false;
+  if (!("frames" in value) || !Array.isArray(value.frames)) return false;
+  return true;
+}
 
 /**
  * A {@link BattleResult} minus its `frames`. The worker streams frames in
