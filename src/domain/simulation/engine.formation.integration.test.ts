@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
+import { runBattleCached } from "@/domain/cache/run-battle-cached";
 import type { BattleInputs, CombatShip } from "@/domain/simulation/types";
 import type { BattleFrame } from "@/schema/battle";
 import type { Doctrine } from "@/schema/ai";
@@ -212,8 +213,8 @@ function escortFireTicks(
 }
 
 describe("formation-doctrine integration: a doctrine-active fleet through a full battle", () => {
-  it("fires the escort's holdFire rule once the carrier is engaged past the hold tick, suppressing beam fire", () => {
-    const held = runBattle(buildFleet(escortHoldDoctrine));
+  it("fires the escort's holdFire rule once the carrier is engaged past the hold tick, suppressing beam fire", async () => {
+    const held = await runBattleCached(buildFleet(escortHoldDoctrine));
     const fireTicks = escortFireTicks(held.frames);
 
     // Sanity: the escort was actually shooting before the rule could fire, so
@@ -241,12 +242,12 @@ describe("formation-doctrine integration: a doctrine-active fleet through a full
     expect(escortLate?.targetId, "escort should still hold the drone locked while holding fire").toBe("d-drone");
   });
 
-  it("does not suppress fire when the formation reference resolves to no formation", () => {
+  it("does not suppress fire when the formation reference resolves to no formation", async () => {
     // Same temporal gate, wrong role: formationEngaged never resolves, so the
     // rule never fires and the escort keeps shooting past the hold tick. This
     // is the contrasting value — identical fleet and tick gate, different
     // formation reference — that isolates the formation predicate as the cause.
-    const wrongRole = runBattle(buildFleet(escortWrongRoleDoctrine));
+    const wrongRole = await runBattleCached(buildFleet(escortWrongRoleDoctrine));
     const fireTicks = escortFireTicks(wrongRole.frames);
 
     expect(

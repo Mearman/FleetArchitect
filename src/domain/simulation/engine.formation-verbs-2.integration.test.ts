@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { runBattle } from "@/domain/simulation/engine";
+import { runBattleCached } from "@/domain/cache/run-battle-cached";
 import type { BattleFrame } from "@/schema/battle";
 import type { Doctrine, SpatialObjective } from "@/schema/ai";
 import type { WeaponEffect, ModuleEffect } from "@/schema/module";
@@ -192,7 +192,7 @@ function bearing(
 // ---------------------------------------------------------------------------
 
 describe("formation-doctrine verbs: ORBIT", () => {
-  it("circles the anchor: the bearing to the anchor rotates over ticks while the radius stays near the maintain distance", () => {
+  it("circles the anchor: the bearing to the anchor rotates over ticks while the radius stays near the maintain distance", async () => {
     // `orbit` is an offsetting bearing: the desired point is the anchor shifted
     // by `radius` (= the paired `maintain` range, 200 m) along
     // `phase + omega·tick`, and `want` is 0 (sit on that circling point). With
@@ -252,7 +252,7 @@ describe("formation-doctrine verbs: ORBIT", () => {
       structure: 99999,
       durable: true,
     });
-    const result = runBattle(inputs([anchor, orbiter, watcher], 40, SEED));
+    const result = await runBattleCached(inputs([anchor, orbiter, watcher], 40, SEED));
 
     // Bearing rotates: the angle from the anchor to the orbiter at tick 30
     // differs from tick 10 by well over 0.5 rad (the orbit point swept 4 rad).
@@ -279,7 +279,7 @@ describe("formation-doctrine verbs: ORBIT", () => {
 // ---------------------------------------------------------------------------
 
 describe("formation-doctrine verbs: EVADE", () => {
-  it("opens range beyond the evade floor when starting inside it", () => {
+  it("opens range beyond the evade floor when starting inside it", async () => {
     // `evade` maps to `want = minRange` against the target's position (free
     // bearing — the controller picks the approach). The ship starts at 150 m,
     // well inside the 300 m evade floor, and must open range past 280 m rather
@@ -321,7 +321,7 @@ describe("formation-doctrine verbs: EVADE", () => {
       structure: 99999,
       durable: true,
     });
-    const result = runBattle(inputs([evader, dummy], 30, SEED));
+    const result = await runBattleCached(inputs([evader, dummy], 30, SEED));
 
     // Starts at 150 m; by tick 25 the evader has opened range past the 300 m
     // floor (allowing a little controller undershoot).
@@ -339,7 +339,7 @@ describe("formation-doctrine verbs: EVADE", () => {
 // ---------------------------------------------------------------------------
 
 describe("formation-doctrine verbs: MAINTAIN", () => {
-  it("settles near the maintain range when starting well inside it", () => {
+  it("settles near the maintain range when starting well inside it", async () => {
     // `maintain` maps to `want = range` (200 m) against the target's position.
     // The ship starts at 100 m and must open range to settle near 200 m — not
     // close to zero, not flee past the tolerance band.
@@ -377,7 +377,7 @@ describe("formation-doctrine verbs: MAINTAIN", () => {
       structure: 99999,
       durable: true,
     });
-    const result = runBattle(inputs([holder, dummy], 40, SEED));
+    const result = await runBattleCached(inputs([holder, dummy], 40, SEED));
 
     // Starts at 100 m; once settled (tick 30+) the separation sits near 200 m.
     const startDist = dist(result.frames, 1, "holder", "dummy");
@@ -395,7 +395,7 @@ describe("formation-doctrine verbs: MAINTAIN", () => {
 // ---------------------------------------------------------------------------
 
 describe("formation-doctrine verbs: MEMBERS_OF", () => {
-  it("targets a member of the referenced enemy formation, not the nearer non-member", () => {
+  it("targets a member of the referenced enemy formation, not the nearer non-member", async () => {
     // `membersOf` is a relational FILTER: it keeps only enemies whose
     // formationId resolves to the referenced enemy role. Geometry isolates the
     // verb: the sniper (nearer, 200 m) is in a different formation; the two
@@ -462,7 +462,7 @@ describe("formation-doctrine verbs: MEMBERS_OF", () => {
       weapons: [beam({ range: 1200, damage: 0 })],
       doctrine: membersDoctrine,
     });
-    const result = runBattle(inputs([sniper, vanguardA, vanguardB, defender], 30, SEED));
+    const result = await runBattleCached(inputs([sniper, vanguardA, vanguardB, defender], 30, SEED));
 
     // The membersOf defender picks a vanguard ship — not the nearer sniper.
     // This holds across the battle: the filter excludes the sniper every tick.
@@ -481,7 +481,7 @@ describe("formation-doctrine verbs: MEMBERS_OF", () => {
 // ---------------------------------------------------------------------------
 
 describe("formation-doctrine verbs: CLASS", () => {
-  it("targets the enemy of the authored classification, not the nearer other class", () => {
+  it("targets the enemy of the authored classification, not the nearer other class", async () => {
     // `class` is a relational FILTER: it keeps only enemies whose
     // `classification` matches. The cruiser (nearer, 200 m) is filtered out;
     // the fighter (farther, 500 m) is the only candidate. A nearest-targeting
@@ -529,7 +529,7 @@ describe("formation-doctrine verbs: CLASS", () => {
       weapons: [beam({ range: 1200, damage: 0 })],
       doctrine: classDoctrine,
     });
-    const result = runBattle(inputs([cruiser, fighter, defender], 20, SEED));
+    const result = await runBattleCached(inputs([cruiser, fighter, defender], 20, SEED));
 
     // The class(fighter) defender targets the fighter, not the nearer cruiser.
     for (const t of [5, 10, 15, 19]) {
@@ -544,7 +544,7 @@ describe("formation-doctrine verbs: CLASS", () => {
 // ---------------------------------------------------------------------------
 
 describe("formation-doctrine verbs: PD_PRIORITY", () => {
-  it("biases targeting toward a launched drone once one is in awareness", () => {
+  it("biases targeting toward a launched drone once one is in awareness", async () => {
     // `pdPriority` is a +1 scoring bias for phantom (drone/decoy) candidates,
     // applied in `scoreEnemy` (not a filter). A drone launched by an enemy
     // hangar enters the defender's awareness once in sensor range; the bias
@@ -606,7 +606,7 @@ describe("formation-doctrine verbs: PD_PRIORITY", () => {
       weapons: [beam({ range: 600, damage: 0 })],
       doctrine: pdDoctrine,
     });
-    const result = runBattle(inputs([carrier, defender], 40, SEED));
+    const result = await runBattleCached(inputs([carrier, defender], 40, SEED));
 
     // Premise: drones ARE launched (the carrier's bay is operational). If none
     // ever appear, the assertion below would be vacuous, so check first.

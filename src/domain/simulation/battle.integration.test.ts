@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { resolveFleetToCombatShips } from "@/domain/resolve";
 import { runBattle } from "@/domain/simulation/engine";
+import { runBattleCached } from "@/domain/cache/run-battle-cached";
 import { catalog } from "@/data/catalog";
 import { createId, nowIso } from "@/domain/id";
 import type { Fleet } from "@/schema/fleet";
@@ -74,7 +75,7 @@ function fleet(id: string, designId: string): Fleet {
 }
 
 describe("battle pipeline (resolve -> runBattle)", () => {
-  it("resolves a fleet to combat ships and produces a well-formed, terminating battle", () => {
+  it("resolves a fleet to combat ships and produces a well-formed, terminating battle", async () => {
     const design = armedFighter(createId("design"));
     const attacker = fleet(createId("fleet"), design.id);
     const defender = fleet(createId("fleet"), design.id);
@@ -87,7 +88,7 @@ describe("battle pipeline (resolve -> runBattle)", () => {
     expect(ships).toHaveLength(4);
     expect(ships.filter((s) => s.side === "attacker")).toHaveLength(2);
 
-    const result = runBattle({
+    const result = await runBattleCached({
       ships,
       attackerFleetId: attacker.id,
       defenderFleetId: defender.id,
@@ -152,7 +153,7 @@ describe("battle pipeline (resolve -> runBattle)", () => {
     expect(resultB.ticks).toBe(resultA.ticks);
   });
 
-  it("produces a well-formed result for an armed mirror match", () => {
+  it("produces a well-formed result for an armed mirror match", async () => {
     const design = armedFighter(createId("design"));
     const attacker = fleet(createId("fleet"), design.id);
     const defender = fleet(createId("fleet"), design.id);
@@ -161,7 +162,7 @@ describe("battle pipeline (resolve -> runBattle)", () => {
       ...resolveFleetToCombatShips(attacker, designs, catalog(), "attacker"),
       ...resolveFleetToCombatShips(defender, designs, catalog(), "defender"),
     ];
-    const result = runBattle({ ships, attackerFleetId: attacker.id, defenderFleetId: defender.id, anomalies: [], seed: 42, maxTicks: 600 });
+    const result = await runBattleCached({ ships, attackerFleetId: attacker.id, defenderFleetId: defender.id, anomalies: [], seed: 42, maxTicks: 600 });
     // The minimal armedFighter is a non-resolving degenerate matchup (see the
     // test above): it deals no damage, so without the removed watchdog it has no
     // internal termination. The test caps it and asserts the pipeline still

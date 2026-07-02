@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { runBattle } from "@/domain/simulation/engine";
+import { runBattleCached } from "@/domain/cache/run-battle-cached";
 import type { BattleFrame } from "@/schema/battle";
 import type { Doctrine, SpatialObjective } from "@/schema/ai";
 import type { WeaponEffect } from "@/schema/module";
@@ -172,7 +172,7 @@ function dist(
 // ---------------------------------------------------------------------------
 
 describe("formation-doctrine verbs: KITE", () => {
-  it("opens range toward the kite distance and holds there, rather than closing or fleeing without bound", () => {
+  it("opens range toward the kite distance and holds there, rather than closing or fleeing without bound", async () => {
     // `kite` is a non-hold range verb, so it must be authored as a rule's
     // `then.spatial` (the only path that writes `aiSpatial`). `tickAfter: 0`
     // is the always-true gate so the verb fires every tick. The kiter starts
@@ -209,7 +209,7 @@ describe("formation-doctrine verbs: KITE", () => {
       y: 0,
       structure: 99999,
     });
-    const result = runBattle(inputs([kiter, dummy], 90, SEED));
+    const result = await runBattleCached(inputs([kiter, dummy], 90, SEED));
 
     // The kiter must OPEN range: by mid-battle it is markedly farther than at
     // the start (without the kite verb it would close to engagement range).
@@ -247,7 +247,7 @@ describe("formation-doctrine verbs: KITE", () => {
 // ---------------------------------------------------------------------------
 
 describe("formation-doctrine verbs: HOLD", () => {
-  it("station-keeps near its tick-0 position (base.spatial hold is the one range kind the base path reads)", () => {
+  it("station-keeps near its tick-0 position (base.spatial hold is the one range kind the base path reads)", async () => {
     // `hold` IS read from `base.spatial` by `isHoldRange`, so no rule is
     // needed: the translation controller station-keeps at the current range,
     // damping velocity so the ship holds its post against any drift.
@@ -270,7 +270,7 @@ describe("formation-doctrine verbs: HOLD", () => {
       y: 0,
       structure: 99999,
     });
-    const result = runBattle(inputs([holder, dummy], 20, SEED));
+    const result = await runBattleCached(inputs([holder, dummy], 20, SEED));
 
     // A holding ship station-keeps: it never wanders more than 500 m from its
     // tick-0 post (in practice it stays within a few metres — the station-keeper
@@ -290,7 +290,7 @@ describe("formation-doctrine verbs: HOLD", () => {
 // ---------------------------------------------------------------------------
 
 describe("formation-doctrine verbs: THREATS_TO", () => {
-  it("targets the enemy threatening the carrier, not the nearer non-threat", () => {
+  it("targets the enemy threatening the carrier, not the nearer non-threat", async () => {
     // `threatsTo` is a relational mode, so it must be a rule's `then.targeting`
     // (the only path that writes `aiTargeting`). The filter keeps only enemies
     // whose current target is a member of the referenced friendly formation.
@@ -376,7 +376,7 @@ describe("formation-doctrine verbs: THREATS_TO", () => {
       }),
     ];
 
-    const result = runBattle(inputs(buildFleet(threatsDoctrine), 30, SEED));
+    const result = await runBattleCached(inputs(buildFleet(threatsDoctrine), 30, SEED));
 
     // Premises: the striker threatens the carrier (targets it), and the decoy
     // does not (targets the escort). These make the threatsTo assertion
@@ -402,7 +402,7 @@ describe("formation-doctrine verbs: THREATS_TO", () => {
     // Contrasting value: with default nearest targeting (no rule), the same
     // escort picks the nearer DECOY. Identical fleet and geometry, different
     // targeting doctrine — this isolates threatsTo as the cause.
-    const control = runBattle(inputs(buildFleet(nearestDoctrine), 30, SEED));
+    const control = await runBattleCached(inputs(buildFleet(nearestDoctrine), 30, SEED));
     const controlEscort = shipAt(control, 15, "escort");
     expect(
       controlEscort.targetId,
@@ -416,7 +416,7 @@ describe("formation-doctrine verbs: THREATS_TO", () => {
 // ---------------------------------------------------------------------------
 
 describe("formation-doctrine verbs: FORMATION_STRENGTH retreat", () => {
-  it("holds station while the carrier is healthy, then flees once the carrier's formation strength drops below half", () => {
+  it("holds station while the carrier is healthy, then flees once the carrier's formation strength drops below half", async () => {
     // `formationStrength` is a formation condition, so the rule is evaluated by
     // the formation-doctrine pass. `then: { stance: "retreat" }` would be
     // silently dropped on a formation-conditioned rule (stepAi does not fire
@@ -495,7 +495,7 @@ describe("formation-doctrine verbs: FORMATION_STRENGTH retreat", () => {
       role: "gunner",
     });
 
-    const result = runBattle(inputs([carrier, escort, gunner], 60, SEED));
+    const result = await runBattleCached(inputs([carrier, escort, gunner], 60, SEED));
 
     // Premise: the carrier must actually take damage — find the tick its
     // structure first drops below half. If it never does, the rule never fires
@@ -536,7 +536,7 @@ describe("formation-doctrine verbs: FORMATION_STRENGTH retreat", () => {
     ).toBeGreaterThan(crossSep + 30);
   });
 
-  it("kite authored on base.spatial (no rule) opens range toward maxRange", () => {
+  it("kite authored on base.spatial (no rule) opens range toward maxRange", async () => {
     // The kite range kind authored directly on base.spatial — NOT in a rule's
     // then.spatial — should still take effect. Currently it's silently ignored
     // (the movement consumer only reads aiSpatial from rules; base.spatial is
@@ -568,7 +568,7 @@ describe("formation-doctrine verbs: FORMATION_STRENGTH retreat", () => {
       },
       rules: [],
     };
-    const res = runBattle(
+    const res = await runBattleCached(
       inputs([kicker, target], 60, SEED),
     );
     const ship = shipAt(res, 50, "s-kicker");

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { runBattle } from "@/domain/simulation/engine";
+import { runBattleCached } from "@/domain/cache/run-battle-cached";
 import { resolveFleetToCombatShips } from "@/domain/resolve";
 import { catalog } from "@/data/catalog";
 import { presetDesigns, presetFleets } from "@/data/presets";
@@ -82,10 +82,10 @@ function buildFullMatrix(): Matchup[] {
 /** Resolve both fleets to combat ships and run the battle, returning the
  *  result. Each call re-resolves (the resolver produces fresh per-cell modules
  *  with deep-cloned effects, so battles never observe prior state). */
-function resolveAndBattle(
+async function resolveAndBattle(
   attackerFleetId: string,
   defenderFleetId: string,
-): BattleResult {
+): Promise<BattleResult> {
   const attacker = presetFleets.find((f) => f.id === attackerFleetId);
   const defender = presetFleets.find((f) => f.id === defenderFleetId);
   if (attacker === undefined) {
@@ -98,7 +98,7 @@ function resolveAndBattle(
     ...resolveFleetToCombatShips(attacker, designs, cat, "attacker"),
     ...resolveFleetToCombatShips(defender, designs, cat, "defender"),
   ];
-  return runBattle({
+  return runBattleCached({
     ships,
     attackerFleetId: attacker.id,
     defenderFleetId: defender.id,
@@ -115,8 +115,8 @@ describe("faction matrix (full): every preset fleet vs every other", () => {
   // well under a minute in the bench; 120 s is generous headroom for a slow
   // CI runner without masking a real hang.
   for (const m of matrix) {
-    it(`${m.name} resolves to a valid outcome`, () => {
-      const result = resolveAndBattle(m.attacker.id, m.defender.id);
+    it(`${m.name} resolves to a valid outcome`, async () => {
+      const result = await resolveAndBattle(m.attacker.id, m.defender.id);
 
       expect(
         result.winner,

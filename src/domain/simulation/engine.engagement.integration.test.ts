@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
+import { runBattleCached } from "@/domain/cache/run-battle-cached";
 import { resolveFleetToCombatShips } from "@/domain/resolve";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import { catalog } from "@/data/catalog";
@@ -86,7 +87,7 @@ function fleetOf(id: string, designId: string, x: number, ys: readonly number[])
   };
 }
 
-function runEngagement(seed: number) {
+async function runEngagement(seed: number) {
   const design = corvette(createId("design"));
   const designs = new Map([[design.id, design]]);
   // Both fleets are authored in attacker coordinates (left side, facing right);
@@ -101,7 +102,7 @@ function runEngagement(seed: number) {
     ...resolveFleetToCombatShips(attacker, designs, catalog(), "attacker"),
     ...resolveFleetToCombatShips(defender, designs, catalog(), "defender"),
   ];
-  return runBattle({
+  return runBattleCached({
     ships,
     attackerFleetId: attacker.id,
     defenderFleetId: defender.id,
@@ -118,8 +119,8 @@ function fleetCentroidX(ships: { side: string; x: number; alive: boolean }[], si
 }
 
 describe("engagement: ships close and fight", () => {
-  it("ships close the distance to the enemy rather than drifting apart", () => {
-    const res = runEngagement(11);
+  it("ships close the distance to the enemy rather than drifting apart", async () => {
+    const res = await runEngagement(11);
     const first = res.frames[0];
     if (first === undefined) throw new Error("no frames");
     const startSep = Math.abs(
@@ -138,23 +139,23 @@ describe("engagement: ships close and fight", () => {
     ).toBeLessThan(startSep);
   });
 
-  it("ships engage and fight for a sustained battle", () => {
+  it("ships engage and fight for a sustained battle", async () => {
     // Verify that armed ships close the distance, acquire targets, and engage
     // in a battle that lasts multiple ticks (not immediately dying from collision
     // or getting stuck). A real engagement test would check for weapon damage,
     // but this verifies the basic pipeline works.
-    const res = runEngagement(11);
+    const res = await runEngagement(11);
     // Battle should run for a reasonable duration (not instant collision + death).
     expect(res.ticks).toBeGreaterThan(10);
     expect(res.frames.length).toBeGreaterThan(10);
   });
 
-  it("keeps the two sides facing each other as they engage (no fleeing)", () => {
+  it("keeps the two sides facing each other as they engage (no fleeing)", async () => {
     // The original bug was ships thrusting backwards and flying apart. Beyond
     // closing the distance, each side should bring its heading to bear on the
     // enemy — an attacker (facing ~0, +x) and a mirrored defender (facing ~π)
     // pointed at one another, not turned tail. Sample mid-engagement.
-    const res = runEngagement(11);
+    const res = await runEngagement(11);
     const probe = res.frames[Math.min(200, res.frames.length - 1)];
     if (probe === undefined) throw new Error("no probe frame");
     const att = probe.ships.find((s) => s.side === "attacker" && s.alive);
@@ -191,9 +192,9 @@ function lopsidedInputs() {
   return { ships, attackerFleetId: attacker.id, defenderFleetId: defender.id };
 }
 
-function runLopsided(seed: number) {
+async function runLopsided(seed: number) {
   const { ships, attackerFleetId, defenderFleetId } = lopsidedInputs();
-  return runBattle({
+  return runBattleCached({
     ships,
     attackerFleetId,
     defenderFleetId,
@@ -204,8 +205,8 @@ function runLopsided(seed: number) {
 }
 
 describe("debris: destroyed hulls leave drifting wreckage", () => {
-  it("spawns debris when a ship is destroyed in the live tick loop", () => {
-    const res = runLopsided(3);
+  it("spawns debris when a ship is destroyed in the live tick loop", async () => {
+    const res = await runLopsided(3);
     // The outnumbered defender should be destroyed, so at least one frame must
     // carry debris with positive mass and a derived bounding radius.
     const withDebris = res.frames.find((f) => f.debris !== undefined && f.debris.length > 0);
@@ -216,8 +217,8 @@ describe("debris: destroyed hulls leave drifting wreckage", () => {
     }
   });
 
-  it("never sheds a debris fragment once spawned (the field only grows)", () => {
-    const res = runLopsided(3);
+  it("never sheds a debris fragment once spawned (the field only grows)", async () => {
+    const res = await runLopsided(3);
     let maxSoFar = 0;
     for (const f of res.frames) {
       const count = f.debris?.length ?? 0;

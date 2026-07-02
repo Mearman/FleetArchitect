@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { runBattle } from "@/domain/simulation/engine";
+import { runBattleCached } from "@/domain/cache/run-battle-cached";
 import { catalog } from "@/data/catalog";
 import type { PointDefenseEffect, WeaponEffect, WeaponType } from "@/schema/module";
 import type { CombatShip } from "@/domain/simulation/types";
+import type { BattleResult } from "@/schema/battle";
 import {
   inputs,
   modularShip,
@@ -171,8 +172,8 @@ function buildDummy(opts: {
  * kind: the battle completes with a valid winner, projectiles appear in flight,
  * the projectiles carry the expected kind, and the dummy takes damage.
  */
-function assertProjectileBattle(weapon: WeaponEffect, expectedKind: WeaponType): void {
-  const result = runBattle(inputs([buildAttacker(weapon), buildDummy()], MAX_TICKS, SEED));
+async function assertProjectileBattle(weapon: WeaponEffect, expectedKind: WeaponType): Promise<void> {
+  const result = await runBattleCached(inputs([buildAttacker(weapon), buildDummy()], MAX_TICKS, SEED));
 
   // Completes with a declared winner (no crash, no hang).
   expect(result.frames.length, "battle should produce frames").toBeGreaterThan(0);
@@ -208,25 +209,25 @@ function assertProjectileBattle(weapon: WeaponEffect, expectedKind: WeaponType):
 // ---------------------------------------------------------------------------
 
 describe("projectile weapons in live battles", () => {
-  it("cannon (kinetic) rounds spawn, carry the cannon kind, and deal damage", () => {
-    assertProjectileBattle(cannonEffect(), "cannon");
+  it("cannon (kinetic) rounds spawn, carry the cannon kind, and deal damage", async () => {
+    await assertProjectileBattle(cannonEffect(), "cannon");
   });
 
-  it("missiles (catalogue missile-rack) spawn, carry the missile kind, and deal damage", () => {
+  it("missiles (catalogue missile-rack) spawn, carry the missile kind, and deal damage", async () => {
     // Exercise a real authored weapon definition, not just a synthetic fixture.
     const rack = catalog().module("mod-missile-rack");
     expect(rack, "catalogue should define mod-missile-rack").toBeDefined();
     if (rack === undefined) return;
     expect(rack.effect.kind, "missile-rack effect should be a weapon").toBe("weapon");
     if (rack.effect.kind !== "weapon") return;
-    assertProjectileBattle(rack.effect, "missile");
+    await assertProjectileBattle(rack.effect, "missile");
   });
 
-  it("torpedoes spawn, carry the torpedo kind, and deal damage", () => {
-    assertProjectileBattle(torpedoEffect(), "torpedo");
+  it("torpedoes spawn, carry the torpedo kind, and deal damage", async () => {
+    await assertProjectileBattle(torpedoEffect(), "torpedo");
   });
 
-  it("a guided missile converges on its target (distance-to-target decreases to a hit)", () => {
+  it("a guided missile converges on its target (distance-to-target decreases to a hit)", async () => {
     // A guided missile with `tracking > 0` and `guided: true` runs the engine's
     // per-tick steer path (weapons.ts: `if (p.guided && p.tracking > 0)`),
     // curving its velocity toward the target's current position. We track one
@@ -244,7 +245,7 @@ describe("projectile weapons in live battles", () => {
       tracking: 2.5,
       spread: 0.2,
     });
-    const result = runBattle(
+    const result = await runBattleCached(
       inputs([buildAttacker(weapon), buildDummy({ structure: 2000 })], MAX_TICKS, SEED),
     );
 
@@ -284,7 +285,7 @@ describe("projectile weapons in live battles", () => {
     expect(endStruct, "target should take damage from the guided missile").toBeLessThan(startStruct);
   });
 
-  it("point-defence shoots down incoming missiles before they reach the hull", () => {
+  it("point-defence shoots down incoming missiles before they reach the hull", async () => {
     // Two otherwise-identical defenders: one carries a PD module adjacent to
     // its bridge (staying 4-connected to the command component so it survives
     // break-apart), the other does not. The same attacker fires the same
@@ -320,10 +321,10 @@ describe("projectile weapons in live battles", () => {
       return defender;
     };
 
-    const withPd = runBattle(
+    const withPd = await runBattleCached(
       inputs([buildAttacker(weapon, "gunner-a"), buildPdDefender("def-pd", true)], 80, SEED),
     );
-    const bare = runBattle(
+    const bare = await runBattleCached(
       inputs([buildAttacker(weapon, "gunner-b"), buildPdDefender("def-bare", false)], 80, SEED),
     );
 
@@ -331,7 +332,7 @@ describe("projectile weapons in live battles", () => {
     // defender — each such frame is a missile PD failed to stop.
     const defenderX = 120;
     const hitRadius = 40;
-    const breakthroughs = (result: ReturnType<typeof runBattle>): number =>
+    const breakthroughs = (result: BattleResult): number =>
       result.frames.filter((f) =>
         f.projectiles.some(
           (p) => p.kind === "missile" && Math.abs(p.x - defenderX) <= hitRadius,
