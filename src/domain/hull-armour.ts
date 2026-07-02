@@ -39,10 +39,10 @@ function cellAt(grid: TileGrid, col: number, row: number): GridCell | undefined 
 }
 
 /**
- * Whether the cell at (col, row) is armour. Only armour seeds hull growth: the
- * shell extends and bevels the armour the designer has placed, so a deck (or
- * bare-framing) edge is never auto-clad — armour is grown for armour, not for
- * deck tiles. Out-of-bounds and non-solid cells are never armour.
+ * Whether the cell at (col, row) is armour. Armour seeds the chamfer fill
+ * (`isConvexCorner`), so a deck (or bare-framing) edge is never auto-clad —
+ * only armour corners are chamfered, never deck tiles. Out-of-bounds and
+ * non-solid cells are never armour.
  */
 function isArmour(grid: TileGrid, col: number, row: number): boolean {
   const cell = cellAt(grid, col, row);
@@ -173,59 +173,38 @@ function exteriorEmpties(grid: TileGrid): boolean[] {
 }
 
 /**
- * Grow an octilinear armour hull around a ship's plating, returning a NEW grid
- * of the same dimensions with the candidate cells set to fresh armour.
+ * Chamfer the authored armour's convex corners, returning a NEW grid of the
+ * same dimensions with the diagonal corner cells set to fresh armour.
  *
- * Two passes:
+ * Chamfer only — the orthogonal armour ring was removed: armour is exactly what
+ * the designer placed, and growth adds no 1-cell margin around the hull. What
+ * remains is the diagonal corner fill that lets the render-time bevel cut a
+ * clean sqrt-2 facet at each armour corner: an EXTERIOR empty cell that is the
+ * missing fourth of a 2x2 block whose other three cells are armour
+ * (`isConvexCorner`). Filling it turns a sharp armour corner into a bevelled
+ * one so the cell crop clips it to a PARTIAL armour block instead of a gaping
+ * notch. Concave notches (only 2-of-4) stay empty and remain bevel-smoothed.
  *
- *   1. ORTHOGONAL RING — an EXTERIOR empty cell (reachable from the border by a
- *      4-connected flood, so enclosed interior holes are left alone) that is
- *      4-connected-adjacent (N/E/S/W) to at least one ARMOUR cell. Seeds are
- *      read from the INPUT grid, so this is a single one-cell ring, not
- *      iterative growth. Only armour seeds growth, so deck-only ships grow
- *      nothing — the shell extends the armour the designer placed.
- *
- *   2. DIAGONAL CORNERS — an exterior empty cell that is the missing fourth of a
- *      2x2 block whose other three cells are armour (`isConvexCorner`): a convex
- *      corner of the ring. Filling it lets the render-time bevel chamfer the
- *      corner to a sqrt-2 facet and the cell crop clip it to a PARTIAL armour
- *      block, so the cut-corner silhouette is filled instead of gaping. Concave
- *      notches (only 2-of-4) stay empty and remain bevel-smoothed. Read against
- *      the pass-1 grid (not the input) so a lone authored cell's ring gets its
- *      corners too. Iterated to fixpoint; it does not cascade — filling a convex
- *      corner creates no new 3-of-4 corner further out — but the loop makes that
- *      a proof rather than an assumption.
+ * A solid armour block (or a lone armour cell) has no 3-of-4 corner, so it
+ * grows nothing: its silhouette stays exactly as authored. Only an armour shape
+ * with a missing corner — an L, a step, a 2x2-minus-one — gains a chamfer. Read
+ * against the input grid and iterated to fixpoint; it does not cascade —
+ * filling a convex corner creates no new 3-of-4 corner further out — but the
+ * loop makes that a proof rather than an assumption.
  *
  * Any solid cell — deck included — still BLOCKS the exterior flood, so an
  * enclosed empty stays interior regardless of surface.
  *
  * Does NOT resize. If the footprint touches the grid border there is simply no
- * room to grow there; callers that need a guaranteed border `padGrid` first.
+ * room to chamfer there; callers that need a guaranteed border `padGrid` first.
  * Connections are carried through unchanged. Pure — the input is not mutated.
  */
 export function growArmourHull(grid: TileGrid): TileGrid {
   const { cols, rows } = grid;
 
-  // Pass 1: orthogonal ring, seeded by the input grid's armour.
-  const ringExterior = exteriorEmpties(grid);
-  const cells: GridCell[] = grid.cells.map((cell) => cell);
-  for (let r = 0; r < rows; r += 1) {
-    for (let c = 0; c < cols; c += 1) {
-      if (!ringExterior[r * cols + c]) continue;
-      let adjacent = false;
-      for (const [dx, dy] of ORTHO) {
-        if (isArmour(grid, c + dx, r + dy)) {
-          adjacent = true;
-          break;
-        }
-      }
-      if (adjacent) cells[r * cols + c] = freshArmourCell();
-    }
-  }
-
-  // Pass 2: diagonal corners, iterated to fixpoint against the grown grid. Each
-  // iteration snapshots the current cells so reads are consistent within it.
-  let grown = cells;
+  // Chamfer fill, iterated to fixpoint. Each iteration snapshots the current
+  // cells so reads are consistent within it.
+  let grown = grid.cells;
   let changed = true;
   while (changed) {
     changed = false;
