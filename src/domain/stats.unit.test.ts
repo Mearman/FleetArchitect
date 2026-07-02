@@ -3,6 +3,8 @@ import { catalog, layerMaterials, modules } from "@/data/catalog";
 import { createCatalog } from "@/domain/catalog";
 import { createId, nowIso } from "@/domain/id";
 import { analyseShipDesign } from "@/domain/stats";
+import { growArmourHull, padGrid } from "@/domain/hull-armour";
+import { cellCoverageFractions } from "@/domain/hull-outline";
 import type { CellEdges, GridCell, TileGrid } from "@/schema/grid";
 import type { ModuleDefinition } from "@/schema/module";
 import type { ShipDesign } from "@/schema/ship";
@@ -195,17 +197,22 @@ describe("analyseShipDesign", () => {
   });
 
   it("sums structure across substrate + surface layers per solid cell", () => {
-    // A single authored armour cell padded by 1 and grown fills the 3×3 padded
-    // grid: 1 original + 4 orthogonal + 4 diagonal-corner neighbours = 9 armour
-    // cells. The 4 corners are chamfered to half their visible area, so they
-    // carry half HP: 5 full + 4 half = 7 cell-equivalents of substrate + armour HP.
-    const { stats } = analyseShipDesign(design(grid(["#"])), catalog());
-    const substrate = catalog().substrateMaterial("Terran");
-    const armor = catalog().armorMaterial("Terran");
+    // A single authored armour cell: chamfer-only growth adds nothing (no 3-of-4
+    // corner), so the grown grid is that one cell. Its structure is the cell's
+    // substrate + armour HP scaled by its coverage fraction inside the bevelled
+    // outline — confirming both the substrate and the surface layer contribute.
+    const d = design(grid(["#"]));
+    const { stats } = analyseShipDesign(d, catalog());
+    const cat = catalog();
+    const substrate = cat.substrateMaterial("Terran");
+    const armor = cat.armorMaterial("Terran");
     expect(substrate).toBeDefined();
     expect(armor).toBeDefined();
-    const perCell = (substrate?.hp ?? 0) + (armor?.hp ?? 0);
-    expect(stats.structure).toBe(7 * perCell);
+    const grown = growArmourHull(padGrid(d.grid, 1));
+    const cov = cellCoverageFractions(grown);
+    const i = grown.cells.findIndex((c) => c.kind === "solid");
+    const expected = ((substrate?.hp ?? 0) + (armor?.hp ?? 0)) * (cov[i] ?? 0);
+    expect(stats.structure).toBe(expected);
   });
 
   // ---------------------------------------------------------------------------

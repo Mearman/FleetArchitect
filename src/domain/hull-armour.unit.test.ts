@@ -4,13 +4,16 @@ import type { GridCell } from "@/schema/grid";
 import { growArmourHull, padGrid } from "@/domain/hull-armour";
 
 /**
- * Contract for the octilinear armour grow. Only ARMOUR seeds growth — the hull
- * adds armour on the four orthogonal sides of existing armour AND fills the
- * diagonal corners (which the render-time bevel + cell crop turn into partial
- * armour blocks, so the cut-corner silhouette is filled rather than gaping),
- * grows nothing for a deck-only ship, never armours an enclosed interior hole,
- * never mutates its input, and is deterministic. `padGrid` grows the canvas on
- * every side so a flush-to-border ship gains room to grow.
+ * Contract for the chamfer-only armour grow. Growth adds NO orthogonal ring —
+ * armour is exactly what the designer placed. The only cells growth adds are
+ * chamfer fills: the missing diagonal of a 2x2 block whose other three cells
+ * are armour, which lets the render-time bevel cut a clean facet at an armour
+ * corner instead of leaving a gaping notch. A solid armour block (or a lone
+ * armour cell) has no such 3-of-4 corner, so it grows nothing. Deck never
+ * seeds (only armour does), an enclosed interior hole is never filled, the
+ * input is never mutated, and the result is deterministic. `padGrid` grows the
+ * canvas on every side so a flush-to-border armour corner gains room for its
+ * chamfer.
  */
 
 const EMPTY: GridCell = { kind: "empty" };
@@ -64,8 +67,10 @@ function isEmpty(cell: GridCell | undefined): boolean {
 }
 
 describe("growArmourHull", () => {
-  it("armours the four orthogonal sides and the diagonal corners of a centred block", () => {
-    // 3x3 deck block centred in a 5x5 grid (1-cell empty border).
+  it("adds no orthogonal ring: a solid armour block grows nothing", () => {
+    // 3x3 armour block centred in a 5x5 grid (1-cell empty border). It has no
+    // 3-of-4 corner — every 2x2 inside it is full, every 2x2 outside it touches
+    // only one armour cell — so chamfer-only growth leaves it exactly as authored.
     const grid = gridFromAscii([
       ".....",
       ".###.",
@@ -75,72 +80,55 @@ describe("growArmourHull", () => {
     ]);
     const out = growArmourHull(grid);
 
-    // The 12 orthogonal side cells gain armour: the cells of the border ring
-    // directly N/E/S/W of the block.
-    const sides: ReadonlyArray<readonly [number, number]> = [
-      // top row (row 0), above the three block columns 1..3
-      [1, 0],
-      [2, 0],
-      [3, 0],
-      // bottom row (row 4)
-      [1, 4],
-      [2, 4],
-      [3, 4],
-      // left column (col 0), beside block rows 1..3
-      [0, 1],
-      [0, 2],
-      [0, 3],
-      // right column (col 4)
-      [4, 1],
-      [4, 2],
-      [4, 3],
+    // Every border cell (the old ring + corner positions) stays empty.
+    const border: ReadonlyArray<readonly [number, number]> = [
+      [1, 0], [2, 0], [3, 0], [1, 4], [2, 4], [3, 4],
+      [0, 1], [0, 2], [0, 3], [4, 1], [4, 2], [4, 3],
+      [0, 0], [4, 0], [0, 4], [4, 4],
     ];
-    for (const [c, r] of sides) {
-      expect(isArmour(at(out, c, r))).toBe(true);
+    for (const [c, r] of border) {
+      expect(isEmpty(at(out, c, r))).toBe(true);
     }
-
-    // The four diagonal corner cells of the border are grown into armour: the
-    // bevel chamfers each to a sqrt-2 facet and the cell crop clips it to a
-    // partial block, filling the cut-corner silhouette.
-    const corners: ReadonlyArray<readonly [number, number]> = [
-      [0, 0],
-      [4, 0],
-      [0, 4],
-      [4, 4],
-    ];
-    for (const [c, r] of corners) {
-      expect(isArmour(at(out, c, r))).toBe(true);
-    }
-
-    // 9 armour seed cells (the 3x3 block) + 12 grown side cells + 4 grown
-    // corners = 25.
-    const armourCount = out.cells.filter((cell) => isArmour(cell)).length;
-    expect(armourCount).toBe(25);
+    expect(out.cells.filter((cell) => isArmour(cell)).length).toBe(9);
   });
 
-  it("armour cells are solid armour with all edges walled", () => {
+  it("chamfers a 3-of-4 armour corner (the missing diagonal of a 2x2)", () => {
+    // An L of three armour cells in a 2x2; the missing cell (1,1) is exterior
+    // (it reaches the border through the empty (2,1)/(1,2)) so its diagonal
+    // chamfer fires and it becomes armour.
     const grid = gridFromAscii([
-      "...",
-      ".#.",
+      "##.",
+      "#..",
       "...",
     ]);
     const out = growArmourHull(grid);
-    const top = at(out, 1, 0);
-    expect(top).toBeDefined();
-    if (top === undefined || top.kind !== "solid") {
+    expect(isArmour(at(out, 1, 1))).toBe(true);
+    // No cascade: the fill creates no new 3-of-4 corner further out.
+    expect(isEmpty(at(out, 2, 2))).toBe(true);
+    expect(out.cells.filter((cell) => isArmour(cell)).length).toBe(4);
+  });
+
+  it("grown chamfer cells are solid armour with all edges walled", () => {
+    const grid = gridFromAscii([
+      "##.",
+      "#..",
+      "...",
+    ]);
+    const out = growArmourHull(grid);
+    const chamfer = at(out, 1, 1);
+    expect(chamfer).toBeDefined();
+    if (chamfer === undefined || chamfer.kind !== "solid") {
       throw new Error("expected a solid armour cell");
     }
-    expect(top.surface).toBe("armor");
-    expect(top.edges.n).toBe("wall");
-    expect(top.edges.e).toBe("wall");
-    expect(top.edges.s).toBe("wall");
-    expect(top.edges.w).toBe("wall");
-    expect(top.edges.doorStates).toEqual({});
+    expect(chamfer.surface).toBe("armor");
+    expect(chamfer.edges.n).toBe("wall");
+    expect(chamfer.edges.e).toBe("wall");
+    expect(chamfer.edges.s).toBe("wall");
+    expect(chamfer.edges.w).toBe("wall");
+    expect(chamfer.edges.doorStates).toEqual({});
   });
 
-  it("grows no armour for a deck-only ship (armour is not grown for deck tiles)", () => {
-    // A solid deck block with an empty border: deck does not seed growth, so the
-    // grid is returned unchanged with zero armour added.
+  it("grows no armour for a deck-only ship (deck does not seed)", () => {
     const grid = gridFromAscii([
       ".....",
       ".ddd.",
@@ -153,27 +141,23 @@ describe("growArmourHull", () => {
     expect(out).toEqual(grid);
   });
 
-  it("grows armour around armour even when deck sits between (deck never seeds)", () => {
-    // Armour on the left, deck on the right: only the armour's exposed sides
-    // gain a shell; the deck's exposed sides do not.
+  it("deck does not seed a chamfer where armour would be needed", () => {
+    // Were the deck at (1,0) armour, the empty (1,1) would be a 3-of-4 corner and
+    // chamfer. Deck is not armour, so the corner is only 2-of-4 — no chamfer.
     const grid = gridFromAscii([
-      ".....",
-      ".#dd.",
-      ".....",
+      "#d.",
+      "#..",
+      "...",
     ]);
     const out = growArmourHull(grid);
-    // Armour at (1,1): N/S/W neighbours gain armour (E is the deck).
-    expect(isArmour(at(out, 1, 0))).toBe(true); // N of armour
-    expect(isArmour(at(out, 1, 2))).toBe(true); // S of armour
-    expect(isArmour(at(out, 0, 1))).toBe(true); // W of armour
-    // The deck's own exposed sides stay empty.
-    expect(isEmpty(at(out, 3, 0))).toBe(true); // N of a deck cell
-    expect(isEmpty(at(out, 3, 2))).toBe(true); // S of a deck cell
-    expect(isEmpty(at(out, 4, 1))).toBe(true); // E of the rightmost deck
+    expect(isEmpty(at(out, 1, 1))).toBe(true);
+    expect(out.cells.filter((cell) => isArmour(cell)).length).toBe(2);
   });
 
-  it("never armours an enclosed interior hole", () => {
-    // A ring of deck cells enclosing one empty cell at the centre (2,2).
+  it("never chamfers an enclosed interior hole", () => {
+    // A ring of armour enclosing one empty cell at the centre (2,2). The hole
+    // is interior (unreachable from the border), so it stays empty even though
+    // its 2x2 corners read 3-of-4 armour.
     const grid = gridFromAscii([
       ".....",
       ".###.",
@@ -182,17 +166,14 @@ describe("growArmourHull", () => {
       ".....",
     ]);
     const out = growArmourHull(grid);
-    // The enclosed empty cell is interior: it must stay empty.
     expect(isEmpty(at(out, 2, 2))).toBe(true);
   });
 
   it("does not mutate its input", () => {
     const grid = gridFromAscii([
-      ".....",
-      ".###.",
-      ".###.",
-      ".###.",
-      ".....",
+      "##.",
+      "#..",
+      "...",
     ]);
     const before = structuredClone(grid);
     growArmourHull(grid);
@@ -201,11 +182,9 @@ describe("growArmourHull", () => {
 
   it("is deterministic across calls", () => {
     const grid = gridFromAscii([
-      ".....",
-      ".###.",
-      ".###.",
-      ".###.",
-      ".....",
+      "##.",
+      "#..",
+      "...",
     ]);
     const a = growArmourHull(grid);
     const b = growArmourHull(grid);
@@ -250,27 +229,18 @@ describe("padGrid", () => {
     expect(() => TileGrid.parse(out)).not.toThrow();
   });
 
-  it("a ship flush to the original border gets armour on that side after padGrid + grow", () => {
-    // A single armour cell occupying the whole 1x1 grid: flush to every border,
-    // so growArmourHull alone has no room to armour.
-    const tight: TileGrid = TileGrid.parse({
-      cols: 1,
-      rows: 1,
-      cells: [armour()],
-      connections: [],
-    });
-    expect(growArmourHull(tight).cells.filter((c) => isArmour(c)).length).toBe(1); // only itself
-
-    // After padding by one, the armour sits at (1,1) of a 3x3 grid and grows a
-    // shell on all four sides plus the diagonal corners.
-    const padded = padGrid(tight, 1);
-    const out = growArmourHull(padded);
-    expect(isArmour(at(out, 1, 0))).toBe(true); // N
-    expect(isArmour(at(out, 2, 1))).toBe(true); // E
-    expect(isArmour(at(out, 1, 2))).toBe(true); // S
-    expect(isArmour(at(out, 0, 1))).toBe(true); // W
-    // Diagonal corners are grown into armour (partial blocks after the bevel).
-    expect(isArmour(at(out, 0, 0))).toBe(true);
+  it("padGrid + growArmourHull chamfers an L's missing corner", () => {
+    // The caller pattern (resolve/stats): pad by one, then chamfer-grow. The L's
+    // missing diagonal chamfers, so the grown grid carries one more armour cell
+    // than the authored L.
+    const l: TileGrid = gridFromAscii([
+      "##.",
+      "#..",
+      "...",
+    ]);
+    const out = growArmourHull(padGrid(l, 1));
+    // After the +1 pad the L sits at (1,1)-(2,2); its missing corner (2,2) chamfers.
     expect(isArmour(at(out, 2, 2))).toBe(true);
+    expect(out.cells.filter((c) => isArmour(c)).length).toBe(4);
   });
 });
