@@ -401,6 +401,43 @@ export function sampleLocalRhoKgPerM3(
 }
 
 // ============================================================================
+// Asteroid source-cell precomputation
+// ============================================================================
+
+/**
+ * Precompute the grid-cell indices within any asteroid disc's uplift region
+ * (disc radius plus one pitch of margin). Called once at setup — both the
+ * discs and the grid are static — so the per-tick deposit loop is O(sourceCells)
+ * instead of O(cells x discs). Indices are in row-major visitation order for
+ * byte-identical results.
+ */
+export function computeAsteroidSourceCells(
+  field: MediumField,
+  asteroidDiscs: ReadonlyArray<{ x: number; y: number; r: number }>,
+): readonly number[] {
+  if (asteroidDiscs.length === 0) return [];
+  const w = field.config.widthM;
+  const h = field.config.heightM;
+  const pitch = field.config.pitchM;
+  const cells: number[] = [];
+  for (let row = 0; row < h; row += 1) {
+    const cellY = (row + 0.5 - h / 2) * pitch;
+    for (let col = 0; col < w; col += 1) {
+      const cellX = (col + 0.5 - w / 2) * pitch;
+      for (const disc of asteroidDiscs) {
+        const dx = cellX - disc.x;
+        const dy = cellY - disc.y;
+        if (dx * dx + dy * dy <= (disc.r + pitch) * (disc.r + pitch)) {
+          cells.push(row * w + col);
+          break;
+        }
+      }
+    }
+  }
+  return cells;
+}
+
+// ============================================================================
 // Per-tick source computation
 // ============================================================================
 
@@ -436,7 +473,7 @@ export function computeArenaMediumSources(
   debris: readonly Debris[],
   projectiles: ReadonlyArray<ProjectileMediumEntry>,
   anomalies: readonly BattleAnomalyKind[],
-  asteroidDiscs: ReadonlyArray<{ x: number; y: number; r: number }>,
+  asteroidSourceCells: readonly number[],
   buffers: MediumSourceBuffers,
 ): MediumSources {
   const { rho, eps, epsVisSrc, mxSrc, mySrc } = buffers;
@@ -448,7 +485,7 @@ export function computeArenaMediumSources(
   epsVisSrc.fill(0);
   mxSrc.fill(0);
   mySrc.fill(0);
-  depositMediumSources(field, liveRho, ships, debris, projectiles, anomalies, asteroidDiscs, rho, eps, epsVisSrc, mxSrc, mySrc);
+  depositMediumSources(field, liveRho, ships, debris, projectiles, anomalies, asteroidSourceCells, rho, eps, epsVisSrc, mxSrc, mySrc);
   return { rho, eps, epsVisSrc, mxSrc, mySrc };
 }
 
@@ -468,7 +505,7 @@ export function computeArenaMediumSourcesReference(
   debris: readonly Debris[],
   projectiles: ReadonlyArray<ProjectileMediumEntry>,
   anomalies: readonly BattleAnomalyKind[],
-  asteroidDiscs: ReadonlyArray<{ x: number; y: number; r: number }>,
+  asteroidSourceCells: readonly number[],
 ): MediumSources {
   const cellCount = field.cellCount;
   const rho = new Array<number>(cellCount).fill(0);
@@ -476,7 +513,7 @@ export function computeArenaMediumSourcesReference(
   const epsVisSrc = new Array<number>(cellCount).fill(0);
   const mxSrc = new Array<number>(cellCount).fill(0);
   const mySrc = new Array<number>(cellCount).fill(0);
-  depositMediumSources(field, liveRho, ships, debris, projectiles, anomalies, asteroidDiscs, rho, eps, epsVisSrc, mxSrc, mySrc);
+  depositMediumSources(field, liveRho, ships, debris, projectiles, anomalies, asteroidSourceCells, rho, eps, epsVisSrc, mxSrc, mySrc);
   return { rho, eps, epsVisSrc, mxSrc, mySrc };
 }
 
@@ -498,7 +535,7 @@ function depositMediumSources(
   debris: readonly Debris[],
   projectiles: ReadonlyArray<ProjectileMediumEntry>,
   anomalies: readonly BattleAnomalyKind[],
-  asteroidDiscs: ReadonlyArray<{ x: number; y: number; r: number }>,
+  asteroidSourceCells: readonly number[],
   rho: number[],
   eps: number[],
   epsVisSrc: number[],
@@ -620,29 +657,13 @@ function depositMediumSources(
     }
   }
 
-  // --- Asteroid field anomaly: each static disc sources a small particulate
-  // uplift into every cell whose centre sits within the disc (plus one pitch of
-  // margin for the disc's own radius). Cold rock sources density without
-  // excitation. The disc list is pre-computed once per battle as a pure function
-  // of (anomalies, seed), so the source reproduces byte-identically. ---
-  if (asteroidDiscs.length > 0) {
-    const w = field.config.widthM;
-    const h = field.config.heightM;
-    const pitch = field.config.pitchM;
-    for (let row = 0; row < h; row += 1) {
-      const cellY = (row + 0.5 - h / 2) * pitch;
-      for (let col = 0; col < w; col += 1) {
-        const cellX = (col + 0.5 - w / 2) * pitch;
-        for (const disc of asteroidDiscs) {
-          const dx = cellX - disc.x;
-          const dy = cellY - disc.y;
-          if (dx * dx + dy * dy <= (disc.r + pitch) * (disc.r + pitch)) {
-            rho[row * w + col] = (rho[row * w + col] ?? 0) + ASTEROID_PARTULATE_PER_CELL_KG;
-            break; // a cell is in at most one disc's uplift region
-          }
-        }
-      }
-    }
+  // --- Asteroid field anomaly: iterate the precomputed source-cell list
+  // (computed once at setup by computeAsteroidSourceCells). Cold rock sources
+  // density without excitation. ---
+  for (let i = 0; i < asteroidSourceCells.length; i += 1) {
+    const idx = asteroidSourceCells[i];
+    if (idx === undefined) continue;
+    rho[idx] = (rho[idx] ?? 0) + ASTEROID_PARTULATE_PER_CELL_KG;
   }
 
   // --- Body drag → wake: a ship moving through the medium displaces it. The
@@ -676,29 +697,11 @@ function depositMediumSources(
 
 /**
  * Advance the arena medium one tick. The caller supplies the per-tick sources
- * (thruster exhaust, debris, projectile wakes, nebula + asteroid anomaly fills)
- * via {@link computeArenaMediumSources}; with a zero source pair, the field
- * relaxes from its prior state without reading or writing any ship / projectile /
- * beam state, so battle outcomes stay byte-for-byte unchanged and only the
- * `medium` snapshot field is added.
- *
- * After the physics step the per-cell `birthTicks` array is updated against
- * {@link MEDIUM_EPS_EMISSION_THRESHOLD_J}: a cell that crossed the threshold
- * from below this tick (ignited) records `tick` as its birth tick; a cell that
- * fell back below the threshold (extinguished) resets to -1; a sustained cell
- * carries its existing birth tick forward. This is the bookkeeping the
- * sustained-radiation light-lag gates on — a distant receiver sees a just-
- * ignited burn only after `ceil(dist / c)` ticks have elapsed, so the gate
- * needs the tick each burn began, not the per-tick ε value (which is the same
- * over the whole burn).
- *
- * Determinism: the stepper is iterated in fixed row-major cell order with fixed
- * N/E/S/W face order (`medium-field.ts`), draws no rng, and depends only on its
- * own prior state plus the supplied sources. Source iteration is likewise fixed
- * (ships, debris, and projectile positions in their array orders; asteroid discs
- * in seed order), so two same-seed runs produce byte-identical medium arrays.
- * The birthTick update walks the same row-major order with the same threshold
- * comparison, so the `birthTicks` array is byte-identical across runs too.
+ * via {@link computeArenaMediumSources}; the physics step runs in fixed
+ * row-major order (no rng), so two same-seed runs produce byte-identical
+ * medium arrays. After the step, per-cell birthTicks are updated against
+ * {@link MEDIUM_EPS_EMISSION_THRESHOLD_J}: ignited → tick, sustained → carry,
+ * extinguished/dark → -1. This drives the sustained-radiation light-lag gate.
  */
 export function stepArenaMedium(
   medium: ArenaMedium,
@@ -736,7 +739,7 @@ export function stepArenaMediumFromState(
   debris: readonly Debris[],
   projectiles: ReadonlyArray<ProjectileMediumEntry>,
   anomalies: readonly BattleAnomalyKind[],
-  asteroidDiscs: ReadonlyArray<{ x: number; y: number; r: number }>,
+  asteroidSourceCells: readonly number[],
   tick: number,
 ): ArenaMedium {
   return stepArenaMedium(
@@ -748,7 +751,7 @@ export function stepArenaMediumFromState(
       debris,
       projectiles,
       anomalies,
-      asteroidDiscs,
+      asteroidSourceCells,
       medium.sourceBuffers,
     ),
     tick,
@@ -756,20 +759,9 @@ export function stepArenaMediumFromState(
 }
 
 /**
- * Build the next per-cell `birthTicks` array from the pre- and post-step ε,
- * against the sustained-emission threshold. Pure cell-wise transition:
- *  - ignited this tick (`old ≤ threshold < new`): the cell's burn begins on
- *    `tick`, so the light-lag gate will admit reception on ticks
- *    `tick + ceil(dist / c)` and onward.
- *  - extinguished this tick (`old > threshold ≥ new`): reset to -1; the cell
- *    stops radiating and reception ceases regardless of the gate.
- *  - sustained (`old > threshold ∧ new > threshold`): carry the prior birth
- *    tick forward so a long-burning cell stays steadily visible (its light
- *    arrived long ago).
- *  - still dark (`old ≤ threshold ∧ new ≤ threshold`): stays -1.
- *
- * Returns a FRESH array; the inputs are not mutated. Row-major cell scan; no
- * RNG; deterministic.
+ * Build the next per-cell `birthTicks` array from the pre- and post-step ε
+ * against the sustained-emission threshold. Ignited: birth = tick; sustained:
+ * carry prior; extinguished or dark: -1. Returns a fresh array; row-major scan.
  */
 function updateMediumBirthTicks(
   epsBefore: readonly number[],

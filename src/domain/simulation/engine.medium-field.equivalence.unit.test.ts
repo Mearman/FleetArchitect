@@ -14,6 +14,7 @@ import {
 import {
   computeArenaMediumSources,
   computeArenaMediumSourcesReference,
+  computeAsteroidSourceCells,
   type MediumSourceBuffers,
   type ProjectileMediumEntry,
 } from "@/domain/simulation/engine/medium-setup";
@@ -227,12 +228,13 @@ describe("engine.medium-field — reference vs optimised equivalence", () => {
     ];
     const anomalies: BattleAnomalyKind[] = ["nebula"];
     const asteroidDiscs = [{ x: 0, y: 0, r: 500 }];
+    const asteroidSourceCells = computeAsteroidSourceCells(field, asteroidDiscs);
 
     const ref = computeArenaMediumSourcesReference(
-      field, liveRho, [], debris, projectiles, anomalies, asteroidDiscs,
+      field, liveRho, [], debris, projectiles, anomalies, asteroidSourceCells,
     );
     const opt = computeArenaMediumSources(
-      field, liveRho, [], debris, projectiles, anomalies, asteroidDiscs,
+      field, liveRho, [], debris, projectiles, anomalies, asteroidSourceCells,
       freshBuffers(field),
     );
     expect([...opt.rho]).toEqual([...ref.rho]);

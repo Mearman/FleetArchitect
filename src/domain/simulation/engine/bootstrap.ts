@@ -18,7 +18,7 @@ import { computeOccluders } from "@/domain/occluders";
 import { hasAnomaly } from "@/domain/anomaly";
 import { restoreCheckpoint } from "./checkpoint";
 import { resetProjectileCounter, setProjectileCounter } from "./config";
-import { buildArenaMedium, restoreArenaMedium } from "./medium-setup";
+import { buildArenaMedium, computeAsteroidSourceCells, restoreArenaMedium } from "./medium-setup";
 import { fleetCentroid } from "./movement";
 import { toSimShip } from "./setup";
 import type { Rng } from "@/domain/simulation/rng";
@@ -56,6 +56,12 @@ export function bootstrapEngine(
     // of prior runs.
     resetProjectileCounter();
     const ships = inputs.ships.map((s) => toSimShip(s, rng));
+    const medium = buildArenaMedium(ships);
+    const asteroidDiscs: ReadonlyArray<{ x: number; y: number; r: number }> =
+      hasAnomaly(inputs.anomalies, "asteroidField")
+        ? computeOccluders(inputs.anomalies, inputs.seed >>> 0)
+        : [];
+    const asteroidSourceCells = computeAsteroidSourceCells(medium.field, asteroidDiscs);
     const state: EngineState = {
       ships,
       // Per-side ship lists and the id index are rebuilt each tick (top of the
@@ -121,14 +127,16 @@ export function bootstrapEngine(
       // seeded at the ISM baseline. Stepped each tick with per-tick sources
       // (thruster exhaust, debris, projectile wakes, nebula + asteroid anomaly
       // fills) computed in index.ts:5c.
-      medium: buildArenaMedium(ships),
+      medium,
       // Static asteroid-disc field: the same discs the awareness/occlusion phase
       // reads, cached once here so the medium's particulate source and the
       // occlusion query share an identical, deterministic disc set. Empty
       // outside an asteroid-field battle.
-      asteroidDiscs: hasAnomaly(inputs.anomalies, "asteroidField")
-        ? computeOccluders(inputs.anomalies, inputs.seed >>> 0)
-        : [],
+      asteroidDiscs,
+      // Precomputed asteroid source-cell list: the grid-cell indices that lie
+      // within any disc's uplift region, in row-major order. Built once so the
+      // per-tick medium deposit loop is O(sourceCells) instead of O(cells x discs).
+      asteroidSourceCells,
       // Deterministic per-battle id counters. Each advances in spawn order, with
       // no rng and no clock, so two same-seed runs produce byte-identical ids.
       chunkSeq: 0,
@@ -191,6 +199,12 @@ export function bootstrapEngine(
     asteroidDiscs: hasAnomaly(inputs.anomalies, "asteroidField")
       ? computeOccluders(inputs.anomalies, inputs.seed >>> 0)
       : [],
+    asteroidSourceCells: computeAsteroidSourceCells(
+      medium.field,
+      hasAnomaly(inputs.anomalies, "asteroidField")
+        ? computeOccluders(inputs.anomalies, inputs.seed >>> 0)
+        : [],
+    ),
     chunkSeq: restored.chunkSeq,
     mineSeq: restored.mineSeq,
     podSeq: restored.podSeq,

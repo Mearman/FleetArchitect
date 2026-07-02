@@ -701,7 +701,7 @@ export function* simulateBattle(
     for (const p of state.projectiles) {
       pMedium.push({ x: p.x, y: p.y, powered: p.powered, burnTicks: p.burnTicks, thrust: p.thrust, mass: p.mass });
     }
-    state.medium = stepArenaMediumFromState(state.medium, state.ships, state.debris, pMedium, inputs.anomalies, state.asteroidDiscs, tick);
+    state.medium = stepArenaMediumFromState(state.medium, state.ships, state.debris, pMedium, inputs.anomalies, state.asteroidSourceCells, tick);
     // 5d. Exhaust/plume particles: step the live plume (transport + cool + cull)
     //     and gather this tick's emissions — no RNG, deterministic.
     state.particles = stepPlume(state.particles, state.ships, state.beams, state.projectiles);
