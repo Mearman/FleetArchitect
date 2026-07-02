@@ -25,10 +25,11 @@ import {
   MOMENTUM_DRAG_PER_S,
   VELOCITY_MAX_M_PER_S,
   buildMediumField,
+  createMediumWorkBuffers,
   mediumStateFromDensity,
 } from "./medium-field";
 import { stepMediumField } from "./medium-stepper";
-import type { MediumField, MediumState, MediumSources } from "./medium-field";
+import type { MediumField, MediumState, MediumSources, MediumWorkBuffers } from "./medium-field";
 import { MEDIUM_EPS_EMISSION_THRESHOLD_J } from "./medium-emissions";
 import type { EngineCheckpoint } from "@/schema/checkpoint";
 import { cellWorldPosition } from "@/domain/simulation/spatial-hash";
@@ -61,17 +62,24 @@ import type { Debris } from "./debris";
 export interface ArenaMedium {
   /** Static grid geometry (rebuilt byte-identically from width × height). */
   readonly field: MediumField;
-  /** Live ρ + ε state, replaced with a fresh MediumState each tick. */
+  /** Live ρ + ε state (Float64Array). Replaced with a fresh MediumState each
+   *  tick; the arrays alias the {@link work} ping-pong buffers, so advancing
+   *  the field overwrites the previous tick's buffers in place. */
   readonly state: MediumState;
-  /** Per-cell sustained-radiation birth tick (the tick each cell first crossed
-   *  the emission threshold this burn); -1 when the cell is not radiating. */
-  readonly birthTicks: readonly number[];
+  /** Per-cell sustained-radiation birth tick; -1 when not radiating. A persistent
+   *  buffer written in place each tick (no per-tick allocation). */
+  readonly birthTicks: number[];
   /** Pre-allocated per-tick source buffers (cleared and refilled in place each
-   *  tick by the optimised {@link computeArenaMediumSources} path to avoid 5
-   *  full-grid allocations per tick). The reference (oracle) path allocates
-   *  fresh arrays instead. Not part of the checkpoint — `restoreArenaMedium`
-   *  rebuilds a zeroed set on resume. */
+   *  tick by the optimised {@link computeArenaMediumSources} path). Not part of
+   *  the checkpoint — `restoreArenaMedium` rebuilds a zeroed set on resume. */
   readonly sourceBuffers: MediumSourceBuffers;
+  /** Persistent Float64Array ping-pong pairs for the FTCS stepper, reused every
+   *  tick (no per-tick allocation). Not part of the checkpoint. */
+  readonly work: MediumWorkBuffers;
+  /** Pre-step ε snapshot, captured before the stepper overwrites the live ε
+   *  buffer (which aliases {@link work}); the birth-tick update diffs it against
+   *  the post-step ε. */
+  readonly prevEps: Float64Array;
 }
 
 /**
@@ -92,6 +100,28 @@ export interface MediumSourceBuffers {
   readonly mxSrc: number[];
   /** Per-cell y-momentum source, kg·m·s⁻². Cleared and refilled each tick. */
   readonly mySrc: number[];
+}
+
+/**
+ * Allocate the per-battle transient scratch on the {@link ArenaMedium}: source
+ * buffers, stepper ping-pong pairs, and the pre-step ε snapshot. Not part of
+ * the checkpoint; rebuilt by {@link buildArenaMedium} and
+ * {@link restoreArenaMedium}.
+ */
+function createMediumScratch(
+  cellCount: number,
+): Pick<ArenaMedium, "sourceBuffers" | "work" | "prevEps"> {
+  return {
+    sourceBuffers: {
+      rho: new Array<number>(cellCount).fill(0),
+      eps: new Array<number>(cellCount).fill(0),
+      epsVisSrc: new Array<number>(cellCount).fill(0),
+      mxSrc: new Array<number>(cellCount).fill(0),
+      mySrc: new Array<number>(cellCount).fill(0),
+    },
+    work: createMediumWorkBuffers(cellCount),
+    prevEps: new Float64Array(cellCount),
+  };
 }
 
 /**
@@ -185,41 +215,21 @@ export function buildArenaMedium(ships: readonly SimShip[]): ArenaMedium {
     momentumDragPerS: MOMENTUM_DRAG_PER_S,
     velocityMaxMPerS: VELOCITY_MAX_M_PER_S,
   });
-  // Seed ρ at the ISM baseline (uniform across every cell); ε at zero. The
-  // baseline density is a real WIM figure (see medium-field.ts); at this
-  // density the ambient medium is the floor the field relaxes back to.
+  // Seed ρ at the ISM baseline (uniform across every cell); ε at zero.
   const state = mediumStateFromDensity(field, ISM_DENSITY_KG_PER_M3);
-  // birthTicks: every cell starts dark (no radiating burn), so the light-lag
-  // gate suppresses reception until a cell first crosses the emission
-  // threshold inside `stepArenaMedium`.
+  // birthTicks: every cell starts dark (no radiating burn yet).
   const birthTicks = new Array<number>(field.cellCount).fill(-1);
-  // Source buffers: pre-allocated once and cleared/refilled in place each tick
-  // by the optimised source path (avoids 5 full-grid allocations per tick).
-  const sourceBuffers: MediumSourceBuffers = {
-    rho: new Array<number>(field.cellCount).fill(0),
-    eps: new Array<number>(field.cellCount).fill(0),
-    epsVisSrc: new Array<number>(field.cellCount).fill(0),
-    mxSrc: new Array<number>(field.cellCount).fill(0),
-    mySrc: new Array<number>(field.cellCount).fill(0),
-  };
-  return { field, state, birthTicks, sourceBuffers };
+  return { field, state, birthTicks, ...createMediumScratch(field.cellCount) };
 }
 
 /**
- * Rebuild the arena medium from a captured checkpoint, or from the resolved
- * ships when the checkpoint predates the medium field. Used by the resume path
- * (and the capture/restore round-trip test).
- *
- * When `captured` is present the grid connectivity is re-derived from
- * `(widthM, heightM)` via {@link buildMediumField} (a pure function of the cell
- * counts, so byte-identical to the original) and the live ρ/ε arrays are
- * reattached, alongside the per-cell `birthTicks` array so the light-lag gate
- * continues to treat ongoing burns as ongoing (not as freshly ignited on
- * resume — which would lose distant receivers their steady-burn contacts for
- * one light-time). When `captured` is absent (a pre-medium checkpoint) the
- * field is rebuilt from the restored ships at the ISM baseline with every cell
- * dark — there is no prior mid-battle state to reconstruct because the
- * original run had no medium.
+ * Rebuild the arena medium from a captured checkpoint (or from the resolved
+ * ships when the checkpoint predates the medium field). The grid connectivity
+ * is re-derived from `(widthM, heightM)` (byte-identical to the original) and
+ * the live ρ/ε arrays reattached alongside `birthTicks` so the light-lag gate
+ * keeps treating ongoing burns as ongoing on resume. The live state is
+ * `Float64Array`; the checkpoint stores boxed `number[]`, materialised to typed
+ * arrays at this boundary (exact IEEE-754 doubles).
  */
 export function restoreArenaMedium(
   captured: EngineCheckpoint["medium"],
@@ -242,18 +252,19 @@ export function restoreArenaMedium(
   });
   return {
     field,
-    state: { rho: captured.rho, eps: captured.eps, epsVis: captured.epsVis ?? new Array<number>(captured.rho.length).fill(0), mx: captured.mx, my: captured.my },
-    birthTicks: [...captured.birthTick],
-    // Source buffers are not captured (they are transient per-tick scratch);
-    // rebuild a zeroed set on resume so the next tick's optimised source
-    // computation clears and refills them.
-    sourceBuffers: {
-      rho: new Array<number>(captured.rho.length).fill(0),
-      eps: new Array<number>(captured.rho.length).fill(0),
-      epsVisSrc: new Array<number>(captured.rho.length).fill(0),
-      mxSrc: new Array<number>(captured.rho.length).fill(0),
-      mySrc: new Array<number>(captured.rho.length).fill(0),
+    // Materialise the boxed `number[]` checkpoint arrays into the live
+    // Float64Array state (exact IEEE-754 doubles).
+    state: {
+      rho: Float64Array.from(captured.rho),
+      eps: Float64Array.from(captured.eps),
+      epsVis: captured.epsVis !== undefined
+        ? Float64Array.from(captured.epsVis)
+        : new Float64Array(captured.rho.length),
+      mx: Float64Array.from(captured.mx),
+      my: Float64Array.from(captured.my),
     },
+    birthTicks: [...captured.birthTick],
+    ...createMediumScratch(captured.rho.length),
   };
 }
 
@@ -468,7 +479,7 @@ export function computeAsteroidSourceCells(
  */
 export function computeArenaMediumSources(
   field: MediumField,
-  liveRho: readonly number[],
+  liveRho: ArrayLike<number>,
   ships: readonly SimShip[],
   debris: readonly Debris[],
   projectiles: ReadonlyArray<ProjectileMediumEntry>,
@@ -490,17 +501,15 @@ export function computeArenaMediumSources(
 }
 
 /**
- * REFERENCE (oracle) medium-source computation: the naive allocating path, kept
- * as a first-class implementation the equivalence test compares against the
- * optimised path. Not wired into production; production runs
- * {@link computeArenaMediumSources}. Allocates five fresh full-grid arrays per
- * call — the allocation pattern the in-place buffer reuse replaces. Shares the
- * {@link depositMediumSources} core, so the deposited values are byte-identical
- * to the optimised path; only the array objects differ.
+ * REFERENCE (oracle) medium-source computation: the naive allocating path the
+ * equivalence test compares against the optimised path. Not wired into
+ * production. Allocates five fresh full-grid arrays per call — the pattern the
+ * in-place reuse replaces. Shares {@link depositMediumSources}, so deposits are
+ * byte-identical to the optimised path; only the array objects differ.
  */
 export function computeArenaMediumSourcesReference(
   field: MediumField,
-  liveRho: readonly number[],
+  liveRho: ArrayLike<number>,
   ships: readonly SimShip[],
   debris: readonly Debris[],
   projectiles: ReadonlyArray<ProjectileMediumEntry>,
@@ -520,17 +529,15 @@ export function computeArenaMediumSourcesReference(
 /**
  * Shared medium-source deposit core. Writes the per-tick sources (thruster
  * exhaust, debris ablation, projectile wakes + plumes, nebula and asteroid
- * anomaly fills, body-drag wakes) into the five given arrays, ADDING to
- * whatever they currently hold. The caller is responsible for clearing the
- * arrays first (the optimised path clears in place via `.fill(0)`; the
- * reference path passes freshly-allocated zeroed arrays). Pure and
- * deterministic: fixed iteration order over ships, debris, projectiles, and
- * asteroid discs; no RNG. Identical inputs plus identically-cleared arrays
- * produce byte-identical deposits, so the optimised and reference paths agree.
+ * fills, body-drag wakes) into the five given arrays, ADDING to what they hold.
+ * The caller clears first (optimised: `.fill(0)` in place; reference: fresh
+ * zeroed arrays). Deterministic fixed iteration order, no RNG; identical inputs
+ * plus identically-cleared arrays give byte-identical deposits, so the two
+ * paths agree.
  */
 function depositMediumSources(
   field: MediumField,
-  liveRho: readonly number[],
+  liveRho: ArrayLike<number>,
   ships: readonly SimShip[],
   debris: readonly Debris[],
   projectiles: ReadonlyArray<ProjectileMediumEntry>,
@@ -544,11 +551,10 @@ function depositMediumSources(
 ): void {
   const cellCount = field.cellCount;
 
-  // --- Thruster exhaust: every engine/afterburner cell that is firing this tick
-  // deposits a fraction of its expelled propellant mass as local density, and a
-  // fraction of its jet power as excitation, along the exhaust direction. The
-  // exhaust direction is `−moduleFacing` (the engine's local +x is forward; the
-  // nozzle points the opposite way), mapped into world space by the ship pose. ---
+  // --- Thruster exhaust: every firing engine/afterburner cell deposits a
+  // fraction of its expelled propellant mass as local density and a fraction of
+  // its jet power as excitation, along the exhaust direction (`−moduleFacing`,
+  // mapped into world space by the ship pose). ---
   for (const ship of ships) {
     const modules = ship.modules;
     if (modules === undefined || ship.engineThrottle <= 0) continue;
@@ -613,13 +619,11 @@ function depositMediumSources(
   }
 
   // --- Projectile wake + burning-motor plume: every round displaces and heats
-  // a thin column of the medium along its per-tick path (a tiny wake coupling
-  // into the cell the round occupies). A POWERED round with fuel remaining
-  // ALSO injects an exhaust plume — the marquee visual of a missile's motor —
-  // using the same SI coupling as ship engine exhaust (mass-flow from
-  // `F = thrust·mass` over `MEDIUM_EXHAUST_VELOCITY_M_PER_S`, and a thermal
-  // fraction of the jet power) so the plume tapers to nothing at burnout. The
-  // iteration is in projectile array (creation) order for determinism. ---
+  // a thin column along its per-tick path. A POWERED round with fuel remaining
+  // also injects an exhaust plume (same SI coupling as ship exhaust: mass-flow
+  // from `F = thrust·mass` over `MEDIUM_EXHAUST_VELOCITY_M_PER_S` plus a thermal
+  // fraction of the jet power) so the plume tapers to nothing at burnout.
+  // Iteration is in projectile array order for determinism. ---
   for (const pos of projectiles) {
     const idx = mediumCellIndex(
       field,
@@ -657,9 +661,8 @@ function depositMediumSources(
     }
   }
 
-  // --- Asteroid field anomaly: iterate the precomputed source-cell list
-  // (computed once at setup by computeAsteroidSourceCells). Cold rock sources
-  // density without excitation. ---
+  // --- Asteroid field anomaly: iterate the precomputed source-cell list (from
+  // computeAsteroidSourceCells). Cold rock sources density, no excitation. ---
   for (let i = 0; i < asteroidSourceCells.length; i += 1) {
     const idx = asteroidSourceCells[i];
     if (idx === undefined) continue;
@@ -696,42 +699,44 @@ function depositMediumSources(
 }
 
 /**
- * Advance the arena medium one tick. The caller supplies the per-tick sources
- * via {@link computeArenaMediumSources}; the physics step runs in fixed
- * row-major order (no rng), so two same-seed runs produce byte-identical
- * medium arrays. After the step, per-cell birthTicks are updated against
- * {@link MEDIUM_EPS_EMISSION_THRESHOLD_J}: ignited → tick, sustained → carry,
- * extinguished/dark → -1. This drives the sustained-radiation light-lag gate.
+ * Advance the arena medium one tick. The physics step runs in fixed row-major
+ * order (no rng), so two same-seed runs produce byte-identical medium arrays.
+ * After the step, per-cell birthTicks are updated against
+ * {@link MEDIUM_EPS_EMISSION_THRESHOLD_J} (ignited → tick, sustained → carry,
+ * extinguished/dark → -1), driving the sustained-radiation light-lag gate.
  */
 export function stepArenaMedium(
   medium: ArenaMedium,
   sources: MediumSources,
   tick: number,
 ): ArenaMedium {
-  const stepped = stepMediumField(medium.field, medium.state, sources);
+  // Snapshot the pre-step ε before the stepper overwrites the live ε buffer
+  // (it aliases the work set); the birth-tick update diffs the two.
+  medium.prevEps.set(medium.state.eps);
+  const stepped = stepMediumField(medium.field, medium.state, sources, medium.work);
   return {
     field: medium.field,
     state: stepped,
     birthTicks: updateMediumBirthTicks(
-      medium.state.eps,
+      medium.prevEps,
       stepped.eps,
       medium.birthTicks,
       tick,
+      medium.birthTicks,
     ),
-    // The source buffers are transient scratch, carried forward unchanged for
-    // the next tick's optimised source computation to clear and refill in place.
+    // Persistent scratch carried forward for the next tick.
     sourceBuffers: medium.sourceBuffers,
+    work: medium.work,
+    prevEps: medium.prevEps,
   };
 }
 
 /**
- * Compute this tick's medium sources from the engine state and step the field.
- * Collapses the per-tick source computation (thruster exhaust, ablating debris,
- * projectile wakes, nebula + asteroid anomaly fills) plus the field step into a
- * single call so the tick loop stays slim. Pure: returns a new medium state,
- * inputs untouched. The `tick` is the tick this step advances to (the index of
- * the post-step state); it seeds the per-cell birth-tick bookkeeping that the
- * sustained-radiation light-lag gates on.
+ * Compute this tick's medium sources from the engine state and step the field,
+ * collapsing source computation (thruster exhaust, debris, projectile wakes,
+ * nebula + asteroid fills) plus the field step into one call. `tick` is the
+ * tick this step advances to; it seeds the birth-tick bookkeeping the
+ * sustained-radiation light-lag gate reads.
  */
 export function stepArenaMediumFromState(
   medium: ArenaMedium,
@@ -759,18 +764,22 @@ export function stepArenaMediumFromState(
 }
 
 /**
- * Build the next per-cell `birthTicks` array from the pre- and post-step ε
- * against the sustained-emission threshold. Ignited: birth = tick; sustained:
- * carry prior; extinguished or dark: -1. Returns a fresh array; row-major scan.
+ * Build the next per-cell `birthTicks` from the pre- and post-step ε against
+ * the sustained-emission threshold. Ignited: birth = tick; sustained: carry
+ * prior; extinguished or dark: -1. Writes `out` in place (row-major) and
+ * returns it. The loop reads `birthTicksBefore[i]` before writing `out[i]` at
+ * the same index with no cross-index dependency, so passing the same buffer as
+ * both (the persistent {@link ArenaMedium.birthTicks}) is safe and allocates
+ * nothing.
  */
 function updateMediumBirthTicks(
-  epsBefore: readonly number[],
-  epsAfter: readonly number[],
+  epsBefore: ArrayLike<number>,
+  epsAfter: ArrayLike<number>,
   birthTicksBefore: readonly number[],
   tick: number,
+  out: number[],
 ): number[] {
   const n = epsAfter.length;
-  const out = new Array<number>(n);
   for (let i = 0; i < n; i += 1) {
     const before = epsBefore[i] ?? 0;
     const after = epsAfter[i] ?? 0;

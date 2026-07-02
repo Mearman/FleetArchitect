@@ -20,12 +20,15 @@ import type {
   MediumState,
   MediumSources,
   MediumStepResult,
+  MediumWorkBuffers,
 } from "./medium-field";
+import { createMediumWorkBuffers } from "./medium-field";
 
 /**
- * Advance the medium field by one tick. Pure: returns new ρ and ε arrays, the
- * input arrays are not mutated, and identical inputs always produce identical
- * outputs.
+ * Advance the medium field by one tick. Identical inputs always produce
+ * byte-identical outputs (the result equals the {@link stepMediumFieldReference}
+ * oracle); the post-step arrays are `Float64Array` holding the same IEEE-754
+ * doubles the boxed representation did.
  *
  * The integrator sub-steps with a FIXED count derived from the ρ diffusivity
  * and the ρ velocity ceiling (ρ is the stiffer substance — it advects); ε is
@@ -42,15 +45,28 @@ import type {
  *
  * Iteration order is row-major (cell index ascending), and the per-cell face
  * order is N, E, S, W — both fixed for floating-point determinism.
+ *
+ * `work` holds the persistent ping-pong `Float64Array` buffers the optimised
+ * path reuses across ticks (no per-tick allocation): the input state is copied
+ * into the set it does not alias, then sub-steps ping-pong between the two
+ * sets. Omit it for a one-off call and a fresh buffer set is allocated. The
+ * production caller ({@link stepArenaMedium} in `medium-setup.ts`) owns the
+ * `work` set on the `ArenaMedium` and passes it every tick; because the live
+ * state aliases the work buffers between ticks, the input buffer is overwritten
+ * in place as the field advances — the caller owns those buffers, so a caller
+ * needing the pre-step ε must snapshot it before the call (see `prevEps`).
  */
 export function stepMediumField(
   field: MediumField,
   state: MediumState,
   sources: MediumSources,
+  work?: MediumWorkBuffers,
 ): MediumStepResult {
-  // Production runs the OPTIMISED path: two pre-allocated buffers per substance
-  // are ping-ponged across sub-steps (no per-sub-step slice()).
-  return runMediumStep(field, state, sources, true);
+  // Production runs the OPTIMISED path: two persistent Float64Array buffers per
+  // substance are ping-ponged across sub-steps (no per-sub-step slice(), no
+  // per-tick allocation). A caller that omits `work` gets a fresh set allocated
+  // for this call — the step is identical either way.
+  return runMediumStep(field, state, sources, true, work ?? createMediumWorkBuffers(field.cellCount));
 }
 
 /**
@@ -68,31 +84,39 @@ export function stepMediumFieldReference(
   state: MediumState,
   sources: MediumSources,
 ): MediumStepResult {
-  return runMediumStep(field, state, sources, false);
+  // The reference path ignores `work` (it slices fresh buffers every sub-step),
+  // but the shared core's signature requires a set — pass a throwaway. The
+  // reference is the naive allocating oracle, never wired into production.
+  return runMediumStep(field, state, sources, false, createMediumWorkBuffers(field.cellCount));
 }
 
 /**
  * Shared medium-step core. The ONLY difference between the reference (oracle)
- * and optimised (production) paths is the per-sub-step buffer strategy,
- * selected by `reuse`:
+ * and optimised (production) paths is the buffer strategy, selected by `reuse`:
  *  - `reuse = false` (reference): allocates a fresh `slice()` of every current
  *    buffer each sub-step — the naive O(5 · subSteps) allocation pattern.
- *  - `reuse = true` (optimised): ping-pongs between two pre-allocated buffers
- *    per substance so no per-sub-step allocation occurs.
+ *  - `reuse = true` (optimised): the two persistent `Float64Array` sets in
+ *    `work` are ping-ponged across sub-steps. The input is copied once (a
+ *    memcpy via `.set`) into the set it does not alias, then sub-steps ping-pong
+ *    between the two sets — zero per-tick allocation.
  *
  * The inner cell loop is identical in both paths: it reads only from the
  * current buffers and writes every cell of the next buffers, so the computed
  * values — and therefore the five post-step arrays — are byte-identical
- * regardless of which array objects hold current and next. Ping-pong safety:
- * for each substance `current` and `next` are always distinct arrays (A vs B),
- * matching the slice() path's read-from-current / write-to-next discipline, so
- * no cell ever reads a half-written neighbour value.
+ * regardless of which array objects hold current and next. The `.set` copy is
+ * bit-exact (a same-width TypedArray-to-TypedArray copy is a memcpy of the
+ * IEEE-754 doubles), so the optimised path's post-step arrays are byte-identical
+ * to the reference path's. Ping-pong safety: for each substance `current` and
+ * `next` are always distinct arrays (A vs B), matching the slice() path's
+ * read-from-current / write-to-next discipline, so no cell ever reads a
+ * half-written neighbour value.
  */
 function runMediumStep(
   field: MediumField,
   state: MediumState,
   sources: MediumSources,
   reuse: boolean,
+  work: MediumWorkBuffers,
 ): MediumStepResult {
   const { config, cellCount, neighbours, boundaryFaceCount } = field;
   const pitch = config.pitchM;
@@ -114,26 +138,49 @@ function runMediumStep(
   const subSteps = Math.max(rhoSubSteps, epsSubSteps, momSubSteps);
   const dt = MEDIUM_DT_S / subSteps;
 
-  // Work on mutable copies so the input is untouched (deterministic, pure).
-  // In the optimised path each substance has a ping-pong partner buffer (B)
-  // pre-allocated once; in the reference path the slice() branch is always
-  // taken so the B buffers are never read (aliased to A to avoid a pointless
-  // allocation in the naive baseline).
-  const bufRhoA = state.rho.slice();
-  const bufEpsA = state.eps.slice();
-  const bufEpsVisA = state.epsVis.slice();
-  const bufMxA = state.mx.slice();
-  const bufMyA = state.my.slice();
-  const bufRhoB = reuse ? new Array<number>(cellCount) : bufRhoA;
-  const bufEpsB = reuse ? new Array<number>(cellCount) : bufEpsA;
-  const bufEpsVisB = reuse ? new Array<number>(cellCount) : bufEpsVisA;
-  const bufMxB = reuse ? new Array<number>(cellCount) : bufMxA;
-  const bufMyB = reuse ? new Array<number>(cellCount) : bufMyA;
-  let rho = bufRhoA;
-  let eps = bufEpsA;
-  let epsVis = bufEpsVisA;
-  let mx = bufMxA;
-  let my = bufMyA;
+  // Buffer strategy. Both paths yield byte-identical post-step arrays; only the
+  // allocation pattern differs (see the function header). The A/B pair is the
+  // ping-pong pair per substance; the reference path aliases B to A (unused,
+  // since it slices fresh every sub-step).
+  const bufRhoA = reuse ? work.rhoA : state.rho.slice();
+  const bufEpsA = reuse ? work.epsA : state.eps.slice();
+  const bufEpsVisA = reuse ? work.epsVisA : state.epsVis.slice();
+  const bufMxA = reuse ? work.mxA : state.mx.slice();
+  const bufMyA = reuse ? work.myA : state.my.slice();
+  const bufRhoB = reuse ? work.rhoB : bufRhoA;
+  const bufEpsB = reuse ? work.epsB : bufEpsA;
+  const bufEpsVisB = reuse ? work.epsVisB : bufEpsVisA;
+  const bufMxB = reuse ? work.mxB : bufMxA;
+  const bufMyB = reuse ? work.myB : bufMyA;
+  let rho: Float64Array;
+  let eps: Float64Array;
+  let epsVis: Float64Array;
+  let mx: Float64Array;
+  let my: Float64Array;
+  if (reuse) {
+    // Optimised path: copy the input into the set it does NOT alias (always a
+    // cross-copy — the live state aliases one work set from last tick's result,
+    // so the other set is a distinct buffer; a fresh state aliases neither and
+    // lands in set A), then start the ping-pong from that copy. The `.set` is a
+    // memcpy of the IEEE-754 doubles (bit-exact), so this introduces no drift.
+    rho = state.rho === bufRhoA ? bufRhoB : bufRhoA;
+    eps = state.eps === bufEpsA ? bufEpsB : bufEpsA;
+    epsVis = state.epsVis === bufEpsVisA ? bufEpsVisB : bufEpsVisA;
+    mx = state.mx === bufMxA ? bufMxB : bufMxA;
+    my = state.my === bufMyA ? bufMyB : bufMyA;
+    rho.set(state.rho);
+    eps.set(state.eps);
+    epsVis.set(state.epsVis);
+    mx.set(state.mx);
+    my.set(state.my);
+  } else {
+    // Reference path: buf*A is already a fresh slice of the input.
+    rho = bufRhoA;
+    eps = bufEpsA;
+    epsVis = bufEpsVisA;
+    mx = bufMxA;
+    my = bufMyA;
+  }
 
   // Call-invariant coefficients: each depends only on `config` or `pitch`, not
   // on the sub-step or the cell, so hoisting them out of the cell loop (and the

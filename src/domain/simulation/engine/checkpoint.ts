@@ -254,7 +254,8 @@ export function captureCheckpoint(
       boundaryEpsLossPerS: state.medium.field.config.boundaryEpsLossPerS,
       // The final structuredClone severs the alias to the live arrays; the
       // spreads satisfy the schema's mutable `number[]` (the live state arrays
-      // are `readonly number[]`).
+      // are `Float64Array`, materialised to boxed `number[]` only here, at the
+      // checkpoint boundary — preserving the exact IEEE-754 doubles).
       rho: [...state.medium.state.rho],
       eps: [...state.medium.state.eps],
       epsVis: [...state.medium.state.epsVis],

@@ -82,9 +82,9 @@ function deltaState(
   return {
     rho: rhoArr,
     eps: epsArr,
-    epsVis: new Array(state.rho.length).fill(0),
-    mx: new Array(state.rho.length).fill(0),
-    my: new Array(state.rho.length).fill(0),
+    epsVis: new Float64Array(state.rho.length),
+    mx: new Float64Array(state.rho.length),
+    my: new Float64Array(state.rho.length),
   };
 }
 
@@ -212,7 +212,7 @@ describe("engine.medium-field", () => {
       const initial = totalDensity(state.rho);
       let rho = state.rho;
       for (let tick = 0; tick < 30; tick += 1) {
-        const result = stepMediumField(field, { rho, eps: new Array(3).fill(0), epsVis: new Array(3).fill(0), mx: new Array(3).fill(0), my: new Array(3).fill(0) }, zeroMediumSources(field));
+        const result = stepMediumField(field, { rho, eps: new Float64Array(3), epsVis: new Float64Array(3), mx: new Float64Array(3), my: new Float64Array(3) }, zeroMediumSources(field));
         // Mass conserved every tick (no source, no boundary).
         expect(totalDensity(result.rho)).toBeCloseTo(initial, 9);
         // Stays finite.
@@ -233,7 +233,7 @@ describe("engine.medium-field", () => {
       for (let tick = 0; tick < 1000; tick += 1) {
         const result = stepMediumField(
           field,
-          { rho, eps, epsVis: new Array(49).fill(0), mx: new Array(49).fill(0), my: new Array(49).fill(0) },
+          { rho, eps, epsVis: new Float64Array(49), mx: new Float64Array(49), my: new Float64Array(49) },
           zeroMediumSources(field),
         );
         for (let i = 0; i < result.rho.length; i += 1) {
@@ -271,7 +271,7 @@ describe("engine.medium-field", () => {
       let rho = state.rho;
       let eps = state.eps;
       for (let tick = 0; tick < 100; tick += 1) {
-        const result = stepMediumField(field, { rho, eps, epsVis: new Array(25).fill(0), mx: new Array(25).fill(0), my: new Array(25).fill(0) }, zeroMediumSources(field));
+        const result = stepMediumField(field, { rho, eps, epsVis: new Float64Array(25), mx: new Float64Array(25), my: new Float64Array(25) }, zeroMediumSources(field));
         rho = result.rho;
         eps = result.eps;
       }
@@ -293,17 +293,17 @@ describe("engine.medium-field", () => {
       // toward zero; the boundary radiative loss accelerates that at the edge.
       const field = defaultField(5, 5);
       const state: MediumState = {
-        rho: new Array(25).fill(0),
-        eps: new Array(25).fill(1e6),
-        epsVis: new Array(25).fill(0),
-        mx: new Array(25).fill(0),
-        my: new Array(25).fill(0),
+        rho: new Float64Array(25),
+        eps: new Float64Array(25).fill(1e6),
+        epsVis: new Float64Array(25),
+        mx: new Float64Array(25),
+        my: new Float64Array(25),
       };
       let eps = state.eps;
       let rho = state.rho;
       const initial = totalExcitation(eps);
       for (let tick = 0; tick < 200; tick += 1) {
-        const result = stepMediumField(field, { rho, eps, epsVis: new Array(25).fill(0), mx: new Array(25).fill(0), my: new Array(25).fill(0) }, zeroMediumSources(field));
+        const result = stepMediumField(field, { rho, eps, epsVis: new Float64Array(25), mx: new Float64Array(25), my: new Float64Array(25) }, zeroMediumSources(field));
         eps = result.eps;
         rho = result.rho;
       }
@@ -359,7 +359,7 @@ describe("engine.medium-field", () => {
       let rhoA = state.rho;
       let epsA = state.eps;
       for (let tick = 0; tick < 50; tick += 1) {
-        const r = stepMediumField(field, { rho: rhoA, eps: epsA, epsVis: new Array(36).fill(0), mx: new Array(36).fill(0), my: new Array(36).fill(0) }, sources);
+        const r = stepMediumField(field, { rho: rhoA, eps: epsA, epsVis: new Float64Array(36), mx: new Float64Array(36), my: new Float64Array(36) }, sources);
         rhoA = r.rho;
         epsA = r.eps;
       }
@@ -367,7 +367,7 @@ describe("engine.medium-field", () => {
       let rhoB = state.rho;
       let epsB = state.eps;
       for (let tick = 0; tick < 50; tick += 1) {
-        const r = stepMediumField(field, { rho: rhoB, eps: epsB, epsVis: new Array(36).fill(0), mx: new Array(36).fill(0), my: new Array(36).fill(0) }, sources);
+        const r = stepMediumField(field, { rho: rhoB, eps: epsB, epsVis: new Float64Array(36), mx: new Float64Array(36), my: new Float64Array(36) }, sources);
         rhoB = r.rho;
         epsB = r.eps;
       }
@@ -448,7 +448,7 @@ describe("engine.medium-field", () => {
       let rho = step1.rho;
       let prev = step1.eps[0] ?? 0;
       for (let tick = 0; tick < 30; tick += 1) {
-        const r = stepMediumField(field, { rho, eps, epsVis: new Array(3).fill(0), mx: new Array(3).fill(0), my: new Array(3).fill(0) }, sourceOff);
+        const r = stepMediumField(field, { rho, eps, epsVis: new Float64Array(3), mx: new Float64Array(3), my: new Float64Array(3) }, sourceOff);
         expect(r.eps[0] ?? 0).toBeLessThanOrEqual(prev);
         prev = r.eps[0] ?? 0;
         eps = r.eps;
@@ -484,7 +484,7 @@ describe("engine.medium-field", () => {
       });
       const result = stepMediumField(
         field,
-        { rho: [0, 1, 0], eps: [0, 0, 0], epsVis: [0, 0, 0], mx: [0, 100, 0], my: [0, 0, 0] },
+        { rho: new Float64Array([0, 1, 0]), eps: new Float64Array(3), epsVis: new Float64Array(3), mx: new Float64Array([0, 100, 0]), my: new Float64Array(3) },
         zeroMediumSources(field),
       );
       // Cell 1 lost ρ (it streamed downstream).
@@ -511,7 +511,7 @@ describe("engine.medium-field", () => {
         momentumDragPerS: 0,
         velocityMaxMPerS: MEDIUM_MAX_VELOCITY_M_PER_S,
       });
-      const initial = { rho: [0, 10, 0], eps: [0, 0, 0], epsVis: [0, 0, 0], mx: [0, 500, 0], my: [0, 0, 0] };
+      const initial = { rho: new Float64Array([0, 10, 0]), eps: new Float64Array(3), epsVis: new Float64Array(3), mx: new Float64Array([0, 500, 0]), my: new Float64Array(3) };
       const result = stepMediumField(field, initial, zeroMediumSources(field));
       const totalBefore = initial.rho.reduce((a, b) => a + b, 0);
       const totalAfter = result.rho.reduce((a, b) => a + b, 0);
