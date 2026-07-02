@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
-import { runBattleCached } from "@/domain/cache/run-battle-cached";
+import { resolveFleetToCombatShipsCached, runBattleCached } from "@/domain/cache/run-battle-cached";
 import { resolveFleetToCombatShips } from "@/domain/resolve";
 import { catalog } from "@/data/catalog";
 import { presetDesigns, presetFleets } from "@/data/presets";
@@ -61,8 +61,8 @@ function resolveMatchup(
   const defender = presetFleet(defenderId);
   return {
     ships: [
-      ...resolveFleetToCombatShips(attacker, designs, cat, "attacker"),
-      ...resolveFleetToCombatShips(defender, designs, cat, "defender"),
+      ...resolveFleetToCombatShipsCached(attacker, designs, cat, "attacker"),
+      ...resolveFleetToCombatShipsCached(defender, designs, cat, "defender"),
     ],
     attackerFleetId: attacker.id,
     defenderFleetId: defender.id,

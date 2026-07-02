@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { resolveFleetToCombatShips } from "@/domain/resolve";
 import { runBattle } from "@/domain/simulation/engine";
-import { runBattleCached } from "@/domain/cache/run-battle-cached";
+import { resolveFleetToCombatShipsCached, runBattleCached } from "@/domain/cache/run-battle-cached";
 import { catalog } from "@/data/catalog";
 import { createId, nowIso } from "@/domain/id";
 import type { Fleet } from "@/schema/fleet";
@@ -82,8 +82,8 @@ describe("battle pipeline (resolve -> runBattle)", () => {
 
     const designs = new Map([[design.id, design]]);
     const ships = [
-      ...resolveFleetToCombatShips(attacker, designs, catalog(), "attacker"),
-      ...resolveFleetToCombatShips(defender, designs, catalog(), "defender"),
+      ...resolveFleetToCombatShipsCached(attacker, designs, catalog(), "attacker"),
+      ...resolveFleetToCombatShipsCached(defender, designs, catalog(), "defender"),
     ];
     expect(ships).toHaveLength(4);
     expect(ships.filter((s) => s.side === "attacker")).toHaveLength(2);
@@ -159,8 +159,8 @@ describe("battle pipeline (resolve -> runBattle)", () => {
     const defender = fleet(createId("fleet"), design.id);
     const designs = new Map([[design.id, design]]);
     const ships = [
-      ...resolveFleetToCombatShips(attacker, designs, catalog(), "attacker"),
-      ...resolveFleetToCombatShips(defender, designs, catalog(), "defender"),
+      ...resolveFleetToCombatShipsCached(attacker, designs, catalog(), "attacker"),
+      ...resolveFleetToCombatShipsCached(defender, designs, catalog(), "defender"),
     ];
     const result = await runBattleCached({ ships, attackerFleetId: attacker.id, defenderFleetId: defender.id, anomalies: [], seed: 42, maxTicks: 600 });
     // The minimal armedFighter is a non-resolving degenerate matchup (see the

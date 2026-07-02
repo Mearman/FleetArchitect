@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { runBattleCached } from "@/domain/cache/run-battle-cached";
+import { resolveFleetToCombatShipsCached, runBattleCached } from "@/domain/cache/run-battle-cached";
 import { resolveFleetToCombatShips } from "@/domain/resolve";
 import { expandTemplates } from "@/schema/expand-templates";
 import { FormationTemplate } from "@/schema/formation-template";
@@ -198,7 +198,7 @@ describe("formation-template expansion through to a battle", () => {
 
   it("runs the resolved template fleet through a full battle without error", async () => {
     const expanded = expandTemplates(fleet, templateTable);
-    const attacker = resolveFleetToCombatShips(expanded, designs, cat, "attacker");
+    const attacker = resolveFleetToCombatShipsCached(expanded, designs, cat, "attacker");
     // A simple defender target for the two Sabres to engage. The dummy is
     // hittable and durable enough to keep the battle meaningful without making
     // it unwinnable.

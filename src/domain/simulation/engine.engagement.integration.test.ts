@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
-import { runBattleCached } from "@/domain/cache/run-battle-cached";
-import { resolveFleetToCombatShips } from "@/domain/resolve";
+import { resolveFleetToCombatShipsCached, runBattleCached } from "@/domain/cache/run-battle-cached";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import { catalog } from "@/data/catalog";
 import { createId, nowIso } from "@/domain/id";
@@ -99,8 +98,8 @@ async function runEngagement(seed: number) {
   const attacker = fleetOf(createId("fleet"), design.id, -250, [-40, 40]);
   const defender = fleetOf(createId("fleet"), design.id, -250, [-40, 40]);
   const ships = [
-    ...resolveFleetToCombatShips(attacker, designs, catalog(), "attacker"),
-    ...resolveFleetToCombatShips(defender, designs, catalog(), "defender"),
+    ...resolveFleetToCombatShipsCached(attacker, designs, catalog(), "attacker"),
+    ...resolveFleetToCombatShipsCached(defender, designs, catalog(), "defender"),
   ];
   return runBattleCached({
     ships,
@@ -186,8 +185,8 @@ function lopsidedInputs() {
   const attacker = fleetOf("fleet-attacker", design.id, -250, [-60, 0, 60]);
   const defender = fleetOf("fleet-defender", design.id, -250, [0]);
   const ships = [
-    ...resolveFleetToCombatShips(attacker, designs, catalog(), "attacker"),
-    ...resolveFleetToCombatShips(defender, designs, catalog(), "defender"),
+    ...resolveFleetToCombatShipsCached(attacker, designs, catalog(), "attacker"),
+    ...resolveFleetToCombatShipsCached(defender, designs, catalog(), "defender"),
   ];
   return { ships, attackerFleetId: attacker.id, defenderFleetId: defender.id };
 }
