@@ -62,7 +62,7 @@ Requires Node 20+ and pnpm.
 
 ## Deploy
 
-Pushes to `main` run the GitHub Actions workflow (`.github/workflows/deploy.yml`),
+Pushes to `main` run the GitHub Actions workflow (`.github/workflows/ci.yml`),
 which typechecks, builds, and publishes `dist/` to GitHub Pages. The app uses a
 hash router, so deep links survive refresh under the `/FleetArchitect/` base path.
 
