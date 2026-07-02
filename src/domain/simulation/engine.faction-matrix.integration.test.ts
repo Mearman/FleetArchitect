@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { runBattle } from "@/domain/simulation/engine";
+import { runBattleCached } from "@/domain/cache/run-battle-cached";
 import { resolveFleetToCombatShips } from "@/domain/resolve";
 import { catalog } from "@/data/catalog";
 import { presetDesigns, presetFleets } from "@/data/presets";
@@ -101,14 +101,14 @@ function buildShowcaseMatrix(): Matchup[] {
   return out;
 }
 
-function runMatchup(m: Matchup): BattleResult {
+function runMatchup(m: Matchup): Promise<BattleResult> {
   const attacker = fleetById(m.attacker);
   const defender = fleetById(m.defender);
   const ships = [
     ...resolveFleetToCombatShips(attacker, designs, catalog(), "attacker"),
     ...resolveFleetToCombatShips(defender, designs, catalog(), "defender"),
   ];
-  return runBattle({
+  return runBattleCached({
     ships,
     attackerFleetId: attacker.id,
     defenderFleetId: defender.id,
@@ -124,8 +124,8 @@ function aliveCount(frame: BattleFrame, side: BattleSide): number {
   return frame.ships.filter((s) => s.side === side && s.alive).length;
 }
 
-function assertValidOutcome(m: Matchup): void {
-  const result = runMatchup(m);
+async function assertValidOutcome(m: Matchup): Promise<void> {
+  const result = await runMatchup(m);
 
   // The engine always assigns a winner label; assert the runtime value really
   // is one of the declared outcomes (catches a crash that left it unset).
@@ -200,16 +200,16 @@ const showcases = buildShowcaseMatrix();
 
 describe("faction matrix: representative preset fleet cross-battles", () => {
   for (const m of crossFaction) {
-    it(`${m.name} produces a valid outcome`, () => {
-      assertValidOutcome(m);
+    it(`${m.name} produces a valid outcome`, async () => {
+      await assertValidOutcome(m);
     }, 120000);
   }
 });
 
 describe("faction matrix: formation-showcase presets", () => {
   for (const m of showcases) {
-    it(`${m.name} produces a valid outcome`, () => {
-      assertValidOutcome(m);
+    it(`${m.name} produces a valid outcome`, async () => {
+      await assertValidOutcome(m);
     }, 120000);
   }
 });

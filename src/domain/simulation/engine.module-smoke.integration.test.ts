@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { runBattle } from "@/domain/simulation/engine";
+import { beforeAll, describe, expect, it } from "vitest";
+import { runBattleCached } from "@/domain/cache/run-battle-cached";
 import type { CombatShip } from "@/domain/simulation/types";
 import type { ModuleEffect } from "@/schema/module";
+import type { BattleFrame, BattleResult } from "@/schema/battle";
 import {
   beam,
   inputs,
@@ -211,32 +212,38 @@ function buildArmedShip(): CombatShip {
 
 describe("module smoke: every module kind coexists in one live battle", () => {
   // One battle shared across the assertions — a smoke test guards the union
-  // once; it does not re-exercise per kind.
-  const result = runBattle(
-    inputs(
-      [
-        buildArmedShip(),
-        // Durable dummy: a shield that depletes under beam fire (exercising
-        // the shield-damage path) and enough on-axis cells that the beam
-        // always finds a live target across all 30 ticks (each 0-HP cell dies
-        // on the first hit it takes, passing damage onward).
-        targetDummy({
-          id: DUMMY_ID,
-          side: "defender",
-          x: 150,
-          y: 0,
-          structure: 5000,
-          shield: 200,
-          absorbingCells: 30,
-        }),
-      ],
-      MAX_TICKS,
-      SEED,
-    ),
-  );
+  // once; it does not re-exercise per kind. Computed once in `beforeAll` so the
+  // cached result is reused across test runs.
+  let result: BattleResult;
+  let firstFrame: BattleFrame;
 
-  const firstFrame = result.frames[0];
-  if (firstFrame === undefined) throw new Error("smoke battle produced no frames");
+  beforeAll(async () => {
+    result = await runBattleCached(
+      inputs(
+        [
+          buildArmedShip(),
+          // Durable dummy: a shield that depletes under beam fire (exercising
+          // the shield-damage path) and enough on-axis cells that the beam
+          // always finds a live target across all 30 ticks (each 0-HP cell dies
+          // on the first hit it takes, passing damage onward).
+          targetDummy({
+            id: DUMMY_ID,
+            side: "defender",
+            x: 150,
+            y: 0,
+            structure: 5000,
+            shield: 200,
+            absorbingCells: 30,
+          }),
+        ],
+        MAX_TICKS,
+        SEED,
+      ),
+    );
+    const frame = result.frames[0];
+    if (frame === undefined) throw new Error("smoke battle produced no frames");
+    firstFrame = frame;
+  });
 
   it("completes the battle with a valid winner and frames produced", () => {
     expect(result.frames.length, "battle should produce frames").toBeGreaterThan(0);

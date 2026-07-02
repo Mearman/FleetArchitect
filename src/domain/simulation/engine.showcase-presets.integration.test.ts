@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
+import { runBattleCached } from "@/domain/cache/run-battle-cached";
 import { resolveFleetToCombatShips } from "@/domain/resolve";
 import { catalog } from "@/data/catalog";
 import { presetDesigns, presetFleets } from "@/data/presets";
@@ -69,12 +70,12 @@ function resolveMatchup(
 }
 
 describe("Carrier Group (showcase) vs Drone Swarm", () => {
-  it("completes a valid battle and stamps the escort sub-formation onto the roster with its doctrine wired", () => {
+  it("completes a valid battle and stamps the escort sub-formation onto the roster with its doctrine wired", async () => {
     const { ships, attackerFleetId, defenderFleetId } = resolveMatchup(
       "preset-fleet-carrier-group",
       "preset-fleet-drone-swarm",
     );
-    const result = runBattle({
+    const result = await runBattleCached({
       ships,
       attackerFleetId,
       defenderFleetId,
@@ -121,12 +122,12 @@ describe("Carrier Group (showcase) vs Drone Swarm", () => {
 });
 
 describe("Skirmisher Line (showcase) vs Battle Line", () => {
-  it("completes a valid battle where the skirmishers hold their side of the midline rather than charging in", () => {
+  it("completes a valid battle where the skirmishers hold their side of the midline rather than charging in", async () => {
     const { ships, attackerFleetId, defenderFleetId } = resolveMatchup(
       "preset-fleet-skirmisher-line",
       "preset-fleet-battleline",
     );
-    const result = runBattle({
+    const result = await runBattleCached({
       ships,
       attackerFleetId,
       defenderFleetId,

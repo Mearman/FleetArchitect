@@ -29,6 +29,18 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
+      # Persist the deterministic battle-result disk cache (`.cache/sim/`) so
+      # the heavy integration suites (306-matchup faction matrix, showcase
+      # presets) reuse prior runs instead of re-simulating every battle. The key
+      # includes the engine source and the algorithm-signature module, so the
+      # cache rebuilds when the engine changes; the key self-invalidates on a
+      # real algorithm change via the pinned-frame-hash signature baked into
+      # every cache key.
+      - name: Cache battle results
+        uses: actions/cache@v4
+        with:
+          path: .cache/sim
+          key: sim-cache-${{ runner.os }}-${{ hashFiles('src/domain/simulation/**/*.ts', 'src/domain/cache/algorithm-signature.ts') }}
       # Serial: the heavy SI-scale battles (lethality guards, preset-pair
       # determinism) contend under vitest's default file-parallelism and time
       # out, flaking the gate. The determinism test tolerates cross-architecture

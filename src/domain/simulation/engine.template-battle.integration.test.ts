@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { runBattle } from "@/domain/simulation/engine";
+import { runBattleCached } from "@/domain/cache/run-battle-cached";
 import { resolveFleetToCombatShips } from "@/domain/resolve";
 import { expandTemplates } from "@/schema/expand-templates";
 import { FormationTemplate } from "@/schema/formation-template";
@@ -196,7 +196,7 @@ describe("formation-template expansion through to a battle", () => {
     }
   });
 
-  it("runs the resolved template fleet through a full battle without error", () => {
+  it("runs the resolved template fleet through a full battle without error", async () => {
     const expanded = expandTemplates(fleet, templateTable);
     const attacker = resolveFleetToCombatShips(expanded, designs, cat, "attacker");
     // A simple defender target for the two Sabres to engage. The dummy is
@@ -209,7 +209,7 @@ describe("formation-template expansion through to a battle", () => {
       y: 0,
       structure: 500,
     });
-    const result = runBattle(inputs([...attacker, defender], MAX_TICKS, SEED));
+    const result = await runBattleCached(inputs([...attacker, defender], MAX_TICKS, SEED));
 
     // The battle ran the full tick loop and produced a valid frame stream and
     // outcome (any of the three terminal states is acceptable here — the
