@@ -141,6 +141,7 @@ function stateWith(ships: SimShip[]): EngineState {
     winner: "draw",
     resolved: false,
     asteroidDiscs: [],
+    asteroidSourceCells: [],
     dynamicOccluderScratch: [],
     aliveAtTickStartScratch: new Set(),
     aliveRealSortedScratch: [],

@@ -102,6 +102,13 @@ export interface EngineState {
    * outside an asteroid-field battle.
    */
   asteroidDiscs: ReadonlyArray<{ x: number; y: number; r: number }>;
+  /**
+   * Precomputed grid-cell indices that lie within any asteroid disc's uplift
+   * region, in row-major visitation order. Built once at bootstrap from
+   * {@link asteroidDiscs} and the medium grid; reused every tick so the
+   * per-tick deposit loop is O(sourceCells) instead of O(cells x discs).
+   */
+  asteroidSourceCells: readonly number[];
   chunkSeq: number;
   mineSeq: number;
   podSeq: number;
