@@ -212,7 +212,7 @@ const MEDIUM_OWN_PLUME_DAZZLE_RADIUS_M = MEDIUM_PITCH_M_DEFAULT * 2;
  * attenuated first (via `attenuatedSensorRange`), so the gain — and thus the
  * reach — falls with it, exactly as halving the range would.
  */
-function sensorGain(range: number): number {
+export function sensorGain(range: number): number {
   if (SIM.visualLosRadius <= 0) return 1;
   const ratio = range / SIM.visualLosRadius;
   return ratio * ratio;
