@@ -1,5 +1,5 @@
 import type { Table } from "dexie";
-import type { BattleFrame, BattleResult } from "@/schema/battle";
+import { isBattleResult, type BattleFrame, type BattleResult } from "@/schema/battle";
 import type { EngineCheckpoint } from "@/schema/checkpoint";
 import type { SimCache } from "@/domain/cache/contract";
 import type { SimCacheRecord } from "@/storage/db";
@@ -173,26 +173,6 @@ function runAtIdle(task: () => Promise<void>): Promise<void> {
       setTimeout(invoke, 0);
     }
   });
-}
-
-/**
- * Cheap top-level shape guard for a stored {@link BattleResult}. Narrows
- * `unknown` with `typeof` and `in` — no assertions, no deep parse — checking
- * only the four top-level fields the cache consumer reads. The inputs +
- * `SimConfig` + `engineAlgorithmSignature` cover every simulation determinant,
- * so an entry written under a key is only ever read back when the algorithm and
- * schema match exactly; a stale-shape row is never reached because algorithm or
- * schema drift flips the key. The guard therefore only catches GROSS corruption
- * (a truncated write, a schema break the key could not observe), evicting the
- * row and treating it as a miss rather than serving a malformed result.
- */
-function isBattleResult(value: unknown): value is BattleResult {
-  if (typeof value !== "object" || value === null) return false;
-  if (!("id" in value) || typeof value.id !== "string") return false;
-  if (!("winner" in value) || typeof value.winner !== "string") return false;
-  if (!("ticks" in value) || typeof value.ticks !== "number") return false;
-  if (!("frames" in value) || !Array.isArray(value.frames)) return false;
-  return true;
 }
 
 interface CacheEntryMeta {
