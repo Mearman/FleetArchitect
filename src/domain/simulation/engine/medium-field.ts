@@ -368,21 +368,69 @@ export interface MediumSources {
   readonly epsVisSrc: readonly number[];
 }
 
-/** A field state: the five substance arrays, length `width * height`. */
+/** A field state: the five substance arrays as unboxed `Float64Array`, length
+ *  `width * height`. Typed arrays hold the same IEEE-754 doubles the boxed
+ *  `number[]` representation did — switching to `Float64Array` removes the
+ *  per-tick boxing/allocation churn of the FTCS stepper, which ping-pongs
+ *  between persistent work buffers (see {@link MediumWorkBuffers}) instead of
+ *  slicing five boxed arrays every tick. Boxed `number[]` is materialised only
+ *  at the snapshot/checkpoint boundary (`Array.from` / spread), preserving the
+ *  exact IEEE-754 values. */
 export interface MediumState {
   /** Density ρ, kg per cell (length `widthM * heightM`). */
-  readonly rho: readonly number[];
+  readonly rho: Float64Array;
   /** Excitation ε, J per cell (length `widthM * heightM`). Sensor-stable
    *  (no velocity advection) — the AI reads this for targeting. */
-  readonly eps: readonly number[];
+  readonly eps: Float64Array;
   /** Visual excitation εVis, J per cell. Same physics as ε (diffusion, decay,
    *  source) but ALSO velocity-advected (streams). The renderer reads this; the
    *  sensor system reads `eps`. This decouples visual glow from AI signatures. */
-  readonly epsVis: readonly number[];
+  readonly epsVis: Float64Array;
   /** Momentum x (East+), kg·m·s⁻¹ per cell. Velocity u_x = mx / ρ. */
-  readonly mx: readonly number[];
+  readonly mx: Float64Array;
   /** Momentum y (South+), kg·m·s⁻¹ per cell. Velocity u_y = my / ρ. */
-  readonly my: readonly number[];
+  readonly my: Float64Array;
+}
+
+/**
+ * Persistent ping-pong work buffers for the medium stepper: two `Float64Array`
+ * sets per substance, owned by the {@link ArenaMedium} (in `medium-setup.ts`)
+ * and reused every tick so the FTCS step allocates nothing. Each tick the
+ * stepper copies the input state into the set it does NOT alias (a cross-copy —
+ * the live state aliases one set from the previous tick's result, so copying
+ * into the OTHER set is never a self-copy; a fresh state aliases neither and
+ * copies into set A), then ping-pongs between the two sets across sub-steps.
+ * The post-step state aliases whichever set the last sub-step wrote.
+ */
+export interface MediumWorkBuffers {
+  readonly rhoA: Float64Array;
+  readonly rhoB: Float64Array;
+  readonly epsA: Float64Array;
+  readonly epsB: Float64Array;
+  readonly epsVisA: Float64Array;
+  readonly epsVisB: Float64Array;
+  readonly mxA: Float64Array;
+  readonly mxB: Float64Array;
+  readonly myA: Float64Array;
+  readonly myB: Float64Array;
+}
+
+/** Allocate a fresh {@link MediumWorkBuffers} set (all-zero) for a field of
+ *  `cellCount` cells. Called once per battle on the {@link ArenaMedium}; the
+ *  stepper overwrites the contents every tick but reuses the buffers. */
+export function createMediumWorkBuffers(cellCount: number): MediumWorkBuffers {
+  return {
+    rhoA: new Float64Array(cellCount),
+    rhoB: new Float64Array(cellCount),
+    epsA: new Float64Array(cellCount),
+    epsB: new Float64Array(cellCount),
+    epsVisA: new Float64Array(cellCount),
+    epsVisB: new Float64Array(cellCount),
+    mxA: new Float64Array(cellCount),
+    mxB: new Float64Array(cellCount),
+    myA: new Float64Array(cellCount),
+    myB: new Float64Array(cellCount),
+  };
 }
 
 /**
@@ -469,18 +517,20 @@ export interface ResolvedMediumFieldConfig {
   readonly velocityMaxMPerS: number;
 }
 
-/** Result of advancing the medium field by one tick. */
+/** Result of advancing the medium field by one tick. The arrays alias the
+ *  stepper's persistent {@link MediumWorkBuffers} (optimised path) or fresh
+ *  slices (reference path); in both cases they hold the post-tick state. */
 export interface MediumStepResult {
   /** The post-tick density field. Length `cellCount`. */
-  readonly rho: number[];
+  readonly rho: Float64Array;
   /** The post-tick excitation field. Length `cellCount`. */
-  readonly eps: number[];
+  readonly eps: Float64Array;
   /** The post-tick visual-excitation field (velocity-advected). Length `cellCount`. */
-  readonly epsVis: number[];
+  readonly epsVis: Float64Array;
   /** The post-tick x-momentum field. Length `cellCount`. */
-  readonly mx: number[];
+  readonly mx: Float64Array;
   /** The post-tick y-momentum field. Length `cellCount`. */
-  readonly my: number[];
+  readonly my: Float64Array;
 }
 
 /**
@@ -561,11 +611,11 @@ export function buildMediumField(
  */
 export function zeroMediumState(field: MediumField): MediumState {
   return {
-    rho: new Array<number>(field.cellCount).fill(0),
-    eps: new Array<number>(field.cellCount).fill(0),
-    epsVis: new Array<number>(field.cellCount).fill(0),
-    mx: new Array<number>(field.cellCount).fill(0),
-    my: new Array<number>(field.cellCount).fill(0),
+    rho: new Float64Array(field.cellCount),
+    eps: new Float64Array(field.cellCount),
+    epsVis: new Float64Array(field.cellCount),
+    mx: new Float64Array(field.cellCount),
+    my: new Float64Array(field.cellCount),
   };
 }
 
@@ -581,11 +631,11 @@ export function mediumStateFromDensity(
   const kgPerCell =
     densityKgPerM3 * field.config.pitchM * field.config.pitchM * MEDIUM_SLAB_DEPTH_M;
   return {
-    rho: new Array<number>(field.cellCount).fill(kgPerCell),
-    eps: new Array<number>(field.cellCount).fill(0),
-    epsVis: new Array<number>(field.cellCount).fill(0),
-    mx: new Array<number>(field.cellCount).fill(0),
-    my: new Array<number>(field.cellCount).fill(0),
+    rho: new Float64Array(field.cellCount).fill(kgPerCell),
+    eps: new Float64Array(field.cellCount),
+    epsVis: new Float64Array(field.cellCount),
+    mx: new Float64Array(field.cellCount),
+    my: new Float64Array(field.cellCount),
   };
 }
 
@@ -696,7 +746,7 @@ export function excitationBoundaryRate(
  * in a closed field (no sources, no boundary sink) the total is invariant
  * under pure advection + diffusion.
  */
-export function totalDensity(rho: readonly number[]): number {
+export function totalDensity(rho: ArrayLike<number>): number {
   let sum = 0;
   for (let i = 0; i < rho.length; i += 1) sum += rho[i] ?? 0;
   return sum;
@@ -706,7 +756,7 @@ export function totalDensity(rho: readonly number[]): number {
  * Sum the excitation across the field (joules). Useful for the decay
  * assertion: ε monotonically decreases toward zero in a source-free field.
  */
-export function totalExcitation(eps: readonly number[]): number {
+export function totalExcitation(eps: ArrayLike<number>): number {
   let sum = 0;
   for (let i = 0; i < eps.length; i += 1) sum += eps[i] ?? 0;
   return sum;

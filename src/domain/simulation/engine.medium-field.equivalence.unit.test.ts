@@ -129,8 +129,8 @@ describe("engine.medium-field — reference vs optimised equivalence", () => {
     const field = smallField();
     const seedState = mediumStateFromDensity(field, 1e-15);
     // Up-end one cell so the density gradient is non-uniform and ρ diffuses.
-    const seedRho = [...seedState.rho];
-    seedRho[0] = seedRho[0]! + 1e-12;
+    const seedRho = seedState.rho.slice();
+    seedRho[0] = (seedRho[0] ?? 0) + 1e-12;
     const baseState: MediumState = {
       rho: seedRho,
       eps: seedState.eps,
@@ -178,11 +178,11 @@ describe("engine.medium-field — reference vs optimised equivalence", () => {
     const field = smallField();
     const seedState = mediumStateFromDensity(field, 1e-14);
     const baseState: MediumState = {
-      rho: [...seedState.rho],
-      eps: [...seedState.eps],
-      epsVis: [1e-10, 0, 0, 0],
-      mx: [1e-12, 0, 0, 0],
-      my: [...seedState.my],
+      rho: seedState.rho.slice(),
+      eps: seedState.eps.slice(),
+      epsVis: new Float64Array([1e-10, 0, 0, 0]),
+      mx: new Float64Array([1e-12, 0, 0, 0]),
+      my: seedState.my.slice(),
     };
     const sources = zeroMediumSources(field);
 
