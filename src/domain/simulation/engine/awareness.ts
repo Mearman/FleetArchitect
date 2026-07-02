@@ -32,14 +32,14 @@ import {
 } from "./sensors";
 import type { Contact, GhostContact, SimShip } from "./types";
 
-/** Reusable scratch for {@link propagateContacts}, held on
- *  `EngineState.awarenessScratch` so the per-ship pool/received/linkedSlots/
- *  adjacency Maps and the per-round inner-loop buffers are cleared-and-reused
- *  across ticks instead of reallocated. The per-ship inner Maps/Sets/arrays are
- *  reused by instanceId (get-or-create + clear); a dead ship's entry is left
- *  stale (never read — only alive ships are iterated — and bounded by the
- *  battle's ship/chunk count). Not captured on the checkpoint (a resume
- *  re-derives awareness from the restored state on the first tick). */
+/** Reusable scratch for the whole awareness phase, held on
+ *  `EngineState.awarenessScratch`: every per-tick Map/array is cleared-and-reused
+ *  across ticks. Per-ship inner structures are reused by instanceId (get-or-
+ *  create + clear); a dead ship's entry is left stale (never read — only alive
+ *  ships are iterated — and bounded by the battle's ship count). Each buffer is
+ *  cleared and refilled each tick IN THE SAME insertion order as the one-tick
+ *  allocation it replaces, so Map iteration order stays byte-identical. Not
+ *  captured on the checkpoint (a resume re-derives awareness on its first tick). */
 export interface AwarenessScratch {
   poolByShip: Map<string, Map<string, Contact>>;
   receivedByShip: Map<string, Map<string, Contact>>;
@@ -50,6 +50,16 @@ export interface AwarenessScratch {
   outbound: Contact[];
   forwarded: Contact[];
   ids: string[];
+  // computeAwareness-level buffers (see interface doc above).
+  alive: SimShip[];
+  enemiesBySide: { attacker: SimShip[]; defender: SimShip[] };
+  dazzleAccum: Map<string, number>;
+  directContacts: Map<string, Contact[]>;
+  directContactLists: Map<string, Contact[]>;
+  ghostById: Map<string, GhostContact>;
+  sideByObserver: Map<string, "attacker" | "defender">;
+  clusterParent: Map<string, string>;
+  clusterGroups: Map<string, string[]>;
 }
 
 export function freshAwarenessScratch(): AwarenessScratch {
@@ -63,6 +73,15 @@ export function freshAwarenessScratch(): AwarenessScratch {
     outbound: [],
     forwarded: [],
     ids: [],
+    alive: [],
+    enemiesBySide: { attacker: [], defender: [] },
+    dazzleAccum: new Map(),
+    directContacts: new Map(),
+    directContactLists: new Map(),
+    ghostById: new Map(),
+    sideByObserver: new Map(),
+    clusterParent: new Map(),
+    clusterGroups: new Map(),
   };
 }
 
@@ -75,21 +94,15 @@ export function freshAwarenessScratch(): AwarenessScratch {
  *
  * Medium-cell radiation (battlefield-medium phase 4): when `medium` and `tick`
  * are supplied, a continuous inverse-square reception pass runs after the
- * continuous ship-ship pass. Each excited-cell emission is tested against every
- * observer's baseline receiver and sensor cones via `continuousContact` (the
- * steady-state inverse-square predicate a hull's ambient emission uses — NOT
- * the discrete light-sphere `formsContact` path, which only ever fired when the
- * observer sat inside the emitting cell). A sensor thus sees a sustained burn
- * at any range where its radiated strength clears the floor. The contacts it
- * forms are TRANSIENT — recorded in the snapshot's `contacts` so the
- * renderer/AI can show the EM event, but kept OUT of the ship-targeting
- * `directContacts` set and ghost memory. A medium contact's `enemyId` is the
- * cell's synthetic id (`medium#<col>_<row>`, never a real ship), so targeting's
- * `visibleEnemyViews` (which resolves `enemyId` against the real-ship map)
- * simply skips it — detecting a burn does not give a weapons lock on a hull
- * that is not there. That is the honest physics: the radiation is detectable,
- * the hull is not. Iteration is observer (instanceId) outer, emission
- * (row-major) inner, for deterministic contact order.
+ * ship-ship pass. The contacts it forms are TRANSIENT — recorded in the
+ * snapshot's `contacts` so the renderer/AI can show the EM event, but kept OUT
+ * of the ship-targeting `directContacts` set and ghost memory. A medium
+ * contact's `enemyId` is the cell's synthetic id (`medium#<col>_<row>`, never a
+ * real ship), so targeting's `visibleEnemyViews` (which resolves `enemyId`
+ * against the real-ship map) simply skips it — detecting a burn does not give a
+ * weapons lock on a hull that is not there. That is the honest physics: the
+ * radiation is detectable, the hull is not. Iteration is observer (instanceId)
+ * outer, emission (row-major) inner, for deterministic contact order.
  */
 export function computeAwareness(
   ships: SimShip[],
@@ -114,10 +127,17 @@ export function computeAwareness(
    */
   scratch?: AwarenessScratch,
 ): AwarenessSnapshot {
+  // Normalise the reusable scratch: production passes state.awarenessScratch
+  // (cleared + refilled each tick); a standalone/test call gets a fresh one.
+  const scr = scratch ?? freshAwarenessScratch();
+
   // Alive ships in instanceId order — the canonical order for every pass.
-  const alive = [...ships]
-    .filter((s) => s.alive)
-    .sort((p, q) => (p.instanceId < q.instanceId ? -1 : p.instanceId > q.instanceId ? 1 : 0));
+  // Cleared + refilled each tick; the instanceId sort is total (ids unique), so
+  // byte-identical to the discarded spread+filter without the per-tick churn.
+  const alive = scr.alive;
+  alive.length = 0;
+  for (const s of ships) if (s.alive) alive.push(s);
+  alive.sort((p, q) => (p.instanceId < q.instanceId ? -1 : p.instanceId > q.instanceId ? 1 : 0));
 
   // (a) Decay every alive ship's carried sensor saturation ONCE, before any
   //     floor is read this tick (battlefield-medium phase 5 dazzle). The
@@ -133,7 +153,8 @@ export function computeAwareness(
   // emissions contribute, added to the (already-decayed) saturation AFTER the
   // reception passes so it raises the floor on subsequent ticks. Built in
   // instanceId (observer) order, then emission order inside — deterministic.
-  const dazzleAccum = new Map<string, number>();
+  const dazzleAccum = scr.dazzleAccum;
+  dazzleAccum.clear();
   for (const ship of alive) dazzleAccum.set(ship.instanceId, 0);
 
   // (b) Per-ship direct detection. directContacts[observerId] = Contact[].
@@ -144,11 +165,17 @@ export function computeAwareness(
   // large bucket block (radius/WORLD_BUCKET_M per axis) and is far slower than a plain
   // O(n^2) scan over the modest ship count. The result is identical and fully
   // deterministic.
-  const directContacts = new Map<string, Contact[]>();
-  const enemiesBySide = {
-    attacker: alive.filter((s) => s.side === "defender"),
-    defender: alive.filter((s) => s.side === "attacker"),
-  };
+  const directContacts = scr.directContacts;
+  directContacts.clear();
+  // Enemy-side arrays refilled in `alive` order each tick (attacker faces
+  // defenders, defender faces attackers), matching the discarded filter order.
+  const enemiesBySide = scr.enemiesBySide;
+  enemiesBySide.attacker.length = 0;
+  enemiesBySide.defender.length = 0;
+  for (const s of alive) {
+    if (s.side === "defender") enemiesBySide.attacker.push(s);
+    else enemiesBySide.defender.push(s);
+  }
 
   for (const observer of alive) {
     // Every ship is fog-gated through EM reception (Phase 9). A ship with no
@@ -158,7 +185,15 @@ export function computeAwareness(
     // they cover. There is no omniscient escape hatch — a sensorless ship is
     // genuinely myopic, modular or not. An occluder on the sight line blocks
     // reception regardless of strength or arc.
-    const list: Contact[] = [];
+    // Reusable per-observer inner Contact[] (get-or-create + clear by
+    // instanceId), so the N direct-contact lists are not reallocated each tick.
+    let list = scr.directContactLists.get(observer.instanceId);
+    if (list === undefined) {
+      list = [];
+      scr.directContactLists.set(observer.instanceId, list);
+    } else {
+      list.length = 0;
+    }
     // enemiesBySide is keyed by the observer's own side and already sorted by
     // instanceId (it is a filter of the sorted `alive` set).
     const enemies =
@@ -262,28 +297,22 @@ export function computeAwareness(
   //     pool seeded with its direct contacts; relays forward third-party
   //     contacts along links, bandwidth-capped, to a fixed point. There is NO
   //     side-wide union — two ships with no comms path share nothing.
-  const liveByShip = propagateContacts(alive, directContacts, links, scratch);
+  const liveByShip = propagateContacts(alive, directContacts, links, scr);
 
   // (f) Per-ship awareness + ghost memory. The live pool drives ghost refresh;
   //     the merged awareness (live ∪ surviving ghosts) is what targeting reads.
   for (const ship of alive) {
-    refreshGhostsAndAwareness(ship, liveByShip.get(ship.instanceId) ?? new Map<string, Contact>(), byId);
+    refreshGhostsAndAwareness(ship, liveByShip.get(ship.instanceId) ?? new Map<string, Contact>(), byId, scr.ghostById);
   }
   // A ship that died is not in `alive`; its ghosts/awareness are irrelevant
   // (it never targets again) and its stale awareness map is harmless.
 
-  // (g) Continuous inverse-square medium-cell reception (battlefield-medium
-  //     phase 4). Each excited-cell emission is tested against every observer's
-  //     baseline receiver and sensor cones via `continuousContact` (the steady-
-  //     state path). A contact that forms is TRANSIENT: recorded for the
-  //     snapshot but kept out of the targeting `directContacts`/ghost path (a
-  //     medium contact's synthetic enemyId never resolves to a real ship, so
-  //     targeting skips it — detecting a burn does not lock a hull). Observer
-  //     order is instanceId, emission order is the row-major order
-  //     `collectMediumEmissions` produced, so two same-seed runs emit
-  //     byte-identical contact rows. An occluder on the sight line blocks
-  //     reception regardless of strength, exactly as for continuous ship-ship
-  //     reception. Skipped entirely when no medium emissions are supplied.
+  // (g) Continuous inverse-square medium-cell reception (phase 4). TRANSIENT
+  //     contacts only (snapshot, not `directContacts`/ghosts): a medium
+  //     contact's synthetic enemyId never resolves to a real ship, so targeting
+  //     skips it. Observer order is instanceId, emission order is row-major;
+  //     occluders block as in the ship-ship pass. Skipped when no medium. See
+  //     the phase header and {@link collectMediumContacts} for the full physics.
   const mediumContacts = collectMediumContacts(
     alive,
     medium,
@@ -294,34 +323,27 @@ export function computeAwareness(
     precomputedEmissions,
   );
 
-  // (h) Write the per-observer dazzle boost back into the carried saturation
-  //     AFTER both reception passes (battlefield-medium phase 5). The floor this
-  //     tick already used the decayed saturation; the boost accumulated from
-  //     this tick's strong emissions raises the floor on subsequent ticks. Done
-  //     in instanceId order so two same-seed runs reach byte-identical state.
+  // (h) Write the per-observer dazzle boost into the carried saturation AFTER
+  //     both reception passes (phase 5). This tick's floor already used the
+  //     decayed saturation; the boost raises the floor on subsequent ticks.
+  //     instanceId order so two same-seed runs reach byte-identical state.
   for (const ship of alive) {
     const boost = dazzleAccum.get(ship.instanceId) ?? 0;
     ship.sensorSaturation += boost;
   }
 
-  return buildAwarenessSnapshot(alive, liveByShip, occluders, links, mediumContacts);
+  return buildAwarenessSnapshot(alive, liveByShip, occluders, links, mediumContacts, scr);
 }
 
 /**
  * The continuous inverse-square medium-cell reception pass. For each observer
- * (in instanceId order) test each medium-cell emission (in row-major order) via
- * {@link mediumReceives} — which routes through `continuousContact`, the
- * steady-state inverse-square predicate a hull's ambient emission uses — and
- * collect a transient contact for every detection. An occluder on the
- * observer→cell segment blocks reception. Returns contacts sorted by
- * (observerId, enemyId) for a deterministic snapshot order; an empty array when
- * no medium was supplied, the tick is absent, or no emission formed a contact.
- *
- * These contacts carry the cell's synthetic `medium#<col>_<row>` enemyId and the
- * cell's world position as the contact fix. They are NOT added to the observers'
- * `directContacts` or ghost memory — only to the snapshot — so targeting (which
- * resolves enemyId against the real-ship map) and ghost refresh (which drops
- * contacts whose enemyId is absent) are undisturbed.
+ * (instanceId order) test each medium-cell emission (row-major) via
+ * {@link mediumReceives}; an occluder on the observer→cell segment blocks
+ * reception. Returns contacts sorted by (observerId, enemyId); empty when no
+ * medium/tick/emissions. Contacts carry the cell's synthetic `medium#<col>_<row>`
+ * enemyId and world position, are snapshot-only (never `directContacts`/ghosts),
+ * so targeting and ghost refresh are undisturbed. See the phase header for the
+ * full transient-contact physics.
  */
 function collectMediumContacts(
   alive: readonly SimShip[],
@@ -345,9 +367,8 @@ function collectMediumContacts(
       // light path, exactly as it blocks continuous ship-ship reception.
       if (segmentBlocked(observer.x, observer.y, emission.x, emission.y, occluders)) continue;
       // Sensor dazzle (phase 5): a bright medium-cell emission raises the
-      // observer's saturation for subsequent ticks, source-agnostic. The
-      // caller passes a mutable accumulator the main loop owns; this pass
-      // only ever ADDS to entries the main loop already seeded.
+      // observer's saturation, source-agnostic. This pass only ADDS to entries
+      // the main loop already seeded.
       const accum = dazzleAccum.get(observer.instanceId);
       if (accum !== undefined) {
         dazzleAccum.set(
@@ -357,21 +378,18 @@ function collectMediumContacts(
       }
       if (mediumReceives(observer, emission, tick, anomalies, observerSensors) === undefined) continue;
       out.push({
-        // The synthetic cell id; never matches a real ship instanceId, so
+        // Synthetic cell id; never matches a real ship instanceId, so
         // targeting's visibleEnemyViews skips it (no hull to lock).
         enemyId: emission.sourceId,
-        // The fix is the cell's world position (a cell is stationary, so there
-        // is no light-lag positional offset to apply). The continuous path
-        // detects the cell while it stays excited, at the range its radiated
-        // strength clears the observer's floor.
+        // The fix is the cell's world position (a cell is stationary, so no
+        // light-lag offset applies).
         x: emission.x,
         y: emission.y,
-        // A radiating cell has no facing; record a neutral 0 so the snapshot
-        // shape stays uniform with ship contacts.
+        // A radiating cell has no facing; neutral 0 keeps the snapshot shape
+        // uniform with ship contacts.
         facing: 0,
-        // Threat is distance-dominated; with no underlying ship cost, the score
-        // is just `-dist` (nearer cells score higher), which keeps snapshot row
-        // ordering by distance consistent with ship contacts.
+        // Distance-dominated; with no underlying ship cost the score is just
+        // `-dist` (nearer cells score higher), keeping row order consistent.
         threat: -fastHypot(emission.x - observer.x, emission.y - observer.y),
         origin: observer.instanceId,
       });
@@ -384,16 +402,21 @@ function collectMediumContacts(
   return out;
 }
 
-/**
- * Union-find over instanceIds for the cluster pass: groups same-side ships that
- * are transitively comms-linked. Deterministic — find/union touch only the maps,
- * never iteration order.
- */
+/** Union-find over instanceIds for the cluster pass: groups same-side ships
+ *  that are transitively comms-linked. Deterministic — find/union touch only the
+ *  maps, never iteration order. */
 export function clusterComponents(
   sideShips: readonly SimShip[],
   sideLinks: readonly CommsLink[],
+  /**
+   * Reusable scratch for the union-find Maps (held on
+   * `EngineState.awarenessScratch`), cleared and rebuilt per side per tick.
+   * Omitted → fresh allocation (standalone/test).
+   */
+  scratch?: AwarenessScratch,
 ): Map<string, string[]> {
-  const parent = new Map<string, string>();
+  const parent = scratch?.clusterParent ?? new Map<string, string>();
+  parent.clear();
   for (const s of sideShips) parent.set(s.instanceId, s.instanceId);
   const find = (x: string): string => {
     let root = x;
@@ -414,7 +437,8 @@ export function clusterComponents(
   };
   for (const link of sideLinks) union(link.a.ship.instanceId, link.b.ship.instanceId);
 
-  const groups = new Map<string, string[]>();
+  const groups = scratch?.clusterGroups ?? new Map<string, string[]>();
+  groups.clear();
   for (const s of sideShips) {
     const root = find(s.instanceId);
     const g = groups.get(root);
@@ -428,11 +452,10 @@ export function clusterComponents(
  * Bounded per-observer flood of contacts along comms links. EACH ship has its
  * own pool seeded with its direct contacts. A ship is a relay iff at least two
  * of its comms units appear in some link; only relays forward third-party
- * contacts (a leaf forwards nothing). Each forward is sorted by (threat desc,
- * enemyId asc) and truncated to the link's min bandwidth, then merged into the
- * neighbour's pool (dedup by enemyId, keep higher threat; tie on enemyId).
- * Repeats in id order to a fixed point. Mutates each ship's awareness pool via
- * the returned-into maps; the caller reads the settled pools in (f).
+ * contacts. Each forward is sorted by (threat desc, enemyId asc) and truncated
+ * to the link's min bandwidth, then merged into the neighbour's pool (dedup by
+ * enemyId, keep higher threat; tie on enemyId). Repeats in id order to a fixed
+ * point; the caller reads the settled pools in (f).
  */
 export function propagateContacts(
   alive: readonly SimShip[],
@@ -570,17 +593,24 @@ export function propagateContacts(
 
 /**
  * Refresh a ship's ghost memory and final awareness from its settled live pool.
- * Live contacts refresh (or create) ghosts at full life; ghosts not currently
- * live decay one tick; ghosts that expire or whose target died are dropped.
- * The final awareness is live contacts plus surviving ghost positions, live
- * overriding a ghost for the same enemy. `ship.ghosts` is kept sorted by enemyId.
+ * Live contacts refresh (or create) ghosts at full life; non-live ghosts decay
+ * one tick; expired or dead-target ghosts are dropped. Final awareness is live
+ * contacts plus surviving ghost positions (live overrides ghost for the same
+ * enemy). `ship.ghosts` is kept sorted by enemyId.
  */
 export function refreshGhostsAndAwareness(
   ship: SimShip,
   live: ReadonlyMap<string, Contact>,
   byId: ReadonlyMap<string, SimShip>,
+  /**
+   * Reusable per-ship ghost-by-id Map (held on `EngineState.awarenessScratch`),
+   * cleared and rebuilt per ship in the same insertion order as the discarded
+   * one-call Map. Omitted → fresh allocation (standalone/test).
+   */
+  ghostByIdScratch?: Map<string, GhostContact>,
 ): void {
-  const ghostById = new Map<string, GhostContact>();
+  const ghostById = ghostByIdScratch ?? new Map<string, GhostContact>();
+  ghostById.clear();
   for (const g of ship.ghosts) ghostById.set(g.enemyId, g);
 
   // Refresh ghosts for every live contact.
@@ -630,15 +660,21 @@ export function refreshGhostsAndAwareness(
 
 /** Build the deterministic AwarenessSnapshot from the settled per-ship state.
  *  Every array is sorted by its canonical key. The optional `mediumContacts`
- *  carry transient, light-lagged detections of radiating medium cells (phase 4);
- *  they are appended to the snapshot's `contacts` (so the renderer/AI can show
- *  the EM event) with the observer's side resolved from the live set. */
+ *  (transient phase-4 detections of radiating cells) are appended to the
+ *  snapshot's `contacts` with the observer's side resolved from the live set. */
 export function buildAwarenessSnapshot(
   alive: readonly SimShip[],
   liveByShip: ReadonlyMap<string, Map<string, Contact>>,
   occluders: readonly Disc[],
   links: readonly CommsLink[],
   mediumContacts: readonly Contact[] = [],
+  /**
+   * Reusable scratch (held on `EngineState.awarenessScratch`) carrying the
+   * snapshot's transient observer→side Map and the cluster union-find Maps,
+   * cleared and refilled each tick. Omitted → fresh allocation (standalone/test).
+   * The snapshot's RETURNED arrays are retained by the caller and are NOT pooled.
+   */
+  scratch?: AwarenessScratch,
 ): AwarenessSnapshot {
   // Occluders: emit verbatim (computeOccluders already returns a fixed order).
   const snapOccluders = occluders.map((d) => ({ x: d.x, y: d.y, r: d.r }));
@@ -649,7 +685,7 @@ export function buildAwarenessSnapshot(
   for (const side of sides) {
     const sideShips = alive.filter((s) => s.side === side);
     const sideLinks = links.filter((l) => l.side === side);
-    const groups = clusterComponents(sideShips, sideLinks);
+    const groups = clusterComponents(sideShips, sideLinks, scratch);
     const byInstance = new Map(sideShips.map((s) => [s.instanceId, s]));
     for (const memberIds of groups.values()) {
       const sortedMembers = [...memberIds].sort((p, q) => (p < q ? -1 : p > q ? 1 : 0));
@@ -672,8 +708,10 @@ export function buildAwarenessSnapshot(
   const contacts: AwarenessSnapshot["contacts"] = [];
   const ghosts: AwarenessSnapshot["ghosts"] = [];
   // Observer → side lookup, so the transient medium contacts below can carry
-  // their observer's side without a second pass over the live set.
-  const sideByObserver = new Map<string, "attacker" | "defender">();
+  // their observer's side without a second pass over the live set. Cleared +
+  // re-seeded in `alive` order each tick (matches the discarded one-tick Map).
+  const sideByObserver = scratch?.sideByObserver ?? new Map<string, "attacker" | "defender">();
+  sideByObserver.clear();
   for (const ship of alive) {
     const live = liveByShip.get(ship.instanceId) ?? new Map<string, Contact>();
     sideByObserver.set(ship.instanceId, ship.side);
