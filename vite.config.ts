@@ -139,7 +139,39 @@ export default defineConfig({
   },
   build: {
     target: "es2022",
-    sourcemap: true,
+    // Production builds ship without sourcemaps: the .map files are larger than
+    // the JS they accompany (the entry chunk's map alone was ~1.4 MB) and would
+    // bloat the GitHub Pages deploy for no runtime benefit. Dev keeps sourcemaps
+    // regardless — this flag governs only the production build.
+    sourcemap: false,
+    rollupOptions: {
+      output: {
+        // Split stable vendor code into separately-cached chunks so a browser
+        // cache survives app-code changes. The function form keys on the
+        // resolved node_modules path; react-router is matched before react so
+        // the router is not folded into the react chunk.
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return undefined;
+          if (id.includes("@mantine")) return "vendor-mantine";
+          if (id.includes("react-router")) return "vendor-router";
+          if (
+            id.includes("/react/") ||
+            id.includes("/react-dom/") ||
+            id.includes("/scheduler/")
+          ) {
+            return "vendor-react";
+          }
+          if (
+            id.includes("/dexie") ||
+            id.includes("lz-string") ||
+            id.includes("/zod/")
+          ) {
+            return "vendor-data";
+          }
+          return undefined;
+        },
+      },
+    },
   },
   test: {
     environment: "node",
