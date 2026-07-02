@@ -21,6 +21,7 @@
  */
 
 import { fastHypot } from "./hypot";
+import { SpatialHash } from "../spatial-hash";
 import type { SimShip } from "./types";
 
 /**
@@ -73,7 +74,7 @@ export const SEPARATION_BURN_THRESHOLD = 0.85;
  * the list is sorted by `id` so the per-ship neighbour summation is
  * byte-reproducible.
  */
-interface SepBody {
+export interface SepBody {
   id: string;
   x: number;
   y: number;
@@ -81,23 +82,73 @@ interface SepBody {
 }
 
 /**
- * Build the per-tick separation snapshot: every alive, non-phantom ship's pose
- * and bounding radius, captured NOW (before any ship moves) and sorted
- * lexicographically by `instanceId`. A claimed hulk is included — it is a solid
- * body other ships must not ram — though it does not itself steer (the movement
- * loop skips claimed hulls before reaching the separation blend). Sorted so the
- * neighbour summation below has a fixed, run-independent order: floating-point
- * addition is not associative, so the order the away-vectors are summed in must
- * be a property of the inputs, not of the live array order.
+ * The per-tick separation field: every alive, non-phantom ship's pose and
+ * bounding radius, captured NOW (before any ship moves) and sorted
+ * lexicographically by `instanceId`, PLUS a uniform-grid spatial hash over the
+ * same bodies and the largest bounding radius on the field.
+ *
+ * The hash backs the optimised neighbour gather in {@link separationHeading}:
+ * the separation field is SHORT-RANGE (a neighbour outside
+ * `contact × (1 + clearanceFactor)` contributes exactly zero — see
+ * {@link separationWeight}), so for each ship we query only the disc of buckets
+ * the field could reach rather than scanning every body. That disc's radius is
+ * `(ship.radius + maxRadius) × (1 + clearanceFactor)` — the furthest any pair's
+ * outer edge could lie — which is a guaranteed superset of every contributing
+ * neighbour for that ship (any `o` inside the (ship, o) pair-field satisfies
+ * `dist < (ship.radius + o.radius) × 1.5 ≤ queryRadius`). The exact membership
+ * test is then the SAME `separationWeight > 0` predicate the full scan used, so
+ * the gathered+filtered candidate SET is identical to the full-scan contributing
+ * set.
+ *
+ * Determinism of the summation: the candidate set gathered from the hash comes
+ * out in bucket-walk order (not id order), so `separationHeading` re-sorts the
+ * gathered bodies back into the snapshot's lexicographic `id` order before
+ * summing. The contributing neighbours therefore accumulate in the identical
+ * order the full O(N²) scan would have summed them — floating-point addition is
+ * not associative, so this re-sort is what makes the optimisation byte-identical
+ * to the frozen oracle ({@link separationHeadingReference}); the field's `id`
+ * sort makes that order a property of the inputs, not of the live array order.
+ *
+ * `candidateScratch` is a per-tick reusable buffer the heading gather fills (one
+ * buffer reused across every ship in the tick, since `moveShips` walks the ships
+ * sequentially); it lives exactly as long as the field, which is rebuilt once
+ * per tick.
  */
-export function buildSeparationSnapshot(ships: readonly SimShip[]): SepBody[] {
+export interface SeparationField {
+  /** All alive, non-phantom bodies, sorted lexicographically by `id`. */
+  readonly bodies: readonly SepBody[];
+  /** Uniform-grid index over the same bodies (payload = the body). */
+  readonly hash: SpatialHash<SepBody>;
+  /** Largest bounding radius on the field; bounds the per-ship query disc. */
+  readonly maxRadius: number;
+  /** Reusable candidate buffer, cleared and refilled once per ship per tick. */
+  readonly candidateScratch: SepBody[];
+}
+
+/**
+ * Build the per-tick separation field: every alive, non-phantom ship's pose and
+ * bounding radius, captured NOW (before any ship moves) and sorted
+ * lexicographically by `instanceId`, then indexed in a uniform-grid spatial hash
+ * for the short-range neighbour gather. A claimed hulk is included — it is a
+ * solid body other ships must not ram — though it does not itself steer (the
+ * movement loop skips claimed hulls before reaching the separation blend). The
+ * bodies are sorted and the hash populated in that same sorted order so the
+ * neighbour summation has a fixed, run-independent order to be re-sorted into:
+ * floating-point addition is not associative, so the order the away-vectors are
+ * summed in must be a property of the inputs, not of the live array order.
+ */
+export function buildSeparationSnapshot(ships: readonly SimShip[]): SeparationField {
   const bodies: SepBody[] = [];
+  let maxRadius = 0;
   for (const s of ships) {
     if (!s.alive || s.phantom !== undefined) continue;
     bodies.push({ id: s.instanceId, x: s.x, y: s.y, radius: s.radius });
+    if (s.radius > maxRadius) maxRadius = s.radius;
   }
   bodies.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  return bodies;
+  const hash = new SpatialHash<SepBody>();
+  for (const body of bodies) hash.insert(body, body.x, body.y);
+  return { bodies, hash, maxRadius, candidateScratch: [] };
 }
 
 /**
@@ -107,9 +158,11 @@ export function buildSeparationSnapshot(ships: readonly SimShip[]): SepBody[] {
  * linearly up to 1 at skin contact. The same ramp shape as `blackHoleAvoidWeight`
  * — a floor at the edge so the bias is felt immediately rather than fading in
  * from zero, then a smooth rise as the pair closes. Returns 0 for any neighbour
- * outside the field so the caller can sum unconditionally.
+ * outside the field so the caller can sum unconditionally. Shared with the
+ * reference oracle so the field shape (and hence the exact cutoff the optimised
+ * gather relies on) cannot drift between the two implementations.
  */
-function separationWeight(dist: number, contact: number): number {
+export function separationWeight(dist: number, contact: number): number {
   const outer = contact * (1 + SEPARATION_CLEARANCE_FACTOR);
   if (dist >= outer) return 0;
   if (dist <= contact) return 1;
@@ -120,27 +173,55 @@ function separationWeight(dist: number, contact: number): number {
 
 /**
  * The net separation heading and peak proximity weight for `ship` over every
- * other body in the snapshot, summed in the snapshot's fixed id order. Each
+ * other body in the field, summed in the snapshot's fixed id order. Each
  * neighbour inside the field contributes a unit vector pointing AWAY from it,
  * weighted by its proximity; the resultant bearing is the direction to steer to
  * escape the cluster (vector-space, so a ship squeezed between two neighbours
  * finds a sideways escape rather than a cancelled-out zero). The blend strength
  * is the PEAK proximity across neighbours — the closest one sets how hard we
  * steer — which is a `max` and so order-independent; only the vector sum is
- * non-associative, which the snapshot's id-sort makes deterministic. Returns
+ * non-associative, which the re-sort into id order makes deterministic. Returns
  * `undefined` when no neighbour is inside the field, or in the degenerate
  * exactly-sandwiched case where the away-vectors cancel (atan2(0,0)=0 would
  * spuriously steer "east"; the existing heading is left to the reactive
  * collision backstop instead).
+ *
+ * Optimisation vs. the frozen oracle ({@link separationHeadingReference}): the
+ * field is short-range, so instead of an O(N²) scan over every body we gather
+ * only the bodies whose bucket overlaps the query disc of radius
+ * `(ship.radius + field.maxRadius) × (1 + clearanceFactor)` (a superset of every
+ * contributing neighbour), re-sort that gathered set into the snapshot's id
+ * order, and run the identical per-neighbour accumulation. The contributing
+ * neighbours are summed in the same order the full scan would have used; the
+ * extra gathered bodies the disc admits are filtered out by the same
+ * `separationWeight <= 0` test, contributing nothing. The candidate SET gathered
+ * is identical to the full-scan contributing set, in the identical order, so the
+ * result is byte-identical (proven by the separation equivalence unit test and
+ * the whole-battle lossless digest gate).
  */
 export function separationHeading(
   ship: SimShip,
-  snapshot: readonly SepBody[],
+  field: SeparationField,
 ): { heading: number; weight: number } | undefined {
+  // Query disc radius: the furthest any pair's outer edge could reach. Every
+  // contributing neighbour (dist < (ship.radius + o.radius) × 1.5) lies inside
+  // this disc, so the gather is a guaranteed superset.
+  const queryRadius = (ship.radius + field.maxRadius) * (1 + SEPARATION_CLEARANCE_FACTOR);
+  // Gather candidate bodies from the spatial hash into the reusable scratch
+  // buffer, then re-sort into the snapshot's lexicographic id order so the
+  // summation below is byte-identical to the full O(N²) scan. The bucket walk
+  // emits in row-major bucket order, not id order, so this re-sort is the
+  // load-bearing step that preserves floating-point determinism.
+  const gathered = field.candidateScratch;
+  gathered.length = 0;
+  field.hash.forEachCandidate(ship.x, ship.y, queryRadius, (entry) => {
+    gathered.push(entry.payload);
+  });
+  gathered.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   let sumX = 0;
   let sumY = 0;
   let peak = 0;
-  for (const o of snapshot) {
+  for (const o of gathered) {
     if (o.id === ship.instanceId) continue;
     const dx = ship.x - o.x;
     const dy = ship.y - o.y;
