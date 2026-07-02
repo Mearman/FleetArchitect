@@ -1,5 +1,5 @@
 import { engineAlgorithmSignature } from "@/domain/cache/algorithm-signature";
-import { deriveCacheKey } from "@/domain/cache/key";
+import { deriveCacheKeyMemoised } from "@/domain/cache/key";
 import type { CheckpointStore } from "@/domain/cache/checkpoint-store";
 import { getSimConfig } from "@/domain/cache/sim-config";
 import type {
@@ -86,7 +86,7 @@ export class ResumingBattleRunner implements BattleRunner {
     options?: BattleRunOptions,
   ): Promise<BattleResult> {
     const signature = await engineAlgorithmSignature();
-    const key = await deriveCacheKey(
+    const key = await deriveCacheKeyMemoised(
       inputs,
       getSimConfig(),
       signature,

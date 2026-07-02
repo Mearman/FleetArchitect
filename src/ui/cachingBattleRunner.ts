@@ -1,5 +1,5 @@
 import { engineAlgorithmSignature } from "@/domain/cache/algorithm-signature";
-import { deriveCacheKey } from "@/domain/cache/key";
+import { deriveCacheKeyMemoised } from "@/domain/cache/key";
 import { getSimConfig } from "@/domain/cache/sim-config";
 import type { SimCache } from "@/domain/cache/contract";
 import type {
@@ -58,7 +58,7 @@ export class CachingBattleRunner implements BattleRunner {
     }
 
     const signature = await engineAlgorithmSignature();
-    const key = await deriveCacheKey(
+    const key = await deriveCacheKeyMemoised(
       inputs,
       getSimConfig(),
       signature,
