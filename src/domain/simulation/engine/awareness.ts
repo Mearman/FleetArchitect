@@ -7,30 +7,18 @@ import { segmentBlocked } from "@/domain/occluders";
 import type { Disc } from "@/domain/occluders";
 import type { AwarenessSnapshot, BattleAnomalyKind } from "@/schema/battle";
 
-import { SIM, SPEED_OF_LIGHT_M_PER_TICK } from "./config";
+import { SIM } from "./config";
 import { fastHypot } from "./hypot";
 import { coverageShapes } from "./coverage";
-import {
-  hullDazzleContribution,
-  mediumDazzleContribution,
-  mediumReceives,
-  emReceives,
-} from "./em-reception";
+import { mediumDazzleContribution, mediumReceives } from "./em-reception";
 import { SATURATION_DECAY_FACTOR } from "./em-anchors";
 import { collectMediumEmissions } from "./medium-emissions";
 import type { Emission } from "./emissions";
 import type { ArenaMedium } from "./medium-setup";
-import { aberratedContactPosition } from "./optics-aberration";
 import type { CommsLink, CommsUnit } from "./sensors";
-import {
-  aimDishes,
-  commsUnitOperable,
-  commsUnitsOf,
-  contactThreat,
-  linkForms,
-  sensorUnitsOf,
-} from "./sensors";
+import { aimDishes, commsUnitOperable, commsUnitsOf, linkForms, sensorUnitsOf } from "./sensors";
 import type { Contact, GhostContact, SimShip } from "./types";
+import { buildDirectContacts } from "./awareness-direct";
 
 /** Reusable scratch for the whole awareness phase, held on
  *  `EngineState.awarenessScratch`: every per-tick Map/array is cleared-and-reused
@@ -165,8 +153,6 @@ export function computeAwareness(
   // large bucket block (radius/WORLD_BUCKET_M per axis) and is far slower than a plain
   // O(n^2) scan over the modest ship count. The result is identical and fully
   // deterministic.
-  const directContacts = scr.directContacts;
-  directContacts.clear();
   // Enemy-side arrays refilled in `alive` order each tick (attacker faces
   // defenders, defender faces attackers), matching the discarded filter order.
   const enemiesBySide = scr.enemiesBySide;
@@ -176,71 +162,21 @@ export function computeAwareness(
     if (s.side === "defender") enemiesBySide.attacker.push(s);
     else enemiesBySide.defender.push(s);
   }
-
-  for (const observer of alive) {
-    // Every ship is fog-gated through EM reception (Phase 9). A ship with no
-    // sensor still receives an enemy's continuous emission out to its baseline
-    // receiver's reach (the EM-grounded `SIM.visualLosRadius`); sensor cones add
-    // gain that extends that reach to their `detectionRange` in the directions
-    // they cover. There is no omniscient escape hatch — a sensorless ship is
-    // genuinely myopic, modular or not. An occluder on the sight line blocks
-    // reception regardless of strength or arc.
-    // Reusable per-observer inner Contact[] (get-or-create + clear by
-    // instanceId), so the N direct-contact lists are not reallocated each tick.
-    let list = scr.directContactLists.get(observer.instanceId);
-    if (list === undefined) {
-      list = [];
-      scr.directContactLists.set(observer.instanceId, list);
-    } else {
-      list.length = 0;
-    }
-    // enemiesBySide is keyed by the observer's own side and already sorted by
-    // instanceId (it is a filter of the sorted `alive` set).
-    const enemies =
-      observer.side === "attacker" ? enemiesBySide.attacker : enemiesBySide.defender;
-    // The observer's sensor set is constant across every enemy this tick, so
-    // gather it once per observer and thread it into emReceives rather than
-    // rebuilding a fresh SensorUnit[] per (observer, enemy) pair.
-    const observerSensors = sensorUnitsOf(observer);
-    for (const enemy of enemies) {
-      if (segmentBlocked(observer.x, observer.y, enemy.x, enemy.y, occluders)) continue;
-      // Sensor dazzle (phase 5): a strong emission raises the observer's
-      // saturation for subsequent ticks, whatever its origin. Accumulated even
-      // when the enemy does not form a contact this tick (the raised floor or
-      // the sensor arc may suppress the fix while the EM power still arrives).
-      const accum = dazzleAccum.get(observer.instanceId);
-      if (accum !== undefined) {
-        dazzleAccum.set(
-          observer.instanceId,
-          accum + hullDazzleContribution(observer, enemy, anomalies),
-        );
-      }
-      if (!emReceives(observer, enemy, anomalies, observerSensors)) continue;
-      // Relativistic aberration (Phase 10): a moving observer measures the
-      // contact's bearing swept toward its own direction of travel, so the
-      // REPORTED position is the aberrated apparent one, not the true position.
-      // A stationary observer sees no shift (the helper is the identity), so an
-      // at-rest fleet's contacts are unchanged.
-      const apparent = aberratedContactPosition(
-        observer.x,
-        observer.y,
-        observer.velX,
-        observer.velY,
-        enemy.x,
-        enemy.y,
-        SPEED_OF_LIGHT_M_PER_TICK,
-      );
-      list.push({
-        enemyId: enemy.instanceId,
-        x: apparent.x,
-        y: apparent.y,
-        facing: enemy.facing,
-        threat: contactThreat(observer, enemy),
-        origin: observer.instanceId,
-      });
-    }
-    directContacts.set(observer.instanceId, list);
-  }
+  // (b) Per-observer direct detection (see `awareness-direct.ts`). Each alive
+  //     observer scans its enemy side, accumulates sensor dazzle for every
+  //     non-occluded enemy, and forms a contact for every enemy it receives.
+  //     An anomaly-free strict-upper-bound early-out skips the full reception
+  //     path for pairs provably below every downstream floor (far-apart pairs
+  //     early in a battle) — lossless. `directContacts` and the per-observer
+  //     inner Contact[] pool are cleared-and-reused entries on `scr`.
+  const directContacts = buildDirectContacts(
+    alive,
+    occluders,
+    anomalies,
+    dazzleAccum,
+    enemiesBySide,
+    scr,
+  );
 
   // (c) Per-side comms links. Gather comms units per side in (shipId, slotId)
   //     order, aim dishes, then form links over A.instanceId < B.instanceId
