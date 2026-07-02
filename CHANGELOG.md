@@ -1,3 +1,16 @@
+## [1.39.2](https://github.com/Mearman/FleetArchitect/compare/v1.39.1...v1.39.2) (2026-07-02)
+
+
+### Bug Fixes
+
+* **cache:** size disk cache budget to fit the matrix working set ([69beaac](https://github.com/Mearman/FleetArchitect/commit/69beaac482bab5c467855f783661a52018374a74))
+
+
+### Performance Improvements
+
+* **cache:** trust cache reads via shared shape guard and cache fleet resolve ([28d4566](https://github.com/Mearman/FleetArchitect/commit/28d45663bcd31915fd75c4d518391dee85cedd42))
+* **cache:** v8-serialise disk cache results and raise budget to the working set ([2d3d156](https://github.com/Mearman/FleetArchitect/commit/2d3d156bddc3ec078db6952fa3ed82eed20b06b9))
+
 ## [1.39.1](https://github.com/Mearman/FleetArchitect/compare/v1.39.0...v1.39.1) (2026-07-02)
 
 
