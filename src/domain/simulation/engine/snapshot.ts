@@ -8,7 +8,7 @@
  */
 
 import { CELL_SIZE } from "@/domain/grid";
-import type { AwarenessSnapshot, BattleFrame, CellStateArrays, MediumSnapshot, ShipDescriptor } from "@/schema/battle";
+import type { AwarenessSnapshot, BattleFrame, CellStateArrays, MediumSnapshot, ShipDescriptor, ShipSnapshot } from "@/schema/battle";
 import { CREW_HP } from "./config";
 import { STANDARD_CELL_GAS_MASS_KG, CREW_VACUUM_SURVIVABLE_FRACTION } from "./lifesupport";
 import type { MediumField, MediumState } from "./medium-field";
@@ -60,6 +60,109 @@ function moduleByCellFor(
   return built;
 }
 
+/**
+ * Build one ship's per-tick {@link ShipSnapshot} in a single pass, appending
+ * optional fields by direct assignment rather than nested object spreads.
+ *
+ * Frame serialisation (`JSON.stringify`, hashed for the lossless digest and
+ * replay) is key-INSERTION-order sensitive, so the assignment order here is
+ * load-bearing: it must match the order the previous `...base / ...withModules /
+ * ...withResource` spreads produced — always-present core first, then brokeOff,
+ * comX/comY, targetId, cells, resource, crew. Direct property assignment on a
+ * plain object appends own enumerable string keys in assignment order, which is
+ * byte-identical to spreading a fresh object carrying those keys in the same
+ * sequence. Building one accumulator (instead of three nested intermediates)
+ * removes two container allocations and two full property-copy passes per ship
+ * per tick; the typed arrays and crew list are referenced once, never copied.
+ */
+function snapshotShip(tick: number, s: SimShip): ShipSnapshot {
+  const ship: ShipSnapshot = {
+    instanceId: s.instanceId,
+    side: s.side,
+    x: s.x,
+    y: s.y,
+    vx: s.velX,
+    vy: s.velY,
+    facing: s.facing,
+    structure: s.structure,
+    shield: s.shield,
+    alive: s.alive,
+  };
+  // Record the split frame, then clear so subsequent snapshots don't carry a
+  // stale "freshly broken" marker.
+  if (s.brokeOff === true) {
+    ship.brokeOff = true;
+    s.brokeOff = false;
+  }
+  // Centre of mass in ship-local coordinates. Omitted when at the origin so
+  // legacy replays stay byte-compatible with pre-rigid-body recordings; modular
+  // ships with offset CoM always emit it.
+  if (s.comX !== 0 || s.comY !== 0) {
+    ship.comX = s.comX;
+    ship.comY = s.comY;
+  }
+  // Current targeting decision (the instance id of the ship this ship is aiming
+  // at this tick, or undefined when it has no live target). Emitted from the
+  // deterministic pickTarget result so frame determinism is preserved; omitted
+  // when there is no target so frames recorded before this field stay
+  // byte-identical.
+  if (s.target !== undefined) ship.targetId = s.target;
+  if (s.modules === undefined) return ship;
+  // Per-cell DYNAMIC state as NAMED TYPED ARRAYS. The static layout (kind,
+  // ship-local offset, surface kind, max HP, turret presence) lives once per
+  // battle in the ship descriptor (see `shipDescriptor` below), keyed by index.
+  // The dynamic arrays are emitted in s.modules order, which is the SAME order
+  // as the static descriptor's cells, so cellHp[i] corresponds to
+  // ShipCellLayout.cells[i] — the renderer joins them by INDEX. The typed arrays
+  // are transferred zero-copy across the worker boundary (the worker collects
+  // every .buffer into the postMessage transfer list), eliminating the
+  // structured-clone cost that was the source of the `[Violation] 'message'
+  // handler` warnings on the heaviest frames. Float64Array holds the same
+  // IEEE-754 doubles the engine uses.
+  ship.cells = buildCellArrays(s.modules);
+  // Resource state — emitted when the ship has run the resource step AND we are
+  // on a resource-emission tick (tick % RESOURCE_EVERY === 0), so the renderer
+  // and analytics can read thermal, propellant, atmosphere and power-buffer
+  // values. On off-ticks the field is omitted: the resource changes slowly
+  // (diffusion/depletion/venting), and the renderer holds the last-known
+  // resource between emissions. Absent on phantoms and legacy ships. The arrays
+  // are fresh Float64Array copies so the snapshot does not alias the live arrays
+  // the engine mutates next tick. The engine computes the resource every tick
+  // regardless — this is a snapshot-emission cadence, not a sim change.
+  const resource = s.resource;
+  if (resource !== undefined && tick % RESOURCE_EVERY === 0) {
+    ship.resource = {
+      thermal: Float64Array.from(resource.thermal),
+      propellant: Float64Array.from(resource.propellant),
+      atmosphere: Float64Array.from(resource.atmosphere),
+      powerBuffer: {
+        energy: resource.powerBuffer.energy,
+        capacityJoules: resource.powerBuffer.capacityJoules,
+      },
+    };
+  }
+  // Crew positions and state, in ship-local coordinates. Each crew member sits
+  // on the cell of the module at its (col, row); that module's x/y is the cell's
+  // ship-local centre, plus the fractional render offset. Omitted when the ship
+  // carries no crew so crewless replays stay byte-compatible.
+  if (s.crew === undefined || s.crew.length === 0) return ship;
+  const moduleByCell = moduleByCellFor(s, s.modules);
+  ship.crew = s.crew.map((c) => {
+    const cell = moduleByCell.get(crewCellKey(c.col, c.row));
+    const cx = cell !== undefined ? cell.x : 0;
+    const cy = cell !== undefined ? cell.y : 0;
+    return {
+      id: c.id,
+      x: cx + c.ox * CELL_SIZE,
+      y: cy + c.oy * CELL_SIZE,
+      state: crewState(c),
+      hp: c.hp,
+      ...(c.carrying !== undefined ? { carrying: c.carrying } : {}),
+    };
+  });
+  return ship;
+}
+
 export function snapshot(
   tick: number,
   ships: readonly SimShip[],
@@ -82,96 +185,7 @@ export function snapshot(
   return {
     tick,
     awareness,
-    ships: realShips.map((s) => {
-      const base = {
-        instanceId: s.instanceId,
-        side: s.side,
-        x: s.x,
-        y: s.y,
-        vx: s.velX,
-        vy: s.velY,
-        facing: s.facing,
-        structure: s.structure,
-        shield: s.shield,
-        alive: s.alive,
-        // Record the split frame, then clear so subsequent snapshots
-        // don't carry a stale "freshly broken" marker.
-        ...(s.brokeOff === true ? { brokeOff: true } : {}),
-        // Centre of mass in ship-local coordinates. Omitted when at the
-        // origin so legacy replays stay byte-compatible with pre-rigid-body
-        // recordings; modular ships with offset CoM always emit it.
-        ...(s.comX !== 0 || s.comY !== 0 ? { comX: s.comX, comY: s.comY } : {}),
-        // Current targeting decision (the instance id of the ship this ship is
-        // aiming at this tick, or undefined when it has no live target). Emitted
-        // from the deterministic pickTarget result so frame determinism is
-        // preserved; omitted when there is no target so frames recorded before
-        // this field stay byte-identical.
-        ...(s.target !== undefined ? { targetId: s.target } : {}),
-      };
-      if (s.brokeOff === true) s.brokeOff = false;
-      if (s.modules === undefined) return base;
-      // Per-cell DYNAMIC state as NAMED TYPED ARRAYS. The static layout (kind,
-      // ship-local offset, surface kind, max HP, turret presence) lives once
-      // per battle in the ship descriptor (see `shipDescriptor` below), keyed
-      // by index. The dynamic arrays below are emitted in s.modules order,
-      // which is the SAME order as the static descriptor's cells, so
-      // cellHp[i] corresponds to ShipCellLayout.cells[i] — the renderer joins
-      // them by INDEX. The typed arrays are transferred zero-copy across the
-      // worker boundary (the worker collects every .buffer into the postMessage
-      // transfer list), eliminating the structured-clone cost that was the
-      // source of the `[Violation] 'message' handler` warnings on the heaviest
-      // frames. Float64Array holds the same IEEE-754 doubles the engine uses.
-      const withModules = {
-        ...base,
-        cells: buildCellArrays(s.modules),
-      };
-      // Crew positions and state, in ship-local coordinates. Each crew member
-      // sits on the cell of the module at its (col, row); that module's x/y is
-      // the cell's ship-local centre, plus the fractional render offset. Omitted
-      // when the ship carries no crew so crewless replays stay byte-compatible.
-      // Resource state — emitted when the ship has run the resource step AND
-      // we are on a resource-emission tick (tick % RESOURCE_EVERY === 0), so the
-      // renderer and analytics can read thermal, propellant, atmosphere and
-      // power-buffer values. On off-ticks the field is omitted: the resource
-      // changes slowly (diffusion/depletion/venting), and the renderer holds the
-      // last-known resource between emissions. Absent on phantoms and legacy
-      // ships. The engine computes the resource every tick regardless — this is
-      // a snapshot-emission cadence, not a sim change.
-      const resource = s.resource;
-      const withResource =
-        resource !== undefined && tick % RESOURCE_EVERY === 0
-          ? {
-              ...withModules,
-              resource: {
-                thermal: Float64Array.from(resource.thermal),
-                propellant: Float64Array.from(resource.propellant),
-                atmosphere: Float64Array.from(resource.atmosphere),
-                powerBuffer: {
-                  energy: resource.powerBuffer.energy,
-                  capacityJoules: resource.powerBuffer.capacityJoules,
-                },
-              },
-            }
-          : withModules;
-      if (s.crew === undefined || s.crew.length === 0) return withResource;
-      const moduleByCell = moduleByCellFor(s, s.modules);
-      return {
-        ...withResource,
-        crew: s.crew.map((c) => {
-          const cell = moduleByCell.get(crewCellKey(c.col, c.row));
-          const cx = cell !== undefined ? cell.x : 0;
-          const cy = cell !== undefined ? cell.y : 0;
-          return {
-            id: c.id,
-            x: cx + c.ox * CELL_SIZE,
-            y: cy + c.oy * CELL_SIZE,
-            state: crewState(c),
-            hp: c.hp,
-            ...(c.carrying !== undefined ? { carrying: c.carrying } : {}),
-          };
-        }),
-      };
-    }),
+    ships: realShips.map((s) => snapshotShip(tick, s)),
     projectiles: projectiles.map((p) => ({ id: p.id, x: p.x, y: p.y, kind: p.kind })),
     // Deployed mines (factions update). Omitted when none are live so frames
     // for battles without mine-layers stay byte-identical to baseline.
