@@ -1,15 +1,14 @@
 import { useCallback, useMemo, useRef } from "react";
 import { CELL_SIZE } from "@/domain/grid";
-import type { BattleAnomalyKind, BattleFrame } from "@/schema/battle";
+import type { BattleAnomalyKind, BattleFrame, ShipSnapshot } from "@/schema/battle";
 import type { DescriptorMap, RenderCell } from "@/ui/cellLayout";
 import { hullRadiusWorld, renderCellsInto } from "@/ui/cellLayout";
 import { interpolateFrame } from "@/ui/interpolateFrame";
-import { orderShipsForRender } from "@/ui/renderOrder";
+import { orderShipsForRenderInto } from "@/ui/renderOrder";
 import { NEON_MAGENTA, PHOSPHOR_AMBER, PHOSPHOR_GREEN } from "@/ui/theme/tokens";
 import { drawAnomaly } from "./battleAnomaly";
-import { drawBackdrop, vignetteGradient } from "./battleBackdrop";
+import { drawBackdropCached, vignetteGradient } from "./battleBackdrop";
 import { drawFogAndAwareness } from "./battleFog";
-import type { ShipScreenPositions } from "./battleFog";
 import { appendWorldArc, pathWorldCircle } from "./battleProject";
 import type { Bounds, Camera } from "./battleCamera";
 import { resolveViewTransform } from "./battleCamera";
@@ -33,6 +32,10 @@ import type { ShipSprite } from "./shipSprite";
 
 /** Per-overlay on/scope state held by the route. */
 export type OverlayState = Record<string, { on: boolean; scope: OverlayScope }>;
+
+/** "all"-scope inScope predicate: captures nothing, so one module-level constant
+ *  replaces the per-overlay-per-frame closure the draw loop used to allocate. */
+const IN_SCOPE_ALL = (): boolean => true;
 
 /**
  * Props for {@link useBattleCanvas}. The draw callback closes over the current
@@ -87,12 +90,20 @@ export function useBattleCanvas({
   overlays,
   descriptors,
 }: UseBattleCanvasProps) {
-  // Per-ship rasterised-sprite cache (re-rasterised on alive-set/colour change)
-  // and a reusable RenderCell[] buffer (renderCellsInto rewrites it in place).
-  // Both are refs keyed by instance id, so the per-frame draw reuses objects
-  // instead of allocating.
+  // Per-ship sprite cache (re-rasterised on alive-set/colour change) and a
+  // reusable RenderCell[] buffer (renderCellsInto rewrites in place), both refs
+  // keyed by instance id so the per-frame draw reuses objects.
   const spriteCache = useRef<Map<string, ShipSprite>>(new Map());
   const cellBufferRef = useRef<Map<string, RenderCell[]>>(new Map());
+  // Reusable render-order buffer: the draw loop orders the frame's ships every
+  // rAF; reusing one buffer avoids the per-frame `[...ships]` allocation.
+  const renderOrderRef = useRef<ShipSnapshot[]>([]);
+  // Pooled fog-of-war ship-position map and value scratch. The fog pass used to
+  // build a fresh Map and a fresh {x,y} per alive ship every frame; these reuse
+  // the Map backing store and value objects (clear + repopulate keeps no stale
+  // positions for newly dead ships).
+  const fogShipPosRef = useRef<Map<string, { x: number; y: number }>>(new Map());
+  const fogPosScratchRef = useRef<{ x: number; y: number }[]>([]);
   // Per-battle formation colour per instance id, derived once (descriptors never
   // mutate); a no-op (byte-identical frames) for a pre-formation battle.
   const formationColourByInstance = useMemo(
@@ -108,67 +119,73 @@ export function useBattleCanvas({
 
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      // Canvas size comes from the ResizeObserver (updated on resize, not read
-      // here per frame), so the draw never forces a synchronous layout reflow
-      // mid-animation. Fall back to a one-off clientWidth/Height read only
-      // before the first observer callback has populated canvasSize; once it is
-      // set the `??` short-circuits and no layout property is touched.
+      // Canvas size comes from the ResizeObserver (not read per frame), so the
+      // draw never forces a synchronous layout reflow mid-animation. Falls back
+      // to a one-off clientWidth/Height read only before the first observer
+      // callback populates canvasSize.
       const width = canvasSize?.width ?? canvas.clientWidth;
       const height = canvasSize?.height ?? canvas.clientHeight;
       if (width === 0 || height === 0) return;
-      // No explicit clear: the backdrop fill below is opaque and covers the
-      // whole canvas, so a clear here would be painted straight over.
+      // No explicit clear: the backdrop fill below is opaque and covers the canvas.
 
-      // Resolve the view transform. In auto-fit mode the camera frames this
-      // frame's live ships; otherwise it honours the manual zoom/pan and, when
-      // following a ship, tracks that ship's live position (falling back to
-      // centre-pan if it has died or not yet appeared).
+      // Resolve the view transform. Auto-fit frames this frame's live ships;
+      // otherwise it honours manual zoom/pan and tracks a followed ship's live
+      // position (falling back to centre-pan if it has died/not yet appeared).
       const cam = cameraRef.current;
       const t = resolveViewTransform(width, height, bounds, cam, frame, descriptors);
       const scale = t.scale;
 
-      // Backdrop: base gradient, parallax grid, and seeded starfield, drawn
-      // first so everything else sits on top of the atmosphere.
-      drawBackdrop(ctx, width, height, t);
+      // Backdrop (base gradient, parallax grid, seeded starfield) rendered to an
+      // offscreen bitmap keyed on the camera transform, so a static camera blits
+      // the cached bitmap instead of recomputing the starfield every rAF.
+      drawBackdropCached(ctx, width, height, dpr, t);
 
       // Anomalies are drawn first, in world space, beneath everything else.
       // The seed is threaded through so asteroid rocks match the engine's
       // canonical occluder positions (single source of truth).
       drawAnomaly(ctx, activeAnomalies, t, bounds, activeSeed);
 
-      // Fog-of-war overlay: drawn after the anomaly but before ships so the
-      // fog shroud sits under hull graphics. Perimeters, ghost markers, links,
-      // and dish indicators are drawn as part of this call and can be layered
-      // on top of the fog layer but still under ships (caller controls depth by
-      // splitting drawFogAndAwareness, but a single call keeps the API simple).
+      // Fog-of-war overlay: drawn after the anomaly but before ships so the fog
+      // shroud sits under hull graphics. Perimeters, ghost markers, links, and
+      // dish indicators are layered as part of this call.
       if (showFog) {
-        // Build a screen-position map for the current frame's ships so links
-        // and dish indicators connect to real hull positions.
-        const shipScreenPos: Map<string, { x: number; y: number }> = new Map();
+        // Screen-position map for the frame's alive ships (for links/dishes).
+        // Pooled: clear + repopulate reuses the Map and its {x,y} value objects
+        // across frames, and clear() keeps no stale position for a newly dead
+        // ship (links/dishes would otherwise anchor to it).
+        const shipPos = fogShipPosRef.current;
+        const scratch = fogPosScratchRef.current;
+        shipPos.clear();
+        let si = 0;
         for (const s of frame.ships) {
-          if (s.alive) {
-            shipScreenPos.set(s.instanceId, t.project(s.x, s.y));
+          if (!s.alive) continue;
+          let pos = scratch[si];
+          if (pos === undefined) {
+            pos = { x: 0, y: 0 };
+            scratch[si] = pos;
           }
+          t.projectInto(pos, s.x, s.y);
+          shipPos.set(s.instanceId, pos);
+          si += 1;
         }
-        const shipPos: ShipScreenPositions = shipScreenPos;
         drawFogAndAwareness(ctx, frame.awareness, t, shipPos);
       }
 
       // Battle overlays: dispatched by layer relative to the ship loop. Each
-      // enabled overlay's draw is called with a fresh OverlayCtx carrying the
-      // frame, transform, integer tick, frame history, follow id, and an
-      // inScope predicate built from the overlay's current scope + follow id.
-      // Overlays are pure draw consumers; they never touch BattleRoute state
-      // directly, which keeps the overlay layer the single seam later agents
-      // extend. Reading `overlays` from the closure here re-creates drawFrame
-      // only when overlay state changes (mirrors the showFog pattern).
+      // enabled overlay's draw gets a fresh OverlayCtx. Overlays are pure draw
+      // consumers (never touch BattleRoute state), keeping the overlay layer the
+      // single seam later agents extend. Reading `overlays` here re-creates
+      // drawFrame only when overlay state changes (mirrors the showFog pattern).
       const followId = cameraRef.current.followId;
+      // Hoist inScope out of the per-overlay loop: only two scopes exist ("all"
+      // = IN_SCOPE_ALL; "active" = followed ship only), so one predicate per
+      // frame replaces the per-enabled-overlay closure allocated each draw.
+      const inScopeActive = (ship: ShipSnapshot) => ship.instanceId === followId;
       const drawOverlays = (ids: ReadonlySet<string>): void => {
         for (const def of OVERLAYS) {
           if (!ids.has(def.id)) continue;
           const state = overlays[def.id];
           if (state === undefined || !state.on) continue;
-          const scope = state.scope;
           def.draw({
             ctx,
             frame,
@@ -177,7 +194,7 @@ export function useBattleCanvas({
             tick,
             frames,
             descriptors,
-            inScope: (ship) => scope === "all" || ship.instanceId === followId,
+            inScope: state.scope === "all" ? IN_SCOPE_ALL : inScopeActive,
           });
         }
       };
@@ -203,10 +220,14 @@ export function useBattleCanvas({
       const mx = t.projection.project(1, 0);
       const my = t.projection.project(0, 1);
 
-      // Back-to-front by projected depth so nearer ships overlap further ones,
-      // rather than the snapshot's attackers-then-defenders array order. Flat
-      // depth is world-y; iso depth is x+y along the tilted plane.
-      for (const s of orderShipsForRender(frame.ships, t.projection.depth)) {
+      // Back-to-front by projected depth (flat: world-y; iso: x+y) so nearer
+      // ships overlap further ones, reusing a caller-owned buffer instead of
+      // allocating a fresh sorted array each rAF.
+      for (const s of orderShipsForRenderInto(
+        frame.ships,
+        renderOrderRef.current,
+        t.projection.depth,
+      )) {
         const origin = t.project(s.x, s.y);
         const px = origin.x;
         const py = origin.y;
@@ -696,10 +717,9 @@ export function useBattleCanvas({
         ctx.fillRect(px - barW / 2, py + 10, barW * frac, 3);
       }
 
-      // Formation centroids (Phase E): a subtle ring and role label at each
-      // formation's live mean position, drawn on top of the ships at low alpha
-      // so the grouping reads without obscuring hulls. No-op when no ship
-      // carries a formation identity (pre-formation battle).
+      // Formation centroids (Phase E): a subtle ring + role label at each
+      // formation's live mean position over the ships at low alpha. No-op when
+      // no ship carries a formation identity (pre-formation battle).
       drawFormationCentroids(ctx, t, frame, descriptors);
 
       // Energy-weapon beams (hitscan): drawn as lines from the firing gun

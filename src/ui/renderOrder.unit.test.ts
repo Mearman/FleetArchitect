@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { type ShipSnapshot } from "@/schema/battle";
-import { orderShipsForRender } from "@/ui/renderOrder";
+import { orderShipsForRender, orderShipsForRenderInto } from "@/ui/renderOrder";
 
 function ship(instanceId: string, y: number, side: ShipSnapshot["side"] = "attacker"): ShipSnapshot {
   return { instanceId, side, x: 0, y, structure: 1, shield: 0, alive: true };
@@ -73,5 +73,55 @@ describe("orderShipsForRender", () => {
   it("handles a single ship and an empty list", () => {
     expect(orderShipsForRender([ship("solo", 5)]).map((s) => s.instanceId)).toEqual(["solo"]);
     expect(orderShipsForRender([])).toEqual([]);
+  });
+});
+
+describe("orderShipsForRenderInto", () => {
+  it("produces the same order as the pure sorter (flat depth)", () => {
+    const ships = [ship("a", 150), ship("b", 50), ship("c", 100)];
+    const out = orderShipsForRenderInto(ships, []);
+    expect(out.map((s) => s.instanceId)).toEqual(["b", "c", "a"]);
+    expect(out.map((s) => s.instanceId)).toEqual(
+      orderShipsForRender(ships).map((s) => s.instanceId),
+    );
+  });
+
+  it("produces the same order as the pure sorter (iso depth, instanceId tie-break)", () => {
+    const isoDepth = (x: number, y: number) => x + y;
+    const ships = [
+      shipAt("near", 200, 200),
+      shipAt("far", 10, 10),
+      shipAt("mid", 100, 50),
+      shipAt("alpha", 30, 70),
+    ];
+    expect(
+      orderShipsForRenderInto(ships, [], isoDepth).map((s) => s.instanceId),
+    ).toEqual(orderShipsForRender(ships, isoDepth).map((s) => s.instanceId));
+  });
+
+  it("returns and mutates the caller-owned buffer", () => {
+    const ships = [ship("a", 3), ship("b", 1), ship("c", 2)];
+    const buffer: ShipSnapshot[] = [];
+    const result = orderShipsForRenderInto(ships, buffer);
+    expect(result).toBe(buffer);
+    expect(result.map((s) => s.instanceId)).toEqual(["b", "c", "a"]);
+  });
+
+  it("does not mutate the input array", () => {
+    const ships = [ship("a", 3), ship("b", 1), ship("c", 2)];
+    const idsBefore = ships.map((s) => s.instanceId);
+    orderShipsForRenderInto(ships, []);
+    expect(ships.map((s) => s.instanceId)).toEqual(idsBefore);
+  });
+
+  it("shrinks the buffer when the input is shorter than a prior frame", () => {
+    // Frame N: three ships.
+    const buffer: ShipSnapshot[] = [];
+    orderShipsForRenderInto([ship("a", 3), ship("b", 1), ship("c", 2)], buffer);
+    expect(buffer).toHaveLength(3);
+    // Frame N+1: one ship — the buffer must not retain stale entries.
+    orderShipsForRenderInto([ship("solo", 5)], buffer);
+    expect(buffer).toHaveLength(1);
+    expect(buffer.map((s) => s.instanceId)).toEqual(["solo"]);
   });
 });

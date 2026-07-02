@@ -110,6 +110,84 @@ function baseGradient(ctx: CanvasRenderingContext2D, height: number): CanvasGrad
   return grad;
 }
 
+// Offscreen bitmap cache of the fully-rendered backdrop (base gradient + grid +
+// starfield). The backdrop depends only on the camera transform and viewport, so
+// when the camera holds still — paused playback, or manual mode with no follow
+// target — every rAF tick re-blits this bitmap instead of recomputing the grid
+// and the (potentially hundreds of thousands of cells) starfield. Repainted
+// only when the transform key changes (pan / zoom / auto-fit movement / resize).
+// The offscreen canvas is sized to the main canvas's backing resolution
+// (width*dpr × height*dpr) and rendered with the same dpr transform, so the blit
+// is pixel-identical to a direct render — no resolution loss on retina.
+let backdropCache: {
+  key: string;
+  canvas: HTMLCanvasElement;
+  backingW: number;
+  backingH: number;
+} | null = null;
+
+/**
+ * Draw the backdrop, blitting a cached offscreen bitmap when the camera-derived
+ * transform key is unchanged since the last call. On a key change (or the first
+ * call, or a viewport/DPR resize) the backdrop is repainted onto the offscreen
+ * canvas at the main canvas's backing resolution, then blitted 1:1 — so a static
+ * camera pays only a `drawImage` per frame and a moving camera pays exactly what
+ * a direct render would. `dpr` is the same device-pixel ratio the caller applied
+ * to `ctx`, so the offscreen matches the main canvas's effective resolution.
+ */
+export function drawBackdropCached(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  dpr: number,
+  t: Transform,
+): void {
+  const backingW = Math.round(width * dpr);
+  const backingH = Math.round(height * dpr);
+  // The key captures everything drawBackdrop depends on: viewport size, DPR
+  // (effective resolution), and the transform's scale, centre, and projection
+  // mode. projection is a module-level singleton per mode, so the mode string
+  // alone identifies it.
+  const key = `${width}|${height}|${dpr}|${t.scale}|${t.centreX}|${t.centreY}|${t.projection.mode}`;
+
+  if (
+    backdropCache !== null &&
+    backdropCache.key === key &&
+    backdropCache.backingW === backingW &&
+    backdropCache.backingH === backingH
+  ) {
+    // Blit the cached bitmap 1:1 in backing pixels. The caller's dpr transform
+    // is saved and restored so the rest of the frame draws in CSS-pixel space.
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(backdropCache.canvas, 0, 0);
+    ctx.restore();
+    return;
+  }
+
+  // (Re)allocate the offscreen canvas at the main canvas's backing resolution.
+  // Setting .width/.height clears it, which is fine — a repaint follows.
+  const canvas =
+    backdropCache !== null ? backdropCache.canvas : document.createElement("canvas");
+  canvas.width = backingW;
+  canvas.height = backingH;
+  const offCtx = canvas.getContext("2d");
+  if (offCtx === null) {
+    // No offscreen context available (should not happen for a 2D canvas): fall
+    // back to a direct render onto the main context so the backdrop still draws.
+    drawBackdrop(ctx, width, height, t);
+    return;
+  }
+  offCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawBackdrop(offCtx, width, height, t);
+  backdropCache = { key, canvas, backingW, backingH };
+
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.drawImage(canvas, 0, 0);
+  ctx.restore();
+}
+
 /**
  * Draw the canvas backdrop beneath everything else: a vertical base gradient,
  * a world-space grid, and a deterministic starfield. Both the grid and the
