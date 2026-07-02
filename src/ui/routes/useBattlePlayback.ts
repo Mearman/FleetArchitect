@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { TICKS_PER_SECOND } from "@/domain/simulation/types";
 import { interpolateFrame } from "@/ui/interpolateFrame";
 import type { BattleFrame, BattleResult } from "@/schema/battle";
@@ -101,10 +101,36 @@ export function useBattlePlayback({
   // values, not positions — there is no meaningful interpolation for HP. It is
   // selected inside the rAF loop below (a legitimate non-render context for
   // reading `framesRef`) and mirrored here, updated only when the integer tick
-  // changes so it does not re-render every animation frame. It is left stale
-  // while the panel is closed — render gates on `statusOpen` — and refreshed
-  // within one frame of reopening.
+  // changes so it does not re-render every animation frame. The loop reads
+  // `statusOpenRef` (not the prop) so toggling the modules tab does not restart
+  // the loop; the frame is left stale while the panel is closed and seeded
+  // synchronously when the panel reopens (a layout effect, before paint, so the
+  // readout never flashes its empty placeholder).
   const [statusFrame, setStatusFrame] = useState<BattleFrame | null>(null);
+
+  // Mirror `statusOpen` into a ref so the rAF loop reads the current value each
+  // frame without restarting (and without the one-frame clock hiccup a restart
+  // would cause) when the modules tab is toggled. Updated every render; the loop
+  // consumes it on the next rAF.
+  const statusOpenRef = useRef(statusOpen);
+  useEffect(() => {
+    statusOpenRef.current = statusOpen;
+  });
+
+  // Seed the status frame synchronously when the panel opens so the module
+  // readout never flashes its empty placeholder: the rAF loop keeps it fresh
+  // thereafter, but its first update lands a frame later. A layout effect so it
+  // commits before the browser paints. Uses the same discrete-nearest selection
+  // as the loop.
+  useLayoutEffect(() => {
+    if (!statusOpen) return;
+    const frames = framesRef.current;
+    if (frames.length === 0) return;
+    const fractionalTick = playbackTimeRef.current * TICKS_PER_SECOND;
+    const tick = Math.min(frames.length - 1, Math.floor(fractionalTick));
+    const frame = frames[tick];
+    if (frame !== undefined) setStatusFrame(frame);
+  }, [statusOpen, framesRef, playbackTimeRef]);
 
   // Latest `drawFrame` held in a ref so the rAF loop reads the current frame
   // painter without the effect restarting whenever `drawFrame`'s identity
@@ -223,7 +249,7 @@ export function useBattlePlayback({
       // only when the panel is open and the integer tick has moved — avoiding a
       // re-render on every animation frame. Reading the ref here is legitimate:
       // the rAF callback is not the render path.
-      if (statusOpen && frames.length > 0) {
+      if (statusOpenRef.current && frames.length > 0) {
         const tick = Math.min(frames.length - 1, Math.floor(fractionalTick));
         if (tick !== lastStatusTick) {
           lastStatusTick = tick;
@@ -289,17 +315,19 @@ export function useBattlePlayback({
     rafId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(rafId);
   // Restart the loop only when: the first batch lands, playing toggles, speed
-  // changes, the final result arrives, or the status panel opens or closes (so
-  // the loop begins/stops mirroring the status frame). The streamed leading edge
-  // and the frame painter are read via refs (`computedTicksRef`/`drawFrameRef`)
-  // each frame, so a new batch or a recreated `drawFrame` no longer tears the
-  // loop down and re-creates it ~60x/sec during streaming. Each restart resets
+  // changes, or the final result arrives. The status-panel open flag is read via
+  // `statusOpenRef` each frame, so toggling the modules tab mirrors/stops
+  // mirroring the status frame WITHOUT a loop restart (and the one-frame clock
+  // hiccup a restart would cause). The streamed leading edge and the frame
+  // painter are likewise read via refs (`computedTicksRef`/`drawFrameRef`) each
+  // frame, so a new batch or a recreated `drawFrame` no longer tears the loop
+  // down and re-creates it ~60x/sec during streaming. Each restart resets
   // `lastTimestamp` so the first dt after a real pause is not inflated.
   // `playbackTimeRef`/`bufferingRef`/`framesRef`/`simTickRateRef`/
-  // `computedTicksRef`/`drawFrameRef` are stable refs (they never change
-  // identity); listed only to satisfy exhaustive-deps lint, not because they
-  // ever retrigger the loop.
-  }, [hasFrames, playing, speed, result, statusOpen, bufferingRef, framesRef, playbackTimeRef, simTickRateRef, computedTicksRef, drawFrameRef]);
+  // `computedTicksRef`/`drawFrameRef`/`statusOpenRef` are stable refs (they
+  // never change identity); listed only to satisfy exhaustive-deps lint, not
+  // because they ever retrigger the loop.
+  }, [hasFrames, playing, speed, result, bufferingRef, framesRef, playbackTimeRef, simTickRateRef, computedTicksRef, drawFrameRef, statusOpenRef]);
 
   // Redraw when the canvas is resized (canvasSize changes). The draw itself is
   // purely a side-effect of the current playbackTime; no clock advance needed.

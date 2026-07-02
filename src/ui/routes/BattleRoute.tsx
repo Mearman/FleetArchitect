@@ -226,9 +226,11 @@ export function BattleRoute() {
     computedTicksRef: simulation.computedTicksRef,
     hasFrames,
     drawFrame,
-    // The controls wing is always present once a battle is running, so refresh
-    // the status frame whenever there are frames to read.
-    statusOpen: hasFrames,
+    // Only refresh the status frame while the modules tab is visible, so the
+    // route does not re-render at tick rate when the readout is hidden. The hook
+    // reads this via a ref (no loop restart) and seeds the frame synchronously
+    // on reopen, so switching tabs never flashes the empty placeholder.
+    statusOpen: hasFrames && controlsTab === "modules",
     canvasSize: camera.canvasSize,
   });
 
