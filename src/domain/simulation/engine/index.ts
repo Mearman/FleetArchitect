@@ -673,23 +673,22 @@ export function* simulateBattle(
       }
     }
 
-    // 5b. Module repair (per-module ships only). Each alive repair module on
-    //     a living ship picks the first damaged alive module in array order
-    //     and heals it by `repairRate`, capped at maxHp. A repair module can
-    //     heal itself (a bay patching its own systems); multiple repair
-    //     modules each heal one module per tick; if there's nothing damaged
-    //     yet, they idle. A repair module destroyed mid-battle can't run
-    //     any more. Aggregated ships have no modules to repair, so the step
-    //     is skipped for them.
+    // 5b. Module repair: each alive repair module heals the first damaged
+    //     alive module in array order (dilation-scaled).  First-damaged
+    //     index pre-computed per ship, advanced on heal-to-full.
     for (const ship of state.ships) {
       if (!ship.alive || ship.modules === undefined) continue;
-      for (const healer of ship.modules) {
-        if (!healer.alive || healer.repairRate <= 0) continue;
-        const target = ship.modules.find((m) => m.alive && m.hp < m.maxHp);
-        if (target === undefined) continue;
-        // Scale the heal by the ship's dilation factor: a relativistically
-        // slowed ship repairs at the same reduced rate as it fires and recharges.
+      const mods = ship.modules;
+      const find = (from: number): number => {
+        for (let i = from; i < mods.length; i++) { const m = mods[i]; if (m !== undefined && m.alive && m.hp < m.maxHp) return i; }
+        return -1;
+      };
+      let di = find(0);
+      for (const healer of mods) {
+        if (!healer.alive || healer.repairRate <= 0 || di === -1) continue;
+        const target = mods[di]; if (target === undefined) break;
         target.hp = Math.min(target.maxHp, target.hp + healer.repairRate * ship.dilationFactor);
+        if (target.hp >= target.maxHp) di = find(di + 1);
       }
     }
 
