@@ -477,8 +477,13 @@ describe("sharing determinism and size", () => {
     const verbose = compressToEncodedURIComponent(
       JSON.stringify({ v: 0, type: "battle", data: battle }),
     );
-    // The binary codec must be a large, robust win: at least 5x smaller than the
-    // verbose form (measured ~8.5x for this 6-design battle).
-    expect(encoded.length * 5).toBeLessThan(verbose.length);
+    // The binary codec must be a large, robust win over the verbose form. Floor
+    // relaxed from 5x to 4x after the outer-armour preset pass (seed Version 18)
+    // grew the six designs this default share battle is built from (leviathan,
+    // bulwark, gunship, torpedo, wasp, sabre) — every one gained a prow/flank
+    // cap. Measured ~4.8x here; the 4x floor still catches a real codec
+    // regression (a ~20% effectiveness loss) while absorbing the intended
+    // content growth.
+    expect(encoded.length * 4).toBeLessThan(verbose.length);
   });
 });

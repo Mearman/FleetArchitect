@@ -31,7 +31,9 @@ const F_AEGIS    = 3;   // 9 m × 3 → 27 m (frigate)
 const F_TORPEDO  = 3;   // 9 m × 3 → 27 m (frigate)
 const F_LEVIATHAN = 7;  // 13 m × 7 → 91 m (cruiser)
 const F_TITAN    = 12;  // 13 m × 12 → 156 m (dreadnought)
-const F_DRONE    = 4;   // 5 m × 4 → 20 m (fighter)
+const F_DRONE    = 3;   // 5 m × 3 → 15 m (fighter; F reduced from 4 so the
+                        // added stern armour + grown skin keeps the longest
+                        // axis ≤ 20 m)
 const F_CARRION  = 2;   // 7 m × 2 → 14 m (fighter)
 const F_RAVAGER  = 3;   // 9 m × 3 → 27 m (frigate)
 const F_SPITTER  = 3;   // 10 m × 3 → 30 m (frigate)
@@ -88,11 +90,11 @@ export const designData: ShipDesignInput[] = [
     // Merged: keeps the scanner (V) and omni transceiver (O), and adds RCS
     // thrusters (J) on the nose and tail so the Sabre can actually slew.
     grid: subdivideGrid(gridFromMap([
-      "..J~L..",
+      "..J~L##",
       ".E=#LV.",
       "EFFCC~L",
       ".E=#LO.",
-      "..J~L..",
+      "..J~L##",
     ]), F_SABRE),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -108,11 +110,11 @@ export const designData: ShipDesignInput[] = [
     // turrets — the whole ship is 4-connected so crew can walk from any
     // crew-quarters cell to the magazine and back. Plasma drives give good speed.
     grid: subdivideGrid(gridFromMap([
-      "..J~Mv.",
+      "..J~Mv#",
       "E=CFMM.",
       "EFCCGLL",
       "E=CFMM.",
-      "..J~Mv.",
+      "..J~Mv#",
     ]), F_WASP),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -128,11 +130,11 @@ export const designData: ShipDesignInput[] = [
     // quarters, and an engine bank. The Mk I shields protect the flanks, and a
     // light armour shoulder (#) caps each prow corner ahead of the railguns.
     grid: subdivideGrid(gridFromMap([
-      ".>JsRL#.",
+      ".>JsRL##",
       ".EFC~YWR",
       "EFFCGv#R",
       ".EFC~sWR",
-      ".<JeRL#.",
+      ".<JeRL##",
     ]), F_GUNSHIP),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -147,11 +149,11 @@ export const designData: ShipDesignInput[] = [
     // means no magazine required. A broad Mk II shield wall fronts a laser bank;
     // triple fusion reactors and a deep crew and engine block run it.
     grid: subdivideGrid(gridFromMap([
-      ".>JWS~L.",
+      "#>JWS~L#",
       ".EFCYS~L",
       "EEFFCSvL",
       ".EFCSS~L",
-      ".<JeWS~e",
+      "#<JeWS~#",
     ]), F_BULWARK),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -168,11 +170,11 @@ export const designData: ShipDesignInput[] = [
     // prow column caps the front of the railgun battery so incoming fire strikes
     // plate before it reaches the guns.
     grid: subdivideGrid(gridFromMap([
-      ".>J~~YR#.",
+      "#>J~~YR#.",
       ".EFCCGsR#",
       "EXEFWGvR#",
       ".EFCCGsR#",
-      ".<JeW~se#",
+      "#<JeW~se#",
     ]), F_AEGIS),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -189,11 +191,11 @@ export const designData: ShipDesignInput[] = [
     // needed to man torpedoes and missiles; titanium armour plate (#) on the prow
     // shoulders and core, plus shields, protect the fragile innards.
     grid: subdivideGrid(gridFromMap([
-      ".>JeMM#..",
+      "#>JeMM#.#",
       ".EFCCEWTT",
       "EXFGCv#TT",
       ".EFCCEWTT",
-      ".<JeMM#..",
+      "#<JeMM#.#",
     ]), F_TORPEDO),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -218,11 +220,11 @@ export const designData: ShipDesignInput[] = [
     // Layout (13 cols × 5 rows), subdivided ×7 → 91 m cruiser:
     // stern (left) → crew/reactor spine → corridors → magazine → weapons → prow
     grid: subdivideGrid(gridFromMap([
-      ".>JWUTRL..#..",
+      "#>JWUTRL..#..",
       ".EXCCTRRLO##.",
       "EXFCCGvRRL###",
       ".EXCCTRRLO##.",
-      ".<JeWSTRL.#..",
+      "#<JeWSTRL.#..",
     ]), F_LEVIATHAN),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -248,11 +250,11 @@ export const designData: ShipDesignInput[] = [
     // C cells (crew quarters) line the central corridor; the G (magazine) cell
     // sits between the crew block and the weapon batteries so crew can haul ammo.
     grid: subdivideGrid(gridFromMap([
-      "..>JWUvRML#..",
+      ".#>JWUvRML#..",
       ".EXCCW~RRML#.",
       "EXFCCG~RRMML#",
       ".EXCCW~RRML#.",
-      "..<JeWS~RML#.",
+      ".#<JeWS~RML#.",
     ]), F_TITAN),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -282,9 +284,9 @@ export const designData: ShipDesignInput[] = [
     // Merged: keeps the electro-receptor membrane (e) and pheromone net (h) for
     // hive-net awareness, and adds pseudopod clusters (x) so the Drone can turn.
     grid: subdivideGrid(swarmGrid([
-      ".>xpe",
+      "#>xpe",
       "jgfpp",
-      ".<xph",
+      "#<xph",
     ]), F_DRONE),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -298,11 +300,11 @@ export const designData: ShipDesignInput[] = [
     // Fighter: a fast acid flanker. Forward-swept acid claws strip armour at
     // knife range; paired flagella and a pulse jet make it the quickest hunter.
     grid: subdivideGrid(swarmGrid([
-      "..>xa..",
+      "..>xa##",
       "j=gfaa.",
       "ug~gfaa",
       "j=gfaa.",
-      "..<xa..",
+      "..<xa##",
     ]), F_CARRION),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -317,11 +319,11 @@ export const designData: ShipDesignInput[] = [
     // self-knitting carapace, a metabolic core, and a cluster of flagella and
     // pulse jets. No discrete ammo weapons so no ammon sac needed.
     grid: subdivideGrid(swarmGrid([
-      ".>jx~aa..",
+      "#>jx~aa##",
       "jgf~zaaa.",
       "ugm~rfaaa",
       "jgf~zaaa.",
-      ".<jx~aa..",
+      "#<jx~aa##",
     ]), F_RAVAGER),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -336,11 +338,11 @@ export const designData: ShipDesignInput[] = [
     // downrange; spore clouds screen it. Neural stings have no ammoCapacity so
     // no ammon sac is required. Regen membranes and a metabolic core sustain it.
     grid: subdivideGrid(swarmGrid([
-      "..>xsnn...",
+      ".#>xsnn#..",
       ".jgfzsnnn.",
       "ugm~rfsnnn",
       ".jgfzsnnn.",
-      "..<xsnn...",
+      ".#<xsnn#..",
     ]), F_SPITTER),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -365,13 +367,13 @@ export const designData: ShipDesignInput[] = [
     // organs (y) for hive-net coverage, and adds pseudopod clusters (x) plus
     // gyral organs (z) on the spine so the capital can come about.
     grid: subdivideGrid(swarmGrid([
-      "...>x~nnnkccc",
+      "..#>x~nnnkccc",
       "..jgfzrsnnnnh",
       ".jgm~rfsannny",
       "ugmm~rfsaannn",
       ".jgm~rfsannny",
       "..jgfzrsnnnnh",
-      "...<x~nnnkccc",
+      "..#<x~nnnkccc",
     ]), F_HIVE_LORD),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,

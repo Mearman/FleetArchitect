@@ -87,8 +87,14 @@ import {
  * formation (ship leaves, no layout), which resolves to the same deployment
  * column, so a reseeded fleet fights identically. This bump replaces the prior
  * `ships[]`-shaped preset records with the formation-shaped ones.
+ *
+ * Version 18: outer-armour pass — the bare and token-armoured preset designs
+ * (bulwark, drone, ravager, spitter, sabre, wasp, gunship, torpedo, aegis,
+ * leviathan, titan, carrion, hive-lord) gain a modest prow/flank armour cap so
+ * every ship carries some outer armour and `growArmourHull` has a seed to skin.
+ * `F_DRONE` drops 4 → 3 so the Drone's added armour keeps it a 20 m fighter.
  */
-const PRESETS_VERSION = 17;
+const PRESETS_VERSION = 18;
 const VERSION_KEY = "presetsVersion";
 
 /**
