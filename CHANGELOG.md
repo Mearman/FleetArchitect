@@ -1,3 +1,27 @@
+## [1.39.1](https://github.com/Mearman/FleetArchitect/compare/v1.39.0...v1.39.1) (2026-07-02)
+
+
+### Performance Improvements
+
+* **awareness:** pool per-tick allocations on awareness scratch ([ad1c608](https://github.com/Mearman/FleetArchitect/commit/ad1c6086304451f4b5309c1275a3d6970f7b3850))
+* **awareness:** skip provably-negligible hull-reception pairs ([03b93fa](https://github.com/Mearman/FleetArchitect/commit/03b93fab938e2cd0e02572e43d46e861efc9b8ea))
+* **build:** split vendor chunks and drop prod sourcemaps ([002945c](https://github.com/Mearman/FleetArchitect/commit/002945c12b5b3cd93d5e7fee35959a7f63e55400))
+* **cache:** memoise derive cache key per battle inputs ([69d5de5](https://github.com/Mearman/FleetArchitect/commit/69d5de547470701d663a5417c1ddd9b19f1c6b36))
+* **engine:** gather separation neighbours via spatial hash ([aba680b](https://github.com/Mearman/FleetArchitect/commit/aba680b8f24b54974337b5266e199e4b1acfa92e))
+* **engine:** pool collision broad-phase buffers and integer-key contacts ([4576499](https://github.com/Mearman/FleetArchitect/commit/457649950871338194cf1581b8002e1807b81ffa))
+* **engine:** pre-compute first-damaged module index for repair step ([723cc2c](https://github.com/Mearman/FleetArchitect/commit/723cc2ce662d64ff7a668491afd8bc37379dcba9))
+* **medium:** persist Float64Array ping-pong state in the FTCS stepper ([9fa5fb4](https://github.com/Mearman/FleetArchitect/commit/9fa5fb48250780ab069f9690ddef7d2690f6a369))
+* **medium:** precompute asteroid source cells once at setup ([dbb5a35](https://github.com/Mearman/FleetArchitect/commit/dbb5a359139d7bab171f8f9b5b5b69a3f33218e5))
+* **sim:** build snapshot ship frame in a single pass ([3678104](https://github.com/Mearman/FleetArchitect/commit/3678104c320d28b256d21d25a653589f22ed11d0))
+* **sim:** hoist point-defence candidate list out of per-projectile loop ([1d72afa](https://github.com/Mearman/FleetArchitect/commit/1d72afa399247d6b52e2215c9b9ef6b4e0eacf1a))
+* **startup:** render before seeding starter content ([6f87aad](https://github.com/Mearman/FleetArchitect/commit/6f87aad0f0dc373a808cb03c292abeb01e019739))
+* **storage:** incremental checkpoint deltas and revision-keyed parse cache ([f7a0450](https://github.com/Mearman/FleetArchitect/commit/f7a04509c2d02a855ae8e94bd61f3d83117f1aa8))
+* **ui:** cache backdrop bitmap, reuse render-order buffer, pool fog map, hoist inScope ([5dead6f](https://github.com/Mearman/FleetArchitect/commit/5dead6f6a571f497a7870f3a680eb87f00d96479))
+* **ui:** cache mediumGlow rasterisation on field identity ([b7ad909](https://github.com/Mearman/FleetArchitect/commit/b7ad90911bc23128cbef3ec4751c641227552f46))
+* **ui:** cache mediumTrails per-frame entity index in a WeakMap ([921cfe6](https://github.com/Mearman/FleetArchitect/commit/921cfe6bee73fa544f58aaf4ffacb49813b891e6))
+* **ui:** gate statusFrame on modules-tab visibility ([10e682a](https://github.com/Mearman/FleetArchitect/commit/10e682a4dde22ba7754dc213aadbdd7cf3b54061))
+* **ui:** pool interpolateFrame scratch across display frames ([53ee93c](https://github.com/Mearman/FleetArchitect/commit/53ee93c1cf63c53d7857d25fecde7f4cfe49cf5b))
+
 # [1.39.0](https://github.com/Mearman/FleetArchitect/compare/v1.38.0...v1.39.0) (2026-07-02)
 
 
