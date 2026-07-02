@@ -34,11 +34,14 @@ import type { SimCache } from "@/domain/cache/contract";
 const DEFAULT_DIR = ".cache/sim";
 
 /**
- * 2 GiB: v8 halves per-result size versus JSON (typed arrays serialise as raw
- * bytes), so 2 GiB fits the full faction-matrix working set instead of evicting
- * warm entries mid-run.
+ * 4 GiB: v8 roughly halves per-result size versus JSON (typed arrays serialise
+ * as raw bytes), but the budget must FIT the test suite's working set — if it
+ * holds fewer results than a matrix run touches, LRU thrashes on the sequential
+ * access pattern (each write evicts the next-needed entry) and the warm run
+ * re-simulates nearly everything. The faction-matrix working set is ~2.5 GiB
+ * (36 results); 4 GiB fits it with headroom, turning a 172 s warm run into ~9 s.
  */
-export const DEFAULT_DISK_BYTES_BUDGET = 2 * 1024 * 1024 * 1024;
+export const DEFAULT_DISK_BYTES_BUDGET = 4 * 1024 * 1024 * 1024;
 
 interface NodeModules {
   readonly fs: typeof FsPromises;
