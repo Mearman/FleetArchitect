@@ -77,12 +77,28 @@ export const PINNED_FRAME_HASHES: readonly [
  * Hashing uses `crypto.subtle.digest('SHA-256')`, available in browsers,
  * workers, and the Node test runtime alike (the same primitive
  * {@link deriveCacheKey} uses).
+ *
+ * MEMOISED: {@link PINNED_FRAME_HASHES} is a compile-time constant, so the
+ * signature is identical for the app's entire lifetime — yet production composes
+ * {@link CachingBattleRunner} and {@link ResumingBattleRunner}
+ * (`Caching(Resuming(inner))`), so a normal battle start called this twice and
+ * paid two `JSON.stringify` + `crypto.subtle.digest` round-trips (the second
+ * result silently discarded when {@link deriveCacheKeyMemoised} hits its own
+ * cache). Cache the single in-flight promise at module scope, the same shape
+ * {@link deriveCacheKeyMemoised} uses for the key: the computation runs once,
+ * every subsequent caller awaits the same promise.
  */
-export async function engineAlgorithmSignature(): Promise<string> {
-  const json = JSON.stringify([...PINNED_FRAME_HASHES]);
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(json),
-  );
-  return toHex(new Uint8Array(digest));
+let cachedSignature: Promise<string> | undefined;
+
+export function engineAlgorithmSignature(): Promise<string> {
+  if (cachedSignature !== undefined) return cachedSignature;
+  cachedSignature = (async () => {
+    const json = JSON.stringify([...PINNED_FRAME_HASHES]);
+    const digest = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(json),
+    );
+    return toHex(new Uint8Array(digest));
+  })();
+  return cachedSignature;
 }
