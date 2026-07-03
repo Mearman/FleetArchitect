@@ -15,9 +15,51 @@
  */
 
 import { maxWeaponRange } from "./setup";
-import { type FormationAggregate, type ResolveReference } from "./formation-doctrine";
+import {
+  anyFormationCondition,
+  type FormationAggregate,
+  type ResolveReference,
+} from "./formation-doctrine";
 import type { SpatialObjective, BearingFrame } from "@/schema/ai";
 import type { SimShip } from "./types";
+
+/**
+ * Whether ANY ship's state this tick could reach the formation-doctrine
+ * aggregates or reference resolver — i.e. whether the Phase D movement
+ * consumer (`moveShips`) must build them at all. A wider gate than
+ * `anyFormationCondition`: that function only covers rules whose conditions
+ * the formation pass evaluates, but the movement consumer also reads three
+ * STATIC ship properties directly:
+ *  - a nested formation chain (length > 1) — routes cohesion to the
+ *    own-formation centroid via {@link cohesionCentroidFor};
+ *  - an `aiSpatial` override (set by the pass when a formation rule fires) —
+ *    routes the ship through {@link desiredPoint};
+ *  - a `base.spatial` objective whose range kind is NOT hold/engage — those
+ *    kinds are routed by the existing range-keeping path, but kite/evade/
+ *    maintain/close flow through {@link desiredPoint}.
+ *
+ * When this returns false, every preset ship runs the existing
+ * target/deployment movement byte-identically with the sort+build+resolve
+ * skipped entirely (no `ships.slice().sort`, no aggregate Map, no resolver
+ * closure, no per-ship Set/Map allocation inside `buildAggregates`). Pure.
+ */
+export function needsFormationBuild(ships: readonly SimShip[]): boolean {
+  if (anyFormationCondition(ships)) return true;
+  for (const ship of ships) {
+    if (ship.phantom !== undefined) continue;
+    if ((ship.formationChain?.length ?? 0) > 1) return true;
+    if (ship.aiSpatial !== undefined) return true;
+    const spatial = ship.doctrine.base.spatial;
+    if (
+      spatial !== undefined &&
+      spatial.range.kind !== "hold" &&
+      spatial.range.kind !== "engage"
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
 
 /** A desired world point the ship should drive to, the desired distance `want`
  *  the translation controller should hold FROM that point, and the at-range
