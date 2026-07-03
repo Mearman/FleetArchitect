@@ -593,18 +593,18 @@ export function* simulateBattle(
     claimHulls(state.ships);
 
     // 4e-debris. Spawn wreckage for every real ship that died this tick (alive
-    //     at the top of the loop, dead now) and was genuinely destroyed rather
-    //     than split into chunks (break-apart carried that mass into its chunks,
-    //     so those deaths are excluded). The fragment inherits the ship's COM
+    //     at top of loop, dead now) and was genuinely destroyed rather than
+    //     split into chunks (break-apart carried that mass into its chunks, so
+    //     those deaths are excluded). The fragment inherits the ship's COM
     //     velocity (Newton's first law), no breakup kick (no deterministic
     //     direction without rng). Wreckage mass is a fraction of the hull's BUILT
     //     structural mass — every cell's mass, alive or destroyed (`ship.mass`
-    //     counts only alive cells and a destroyed hull has none); legacy
-    //     non-modular ships fall back to per-class mass. Summed in module-array
-    //     order; spawned in lexicographic id order behind the monotonic debris
-    //     counter, then every debris drifts one tick. A no-op until the first
-    //     death.
-    const newlyDead = state.ships
+    //     counts only alive; legacy non-modular falls back to per-class). Spawned
+    //     in lexicographic id order behind the monotonic debris counter, then every debris drifts one tick.
+    // `ticksSinceLastDeath === 0` here means a monitored death fired this tick
+    // (set to -1 above then incremented); otherwise skip the full-list scan.
+    const deadPool = state.ticksSinceLastDeath === 0 ? state.ships : [];
+    const newlyDead = deadPool
       .filter(
         (s) =>
           s.phantom === undefined &&
