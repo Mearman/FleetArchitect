@@ -30,7 +30,9 @@ export type NotifyCacheFailure = (error: Error) => void;
  *               the UI streams a hit down the identical path it streams a fresh
  *               run, then resolve with the cached result. The inner runner is
  *               never touched.
- *      - MISS — run the inner runner, then `set` the result under the key.
+ *      - MISS — run the inner runner, then fire-and-forget `set` the result
+ *               under the key (the caller's `run` promise resolves before the
+ *               durable tier's idle-deferred write lands).
  *
  * A `set` failure (including IndexedDB quota exhaustion that the durable tier
  * could not recover by eviction) must NOT block returning the freshly computed
@@ -80,16 +82,20 @@ export class CachingBattleRunner implements BattleRunner {
 
     const result = await this.inner.run(inputs, options);
 
-    try {
-      await this.cache.set(key, result);
-    } catch (error) {
-      // The result is already returned to the caller; a failed cache write must
-      // not fail the battle. Surface it so a broken cache is visible, never
-      // swallowed into a silent no-op.
+    // Fire-and-forget: the durable tier defers the structured-clone put through
+    // `requestIdleCallback`, so awaiting `set` would hold the caller's
+    // battle-runner promise open until that idle-deferred write lands — up to
+    // ~2 s of pure UI latency on every battle-complete, worse on a busy main
+    // thread. The frames are already fully streamed via `onFrames` by the time
+    // the inner runner resolves, so nothing downstream needs the write to have
+    // landed. A failed write is surfaced through the existing notifier rather
+    // than swallowed, so a silently failing cache cannot masquerade as a
+    // working one.
+    this.cache.set(key, result).catch((error: unknown) => {
       this.notifyCacheFailure(
         error instanceof Error ? error : new Error(String(error)),
       );
-    }
+    });
 
     return result;
   }

@@ -100,8 +100,13 @@ describe("CachingBattleRunner", () => {
 
     expect(out).toBe(fresh);
     expect(calls).toHaveLength(1);
-    // The freshly computed result is now cached under the derived key.
-    expect(await cache.get(await key())).toBe(fresh);
+    // The cache write is fire-and-forget off the run() return path (the
+    // durable tier defers it through requestIdleCallback), so poll until the
+    // freshly computed result lands under the derived key.
+    const expectedKey = await key();
+    await vi.waitFor(async () => {
+      expect(await cache.get(expectedKey)).toBe(fresh);
+    });
   });
 
   it("noCache bypasses the cache: delegates and stores nothing", async () => {
