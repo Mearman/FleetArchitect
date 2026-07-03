@@ -194,19 +194,23 @@ export function ShipDesignerRoute() {
   const displayGrid = useMemo(() => growArmourHull(working.grid), [working.grid]);
 
   const analysis = useMemo(() => {
+    // analyseShipDesign reads only grid and faction; the remaining ShipDesign
+    // fields are required by the type but ignored by the analysis, so stable
+    // placeholders keep the dependency array narrow. Keying on the whole working
+    // object would recompute on every keystroke (name) and doctrine-panel change.
     const design: ShipDesign = {
-      id: working.id ?? "draft",
-      name: working.name || "Draft",
+      id: "draft",
+      name: "Draft",
       faction: working.faction || "Unaligned",
       grid: working.grid,
-      createdAt: working.createdAt ?? nowIso(),
+      createdAt: nowIso(),
       updatedAt: nowIso(),
-      source: working.source,
+      source: "user",
       revision: 1,
-      doctrine: working.doctrine,
+      doctrine: { base: {}, rules: [] },
     };
     return analyseShipDesign(design, catalog());
-  }, [working]);
+  }, [working.grid, working.faction]);
 
   /** Breached-compartment cells, derived from the layered-cell flood-fill. */
   const breached = useMemo<BreachSet>(() => {
