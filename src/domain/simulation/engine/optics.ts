@@ -1,5 +1,6 @@
 import { BEAM_RAYLEIGH_REFERENCE_M } from "@/data/catalog/combat-scale";
 import { SPEED_OF_LIGHT_M_PER_S } from "./config";
+import { fastHypot } from "./hypot";
 
 export { BEAM_RAYLEIGH_REFERENCE_M };
 
@@ -181,7 +182,7 @@ export function relativeRadialBeta(
   losY: number,
   cPerTick: number,
 ): number {
-  const losLen = Math.hypot(losX, losY);
+  const losLen = fastHypot(losX, losY);
   if (losLen <= 0 || cPerTick <= 0) return 0;
   const radial = (relVx * losX + relVy * losY) / losLen;
   return radial / cPerTick;
