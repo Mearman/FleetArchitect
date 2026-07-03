@@ -9,7 +9,7 @@ import {
 } from "@/domain/simulation/runner";
 import { DexieSimCache } from "@/storage/sim-cache-dexie";
 import { DexieCheckpointStore } from "@/storage/checkpoint-store-dexie";
-import { checkpointsTable, simCacheTable } from "@/storage/db";
+import { checkpointsTable, simCacheMetaTable, simCacheTable } from "@/storage/db";
 import { CachingBattleRunner } from "@/ui/cachingBattleRunner";
 import { ResumingBattleRunner } from "@/ui/resumingBattleRunner";
 
@@ -54,7 +54,7 @@ const resumingRunner: BattleRunner = new ResumingBattleRunner(
  */
 const cache = new CompositeSimCache(
   new MemorySimCache(),
-  new DexieSimCache(simCacheTable()),
+  new DexieSimCache(simCacheTable(), simCacheMetaTable()),
 );
 
 /**

@@ -15,6 +15,10 @@ import {
 import { createId, nowIso } from "@/domain/id";
 import type { Repository, Storage } from "./contract";
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 /** Internal key-value record, used for one-time boot tasks like seeding. */
 export interface MetaRecord {
   key: string;
@@ -53,6 +57,14 @@ export type FormationTemplateRevisionRecord = FormationTemplate;
 export interface SimCacheRecord {
   key: string;
   result: BattleResult;
+  bytes: number;
+  lastAccess: number;
+}
+
+/** Eviction metadata for {@link SimCacheRecord}: three scalars, no result
+ *  payload. Kept in sync via a transaction over both tables. */
+export interface SimCacheMetaRecord {
+  key: string;
   bytes: number;
   lastAccess: number;
 }
@@ -104,6 +116,7 @@ class FleetArchitectDatabase extends Dexie {
   fleet_revisions!: Table<FleetRevisionRecord, [string, number]>;
   formation_template_revisions!: Table<FormationTemplateRevisionRecord, [string, number]>;
   simCache!: Table<SimCacheRecord, string>;
+  simCacheMeta!: Table<SimCacheMetaRecord, string>;
   checkpoints!: Table<CheckpointDeltaRecord, [string, number]>;
 
   constructor(name = "fleet-architect", options?: DexieOptions) {
@@ -131,16 +144,13 @@ class FleetArchitectDatabase extends Dexie {
       design_revisions: "[id+revision], id",
       fleet_revisions: "[id+revision], id",
     });
-    // Deterministic battle result cache (Part 1 of the cache plan). Keyed by the
-    // content hash; `lastAccess` and `bytes` are indexed for LRU + byte-budget
-    // eviction. Separate from the write-only `battles` history.
+    // Deterministic battle result cache, keyed by content hash. `lastAccess`
+    // and `bytes` are indexed for LRU + byte-budget eviction.
     this.version(5).stores({
       simCache: "key, lastAccess, bytes",
     });
-    // In-progress battle checkpoints (Part 2 of the cache plan, Phase 10). One
-    // latest checkpoint per content key (overwrite on capture); `updatedAt` is
-    // indexed for diagnostics. The resume decorator deletes the entry once the
-    // full result is computed (and cached by the result-cache tier).
+    // In-progress battle checkpoints. `updatedAt` is indexed for diagnostics;
+    // the resume decorator deletes the entry once the result is cached.
     this.version(6).stores({
       checkpoints: "key, updatedAt",
     });
@@ -151,21 +161,17 @@ class FleetArchitectDatabase extends Dexie {
     // left intact so the upgrade chain stays consistent.
     this.version(7).stores({ battles: null });
     // Phase F: formation templates — the by-reference formation subtree asset
-    // a fleet's `template` node links to. Indexed by id (primary), name (for
-    // lookup lists), and updatedAt (for recency sorts). The version-history
-    // store uses the same composite [id+revision] key as the ship/fleet
-    // revision stores so prior snapshots can be listed and restored.
+    // a fleet's `template` node links to. Indexed by id, name, and updatedAt.
+    // The version-history store uses the same composite [id+revision] key.
     this.version(8).stores({
       formationTemplates: "id, name, updatedAt",
       formation_template_revisions: "[id+revision], id",
     });
     // Checkpoints become incremental delta rows: primary key [key+seq] (one row
-    // per capture, not one overwrite-per-key), with `key` indexed so all deltas
-    // of a matchup are read back and concatenated on resume. The primary-key
-    // change from `key` to `[key+seq]` recreates the object store, so old
-    // monolithic `preFrames` records are DISCARDED (never mis-read as a delta);
-    // the upgrade also clears explicitly as belt-and-braces against any row that
-    // might survive the recreation.
+    // per capture), `key` indexed so all deltas of a matchup are read back and
+    // concatenated on resume. The PK change from `key` to `[key+seq]` recreates
+    // the store, so old monolithic `preFrames` records are discarded; the upgrade
+    // clears explicitly as belt-and-braces.
     this.version(9)
       .stores({
         checkpoints: "[key+seq], key, updatedAt",
@@ -173,6 +179,19 @@ class FleetArchitectDatabase extends Dexie {
       .upgrade(async (tx) => {
         await tx.table("checkpoints").clear();
       });
+    // Split eviction metadata into its own table so #ensureMeta reads three
+    // scalars per row, not a full BattleResult clone. See sim-cache-dexie.ts.
+    this.version(10).stores({ simCacheMeta: "key" }).upgrade(async (tx) => {
+      const rows: unknown[] = await tx.table("simCache").toArray();
+      const meta: SimCacheMetaRecord[] = [];
+      for (const row of rows) {
+        if (!isRecord(row)) continue;
+        const { key, bytes, lastAccess } = row;
+        if (typeof key === "string" && typeof bytes === "number" && typeof lastAccess === "number")
+          meta.push({ key, bytes, lastAccess });
+      }
+      await tx.table("simCacheMeta").bulkPut(meta);
+    });
   }
 }
 
@@ -365,6 +384,11 @@ export function storage(): Storage {
  */
 export function simCacheTable(): Table<SimCacheRecord, string> {
   return database().simCache;
+}
+
+/** Mirror of {@link simCacheTable} for the lightweight eviction-metadata table. */
+export function simCacheMetaTable(): Table<SimCacheMetaRecord, string> {
+  return database().simCacheMeta;
 }
 
 /**

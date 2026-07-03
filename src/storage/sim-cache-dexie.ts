@@ -2,15 +2,16 @@ import type { Table } from "dexie";
 import { isBattleResult, type BattleFrame, type BattleResult } from "@/schema/battle";
 import type { EngineCheckpoint } from "@/schema/checkpoint";
 import type { SimCache } from "@/domain/cache/contract";
-import type { SimCacheRecord } from "@/storage/db";
+import type { SimCacheMetaRecord, SimCacheRecord } from "@/storage/db";
 import { isQuotaExceeded, isUncloneable } from "@/storage/idb-errors";
 
 /**
  * The in-browser durable tier of the deterministic result cache: an IndexedDB
- * adapter over the `simCache` Dexie table (see `db.ts`, `version(5)`). It mirrors
- * the on-disk `DiskSimCache` for node tests — same `SimCache` contract, same LRU +
- * budget eviction policy — but persists across browser reloads instead of across
- * `pnpm test` runs.
+ * adapter over the `simCache` Dexie table (see `db.ts`, `version(5)`) and its
+ * lightweight eviction-metadata mirror `simCacheMeta` (added in `version(10)`).
+ * It mirrors the on-disk `DiskSimCache` for node tests — same `SimCache` contract,
+ * same LRU + budget eviction policy — but persists across browser reloads instead
+ * of across `pnpm test` runs.
  *
  * The table is SEPARATE from the write-only `battles` history: that table records
  * every play keyed by random id and is never read back, whereas this one is a
@@ -34,9 +35,14 @@ import { isQuotaExceeded, isUncloneable } from "@/storage/idb-errors";
  *    `{ key → { bytes, lastAccess } }` mirror, not from a fresh
  *    `orderBy("lastAccess").toArray()` — that call structured-cloned EVERY cached
  *    result on every `set`, the dominant cost of the old write path. The mirror is
- *    rebuilt once (lazily, inside the deferred `set`) and kept in sync thereafter.
+ *    rebuilt once (lazily, inside the deferred `set`) from the `simCacheMeta`
+ *    table, which holds only three scalars per entry (no `result` payload), and is
+ *    kept in sync thereafter.
  *  - the `put` + `evict` run via `requestIdleCallback` so even the structured-clone
  *    `put` of a large result never blocks the animation frame.
+ *  - every `put` / `delete` writes BOTH the `simCache` and `simCacheMeta` tables
+ *    in a single readwrite transaction, so the metadata mirror never drifts from
+ *    the result rows.
  *
  * A `get` bumps the hit entry's `lastAccess` for LRU recency. The bump is
  * fire-and-forget: it must not delay returning the result and a failure to record
@@ -183,26 +189,31 @@ interface CacheEntryMeta {
 export class DexieSimCache implements SimCache {
   // In-memory mirror of every row's { bytes, lastAccess }, so eviction can rank
   // and bound entries without structured-cloning every cached result on each
-  // write. Built once (lazily, inside the deferred `set` that first needs it) and
+  // write. Built once (lazily, inside the deferred `set` that first needs it) from
+  // the lightweight `simCacheMeta` table — never the `simCache` result rows — and
   // kept in sync on every get/set/evict thereafter. `null` until that first build.
   #meta: Map<string, CacheEntryMeta> | null = null;
 
   constructor(
     private readonly table: Table<SimCacheRecord, string>,
+    private readonly metaTable: Table<SimCacheMetaRecord, string>,
     private readonly maxBytes: number = DEFAULT_DEXIE_BYTES_BUDGET,
     private readonly maxEntries: number = DEFAULT_DEXIE_MAX_ENTRIES,
   ) {}
 
   /**
-   * Populate {@link #meta} from the table on first use and return it. Runs once
-   * per instance; later calls return the existing map. Called from `set` (the
-   * only path that evicts), so the one full-table read happens inside the
-   * deferred idle write, off the rAF. Returning the map lets callers use a
-   * narrowed local rather than re-checking the nullable field after each await.
+   * Populate {@link #meta} from the `simCacheMeta` table on first use and return
+   * it. Runs once per instance; later calls return the existing map. Called from
+   * `set` (the only path that evicts), so the one metadata-table read happens
+   * inside the deferred idle write, off the rAF. Reading `simCacheMeta` (three
+   * scalars per row) instead of `simCache` avoids structured-cloning every cached
+   * `BattleResult` — the full frame-graph payloads stay in the result table
+   * untouched. Returning the map lets callers use a narrowed local rather than
+   * re-checking the nullable field after each await.
    */
   async #ensureMeta(): Promise<Map<string, CacheEntryMeta>> {
     if (this.#meta !== null) return this.#meta;
-    const rows = await this.table.toArray();
+    const rows = await this.metaTable.toArray();
     const meta = new Map<string, CacheEntryMeta>();
     for (const row of rows) meta.set(row.key, { bytes: row.bytes, lastAccess: row.lastAccess });
     this.#meta = meta;
@@ -215,18 +226,18 @@ export class DexieSimCache implements SimCache {
     // Cheap shape guard only: the inputs + SimConfig + engineAlgorithmSignature
     // cover every determinant, so a stale-shape entry is never read (algorithm
     // or schema drift flips the key). This guard only catches gross corruption
-    // (a truncated write) — evict the row and miss.
+    // (a truncated write) — evict the row from BOTH tables and miss.
     if (!isBattleResult(record.result)) {
-      await this.table.delete(key);
+      await this.#deleteBoth(key);
       if (this.#meta !== null) this.#meta.delete(key);
       return undefined;
     }
-    // Bump recency for LRU. Fire-and-forget on the durable row: do not delay or
+    // Bump recency for LRU. Fire-and-forget on the durable rows: do not delay or
     // fail the read on a recency-bookkeeping error — the result is already
     // resolved. Mirror the bump too, when the mirror is loaded and holds the
     // key, so the next eviction sees fresh recency without re-reading the table.
     const now = Date.now();
-    void this.table.update(key, { lastAccess: now });
+    void this.#bumpRecency(key, now);
     if (this.#meta !== null) {
       const existing = this.#meta.get(key);
       if (existing !== undefined) this.#meta.set(key, { ...existing, lastAccess: now });
@@ -249,7 +260,7 @@ export class DexieSimCache implements SimCache {
     const now = Date.now();
     const record: SimCacheRecord = { key, result: value, bytes, lastAccess: now };
     try {
-      await this.table.put(record);
+      await this.#putBoth(record);
     } catch (error) {
       // A DataCloneError is a capacity boundary, not a bug: the result is too
       // large for the structured clone. The memory tier still holds it for the
@@ -262,10 +273,53 @@ export class DexieSimCache implements SimCache {
       // rethrown unchanged.
       if (!isQuotaExceeded(error)) throw error;
       await this.#evictOldest(meta);
-      await this.table.put(record);
+      await this.#putBoth(record);
     }
     meta.set(key, { bytes, lastAccess: now });
     await this.#evict(meta);
+  }
+
+  /**
+   * Write a result row and its metadata mirror in a single readwrite
+   * transaction over both tables, so the two never drift apart. Used by
+   * {@link #write} (including the quota-retry path — the first transaction
+   * aborts cleanly on quota, then eviction frees space and this is re-called).
+   */
+  async #putBoth(record: SimCacheRecord): Promise<void> {
+    await this.table.db.transaction("rw", this.table, this.metaTable, async () => {
+      await this.table.put(record);
+      await this.metaTable.put({
+        key: record.key,
+        bytes: record.bytes,
+        lastAccess: record.lastAccess,
+      });
+    });
+  }
+
+  /**
+   * Delete the result row and its metadata mirror in a single readwrite
+   * transaction. A missing row in either table is a no-op (IndexedDB `delete`
+   * on a non-existent key is not an error), so this is safe for keys that exist
+   * in only one table (e.g. a corrupt row evicted before the mirror was built).
+   */
+  async #deleteBoth(key: string): Promise<void> {
+    await this.table.db.transaction("rw", this.table, this.metaTable, async () => {
+      await this.table.delete(key);
+      await this.metaTable.delete(key);
+    });
+  }
+
+  /**
+   * Bump the `lastAccess` timestamp on both the result row and its metadata
+   * mirror in a single readwrite transaction. Fire-and-forget from {@link get}:
+   * the result is already in hand, and a failure to record recency is not a
+   * reason to fail the read (the sole deliberate swallow in this adapter).
+   */
+  async #bumpRecency(key: string, now: number): Promise<void> {
+    await this.table.db.transaction("rw", this.table, this.metaTable, async () => {
+      await this.table.update(key, { lastAccess: now });
+      await this.metaTable.update(key, { lastAccess: now });
+    });
   }
 
   async has(key: string): Promise<boolean> {
@@ -287,15 +341,15 @@ export class DexieSimCache implements SimCache {
       }
     }
     if (oldestKey === null) return;
-    await this.table.delete(oldestKey);
+    await this.#deleteBoth(oldestKey);
     meta.delete(oldestKey);
   }
 
   /**
    * Evict the oldest-`lastAccess` rows until both the byte budget and the
    * entry-count cap hold. Ranks and bounds from the in-memory {@link #meta}
-   * mirror, deleting oldest-first, so no cached result is structured-cloned just
-   * to compute the running totals.
+   * mirror, deleting oldest-first from BOTH tables, so no cached result is
+   * structured-cloned just to compute the running totals.
    */
   async #evict(meta: Map<string, CacheEntryMeta>): Promise<void> {
     const ordered = Array.from(meta.entries()).sort((a, b) => a[1].lastAccess - b[1].lastAccess);
@@ -304,7 +358,7 @@ export class DexieSimCache implements SimCache {
     let count = ordered.length;
     for (const [k, m] of ordered) {
       if (totalBytes <= this.maxBytes && count <= this.maxEntries) break;
-      await this.table.delete(k);
+      await this.#deleteBoth(k);
       meta.delete(k);
       totalBytes -= m.bytes;
       count -= 1;
