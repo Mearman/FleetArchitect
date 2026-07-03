@@ -11,6 +11,7 @@ import {
   MAX_PX_PER_M,
   padLiveBounds,
   resolveViewTransform,
+  resolveViewTransformInto,
   screenToWorld,
 } from "./battleCamera";
 import type { Bounds, Camera } from "./battleCamera";
@@ -267,6 +268,48 @@ describe("battleCamera", () => {
       expect(t1.scale).toBe(t0.scale);
       expect(t1.centreX).toBe(t0.centreX);
       expect(t1.centreY).toBe(t0.centreY);
+    });
+  });
+
+  describe("resolveViewTransformInto", () => {
+    it("produces the same projection as a fresh resolveViewTransform (flat + iso)", () => {
+      const frame = frameWith([
+        { id: "a", x: -100, y: -50, alive: true },
+        { id: "b", x: 100, y: 50, alive: true },
+      ]);
+      const worldCases: ReadonlyArray<readonly [number, number]> = [
+        [0, 0],
+        [123, 77],
+        [-40, 310],
+        [100, -50],
+      ];
+      const projections: ReadonlyArray<Camera["projection"]> = ["flat", "isometric"];
+      for (const projection of projections) {
+        const cam: Camera = { ...DEFAULT_CAMERA, projection };
+        // tFresh allocates a fresh transform; tInto rewrites a caller-owned one
+        // seeded with a different scale/centre/projection. Both must resolve to
+        // the same view, since resolveViewTransform delegates to ...Into.
+        const tFresh = resolveViewTransform(800, 600, WIDE_BOUNDS, cam, frame, NO_DESCRIPTORS);
+        const tInto = resolveViewTransformInto(
+          makeTransform(800, 600, 1, 0, 0, FLAT_PROJECTION),
+          800,
+          600,
+          WIDE_BOUNDS,
+          cam,
+          frame,
+          NO_DESCRIPTORS,
+        );
+        expect(tInto.scale).toBe(tFresh.scale);
+        expect(tInto.centreX).toBeCloseTo(tFresh.centreX, 9);
+        expect(tInto.centreY).toBeCloseTo(tFresh.centreY, 9);
+        expect(tInto.projection.mode).toBe(tFresh.projection.mode);
+        for (const [wx, wy] of worldCases) {
+          const pf = tFresh.project(wx, wy);
+          const pi = tInto.project(wx, wy);
+          expect(pi.x).toBeCloseTo(pf.x, 9);
+          expect(pi.y).toBeCloseTo(pf.y, 9);
+        }
+      }
     });
   });
 
