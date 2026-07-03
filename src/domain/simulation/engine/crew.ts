@@ -90,32 +90,50 @@ export function updateCrew(ship: SimShip): void {
   // subscribed, weapons/sinks not already targeted) are applied inline against
   // the claim sets, which mutate as crew are assigned — so the result is
   // byte-identical to the old per-crew rebuild, without the allocation churn.
-  const stations = ship.modules
-    .filter((m) => m.alive && m.crewRequired > 0 && stationNeedsCrew(m))
-    .slice()
-    .sort(compareByCell);
-  const dryWeapons = ship.modules
-    .filter(
-      (m) =>
-        m.alive &&
-        m.effect.kind === "weapon" &&
-        m.effect.ammoCapacity !== undefined &&
-        ammoShortfall(m) >= SIM.ammoRunAmount,
-    )
-    .slice()
-    .sort(compareByCell);
-  const magazines = ship.modules
-    .filter((m) => m.alive && m.effect.kind === "magazine" && m.ammoStored > 0)
-    .slice()
-    .sort(compareByCell);
-  const starvedSinks = ship.modules
-    .filter((m) => m.alive && m.powerDraw > 0 && chargeShortfall(m) >= SIM.powerRunAmount)
-    .slice()
-    .sort(compareByCell);
-  const reactors = ship.modules
-    .filter((m) => m.alive && m.effect.kind === "power")
-    .slice()
-    .sort(compareByCell);
+  //
+  // The lists are consumed ONLY inside the idle-crew loop below (via
+  // assignIdleCrewToTask), which itself skips any crew whose job is not
+  // "idle". When no crew is idle this tick — the common steady-state case once
+  // every member is manning or hauling — the lists would never be read, so
+  // skip the five filter+sort passes entirely. They are pure read-only
+  // derivations of alive module state, so omitting them changes no result.
+  const hasIdle = ordered.some((c) => c.job === "idle");
+  const stations = hasIdle
+    ? ship.modules
+        .filter((m) => m.alive && m.crewRequired > 0 && stationNeedsCrew(m))
+        .slice()
+        .sort(compareByCell)
+    : [];
+  const dryWeapons = hasIdle
+    ? ship.modules
+        .filter(
+          (m) =>
+            m.alive &&
+            m.effect.kind === "weapon" &&
+            m.effect.ammoCapacity !== undefined &&
+            ammoShortfall(m) >= SIM.ammoRunAmount,
+        )
+        .slice()
+        .sort(compareByCell)
+    : [];
+  const magazines = hasIdle
+    ? ship.modules
+        .filter((m) => m.alive && m.effect.kind === "magazine" && m.ammoStored > 0)
+        .slice()
+        .sort(compareByCell)
+    : [];
+  const starvedSinks = hasIdle
+    ? ship.modules
+        .filter((m) => m.alive && m.powerDraw > 0 && chargeShortfall(m) >= SIM.powerRunAmount)
+        .slice()
+        .sort(compareByCell)
+    : [];
+  const reactors = hasIdle
+    ? ship.modules
+        .filter((m) => m.alive && m.effect.kind === "power")
+        .slice()
+        .sort(compareByCell)
+    : [];
 
   // 3. Assign idle crew (id order) to the highest-priority unmet need, in the
   //    order the ship's `crewPriority` mode dictates (combat: manning, ammo,
