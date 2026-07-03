@@ -10,8 +10,8 @@ import { drawAnomaly } from "./battleAnomaly";
 import { drawBackdropCached, vignetteGradient } from "./battleBackdrop";
 import { drawFogAndAwareness } from "./battleFog";
 import { appendWorldArc, pathWorldCircle } from "./battleProject";
-import type { Bounds, Camera } from "./battleCamera";
-import { resolveViewTransform } from "./battleCamera";
+import type { Bounds, Camera, Transform } from "./battleCamera";
+import { makeTransform, resolveViewTransformInto } from "./battleCamera";
 import {
   CARRYING_COLOUR,
   CREW_COLOUR,
@@ -103,6 +103,11 @@ export function useBattleCanvas({
   // dead ships) instead of allocating per alive ship every frame.
   const fogShipPosRef = useRef<Map<string, { x: number; y: number }>>(new Map());
   const fogPosScratchRef = useRef<{ x: number; y: number }[]>([]);
+  // Reusable battle-camera Transform: built once, rewritten in place per frame
+  // (resolveViewTransformInto), so the per-rAF draw pays no Transform/closure
+  // allocation. The closures read the scalar fields at call time, so the in-place
+  // update is visible to every consumer this frame.
+  const transformRef = useRef<Transform | null>(null);
   // Per-battle formation colour per instance id, derived once (descriptors never
   // mutate); a no-op (byte-identical frames) for a pre-formation battle.
   const formationColourByInstance = useMemo(
@@ -127,11 +132,16 @@ export function useBattleCanvas({
       if (width === 0 || height === 0) return;
       // No explicit clear: the backdrop fill below is opaque and covers the canvas.
 
-      // Resolve the view transform. Auto-fit frames this frame's live ships;
-      // otherwise it honours manual zoom/pan and tracks a followed ship's live
-      // position (falling back to centre-pan if it has died/not yet appeared).
+      // Resolve the view transform (held in a ref, rewritten in place so the
+      // per-rAF path allocates nothing once warmed). Auto-fit frames this frame's
+      // live ships; manual mode honours zoom/pan and tracks a followed ship.
       const cam = cameraRef.current;
-      const t = resolveViewTransform(width, height, bounds, cam, frame, descriptors);
+      let t = transformRef.current;
+      if (t === null) {
+        t = makeTransform(width, height, 1, 0, 0);
+        transformRef.current = t;
+      }
+      resolveViewTransformInto(t, width, height, bounds, cam, frame, descriptors);
       const scale = t.scale;
 
       // Backdrop (base gradient, parallax grid, seeded starfield) rendered to an
@@ -170,11 +180,10 @@ export function useBattleCanvas({
         drawFogAndAwareness(ctx, frame.awareness, t, shipPos);
       }
 
-      // Battle overlays: dispatched by layer relative to the ship loop. Each
-      // enabled overlay's draw gets a fresh OverlayCtx. Overlays are pure draw
-      // consumers (never touch BattleRoute state), keeping the overlay layer the
-      // single seam later agents extend. Reading `overlays` here re-creates
-      // drawFrame only when overlay state changes (mirrors the showFog pattern).
+      // Battle overlays: dispatched by layer relative to the ship loop. Overlays
+      // are pure draw consumers (never touch BattleRoute state), keeping the
+      // overlay layer the single seam later agents extend. Reading `overlays`
+      // here re-creates drawFrame only on overlay-state change (showFog pattern).
       const followId = cameraRef.current.followId;
       // Hoist inScope out of the per-overlay loop: only two scopes exist ("all"
       // = IN_SCOPE_ALL; "active" = followed ship only), so one predicate per
@@ -212,10 +221,9 @@ export function useBattleCanvas({
         ctx.fillRect(pp.x - 1, pp.y - 1, 2.5, 2.5);
       }
 
-      // The projection's pure 2x2 delta map (its basis vectors): the screen
-      // delta for one world unit along x and along y. For the flat projection
-      // this is the identity, so the composed ship transform below reduces to
-      // scale * rotate(facing) and reproduces the old top-down draw exactly.
+      // The projection's pure 2x2 delta map (its basis vectors): the screen delta
+      // for one world unit along x and along y. Flat is the identity, so the
+      // composed ship transform below reduces to scale * rotate(facing).
       const mx = t.projection.project(1, 0);
       const my = t.projection.project(0, 1);
 
@@ -239,11 +247,9 @@ export function useBattleCanvas({
           cellBufferRef.current.set(s.instanceId, cellBuffer);
         }
         const cells = renderCellsInto(cellBuffer, s, descriptor);
-        // Faction accent tints the hull; the side colour is shown separately as
-        // an outline ring so allegiance stays legible in a mirror match. Falls
-        // back to the side colour for replays recorded before the factions update.
-        // When the ship carries a formation identity (Phase E), its formation
-        // colour takes priority over the faction accent — within a fleet every
+        // Faction accent tints the hull; the side colour is a separate outline
+        // ring so allegiance stays legible in a mirror match. A formation identity
+        // (Phase E) takes priority over the faction accent — within a fleet every
         // ship shares one faction, so the formation tint is the informative
         // sub-grouping, and the side ring still carries attacker/defender.
         const formationColour = formationColourByInstance.get(s.instanceId);
@@ -253,9 +259,8 @@ export function useBattleCanvas({
         const max = maxHp.get(s.instanceId);
 
         // World extent of the hull (farthest cell from the centre), driving the
-        // ship rings and the wreck marker as world circles so they tilt into
-        // ellipses on the ship plane under iso. Legacy ships with no cell data
-        // fall back to a small world radius (a couple of cells).
+        // ship rings and the wreck marker as world circles so they tilt under
+        // iso. Legacy ships with no cell data fall back to a couple of cells.
         const hullRadius = hullRadiusWorld(descriptor);
         const hullR = hullRadius === undefined ? CELL_SIZE * 2 : hullRadius;
 
@@ -270,10 +275,9 @@ export function useBattleCanvas({
           continue;
         }
 
-        // Side outline ring (factions update): with hulls tinted by faction, a
-        // thin ring in the side colour keeps attacker/defender legible at a
-        // glance, including same-faction mirror matches. A world circle (the
-        // small pixel gap mapped to world units) so it tilts under iso.
+        // Side outline ring: with hulls tinted by faction, a thin ring in the
+        // side colour keeps attacker/defender legible at a glance, including
+        // same-faction mirror matches. A world circle so it tilts under iso.
         ctx.strokeStyle = SIDE_COLOUR[s.side];
         ctx.lineWidth = 1.5;
         ctx.globalAlpha = 0.8;
@@ -295,14 +299,10 @@ export function useBattleCanvas({
           }
         }
 
-        // Per-cell hull: each module/hull cell is drawn as a square the true
-        // size of a grid cell (CELL_SIZE world units), positioned at its world
-        // location (ship centre + the cell's local offset rotated by the ship's
-        // facing) and rotated to match. This makes a ship read as its actual
-        // sculpted silhouette and scale rather than a dot — a dreadnought
-        // genuinely dwarfs a fighter on the canvas. Cells are tinted toward the
-        // side colour so faction allegiance stays legible at a glance. Destroyed
-        // cells go dark with a cross; turreted weapons draw a tracking barrel.
+        // Per-cell hull: each cell is drawn as a CELL_SIZE square at its world
+        // location (ship centre + the local offset rotated by facing), so a ship
+        // reads as its sculpted silhouette — a dreadnought dwarfs a fighter.
+        // Destroyed cells go dark with a cross; turreted weapons draw a barrel.
         if (cells !== undefined && s.facing !== undefined) {
           // Whether the cell size is being floored (distant zoom): in that
           // regime cells overlap to keep a tiny hull legible, which the baked

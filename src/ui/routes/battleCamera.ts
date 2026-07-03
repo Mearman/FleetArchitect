@@ -144,6 +144,12 @@ export const ISO_PROJECTION: Projection = {
  * `sx`/`sy` are the per-axis equivalents — valid only for an axis-separable
  * projection (the flat one); isometric callers must use `project`, where screen-x
  * depends on both world coords.
+ *
+ * The scalar fields are mutable: the draw loop holds one Transform in a ref and
+ * {@link resolveViewTransformInto} rewrites them in place each frame, so the
+ * per-rAF path allocates nothing once warmed. The closures read the scalars from
+ * the transform itself at call time (not via capture), so an in-place update
+ * takes effect on the next `project`/`projectInto`/`sx`/`sy` call.
  */
 export interface Transform {
   scale: number;
@@ -167,8 +173,16 @@ export function fitScale(width: number, height: number, bounds: Bounds): number 
   return Math.min((width - CAMERA_PAD * 2) / rangeX, (height - CAMERA_PAD * 2) / rangeY);
 }
 
-/** Build a Transform from an absolute scale, world centre, and projection
- *  (defaulting to the flat top-down mapping). */
+/**
+ * Build a Transform from an absolute scale, world centre, and projection
+ * (defaulting to the flat top-down mapping). The closures read the scalar fields
+ * from the returned object at call time, so a caller that holds one Transform
+ * and rewrites its fields (via {@link resolveViewTransformInto}) reuses the same
+ * closures across frames — no per-frame allocation once warmed.
+ *
+ * Constructed once per canvas (held in a ref); for the per-frame hot path prefer
+ * {@link resolveViewTransformInto}, which updates an existing Transform in place.
+ */
 export function makeTransform(
   width: number,
   height: number,
@@ -181,16 +195,27 @@ export function makeTransform(
   // projectInto call so the hot draw loops allocate nothing per projection.
   // Safe because each projectInto fully consumes it before returning.
   const projScratch = { x: 0, y: 0 };
-  const projectInto = (out: { x: number; y: number }, wx: number, wy: number) => {
-    projection.projectInto(projScratch, wx - centreX, wy - centreY);
-    out.x = width / 2 + projScratch.x * scale;
-    out.y = height / 2 + projScratch.y * scale;
-    return out;
+  const self: Transform = {
+    scale,
+    centreX,
+    centreY,
+    width,
+    height,
+    projection,
+    projectInto: (out, wx, wy) => {
+      // Read the scalars off `self` at call time so an in-place update (the draw
+      // loop rewriting this Transform each frame) takes effect immediately; the
+      // arithmetic is identical to capturing them by value when they never move.
+      self.projection.projectInto(projScratch, wx - self.centreX, wy - self.centreY);
+      out.x = self.width / 2 + projScratch.x * self.scale;
+      out.y = self.height / 2 + projScratch.y * self.scale;
+      return out;
+    },
+    project: (wx, wy) => self.projectInto({ x: 0, y: 0 }, wx, wy),
+    sx: (wx) => self.project(wx, self.centreY).x,
+    sy: (wy) => self.project(self.centreX, wy).y,
   };
-  const project = (wx: number, wy: number) => projectInto({ x: 0, y: 0 }, wx, wy);
-  const sx = (wx: number) => project(wx, centreY).x;
-  const sy = (wy: number) => project(centreX, wy).y;
-  return { scale, centreX, centreY, width, height, projection, project, projectInto, sx, sy };
+  return self;
 }
 
 /** Centre of a bounds box. */
@@ -249,8 +274,38 @@ export function padLiveBounds(b: Bounds): Bounds {
  * manual absolute-scale transform: `baseScale * zoom`, centred on the followed
  * ship's live position or the stored centre. Used by both the draw loop and the
  * pointer-math so clicks/zoom resolve against exactly what is on screen.
+ *
+ * Returns a fresh Transform (allocates). The per-rAF draw loop should prefer
+ * {@link resolveViewTransformInto}, which rewrites a caller-owned Transform in
+ * place so the hot path allocates nothing once warmed.
  */
 export function resolveViewTransform(
+  width: number,
+  height: number,
+  staticBounds: Bounds,
+  camera: Camera,
+  frame: BattleFrame,
+  descriptors: DescriptorMap,
+): Transform {
+  return resolveViewTransformInto(
+    makeTransform(width, height, 1, 0, 0, FLAT_PROJECTION),
+    width,
+    height,
+    staticBounds,
+    camera,
+    frame,
+    descriptors,
+  );
+}
+
+/**
+ * As {@link resolveViewTransform}, but rewrites the scalar fields of `t` in place
+ * (and returns `t`) so a caller that holds one Transform across frames — the
+ * draw loop keeps it in a ref — pays no per-frame allocation. The arithmetic is
+ * identical to {@link resolveViewTransform}; only the destination differs.
+ */
+export function resolveViewTransformInto(
+  t: Transform,
   width: number,
   height: number,
   staticBounds: Bounds,
@@ -267,7 +322,7 @@ export function resolveViewTransform(
     // over-zoom past MAX_PX_PER_M (which would also make break-out jump on the
     // first scroll). The close limit is metres-based, not relative to this frame.
     const fit = Math.min(fitScale(width, height, box), MAX_PX_PER_M);
-    return makeTransform(width, height, fit, c.x, c.y, projection);
+    return updateTransform(t, width, height, fit, c.x, c.y, projection);
   }
   const followPos =
     camera.followId !== null
@@ -276,7 +331,28 @@ export function resolveViewTransform(
   const scale = camera.baseScale * camera.zoom;
   const centreX = followPos !== undefined ? followPos.x : camera.centreX;
   const centreY = followPos !== undefined ? followPos.y : camera.centreY;
-  return makeTransform(width, height, scale, centreX, centreY, projection);
+  return updateTransform(t, width, height, scale, centreX, centreY, projection);
+}
+
+/** Rewrite a Transform's scalar fields in place. The closures read these off
+ *  `self` at call time, so the next `project`/`projectInto`/`sx`/`sy` sees the
+ *  new values. No allocation. */
+function updateTransform(
+  t: Transform,
+  width: number,
+  height: number,
+  scale: number,
+  centreX: number,
+  centreY: number,
+  projection: Projection,
+): Transform {
+  t.width = width;
+  t.height = height;
+  t.scale = scale;
+  t.centreX = centreX;
+  t.centreY = centreY;
+  t.projection = projection;
+  return t;
 }
 
 /**
