@@ -47,6 +47,26 @@ export interface ResourceState {
    * cost on capital ships with thousands of cells.
    */
   heatCapacity: ReadonlyMap<number, number>;
+  /** Pooled per-tick scratch (see {@link ResourceScratch}); cleared, not
+   *  reallocated, each call. Lazily allocated; never serialised. */
+  scratch?: ResourceScratch;
+}
+
+/** Reusable per-tick scratch pooled on `ResourceState.scratch`, cleared (not
+ *  reallocated) at the top of every `resourceStep` call. `engineThrust`,
+ *  `crewMap`, and `deckCells` are read only via `.get()`/`.has()` in the
+ *  propellant/atmosphere substances — never iterated — and `crewOrder` is
+ *  iterated locally, so clearing + refilling in fixed module-array order is
+ *  lossless and no value survives across ticks. */
+export interface ResourceScratch {
+  /** Dense φ-index → alive engine thrust command (N) this tick. */
+  engineThrust: Map<number, number>;
+  /** Dense φ-index → crew count on that cell this tick. */
+  crewMap: Map<number, number>;
+  /** Dense φ-indices of alive deck cells this tick. */
+  deckCells: Set<number>;
+  /** Refilled and re-sorted by crew id each tick. */
+  crewOrder: SimCrew[];
 }
 
 /** Cached transport graph for a ship's current topology (Phase 12 wiring).

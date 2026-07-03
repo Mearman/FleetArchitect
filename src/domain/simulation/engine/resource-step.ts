@@ -472,6 +472,17 @@ function runResourceStep(
   const graph = transportGraph(ship, state);
   const idx = makeIdx(state);
 
+  // Pooled scratch (see ResourceScratch): cleared, not reallocated, each tick.
+  // Lazily allocated; a checkpoint restore rebuilds the state without it.
+  if (state.scratch === undefined) {
+    state.scratch = { engineThrust: new Map(), crewMap: new Map(), deckCells: new Set(), crewOrder: [] };
+  }
+  const scratch = state.scratch;
+  scratch.engineThrust.clear();
+  scratch.crewMap.clear();
+  scratch.deckCells.clear();
+  scratch.crewOrder.length = 0;
+
   // Resource consequences are recomputed fresh every tick: clear the previous
   // tick's flame-out and grid-shed verdicts before the substance steps re-derive
   // them from the new field state, so a tank that refilled or a buffer that
@@ -491,19 +502,9 @@ function runResourceStep(
   // full output (the previous behaviour) overstated the heat by `1/(1/η − 1)`
   // ≈ 5.7× and, at gigawatt outputs, drove every reactor cell over the
   // overheat threshold on the first tick.
-  // Per-cell heat capacity (J/K): cell mass × the faction material's specific
-  // heat. Built once in `makeResourceState` and cached on the state (a cell's
-  // mass and the index map are fixed for the battle), so the thermal step reuses
-  // it rather than rebuilding an n-entry map per ship per tick. The thermal
-  // field divides each watt source and watt radiative flux by this to convert
-  // power into the kelvin-per-second rate the temperature field integrates. A
-  // heavy reactor cell (its installed mass dominates) gets a large heat capacity,
-  // so even a gigawatt waste-heat source heats it by only tens of kelvin per
-  // second — the term that tames the transient.
-  //
-  // Radiator cells: every perimeter cell of the bounding rectangle is a
-  // radiator surface (v1 simplification). Use the pre-built set from the
-  // cached graph to avoid O(n) Set construction on every tick.
+  // Per-cell heat capacity (cached on the state; see `ResourceState.heatCapacity`)
+  // and the radiator surface (`graph.boundaryCellSet`, pre-built to avoid O(n)
+  // Set construction per tick) feed the thermal substance.
   const thermalField: TransportField = {
     substance: makeThermalSubstance(graph.thermalSources, graph.boundaryCellSet, state.heatCapacity),
     faces: graph.faces,
@@ -535,18 +536,13 @@ function runResourceStep(
   }
 
   // --- Propellant substance ---
-  // Engine thrust command: each alive engine's rated thrust scaled by the
-  // throttle the movement step actually applied this tick (`ship.engineThrottle`,
-  // afterburner included). Fuel is burned in proportion to the thrust genuinely
-  // produced — a coasting or station-keeping ship (throttle 0) burns nothing —
-  // so the dry-tank flame-out reflects real usage rather than charging every
-  // engine full burn every tick.
+  // Engine thrust command (per-tick: throttle varies). Each alive engine's
+  // rated thrust scaled by `ship.engineThrottle`; fuel burns in proportion to
+  // the thrust genuinely produced (Gate 1 below enforces the flame-out). The
+  // exhaust NORMALS are folded into the cached graph (`graph.exhaust`) since
+  // engine facing is fixed for life; only the thrust magnitude is rebuilt here.
   const throttle = ship.engineThrottle;
-  // Engine thrust command (per-tick — throttle varies): each alive engine's
-  // rated thrust scaled by the throttle the movement step applied. The exhaust
-  // NORMALS are folded into the cached graph (`graph.exhaust`) since engine
-  // facing is fixed for life; only the thrust magnitude is rebuilt here.
-  const engineThrust = new Map<number, number>();
+  const engineThrust = scratch.engineThrust;
   for (const m of ship.modules) {
     if (!m.alive || m.effect.kind !== "engine") continue;
     const i = idx(m);
@@ -588,7 +584,7 @@ function runResourceStep(
 
   // --- Atmosphere substance ---
   // Crew map: cell index → number of crew present on that cell.
-  const crewMap = new Map<number, number>();
+  const crewMap = scratch.crewMap;
   if (ship.crew !== undefined) {
     for (const c of ship.crew) {
       const i = state.moduleIndex.get(cellKey(c.col, c.row));
@@ -603,7 +599,7 @@ function runResourceStep(
   // pass above can kill a deck cell mid-tick AFTER the graph is fetched — a
   // cell that overheated this tick must be excluded from THIS tick's advection,
   // which only a per-tick build reflects. Built in fixed module-array order.
-  const deckCells = new Set<number>();
+  const deckCells = scratch.deckCells;
   for (const m of ship.modules) {
     if (!m.alive || !isDeck(m)) continue;
     const i = idx(m);
@@ -670,9 +666,9 @@ function runResourceStep(
   // identical runs. A crew member at zero HP is removed from the roster.
   if (ship.crew !== undefined && ship.crew.length > 0) {
     const lethalRatePerTick = CREW_HP / (CREW_VACUUM_LETHAL_TIME_S * TICKS_PER_SECOND);
-    const ordered = [...ship.crew].sort((a, b) =>
-      a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
-    );
+    const ordered = scratch.crewOrder;
+    for (const c of ship.crew) ordered.push(c);
+    ordered.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
     let anyDied = false;
     for (const c of ordered) {
       const cellIdx = state.moduleIndex.get(cellKey(c.col, c.row));
