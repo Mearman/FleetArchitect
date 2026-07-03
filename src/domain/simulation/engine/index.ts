@@ -304,7 +304,7 @@ export function* simulateBattle(
     }
 
     // 2. Movement + facing.
-    moveShips(state.ships, state.byId, inputs.anomalies, state.deployment, SIM.defaultRange, state.medium, tick, state.points);
+    moveShips(state.ships, state.byId, inputs.anomalies, state.deployment, SIM.defaultRange, state.medium, tick, state.points, state.separationHashScratch);
 
     // 2b. Ship-vs-ship collision at cell granularity. After movement, any two
     //     ships whose cells now overlap are pushed apart with an elastic

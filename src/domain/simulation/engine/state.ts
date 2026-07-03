@@ -20,6 +20,7 @@ import type { ArenaMedium, ProjectileMediumEntry } from "./medium-setup";
 import type { AwarenessScratch } from "./awareness";
 import type { CollisionScratch, ShipCell } from "./collision";
 import type { SpatialHash } from "../spatial-hash";
+import type { SepBody } from "./separation";
 import type { DeploymentReference } from "./movement";
 import type { SimPulse } from "./pulses";
 import type { SimMine, SimPod, SimProjectile, SimShip } from "./types";
@@ -149,6 +150,11 @@ export interface EngineState {
    *  tick: ship-ship collision + projectile-cell hits). Entry objects recycled
    *  via the free-list; cleared-and-reused across ticks. Not checkpointed. */
   shipCellHashScratch: SpatialHash<ShipCell>;
+  /** Reusable `SpatialHash<SepBody>` for `buildSeparationSnapshot` (built once
+   *  per tick for the inter-ship separation field). Same clear-and-refill
+   *  contract as {@link shipCellHashScratch}; the candidate walk is byte-identical
+   *  after `clear()` + reinsert in the same order. Not checkpointed. */
+  separationHashScratch: SpatialHash<SepBody>;
   /** Reusable buffers for the optimised collision broad-phase
    *  (`generateCandidateContactsOptimised`): per-ship cell arrays and
    *  cell-point objects recycled across ticks. Not checkpointed. */

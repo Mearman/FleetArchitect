@@ -38,6 +38,8 @@ import type { SimShip } from "./types";
 import { isClaimed } from "./salvage";
 import { buildGravityField, gravityAcceleration } from "./gravity";
 import { buildSeparationSnapshot, separationHeading, SEPARATION_BURN_THRESHOLD } from "./separation";
+import type { SepBody } from "./separation";
+import type { SpatialHash } from "../spatial-hash";
 
 /**
  * Whether the linear integrator routes thrust through the relativistic
@@ -214,6 +216,10 @@ export function moveShips(
   /** Named waypoints (pointId → world); a `{kind: "point"}` reference resolves
    *  here. Empty when no fleet authored points. */
   points: ReadonlyMap<string, Point>,
+  /** Pooled `SpatialHash<SepBody>` carried on the `EngineState`, cleared and
+   *  refilled once per tick by `buildSeparationSnapshot` so the separation field
+   *  does not allocate a fresh two-level Map. */
+  separationHashScratch: SpatialHash<SepBody>,
 ): void {
   // Pre-compute fleet centroids once per tick so formation-keeping blends
   // each ship's desired heading toward a stable reference point, not one
@@ -268,7 +274,7 @@ export function moveShips(
   // same determinism contract as the gravity field above. Each ship then reads
   // its neighbours from this single simultaneous configuration, so the
   // separation blend is independent of the loop order and byte-reproducible.
-  const separationField = buildSeparationSnapshot(ships);
+  const separationField = buildSeparationSnapshot(ships, separationHashScratch);
   for (const ship of ships) {
     if (!ship.alive) continue;
     // Phantoms (drones/decoys) move in their own bespoke step, not here.

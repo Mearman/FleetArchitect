@@ -15,6 +15,7 @@ import { freshAwarenessScratch } from "@/domain/simulation/engine/awareness";
 import { SpatialHash } from "@/domain/simulation/spatial-hash";
 import { newCollisionScratch } from "@/domain/simulation/engine/collision";
 import type { ShipCell } from "@/domain/simulation/engine/collision";
+import type { SepBody } from "@/domain/simulation/engine/separation";
 import type { SimBeam } from "@/domain/simulation/engine/beams";
 import type { ExhaustParticle } from "@/domain/simulation/engine/exhaust-particles";
 import {
@@ -330,6 +331,7 @@ function makeState(): { state: EngineState; rng: ReturnType<typeof mulberry32> }
     projectileMediumScratch: [],
     awarenessScratch: freshAwarenessScratch(),
     shipCellHashScratch: new SpatialHash<ShipCell>(),
+    separationHashScratch: new SpatialHash<SepBody>(),
     collisionScratch: newCollisionScratch(),
   };
   // Advance the projectile counter so capture records a non-zero value.
@@ -461,6 +463,7 @@ describe("captureCheckpoint / restoreCheckpoint", () => {
       projectileMediumScratch: [],
       awarenessScratch: freshAwarenessScratch(),
       shipCellHashScratch: new SpatialHash<ShipCell>(),
+      separationHashScratch: new SpatialHash<SepBody>(),
       collisionScratch: newCollisionScratch(),
     };
     const second = captureCheckpoint(reState, resumedRng, restored.tick);

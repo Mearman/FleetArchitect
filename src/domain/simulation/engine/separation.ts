@@ -136,8 +136,18 @@ export interface SeparationField {
  * neighbour summation has a fixed, run-independent order to be re-sorted into:
  * floating-point addition is not associative, so the order the away-vectors are
  * summed in must be a property of the inputs, not of the live array order.
+ *
+ * `scratch` optionally supplies a pooled `SpatialHash<SepBody>` carried on the
+ * `EngineState` (`separationHashScratch`); when present it is `clear()`-ed and
+ * refilled rather than allocating a fresh two-level Map every tick, mirroring
+ * the `buildShipCellHash` scratch on the collision broad-phase. `clear()`
+ * documents that reinserting the same points in the same order reproduces a
+ * byte-identical candidate walk, so pooling is lossless.
  */
-export function buildSeparationSnapshot(ships: readonly SimShip[]): SeparationField {
+export function buildSeparationSnapshot(
+  ships: readonly SimShip[],
+  scratch?: SpatialHash<SepBody>,
+): SeparationField {
   const bodies: SepBody[] = [];
   let maxRadius = 0;
   for (const s of ships) {
@@ -146,7 +156,10 @@ export function buildSeparationSnapshot(ships: readonly SimShip[]): SeparationFi
     if (s.radius > maxRadius) maxRadius = s.radius;
   }
   bodies.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  const hash = new SpatialHash<SepBody>();
+  // Reuse the scratch (cleared + refilled — entry objects recycled via the
+  // free-list) or allocate fresh. `clear()` is a no-op on an empty fresh hash.
+  const hash = scratch ?? new SpatialHash<SepBody>();
+  hash.clear();
   for (const body of bodies) hash.insert(body, body.x, body.y);
   return { bodies, hash, maxRadius, candidateScratch: [] };
 }

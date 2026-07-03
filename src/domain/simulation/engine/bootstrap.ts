@@ -26,6 +26,7 @@ import { freshAwarenessScratch } from "./awareness";
 import { newCollisionScratch } from "./collision";
 import type { ShipCell } from "./collision";
 import { SpatialHash } from "../spatial-hash";
+import type { SepBody } from "./separation";
 import type { EngineState } from "./state";
 
 /**
@@ -161,6 +162,7 @@ export function bootstrapEngine(
       projectileMediumScratch: [],
       awarenessScratch: freshAwarenessScratch(),
       shipCellHashScratch: new SpatialHash<ShipCell>(),
+      separationHashScratch: new SpatialHash<SepBody>(),
       collisionScratch: newCollisionScratch(),
     };
     return { state, startTick: 1 };
@@ -226,6 +228,7 @@ export function bootstrapEngine(
     projectileMediumScratch: [],
     awarenessScratch: freshAwarenessScratch(),
     shipCellHashScratch: new SpatialHash<ShipCell>(),
+    separationHashScratch: new SpatialHash<SepBody>(),
     collisionScratch: newCollisionScratch(),
   };
   return { state, startTick: restored.tick + 1 };
