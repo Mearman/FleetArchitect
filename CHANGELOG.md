@@ -1,3 +1,11 @@
+## [1.39.4](https://github.com/Mearman/FleetArchitect/compare/v1.39.3...v1.39.4) (2026-07-03)
+
+
+### Bug Fixes
+
+* **storage:** repair the v9 checkpoints primary-key upgrade ([c3dba3d](https://github.com/Mearman/FleetArchitect/commit/c3dba3d7bda1f047ce37e51ba755b4519f825520))
+* **ui:** contain a throwing cache-failure notifier ([dd153fb](https://github.com/Mearman/FleetArchitect/commit/dd153fb4c31f2162ade98c5357d143591905dfe0))
+
 ## [1.39.3](https://github.com/Mearman/FleetArchitect/compare/v1.39.2...v1.39.3) (2026-07-03)
 
 
