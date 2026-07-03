@@ -8,7 +8,7 @@
  */
 
 import { CELL_SIZE } from "@/domain/grid";
-import type { AwarenessSnapshot, BattleFrame, CellStateArrays, MediumSnapshot, ShipDescriptor, ShipSnapshot } from "@/schema/battle";
+import type { AwarenessSnapshot, BattleFrame, CellStateArrays, MediumSnapshot, ParticleSnapshot, ShipDescriptor, ShipSnapshot } from "@/schema/battle";
 import { CREW_HP } from "./config";
 import { STANDARD_CELL_GAS_MASS_KG, CREW_VACUUM_SURVIVABLE_FRACTION } from "./lifesupport";
 import type { MediumField, MediumState } from "./medium-field";
@@ -19,7 +19,7 @@ import type { Debris } from "./debris";
 import type { Emission } from "./emissions";
 import type { SimPulse } from "./pulses";
 import type { SimBeam } from "./beams";
-import type { ExhaustParticle } from "./exhaust-particles";
+import type { ParticleStore } from "./exhaust-particles";
 import type { SimMine, SimModule, SimPod, SimProjectile, SimShip } from "./types";
 
 /**
@@ -174,7 +174,7 @@ export function snapshot(
   emissions: readonly Emission[],
   debris: readonly Debris[],
   beams: readonly SimBeam[],
-  particles: readonly ExhaustParticle[],
+  particles: ParticleStore,
   medium: { field: MediumField; state: MediumState },
 ): BattleFrame {
   // Partition real ships from phantoms (drones/decoys) so phantoms never appear
@@ -345,16 +345,12 @@ export function snapshot(
     // between subsamples (as the medium overlay does), so the glow stays
     // continuous. Tick 0 is always emitted (RESOURCE_EVERY divides 0). Omitted
     // when none are live so particle-free frames stay byte-identical to baseline.
-    ...(tick % RESOURCE_EVERY === 0 && particles.length > 0
+    // The store is materialised here in `[0, count)` order — the iteration order
+    // the frame digest hashes — with the same `{x,y,vx,vy,intensity,age}` key
+    // order the prior plain-object map produced.
+    ...(tick % RESOURCE_EVERY === 0 && particles.count > 0
       ? {
-          particles: particles.map((p) => ({
-            x: p.x,
-            y: p.y,
-            vx: p.vx,
-            vy: p.vy,
-            intensity: p.intensity,
-            age: p.age,
-          })),
+          particles: particleSnapshotsFromStore(particles),
         }
       : {}),
     // Arena medium field (ρ + ε). Subsampled on the same RESOURCE_EVERY cadence
@@ -390,6 +386,31 @@ function mediumSnapshot(medium: {
     heightM: medium.field.config.heightM,
     pitchM: medium.field.config.pitchM,
   };
+}
+
+/**
+ * Materialise the live particle set as plain {@link ParticleSnapshot} records
+ * for the frame. Reads the {@link ParticleStore}'s `[0, count)` slots in
+ * iteration order — the order the frame digest hashes — emitting each with the
+ * same `{x,y,vx,vy,intensity,age}` key order the prior plain-object `.map`
+ * produced, so the subsampled frame stays byte-identical. The `?? 0` narrows
+ * `noUncheckedIndexedAccess`'s `number | undefined`; slots in `[0, count)` are
+ * always live (written before read), so the 0 never fires — same convention as
+ * the medium stepper's `rho[cell] ?? 0`.
+ */
+function particleSnapshotsFromStore(store: ParticleStore): ParticleSnapshot[] {
+  const out: ParticleSnapshot[] = [];
+  for (let i = 0; i < store.count; i += 1) {
+    out.push({
+      x: store.x[i] ?? 0,
+      y: store.y[i] ?? 0,
+      vx: store.vx[i] ?? 0,
+      vy: store.vy[i] ?? 0,
+      intensity: store.intensity[i] ?? 0,
+      age: store.age[i] ?? 0,
+    });
+  }
+  return out;
 }
 
 /**

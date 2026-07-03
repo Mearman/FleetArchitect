@@ -21,6 +21,7 @@ import { resetProjectileCounter, setProjectileCounter } from "./config";
 import { buildArenaMedium, computeAsteroidSourceCells, restoreArenaMedium } from "./medium-setup";
 import { fleetCentroid } from "./movement";
 import { toSimShip } from "./setup";
+import { createParticleStore } from "./exhaust-particles";
 import type { Rng } from "@/domain/simulation/rng";
 import { freshAwarenessScratch } from "./awareness";
 import { newCollisionScratch } from "./collision";
@@ -122,9 +123,10 @@ export function bootstrapEngine(
       // lingers a few ticks then expires. Empty until a beam weapon fires, so a
       // battle with no beam weapons keeps it empty and emits no `beams` snapshots.
       beams: [],
-      // Exhaust/plume particles. Empty until a weapon source emits; gathered +
-      // stepped each tick. A battle with no firing weapons keeps it empty.
-      particles: [],
+      // Exhaust/plume particles. Empty until a weapon source emits; stepped in
+      // place on the fixed-capacity store each tick. A battle with no firing
+      // weapons keeps it empty.
+      particles: createParticleStore(),
       // Arena medium field: built once from the deployment bounding box and
       // seeded at the ISM baseline. Stepped each tick with per-tick sources
       // (thruster exhaust, debris, projectile wakes, nebula + asteroid anomaly

@@ -56,22 +56,196 @@ export interface ExhaustParticle {
 }
 
 /**
- * Advance one particle by `dt`: it transports at its velocity (the defining
- * behaviour — material leaves the source, it does not pool), cools (intensity
- * fades), and ages. Pure: returns a fresh particle, input untouched.
+ * The live plume as fixed-capacity parallel {@link Float64Array}s, updated IN
+ * PLACE each tick. A particle is the six doubles at index `i` across `x`/`y`/
+ * `vx`/`vy`/`intensity`/`age`; `[0, count)` is the live set and `count` replaces
+ * `array.length` as the live bound. Stepping mutates the slots directly
+ * (`x[i] += vx[i] * dt`) and compacts dead parcels with a forward write pointer
+ * (order-preserving — survivors keep their relative order, which the frame
+ * digest hashes), so the per-tick hot path allocates nothing for the surviving
+ * set: no per-particle object spread, no fresh array, no `concat`/`slice`. Only
+ * the tick's NEW emissions (a small per-source list) cross the object boundary
+ * before being copied into the tail. Capacity is {@link MAX_LIVE_PARTICLES}.
  */
-export function stepExhaustParticle(
-  p: ExhaustParticle,
-  dt: number,
-): ExhaustParticle {
+export interface ParticleStore {
+  readonly x: Float64Array;
+  readonly y: Float64Array;
+  readonly vx: Float64Array;
+  readonly vy: Float64Array;
+  readonly intensity: Float64Array;
+  readonly age: Float64Array;
+  /** Live particle count; the live set is slots `[0, count)`. */
+  count: number;
+}
+
+/** Allocate an empty store at {@link MAX_LIVE_PARTICLES} capacity. */
+export function createParticleStore(): ParticleStore {
   return {
-    ...p,
-    x: p.x + p.vx * dt,
-    y: p.y + p.vy * dt,
-    // Cool as it radiates: intensity fades over the cooling timescale.
-    intensity: p.intensity * Math.exp(-dt / EXHAUST_COOLING_TIMESCALE_S),
-    age: p.age + dt,
+    x: new Float64Array(MAX_LIVE_PARTICLES),
+    y: new Float64Array(MAX_LIVE_PARTICLES),
+    vx: new Float64Array(MAX_LIVE_PARTICLES),
+    vy: new Float64Array(MAX_LIVE_PARTICLES),
+    intensity: new Float64Array(MAX_LIVE_PARTICLES),
+    age: new Float64Array(MAX_LIVE_PARTICLES),
+    count: 0,
   };
+}
+
+/**
+ * Build a store from plain particles (the checkpoint-restore boundary: a stored
+ * checkpoint carries plain `{x,y,vx,vy,intensity,age}` records). Copies up to
+ * {@link MAX_LIVE_PARTICLES} in iteration order — matching the prior
+ * `slice(-MAX)` cap that was applied every tick before any capture, so the
+ * restored live set is identical to what a running battle would have carried
+ * into the same tick.
+ */
+export function particleStoreFromParticles(
+  particles: readonly ExhaustParticle[],
+): ParticleStore {
+  const store = createParticleStore();
+  const n = Math.min(particles.length, MAX_LIVE_PARTICLES);
+  for (let i = 0; i < n; i += 1) {
+    const p = particles[i];
+    if (p === undefined) break;
+    store.x[i] = p.x;
+    store.y[i] = p.y;
+    store.vx[i] = p.vx;
+    store.vy[i] = p.vy;
+    store.intensity[i] = p.intensity;
+    store.age[i] = p.age;
+  }
+  store.count = n;
+  return store;
+}
+
+/**
+ * Materialise the live set as plain particles (the checkpoint-capture and
+ * snapshot boundaries: both store and replay plain `{x,y,vx,vy,intensity,age}`
+ * records). Iterates `[0, count)` in order so the result carries the live set
+ * in its current iteration order — the order the frame digest hashes.
+ */
+export function particlesFromStore(store: ParticleStore): ExhaustParticle[] {
+  const out: ExhaustParticle[] = [];
+  for (let i = 0; i < store.count; i += 1) {
+    out.push({
+      x: store.x[i] ?? 0,
+      y: store.y[i] ?? 0,
+      vx: store.vx[i] ?? 0,
+      vy: store.vy[i] ?? 0,
+      intensity: store.intensity[i] ?? 0,
+      age: store.age[i] ?? 0,
+    });
+  }
+  return out;
+}
+
+/**
+ * Advance every live particle by `dt` IN PLACE and cull those past their
+ * lifetime, compacting survivors with a forward write pointer. A survivor at
+ * read slot `r` is written to slot `w` (where `w <= r`, so the write never
+ * clobbers an unread slot), preserving the survivors' relative order — the
+ * order the frame digest hashes, so the compaction is byte-identical to the
+ * prior "push survivors into a fresh array in order". `count` becomes the
+ * survivor count. Same physics as the prior per-particle step: transport at
+ * velocity, cool over the radiative timescale, age by `dt`; cull on the STEPPED
+ * age (mirroring the prior `stepped.age < lifetime` check).
+ */
+export function stepParticleStore(store: ParticleStore, dt: number): void {
+  const { x, y, vx, vy, intensity, age } = store;
+  // Cool as it radiates: intensity fades over the cooling timescale. Computed
+  // once per tick (dt is constant across the live set).
+  const cooling = Math.exp(-dt / EXHAUST_COOLING_TIMESCALE_S);
+  let w = 0;
+  for (let r = 0; r < store.count; r += 1) {
+    // Slots in [0, count) are always live (written before read), so the
+    // `?? 0` narrows `noUncheckedIndexedAccess`'s `number | undefined` without
+    // supplying a runtime default — the 0 never fires. Same convention as the
+    // medium stepper's `rho[cell] ?? 0`.
+    const xr = x[r] ?? 0;
+    const yr = y[r] ?? 0;
+    const vxr = vx[r] ?? 0;
+    const vyr = vy[r] ?? 0;
+    const ir = intensity[r] ?? 0;
+    const ar = age[r] ?? 0;
+    const na = ar + dt;
+    if (na < EXHAUST_PARTICLE_LIFETIME_S) {
+      x[w] = xr + vxr * dt;
+      y[w] = yr + vyr * dt;
+      vx[w] = vxr;
+      vy[w] = vyr;
+      intensity[w] = ir * cooling;
+      age[w] = na;
+      w += 1;
+    }
+  }
+  store.count = w;
+}
+
+/**
+ * Append one tick's new emissions to the store, dropping the OLDEST parcels when
+ * the result would exceed capacity — byte-identical to the prior
+ * `survivors.concat(emissions).slice(-MAX_LIVE_PARTICLES)`. The prior step left
+ * `[0, count)` holding the survivors in order; this concatenates `emissions` at
+ * the tail and, when over capacity, drops from the FRONT (the oldest survivors
+ * first, then the oldest emissions in the degenerate `emissions > capacity`
+ * case) via `copyWithin` — a stable in-place shift that preserves every kept
+ * particle's relative order. New emissions always land at the tail.
+ */
+export function appendParticles(
+  store: ParticleStore,
+  emissions: readonly ExhaustParticle[],
+): void {
+  const { x, y, vx, vy, intensity, age } = store;
+  const survivorCount = store.count;
+  const emissionCount = emissions.length;
+  const total = survivorCount + emissionCount;
+  if (total <= MAX_LIVE_PARTICLES) {
+    // Room for every emission: write them straight into the tail.
+    let w = survivorCount;
+    for (let i = 0; i < emissionCount; i += 1) {
+      const p = emissions[i];
+      if (p === undefined) break;
+      x[w] = p.x;
+      y[w] = p.y;
+      vx[w] = p.vx;
+      vy[w] = p.vy;
+      intensity[w] = p.intensity;
+      age[w] = p.age;
+      w += 1;
+    }
+    store.count = w;
+    return;
+  }
+  // Over capacity: drop the oldest `total - MAX` from the FRONT of the
+  // conceptual `survivors ++ emissions` stream. Drops fall on survivors first
+  // (they precede the emissions), then on the oldest emissions.
+  const dropFront = total - MAX_LIVE_PARTICLES;
+  const dropSurvivors = Math.min(dropFront, survivorCount);
+  if (dropSurvivors > 0) {
+    // Shift the kept survivors to the front (a stable memmove; the duplicated
+    // tail beyond the new count is never read).
+    x.copyWithin(0, dropSurvivors, survivorCount);
+    y.copyWithin(0, dropSurvivors, survivorCount);
+    vx.copyWithin(0, dropSurvivors, survivorCount);
+    vy.copyWithin(0, dropSurvivors, survivorCount);
+    intensity.copyWithin(0, dropSurvivors, survivorCount);
+    age.copyWithin(0, dropSurvivors, survivorCount);
+  }
+  const keptSurvivors = survivorCount - dropSurvivors;
+  const dropEmissions = dropFront - dropSurvivors;
+  let w = keptSurvivors;
+  for (let i = dropEmissions; i < emissionCount; i += 1) {
+    const p = emissions[i];
+    if (p === undefined) break;
+    x[w] = p.x;
+    y[w] = p.y;
+    vx[w] = p.vx;
+    vy[w] = p.vy;
+    intensity[w] = p.intensity;
+    age[w] = p.age;
+    w += 1;
+  }
+  store.count = w;
 }
 
 /**
@@ -122,24 +296,6 @@ export const EXHAUST_PARTICLE_LIFETIME_S = 3 * EXHAUST_COOLING_TIMESCALE_S;
  * deterministic — slice from the end in fixed gather order.
  */
 export const MAX_LIVE_PARTICLES = 1000;
-
-/**
- * Step every particle (transport + cool + age) and cull those past their
- * lifetime. Pure: returns a fresh array, input untouched. The engine calls this
- * over the whole live plume each tick, then concatenates the tick's new
- * emissions.
- */
-export function stepExhaustParticles(
-  particles: readonly ExhaustParticle[],
-  dt: number,
-): ExhaustParticle[] {
-  const out: ExhaustParticle[] = [];
-  for (const p of particles) {
-    const stepped = stepExhaustParticle(p, dt);
-    if (stepped.age < EXHAUST_PARTICLE_LIFETIME_S) out.push(stepped);
-  }
-  return out;
-}
 
 /** Spacing of particles sampled along a beam channel, metres. Dense enough that
  *  the rendered blobs read as a continuous glowing line. */

@@ -703,9 +703,9 @@ export function* simulateBattle(
       pMedium.push({ x: p.x, y: p.y, powered: p.powered, burnTicks: p.burnTicks, thrust: p.thrust, mass: p.mass });
     }
     state.medium = stepArenaMediumFromState(state.medium, state.ships, state.debris, pMedium, inputs.anomalies, state.asteroidSourceCells, tick);
-    // 5d. Exhaust/plume particles: step the live plume (transport + cool + cull)
-    //     and gather this tick's emissions — no RNG, deterministic.
-    state.particles = stepPlume(state.particles, state.ships, state.beams, state.projectiles);
+    // 5d. Exhaust/plume particles: step the live plume IN PLACE (transport +
+    //     cool + cull) and gather this tick's emissions — no RNG, deterministic.
+    stepPlume(state.particles, state.ships, state.beams, state.projectiles);
     // Capture descriptors for new instances (break-away chunks, launched phantoms).
     captureDescriptors(state.ships);
     yield snapshot(tick, state.ships, state.projectiles, awareness, state.mines, state.pods, state.pulses, state.emissions, state.debris, state.beams, state.particles, state.medium);

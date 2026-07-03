@@ -11,6 +11,7 @@
 import { describe, expect, it } from "vitest";
 import { mulberry32 } from "@/domain/simulation/rng";
 import { buildArenaMedium } from "@/domain/simulation/engine/medium-setup";
+import { createParticleStore } from "@/domain/simulation/engine/exhaust-particles";
 import { toSimShip } from "@/domain/simulation/engine/setup";
 import { freshAwarenessScratch } from "@/domain/simulation/engine/awareness";
 import { SpatialHash } from "@/domain/simulation/spatial-hash";
@@ -129,7 +130,7 @@ function stateWith(ships: SimShip[]): EngineState {
     emissions: [],
     debris: [],
     beams: [],
-    particles: [],
+    particles: createParticleStore(),
     medium: buildArenaMedium(ships),
     chunkSeq: 0,
     mineSeq: 0,

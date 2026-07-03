@@ -30,6 +30,10 @@ import { CHECKPOINT_VERSION } from "@/schema/checkpoint";
 import type { Rng } from "@/domain/simulation/rng";
 import { getProjectileCounter } from "./projectile-id";
 import { buildHeatCapacity } from "./resource-step";
+import {
+  particleStoreFromParticles,
+  particlesFromStore,
+} from "./exhaust-particles";
 import type { EngineState } from "./state";
 import type {
   SimMine,
@@ -233,7 +237,13 @@ export function captureCheckpoint(
     emissions: state.emissions,
     debris: state.debris,
     beams: state.beams,
-    particles: state.particles,
+    // The live store is materialised to plain records at the capture boundary
+    // (the checkpoint schema stores `{x,y,vx,vy,intensity,age}` objects). The
+    // final structuredClone severs the alias to the records; the store's
+    // Float64Array slots hold the exact IEEE-754 doubles the engine uses, so
+    // boxing to `number` here preserves them — the resumed plume continues
+    // byte-identically from the live set.
+    particles: particlesFromStore(state.particles),
     // Medium field: capture the resolved config scalars (the grid connectivity
     // re-derives from width/height on resume) and a COPY of the live state
     // arrays plus the per-cell `birthTicks` array, so the checkpoint is
@@ -502,7 +512,11 @@ export function restoreCheckpoint(cp: EngineCheckpoint): RestoredEngine {
     emissions: clone.emissions,
     debris: clone.debris,
     beams: clone.beams,
-    particles: clone.particles ?? [],
+    // Rebuild the live store from the checkpoint's plain records (absent on a
+    // pre-particle checkpoint → empty store). `particleStoreFromParticles` copies
+    // up to MAX_LIVE_PARTICLES in order, matching the per-tick cap the running
+    // battle applied before capture, so the restored live set is identical.
+    particles: particleStoreFromParticles(clone.particles ?? []),
     medium: clone.medium,
     // Build the DeploymentReference with both keys present (value possibly
     // undefined for a side that deployed nothing): the schema models each side

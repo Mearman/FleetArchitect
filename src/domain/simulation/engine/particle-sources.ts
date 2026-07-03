@@ -13,14 +13,14 @@ import { MEDIUM_EXHAUST_VELOCITY_M_PER_S } from "./medium-setup";
 import type { SimBeam } from "./beams";
 import type { SimProjectile, SimShip } from "./types";
 import {
+  appendParticles,
   gatherParticles,
-  stepExhaustParticles,
-  MAX_LIVE_PARTICLES,
-  type ExhaustParticle,
+  stepParticleStore,
   type ParticleBeamSource,
   type ParticleImpactSource,
   type ParticleProjectileSource,
   type ParticleSources,
+  type ParticleStore,
   type ParticleThrusterSource,
 } from "./exhaust-particles";
 
@@ -97,22 +97,26 @@ export function extractParticleSources(
 }
 
 /**
- * Advance the live plume one tick: step every particle (transport + cool + cull
- * by lifetime), then gather this tick's new emissions from every weapon source
- * in fixed order. One call per tick from the engine loop. Pure: returns a fresh
- * array, inputs untouched, no RNG — deterministic.
+ * Advance the live plume one tick IN PLACE: step every particle (transport +
+ * cool + cull by lifetime), then append this tick's new emissions from every
+ * weapon source in fixed order, dropping the oldest when over capacity. One call
+ * per tick from the engine loop. Mutates `particles` directly (no allocation for
+ * the surviving set), no RNG — deterministic. The prior pure form rebuilt the
+ * live array every tick via `step(...).concat(gather(...)).slice(-MAX)`; this is
+ * byte-identical to that (see {@link stepParticleStore}'s order-preserving
+ * compaction and {@link appendParticles}'s `concat().slice(-MAX)` semantics) but
+ * reuses the fixed-capacity store across ticks.
  */
 export function stepPlume(
-  particles: readonly ExhaustParticle[],
+  particles: ParticleStore,
   ships: readonly SimShip[],
   beams: readonly SimBeam[],
   projectiles: readonly SimProjectile[],
-): ExhaustParticle[] {
-  const out = stepExhaustParticles(particles, MEDIUM_DT_S).concat(
-    gatherParticles(extractParticleSources(ships, beams, projectiles), MEDIUM_DT_S),
+): void {
+  stepParticleStore(particles, MEDIUM_DT_S);
+  const emissions = gatherParticles(
+    extractParticleSources(ships, beams, projectiles),
+    MEDIUM_DT_S,
   );
-  // Bound the live set so a long weapon-heavy battle cannot exhaust the heap
-  // (the snapshot stores the live set per subsampled frame). Drop the oldest
-  // parcels — the dim cooling tails — keeping the bright fresh heads.
-  return out.length > MAX_LIVE_PARTICLES ? out.slice(-MAX_LIVE_PARTICLES) : out;
+  appendParticles(particles, emissions);
 }

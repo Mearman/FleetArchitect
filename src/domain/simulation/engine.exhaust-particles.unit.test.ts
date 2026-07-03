@@ -4,16 +4,20 @@ import { MEDIUM_DT_S } from "./engine/medium-field";
 import {
   BEAM_ENERGY_HALFSAT_J,
   EXHAUST_ENERGY_HALFSAT_J,
+  EXHAUST_PARTICLE_LIFETIME_S,
   IMPACT_ENERGY_HALFSAT_J,
+  MAX_LIVE_PARTICLES,
   WAKE_ENERGY_HALFSAT_J,
+  appendParticles,
   emitBeamChannelParticles,
   emitExhaustParticles,
   emitImpactBurstParticles,
   emitProjectileWakeParticles,
   gatherParticles,
   particleIntensityFromEnergy,
-  stepExhaustParticle,
-  stepExhaustParticles,
+  particleStoreFromParticles,
+  particlesFromStore,
+  stepParticleStore,
   type ExhaustParticle,
 } from "./engine/exhaust-particles";
 
@@ -34,13 +38,15 @@ import {
 describe("engine.exhaust-particles", () => {
   it("advances an exhaust particle by velocity · dt (material transports, it does not pool)", () => {
     // A particle just emitted at x=1000 moving at 3000 m/s in +x.
-    const p: ExhaustParticle = { x: 1000, y: 0, vx: 3000, vy: 0, intensity: 1, age: 0 };
-    const stepped = stepExhaustParticle(p, MEDIUM_DT_S);
+    const store = particleStoreFromParticles([
+      { x: 1000, y: 0, vx: 3000, vy: 0, intensity: 1, age: 0 },
+    ]);
+    stepParticleStore(store, MEDIUM_DT_S);
 
     // Transported downstream by velocity · dt — the defining behaviour: the
     // material leaves the source instead of accumulating there.
-    expect(stepped.x).toBeCloseTo(1000 + 3000 * MEDIUM_DT_S, 9);
-    expect(stepped.y).toBeCloseTo(0, 9);
+    expect(store.x[0] ?? 0).toBeCloseTo(1000 + 3000 * MEDIUM_DT_S, 9);
+    expect(store.y[0] ?? 0).toBeCloseTo(0, 9);
   });
 
   it("a firing thruster emits exhaust particles moving at the exhaust velocity in the exhaust direction", () => {
@@ -104,26 +110,40 @@ describe("engine.exhaust-particles", () => {
   });
 
   it("an exhaust particle's intensity decays as it cools (the glow fades behind the engine)", () => {
-    const p: ExhaustParticle = { x: 0, y: 0, vx: 3000, vy: 0, intensity: 1, age: 0 };
-    const stepped = stepExhaustParticle(p, MEDIUM_DT_S);
+    const store = particleStoreFromParticles([
+      { x: 0, y: 0, vx: 3000, vy: 0, intensity: 1, age: 0 },
+    ]);
+    stepParticleStore(store, MEDIUM_DT_S);
     // Cooled a little this tick (dimmer) but still radiating (not gone).
-    expect(stepped.intensity).toBeLessThan(1);
-    expect(stepped.intensity).toBeGreaterThan(0);
+    expect(store.intensity[0] ?? 0).toBeLessThan(1);
+    expect(store.intensity[0] ?? 0).toBeGreaterThan(0);
   });
 
   it("a stepped particle ages (so stale plume parcels can be culled by lifetime)", () => {
-    const p: ExhaustParticle = { x: 0, y: 0, vx: 3000, vy: 0, intensity: 1, age: 0 };
-    const stepped = stepExhaustParticle(p, MEDIUM_DT_S);
-    expect(stepped.age).toBeCloseTo(MEDIUM_DT_S, 9);
+    const store = particleStoreFromParticles([
+      { x: 0, y: 0, vx: 3000, vy: 0, intensity: 1, age: 0 },
+    ]);
+    stepParticleStore(store, MEDIUM_DT_S);
+    expect(store.age[0] ?? 0).toBeCloseTo(MEDIUM_DT_S, 9);
   });
 
-  it("steps every particle and culls those past their lifetime", () => {
-    const fresh: ExhaustParticle = { x: 0, y: 0, vx: 1000, vy: 0, intensity: 1, age: 0.1 };
-    const stale: ExhaustParticle = { x: 0, y: 0, vx: 1000, vy: 0, intensity: 0.01, age: 99 };
-    const out = stepExhaustParticles([fresh, stale], MEDIUM_DT_S);
-    // The stale parcel is gone; the fresh one survives, aged by one tick.
-    expect(out).toHaveLength(1);
-    expect(out[0]!.age).toBeCloseTo(0.1 + MEDIUM_DT_S, 9);
+  it("steps every particle and culls those past their lifetime (order preserved)", () => {
+    // Three parcels: two fresh (distinct x so we can assert ORDER is preserved),
+    // one stale (past lifetime) in the middle — the compaction must drop only
+    // the stale one and keep the two fresh ones in their original relative order.
+    const store = particleStoreFromParticles([
+      { x: 10, y: 0, vx: 1000, vy: 0, intensity: 1, age: 0.1 },
+      { x: 99, y: 0, vx: 1000, vy: 0, intensity: 0.01, age: EXHAUST_PARTICLE_LIFETIME_S + 1 },
+      { x: 20, y: 0, vx: 1000, vy: 0, intensity: 1, age: 0.2 },
+    ]);
+    stepParticleStore(store, MEDIUM_DT_S);
+    // The stale middle parcel is gone; the two fresh ones survive, aged by one
+    // tick, in their original relative order (x=10 before x=20).
+    expect(store.count).toBe(2);
+    expect(store.x[0] ?? 0).toBeCloseTo(10 + 1000 * MEDIUM_DT_S, 6);
+    expect(store.x[1] ?? 0).toBeCloseTo(20 + 1000 * MEDIUM_DT_S, 6);
+    expect(store.age[0] ?? 0).toBeCloseTo(0.1 + MEDIUM_DT_S, 9);
+    expect(store.age[1] ?? 0).toBeCloseTo(0.2 + MEDIUM_DT_S, 9);
   });
 
   it("a beam emits particles along its source-to-target channel", () => {
@@ -214,6 +234,61 @@ describe("engine.exhaust-particles", () => {
     expect(out).toHaveLength(1 + 6 + 1 + 8);
     // Thrusters come first — the streaming exhaust particle (vx ≈ exhaust speed).
     expect(out[0]!.vx).toBeCloseTo(3000, 1);
+  });
+
+  it("appendParticles concatenates emissions at the tail when under capacity", () => {
+    // Survivors [A, B] (distinct x to track order), two new emissions [C, D].
+    const store = particleStoreFromParticles([
+      { x: 1, y: 0, vx: 0, vy: 0, intensity: 0.5, age: 0.1 },
+      { x: 2, y: 0, vx: 0, vy: 0, intensity: 0.5, age: 0.1 },
+    ]);
+    appendParticles(store, [
+      { x: 3, y: 0, vx: 0, vy: 0, intensity: 0.9, age: 0 },
+      { x: 4, y: 0, vx: 0, vy: 0, intensity: 0.9, age: 0 },
+    ]);
+    // Survivors keep their slots; emissions land at the tail in gather order.
+    expect(store.count).toBe(4);
+    expect([store.x[0], store.x[1], store.x[2], store.x[3]]).toEqual([1, 2, 3, 4]);
+  });
+
+  it("appendParticles drops the OLDEST survivors first when over capacity (order preserved)", () => {
+    // The byte-identity-critical cap: over capacity, drop from the FRONT (oldest
+    // survivors), keeping the newest survivors + all emissions in relative order
+    // — i.e. `survivors.concat(emissions).slice(-MAX)`. Fill the store to its
+    // full MAX_LIVE_PARTICLES capacity with distinct, ordered x positions so the
+    // dropped (oldest) and kept (newest) slots are unambiguous.
+    const survivors: ExhaustParticle[] = [];
+    for (let i = 0; i < MAX_LIVE_PARTICLES; i += 1) {
+      survivors.push({ x: i + 1, y: 0, vx: 0, vy: 0, intensity: 0.5, age: 0.1 });
+    }
+    const store = particleStoreFromParticles(survivors);
+    // Three new emissions appended → total MAX + 3 → drop the 3 oldest survivors.
+    appendParticles(store, [
+      { x: MAX_LIVE_PARTICLES + 1, y: 0, vx: 0, vy: 0, intensity: 0.9, age: 0 },
+      { x: MAX_LIVE_PARTICLES + 2, y: 0, vx: 0, vy: 0, intensity: 0.9, age: 0 },
+      { x: MAX_LIVE_PARTICLES + 3, y: 0, vx: 0, vy: 0, intensity: 0.9, age: 0 },
+    ]);
+    expect(store.count).toBe(MAX_LIVE_PARTICLES);
+    // The three oldest survivors (x = 1, 2, 3) were dropped; the kept set runs
+    // 4..MAX then the three emissions, in strict ascending order — no reordering.
+    const xs: number[] = [];
+    for (let i = 0; i < store.count; i += 1) xs.push(store.x[i] ?? 0);
+    const expected: number[] = [];
+    for (let i = 4; i <= MAX_LIVE_PARTICLES; i += 1) expected.push(i);
+    expected.push(MAX_LIVE_PARTICLES + 1, MAX_LIVE_PARTICLES + 2, MAX_LIVE_PARTICLES + 3);
+    expect(xs).toEqual(expected);
+  });
+
+  it("particlesFromStore round-trips through particleStoreFromStore in order", () => {
+    // The checkpoint boundary: capture materialises to plain records, restore
+    // rebuilds the store. Order and every double must survive the round trip.
+    const original: ExhaustParticle[] = [
+      { x: -90.5, y: 12.25, vx: 3000, vy: -0.001, intensity: 0.7, age: 0.4 },
+      { x: 0, y: 0, vx: 0, vy: 0, intensity: 0, age: 0 },
+      { x: 1e9, y: -1e9, vx: 8.6e9, vy: 1, intensity: 0.999, age: 5.999 },
+    ];
+    const store = particleStoreFromParticles(original);
+    expect(particlesFromStore(store)).toEqual(original);
   });
 });
 

@@ -15,7 +15,7 @@ import type { BattleSide } from "@/schema/battle";
 import type { SimBeam } from "./beams";
 import type { Debris } from "./debris";
 import type { Emission } from "./emissions";
-import type { ExhaustParticle } from "./exhaust-particles";
+import type { ParticleStore } from "./exhaust-particles";
 import type { ArenaMedium, ProjectileMediumEntry } from "./medium-setup";
 import type { AwarenessScratch } from "./awareness";
 import type { CollisionScratch, ShipCell } from "./collision";
@@ -76,10 +76,12 @@ export interface EngineState {
    * Live exhaust/plume particles — the actual transferred material radiating as
    * it moves and cools (engine exhaust, beam channels, projectile wakes, impact
    * ejecta). Gathered each tick from the four weapon sources (fixed order, no
-   * RNG), then stepped + culled by lifetime. Carried across ticks so a plume
-   * integrates from its own prior state; captured and restored on checkpoint.
+   * RNG), then stepped + culled by lifetime in place on the fixed-capacity
+   * {@link ParticleStore}. Carried across ticks so a plume integrates from its
+   * own prior state; captured and restored on checkpoint (materialised to/from
+   * plain records at the checkpoint boundary).
    */
-  particles: ExhaustParticle[];
+  particles: ParticleStore;
   /**
    * Arena medium field (the density + excitation substrate). The `field` is the
    * resolved {@link MediumField} (built once from the arena bounds; grid

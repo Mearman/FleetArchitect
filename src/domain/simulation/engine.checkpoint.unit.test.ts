@@ -17,7 +17,7 @@ import { newCollisionScratch } from "@/domain/simulation/engine/collision";
 import type { ShipCell } from "@/domain/simulation/engine/collision";
 import type { SepBody } from "@/domain/simulation/engine/separation";
 import type { SimBeam } from "@/domain/simulation/engine/beams";
-import type { ExhaustParticle } from "@/domain/simulation/engine/exhaust-particles";
+import { particleStoreFromParticles, type ExhaustParticle } from "@/domain/simulation/engine/exhaust-particles";
 import {
   buildArenaMedium,
   restoreArenaMedium,
@@ -310,7 +310,7 @@ function makeState(): { state: EngineState; rng: ReturnType<typeof mulberry32> }
     emissions: [emission],
     debris: [debris],
     beams: [beam],
-    particles: [particle],
+    particles: particleStoreFromParticles([particle]),
     medium: buildArenaMedium(ships),
     chunkSeq: 1,
     mineSeq: 1,
