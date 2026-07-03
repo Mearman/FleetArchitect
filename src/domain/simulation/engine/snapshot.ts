@@ -179,9 +179,25 @@ export function snapshot(
 ): BattleFrame {
   // Partition real ships from phantoms (drones/decoys) so phantoms never appear
   // in the `ships` array — they render from their own dedicated arrays instead.
-  const realShips = ships.filter((s) => s.phantom === undefined);
-  const drones = ships.filter((s) => s.phantom?.kind === "drone" && s.alive);
-  const decoys = ships.filter((s) => s.phantom?.kind === "decoy" && s.alive);
+  // One forward pass over `ships`, evaluating `s.phantom` once per ship: real
+  // ships (no phantom) go to `realShips`, live drones to `drones`, live decoys
+  // to `decoys`. Dead phantoms fall through to no bucket, matching the prior
+  // three `filter` predicates (which required `s.alive` on phantom buckets);
+  // push-in-iteration-order preserves each subset's relative order, which is
+  // all the downstream `map` calls consume.
+  const realShips: SimShip[] = [];
+  const drones: SimShip[] = [];
+  const decoys: SimShip[] = [];
+  for (const s of ships) {
+    const phantom = s.phantom;
+    if (phantom === undefined) {
+      realShips.push(s);
+    } else if (phantom.kind === "drone") {
+      if (s.alive) drones.push(s);
+    } else if (phantom.kind === "decoy") {
+      if (s.alive) decoys.push(s);
+    }
+  }
   return {
     tick,
     awareness,
