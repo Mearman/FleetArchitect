@@ -9,7 +9,7 @@ import type { SimCrew } from "../types";
 
 import { SIM } from "./config";
 import { abandonHaul } from "./crew";
-import { aliveCellMap, compareByCell, crewCellKey, findCrewPath, modulesBySlot } from "./crew-pathfinding";
+import { aliveCellMap, crewCellKey, findCrewPath, modulesBySlot } from "./crew-pathfinding";
 import type { SimModule, SimShip } from "./types";
 
 /**
@@ -314,9 +314,10 @@ export function refillHardwiredAmmo(ship: SimShip): void {
  *
  * The dry-weapon and magazine candidate lists are precomputed once per ship per
  * tick by the caller (`updateCrew`) and passed in already sorted by `(col, row)`;
- * only the per-crew claim filter (skip weapons already being resupplied) is
- * applied inline. This is byte-identical to the old per-crew rebuild, without
- * the filter+sort allocation churn on every idle-crew assignment.
+ * entry to the pathfinding loop is guarded by an existence check rather than
+ * rebuilding the candidate set. This is byte-identical to the old per-crew
+ * rebuild, without the filter+sort allocation churn on every idle-crew
+ * assignment.
  *
  * "Dry" is a weapon below a top-up threshold so crew restock proactively rather
  * than only at exactly zero — a magazine run takes several ticks to walk, so a
@@ -334,25 +335,16 @@ export function chooseAmmoRun(
 ): { source: SimModule; sink: SimModule; path: { col: number; row: number }[] } | undefined {
   if (dryWeapons.length === 0 || magazines.length === 0) return undefined;
   if (ship.modules === undefined) return undefined;
-  const modules = ship.modules;
   const bySlot = modulesBySlot(ship);
-  const weapons = modules
-    .filter(
-      (m) =>
-        m.alive &&
-        m.effect.kind === "weapon" &&
-        m.effect.ammoCapacity !== undefined &&
-        ammoShortfall(m) >= SIM.ammoRunAmount &&
-        !claimedWeapons.has(m.slotId) &&
-        // A weapon fed by a live ammo conduit refills directly from its
-        // magazine each tick, so no crew haul job is ever created for it. The
-        // conduit is dead once its named magazine dies, at which point the
-        // weapon re-enters the crew-haul economy here.
-        !hasLiveAmmoHardwire(m, bySlot),
-    )
-    .slice()
-    .sort(compareByCell);
-  if (weapons.length === 0) return undefined;
+  // Short-circuit: bail unless some dry weapon is both unclaimed and not fed by
+  // a live ammo conduit. Both terms are load-bearing — a claimed non-conduit
+  // dry weapon alongside an earlier unclaimed conduit-fed one means only the
+  // combined check correctly reports no candidate, matching the precomputed
+  // per-ship candidate set the loop below selects from.
+  const anyCandidate = dryWeapons.some(
+    (m) => !claimedWeapons.has(m.slotId) && !hasLiveAmmoHardwire(m, bySlot),
+  );
+  if (!anyCandidate) return undefined;
 
   for (const sink of dryWeapons) {
     if (claimedWeapons.has(sink.slotId)) continue;
