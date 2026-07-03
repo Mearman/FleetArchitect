@@ -25,20 +25,35 @@ import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { SimConfig } from "@/domain/cache/sim-config";
 
 /**
- * Recursively encode a value as stable JSON: object keys sorted lexicographically,
- * array order preserved, `-0` normalised to `0`. Throws on `NaN`/`Infinity` (they
+ * Encode a value as stable JSON: object keys sorted lexicographically, array
+ * order preserved, `-0` normalised to `0`. Throws on `NaN`/`Infinity` (they
  * must never reach a deterministic key) and on non-serialisable leaf types
  * (functions, symbols, bigints, `undefined`) — all are bugs in the determinant
- * set, not values to paper over. `unknown` is narrowed with `typeof` / `Array.isArray`
- * / `in`; no type assertions.
+ * set, not values to paper over. `unknown` is narrowed with `typeof` /
+ * `Array.isArray`; no type assertions.
+ *
+ * Single pass: JSON.stringify walks the structure natively (quoting strings,
+ * formatting numbers, and building the output string in the engine), so leaf
+ * primitives incur no per-value JSON.stringify call. The replacer only sorts
+ * object keys and guards the IEEE-754 edge cases.
  */
 export function canonicalize(value: unknown): string {
-  if (value === null) return "null";
+  return JSON.stringify(value, stableReplacer);
+}
 
-  if (typeof value === "boolean") return value ? "true" : "false";
-
-  if (typeof value === "string") return JSON.stringify(value);
-
+/**
+ * Replacer for {@link canonicalize}. Returns a key-sorted copy of every plain
+ * object so the output is independent of insertion order, and surfaces `NaN` /
+ * `Infinity` / non-serialisable leaf types as loud failures rather than letting
+ * JSON.stringify silently coerce them (to `null` or by omitting them). `-0`
+ * needs no special case: JSON.stringify already renders it as `"0"`, matching
+ * the previous explicit normalisation.
+ */
+function stableReplacer(this: unknown, key: string, value: unknown): unknown {
+  // `key` (the property name; "" at the root) is unused — the replacer only
+  // transforms `value` — but the (key, value) arity is required by the
+  // JSON.stringify contract, so reference it to satisfy noUnusedParameters.
+  void key;
   if (typeof value === "number") {
     if (Number.isNaN(value)) {
       throw new Error("canonicalize: NaN is not a valid cache determinant");
@@ -48,31 +63,29 @@ export function canonicalize(value: unknown): string {
         "canonicalize: Infinity is not a valid cache determinant",
       );
     }
-    // Normalise -0 to 0 so two engine-equivalent values share one key.
-    const normalised = value === 0 ? 0 : value;
-    return JSON.stringify(normalised);
+    return value;
   }
 
-  if (Array.isArray(value)) {
-    return `[${value.map((element) => canonicalize(element)).join(",")}]`;
+  if (
+    value === undefined ||
+    typeof value === "function" ||
+    typeof value === "symbol" ||
+    typeof value === "bigint"
+  ) {
+    throw new Error(
+      `canonicalize: non-serialisable value of type '${typeof value}' is not a valid cache determinant`,
+    );
   }
 
-  if (typeof value === "object") {
-    const keys = Object.keys(value).sort();
-    const entries = keys.map((key) => {
-      // `key` came from Object.keys(value), so it indexes value; narrow with `in`.
-      if (!(key in value)) {
-        throw new Error(`canonicalize: key '${key}' vanished from object`);
-      }
-      const child: unknown = Reflect.get(value, key);
-      return `${JSON.stringify(key)}:${canonicalize(child)}`;
-    });
-    return `{${entries.join(",")}}`;
+  if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+    const sorted: Record<string, unknown> = {};
+    for (const objectKey of Object.keys(value).sort()) {
+      sorted[objectKey] = Reflect.get(value, objectKey);
+    }
+    return sorted;
   }
 
-  throw new Error(
-    `canonicalize: non-serialisable value of type '${typeof value}' is not a valid cache determinant`,
-  );
+  return value;
 }
 
 /** Lower-case hex encoding of raw bytes. */
