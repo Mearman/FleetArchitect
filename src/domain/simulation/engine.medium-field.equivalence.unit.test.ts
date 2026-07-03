@@ -86,11 +86,11 @@ function wideField(): MediumField {
 function freshBuffers(field: MediumField): MediumSourceBuffers {
   const n = field.cellCount;
   return {
-    rho: new Array<number>(n).fill(0),
-    eps: new Array<number>(n).fill(0),
-    epsVisSrc: new Array<number>(n).fill(0),
-    mxSrc: new Array<number>(n).fill(0),
-    mySrc: new Array<number>(n).fill(0),
+    rho: new Float64Array(n),
+    eps: new Float64Array(n),
+    epsVisSrc: new Float64Array(n),
+    mxSrc: new Float64Array(n),
+    mySrc: new Float64Array(n),
   };
 }
 
@@ -141,8 +141,8 @@ describe("engine.medium-field — reference vs optimised equivalence", () => {
     // A small ε source on cell 3 so ε and εVis evolve each tick.
     const baseSources: MediumSources = {
       ...zeroMediumSources(field),
-      eps: [0, 0, 0, 1e-9],
-      epsVisSrc: [0, 0, 0, 1e-9],
+      eps: new Float64Array([0, 0, 0, 1e-9]),
+      epsVisSrc: new Float64Array([0, 0, 0, 1e-9]),
     };
 
     let refState = structuredClone(baseState);

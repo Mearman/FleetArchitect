@@ -85,21 +85,21 @@ export interface ArenaMedium {
 /**
  * The five per-cell medium-source arrays as mutable buffers, pre-allocated once
  * on the {@link ArenaMedium} and cleared (`.fill(0)`) then refilled in place
- * each tick by the optimised source-computation path. Exposed as `number[]`
- * (not `readonly number[]`) so the deposit core can write in place; the
- * `readonly` properties prevent reassigning the buffer references themselves.
+ * each tick by the optimised source-computation path. `Float64Array` (not boxed
+ * `number[]`) to match the state arrays the stepper adds them to in the same
+ * hot cell loop — same IEEE-754 doubles, no backing-store-shape mismatch.
  */
 export interface MediumSourceBuffers {
   /** Per-cell density source, kg·s⁻¹. Cleared and refilled each tick. */
-  readonly rho: number[];
+  readonly rho: Float64Array;
   /** Per-cell excitation source, J·s⁻¹. Cleared and refilled each tick. */
-  readonly eps: number[];
+  readonly eps: Float64Array;
   /** Per-cell visual-excitation source, J·s⁻¹. Cleared and refilled each tick. */
-  readonly epsVisSrc: number[];
+  readonly epsVisSrc: Float64Array;
   /** Per-cell x-momentum source, kg·m·s⁻². Cleared and refilled each tick. */
-  readonly mxSrc: number[];
+  readonly mxSrc: Float64Array;
   /** Per-cell y-momentum source, kg·m·s⁻². Cleared and refilled each tick. */
-  readonly mySrc: number[];
+  readonly mySrc: Float64Array;
 }
 
 /**
@@ -113,11 +113,11 @@ function createMediumScratch(
 ): Pick<ArenaMedium, "sourceBuffers" | "work" | "prevEps"> {
   return {
     sourceBuffers: {
-      rho: new Array<number>(cellCount).fill(0),
-      eps: new Array<number>(cellCount).fill(0),
-      epsVisSrc: new Array<number>(cellCount).fill(0),
-      mxSrc: new Array<number>(cellCount).fill(0),
-      mySrc: new Array<number>(cellCount).fill(0),
+      rho: new Float64Array(cellCount),
+      eps: new Float64Array(cellCount),
+      epsVisSrc: new Float64Array(cellCount),
+      mxSrc: new Float64Array(cellCount),
+      mySrc: new Float64Array(cellCount),
     },
     work: createMediumWorkBuffers(cellCount),
     prevEps: new Float64Array(cellCount),
@@ -517,11 +517,11 @@ export function computeArenaMediumSourcesReference(
   asteroidSourceCells: readonly number[],
 ): MediumSources {
   const cellCount = field.cellCount;
-  const rho = new Array<number>(cellCount).fill(0);
-  const eps = new Array<number>(cellCount).fill(0);
-  const epsVisSrc = new Array<number>(cellCount).fill(0);
-  const mxSrc = new Array<number>(cellCount).fill(0);
-  const mySrc = new Array<number>(cellCount).fill(0);
+  const rho = new Float64Array(cellCount);
+  const eps = new Float64Array(cellCount);
+  const epsVisSrc = new Float64Array(cellCount);
+  const mxSrc = new Float64Array(cellCount);
+  const mySrc = new Float64Array(cellCount);
   depositMediumSources(field, liveRho, ships, debris, projectiles, anomalies, asteroidSourceCells, rho, eps, epsVisSrc, mxSrc, mySrc);
   return { rho, eps, epsVisSrc, mxSrc, mySrc };
 }
@@ -543,11 +543,11 @@ function depositMediumSources(
   projectiles: ReadonlyArray<ProjectileMediumEntry>,
   anomalies: readonly BattleAnomalyKind[],
   asteroidSourceCells: readonly number[],
-  rho: number[],
-  eps: number[],
-  epsVisSrc: number[],
-  mxSrc: number[],
-  mySrc: number[],
+  rho: Float64Array,
+  eps: Float64Array,
+  epsVisSrc: Float64Array,
+  mxSrc: Float64Array,
+  mySrc: Float64Array,
 ): void {
   const cellCount = field.cellCount;
 

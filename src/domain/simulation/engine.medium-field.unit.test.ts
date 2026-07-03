@@ -138,16 +138,18 @@ describe("engine.medium-field", () => {
   describe("buildMediumField", () => {
     it("builds interior neighbours plus perimeter boundary faces for a 3x3 grid", () => {
       const field = defaultField(3, 3);
+      // neighboursFlat is a stride-4 Int32Array (N, E, S, W per cell) with -1
+      // marking a missing (perimeter) direction.
       // Centre cell (index 4) has 4 neighbours: N, E, S, W = 1, 5, 7, 3.
-      expect(field.neighbours[4]).toEqual([1, 5, 7, 3]);
+      expect([...field.neighboursFlat.subarray(4 * 4, 5 * 4)]).toEqual([1, 5, 7, 3]);
       expect(field.boundaryFaceCount[4]).toBe(0);
-      // Top-edge cell (index 1, row 0 col 1) has no North neighbour; its
+      // Top-edge cell (index 1, row 0 col 1) has no North neighbour (-1); its
       // neighbours are E (2), S (4), W (0) — 3 interior + 1 boundary face.
-      expect(field.neighbours[1]).toEqual([2, 4, 0]);
+      expect([...field.neighboursFlat.subarray(1 * 4, 2 * 4)]).toEqual([-1, 2, 4, 0]);
       expect(field.boundaryFaceCount[1]).toBe(1);
-      // Corner cell (top-left, index 0) has E (1) and S (3): 2 neighbours +
-      // 2 boundary faces (N and W both on the perimeter).
-      expect(field.neighbours[0]).toEqual([1, 3]);
+      // Corner cell (top-left, index 0) has N=-1, E (1), S (3), W=-1: 2
+      // neighbours + 2 boundary faces (N and W both on the perimeter).
+      expect([...field.neighboursFlat.subarray(0 * 4, 1 * 4)]).toEqual([-1, 1, 3, -1]);
       expect(field.boundaryFaceCount[0]).toBe(2);
     });
 
@@ -395,11 +397,11 @@ describe("engine.medium-field", () => {
       });
       const state = zeroMediumState(field);
       const sources: MediumSources = {
-        rho: [10, 0, 0], // 10 kg/s into cell 0
-        eps: [0, 0, 0],
-        epsVisSrc: [0, 0, 0],
-        mxSrc: [0, 0, 0],
-        mySrc: [0, 0, 0],
+        rho: new Float64Array([10, 0, 0]), // 10 kg/s into cell 0
+        eps: new Float64Array(3),
+        epsVisSrc: new Float64Array(3),
+        mxSrc: new Float64Array(3),
+        mySrc: new Float64Array(3),
       };
       const result = stepMediumField(field, state, sources);
       // Cell 0 grew by source · dt = 10 · (1/30) = 0.333... kg.
@@ -428,11 +430,11 @@ describe("engine.medium-field", () => {
       });
       const state = zeroMediumState(field);
       const sourceOn: MediumSources = {
-        rho: [0, 0, 0],
-        eps: [100, 0, 0], // 100 J/s into cell 0
-        epsVisSrc: [0, 0, 0],
-        mxSrc: [0, 0, 0],
-        mySrc: [0, 0, 0],
+        rho: new Float64Array(3),
+        eps: new Float64Array([100, 0, 0]), // 100 J/s into cell 0
+        epsVisSrc: new Float64Array(3),
+        mxSrc: new Float64Array(3),
+        mySrc: new Float64Array(3),
       };
       const step1 = stepMediumField(field, state, sourceOn);
       // Cell 0 ε grew by source · dt; with no transport and a single sub-step

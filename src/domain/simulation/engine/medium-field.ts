@@ -355,17 +355,17 @@ export function mediumAdvectionSubSteps(
  */
 export interface MediumSources {
   /** Per-cell density source, kg·s⁻¹. Default zero everywhere. */
-  readonly rho: readonly number[];
+  readonly rho: Float64Array;
   /** Per-cell excitation source, J·s⁻¹. Default zero everywhere. */
-  readonly eps: readonly number[];
+  readonly eps: Float64Array;
   /** Per-cell x-momentum source (East+), kg·m·s⁻² per cell. Drives exhaust
    *  streaming and wakes. Default zero everywhere. */
-  readonly mxSrc: readonly number[];
+  readonly mxSrc: Float64Array;
   /** Per-cell y-momentum source (South+), kg·m·s⁻² per cell. Default zero. */
-  readonly mySrc: readonly number[];
+  readonly mySrc: Float64Array;
   /** Per-cell visual-excitation source, J·s⁻¹. Same deposits as eps but this
    *  field is velocity-advected (streams). The renderer reads epsVis. */
-  readonly epsVisSrc: readonly number[];
+  readonly epsVisSrc: Float64Array;
 }
 
 /** A field state: the five substance arrays as unboxed `Float64Array`, length
@@ -651,11 +651,11 @@ export function mediumStateFromDensity(
 /** Build a zeroed {@link MediumSources} (no injection anywhere). */
 export function zeroMediumSources(field: MediumField): MediumSources {
   return {
-    rho: new Array<number>(field.cellCount).fill(0),
-    eps: new Array<number>(field.cellCount).fill(0),
-    epsVisSrc: new Array<number>(field.cellCount).fill(0),
-    mxSrc: new Array<number>(field.cellCount).fill(0),
-    mySrc: new Array<number>(field.cellCount).fill(0),
+    rho: new Float64Array(field.cellCount),
+    eps: new Float64Array(field.cellCount),
+    epsVisSrc: new Float64Array(field.cellCount),
+    mxSrc: new Float64Array(field.cellCount),
+    mySrc: new Float64Array(field.cellCount),
   };
 }
 
