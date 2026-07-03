@@ -571,7 +571,7 @@ export function updateProjectiles(
   // query this for the frontmost occupied cell on the path instead of scanning
   // every ship. Built once per tick from the post-movement, post-collision
   // positions so a projectile strikes a cell where it actually is.
-  const cellHash = buildShipCellHash([...byId.values()], cellHashScratch);
+  const cellHash = buildShipCellHash(byId.values(), cellHashScratch);
   // PD candidates built once per tick (lazily, on the first interceptable
   // projectile) in walk order — see buildPdCandidates / tryPointDefenseIntercept.
   let pdCandidates: PdCandidate[] | undefined;

@@ -32,7 +32,7 @@ export interface ShipCell {
  * agree on where every cell is.
  */
 export function buildShipCellHash(
-  ships: readonly SimShip[],
+  ships: Iterable<SimShip>,
   scratch?: SpatialHash<ShipCell>,
 ): SpatialHash<ShipCell> {
   // Reuse the scratch (cleared + refilled — entry objects recycled via the
