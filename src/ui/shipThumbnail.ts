@@ -45,7 +45,6 @@ export function designSprite(design: ShipDesign): DesignSprite | undefined {
     manned: undefined,
     ammo: undefined,
     charge: undefined,
-    doorStates: undefined,
   }));
 
   const palette = FACTION_PALETTE[design.faction];

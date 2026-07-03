@@ -12,19 +12,10 @@
  */
 
 import { CELL_SIZE } from "@/domain/grid";
-import type { CellStateArrays, ShipCellLayout, ShipDescriptor, ShipSnapshot } from "@/schema/battle";
+import type { ShipCellLayout, ShipDescriptor, ShipSnapshot } from "@/schema/battle";
 
 /** A lookup from ship instance id to its static descriptor. */
 export type DescriptorMap = ReadonlyMap<string, ShipDescriptor>;
-
-/** The live door states for one cell, keyed by direction. Absent edges have no
- *  door. Reconstructed from the four door typed arrays by renderCells. */
-export interface RenderDoorStates {
-  n?: "open" | "closed";
-  e?: "open" | "closed";
-  s?: "open" | "closed";
-  w?: "open" | "closed";
-}
 
 /**
  * A cell ready to draw: its static layout (offset, kind, max HP, surface, turret
@@ -49,7 +40,6 @@ export interface RenderCell {
   manned: boolean | undefined;
   ammo: number | undefined;
   charge: number | undefined;
-  doorStates: RenderDoorStates | undefined;
 }
 
 /**
@@ -65,9 +55,7 @@ export interface RenderCell {
  *
  * Reads each typed array positionally, resolving sentinel values back to the
  * optional-field semantics downstream consumers expect: NaN in turretAngle /
- * charge becomes `undefined`; -1 in ammo becomes `undefined`; door Uint8Array
- * values (0=none, 1=open, 2=closed) are reconstructed into a RenderDoorStates
- * object.
+ * charge becomes `undefined`; -1 in ammo becomes `undefined`.
  */
 /**
  * As {@link renderCells}, but writes into a caller-supplied `buffer` and REUSES
@@ -116,7 +104,6 @@ export function renderCellsInto(
     const manned = mannedRaw === undefined ? undefined : mannedRaw !== 0;
     const ammo = ammoRaw === undefined || ammoRaw < 0 ? undefined : ammoRaw;
     const chargeResolved = charge !== undefined && Number.isNaN(charge) ? undefined : charge;
-    const doorStates = readDoorStates(cells, i);
     const existing = buffer[out];
     if (existing === undefined) {
       buffer.push({
@@ -135,7 +122,6 @@ export function renderCellsInto(
         manned,
         ammo,
         charge: chargeResolved,
-        doorStates,
       });
     } else {
       existing.slotId = slotId;
@@ -153,7 +139,6 @@ export function renderCellsInto(
       existing.manned = manned;
       existing.ammo = ammo;
       existing.charge = chargeResolved;
-      existing.doorStates = doorStates;
     }
     out += 1;
   }
@@ -166,28 +151,6 @@ export function renderCells(
   descriptor: ShipDescriptor | undefined,
 ): RenderCell[] | undefined {
   return renderCellsInto([], ship, descriptor);
-}
-
-/**
- * Reconstruct the per-cell door-states object from the four door typed arrays
- * at index `i`. Returns undefined when the ship carries no door arrays.
- */
-function readDoorStates(cells: CellStateArrays, i: number): RenderDoorStates | undefined {
-  const n = cells.cellDoorN;
-  if (n === undefined) return undefined;
-  const e = cells.cellDoorE;
-  const s = cells.cellDoorS;
-  const w = cells.cellDoorW;
-  const result: RenderDoorStates = {};
-  const nv = n[i];
-  if (nv !== undefined && nv !== 0) result.n = nv === 1 ? "open" : "closed";
-  const ev = e?.[i];
-  if (ev !== undefined && ev !== 0) result.e = ev === 1 ? "open" : "closed";
-  const sv = s?.[i];
-  if (sv !== undefined && sv !== 0) result.s = sv === 1 ? "open" : "closed";
-  const wv = w?.[i];
-  if (wv !== undefined && wv !== 0) result.w = wv === 1 ? "open" : "closed";
-  return result;
 }
 
 /**
