@@ -92,9 +92,17 @@ export class CachingBattleRunner implements BattleRunner {
     // than swallowed, so a silently failing cache cannot masquerade as a
     // working one.
     this.cache.set(key, result).catch((error: unknown) => {
-      this.notifyCacheFailure(
-        error instanceof Error ? error : new Error(String(error)),
-      );
+      const err = error instanceof Error ? error : new Error(String(error));
+      // Contain a throwing notifier. This `.catch` is fire-and-forget (its
+      // promise is never awaited), so if the notifier itself threw it would
+      // escape as an unhandled promise rejection that none of the gates see.
+      // Surface the notifier failure via the console rather than swallow it,
+      // but keep the promise settled — the battle result is already in hand.
+      try {
+        this.notifyCacheFailure(err);
+      } catch (notifyError) {
+        console.warn("cache-failure notifier threw", notifyError);
+      }
     });
 
     return result;

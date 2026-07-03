@@ -140,4 +140,35 @@ describe("CachingBattleRunner", () => {
     expect(onFail).toHaveBeenCalledOnce();
     expect(onFail.mock.calls[0]?.[0].message).toBe("quota exhausted");
   });
+
+  it("contains a throwing notifier so it cannot escape as an unhandled rejection", async () => {
+    const fresh = result("fresh");
+    const failing: SimCache = {
+      get: () => Promise.resolve(undefined),
+      set: () => Promise.reject(new Error("quota exhausted")),
+      has: () => Promise.resolve(false),
+    };
+    // A notifier that itself blows up. Without containment this throw would
+    // escape the fire-and-forget `.catch` as an unhandled promise rejection.
+    const throwingNotifier = vi.fn<(error: Error) => void>(() => {
+      throw new Error("notifier blew up");
+    });
+    const { runner: inner } = stubInner(fresh);
+    const caching = new CachingBattleRunner(inner, failing, throwingNotifier);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const out = await caching.run(inputs);
+
+    // The run still resolves with the freshly computed result...
+    expect(out).toBe(fresh);
+    // ...and the notifier's throw was contained — it surfaced via the console
+    // rather than becoming an unhandled rejection (which vitest would fail on).
+    await vi.waitFor(() => {
+      expect(throwingNotifier).toHaveBeenCalledOnce();
+    });
+    expect(warnSpy).toHaveBeenCalled();
+    expect(warnSpy.mock.calls[0]?.[0]).toBe("cache-failure notifier threw");
+
+    warnSpy.mockRestore();
+  });
 });
