@@ -490,11 +490,15 @@ export interface MediumField {
   readonly config: ResolvedMediumFieldConfig;
   /** Total cell count (`widthM * heightM`). */
   readonly cellCount: number;
-  /** Pre-built per-cell neighbour index: `neighbours[cell]` lists the cell
-   *  indices of the N/E/S/W neighbours present (interior cells get up to 4;
-   *  edge/corner cells get fewer). Length `cellCount`, fixed deterministic
-   *  order (N, E, S, W). */
-  readonly neighbours: readonly (readonly number[])[];
+  /** Pre-built per-cell neighbour index as a flat `Int32Array` of stride 4:
+   *  for cell `c`, slots `[c*4 .. c*4+3]` hold the N, E, S, W neighbour indices
+   *  in that fixed deterministic order, with `-1` marking a missing direction
+   *  (edge/corner cells). Length `cellCount * 4`. A flat typed array replaces
+   *  the per-cell boxed arrays so the hot FTCS loop reads neighbour indices via
+   *  direct indexed Int32 loads instead of boxed-array `for-of` iteration; the
+   *  N/E/S/W visitation order (which drives the floating-point accumulation) is
+   *  unchanged. */
+  readonly neighboursFlat: Int32Array;
   /** Pre-built per-cell outward face count (how many of the 4 directions open
    *  to vacuum rather than to a neighbour). Length `cellCount`. */
   readonly boundaryFaceCount: readonly number[];
@@ -556,40 +560,45 @@ export function buildMediumField(
     velocityMaxMPerS: config.velocityMaxMPerS,
   };
   const cellCount = resolved.widthM * resolved.heightM;
-  // Per-cell neighbours in fixed N, E, S, W order. A missing direction (edge
-  // or corner cell) is omitted from the list.
-  const neighbours: number[][] = Array.from({ length: cellCount }, () => []);
+  // Per-cell neighbours in fixed N, E, S, W order, packed into a single flat
+  // Int32Array of stride 4. A missing direction (edge or corner cell) is
+  // marked with the `-1` sentinel, which the stepper skips — the visitation
+  // order is therefore identical to the old per-cell boxed-array list (which
+  // pushed N/E/S/W and omitted missing directions), so the floating-point
+  // accumulation in the FTCS loop is byte-identical. One allocation total,
+  // and the hot loop reads indices via direct Int32 loads with no per-cell
+  // array indirection or boxing.
+  const neighboursFlat = new Int32Array(cellCount * 4).fill(-1);
   const boundaryFaceCount: number[] = new Array<number>(cellCount).fill(0);
   for (let row = 0; row < resolved.heightM; row += 1) {
     for (let col = 0; col < resolved.widthM; col += 1) {
       const cell = row * resolved.widthM + col;
-      const list = neighbours[cell];
-      if (list === undefined) continue;
+      const base = cell * 4;
       // Count the directions that open to vacuum (no neighbour) rather than
       // to an interior cell. A cell on the top row has its North face on the
       // perimeter, etc.; a corner cell has two perimeter faces.
       let boundaryFaces = 0;
-      // North neighbour (row - 1).
+      // North neighbour (row - 1) — slot 0.
       if (row > 0) {
-        list.push((row - 1) * resolved.widthM + col);
+        neighboursFlat[base] = (row - 1) * resolved.widthM + col;
       } else {
         boundaryFaces += 1;
       }
-      // East neighbour (col + 1).
+      // East neighbour (col + 1) — slot 1.
       if (col + 1 < resolved.widthM) {
-        list.push(row * resolved.widthM + (col + 1));
+        neighboursFlat[base + 1] = row * resolved.widthM + (col + 1);
       } else {
         boundaryFaces += 1;
       }
-      // South neighbour (row + 1).
+      // South neighbour (row + 1) — slot 2.
       if (row + 1 < resolved.heightM) {
-        list.push((row + 1) * resolved.widthM + col);
+        neighboursFlat[base + 2] = (row + 1) * resolved.widthM + col;
       } else {
         boundaryFaces += 1;
       }
-      // West neighbour (col - 1).
+      // West neighbour (col - 1) — slot 3.
       if (col > 0) {
-        list.push(row * resolved.widthM + (col - 1));
+        neighboursFlat[base + 3] = row * resolved.widthM + (col - 1);
       } else {
         boundaryFaces += 1;
       }
@@ -599,7 +608,7 @@ export function buildMediumField(
   return {
     config: resolved,
     cellCount,
-    neighbours,
+    neighboursFlat,
     boundaryFaceCount,
   };
 }

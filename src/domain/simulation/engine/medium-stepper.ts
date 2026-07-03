@@ -118,7 +118,7 @@ function runMediumStep(
   reuse: boolean,
   work: MediumWorkBuffers,
 ): MediumStepResult {
-  const { config, cellCount, neighbours, boundaryFaceCount } = field;
+  const { config, cellCount, neighboursFlat, boundaryFaceCount } = field;
   const pitch = config.pitchM;
   const slabDepth = MEDIUM_SLAB_DEPTH_M;
   const widthM = config.widthM;
@@ -209,7 +209,6 @@ function runMediumStep(
       const epsVisHere = epsVis[cell] ?? 0;
       const mxHere = mx[cell] ?? 0;
       const myHere = my[cell] ?? 0;
-      const cellNeighbours = neighbours[cell] ?? [];
       const bFaces = boundaryFaceCount[cell] ?? 0;
 
       // Derive per-cell velocity u = m / ρ (0 where ρ = 0), clamped to the
@@ -256,7 +255,15 @@ function runMediumStep(
       let myDif = 0;
       let myAdvVel = 0;
 
-      for (const neighbour of cellNeighbours) {
+      // Stride-4 flat neighbour index: N, E, S, W slots per cell, `-1` for a
+      // missing direction. Iterating dir 0..3 and skipping the sentinel visits
+      // neighbours in the identical N, E, S, W order the boxed-array `for-of`
+      // did (it pushed N/E/S/W and omitted missing directions), so the
+      // floating-point accumulation below is byte-identical.
+      const base = cell * 4;
+      for (let dir = 0; dir < 4; dir += 1) {
+        const neighbour = neighboursFlat[base + dir];
+        if (neighbour === undefined || neighbour < 0) continue;
         const rhoThere = rho[neighbour] ?? 0;
         const epsThere = eps[neighbour] ?? 0;
         const epsVisThere = epsVis[neighbour] ?? 0;
