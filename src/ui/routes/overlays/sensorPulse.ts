@@ -1,6 +1,7 @@
 import { CELL_SIZE } from "@/domain/grid";
 import type { OverlayCtx, OverlayDef } from "./types";
 import { appendWorldArc, pathWorldCircle } from "@/ui/routes/battleProject";
+import { shipIndexFor } from "./shipIndex";
 
 /** Stroke width of an active-radar pulse ring, in display pixels. */
 const PULSE_STROKE_WIDTH = 1.5;
@@ -60,11 +61,9 @@ function drawSensorPulse(c: OverlayCtx): void {
   ctx.lineWidth = PULSE_STROKE_WIDTH;
   ctx.setLineDash([]);
 
-  // Build a side map from ships so we can tint outbound pulses by emitter side.
-  const sideByInstanceId = new Map<string, "attacker" | "defender">();
-  for (const s of frame.ships) {
-    sideByInstanceId.set(s.instanceId, s.side);
-  }
+  // Shared per-frame id→ship index (built once per frame identity across all
+  // overlays — see ./shipIndex). Used to tint outbound pulses by emitter side.
+  const ships = shipIndexFor(frame);
 
   // Draw active-radar pulse rings.
   if (pulses !== undefined) {
@@ -89,7 +88,7 @@ function drawSensorPulse(c: OverlayCtx): void {
       if (isReflected) {
         ctx.strokeStyle = PULSE_COLOUR_REFLECTED;
       } else {
-        const side = sideByInstanceId.get(pulse.emitterId);
+        const side = ships.get(pulse.emitterId)?.side;
         ctx.strokeStyle = side === "defender" ? PULSE_COLOUR_DEFENDER : PULSE_COLOUR_ATTACKER;
       }
 

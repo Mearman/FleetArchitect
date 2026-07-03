@@ -1,6 +1,7 @@
 import type { BattleFrame } from "@/schema/battle";
 import type { OverlayCtx, OverlayDef } from "./types";
 import { pathWorldCircle } from "@/ui/routes/battleProject";
+import { shipIndexFor } from "./shipIndex";
 
 /** Minimum number of breached cells before the haze is drawn. A single
  *  cracked cell in an otherwise intact hull is too subtle to warrant a
@@ -66,12 +67,10 @@ function resolveAtmosphere(
 function drawAtmosphereBreach(c: OverlayCtx): void {
   const { ctx, frame, t, descriptors, frames, tick } = c;
 
-  // Index live ship positions by instance id for O(1) lookup. Entries for ships
-  // no longer live are skipped during the draw — there is no held state to prune.
-  const shipPos = new Map<string, { x: number; y: number }>();
-  for (const s of frame.ships) {
-    if (s.alive) shipPos.set(s.instanceId, { x: s.x, y: s.y });
-  }
+  // Shared per-frame id→ship index (built once per frame identity across all
+  // overlays — see ./shipIndex). Ships no longer live are skipped during the
+  // draw; there is no held state to prune.
+  const ships = shipIndexFor(frame);
 
   // Resolve the atmosphere summary for this tick from the frame history (the
   // most recent emission at-or-before the current tick), so the overlay tracks
@@ -82,8 +81,8 @@ function drawAtmosphereBreach(c: OverlayCtx): void {
   ctx.save();
 
   for (const entry of atmosphere) {
-    const pos = shipPos.get(entry.shipId);
-    if (pos === undefined) continue; // ship destroyed or not yet present
+    const ship = ships.get(entry.shipId);
+    if (ship === undefined || !ship.alive) continue; // destroyed or not yet present
 
     // Derive the haze radius from the ship's hull extent. Use the farthest
     // cell from the ship centre (the hull radius in world units) when cell
@@ -108,14 +107,14 @@ function drawAtmosphereBreach(c: OverlayCtx): void {
       const severity = 1 - entry.atmosphereLevel;
       ctx.globalAlpha = BREACH_HAZE_MAX_ALPHA * Math.max(0, Math.min(1, severity));
       ctx.fillStyle = "#ff3a3a";
-      pathWorldCircle(ctx, t, pos.x, pos.y, hazeWorld);
+      pathWorldCircle(ctx, t, ship.x, ship.y, hazeWorld);
       ctx.fill();
     } else if (entry.atmosphereLevel < THIN_ATMO_THRESHOLD) {
       // Thin atmosphere tint: blue, for a ship losing air slowly without a
       // direct breach reading (gradual leak rather than puncture).
       ctx.globalAlpha = THIN_ATMO_TINT_ALPHA * (1 - entry.atmosphereLevel / THIN_ATMO_THRESHOLD);
       ctx.fillStyle = "#5ab0ff";
-      pathWorldCircle(ctx, t, pos.x, pos.y, hazeWorld);
+      pathWorldCircle(ctx, t, ship.x, ship.y, hazeWorld);
       ctx.fill();
     }
   }

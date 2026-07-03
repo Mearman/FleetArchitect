@@ -1,5 +1,6 @@
 import { SIDE_COLOUR } from "@/ui/routes/battleConstants";
 import type { OverlayCtx, OverlayDef } from "./types";
+import { shipIndexFor } from "./shipIndex";
 
 /** Number of discrete frames to trace back from the current tick when building
  *  a ship's breadcrumb trail. Kept small so the overlay stays O(in-scope × N)
@@ -32,12 +33,14 @@ export function drawMovementTrail(c: OverlayCtx): void {
   ctx.setLineDash([]);
 
   // Collect each in-scope alive ship's current position and side colour, keyed
-  // by instanceId. Ships not in scope / dead have no trail to draw.
+  // by instanceId. Ships not in scope / dead have no trail to draw. Iterates the
+  // shared per-frame id→ship index (built once per frame identity across all
+  // overlays — see ./shipIndex) instead of re-scanning frame.ships.
   const live = new Map<
     string,
     { x: number; y: number; colour: string }
   >();
-  for (const ship of frame.ships) {
+  for (const ship of shipIndexFor(frame).values()) {
     if (!inScope(ship) || !ship.alive) continue;
     live.set(ship.instanceId, {
       x: ship.x,
@@ -62,19 +65,11 @@ export function drawMovementTrail(c: OverlayCtx): void {
   for (let i = tick - 1; i >= firstIdx; i--) {
     const f = frames[i];
     if (f === undefined) break;
-    // Build ONE per-frame index of {x, y, alive} so each in-scope ship is an
-    // O(1) lookup rather than a frame.ships scan — mirrors damagePulse /
-    // targetLock. Building the map is O(frame.ships); lookup is O(1) per
-    // in-scope ship, so the overlay is O(in-scope × TRAIL_LENGTH + Σ
-    // frame.ships) instead of quadratic in (in-scope × TRAIL_LENGTH ×
-    // frame.ships).
-    const frameIndex = new Map<
-      string,
-      { x: number; y: number; alive: boolean }
-    >();
-    for (const s of f.ships) {
-      frameIndex.set(s.instanceId, { x: s.x, y: s.y, alive: s.alive });
-    }
+    // Shared per-frame id→ship index (built once per frame identity across all
+    // overlays — see ./shipIndex): each in-scope ship is an O(1) lookup rather
+    // than a frame.ships scan, and the index is built once per frame ever, not
+    // rebuilt per draw.
+    const frameIndex = shipIndexFor(f);
     for (const id of live.keys()) {
       if (stopped.has(id)) continue;
       const past = frameIndex.get(id);

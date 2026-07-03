@@ -2,6 +2,7 @@ import { CELL_SIZE } from "@/domain/grid";
 import { NEON_MAGENTA } from "@/ui/theme/tokens";
 import { pathWorldCircle } from "@/ui/routes/battleProject";
 import type { OverlayCtx, OverlayDef } from "./types";
+import { shipIndexFor } from "./shipIndex";
 
 /** Colour of a damage pulse ring. Neon magenta — the weapons/damage channel —
  *  so a hit reads instantly even against a busy battlefield. */
@@ -46,12 +47,11 @@ export function drawDamagePulse(c: OverlayCtx): void {
   const prev = frames[tick - 1];
   if (prev === undefined) return;
 
-  // Index previous-frame structure by instance id for O(1) lookup. Only ships
-  // present in the previous frame can have a meaningful delta.
-  const prevStructure = new Map<string, number>();
-  for (const s of prev.ships) {
-    prevStructure.set(s.instanceId, s.structure);
-  }
+  // Shared per-frame id→ship index for the PREVIOUS frame (built once per frame
+  // identity — the cache is keyed on the frame object, so it serves any frame,
+  // not just the current one). Only ships present in the previous frame can
+  // have a meaningful delta.
+  const prevShips = shipIndexFor(prev);
 
   ctx.save();
   ctx.strokeStyle = DAMAGE_COLOUR;
@@ -61,7 +61,7 @@ export function drawDamagePulse(c: OverlayCtx): void {
 
   for (const ship of frame.ships) {
     if (!inScope(ship) || !ship.alive) continue;
-    const before = prevStructure.get(ship.instanceId);
+    const before = prevShips.get(ship.instanceId)?.structure;
     if (before === undefined) continue;
     const delta = before - ship.structure;
     if (delta <= 0) continue;

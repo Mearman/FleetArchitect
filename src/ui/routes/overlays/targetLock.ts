@@ -1,5 +1,6 @@
 import { SIDE_COLOUR } from "@/ui/routes/battleConstants";
 import type { OverlayCtx, OverlayDef } from "./types";
+import { shipIndexFor } from "./shipIndex";
 
 /** Stroke width of a target-lock line, in display pixels. Kept thin so the
  *  overlay reads as a faint sight-line rather than a solid beam. */
@@ -16,14 +17,10 @@ const TARGET_LOCK_ALPHA = 0.35;
  */
 export function drawTargetLock(c: OverlayCtx): void {
   const { ctx, frame, t, inScope } = c;
-  // Index alive ships by instanceId for O(1) target lookup. Only alive ships
-  // can be a lock target — a dead target has no lock to render.
-  const alive = new Map<string, { x: number; y: number }>();
-  for (const s of frame.ships) {
-    if (s.alive) {
-      alive.set(s.instanceId, { x: s.x, y: s.y });
-    }
-  }
+  // Shared per-frame id→ship index (built once per frame identity across all
+  // overlays — see ./shipIndex). Only alive ships can be a lock target — a dead
+  // target has no lock to render.
+  const ships = shipIndexFor(frame);
 
   ctx.save();
   ctx.lineWidth = TARGET_LOCK_WIDTH;
@@ -33,8 +30,8 @@ export function drawTargetLock(c: OverlayCtx): void {
   for (const ship of frame.ships) {
     if (!inScope(ship)) continue;
     if (ship.targetId === undefined) continue;
-    const target = alive.get(ship.targetId);
-    if (target === undefined) continue;
+    const target = ships.get(ship.targetId);
+    if (target === undefined || !target.alive) continue;
     ctx.strokeStyle = SIDE_COLOUR[ship.side];
     const a = t.project(ship.x, ship.y);
     const b = t.project(target.x, target.y);

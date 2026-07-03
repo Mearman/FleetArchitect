@@ -1,4 +1,4 @@
-import type { BattleFrame, ProjectileSnapshot, ShipSnapshot } from "@/schema/battle";
+import type { BattleFrame, ProjectileSnapshot } from "@/schema/battle";
 import type { WeaponType } from "@/schema/module";
 import {
   INTENSITY_DRAW_THRESHOLD,
@@ -9,6 +9,7 @@ import {
   sampleMediumIntensity,
 } from "./mediumShared";
 import type { OverlayCtx, OverlayDef } from "./types";
+import { shipIndexFor } from "./shipIndex";
 
 // ---------------------------------------------------------------------------
 // Arena medium field: sharp ANALYTIC per-entity trail streaks
@@ -102,24 +103,15 @@ const PLUME_GAIN_BY_KIND: Record<WeaponType, number> = {
 };
 
 // ---------------------------------------------------------------------------
-// Per-frame entity index cache
+// Per-frame projectile index cache
 // ---------------------------------------------------------------------------
 //
-// The history walk looks each historical frame's ships/projectiles up by id.
-// Frames in `OverlayCtx.frames` are IMMUTABLE recorded snapshots (parsed once
-// from the battle result and never mutated afterwards), so a frame's id→entity
-// index is stable for the frame's whole lifetime. Caching that index in a
-// WeakMap keyed by the frame object means it is built at most ONCE per frame,
-// ever — across every rAF tick of playback and every scrub position — instead
-// of being rebuilt (and re-allocating a trimmed {x,y,alive} object per entity)
-// on every draw. The WeakMap lets the index self-evict when the player drops a
-// frame (battle unload), so the cache cannot leak past the battle.
-//
-// Storing the raw snapshot reference (rather than a trimmed copy) also removes
-// the per-entity allocation the inline index used to make. Exactly the same
-// fields (x, y, alive) are read from it, so the trails drawn are unchanged.
-
-const shipFrameIndexCache = new WeakMap<BattleFrame, Map<string, ShipSnapshot>>();
+// Ship lookups use the shared per-frame id→ship index (`./shipIndex`), built
+// once per frame identity across every overlay. The projectile index is
+// mediumTrails-specific, so it lives here with the same WeakMap-on-frame-identity
+// memoisation: frames in `OverlayCtx.frames` are IMMUTABLE recorded snapshots,
+// so the index is stable for the frame's whole lifetime and self-evicts when
+// the player drops a frame (battle unload).
 
 const projFrameIndexCache = new WeakMap<
   BattleFrame,
@@ -127,23 +119,9 @@ const projFrameIndexCache = new WeakMap<
 >();
 
 /**
- * The id→ship index for a frame, built once and cached for the frame's
- * lifetime. Reads `x`, `y`, `alive` straight off the cached snapshot, exactly
- * as the previously-inline index did — only the indexing is memoised.
- */
-function shipIndexFor(frame: BattleFrame): Map<string, ShipSnapshot> {
-  const cached = shipFrameIndexCache.get(frame);
-  if (cached !== undefined) return cached;
-  const index = new Map<string, ShipSnapshot>();
-  for (const s of frame.ships) index.set(s.instanceId, s);
-  shipFrameIndexCache.set(frame, index);
-  return index;
-}
-
-/**
  * The id→projectile index for a frame, built once and cached for the frame's
- * lifetime. Reads `x`, `y` straight off the cached snapshot, exactly as the
- * previously-inline index did — only the indexing is memoised.
+ * lifetime. Reads `x`, `y` straight off the cached snapshot — only the
+ * indexing is memoised.
  */
 function projIndexFor(frame: BattleFrame): Map<string, ProjectileSnapshot> {
   const cached = projFrameIndexCache.get(frame);
@@ -286,10 +264,10 @@ function drawExhaustTrails(
   for (let i = tick - 1; i >= firstIdx; i -= 1) {
     const f = frames[i];
     if (f === undefined) break;
-    // Cached id→ship index for this frame (built once, ever — see
-    // `shipIndexFor`): each ship is an O(1) lookup rather than a frame.ships
-    // scan, mirroring movementTrail / damagePulse, but without re-indexing the
-    // frame on every draw.
+    // Cached id→ship index for this frame (built once, ever, shared across
+    // overlays — see `./shipIndex`): each ship is an O(1) lookup rather than a
+    // frame.ships scan, mirroring movementTrail / damagePulse, but without
+    // re-indexing the frame on every draw.
     const index = shipIndexFor(f);
     for (const ship of live) {
       if (stopped.has(ship.id)) continue;
