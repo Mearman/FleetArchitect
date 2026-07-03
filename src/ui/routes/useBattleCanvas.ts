@@ -23,7 +23,7 @@ import {
 } from "./battleConstants";
 import { appearanceOf } from "@/ui/render/moduleAppearance";
 import { glyphPath2D } from "@/ui/render/moduleGlyphs";
-import { drawIsoShipCells } from "./isoShipCells";
+import { drawIsoShipCells, type IsoCellDepth } from "./isoShipCells";
 import { buildFormationColourByInstance, drawFormationCentroids } from "./battleFormation";
 import { OVERLAYS, OVER_SHIP_IDS, UNDER_SHIP_IDS } from "./overlays";
 import type { OverlayScope } from "./overlays";
@@ -90,18 +90,17 @@ export function useBattleCanvas({
   overlays,
   descriptors,
 }: UseBattleCanvasProps) {
-  // Per-ship sprite cache (re-rasterised on alive-set/colour change) and a
-  // reusable RenderCell[] buffer (renderCellsInto rewrites in place), both refs
-  // keyed by instance id so the per-frame draw reuses objects.
+  // Per-ship sprite cache (re-rasterised on alive-set/colour change) and reusable
+  // RenderCell[] buffer (renderCellsInto rewrites in place), keyed by instance id.
   const spriteCache = useRef<Map<string, ShipSprite>>(new Map());
   const cellBufferRef = useRef<Map<string, RenderCell[]>>(new Map());
-  // Reusable render-order buffer: the draw loop orders the frame's ships every
-  // rAF; reusing one buffer avoids the per-frame `[...ships]` allocation.
+  // Pooled iso depth-sort buffer; mirrors orderShipsForRenderInto.
+  const isoDepthBufferRef = useRef<IsoCellDepth[]>([]);
+  // Reusable render-order buffer; avoids the per-frame `[...ships]` allocation.
   const renderOrderRef = useRef<ShipSnapshot[]>([]);
-  // Pooled fog-of-war ship-position map and value scratch. The fog pass used to
-  // build a fresh Map and a fresh {x,y} per alive ship every frame; these reuse
-  // the Map backing store and value objects (clear + repopulate keeps no stale
-  // positions for newly dead ships).
+  // Pooled fog-of-war ship-position map and value scratch: reuses the Map backing
+  // store and value objects (clear + repopulate keeps no stale positions for newly
+  // dead ships) instead of allocating per alive ship every frame.
   const fogShipPosRef = useRef<Map<string, { x: number; y: number }>>(new Map());
   const fogPosScratchRef = useRef<{ x: number; y: number }[]>([]);
   // Per-battle formation colour per instance id, derived once (descriptors never
@@ -335,7 +334,7 @@ export function useBattleCanvas({
             // Isometric 2.5D: draw each cell as an extruded box (lit top, shaded
             // sides, glyph on top) with per-kind height, so components read as
             // 3-D parts. Drawn live in screen space (the projection has no
-            // z-axis), painter-sorted inside the helper.
+            // z-axis), painter-sorted inside the helper into a pooled buffer.
             drawIsoShipCells(
               ctx,
               t,
@@ -343,6 +342,7 @@ export function useBattleCanvas({
               cells,
               base,
               (m) => cellState(m).isStarved,
+              isoDepthBufferRef.current,
             );
           } else if (floored) {
             // Distant-zoom fallback: the cells are below the legibility floor,

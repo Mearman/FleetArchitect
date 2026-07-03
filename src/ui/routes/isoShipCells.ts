@@ -75,6 +75,18 @@ export function isoCellBox(
   return { ground, top, centre, zS };
 }
 
+/**
+ * A render cell paired with its projected screen depth, used to painter-sort the
+ * isometric extruded-cell draw back-to-front. The wrapper objects are pooled in
+ * a caller-owned buffer (see {@link drawIsoShipCells}'s `out` parameter) and
+ * reused across frames, so only the first frame per ship pays any allocation —
+ * mirroring the ship-level {@link orderShipsForRenderInto} pattern.
+ */
+export interface IsoCellDepth {
+  m: RenderCell;
+  depth: number;
+}
+
 /** Multiply each channel of a #rrggbb colour by `f` (0..1) to shade a face. */
 function shade(hex: string, f: number): string {
   if (hex.length !== 7 || hex.charCodeAt(0) !== 35) return hex;
@@ -89,6 +101,13 @@ function shade(hex: string, f: number): string {
  * Draw one ship's cells as extruded isometric boxes. `cells` are this frame's
  * render cells; `s` is the ship pose; `base` is the faction/side accent tint;
  * `isStarved` flags supply-starved cells for dimming.
+ *
+ * `out` is a caller-owned, reusable {@link IsoCellDepth} buffer used to
+ * painter-sort the cells back-to-front. Its wrapper objects are mutated in place
+ * and reused across frames (the length is reset each call so no stale entries
+ * survive), so the per-rAF hot path allocates nothing once warmed — mirroring
+ * the ship-level {@link orderShipsForRenderInto}. Same comparator and cell set as
+ * the prior `.map().sort()`, so the visual permutation is identical.
  */
 export function drawIsoShipCells(
   ctx: CanvasRenderingContext2D,
@@ -97,22 +116,34 @@ export function drawIsoShipCells(
   cells: readonly RenderCell[],
   base: string,
   isStarved: (cell: RenderCell) => boolean,
+  out: IsoCellDepth[],
 ): void {
   const cosF = Math.cos(s.facing);
   const sinF = Math.sin(s.facing);
   const scale = t.scale;
 
   // Back-to-front by the projection's depth of each cell centre, so nearer cells
-  // overpaint farther ones (painter's algorithm for the heightfield).
-  const ordered = cells
-    .map((m) => {
-      const wx = s.x + (m.ox * cosF - m.oy * sinF);
-      const wy = s.y + (m.ox * sinF + m.oy * cosF);
-      return { m, depth: t.projection.depth(wx, wy) };
-    })
-    .sort((a, b) => a.depth - b.depth);
+  // overpaint farther ones (painter's algorithm for the heightfield). Fill the
+  // pooled buffer in place (reusing wrapper objects where the slot already
+  // exists) then sort in place; only the first frame per ship allocates.
+  let n = 0;
+  for (const m of cells) {
+    const wx = s.x + (m.ox * cosF - m.oy * sinF);
+    const wy = s.y + (m.ox * sinF + m.oy * cosF);
+    const depth = t.projection.depth(wx, wy);
+    const slot = out[n];
+    if (slot === undefined) {
+      out[n] = { m, depth };
+    } else {
+      slot.m = m;
+      slot.depth = depth;
+    }
+    n += 1;
+  }
+  out.length = n;
+  out.sort((a, b) => a.depth - b.depth);
 
-  for (const { m } of ordered) {
+  for (const { m } of out) {
     const app = appearanceOf(m.kind);
     const { ground, top, centre, zS } = isoCellBox(
       t.project,
