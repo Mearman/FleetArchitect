@@ -167,31 +167,32 @@ class FleetArchitectDatabase extends Dexie {
       formationTemplates: "id, name, updatedAt",
       formation_template_revisions: "[id+revision], id",
     });
-    // Checkpoints become incremental delta rows: primary key [key+seq] (one row
-    // per capture), `key` indexed so all deltas of a matchup are read back and
-    // concatenated on resume. The PK change from `key` to `[key+seq]` recreates
-    // the store, so old monolithic `preFrames` records are discarded; the upgrade
-    // clears explicitly as belt-and-braces.
-    this.version(9)
+    // Drop the v6 checkpoints store (PK `key`). Dexie can't change a primary
+    // key in place — redeclaring with `[key+seq]` throws "changing primary key"
+    // for every DB upgrading through v9 — so drop here, recreate at v10.
+    // Checkpoints are disposable resume state (the old v9 clear already
+    // discarded them).
+    this.version(9).stores({
+      checkpoints: null,
+    });
+    // Recreate checkpoints at the new PK and add the eviction-metadata table
+    // (#ensureMeta reads scalars, not a full BattleResult). Mirror simCache rows.
+    this.version(10)
       .stores({
         checkpoints: "[key+seq], key, updatedAt",
+        simCacheMeta: "key",
       })
       .upgrade(async (tx) => {
-        await tx.table("checkpoints").clear();
+        const rows: unknown[] = await tx.table("simCache").toArray();
+        const meta: SimCacheMetaRecord[] = [];
+        for (const row of rows) {
+          if (!isRecord(row)) continue;
+          const { key, bytes, lastAccess } = row;
+          if (typeof key === "string" && typeof bytes === "number" && typeof lastAccess === "number")
+            meta.push({ key, bytes, lastAccess });
+        }
+        await tx.table("simCacheMeta").bulkPut(meta);
       });
-    // Split eviction metadata into its own table so #ensureMeta reads three
-    // scalars per row, not a full BattleResult clone. See sim-cache-dexie.ts.
-    this.version(10).stores({ simCacheMeta: "key" }).upgrade(async (tx) => {
-      const rows: unknown[] = await tx.table("simCache").toArray();
-      const meta: SimCacheMetaRecord[] = [];
-      for (const row of rows) {
-        if (!isRecord(row)) continue;
-        const { key, bytes, lastAccess } = row;
-        if (typeof key === "string" && typeof bytes === "number" && typeof lastAccess === "number")
-          meta.push({ key, bytes, lastAccess });
-      }
-      await tx.table("simCacheMeta").bulkPut(meta);
-    });
   }
 }
 
