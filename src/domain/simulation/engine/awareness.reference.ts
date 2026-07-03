@@ -19,7 +19,12 @@ import type { BattleAnomalyKind } from "@/schema/battle";
 
 import { SPEED_OF_LIGHT_M_PER_TICK } from "./config";
 import { aberratedContactPosition } from "./optics-aberration";
-import { emReceives, hullDazzleContribution } from "./em-reception";
+import {
+  continuousEmissionStrength,
+  emReceives,
+  hullDazzleContribution,
+  receptionShift,
+} from "./em-reception";
 import { contactThreat, sensorUnitsOf } from "./sensors";
 import type { Contact, SimShip } from "./types";
 import type { AwarenessScratch } from "./awareness";
@@ -55,14 +60,20 @@ export function buildDirectContactsReference(
     const observerSensors = sensorUnitsOf(observer);
     for (const enemy of enemies) {
       if (segmentBlocked(observer.x, observer.y, enemy.x, enemy.y, occluders)) continue;
+      // Hoisted once per pair to mirror `buildDirectContacts`: the full emission
+      // product (enemy strength × reception shift) is evaluated once and shared
+      // between the dazzle and reception paths. The product is the same float
+      // each path computed internally, so the oracle's output is unchanged.
+      const emission =
+        continuousEmissionStrength(enemy) * receptionShift(observer, enemy, anomalies);
       const accum = dazzleAccum.get(observer.instanceId);
       if (accum !== undefined) {
         dazzleAccum.set(
           observer.instanceId,
-          accum + hullDazzleContribution(observer, enemy, anomalies),
+          accum + hullDazzleContribution(observer, enemy, anomalies, emission),
         );
       }
-      if (!emReceives(observer, enemy, anomalies, observerSensors)) continue;
+      if (!emReceives(observer, enemy, anomalies, observerSensors, emission)) continue;
       const apparent = aberratedContactPosition(
         observer.x,
         observer.y,

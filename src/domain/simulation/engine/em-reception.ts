@@ -154,12 +154,23 @@ export function hullDazzleContribution(
   observer: SimShip,
   enemy: SimShip,
   anomalies: readonly BattleAnomalyKind[],
+  /**
+   * The precomputed `continuousEmissionStrength(enemy) * receptionShift(...)`
+   * product, when the caller has already evaluated it. `buildDirectContacts` and
+   * its frozen reference oracle thread the SAME product into the dazzle and
+   * reception paths, so the per-pair emission is evaluated once rather than
+   * recomputed by each. When omitted the function computes its own — same float,
+   * same dazzle decision.
+   */
+  precomputedEmission?: number,
 ): number {
   const dx = enemy.x - observer.x;
   const dy = enemy.y - observer.y;
   const distSq = dx * dx + dy * dy;
   const dist = Math.sqrt(distSq);
-  const emission = continuousEmissionStrength(enemy) * receptionShift(observer, enemy, anomalies);
+  const emission =
+    precomputedEmission ??
+    continuousEmissionStrength(enemy) * receptionShift(observer, enemy, anomalies);
   const received = dist <= 0 ? emission : emission / (4 * Math.PI * distSq);
   return dazzleBoost(received / EM_RECEIVER_NOISE_FLOOR);
 }
@@ -291,12 +302,23 @@ export function emReceives(
    * so it still works standalone. Same array, same module-array order.
    */
   observerSensors?: readonly SensorUnit[],
+  /**
+   * The precomputed `continuousEmissionStrength(enemy) * receptionShift(...)`
+   * product — see {@link hullDazzleContribution}. `buildDirectContacts` hoists
+   * the enemy's emission strength once per pair and shares the product between
+   * the dazzle and reception decisions, halving the per-pair emission and shift
+   * evaluations. When omitted the function computes its own — same float, same
+   * reception decision.
+   */
+  precomputedEmission?: number,
 ): boolean {
   const dx = enemy.x - observer.x;
   const dy = enemy.y - observer.y;
   const distSq = dx * dx + dy * dy;
   const dist = Math.sqrt(distSq);
-  const emission = continuousEmissionStrength(enemy) * receptionShift(observer, enemy, anomalies);
+  const emission =
+    precomputedEmission ??
+    continuousEmissionStrength(enemy) * receptionShift(observer, enemy, anomalies);
 
   // Baseline sensor-free receiver: an omni eye at gain 1, reaching
   // `visualLosRadius` against a baseline emitter. A nebula dims the naked eye

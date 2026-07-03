@@ -24,6 +24,7 @@ import {
   effectiveReceiverFloor,
   emReceives,
   hullDazzleContribution,
+  receptionShift,
   sensorGain,
 } from "./em-reception";
 import { DAZZLE_THRESHOLD_MULT } from "./em-anchors";
@@ -91,6 +92,14 @@ export function hullReceptionIsNegligible(
   observerSpeedMag: number,
   /** Precomputed {@link observerMaxReceptionGain} for this observer. */
   observerMaxGain: number,
+  /**
+   * The precomputed `continuousEmissionStrength(enemy)`, when the caller has
+   * already evaluated it. `buildDirectContacts` hoists this once per pair so the
+   * same evaluation feeds the bound here AND the full emission product threaded
+   * into the dazzle and reception paths. When omitted the function computes its
+   * own — same float, same bound.
+   */
+  precomputedEnemyEmission?: number,
 ): boolean {
   const dx = enemy.x - observer.x;
   const dy = enemy.y - observer.y;
@@ -103,7 +112,7 @@ export function hullReceptionIsNegligible(
   // full path handles it (ship speeds are far below c, so this never fires).
   if (betaBound >= 1) return false;
   const dMaxSq = (1 + betaBound) / (1 - betaBound); // strict upper bound on D²
-  const emission = continuousEmissionStrength(enemy);
+  const emission = precomputedEnemyEmission ?? continuousEmissionStrength(enemy);
   const floor = effectiveReceiverFloor(observer);
   // Strict upper bound on the received strength as a multiple of the floor.
   const receivedFloorBound = (emission * dMaxSq) / (4 * Math.PI * distSq * floor);
@@ -150,13 +159,30 @@ export function buildDirectContacts(
       : 0;
     const observerMaxGain = earlyOut ? observerMaxReceptionGain(observerSensors) : 1;
     for (const enemy of enemies) {
+      // Hoisted once per pair: the enemy's continuous emission strength feeds
+      // the early-out's strict bound (next) AND the full emission product (after
+      // the occlusion check), so it is evaluated once rather than recomputed by
+      // each of the three downstream paths. Every intermediate is a pure function
+      // of (observer, enemy, anomalies) and none are mutated within the pair.
+      const enemyEmission = continuousEmissionStrength(enemy);
       if (
         earlyOut &&
-        hullReceptionIsNegligible(observer, enemy, observerSpeedMag, observerMaxGain)
+        hullReceptionIsNegligible(
+          observer,
+          enemy,
+          observerSpeedMag,
+          observerMaxGain,
+          enemyEmission,
+        )
       ) {
         continue;
       }
       if (segmentBlocked(observer.x, observer.y, enemy.x, enemy.y, occluders)) continue;
+      // Hoisted once per pair: the full emission product (enemy strength ×
+      // relativistic + gravitational reception shift) feeds both the dazzle
+      // contribution and the reception decision, which previously each
+      // recomputed the strength and the shift independently.
+      const emission = enemyEmission * receptionShift(observer, enemy, anomalies);
       // Sensor dazzle: a strong emission raises the observer's saturation for
       // subsequent ticks, whatever its origin. Accumulated even when the enemy
       // does not form a contact this tick.
@@ -164,10 +190,10 @@ export function buildDirectContacts(
       if (accum !== undefined) {
         dazzleAccum.set(
           observer.instanceId,
-          accum + hullDazzleContribution(observer, enemy, anomalies),
+          accum + hullDazzleContribution(observer, enemy, anomalies, emission),
         );
       }
-      if (!emReceives(observer, enemy, anomalies, observerSensors)) continue;
+      if (!emReceives(observer, enemy, anomalies, observerSensors, emission)) continue;
       // Relativistic aberration: a moving observer measures the contact's
       // bearing swept toward its direction of travel. Stationary → identity.
       const apparent = aberratedContactPosition(
