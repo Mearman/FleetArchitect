@@ -1,12 +1,13 @@
 /**
  * Pure bucketing of ship designs into ordered faction -> class groups for the
  * grouped ship browser. Classification is derived from the design grid via
- * {@link deriveClassification}; class order follows the {@link ShipClassification}
+ * {@link deriveClassificationCached} (a per-(id, revision) cache over the
+ * underlying domain classification); class order follows the {@link ShipClassification}
  * enum (fighter, frigate, cruiser, dreadnought); factions are ordered
  * alphabetically. Empty groups are omitted and ships within a class are sorted
  * by name. No side effects, no DOM, no storage.
  */
-import { deriveClassification } from "@/domain/grid";
+import { deriveClassificationCached } from "@/ui/design-analysis-cache";
 import { ShipClassification } from "@/schema/armor";
 import type { ShipDesign } from "@/schema/ship";
 
@@ -33,7 +34,7 @@ export function groupByFactionAndClass(
 ): FactionGroup[] {
   const byFaction = new Map<string, Map<ShipClassification, ShipDesign[]>>();
   for (const design of designs) {
-    const classification = deriveClassification(design.grid);
+    const classification = deriveClassificationCached(design);
     let classes = byFaction.get(design.faction);
     if (classes === undefined) {
       classes = new Map();

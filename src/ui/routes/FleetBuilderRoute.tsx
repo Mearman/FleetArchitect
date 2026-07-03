@@ -29,9 +29,11 @@ import {
   updateNode,
 } from "@/domain/formation-tree-state";
 import { createId, nowIso } from "@/domain/id";
-import { analyseShipDesign } from "@/domain/stats";
-import { deriveClassification } from "@/domain/grid";
 import { catalog } from "@/data/catalog";
+import {
+  analyseShipDesignCached,
+  deriveClassificationCached,
+} from "@/ui/design-analysis-cache";
 import { ShareButton } from "@/ui/components/ShareButton";
 import { VersionHistoryPanel } from "@/ui/components/VersionHistoryPanel";
 import { CassettePanel } from "@/ui/components/CassettePanel";
@@ -180,8 +182,12 @@ export function FleetBuilderRoute() {
   const designInfo = useMemo(() => {
     const map = new Map<string, { design: ShipDesign; cost: number; classification: string }>();
     for (const d of designs ?? []) {
-      const { stats } = analyseShipDesign(d, catalog());
-      map.set(d.id, { design: d, cost: stats.cost, classification: deriveClassification(d.grid) });
+      const { stats } = analyseShipDesignCached(d, catalog());
+      map.set(d.id, {
+        design: d,
+        cost: stats.cost,
+        classification: deriveClassificationCached(d),
+      });
     }
     return map;
   }, [designs]);
