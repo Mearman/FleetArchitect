@@ -1,3 +1,32 @@
+## [1.39.3](https://github.com/Mearman/FleetArchitect/compare/v1.39.2...v1.39.3) (2026-07-03)
+
+
+### Performance Improvements
+
+* **cache:** memoise the engine algorithm signature ([ccef58a](https://github.com/Mearman/FleetArchitect/commit/ccef58aa191a2139fd18515e1fd077cda1f86613))
+* **cache:** single-pass canonical stringifier for the cache key ([b81a87e](https://github.com/Mearman/FleetArchitect/commit/b81a87e292e6d0a655d4a5df4ea36a42de084914))
+* **sim:** compute per-pair emission product once in direct contacts ([b341e75](https://github.com/Mearman/FleetArchitect/commit/b341e75919a4de451763d2499ffd0dfee62f08cc))
+* **sim:** drop dead weapon list rebuild in chooseAmmoRun ([10dd9e0](https://github.com/Mearman/FleetArchitect/commit/10dd9e06382d0e804b6708157587b2bb9b27da0d))
+* **sim:** flatten medium neighbour index to int32 stride ([d9e64b6](https://github.com/Mearman/FleetArchitect/commit/d9e64b6dcc5bf607daf17a80c3b0514cbc021849))
+* **sim:** partition ships in one pass in snapshot ([54a8b47](https://github.com/Mearman/FleetArchitect/commit/54a8b472293de49107c1ca523389aa4a16234ea5))
+* **sim:** pass ship map iterator directly to buildShipCellHash ([3ac7608](https://github.com/Mearman/FleetArchitect/commit/3ac76088bc8ba36cf81605f2b89d72ba2e5f292f))
+* **sim:** pool resource-step per-call map and set containers ([d892f3f](https://github.com/Mearman/FleetArchitect/commit/d892f3f8168a2b393fa19cc241e12d4cc63c4698))
+* **sim:** pool the separation-field spatial hash on EngineState ([2a9e50e](https://github.com/Mearman/FleetArchitect/commit/2a9e50e2b73425f461dc89d125b1739218028ac0))
+* **sim:** skip crew candidate-list build when no crew is idle ([aab4ca6](https://github.com/Mearman/FleetArchitect/commit/aab4ca6a1cf05a487793a4a85c20be62128fb494))
+* **sim:** skip formation-doctrine build when no ship uses it ([3ac7e2d](https://github.com/Mearman/FleetArchitect/commit/3ac7e2d68bcf9a4b6ceba3aa30b0d1a4574710dc))
+* **sim:** skip newlyDead scan on ticks with no deaths ([f01903a](https://github.com/Mearman/FleetArchitect/commit/f01903a0256279c2db3233292fe2a077d90a5c68))
+* **sim:** step exhaust particles in place with stable compaction ([8342b00](https://github.com/Mearman/FleetArchitect/commit/8342b009fdc1168c503edd88855e51ae846e60df))
+* **sim:** type medium source buffers as Float64Array ([8886d0d](https://github.com/Mearman/FleetArchitect/commit/8886d0dcded537b3efe54e7d548ca7c408dd23bf))
+* **sim:** use fastHypot in EM reception ([c02e9df](https://github.com/Mearman/FleetArchitect/commit/c02e9dfbe175bf2460eb022953a08b508d420c7c))
+* **storage:** split sim-cache eviction metadata into its own table ([33176c0](https://github.com/Mearman/FleetArchitect/commit/33176c0dc1bc8c40b22d3150eff42bfb93fc850c))
+* **ui:** cache per-design analysis by id and revision ([a36c019](https://github.com/Mearman/FleetArchitect/commit/a36c019ef1f3564e3383386353b07912df335a53))
+* **ui:** drop unread door-states per cell per frame ([ef4419c](https://github.com/Mearman/FleetArchitect/commit/ef4419ce0e033cdaf9195d2d4ba5177cf7549be7))
+* **ui:** fire the durable sim-cache write without blocking completion ([1f718c6](https://github.com/Mearman/FleetArchitect/commit/1f718c677f7bef7d40043c270456a7b3a56562de))
+* **ui:** narrow ship-designer analysis memo deps ([a11d61f](https://github.com/Mearman/FleetArchitect/commit/a11d61fa0248f7566cedb9cd3cef349a71df9d9c))
+* **ui:** pool the iso cell depth-sort buffer ([4ad8a02](https://github.com/Mearman/FleetArchitect/commit/4ad8a02ad08417d5d2fc3ae3ce70c6fe4b7a096d))
+* **ui:** reuse the battle camera transform across frames ([3834ecf](https://github.com/Mearman/FleetArchitect/commit/3834ecf4f95ad5b90bb7a439302cb24afe4e4e76))
+* **ui:** share a cached per-frame ship index across overlays ([96c4c94](https://github.com/Mearman/FleetArchitect/commit/96c4c94cd53776548b72f792f987b5cd1d40e112))
+
 ## [1.39.2](https://github.com/Mearman/FleetArchitect/compare/v1.39.1...v1.39.2) (2026-07-02)
 
 
