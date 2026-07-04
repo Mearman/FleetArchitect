@@ -27,18 +27,25 @@ function git(command: string): string {
 }
 
 // Build-time metadata injected into the bundle for the top-bar link. `buildTag`
-// is non-empty only when HEAD is exactly a release tag; `buildRepo` is the
-// OWNER/REPO slug parsed from the git remote; `buildDate` is the tag's creation
-// date for releases or the commit date otherwise.
+// is the release tag — either resolved by the CI build job via a semantic-release
+// dry-run (`NEXT_RELEASE_TAG`, the version the parallel release WILL cut, so the
+// deployed header shows the version rather than the un-tagged commit hash), or,
+// for local/untagged builds, non-empty only when HEAD is exactly a release tag.
+// `buildRepo` is the OWNER/REPO slug parsed from the git remote; `buildDate` is
+// the tag's creation date for releases or the commit date otherwise.
 const buildHash = git("git rev-parse --short HEAD");
-const buildTag = git("git describe --tags --exact-match HEAD");
+const buildTag =
+  process.env.NEXT_RELEASE_TAG || git("git describe --tags --exact-match HEAD");
 const buildRepo = git("git config --get remote.origin.url")
   .replace(/^.*github\.com[:/]/, "")
   .replace(/\.git$/, "");
-const buildDate =
+// The tag date lookup is empty for a dry-run tag (it isn't in git yet) — fall
+// back to the commit date so the tooltip stays meaningful in that case.
+const buildDate = (
   buildTag !== ""
     ? git(`git for-each-ref --format='%(creatordate:iso-strict)' refs/tags/${buildTag}`)
-    : git("git log -1 --format=%cI HEAD");
+    : ""
+) || git("git log -1 --format=%cI HEAD");
 
 /** babel-plugin-react-compiler with default (compile-everything) options.
  *  Typed as a tuple so the literal isn't widened to `(string | object)[]`. */
