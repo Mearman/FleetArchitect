@@ -18,7 +18,6 @@ import { CELL_SIZE } from "@/domain/grid";
 import type { RenderCell } from "@/ui/cellLayout";
 import { appearanceOf } from "@/ui/render/moduleAppearance";
 import { glyphPath2D } from "@/ui/render/moduleGlyphs";
-import { chamferOutline } from "@/ui/render/outlineChamfer";
 import type { Transform } from "./battleCamera";
 import {
   DOOR_COLOUR,
@@ -163,23 +162,21 @@ export function drawIsoShipCells(
   out.length = n;
   out.sort((a, b) => a.depth - b.depth);
 
-  // Body-only chamfer: clip the SIDE walls (the hull silhouette) to the
-  // chamfered outline so armour corners read as a 45° bevel, but leave the TOP
-  // faces unclipped so tall modules (sensors, turrets) are not truncated. A
+  // Body-only clip: clip the SIDE walls (the hull silhouette) to the bevelled
+  // hull outline so armour corners read as a 45° bevel, but leave the TOP faces
+  // unclipped so tall modules (sensors, turrets) are not truncated. The outline
+  // DATA arriving here is already the bevelled render outline (computeHullOutline
+  // via the descriptor), so we clip directly — no further chamfer. A
   // ground-footprint clip around the whole draw would crop those raised tops; a
-  // true prism silhouette (front edges at ground, back edges lifted per-cell)
-  // is the fully-correct fix but disproportionate here. The metre-space chamfer
-  // projects to an axis-aligned screen line, so the bevel reads clean. Trade:
-  // a slight "deck overhang" where a top face cantilevers past a bevelled wall.
-  // Chamfer in METRE space (projected edges lose axis-alignment), then project
-  // each vertex with the same ship-pose + t.project the cells use. Per-cell
-  // save/clip/restore (below) keeps the back-to-front painter order intact.
-  // Render-only: the outline DATA is untouched.
-  const OUTLINE_BEVEL_CELLS = 0.45;
+  // true prism silhouette (front edges at ground, back edges lifted per-cell) is
+  // the fully-correct fix but disproportionate here. Project each vertex with
+  // the same ship-pose + t.project the cells use. Per-cell save/clip/restore
+  // (below) keeps the back-to-front painter order intact. Trade: a slight "deck
+  // overhang" where a top face cantilevers past a bevelled wall. Render-only.
   let clipPath: Path2D | undefined;
   if (outline !== undefined && outline.length > 0) {
     clipPath = new Path2D();
-    for (const loop of chamferOutline(outline, OUTLINE_BEVEL_CELLS * CELL_SIZE)) {
+    for (const loop of outline) {
       if (loop.length === 0) continue;
       let first = true;
       for (const v of loop) {

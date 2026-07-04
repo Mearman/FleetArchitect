@@ -239,6 +239,12 @@ const CheckpointShip = z.object({
   momentOfInertia: z.number(),
   radius: z.number(),
   outline: z.array(z.array(z.object({ x: z.number(), y: z.number() }))).optional(),
+  /** Bevelled render outline (45-degree-faceted hull). Mirrors `outline` (the
+   *  tight collision outline); the snapshot descriptor prefers this so a resumed
+   *  battle's silhouette stays bevelled. Optional/additive: absent on checkpoints
+   *  written before it was captured, so old checkpoints parse and a resumed ship
+   *  falls back to `outline` exactly as before. */
+  renderOutline: z.array(z.array(z.object({ x: z.number(), y: z.number() }))).optional(),
   dilationFactor: z.number(),
   cost: z.number(),
   weapons: z.array(WeaponEffect),
@@ -423,8 +429,10 @@ const DeploymentReference = z.object({
  *  threading real beam energy (Joules) into the particle-intensity model. v9 adds
  *  `ticksSinceLastDeath` for the reactor-loss stalemate threshold. v10 adds
  *  `reactiveHp`/`maxReactiveHp` to {@link CheckpointModule} for the finite
- *  reactive-plate (E,p-aware armour) model. */
-export const CHECKPOINT_VERSION = 10;
+ *  reactive-plate (E,p-aware armour) model. v11 adds `renderOutline` to
+ *  {@link CheckpointShip}, threading the bevelled render outline so a resumed
+ *  battle's silhouette stays bevelled. */
+export const CHECKPOINT_VERSION = 11;
 
 /**
  * A complete engine checkpoint: everything needed to resume `simulateBattle`

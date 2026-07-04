@@ -563,9 +563,10 @@ function atmosphereSnapshot(
 
 /**
  * Build the STATIC descriptor for one ship instance: the cell layout (kind,
- * ship-local offset, surface, max HP, turret presence) and the chamfered hull
- * outline. Emitted ONCE per instance for the whole battle rather than per tick,
- * so per-tick frames carry only dynamic cell state and the renderer
+ * ship-local offset, surface, max HP, turret presence) and the hull render
+ * outline (the bevelled `renderOutline` when present, else the tight collision
+ * `outline`). Emitted ONCE per instance for the whole battle rather than per
+ * tick, so per-tick frames carry only dynamic cell state and the renderer
  * reconstructs each cell's world position from the ship pose plus the static
  * offset here. A legacy aggregated ship with no modules gets a descriptor with
  * no `cells` (and no `outline` unless one was resolved).
@@ -583,7 +584,13 @@ export function shipDescriptor(s: SimShip): ShipDescriptor {
       ? { formationId: s.formationId, role: s.role }
       : {}),
   };
-  if (s.outline !== undefined) base.outline = s.outline;
+  // The descriptor outline is the RENDER outline: prefer the bevelled
+  // `renderOutline` (45-degree-faceted hull matching the designer render) when
+  // present, falling back to the tight octilinear `outline` (the collision
+  // outline) for ships resolved before renderOutline was threaded. Render-only;
+  // the schema field type is unchanged (ShipOutline), just a bevelled value.
+  if (s.renderOutline !== undefined) base.outline = s.renderOutline;
+  else if (s.outline !== undefined) base.outline = s.outline;
   if (s.modules === undefined) return base;
   return {
     ...base,

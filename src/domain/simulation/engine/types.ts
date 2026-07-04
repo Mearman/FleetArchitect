@@ -228,6 +228,10 @@ export interface SimShip {
    *  via computeOutline over the armor shell; re-derived on break-apart).
    *  Render-only — collision stays per-cell. */
   outline?: { x: number; y: number }[][];
+  /** Bevelled render outline (the designer's 45-degree-faceted hull), computed
+   *  at resolve via `computeHullOutline` and re-derived on break-apart. The
+   *  descriptor prefers this; collision stays on the tight `outline`. */
+  renderOutline?: { x: number; y: number }[][];
   /** Proper-time dilation factor (1 = real-time, <1 = slowed). Computed
    *  each tick from velocity (SR) + gravitational potential (GR); ship rates
    *  (cooldowns, recharge, crew) multiply by it. */

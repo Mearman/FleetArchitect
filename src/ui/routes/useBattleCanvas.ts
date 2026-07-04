@@ -647,12 +647,12 @@ export function useBattleCanvas({
               }
             }
 
-            // Chamfered hull outline: drawn over the cells as a semi-transparent
-            // stroke through the shell's corner vertices. Takes the formation
-            // colour when present (Phase E) so the silhouette carries the
-            // formation hue; otherwise the side colour. Vertices are in
-            // ship-local world units; the composed matrix places them on screen
-            // (with the projection tilt applied).
+            // Bevelled hull outline ring: the descriptor outline is already the
+            // bevelled render outline (computeHullOutline), so stroke it
+            // directly — no further chamfer. Takes the formation colour when
+            // present (Phase E); otherwise the side colour. Vertices are
+            // ship-local; the composed matrix places them on screen (with the
+            // projection tilt applied).
             const outline = descriptor?.outline;
             if (outline !== undefined) {
               ctx.strokeStyle = formationColour ?? SIDE_COLOUR[s.side];

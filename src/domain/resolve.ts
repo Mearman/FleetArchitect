@@ -1,7 +1,7 @@
 import { analyseShipDesign } from "@/domain/stats";
 import { CELL_SIZE, cellToLocal, deriveClassification, deriveRadius, footprint } from "@/domain/grid";
 import { computeOutline, extractShell } from "@/domain/outline";
-import { cellCoverageFractions } from "@/domain/hull-outline";
+import { cellCoverageFractions, computeHullOutline } from "@/domain/hull-outline";
 import { growArmourHull, padGrid } from "@/domain/hull-armour";
 import { hasPatternLayout, placeByPattern } from "@/domain/deploy";
 import type { ResolvedEntry, ShipBuilder } from "@/domain/deploy";
@@ -292,10 +292,10 @@ function buildCombatShip(
   const modules = resolveModules(grownDesign, catalog);
   const hardwires = resolveHardwires(grownDesign, modules);
   const outline = computeOutline(extractShell(grownDesign.grid));
-  // Formation identity, threaded from the leaf's formation context. Stamped
-  // via conditional spread so a direct-constructed CombatShip (a test fixture)
-  // without them keeps an unchanged cache key; resolve-built ships always
-  // carry them.
+  // Bevelled render outline (designer's 45° hull); descriptor prefers it. Render-only.
+  const renderOutline = computeHullOutline(grownDesign.grid);
+  // Formation identity from the leaf, spread conditionally so a direct-built
+  // CombatShip (test fixture) without them keeps an unchanged cache key.
   const { formationId, formationChain, role } = leaf;
   return {
     // Stable across independent resolutions of the same fleet: side + index
@@ -314,6 +314,7 @@ function buildCombatShip(
     ...(modules.length > 0 ? { modules } : {}),
     ...(hardwires.length > 0 ? { hardwires } : {}),
     ...(outline.length > 0 ? { outline } : {}),
+    ...(renderOutline.length > 0 ? { renderOutline } : {}),
     ...(formationId !== undefined ? { formationId, formationChain, ...(role !== undefined ? { role } : {}) } : {}),
   };
 }

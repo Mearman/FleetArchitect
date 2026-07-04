@@ -21,18 +21,11 @@ import type { RenderCell } from "@/ui/cellLayout";
 import { DOOR_COLOUR, MODULE_COLOUR, WALL_COLOUR, WALL_STROKE_PX } from "./battleConstants";
 import { glyphPath2D } from "@/ui/render/moduleGlyphs";
 import { appearanceOf } from "@/ui/render/moduleAppearance";
-import { chamferOutline } from "@/ui/render/outlineChamfer";
 
 /** Pixels per grid cell in the rasterised sprite. Chosen well above the largest
  *  on-screen cell size so a zoomed-in capital ship's baked cells never look soft
  *  when blitted; the blit downscales for normal zoom. */
 const SPRITE_CELL_PX = 16;
-
-/** Render-only bevel applied to the outline clip so armour corners chamfer to a
- *  45° diagonal instead of reading as sharp lattice squares. ~0.45 of a cell:
- *  pronounced enough to read, small enough not to eat a whole corner cell. The
- *  same fraction is used by the iso outline clip (`isoShipCells`). */
-const OUTLINE_BEVEL_CELLS = 0.45;
 
 /** Sprite-space pixels per world unit: the sprite draws `CELL_SIZE` world units
  *  as `SPRITE_CELL_PX` pixels. The per-frame blit divides the live display scale
@@ -166,19 +159,15 @@ export function rasteriseShipSprite(
   if (surface === undefined) return undefined;
   const { ctx } = surface;
 
-  // Clip the baked cells to the bevelled outline so armour corners chamfer to
-  // a 45° diagonal instead of reading as sharp lattice squares. The bevel is
-  // applied in ship-local metres (where the outline is octilinear, so the
-  // perpendicular-corner test is exact) and the chamfered vertices are then
-  // mapped into sprite pixels with the SAME originX/originY and
-  // SPRITE_PX_PER_WORLD as the cells. evenodd correctly handles multiple loops
-  // and holes. Render-only: the outline DATA and the lossless digest are
-  // untouched.
+  // Clip the baked cells to the hull outline so armour corners carry the
+  // bevelled 45-degree facets. The outline DATA arriving here is already the
+  // bevelled render outline (computeHullOutline via the descriptor), so we clip
+  // directly — no further chamfer. Vertices are mapped into sprite pixels with
+  // the SAME originX/originY and SPRITE_PX_PER_WORLD as the cells. evenodd
+  // correctly handles multiple loops and holes. Render-only.
   if (outline !== undefined && outline.length > 0) {
-    const bevelMetres = OUTLINE_BEVEL_CELLS * CELL_SIZE;
-    const chamfered = chamferOutline(outline, bevelMetres);
     const path = new Path2D();
-    for (const loop of chamfered) {
+    for (const loop of outline) {
       if (loop.length === 0) continue;
       const first = loop[0];
       if (first === undefined) continue;

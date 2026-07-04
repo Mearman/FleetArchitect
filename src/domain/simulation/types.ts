@@ -40,6 +40,14 @@ export interface CombatShip {
    *  Render-only; the engine snapshots it. */
   outline?: { x: number; y: number }[][];
   /**
+   * Bevelled render outline (the 45-degree-faceted hull the ship designer
+   * renders), computed at resolve from the grown design grid via
+   * `computeHullOutline`. The snapshot descriptor prefers this over
+   * `outline` so the battle silhouette matches the designer render; collision
+   * stays on the tight octilinear `outline`. Render-only.
+   */
+  renderOutline?: { x: number; y: number }[][];
+  /**
    * Per-module instances with their initial hit points and the module effect,
    * built from the ShipDesign by the resolver. When present, the engine
    * runs the per-module damage / fire / regen model: each module can be

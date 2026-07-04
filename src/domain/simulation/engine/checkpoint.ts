@@ -115,6 +115,7 @@ function snapshotShip(s: SimShip): CheckpointShip {
     sensorSaturation: s.sensorSaturation,
   };
   if (s.outline !== undefined) ship.outline = s.outline;
+  if (s.renderOutline !== undefined) ship.renderOutline = s.renderOutline;
   if (s.target !== undefined) ship.target = s.target;
   if (s.claimedBy !== undefined) ship.claimedBy = s.claimedBy;
   if (s.modules !== undefined) ship.modules = s.modules.map(snapshotModule);
@@ -434,6 +435,7 @@ function restoreShip(s: CheckpointShip): SimShip {
     sensorSaturation: s.sensorSaturation,
   };
   if (s.outline !== undefined) ship.outline = s.outline;
+  if (s.renderOutline !== undefined) ship.renderOutline = s.renderOutline;
   if (s.claimedBy !== undefined) ship.claimedBy = s.claimedBy;
   if (s.modules !== undefined) ship.modules = s.modules.map(restoreModule);
   if (s.crew !== undefined) ship.crew = s.crew;

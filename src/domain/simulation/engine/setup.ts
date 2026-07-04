@@ -334,6 +334,7 @@ export function toSimShip(ship: CombatShip, rng: Rng): SimShip {
     // per-class lookup, so the collision bound tracks the actual footprint.
     base.radius = gridRadius(base.modules);
     base.outline = ship.outline;
+    if (ship.renderOutline !== undefined) base.renderOutline = ship.renderOutline;
     // Shield starts full at the (recomputed) capacity; structure is the
     // hull's base integrity, independent of module HP.
     base.shield = base.maxShield;

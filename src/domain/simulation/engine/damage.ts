@@ -6,7 +6,7 @@
 
 import type { SimCrew } from "../types";
 
-import { computeChunkOutline } from "./chunk-outline";
+import { computeChunkOutline, computeChunkRenderOutline } from "./chunk-outline";
 import { analyseBreakApartFast } from "./damage-break-apart-fast";
 import { defaultAiDecisions } from "./ai-step";
 import { aliveDirectionalShields } from "./directional-shield-cache";
@@ -709,10 +709,16 @@ export function makeChunkShip(
   chunk.maxShield = 0;
   chunk.deflector = 0;
   chunk.maxDeflector = 0;
-  // Compute the chamfered hull outline from the chunk's armour cells.
-  // Grid dimensions come from the parent's full module set so the resulting
-  // vertices share the same ship-local coordinate frame as module.x/y.
+  // Compute the chunk's outlines. The collision outline (octilinear shrink-wrap
+  // of the chunk's whole footprint) stays on `computeOutline`; the bevelled
+  // render outline (the 45-degree-faceted hull the designer renders) is
+  // `computeChunkRenderOutline`, which the snapshot descriptor prefers so a
+  // split-off chunk does not snap to an octilinear silhouette. Grid dimensions
+  // come from the parent's full module set so the resulting vertices share the
+  // same ship-local coordinate frame as module.x/y.
   const chunkOutline = computeChunkOutline(parent.modules ?? [], modules);
   if (chunkOutline.length > 0) chunk.outline = chunkOutline;
+  const chunkRenderOutline = computeChunkRenderOutline(parent.modules ?? [], modules);
+  if (chunkRenderOutline.length > 0) chunk.renderOutline = chunkRenderOutline;
   return chunk;
 }
