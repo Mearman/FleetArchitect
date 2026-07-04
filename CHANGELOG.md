@@ -1,3 +1,10 @@
+# [1.41.0](https://github.com/Mearman/FleetArchitect/compare/v1.40.1...v1.41.0) (2026-07-04)
+
+
+### Features
+
+* **ui:** render internal walls and doors in the battle view ([705978c](https://github.com/Mearman/FleetArchitect/commit/705978c00cf76c865ff96ece1bafdae3c3523bd6)), closes [#3a3f3c](https://github.com/Mearman/FleetArchitect/issues/3a3f3c) [#ffb000](https://github.com/Mearman/FleetArchitect/issues/ffb000)
+
 ## [1.40.1](https://github.com/Mearman/FleetArchitect/compare/v1.40.0...v1.40.1) (2026-07-04)
 
 
