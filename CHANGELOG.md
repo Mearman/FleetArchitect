@@ -1,3 +1,10 @@
+## [1.40.1](https://github.com/Mearman/FleetArchitect/compare/v1.40.0...v1.40.1) (2026-07-04)
+
+
+### Bug Fixes
+
+* **render:** render armour cells as armour, not hull ([2c4fefd](https://github.com/Mearman/FleetArchitect/commit/2c4fefda59475cb1d1ce8580b93db4c03c37d250)), closes [#6f7a86](https://github.com/Mearman/FleetArchitect/issues/6f7a86)
+
 # [1.40.0](https://github.com/Mearman/FleetArchitect/compare/v1.39.4...v1.40.0) (2026-07-04)
 
 
