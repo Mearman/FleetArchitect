@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { EntityId, IsoTimestamp } from "./primitives";
 import { WeaponType } from "./module";
-import { SurfaceKind } from "./grid";
+import { EdgeKind, SurfaceKind } from "./grid";
 import { EngineCheckpoint } from "./checkpoint";
 
 /** A side in a battle. `draw` is only a battle outcome, never a ship's side. */
@@ -267,6 +267,7 @@ export const ShipCellLayout = z.object({
    *  live `turretAngle` in the cell's dynamic state. Omitted on fixed mounts and
    *  non-weapon cells. */
   hasTurret: z.boolean().optional(),
+  edges: z.object({ n: EdgeKind, e: EdgeKind, s: EdgeKind, w: EdgeKind }).optional(), // static wall/door/open per edge for bulkhead rendering
 });
 export type ShipCellLayout = z.infer<typeof ShipCellLayout>;
 

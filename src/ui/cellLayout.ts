@@ -32,6 +32,10 @@ export interface RenderCell {
   surface: ShipCellLayout["surface"];
   maxSurfaceHp: number | undefined;
   hasTurret: boolean;
+  /** Static per-edge kinds (wall/door/open) for bulkhead rendering. Undefined
+   *  on descriptors recorded before edges were threaded through. Optional so
+   *  existing RenderCell consumers need not supply it until they render edges. */
+  edges?: { n: string; e: string; s: string; w: string };
   // Dynamic state for this frame.
   hp: number;
   alive: boolean;
@@ -96,6 +100,8 @@ export function renderCellsInto(
     const surface = l.surface;
     const maxSurfaceHp = l.maxSurfaceHp;
     const hasTurret = l.hasTurret === true;
+    // Static edge kinds: undefined on legacy descriptors that predate the field.
+    const edges = l.edges;
     const hp = cells.cellHp[i] ?? 0;
     const alive = (cells.cellAlive[i] ?? 0) !== 0;
     const surfaceHp = cells.cellSurfaceHp[i];
@@ -115,6 +121,7 @@ export function renderCellsInto(
         surface,
         maxSurfaceHp,
         hasTurret,
+        edges,
         hp,
         alive,
         surfaceHp,
@@ -132,6 +139,7 @@ export function renderCellsInto(
       existing.surface = surface;
       existing.maxSurfaceHp = maxSurfaceHp;
       existing.hasTurret = hasTurret;
+      existing.edges = edges;
       existing.hp = hp;
       existing.alive = alive;
       existing.surfaceHp = surfaceHp;

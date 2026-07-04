@@ -45,6 +45,29 @@ export const MODULE_COLOUR: Record<string, string> = Object.fromEntries(
 );
 
 /**
+ * Static cell-edge rendering. A cell's `edges` (n/e/s/w as wall/door/open) come
+ * from the ship descriptor; the renderer strokes wall and door edges in these
+ * colours so bulkheads and doorways are visible at a glance.
+ */
+export const WALL_COLOUR = "#3a3f3c";
+export const DOOR_COLOUR = "#ffb000";
+
+/**
+ * Wall stroke width for the 2D sprite renderer, in sprite pixels. Doors share
+ * the same width — only their colour differs.
+ */
+export const WALL_STROKE_PX = 2;
+
+/**
+ * Wall stroke width for the isometric renderer, as a FRACTION of CELL_SIZE. The
+ * concrete pixel width is `ISO_WALL_STROKE_FRACTION * CELL_SIZE * scale`, i.e.
+ * the same form as the existing top-face edge stroke
+ * (`0.06 * CELL_SIZE * scale`), so a wall reads at comparable thickness to the
+ * cell's top-face outline at every zoom level.
+ */
+export const ISO_WALL_STROKE_FRACTION = 0.06;
+
+/**
  * Per-faction hull/accent palette (factions update). The hull base tints a
  * faction's structural cells; the accent marks it at a glance. Side allegiance
  * (attacker/defender) is shown separately via an outline ring so a mirror match

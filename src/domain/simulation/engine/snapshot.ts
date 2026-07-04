@@ -602,6 +602,10 @@ export function shipDescriptor(s: SimShip): ShipDescriptor {
       // Turret presence mirrors the per-frame `turretAngle` emission: the
       // renderer draws a tracking barrel only on cells flagged here.
       ...(m.turretTurnRate > 0 ? { hasTurret: true } : {}),
+      // Static edge kinds (wall/door/open) for bulkhead/doorway rendering. The
+      // dynamic doorStates are dropped — those live per-tick in the cell state
+      // arrays. Always present: SimModule.edges is required on the live sim.
+      edges: { n: m.edges.n, e: m.edges.e, s: m.edges.s, w: m.edges.w },
     })),
   };
 }

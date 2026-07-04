@@ -18,7 +18,7 @@
  */
 import { CELL_SIZE } from "@/domain/grid";
 import type { RenderCell } from "@/ui/cellLayout";
-import { MODULE_COLOUR } from "./battleConstants";
+import { DOOR_COLOUR, MODULE_COLOUR, WALL_COLOUR, WALL_STROKE_PX } from "./battleConstants";
 import { glyphPath2D } from "@/ui/render/moduleGlyphs";
 import { appearanceOf } from "@/ui/render/moduleAppearance";
 
@@ -31,6 +31,22 @@ const SPRITE_CELL_PX = 16;
  *  as `SPRITE_CELL_PX` pixels. The per-frame blit divides the live display scale
  *  by this to map sprite pixels to display pixels. */
 export const SPRITE_PX_PER_WORLD = SPRITE_CELL_PX / CELL_SIZE;
+
+/** The four cell sides, in fixed n/e/s/w order. */
+type EdgeDir = "n" | "e" | "s" | "w";
+
+/**
+ * Each cell side as a pair of endpoints relative to the cell's top-left corner
+ * (dx1, dy1) → (dx2, dy2), in sprite pixels. Hoisted out of the per-cell bake
+ * loop so rasterising a thousand-cell hull does not allocate it per cell. The
+ * fixed n/e/s/w order also makes the {@link spriteKey} edge token stable.
+ */
+const CELL_SIDES: ReadonlyArray<readonly [EdgeDir, number, number, number, number]> = [
+  ["n", 0, 0, SPRITE_CELL_PX, 0],
+  ["e", SPRITE_CELL_PX, 0, SPRITE_CELL_PX, SPRITE_CELL_PX],
+  ["s", 0, SPRITE_CELL_PX, SPRITE_CELL_PX, SPRITE_CELL_PX],
+  ["w", 0, 0, 0, SPRITE_CELL_PX],
+];
 
 /**
  * A rasterised static cell layer for one ship. `canvas` holds the baked alive
@@ -65,19 +81,37 @@ function createSurface(width: number, height: number): Surface | undefined {
 }
 
 /**
- * A stable cache token for a ship's static sprite: the set of alive slot ids and
- * the base colour. The slot ids are sorted so the token is independent of cell
- * array order, and a single cell death (which removes a slot) always moves it.
- * Joining ids with a separator that cannot appear in a slot id keeps the token
- * unambiguous.
+ * A stable cache token for a ship's static sprite: the set of alive slot ids,
+ * the base colour, and the static per-slot edge topology. Slot ids and edge
+ * tokens are sorted so the token is independent of cell array order, and a
+ * single cell death (which removes a slot) always moves it. Joining ids and
+ * tokens with separators that cannot appear in a slot id keeps the token
+ * unambiguous. The edge token is the non-open kinds per alive slot (n/e/s/w in
+ * fixed order); designs that share an alive-slot set but differ in bulkhead
+ * topology therefore get distinct sprites.
  */
 export function spriteKey(cells: readonly RenderCell[], base: string): string {
   const alive: string[] = [];
+  // Static edge fingerprint: the non-open edge kinds per alive slot, so two
+  // designs with the same alive-slot set but different bulkhead topology do not
+  // share a cached sprite. Edges are static per ship, so this token is stable.
+  const edgeTokens: string[] = [];
   for (const c of cells) {
-    if (c.alive) alive.push(c.slotId);
+    if (!c.alive) continue;
+    alive.push(c.slotId);
+    const edges = c.edges;
+    if (edges === undefined) continue;
+    const parts: string[] = [];
+    // Fixed n/e/s/w order keeps the per-slot token stable and unambiguous.
+    if (edges.n !== "open") parts.push(`n=${edges.n}`);
+    if (edges.e !== "open") parts.push(`e=${edges.e}`);
+    if (edges.s !== "open") parts.push(`s=${edges.s}`);
+    if (edges.w !== "open") parts.push(`w=${edges.w}`);
+    if (parts.length > 0) edgeTokens.push(`${c.slotId}[${parts.join(",")}]`);
   }
   alive.sort();
-  return `${base}|${alive.join(",")}`;
+  edgeTokens.sort();
+  return `${base}|${alive.join(",")}|${edgeTokens.join(";")}`;
 }
 
 /**
@@ -147,6 +181,12 @@ export function rasteriseShipSprite(
     ctx.clip(path, "evenodd");
   }
 
+  // Accumulate static wall/door edges across all alive cells, then stroke once
+  // per colour after the loop — bulkheads and doorways read at a glance without
+  // a per-edge stroke or context state change.
+  const wallPath = new Path2D();
+  const doorPath = new Path2D();
+
   for (const c of cells) {
     if (!c.alive) continue;
     const colour = MODULE_COLOUR[c.kind];
@@ -163,6 +203,18 @@ export function rasteriseShipSprite(
     ctx.globalAlpha = 0.22;
     ctx.fillStyle = base;
     ctx.fillRect(left, top, SPRITE_CELL_PX, SPRITE_CELL_PX);
+    // Static bulkhead/doorway edges: undefined on legacy descriptors → draw none.
+    const edges = c.edges;
+    if (edges !== undefined) {
+      for (const [dir, dx1, dy1, dx2, dy2] of CELL_SIDES) {
+        const kind = edges[dir];
+        if (kind === "wall" || kind === "door") {
+          const path = kind === "wall" ? wallPath : doorPath;
+          path.moveTo(left + dx1, top + dy1);
+          path.lineTo(left + dx2, top + dy2);
+        }
+      }
+    }
     // Glyph: bake the module's mark (a static function of kind) so the blit
     // carries it — no per-frame save/translate/scale/stroke per cell.
     ctx.save();
@@ -177,6 +229,16 @@ export function rasteriseShipSprite(
     ctx.restore();
   }
   ctx.globalAlpha = 1;
+  // Stroke accumulated wall/door edges. Square caps fill the outer corner where
+  // perpendicular bulkheads meet and close any sub-pixel gap at collinear
+  // junctions between adjacent cells' walls.
+  ctx.lineWidth = WALL_STROKE_PX;
+  ctx.lineCap = "square";
+  ctx.lineJoin = "miter";
+  ctx.strokeStyle = WALL_COLOUR;
+  ctx.stroke(wallPath);
+  ctx.strokeStyle = DOOR_COLOUR;
+  ctx.stroke(doorPath);
 
   return { canvas: surface.canvas, originX, originY, key, aliveSlots };
 }

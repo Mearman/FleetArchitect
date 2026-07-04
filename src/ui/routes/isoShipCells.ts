@@ -19,6 +19,11 @@ import type { RenderCell } from "@/ui/cellLayout";
 import { appearanceOf } from "@/ui/render/moduleAppearance";
 import { glyphPath2D } from "@/ui/render/moduleGlyphs";
 import type { Transform } from "./battleCamera";
+import {
+  DOOR_COLOUR,
+  ISO_WALL_STROKE_FRACTION,
+  WALL_COLOUR,
+} from "./battleConstants";
 
 export interface Pt {
   x: number;
@@ -33,6 +38,19 @@ const LOCAL_CORNERS: ReadonlyArray<readonly [number, number]> = [
   [HALF, HALF],
   [-HALF, HALF],
 ];
+
+/**
+ * Each compass edge maps to the index of its top-face corner: the edge spans
+ * `top[index] -> top[(index + 1) % 4]`, matching the counter-clockwise corner
+ * order. Used to stroke the static wall/door edges along the projected top face.
+ */
+const EDGE_DIRS: ReadonlyArray<"n" | "e" | "s" | "w"> = ["n", "e", "s", "w"];
+const EDGE_TO_CORNER: Readonly<Record<"n" | "e" | "s" | "w", number>> = {
+  n: 0,
+  e: 1,
+  s: 2,
+  w: 3,
+};
 
 /** The screen geometry of one extruded cell: the projected ground quad, the
  *  raised top quad, the projected centre, and the screen-space rise `zS`. */
@@ -206,6 +224,28 @@ export function drawIsoShipCells(
     ctx.strokeStyle = shade(topColour, 0.4);
     ctx.lineWidth = Math.max(0.5, 0.06 * CELL_SIZE * scale);
     ctx.stroke();
+
+    // Static cell edges: walls and doors stroked along their projected top-face
+    // edges so bulkheads and doorways read at a glance. n/e/s/w map to the
+    // corner pairs 0->1, 1->2, 2->3, 3->0. Old descriptors carry no `edges`,
+    // so there is nothing to draw.
+    const edges = m.edges;
+    if (edges !== undefined) {
+      ctx.lineWidth = Math.max(0.5, ISO_WALL_STROKE_FRACTION * CELL_SIZE * scale);
+      for (const dir of EDGE_DIRS) {
+        const kind = edges[dir];
+        if (kind !== "wall" && kind !== "door") continue;
+        const i = EDGE_TO_CORNER[dir];
+        const a = top[i];
+        const b = top[(i + 1) % 4];
+        if (a === undefined || b === undefined) continue;
+        ctx.strokeStyle = kind === "door" ? DOOR_COLOUR : WALL_COLOUR;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+    }
 
     // Cell too small to carry a legible glyph — skip the engraving.
     const cellPx = CELL_SIZE * scale;
