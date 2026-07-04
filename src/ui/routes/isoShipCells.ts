@@ -161,6 +161,21 @@ export function drawIsoShipCells(
   out.length = n;
   out.sort((a, b) => a.depth - b.depth);
 
+  // NOTE: the flat 2-D sprite (`shipSprite`) chamfers its outline clip so armour
+  // corners read as a 45° bevel. The isometric path deliberately does NOT apply
+  // that chamfer: the extrusion lifts each cell's top face above the ground
+  // footprint by its own `zS`, so a single ground-footprint clip would crop the
+  // raised tops of tall back-edge modules (sensors, comms, turrets) and read as
+  // truncated masts. A correct fix would need the prism silhouette of the hull
+  // (front edges at the ground, back edges lifted by the per-cell extrusion,
+  // joined at the silhouette points); the simpler "union of the ground and
+  // max-lifted outlines" does not work, because the lifted copy's straight
+  // edges pass over the ground's chamfered corners and fill them back in. That
+  // geometry is disproportionate for a render nicety that — under the iso shear
+  // — would not read as a clean 45° diagonal anyway, so the bevel is carried by
+  // the flat view alone and the iso extrusion keeps its clean, unclipped shape.
+  // Render-only: the outline DATA is untouched.
+
   for (const { m } of out) {
     const app = appearanceOf(m.kind);
     const { ground, top, centre, zS } = isoCellBox(
