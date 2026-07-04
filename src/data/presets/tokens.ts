@@ -168,6 +168,8 @@ const SWARM_TOKENS: Record<string, GridCell> = {
   "r": deckEquip("swm-regen-membrane", 0),
   // `c` formerly the carapace-plating armour module; now an armor cell.
   "c": armorCell(),
+  // `w` living momentum screen (carapace screen) — the Swarm's deflector.
+  "w": deckEquip("swm-carapace-screen", 0),
   "j": deckEquip("swm-flagellum-drive", Math.PI),
   "u": deckEquip("swm-pulse-jet", Math.PI),
   "f": deckEquip("swm-flagellum-drive", 0),
@@ -225,8 +227,9 @@ export function swarmGrid(rows: readonly string[]): TileGrid {
 }
 
 /** Single-character tokens for the ASCII grid authoring map — Crystalline parts.
- *  Drive orientation: `E` AFT (π), `e` FORWARD (0, braking), `>` UP (−π/2),
- *  `<` DOWN (π/2). */
+ *  Weapons: `Y` Resonance Cannon (lobbed shard kinetic, unlimited ammo), `O`
+ *  Resonance Overcharger (power surge). Drive orientation: `E` AFT (π), `e`
+ *  FORWARD (0, braking), `>` UP (−π/2), `<` DOWN (π/2). */
 const CRYSTAL_TOKENS: Record<string, GridCell> = {
   ".": { kind: "empty" },
   "#": armorCell(),
@@ -237,10 +240,12 @@ const CRYSTAL_TOKENS: Record<string, GridCell> = {
   "L": deckEquip("cry-prism-beam", 0),
   "H": deckEquip("cry-phase-lance", 0),
   "Z": deckEquip("cry-spinal-lance", 0), // Spinal Resonance Lance (1 GW capital spinal beam)
+  "Y": deckEquip("cry-resonance-cannon", 0), // Resonance Cannon (lobbed shard kinetic, unlimited ammo)
   "S": deckEquip("cry-adaptive-shield-mk1", 0),
   "D": deckEquip("cry-adaptive-shield-mk2", 0), // Adaptive Bulwark Mk II (600 MJ capital shield)
   "R": deckEquip("cry-resonance-bulwark-mk1", 0),
   "Q": deckEquip("cry-resonance-bulwark-mk2", 0),
+  "O": deckEquip("cry-overcharger", 0), // Resonance Overcharger (brief power-ceiling surge)
   "E": deckEquip("cry-thruster", Math.PI),
   "e": deckEquip("cry-thruster", 0),
   ">": deckEquip("cry-thruster", -Math.PI / 2),
@@ -268,6 +273,13 @@ const FOUNDRY_TOKENS: Record<string, GridCell> = {
   // Foundry armor layer material (see src/data/catalog/layer-materials.ts).
   "D": armorCell(),
   "R": armorCell(),
+  // Capital weapons and defence — the Foundry's heavy battery, unlocked by the
+  // roster review so the capitals field their signature modules.
+  "H": deckEquip("fnd-heavy-cannon", 0),     // gauss, the capital kinetic
+  "Q": deckEquip("fnd-siege-plasma", 0),     // capital plasma mortar (alpha strike)
+  "Y": deckEquip("fnd-torpedo-tube", 0),     // armour-cracking torpedo
+  "L": deckEquip("fnd-flak-battery", 0),     // point defence
+  "U": deckEquip("fnd-bulwark-deflector", 0), // heavy momentum screen
   "W": deckEquip("fnd-repair-bay", 0),
   "E": deckEquip("fnd-thruster", Math.PI),
   "P": deckEquip("fnd-grav-drive", Math.PI),
@@ -297,6 +309,14 @@ const CORSAIR_TOKENS: Record<string, GridCell> = {
   "B": deckEquip("cor-blink-drive", 0),
   "J": deckEquip("cor-scrambler", 0),
   "O": deckEquip("cor-boarding-pod", 0),
+  // Cannon, drive, and ECM kit — the Reavers' raid tools, unlocked by the
+  // roster review so the cruiser and boarding designs field their signature
+  // modules.
+  "R": deckEquip("cor-raid-cannon", 0),      // light autocannon, sustained fire
+  "A": deckEquip("cor-afterburner", 0),       // burst thrust/turn
+  "S": deckEquip("cor-raider-shield", 0),     // light shield
+  "D": deckEquip("cor-raider-deflector", 0),  // light momentum screen
+  "L": deckEquip("cor-decoy-launcher", 0),    // holo decoys
 };
 
 /** Single-character tokens for the ASCII grid authoring map — Synthetic parts.

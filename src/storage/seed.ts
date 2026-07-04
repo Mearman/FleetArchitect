@@ -93,8 +93,15 @@ import {
  * leviathan, titan, carrion, hive-lord) gain a modest prow/flank armour cap so
  * every ship carries some outer armour and `growArmourHull` has a seed to skin.
  * `F_DRONE` drops 4 → 3 so the Drone's added armour keeps it a 20 m fighter.
+ *
+ * Version 19: roster review (see DESIGN-BLUEPRINT.md). Terran sharpening: the
+ * Bulwark gains a centre-line deflector Mk I so the mobile shield brawler sheds
+ * kinetics; the Aegis Monitor becomes the pure armour anchor (Mk I shields
+ * dropped, a railgun bank swapped for a deflector Mk I, prow cap thickened); the
+ * Torpedo Boat is renamed "Bombard" (id `preset-ship-torpedo` unchanged). Sibling
+ * factions gain new designs and re-arms landed by the other faction implementers.
  */
-const PRESETS_VERSION = 18;
+const PRESETS_VERSION = 19;
 const VERSION_KEY = "presetsVersion";
 
 /**

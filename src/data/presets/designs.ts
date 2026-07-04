@@ -10,12 +10,12 @@ type ShipDesignInput = input<typeof ShipDesign>;
 import {
   corsairGrid,
   crystalGrid,
-  foundryGrid,
   gridFromMap,
   PRESET_TIME,
   swarmGrid,
   syntheticGrid,
 } from "@/data/presets/tokens";
+import { foundryDesigns } from "@/data/presets/designs-foundry";
 import { subdivideGrid } from "@/domain/shipgen";
 
 // Subdivision factors (f): expand each coarse cell into an f × f block of 1 m
@@ -31,27 +31,29 @@ const F_AEGIS    = 3;   // 9 m × 3 → 27 m (frigate)
 const F_TORPEDO  = 3;   // 9 m × 3 → 27 m (frigate)
 const F_LEVIATHAN = 7;  // 13 m × 7 → 91 m (cruiser)
 const F_TITAN    = 12;  // 13 m × 12 → 156 m (dreadnought)
-const F_DRONE    = 3;   // 5 m × 3 → 15 m (fighter; F reduced from 4 so the
-                        // added stern armour + grown skin keeps the longest
-                        // axis ≤ 20 m)
+const F_DRONE    = 3;   // 6 m × 3 → 18 m (fighter; armour sits on the left edge
+                        // only so chamfer growth leaves the longest axis ≤ 20 m)
 const F_CARRION  = 2;   // 7 m × 2 → 14 m (fighter)
 const F_RAVAGER  = 3;   // 9 m × 3 → 27 m (frigate)
 const F_SPITTER  = 3;   // 10 m × 3 → 30 m (frigate)
 const F_HIVE_LORD = 5;  // 13 m × 5 → 65 m (cruiser)
+const F_DEVOURER = 12;  // 14 m × 12 → 168 m (dreadnought)
 const F_SHARD    = 4;   // 11 m × 4 → 44 m (frigate)
 const F_SPLINTER = 2;   // 8 m × 2 → 16 m (fighter)
+const F_OBELISK  = 7;   // 11 m × 7 → 77 m (cruiser)
 const F_MONOLITH = 12;  // 13 m × 12 → 156 m (dreadnought)
-const F_INGOT    = 4;   // 5 m × 4 → 20 m (fighter)
-const F_ANVIL    = 3;   // 7 m × 3 → 21 m (frigate)
-const F_BATTLERAM = 6;  // 11 m × 6 → 66 m (cruiser)
-const F_SIEGE_TITAN = 12; // 13 m × 12 → 156 m (dreadnought)
+// Foundry designs live in designs-foundry.ts (kept the roster file under the
+// max-lines guard); their subdivision factors are declared there.
 const F_CUTLASS  = 4;   // 5 m × 4 → 20 m (fighter)
 const F_REAVER   = 3;   // 7 m × 3 → 21 m (frigate)
-const F_WARBRINGER = 7; // 9 m × 7 → 63 m (cruiser)
+const F_WARBRINGER = 7; // 10 m × 7 → 70 m (cruiser)
+const F_MARAUDER = 3;   // 9 m × 3 → 27 m (frigate)
+const F_GALLEON  = 12;  // 13 m × 12 → 156 m (dreadnought)
 const F_AUTOMATON = 3;  // 6 m × 3 → 18 m (fighter)
 const F_NODE     = 3;   // 7 m × 3 → 21 m (frigate)
 const F_NETWORK_HUB = 6; // 11 m × 6 → 66 m (cruiser)
 const F_NEXUS_PRIME = 12; // 13 m × 12 → 156 m (dreadnought)
+const F_MAINFRAME = 7;  // 11 m × 7 → 77 m (cruiser)
 
 // Authoring note on orientation: ships face +x (to the right). A cell's world
 // x grows with its column, so the RIGHTMOST columns are the prow (forward) and
@@ -145,13 +147,16 @@ export const designData: ShipDesignInput[] = [
     id: "preset-ship-bulwark",
     name: "Bulwark Escort",
     faction: "Terran",
-    // Frigate: a shield brawler using only pulse lasers. No finite-ammo weapons
-    // means no magazine required. A broad Mk II shield wall fronts a laser bank;
-    // triple fusion reactors and a deep crew and engine block run it.
+    // Frigate: the mobile shield brawler. Pulse-laser pressure behind a broad
+    // Mk II shield wall, advancing with the line. A centre-line deflector Mk I
+    // (Y) sheds kinetic rounds — this is what separates it from the Aegis (pure
+    // armour anchor) and lets it screen a Leviathan against railgun spam. No
+    // finite-ammo weapons means no magazine required; fusion reactors and a deep
+    // crew and engine block run it.
     grid: subdivideGrid(gridFromMap([
       "#>JWS~L#",
       ".EFCYS~L",
-      "EEFFCSvL",
+      "EEFFCYvL",
       ".EFCSS~L",
       "#<JeWS~#",
     ]), F_BULWARK),
@@ -164,17 +169,19 @@ export const designData: ShipDesignInput[] = [
     id: "preset-ship-aegis",
     name: "Aegis Monitor",
     faction: "Terran",
-    // Frigate: an armour brawler. A blunt prow of ablative plating (#) over a Mk
-    // I shield soaks punishment while railgun turrets answer. The magazine (G) in
-    // the central corridor feeds all railguns; slow but unyielding. The armoured
-    // prow column caps the front of the railgun battery so incoming fire strikes
-    // plate before it reaches the guns.
+    // Frigate: the pure armour anchor. No shields — it leans entirely on a blunt
+    // prow of ablative plating, thickened into a solid cap. Deflector Mk I
+    // screens stop the kinetics that would otherwise strip the plate, while
+    // railgun turrets answer over the top. The magazine (G) in the central
+    // corridor feeds all railguns; slow, unyielding, the thing you park in
+    // front of a Leviathan. This is the clean split with the Bulwark: Bulwark =
+    // shields + mobility, Aegis = plate + momentum screen.
     grid: subdivideGrid(gridFromMap([
-      "#>J~~YR#.",
-      ".EFCCGsR#",
-      "EXEFWGvR#",
-      ".EFCCGsR#",
-      "#<JeW~se#",
+      "#>J~~YR##",
+      ".EFCCG#R#",
+      "EXEFWGvY#",
+      ".EFCCG#R#",
+      "#<JeW~#e#",
     ]), F_AEGIS),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -183,7 +190,7 @@ export const designData: ShipDesignInput[] = [
   },
   {
     id: "preset-ship-torpedo",
-    name: "Vanguard Torpedo Boat",
+    name: "Bombard Torpedo Boat",
     faction: "Terran",
     // Frigate: stand-off artillery. Spinal plasma torpedoes and wingtip missile
     // turrets hit enormously hard. The munitions magazine (G) sits in the
@@ -276,17 +283,18 @@ export const designData: ShipDesignInput[] = [
     id: "preset-ship-drone",
     name: "Drone Skimmer",
     faction: "Swarm",
-    // Fighter: the basic Swarm unit. A spore launcher snout, a neural ganglion
-    // core, twin flagella — small, fast, expendable. No crew, no ammo.
-    // Phase B: an electro-receptor membrane (e) and a pheromone net (h) extend
-    // the Drone's awareness and connect it to the hive-net on channel 0. Both
-    // are passive (no metabolic cost or crew), tucked onto the aft wing tips.
-    // Merged: keeps the electro-receptor membrane (e) and pheromone net (h) for
-    // hive-net awareness, and adds pseudopod clusters (x) so the Drone can turn.
+    // Fighter: the expendable chaff brawler — the brick the Swarm throws in
+    // numbers. A spore launcher snout and a neural ganglion core over twin
+    // flagella, with a regen-membrane spine (r) running fore–aft through the
+    // hull so a Drone cloud knits back together and survives the approach.
+    // Tougher but slower than the Carrion flanker (no pulse jet). No crew, no
+    // ammo. An electro-receptor membrane (e) and a pheromone net (h) sit on the
+    // aft wing tips for hive-net awareness on channel 0; pseudopod clusters (x)
+    // let it turn.
     grid: subdivideGrid(swarmGrid([
-      "#>xpe",
-      "jgfpp",
-      "#<xph",
+      "#>xpre",
+      "jgfprp",
+      "#<xprh",
     ]), F_DRONE),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -297,14 +305,18 @@ export const designData: ShipDesignInput[] = [
     id: "preset-ship-carrion",
     name: "Carrion Wing",
     faction: "Swarm",
-    // Fighter: a fast acid flanker. Forward-swept acid claws strip armour at
-    // knife range; paired flagella and a pulse jet make it the quickest hunter.
+    // Fighter: the glass-cannon knife-range flanker — the blade that gets
+    // behind armour and strips it. Opposite of the Drone: faster and more
+    // fragile. Forward-swept acid claws dissolve plate at knife range; a pulse
+    // jet (u) over the flagella gives it the speed edge. The armour shoulders
+    // are gone — only a pair of carapace screens (w) at the prow offer token
+    // kinetic defence. The ganglion core and flagella bank fill out the hull.
     grid: subdivideGrid(swarmGrid([
-      "..>xa##",
-      "j=gfaa.",
+      "..>xaw.",
+      "j~gfaa.",
       "ug~gfaa",
-      "j=gfaa.",
-      "..<xa##",
+      "j~gfaa.",
+      "..<xaw.",
     ]), F_CARRION),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -380,6 +392,38 @@ export const designData: ShipDesignInput[] = [
     source: "preset",
     revision: 1,
   },
+  {
+    id: "preset-ship-devourer",
+    name: "Devourer",
+    faction: "Swarm",
+    // Dreadnought: the bio-capital — a vast spawning organism whose prow is a
+    // wall of neural stings and acid sprayers, ringed by spore clouds and
+    // carapace screens, with a metabolic heart and a biolaser-spine relay
+    // linking the brood. Five metabolic cores and a ganglion ring drive the
+    // mass; regen membranes knit the carapace; pseudopod and gyral organs let
+    // it come about. It is a force multiplier for the brood, not a solo killer
+    // — no spinal-lance-class alpha, just short-range sting and acid pressure
+    // behind a screen of spores and living momentum baffles. Neural stings have
+    // no ammoCapacity so no ammon sac is required; all Swarm modules are
+    // crewless. Implies hive doctrine (aggressive short-range).
+    //
+    // Layout (14 cols × 7 rows), subdivided ×12 → 168 m dreadnought:
+    // stern (left) → drive flagella → ganglion/metabolic spine →
+    // regen + spore-cloud screen → sting/acid battery → carapace-screened prow.
+    grid: subdivideGrid(swarmGrid([
+      "..#>x~nnnkwccc",
+      "..jgfzrsnnnnwh",
+      ".jgm~rfsannnwy",
+      "ugmmmrfsaannnw",
+      ".jgm~rfsannnwy",
+      "..jgfzrsnnnnwh",
+      "..#<x~nnnkwccc",
+    ]), F_DEVOURER),
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
+  },
 
   // ---------------------------------------------------------------------------
   // Crystalline Concord — phase skirmishers: adaptive shields, blink, cloak.
@@ -411,16 +455,18 @@ export const designData: ShipDesignInput[] = [
     id: "preset-ship-splinter",
     name: "Splinter",
     faction: "Crystalline",
-    // A fast phase fighter: a glass needle that closes under cloak, lands a
-    // prism beam strike, and blinks away before the point defences track it.
-    // A power crystal (F, command) and one resonator core (C, 5 berths for 4
-    // crew) feed a prism beam (L), a blink drive (B), a phase-cloak (K), and a
-    // resonance sensor (v). Balanced drives — an aft resonance thruster (E)
-    // and a forward brake (e). Brittle armour caps (##) give it its dart
-    // silhouette. Grid (8 cols × 3 rows), subdivided ×2 → 16 m fighter.
+    // The lean cloak-striker fighter — the disposable screen Crystalline
+    // otherwise lacks. A glass needle that closes under cloak, lands a prism
+    // beam strike, and folds clear; it trades the Shard's signature kit (blink
+    // drive, phase lance) for a bare-minimum raider. A power crystal (F,
+    // command) and one resonator core (C, 5 berths for 3 crew) feed a prism
+    // beam (L), a phase-cloak (K), and a resonance sensor (v). Balanced drives
+    // — an aft resonance thruster (E) and a forward brake (e). Brittle armour
+    // caps (##) give it its dart silhouette. Grid (8 cols × 3 rows),
+    // subdivided ×2 → 16 m fighter.
     grid: subdivideGrid(crystalGrid([
       "##....##",
-      "EeFCvKBL",
+      "EeFCvK~L",
       "##....##",
     ]), F_SPLINTER),
     createdAt: PRESET_TIME,
@@ -455,103 +501,48 @@ export const designData: ShipDesignInput[] = [
     source: "preset",
     revision: 1,
   },
+  {
+    id: "preset-ship-obelisk",
+    name: "Obelisk",
+    faction: "Crystalline",
+    // Cruiser: a standing-stone capital — the rung the Concord lacked between
+    // the Shard frigate and the Monolith dreadnought. A beam-and-shard hybrid
+    // that throws phase lances and lobbed resonance shards from behind a wall
+    // of adaptive shielding, then overcharges its arrays and blinks to a new
+    // bearing. A quantum lattice (X, command, 5 GW) drives two phase lances
+    // (H×2) and a fixed-forward spinal resonance lance (Z) as the main battery,
+    // two resonance cannons (Y×2) for lobbed shard fire — the previously
+    // unfielded cry-resonance-cannon — an adaptive shield Mk II (D×2) and Mk I
+    // (S) plus a resonance bulwark Mk II (Q) for defence, an overcharger (O)
+    // — the previously unfielded cry-overcharger — to surge the arrays through
+    // a brownout, a blink drive (B), a resonance sensor (v), and four
+    // resonator cores (C×4, 20 berths for 20 crew). Balanced drives — three
+    // aft resonance thrusters (E×3) and a forward brake (e). Crystal plate
+    // (#) caps the prow; the grown-crystal hull relies on its shields and
+    // mobility, not bulk. Implies phase doctrine (evasive, long-range, blink
+    // away from trouble). Grid (11 cols × 5 rows), subdivided ×7 → 77 m
+    // cruiser.
+    grid: subdivideGrid(crystalGrid([
+      "##~~~Y#####",
+      "E#CCSDH~~~Z",
+      "EeXOBv~~~~#",
+      "E#CCQD~H~~~",
+      "##~~~Y#####",
+    ]), F_OBELISK),
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
+  },
 
   // ---------------------------------------------------------------------------
   // Foundry Combine — slow, heavily-armoured fortress slabs. Thick reactive
-  // prows, autocannon broadsides, repair bays that weld damage shut. No
-  // shields — they take every hit on the plate and keep coming.
+  // prows, repair bays that weld damage shut, and now real capital weapons.
+  // Designs live in designs-foundry.ts (keeps this file under the max-lines
+  // guard) and are spread into the roster here.
   // ---------------------------------------------------------------------------
-  {
-    id: "preset-ship-ingot",
-    name: "Ingot",
-    faction: "Foundry",
-    // Fighter: the Foundry's heavy interceptor. A squat five-by-five block of
-    // reactive plating surrounds a compact autocannon battery and a pair of
-    // crew barracks. Heavier than any comparable fighter; slow but almost
-    // unkillable at close range. A single forge reactor and magazine feed the
-    // guns; industrial thrusters push the whole mass forward.
-    grid: subdivideGrid(foundryGrid([
-      "###>#",
-      "#CFA#",
-      "EFAGe",
-      "#CFA#",
-      "###<#",
-    ]), F_INGOT),
-    createdAt: PRESET_TIME,
-    updatedAt: PRESET_TIME,
-    source: "preset",
-    revision: 1,
-  },
-  {
-    id: "preset-ship-anvil",
-    name: "Anvil",
-    faction: "Foundry",
-    // Frigate: a five-row fortress slab with a deep reactive prow and an
-    // autocannon battery fronted by a damage-control bay. Two forge reactors
-    // feed the guns and welders; a shell magazine carries the ammunition;
-    // a corridor of deck space lets the crew reach every station. No shields —
-    // the Anvil absorbs fire until the enemy breaks.
-    grid: subdivideGrid(foundryGrid([
-      ".###>##",
-      "ECFW~A#",
-      "XFW~AGe",
-      "ECFW~A#",
-      ".###<##",
-    ]), F_ANVIL),
-    createdAt: PRESET_TIME,
-    updatedAt: PRESET_TIME,
-    source: "preset",
-    revision: 1,
-  },
-  {
-    id: "preset-ship-battleram",
-    name: "Battleram",
-    faction: "Foundry",
-    // Cruiser: a heavy siege platform. A thick reactive prow six cells deep
-    // presents an enormous surface for incoming fire while autocannon banks
-    // and mine layers work the flanks. Industrial cores and grav-drives push
-    // the mass; two barracks blocks and a crew of welders keep it in the
-    // fight long after lighter ships have folded. Slow and inexorable.
-    grid: subdivideGrid(foundryGrid([
-      "..###>####.",
-      ".#XCFW~AG##",
-      "#XCCW~AAG##",
-      "PXCCFW~MAGe",
-      "#XCCW~AAG##",
-      ".#XCFW~AG##",
-      "..###<####.",
-    ]), F_BATTLERAM),
-    createdAt: PRESET_TIME,
-    updatedAt: PRESET_TIME,
-    source: "preset",
-    revision: 1,
-  },
-  {
-    id: "preset-ship-siege-titan",
-    name: "Siege Titan",
-    faction: "Foundry",
-    // Dreadnought: the Foundry's ultimate weapon. A walking fortress nine
-    // rows wide, its prow a solid wall of reactive plating six cells thick.
-    // Multiple industrial cores and grav-drives drag the mass forward; banks
-    // of autocannons and mine layers cover every approach vector; a deep crew
-    // complement mans the welders and magazines. Enemies either destroy it
-    // before it closes range — or they do not.
-    grid: subdivideGrid(foundryGrid([
-      "...##>######.",
-      "..##XCFW~AG##",
-      ".##XCCW~AAG##",
-      "##XCCCFW~MAG#",
-      "PXCCCFW~MAGe.",
-      "##XCCCFW~MAG#",
-      ".##XCCW~AAG##",
-      "..##XCFW~AG##",
-      "...##<######.",
-    ]), F_SIEGE_TITAN),
-    createdAt: PRESET_TIME,
-    updatedAt: PRESET_TIME,
-    source: "preset",
-    revision: 1,
-  },
+  ...foundryDesigns,
+
 
   // ---------------------------------------------------------------------------
   // Corsair Reavers — asymmetric scavenger hulls. One heavy side, one light
@@ -607,15 +598,72 @@ export const designData: ShipDesignInput[] = [
     // Asymmetric by design: the upper section is all armour and missile
     // launchers, the lower section carries the drives and the blink core.
     // Raids in, empties the magazines, blinks out before the point defences
-    // find their rhythm.
+    // find their rhythm. A raid cannon (R) per broadside gives sustained fire
+    // once the missile magazines run dry, and a holo decoy launcher (L) on
+    // the lower stern covers its withdrawal.
     grid: subdivideGrid(corsairGrid([
-      ".##>#####",
-      "ECF~CM###",
-      "EFMGCWM##",
-      "#CFBGWM#.",
-      "##FM<G##.",
-      ".##e####.",
+      ".##>######",
+      "ECF~CMR###",
+      "EFMGCWMR##",
+      "#CFBGWM##.",
+      "##FM<GL##.",
+      ".##e#####.",
     ]), F_WARBRINGER),
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
+  },
+  {
+    id: "preset-ship-marauder",
+    name: "Marauder",
+    faction: "Corsair",
+    // Frigate: the ambush payoff specialist — closes under cloak, looses
+    // boarding pods (O) to disable a target's systems, then finishes with
+    // raid cannons (R) at point-blank. A raider missile rack (M) softens the
+    // approach and an ECM scrambler (J) spoils the return fire. Twin
+    // magazines (G) feed the missile rack and pods; salvaged reactors and
+    // crew quarters keep the raid sustained. Balanced raid drives — aft (E),
+    // forward brake (e), lateral (>/<) — let it hold position long enough to
+    // board, then scatter. Fields the previously unshipped cor-boarding-pod
+    // as its primary armament. Implies raid doctrine (aggressive, short-range,
+    // scatter). Grid (9 cols × 5 rows), subdivided ×3 → 27 m frigate.
+    grid: subdivideGrid(corsairGrid([
+      ".####>###",
+      "ECFC#MRe#",
+      "EFM~GJOe#",
+      "#CFMGRe#.",
+      "..##<O###",
+    ]), F_MARAUDER),
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
+  },
+  {
+    id: "preset-ship-galleon",
+    name: "Galleon",
+    faction: "Corsair",
+    // Dreadnought: the pirate treasure-ship — a vast scavenger hull that
+    // raids in with a storm of raider and swarm missiles, punch-through raid
+    // cannons for sustained fire, and a pair of boarding pods (O) to finish
+    // crippled capitals. Banks of salvaged reactors and deep magazines feed
+    // the volley; an ECM scrambler (J) strips return fire and a holo decoy
+    // launcher (L) covers the withdrawal. A blink drive (B) stands by for the
+    // unthinkable (retreat). Balanced raid drives — aft (E×3), forward brake
+    // (e), lateral (>/<) — drive the mass. Fields cor-boarding-pod,
+    // cor-raid-cannon, cor-swarm-missile, and cor-decoy-launcher. Implies
+    // raid doctrine. Grid (13 cols × 7 rows), subdivided ×12 → 156 m
+    // dreadnought.
+    grid: subdivideGrid(corsairGrid([
+      "..##>########",
+      ".ECF~CMR#####",
+      "EFMG~CWMRR###",
+      "#CFBGOOJMWLe#",
+      "##FMG~CWMRR##",
+      ".ECF~CMR#####",
+      "..##<########",
+    ]), F_GALLEON),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -709,6 +757,31 @@ export const designData: ShipDesignInput[] = [
       "EX~GHAINRR##e",
       ".###########<",
     ]), F_NEXUS_PRIME),
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
+  },
+  {
+    id: "preset-ship-mainframe",
+    name: "Mainframe",
+    faction: "Synthetic",
+    // Cruiser: the Collective's dedicated carrier. Where the Network Hub is a
+    // generalist coordinator, the Mainframe is built around its drone hangars —
+    // stacks of fabrication bays line every interior row, loosing autonomous
+    // swarms to saturate the engagement zone. A single coilgun on the centre
+    // line is the only direct fire; the hull's strength is the drones it
+    // launches and the network it runs (coordination nodes extend every allied
+    // ship's range and accuracy), screened by interceptor arrays and watched
+    // over by active sensors. Twin quantum cores and a command processor power
+    // the whole hardwired hull with no crew aboard.
+    grid: subdivideGrid(syntheticGrid([
+      ".#########>",
+      "EX~GHHAINe#",
+      "EPAGRHAIN##",
+      "EX~GHHAINe#",
+      ".#########<",
+    ]), F_MAINFRAME),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",

@@ -107,8 +107,8 @@ export const fleetData: FleetInput[] = [
     id: "preset-fleet-strike",
     name: "Strike Wing",
     faction: "Terran",
-    // A balanced mixed-arms wing: paired gunships and torpedo boats for weight,
-    // a screen of fast fighters to flank.
+    // A balanced mixed-arms wing: paired Vanguard gunships and a Bombard torpedo
+    // boat for weight, a screen of fast fighters to flank.
     formation: flatFormation([
       { designId: "preset-ship-gunship", position: { x: -120, y: -90 }, facing: 0, doctrine: strikeDoctrine },
       { designId: "preset-ship-gunship", position: { x: -120, y: 90 }, facing: 0, doctrine: strikeDoctrine },
@@ -229,6 +229,31 @@ export const fleetData: FleetInput[] = [
     source: "preset",
     revision: 1,
   },
+  {
+    id: "preset-fleet-devourer-brood",
+    name: "Devourer Brood",
+    faction: "Swarm",
+    // The full brood led by the apex: the Devourer dreadnought anchors the
+    // centre, flanked by a Hive Lord and a pair of Ravagers; a Brood Spitter
+    // stings from the back while a screen of Drones and Carrion wings floods
+    // the approach. The new apex leading a full brood — aggressive, short-range.
+    formation: flatFormation([
+      { designId: "preset-ship-devourer",  position: { x: -240, y:    0 }, facing: 0, doctrine: hiveDoctrine },
+      { designId: "preset-ship-hive-lord", position: { x: -300, y: -110 }, facing: 0, doctrine: hiveDoctrine },
+      { designId: "preset-ship-ravager",   position: { x: -340, y: -200 }, facing: 0, doctrine: hiveDoctrine },
+      { designId: "preset-ship-ravager",   position: { x: -340, y:  200 }, facing: 0, doctrine: hiveDoctrine },
+      { designId: "preset-ship-spitter",   position: { x: -340, y:    0 }, facing: 0, doctrine: hiveDoctrine },
+      { designId: "preset-ship-carrion",   position: { x: -400, y:  -60 }, facing: 0, doctrine: hiveDoctrine },
+      { designId: "preset-ship-carrion",   position: { x: -400, y:   60 }, facing: 0, doctrine: hiveDoctrine },
+      { designId: "preset-ship-drone",     position: { x: -430, y: -260 }, facing: 0, doctrine: hiveDoctrine },
+      { designId: "preset-ship-drone",     position: { x: -430, y:    0 }, facing: 0, doctrine: hiveDoctrine },
+      { designId: "preset-ship-drone",     position: { x: -430, y:  260 }, facing: 0, doctrine: hiveDoctrine },
+    ]),
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
+  },
 
   // --- Crystalline Concord fleets ---
   {
@@ -252,13 +277,15 @@ export const fleetData: FleetInput[] = [
     id: "preset-fleet-resonance-court",
     name: "Resonance Court",
     faction: "Crystalline",
-    // A phase court: the Monolith dreadnought anchors the line with its spinal
-    // resonance lances while Shards and Splinters kite and blink around it,
-    // closing under cloak to land beam strikes then folding clear.
+    // A phase court running the full Crystalline ladder: the Monolith
+    // dreadnought anchors the line with its spinal resonance lances, the
+    // Obelisk cruiser stands it up behind a wall of adaptive shielding and
+    // lobbed resonance shards, Shards kite and blink on the flanks, and
+    // Splinters close under cloak to land beam strikes then fold clear.
     formation: flatFormation([
       { designId: "preset-ship-monolith", position: { x: -260, y:    0 }, facing: 0, doctrine: phaseDoctrine },
+      { designId: "preset-ship-obelisk",  position: { x: -300, y:    0 }, facing: 0, doctrine: phaseDoctrine },
       { designId: "preset-ship-shard",    position: { x: -340, y: -150 }, facing: 0, doctrine: phaseDoctrine },
-      { designId: "preset-ship-shard",    position: { x: -340, y:    0 }, facing: 0, doctrine: phaseDoctrine },
       { designId: "preset-ship-shard",    position: { x: -340, y:  150 }, facing: 0, doctrine: phaseDoctrine },
       { designId: "preset-ship-splinter", position: { x: -420, y:  -90 }, facing: 0, doctrine: phaseDoctrine },
       { designId: "preset-ship-splinter", position: { x: -420, y:   90 }, facing: 0, doctrine: phaseDoctrine },
@@ -291,16 +318,63 @@ export const fleetData: FleetInput[] = [
     id: "preset-fleet-siege-column",
     name: "Siege Column",
     faction: "Foundry",
-    // The Foundry's hammer blow: a Siege Titan grinds forward behind a
-    // screen of Ingot interceptors while Battlerams hold the flanks.
-    // Nothing fancy — just mass, armour, and autocannons until nothing
-    // is left standing.
+    // The Foundry's hammer blow: a Siege Titan grinds forward behind a screen
+    // of Ingot interceptors while Battlerams hold the flanks. Re-armed with
+    // siege plasma, heavy cannons, and flak, the capitals are now genuinely
+    // dangerous — mass, armour, and a real alpha strike until nothing is left
+    // standing.
     formation: flatFormation([
       { designId: "preset-ship-siege-titan",  position: { x: -260, y:    0 }, facing: 0, doctrine: siegeDoctrine },
       { designId: "preset-ship-battleram",     position: { x: -340, y: -180 }, facing: 0, doctrine: siegeDoctrine },
       { designId: "preset-ship-battleram",     position: { x: -340, y:  180 }, facing: 0, doctrine: siegeDoctrine },
       { designId: "preset-ship-ingot",         position: { x: -400, y: -260 }, facing: 0, doctrine: siegeDoctrine },
       { designId: "preset-ship-ingot",         position: { x: -400, y:  260 }, facing: 0, doctrine: siegeDoctrine },
+    ]),
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
+  },
+  {
+    id: "preset-fleet-forge-guard",
+    name: "Forge Guard",
+    faction: "Foundry",
+    // The re-armed capitals screened by the new flak escort: a Siege Titan
+    // anchors the centre, Battlerams hold the flanks with heavy-cannon
+    // broadsides, and Crucibles shuttle ahead shredding incoming missiles and
+    // torpedoes so the slabs reach range. Ingot interceptors round out the
+    // screen. The Foundry's answer to a missile-heavy line.
+    formation: flatFormation([
+      { designId: "preset-ship-siege-titan", position: { x: -240, y:    0 }, facing: 0, doctrine: siegeDoctrine },
+      { designId: "preset-ship-battleram",   position: { x: -320, y: -160 }, facing: 0, doctrine: siegeDoctrine },
+      { designId: "preset-ship-battleram",   position: { x: -320, y:  160 }, facing: 0, doctrine: siegeDoctrine },
+      { designId: "preset-ship-crucible",    position: { x: -380, y:  -80 }, facing: 0, doctrine: siegeDoctrine },
+      { designId: "preset-ship-crucible",    position: { x: -380, y:   80 }, facing: 0, doctrine: siegeDoctrine },
+      { designId: "preset-ship-ingot",       position: { x: -420, y: -240 }, facing: 0, doctrine: siegeDoctrine },
+      { designId: "preset-ship-ingot",       position: { x: -420, y:  240 }, facing: 0, doctrine: siegeDoctrine },
+    ]),
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
+  },
+  {
+    id: "preset-fleet-minefield",
+    name: "Minefield",
+    faction: "Foundry",
+    // A static denial wall: Cauldrons sow the approach lane with minefields
+    // while Anvils hold the line behind the mines and Ingot interceptors
+    // screen the flanks. Let the enemy come to the mines.
+    formation: flatFormation([
+      { designId: "preset-ship-cauldron", position: { x: -280, y:  -90 }, facing: 0, doctrine: siegeDoctrine },
+      { designId: "preset-ship-cauldron", position: { x: -280, y:   90 }, facing: 0, doctrine: siegeDoctrine },
+      { designId: "preset-ship-anvil",    position: { x: -360, y: -180 }, facing: 0, doctrine: siegeDoctrine },
+      { designId: "preset-ship-anvil",    position: { x: -360, y:  -60 }, facing: 0, doctrine: siegeDoctrine },
+      { designId: "preset-ship-anvil",    position: { x: -360, y:   60 }, facing: 0, doctrine: siegeDoctrine },
+      { designId: "preset-ship-ingot",    position: { x: -420, y: -240 }, facing: 0, doctrine: siegeDoctrine },
+      { designId: "preset-ship-ingot",    position: { x: -420, y: -120 }, facing: 0, doctrine: siegeDoctrine },
+      { designId: "preset-ship-ingot",    position: { x: -420, y:  120 }, facing: 0, doctrine: siegeDoctrine },
+      { designId: "preset-ship-ingot",    position: { x: -420, y:  240 }, facing: 0, doctrine: siegeDoctrine },
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -367,6 +441,52 @@ export const fleetData: FleetInput[] = [
     source: "preset",
     revision: 1,
   },
+  {
+    id: "preset-fleet-galleons-wrath",
+    name: "Galleon's Wrath",
+    faction: "Corsair",
+    // The full Corsair raid strength: the Galleon apex leads a Warbringer
+    // cruiser, a Marauder boarding specialist, two Reaver frigates and a
+    // three-ship Cutlass screen. The boarding pods and swarm missiles disable
+    // and strip anything the raid cannons can't finish.
+    formation: flatFormation([
+      { designId: "preset-ship-galleon",    position: { x: -260, y:    0 }, facing: 0, doctrine: raidDoctrine },
+      { designId: "preset-ship-warbringer", position: { x: -340, y:  -80 }, facing: 0, doctrine: raidDoctrine },
+      { designId: "preset-ship-marauder",   position: { x: -340, y:   80 }, facing: 0, doctrine: raidDoctrine },
+      { designId: "preset-ship-reaver",     position: { x: -400, y: -170 }, facing: 0, doctrine: raidDoctrine },
+      { designId: "preset-ship-reaver",     position: { x: -400, y:  170 }, facing: 0, doctrine: raidDoctrine },
+      { designId: "preset-ship-cutlass",    position: { x: -460, y: -240 }, facing: 0, doctrine: raidDoctrine },
+      { designId: "preset-ship-cutlass",    position: { x: -460, y:    0 }, facing: 0, doctrine: raidDoctrine },
+      { designId: "preset-ship-cutlass",    position: { x: -460, y:  240 }, facing: 0, doctrine: raidDoctrine },
+    ]),
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
+  },
+  {
+    id: "preset-fleet-boarding-action",
+    name: "Boarding Action",
+    faction: "Corsair",
+    // A cheap, fast boarding-focused raid that demonstrates the
+    // cor-boarding-pod role: two Marauders close under cloak to disable, two
+    // Reavers work the flanks with missiles, and three Cutlass fighters hunt
+    // anything that tries to run. The lightest showcase fleet — intentionally
+    // so.
+    formation: flatFormation([
+      { designId: "preset-ship-marauder", position: { x: -320, y: -100 }, facing: 0, doctrine: raidDoctrine },
+      { designId: "preset-ship-marauder", position: { x: -320, y:  100 }, facing: 0, doctrine: raidDoctrine },
+      { designId: "preset-ship-reaver",   position: { x: -380, y: -200 }, facing: 0, doctrine: raidDoctrine },
+      { designId: "preset-ship-reaver",   position: { x: -380, y:  200 }, facing: 0, doctrine: raidDoctrine },
+      { designId: "preset-ship-cutlass",  position: { x: -440, y: -260 }, facing: 0, doctrine: raidDoctrine },
+      { designId: "preset-ship-cutlass",  position: { x: -440, y:    0 }, facing: 0, doctrine: raidDoctrine },
+      { designId: "preset-ship-cutlass",  position: { x: -440, y:  260 }, facing: 0, doctrine: raidDoctrine },
+    ]),
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
+  },
 
   // --- Synthetic Collective fleets ---
   {
@@ -425,6 +545,31 @@ export const fleetData: FleetInput[] = [
       { designId: "preset-ship-automaton", position: { x: -450, y: -200 }, facing: 0, doctrine: netDoctrine },
       { designId: "preset-ship-automaton", position: { x: -450, y: 0 }, facing: 0, doctrine: netDoctrine },
       { designId: "preset-ship-automaton", position: { x: -450, y: 200 }, facing: 0, doctrine: netDoctrine },
+    ]),
+    createdAt: PRESET_TIME,
+    updatedAt: PRESET_TIME,
+    source: "preset",
+    revision: 1,
+  },
+  {
+    id: "preset-fleet-carrier-wing",
+    name: "Carrier Wing",
+    faction: "Synthetic",
+    // A pure carrier expression: the Mainframe anchors behind a Node
+    // point-defence screen while its drone hangars saturate the engagement
+    // zone and its coordination nodes extend every allied ship's range. A
+    // cloud of Automaton pickets runs ahead as sensor eyes and intercept
+    // drones. No crew anywhere in the formation — the carrier runs the net.
+    formation: flatFormation([
+      { designId: "preset-ship-mainframe", position: { x: -260, y:    0 }, facing: 0, doctrine: netDoctrine },
+      { designId: "preset-ship-node",      position: { x: -340, y: -130 }, facing: 0, doctrine: netDoctrine },
+      { designId: "preset-ship-node",      position: { x: -340, y:  130 }, facing: 0, doctrine: netDoctrine },
+      { designId: "preset-ship-automaton", position: { x: -450, y: -250 }, facing: 0, doctrine: netDoctrine },
+      { designId: "preset-ship-automaton", position: { x: -450, y: -150 }, facing: 0, doctrine: netDoctrine },
+      { designId: "preset-ship-automaton", position: { x: -450, y:  -50 }, facing: 0, doctrine: netDoctrine },
+      { designId: "preset-ship-automaton", position: { x: -450, y:   50 }, facing: 0, doctrine: netDoctrine },
+      { designId: "preset-ship-automaton", position: { x: -450, y:  150 }, facing: 0, doctrine: netDoctrine },
+      { designId: "preset-ship-automaton", position: { x: -450, y:  250 }, facing: 0, doctrine: netDoctrine },
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
