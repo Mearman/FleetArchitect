@@ -342,7 +342,7 @@ export function useBattleCanvas({
               cells,
               base,
               (m) => cellState(m).isStarved,
-              isoDepthBufferRef.current,
+              isoDepthBufferRef.current, descriptor?.outline,
             );
           } else if (floored) {
             // Distant-zoom fallback: the cells are below the legibility floor,

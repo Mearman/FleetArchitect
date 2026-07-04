@@ -18,6 +18,7 @@ import { CELL_SIZE } from "@/domain/grid";
 import type { RenderCell } from "@/ui/cellLayout";
 import { appearanceOf } from "@/ui/render/moduleAppearance";
 import { glyphPath2D } from "@/ui/render/moduleGlyphs";
+import { chamferOutline } from "@/ui/render/outlineChamfer";
 import type { Transform } from "./battleCamera";
 import {
   DOOR_COLOUR,
@@ -135,6 +136,7 @@ export function drawIsoShipCells(
   base: string,
   isStarved: (cell: RenderCell) => boolean,
   out: IsoCellDepth[],
+  outline?: ReadonlyArray<ReadonlyArray<{ x: number; y: number }>>,
 ): void {
   const cosF = Math.cos(s.facing);
   const sinF = Math.sin(s.facing);
@@ -161,20 +163,39 @@ export function drawIsoShipCells(
   out.length = n;
   out.sort((a, b) => a.depth - b.depth);
 
-  // NOTE: the flat 2-D sprite (`shipSprite`) chamfers its outline clip so armour
-  // corners read as a 45° bevel. The isometric path deliberately does NOT apply
-  // that chamfer: the extrusion lifts each cell's top face above the ground
-  // footprint by its own `zS`, so a single ground-footprint clip would crop the
-  // raised tops of tall back-edge modules (sensors, comms, turrets) and read as
-  // truncated masts. A correct fix would need the prism silhouette of the hull
-  // (front edges at the ground, back edges lifted by the per-cell extrusion,
-  // joined at the silhouette points); the simpler "union of the ground and
-  // max-lifted outlines" does not work, because the lifted copy's straight
-  // edges pass over the ground's chamfered corners and fill them back in. That
-  // geometry is disproportionate for a render nicety that — under the iso shear
-  // — would not read as a clean 45° diagonal anyway, so the bevel is carried by
-  // the flat view alone and the iso extrusion keeps its clean, unclipped shape.
+  // Body-only chamfer: clip the SIDE walls (the hull silhouette) to the
+  // chamfered outline so armour corners read as a 45° bevel, but leave the TOP
+  // faces unclipped so tall modules (sensors, turrets) are not truncated. A
+  // ground-footprint clip around the whole draw would crop those raised tops; a
+  // true prism silhouette (front edges at ground, back edges lifted per-cell)
+  // is the fully-correct fix but disproportionate here. The metre-space chamfer
+  // projects to an axis-aligned screen line, so the bevel reads clean. Trade:
+  // a slight "deck overhang" where a top face cantilevers past a bevelled wall.
+  // Chamfer in METRE space (projected edges lose axis-alignment), then project
+  // each vertex with the same ship-pose + t.project the cells use. Per-cell
+  // save/clip/restore (below) keeps the back-to-front painter order intact.
   // Render-only: the outline DATA is untouched.
+  const OUTLINE_BEVEL_CELLS = 0.45;
+  let clipPath: Path2D | undefined;
+  if (outline !== undefined && outline.length > 0) {
+    clipPath = new Path2D();
+    for (const loop of chamferOutline(outline, OUTLINE_BEVEL_CELLS * CELL_SIZE)) {
+      if (loop.length === 0) continue;
+      let first = true;
+      for (const v of loop) {
+        const wx = s.x + (v.x * cosF - v.y * sinF);
+        const wy = s.y + (v.x * sinF + v.y * cosF);
+        const p = t.project(wx, wy);
+        if (first) {
+          clipPath.moveTo(p.x, p.y);
+          first = false;
+        } else {
+          clipPath.lineTo(p.x, p.y);
+        }
+      }
+      clipPath.closePath();
+    }
+  }
 
   for (const { m } of out) {
     const app = appearanceOf(m.kind);
@@ -197,7 +218,12 @@ export function drawIsoShipCells(
 
     // Side faces: only the two front edges (whose midpoint sits below the cell
     // centre on screen) are visible. The left/right pair gets slightly different
-    // shading for a lit-from-one-side read.
+    // shading for a lit-from-one-side read. Clipped to the chamfered silhouette
+    // when present so armour corners bevel; the top face below stays unclipped.
+    if (clipPath !== undefined) {
+      ctx.save();
+      ctx.clip(clipPath, "evenodd");
+    }
     for (let i = 0; i < 4; i += 1) {
       const a = ground[i];
       const b = ground[(i + 1) % 4];
@@ -215,6 +241,9 @@ export function drawIsoShipCells(
       ctx.lineTo(ta.x, ta.y);
       ctx.closePath();
       ctx.fill();
+    }
+    if (clipPath !== undefined) {
+      ctx.restore();
     }
 
     // Top face.
