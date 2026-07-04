@@ -1,3 +1,11 @@
+## [1.41.1](https://github.com/Mearman/FleetArchitect/compare/v1.41.0...v1.41.1) (2026-07-04)
+
+
+### Bug Fixes
+
+* **ci:** build the tagged release commit for the version header ([1b6d775](https://github.com/Mearman/FleetArchitect/commit/1b6d775c7c7945622407b68d7b52003e4655d096))
+* show the release version in the header, not the commit hash ([2d1dc82](https://github.com/Mearman/FleetArchitect/commit/2d1dc8246d5a632c3c551d3cf8c7e14195965d71))
+
 # [1.41.0](https://github.com/Mearman/FleetArchitect/compare/v1.40.1...v1.41.0) (2026-07-04)
 
 
