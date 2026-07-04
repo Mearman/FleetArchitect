@@ -1,3 +1,10 @@
+# [1.40.0](https://github.com/Mearman/FleetArchitect/compare/v1.39.4...v1.40.0) (2026-07-04)
+
+
+### Features
+
+* **presets:** expand and rebalance the ship design roster ([74fa1af](https://github.com/Mearman/FleetArchitect/commit/74fa1af2b8461bf8105dd764b1974c910529ecfd))
+
 ## [1.39.4](https://github.com/Mearman/FleetArchitect/compare/v1.39.3...v1.39.4) (2026-07-03)
 
 
