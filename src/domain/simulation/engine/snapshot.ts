@@ -589,7 +589,11 @@ export function shipDescriptor(s: SimShip): ShipDescriptor {
     ...base,
     cells: s.modules.map((m) => ({
       slotId: m.slotId,
-      kind: m.kind,
+      // Render kind: armour-surfaced cells render as the distinct "armour"
+      // CellKind (lighter plate, taller iso extrusion) rather than plain "hull".
+      // m.kind is the effect-kind union (no "armour"); the surface→CellKind lift
+      // happens here at the descriptor boundary where CellKind is the type.
+      kind: m.surface === "armor" ? "armour" : m.kind,
       ox: m.x,
       oy: m.y,
       surface: m.surface,
