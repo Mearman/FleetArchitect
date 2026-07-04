@@ -1,3 +1,11 @@
+# [1.42.0](https://github.com/Mearman/FleetArchitect/compare/v1.41.1...v1.42.0) (2026-07-04)
+
+
+### Features
+
+* **ui:** chamfer armour corners in the 2D battle view ([d5b0cdc](https://github.com/Mearman/FleetArchitect/commit/d5b0cdcc292b668ce855ab71b3ba6fc6383ef6b2))
+* **ui:** chamfer armour corners in the iso (2.5D) battle view ([2354783](https://github.com/Mearman/FleetArchitect/commit/2354783da6ad5132540d89d40fb4128a5ac4fb63))
+
 ## [1.41.1](https://github.com/Mearman/FleetArchitect/compare/v1.41.0...v1.41.1) (2026-07-04)
 
 
