@@ -72,11 +72,13 @@ jobs:
 
   build-and-deploy:
     name: Build and deploy to Pages
-    # Depends on quality only (not release): semantic-release fails when main is
-    # branch-protected (GITHUB_TOKEN can't push tags to main), and the site
-    # should deploy regardless. The top-bar link falls back to the commit hash
-    # when no release tag exists.
-    needs: quality
+    # Build AFTER release so the deploy is built from the tagged release commit
+    # (semantic-release bumps package.json + tags on the chore(release) commit),
+    # which makes the top bar show the version instead of the un-tagged feat
+    # commit's hash. main is not branch-protected, so release is reliable and
+    # this coupling never blocks the deploy. For non-releasing commits release
+    # creates no new tag and the header falls back to the hash, which is correct.
+    needs: [quality, release]
     runs-on: ubuntu-latest
     # `actions: write` (beyond the top-level set) lets the artifact-cleanup
     # step below delete a `github-pages` artifact left by a prior failed
@@ -92,6 +94,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          # Check out the latest main (the release commit semantic-release just
+          # pushed), not the trigger commit, so the build resolves the new tag.
+          ref: main
           # Full history + tags so the build can resolve the release tag.
           fetch-depth: 0
       - uses: pnpm/action-setup@v6
@@ -101,14 +106,6 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
-      # Compute the version semantic-release will cut (dry-run: no tag, no
-      # commit, no write perms needed) and expose it to the build as
-      # NEXT_RELEASE_TAG, so the deployed top-bar shows the version rather than
-      # the un-tagged commit hash. Empty for non-releasing commits (test/chore).
-      - name: Compute next release tag (dry-run)
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: echo "NEXT_RELEASE_TAG=$(node scripts/next-version.mjs)" >> "$GITHUB_ENV"
       - run: pnpm build
       - uses: actions/configure-pages@v6
       # A failed `deploy-pages` step (GitHub Pages' "Deployment failed, try
