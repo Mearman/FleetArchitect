@@ -130,6 +130,11 @@ export function rasteriseShipSprite(
   base: string,
   key: string,
   outline?: ReadonlyArray<ReadonlyArray<{ x: number; y: number }>>,
+  /** Offscreen-surface factory: defaults to the DOM-backed {@link createSurface}.
+   *  Exposed as a parameter so a node-environment unit test can inject a spy
+   *  surface (a real canvas needs `document`, absent under vitest) and assert the
+   *  outline clip is applied. Production callers pass nothing. */
+  surfaceFactory: (width: number, height: number) => Surface | undefined = createSurface,
 ): ShipSprite | undefined {
   // Bounding box over alive cell centres, in cell offsets (world units).
   let minX = Infinity;
@@ -155,7 +160,7 @@ export function rasteriseShipSprite(
   const width = Math.ceil((maxX - minX) * SPRITE_PX_PER_WORLD + SPRITE_CELL_PX);
   const height = Math.ceil((maxY - minY) * SPRITE_PX_PER_WORLD + SPRITE_CELL_PX);
 
-  const surface = createSurface(width, height);
+  const surface = surfaceFactory(width, height);
   if (surface === undefined) return undefined;
   const { ctx } = surface;
 

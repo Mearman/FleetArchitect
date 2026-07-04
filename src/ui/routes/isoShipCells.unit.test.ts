@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CELL_SIZE } from "@/domain/grid";
 import type { RenderCell } from "@/ui/cellLayout";
 import { ISO_PROJECTION, makeTransform } from "./battleCamera";
@@ -54,12 +54,29 @@ describe("isoCellBox", () => {
   });
 });
 
+/** Named handles to the chamfer-clip spy methods, returned alongside the typed
+ *  ctx so a test asserts on local `Mock` consts rather than reading
+ *  `ctx.clip`/`ctx.save`/`ctx.restore` as detached method references — the
+ *  `@typescript-eslint/unbound-method` rule rejects that. Mirrors the repo's
+ *  existing `const onFail = vi.fn()` pattern. */
+interface CtxSpies {
+  ctx: CanvasRenderingContext2D;
+  save: ReturnType<typeof vi.fn>;
+  clip: ReturnType<typeof vi.fn>;
+  restore: ReturnType<typeof vi.fn>;
+}
+
 /** A CanvasRenderingContext2D test double covering exactly the call surface
- *  drawIsoShipCells touches (9 methods, 6 fields). Built without a type
- *  assertion — banned repo-wide — by narrowing a plain-object stub to the full
- *  interface with a user-defined type guard. Vitest runs in the node
- *  environment, so no real canvas exists. */
-function mockCtx(): CanvasRenderingContext2D {
+ *  drawIsoShipCells touches (9 drawing methods, 6 fields) PLUS the chamfer-clip
+ *  surface (`clip`, `save`, `restore`) as vi.fn spies so a test can assert the
+ *  body-only outline clip is applied. Built without a type assertion — banned
+ *  repo-wide — by narrowing a plain-object stub to the full interface with a
+ *  user-defined type guard. Vitest runs in the node environment, so no real
+ *  canvas exists. Returns the spy handles as well as the typed ctx. */
+function spyCtx(): CtxSpies {
+  const save = vi.fn();
+  const clip = vi.fn();
+  const restore = vi.fn();
   const noop = (): void => {};
   const stub = {
     beginPath: noop,
@@ -68,9 +85,10 @@ function mockCtx(): CanvasRenderingContext2D {
     closePath: noop,
     fill: noop,
     stroke: noop,
-    save: noop,
-    restore: noop,
+    save,
+    restore,
     transform: noop,
+    clip,
     fillStyle: "",
     strokeStyle: "",
     lineWidth: 1,
@@ -79,7 +97,13 @@ function mockCtx(): CanvasRenderingContext2D {
     globalAlpha: 1,
   };
   if (!isCanvasCtx(stub)) throw new Error("stub is not a CanvasRenderingContext2D");
-  return stub;
+  return { ctx: stub, save, clip, restore };
+}
+
+/** A ctx-only view of {@link spyCtx} for tests that draw but do not assert on
+ *  clip/save/restore calls. */
+function mockCtx(): CanvasRenderingContext2D {
+  return spyCtx().ctx;
 }
 
 /** Narrow the partial stub to the full CanvasRenderingContext2D interface (a
@@ -173,5 +197,64 @@ describe("drawIsoShipCells", () => {
       expect(d).toBeGreaterThanOrEqual(prev);
       prev = d;
     }
+  });
+});
+
+describe("drawIsoShipCells chamfer clip (body-only outline bevel)", () => {
+  // Vitest's node environment has no DOM Path2D, and drawIsoShipCells builds one
+  // from the outline. A minimal stub class with the three methods the clip path
+  // construction calls. Installed via Object.defineProperty (its `value` slot is
+  // untyped, so no `as` is needed) and removed reflectively afterwards. Scoped to
+  // this describe so the geometry tests above stay Path2D-free.
+  beforeEach(() => {
+    Object.defineProperty(globalThis, "Path2D", {
+      configurable: true,
+      writable: true,
+      value: class {
+        moveTo(): void {}
+        lineTo(): void {}
+        closePath(): void {}
+      },
+    });
+  });
+  afterEach(() => {
+    Reflect.deleteProperty(globalThis, "Path2D");
+  });
+
+  /** A square outline loop in ship-local world units. Non-empty is all the clip
+   *  gate checks (`outline !== undefined && outline.length > 0`). */
+  const SQUARE_OUTLINE: ReadonlyArray<ReadonlyArray<{ x: number; y: number }>> = [
+    [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 10 },
+      { x: 0, y: 10 },
+    ],
+  ];
+
+  it("applies the body-only chamfer clip (save/clip/restore) when an outline is present", () => {
+    const t = makeTransform(800, 600, 3, 0, 0, ISO_PROJECTION);
+    const s = { x: 100, y: 200, facing: 0 };
+    const { ctx, save, clip, restore } = spyCtx();
+    const out: IsoCellDepth[] = [];
+    // One alive cell at scale 3 (cellPx = 3 ≤ 12, so no glyph Path2D is built);
+    // the per-cell save/clip/restore block still runs, clipping the side walls
+    // to the bevelled silhouette with the evenodd fill rule.
+    drawIsoShipCells(ctx, t, s, [cellAt(0, 0)], "#ff0000", () => false, out, SQUARE_OUTLINE);
+    expect(save).toHaveBeenCalled();
+    expect(clip).toHaveBeenCalledWith(expect.anything(), "evenodd");
+    expect(restore).toHaveBeenCalled();
+  });
+
+  it("does not clip when no outline is given (outline undefined)", () => {
+    const t = makeTransform(800, 600, 3, 0, 0, ISO_PROJECTION);
+    const s = { x: 100, y: 200, facing: 0 };
+    const { ctx, save, clip, restore } = spyCtx();
+    const out: IsoCellDepth[] = [];
+    drawIsoShipCells(ctx, t, s, [cellAt(0, 0)], "#ff0000", () => false, out, undefined);
+    // No clip path is built, so the per-cell save/clip/restore block is skipped.
+    expect(clip).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+    expect(restore).not.toHaveBeenCalled();
   });
 });
