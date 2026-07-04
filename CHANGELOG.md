@@ -1,3 +1,10 @@
+# [1.43.0](https://github.com/Mearman/FleetArchitect/compare/v1.42.0...v1.43.0) (2026-07-04)
+
+
+### Features
+
+* **ui:** render the bevelled hull outline in the battle view ([49dea90](https://github.com/Mearman/FleetArchitect/commit/49dea90d4df7f5892cebef90317ad2428f13cc74))
+
 # [1.42.0](https://github.com/Mearman/FleetArchitect/compare/v1.41.1...v1.42.0) (2026-07-04)
 
 
