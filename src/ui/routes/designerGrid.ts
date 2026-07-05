@@ -330,6 +330,186 @@ export function applyCellBrush(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Multi-cell (polyomino) module placement + erasure.
+// ---------------------------------------------------------------------------
+
+/** The slice of a module definition the placement helpers read: identity +
+ *  shape. Narrower than `ModuleDefinition` so the helpers (and their tests) need
+ *  no catalog coupling — a full `ModuleDefinition` satisfies it structurally. */
+export interface PlacementModule {
+  id: EntityId;
+  footprint: ReadonlyArray<{ dx: number; dy: number }>;
+}
+
+/**
+ * Whether a multi-cell module would fit anchored at (col, row): every footprint
+ * offset must land on a solid, non-armour cell. The anchor target may overwrite
+ * a cell carrying a `moduleId` (replacing a single-cell module) or a plain cell,
+ * but NEVER a `covers` cell (burying a second anchor inside an existing
+ * polyomino would orphan the first). Each non-anchor offset must carry no
+ * equipment at all. A 1-cell `[{0,0}]` footprint reduces to "the anchor cell is
+ * solid, non-armour, and not a cover" — today's single-cell rule — so legacy
+ * modules place exactly as before. Pure; the placement brush and the hover ghost
+ * share this one truth.
+ */
+export function moduleFits(
+  grid: TileGrid,
+  col: number,
+  row: number,
+  moduleDef: PlacementModule,
+): boolean {
+  for (const { dx, dy } of moduleDef.footprint) {
+    const c = col + dx;
+    const r = row + dy;
+    if (c < 0 || c >= grid.cols || r < 0 || r >= grid.rows) return false;
+    const cell = grid.cells[r * grid.cols + c];
+    if (cell === undefined || cell.kind !== "solid") return false;
+    if (cell.surface === "armor") return false;
+    const equipment = cell.equipment;
+    if (dx === 0 && dy === 0) {
+      if (equipment !== undefined && equipment.covers !== undefined) return false;
+    } else if (equipment !== undefined) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Place a multi-cell module anchored at (col, row): the anchor's equipment on
+ * (col, row) and a `covers` back-pointer on each non-anchor footprint offset.
+ * Returns the grid UNCHANGED when {@link moduleFits} is false — never a partial
+ * placement, so the brush cannot create an orphaned cover. The anchor overwrites
+ * any existing single-cell module on its target cell. Pure.
+ */
+export function placeModule(
+  grid: TileGrid,
+  col: number,
+  row: number,
+  moduleDef: PlacementModule,
+): TileGrid {
+  if (!moduleFits(grid, col, row, moduleDef)) return grid;
+  const cells = grid.cells.slice();
+  for (const { dx, dy } of moduleDef.footprint) {
+    const idx = (row + dy) * grid.cols + (col + dx);
+    const cell = cells[idx];
+    if (cell === undefined || cell.kind !== "solid") continue;
+    if (dx === 0 && dy === 0) {
+      cells[idx] = { ...cell, equipment: { moduleId: moduleDef.id, facing: 0 } };
+    } else {
+      cells[idx] = {
+        ...cell,
+        equipment: {
+          facing: 0,
+          covers: { moduleId: moduleDef.id, anchorCol: col, anchorRow: row },
+        },
+      };
+    }
+  }
+  return { ...grid, cells };
+}
+
+/**
+ * Resolve the module anchored at — or owning — the cell at (col, row), along
+ * with the anchor's coordinate. Returns undefined for a plain cell, an unknown
+ * module, or an out-of-bounds cell. For a covered cell the anchor comes from the
+ * `covers` back-pointer; for an anchor it is the cell itself.
+ */
+function moduleAt(
+  grid: TileGrid,
+  col: number,
+  row: number,
+  resolveModule: (id: EntityId) => PlacementModule | undefined,
+): { def: PlacementModule; anchorCol: number; anchorRow: number } | undefined {
+  const cell = grid.cells[row * grid.cols + col];
+  if (cell === undefined || cell.kind !== "solid") return undefined;
+  const equipment = cell.equipment;
+  if (equipment === undefined) return undefined;
+  if (equipment.moduleId !== undefined) {
+    const def = resolveModule(equipment.moduleId);
+    if (def === undefined) return undefined;
+    return { def, anchorCol: col, anchorRow: row };
+  }
+  if (equipment.covers !== undefined) {
+    const def = resolveModule(equipment.covers.moduleId);
+    if (def === undefined) return undefined;
+    return {
+      def,
+      anchorCol: equipment.covers.anchorCol,
+      anchorRow: equipment.covers.anchorRow,
+    };
+  }
+  return undefined;
+}
+
+/**
+ * Whether the cell at (col, row) belongs to a multi-cell module — an anchor
+ * whose footprint spans more than one cell, or any covered cell. Destructive
+ * single-cell brushes consult this so they remove the whole module (rather than
+ * orphan its covers) when painting over a polyomino cell.
+ */
+export function isMultiCellPart(
+  grid: TileGrid,
+  col: number,
+  row: number,
+  resolveModule: (id: EntityId) => PlacementModule | undefined,
+): boolean {
+  const found = moduleAt(grid, col, row, resolveModule);
+  return found !== undefined && found.def.footprint.length > 1;
+}
+
+/**
+ * Erase the cell at (col, row). When it belongs to a multi-cell module the
+ * WHOLE module is removed (anchor + every covered cell) — erasing one cell of a
+ * polyomino never leaves an orphaned anchor or cover. A plain cell or a 1-cell
+ * module is cleared alone (today's eraser behaviour). Returns the grid unchanged
+ * when the cell is out of bounds or already empty. Pure.
+ */
+export function eraseModule(
+  grid: TileGrid,
+  col: number,
+  row: number,
+  resolveModule: (id: EntityId) => PlacementModule | undefined,
+): TileGrid {
+  if (col < 0 || col >= grid.cols || row < 0 || row >= grid.rows) return grid;
+  const idx = row * grid.cols + col;
+  const cell = grid.cells[idx];
+  if (cell === undefined || cell.kind === "empty") return grid;
+  const found = moduleAt(grid, col, row, resolveModule);
+  if (found === undefined || found.def.footprint.length === 1) {
+    const cells = grid.cells.slice();
+    cells[idx] = { kind: "empty" };
+    return { ...grid, cells };
+  }
+  const cells = grid.cells.slice();
+  for (const { dx, dy } of found.def.footprint) {
+    const i = (found.anchorRow + dy) * grid.cols + (found.anchorCol + dx);
+    if (i >= 0 && i < cells.length) cells[i] = { kind: "empty" };
+  }
+  return { ...grid, cells };
+}
+
+/**
+ * Whether a whole-cell brush would destroy a cell's equipment or substrate —
+ * `substrate-*` (replaces the cell) and `add-surface` to armour (strips
+ * equipment). Such brushes orphan a multi-cell module if applied to one of its
+ * cells, so the brush dispatch erases the whole module first when this is true
+ * and the target is a multi-cell part.
+ */
+export function isDestructiveToModule(brush: Brush): boolean {
+  switch (brush.kind) {
+    case "substrate-bare":
+    case "substrate-deck":
+    case "substrate-armor":
+      return true;
+    case "add-surface":
+      return brush.surface === "armor";
+    default:
+      return false;
+  }
+}
+
 /** Toggle one edge of a cell between two kinds, preserving the doorState
  *  invariant (a state is present exactly on door edges). Returns a new cell
  *  with the edge updated, or `null` if the cell is not solid. */

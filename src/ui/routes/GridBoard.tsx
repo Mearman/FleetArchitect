@@ -21,6 +21,8 @@ import {
   facingTick,
   gridBoard,
   gridCell as gridCellClass,
+  gridGhostFit,
+  gridGhostMiss,
   gridOverlay,
   gridSelection,
 } from "./ShipDesignerRoute.css";
@@ -70,9 +72,12 @@ export function GridBoard({
   showAirtightness,
   view,
   cellPx,
+  dragPaints,
+  ghost,
   onPaint,
   onEdge,
   onMoveCursor,
+  onHover,
 }: {
   grid: TileGrid;
   selected: { col: number; row: number } | null;
@@ -85,6 +90,13 @@ export function GridBoard({
   /** Current zoomed cell pitch in px — sizes the grid-line overlay so its lines
    *  track the cell boundaries at every zoom. */
   cellPx: number;
+  /** Whether drag-paint fires `onPaint` on pointer-move. Suppressed for
+   *  multi-cell equipment brushes so a drag stroke cannot stamp overlapping
+   *  polyominoes; single-cell modules and other brushes keep drag-paint. */
+  dragPaints: boolean;
+  /** Placement preview ghost: the cells the active equipment module would
+   *  occupy, coloured green (fits) or red (blocked). Null hides the ghost. */
+  ghost: { cells: { col: number; row: number }[]; fits: boolean } | null;
   /** Paint the whole cell at (col, row). Called for a cell-body click. */
   onPaint: (col: number, row: number) => void;
   /** Paint the edge of the cell at (col, row) on the given side. Called for an
@@ -92,6 +104,9 @@ export function GridBoard({
   onEdge: (col: number, row: number, dir: "n" | "e" | "s" | "w") => void;
   /** Move the keyboard cursor to (col, row). Called for arrow-key navigation. */
   onMoveCursor: (col: number, row: number) => void;
+  /** Report the cell under the pointer (for the placement ghost), or null when
+   *  the pointer leaves the board. */
+  onHover: (coord: { col: number; row: number } | null) => void;
 }) {
   /** True while the pointer is held down inside the board — enables
    *  drag-to-paint. */
@@ -216,13 +231,20 @@ export function GridBoard({
   }
 
   function handlePointerMove(e: ReactPointerEvent<HTMLDivElement>) {
-    if (!isPainting.current) return;
     const c = cellAtPointer(e.clientX, e.clientY);
     if (c === null) return;
+    // Hover fires on every move (with or without the button) so the placement
+    // ghost tracks the pointer; the dedupe keeps it to one setState per cell.
+    onHover(c);
+    if (!isPainting.current || !dragPaints) return;
     const key = `${c.col},${c.row}`;
     if (key === lastPainted.current) return;
     lastPainted.current = key;
     onPaint(c.col, c.row);
+  }
+
+  function handlePointerLeave() {
+    onHover(null);
   }
 
   // Only the built (non-empty) cells become DOM nodes; the empty grid is a
@@ -314,6 +336,7 @@ export function GridBoard({
         onKeyDown={handleKeyDown}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
+        onPointerLeave={handlePointerLeave}
         style={{
           gridTemplateColumns: `repeat(${grid.cols}, 1fr)`,
           gridTemplateRows: `repeat(${grid.rows}, 1fr)`,
@@ -410,6 +433,19 @@ export function GridBoard({
             aria-hidden="true"
           />
         ) : null}
+        {/* Placement preview ghost: one tile per footprint cell, green when the
+            module fits at the hovered anchor, red when blocked. Mirrors the
+            selection overlay's grid positioning and tilts with the board. */}
+        {ghost !== null
+          ? ghost.cells.map((cell, i) => (
+              <div
+                key={`ghost-${i}`}
+                className={ghost.fits ? gridGhostFit : gridGhostMiss}
+                style={{ gridColumn: cell.col + 1, gridRow: cell.row + 1 }}
+                aria-hidden="true"
+              />
+            ))
+          : null}
       </div>
       {outlineLoops.length > 0 ? (
         <svg

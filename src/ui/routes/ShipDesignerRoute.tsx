@@ -52,23 +52,13 @@ import {
   saveShipDesign,
 } from "@/storage/db";
 import type { ShipDesign } from "@/schema/ship";
-import type { CellEquipment, TileGrid } from "@/schema/grid";
-import {
-  type Brush,
-  type WorkingDesign,
-  FACINGS,
-} from "./designerConstants";
-import {
-  applyCellBrush,
-  applyEdgeBrush,
-  blankDesign,
-  contentBox,
-  fitGridCentered,
-  isEdgeBrush,
-} from "./designerGrid";
+import type { TileGrid } from "@/schema/grid";
+import { type WorkingDesign, FACINGS } from "./designerConstants";
+import { blankDesign, contentBox, fitGridCentered, moduleFits } from "./designerGrid";
 import { BehaviourPanel } from "./BehaviourPanel";
 import { DesignerPalette } from "./DesignerPalette";
 import { type BreachSet, GridBoard } from "./GridBoard";
+import { useDesignerBrush } from "./useDesignerBrush";
 import { useShipDesignUrlSync } from "./useShipDesignUrlSync";
 import { CommsConfig, SensorConfig } from "./ModuleConfig";
 import {
@@ -113,10 +103,22 @@ export function ShipDesignerRoute() {
   const designs = useShipDesigns();
   const factions = catalog().factions();
   const [working, setWorking] = useState<WorkingDesign>(() => blankDesign());
-  const [brush, setBrush] = useState<Brush>({ kind: "substrate-deck" });
-  const [selected, setSelected] = useState<{ col: number; row: number } | null>(
-    null,
-  );
+  /** Whether the working design is read-only (a preset). Copy is the only way
+   *  to make changes to a preset. Declared early so the brush hook (which the
+   *  viewport-fit effect below depends on via `setSelected`) can use it. */
+  const readOnly = working.source === "preset";
+  // Brush, selection, hover, and the multi-cell-aware paint/erase handlers.
+  const {
+    brush,
+    setBrush,
+    selected,
+    setSelected,
+    hovered,
+    setHovered,
+    paint,
+    paintEdge,
+    updateSelectedEquipment,
+  } = useDesignerBrush(setWorking, readOnly);
   const [zoom, setZoom] = useState(ZOOM_DEFAULT);
   // Trackpad pinch-to-zoom (two-finger scroll pans natively) plus the viewport's
   // measured size, so the grid can fit-to-fill it at the current cell pitch.
@@ -169,7 +171,7 @@ export function ShipDesignerRoute() {
     if (dx !== 0 || dy !== 0) {
       setSelected((s) => (s === null ? null : { col: s.col + dx, row: s.row + dy }));
     }
-  }, [viewportW, viewportH, zoom]);
+  }, [viewportW, viewportH, zoom, setSelected]);
   // Mirror the working design to/from the URL so the address bar is the
   // shareable design (`load` is a hoisted declaration below).
   useShipDesignUrlSync(working, load);
@@ -184,9 +186,28 @@ export function ShipDesignerRoute() {
   /** Modules available for the current design's faction. */
   const moduleDefs = catalog().modulesForFaction(working.faction);
 
-  /** Whether the working design is read-only (a preset). Copy is the only way
-   *  to make changes to a preset. */
-  const readOnly = working.source === "preset";
+  /** The active equipment brush's polyomino footprint (1+ cells), or null when
+   *  no equipment brush is active. Drag-paint is suppressed for multi-cell
+   *  modules (footprint > 1) so a drag stroke cannot stamp overlapping
+   *  polyominoes; single-cell modules keep drag-paint. */
+  const equipmentFootprint = brush.kind === "equipment"
+    ? catalog().module(brush.moduleId)?.footprint
+    : undefined;
+  const dragPaints = equipmentFootprint === undefined || equipmentFootprint.length === 1;
+
+  /** Placement preview ghost: the cells the active equipment module would
+   *  occupy anchored at the hovered cell, and whether they fit. Null when no
+   *  equipment brush is active or nothing is hovered. The fit check runs against
+   *  the authored `working.grid` (not the armour-padded display grid). */
+  const ghost = useMemo(() => {
+    if (brush.kind !== "equipment" || hovered === null) return null;
+    const def = catalog().module(brush.moduleId);
+    if (def === undefined) return null;
+    return {
+      cells: def.footprint.map(({ dx, dy }) => ({ col: hovered.col + dx, row: hovered.row + dy })),
+      fits: moduleFits(working.grid, hovered.col, hovered.row, def),
+    };
+  }, [brush, hovered, working.grid]);
 
   // Display grid: armour grown in-place (no padding, same coordinate space as
   // working.grid) so GridBoard shows the auto-derived armour ring. Painting and
@@ -251,65 +272,6 @@ export function ShipDesignerRoute() {
       </Text>
     );
   }
-
-  /** Paint a whole cell with the active cell-brush. */
-  function paint(col: number, row: number) {
-    if (readOnly) return;
-    if (isEdgeBrush(brush)) return;
-    setWorking((prev) => {
-      const idx = row * prev.grid.cols + col;
-      const cells = prev.grid.cells.slice();
-      const prevCell = cells[idx];
-      if (prevCell === undefined) return prev;
-      const next = applyCellBrush(brush, prevCell);
-      if (next === null) return prev;
-      cells[idx] = next;
-      return { ...prev, grid: { ...prev.grid, cells } };
-    });
-    setSelected({ col, row });
-  }
-
-  /** Paint an edge of the cell at (col, row) on side `dir`. */
-  function paintEdge(col: number, row: number, dir: "n" | "e" | "s" | "w") {
-    if (readOnly) return;
-    if (!isEdgeBrush(brush)) return;
-    setWorking((prev) => {
-      const idx = row * prev.grid.cols + col;
-      const cells = prev.grid.cells.slice();
-      const prevCell = cells[idx];
-      if (prevCell === undefined) return prev;
-      const next = applyEdgeBrush(brush, prevCell, dir);
-      if (next === null) return prev;
-      cells[idx] = next;
-      return { ...prev, grid: { ...prev.grid, cells } };
-    });
-    setSelected({ col, row });
-  }
-
-  /** Patch the equipment of the selected solid cell (facing, comms/sensor
-   *  settings). No-op when nothing is selected, the design is read-only, or the
-   *  selected cell carries no anchor module of its own (a covered cell of a
-   *  multi-cell module inherits its config from its anchor and is not patchable
-   *  here). */
-  function updateSelectedEquipment(patch: Partial<CellEquipment>) {
-    if (selected === null || readOnly) return;
-    setWorking((prev) => {
-      const idx = selected.row * prev.grid.cols + selected.col;
-      const cell = prev.grid.cells[idx];
-      if (
-        cell === undefined ||
-        cell.kind !== "solid" ||
-        cell.equipment === undefined ||
-        cell.equipment.moduleId === undefined
-      ) {
-        return prev;
-      }
-      const cells = prev.grid.cells.slice();
-      cells[idx] = { ...cell, equipment: { ...cell.equipment, ...patch } };
-      return { ...prev, grid: { ...prev.grid, cells } };
-    });
-  }
-
 
   async function save() {
     if (readOnly) return;
@@ -637,9 +599,12 @@ export function ShipDesignerRoute() {
                 showAirtightness={showAirtightness}
                 view={view}
                 cellPx={cellPx}
+                dragPaints={dragPaints}
+                ghost={ghost}
                 onPaint={paint}
                 onEdge={paintEdge}
                 onMoveCursor={(col, row) => setSelected({ col, row })}
+                onHover={setHovered}
               />
             </div>
           </div>

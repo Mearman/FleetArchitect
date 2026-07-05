@@ -182,6 +182,26 @@ export const gridSelection = style({
   zIndex: 2,
 });
 
+/** Placement-preview ghost tiles for a multi-cell module's footprint — one per
+ *  offset, placed on its grid track. `gridGhostFit` (green) when the module fits
+ *  at the hovered anchor; `gridGhostMiss` (red) when the footprint is blocked.
+ *  Non-interactive so the ghost never intercepts the placement click. */
+export const gridGhostFit = style({
+  pointerEvents: "none",
+  outline: `2px solid ${PHOSPHOR_GREEN}`,
+  outlineOffset: -2,
+  background: "rgba(120, 240, 160, 0.22)",
+  zIndex: 3,
+});
+
+export const gridGhostMiss = style({
+  pointerEvents: "none",
+  outline: `2px solid #ff5a5a`,
+  outlineOffset: -2,
+  background: "rgba(255, 90, 90, 0.22)",
+  zIndex: 3,
+});
+
 /** Wrapper to position the facing tick relative to the cell content. */
 export const cellInner = style({
   position: "relative",
