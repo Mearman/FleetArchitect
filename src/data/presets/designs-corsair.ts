@@ -55,10 +55,13 @@ export const corsairDesigns: ShipDesignInput[] = [
     // drive for the getaway. Crew quarters sit off-centre on the lighter side.
     // It looks like it was assembled in a hurry from three different ships —
     // which it was — and it works exactly because of that.
-    // Reaver: open-plan (no interior bulkheads) — the classic raider is built
-    // for speed, not compartmentalisation. The crew door open/close dynamics
-    // break the kiting doctrine when bulkheads delay crew reassignment, so the
-    // Reaver stays open-plan until the crew sim handles doors better.
+    // Reaver: deliberately open-plan (no interior bulkheads) — the classic
+    // raider is built for speed, not compartmentalisation. A sealed bulkhead
+    // costs a tick of crew-reassignment latency (the trade-off for blast
+    // containment), which the raid doctrine — frequent retargeting, sparse crew
+    // — can't spare. The crew door bug that once forced this choice is fixed
+    // (advanceCrew now reopens sealed doors), but the responsiveness trade-off
+    // makes open-plan the right raider design regardless.
     grid: subdivideGrid(corsairGrid([
       ".####>.",
       "ECF##Me",

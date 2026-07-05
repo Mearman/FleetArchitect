@@ -5,6 +5,7 @@ import type { ShipDesign } from "@/schema/ship";
 type ShipDesignInput = input<typeof ShipDesign>;
 
 import { swarmGrid, mountMultiCell, PRESET_TIME, withEdges } from "@/data/presets/tokens";
+import type { AuthoredEdge } from "@/data/presets/tokens";
 import { subdivideGrid } from "@/domain/shipgen";
 import { SWARM_FOOTPRINTS } from "@/data/catalog/modules/swarm-capital";
 
@@ -16,6 +17,18 @@ import { SWARM_FOOTPRINTS } from "@/data/catalog/modules/swarm-capital";
 // rounds), so no ammon sac is needed even for sting-armed ships. All Swarm
 // crewRequired values are 0; no crew quarters are needed either. Isolated
 // from designs.ts so the roster file stays under the max-lines guard.
+
+/** A vertical compartment bulkhead at `col` (its east edges): wall on every row
+ *  except the listed `doorRows` (transit doors). Used by the crewless capital
+ *  hulls (Devourer) for silhouette + blast containment — closed doors block
+ *  chain reactions, and with no crew to reopen them the bulkheads stay sealed. */
+function bulkhead(col: number, doorRows: number[]): AuthoredEdge[] {
+  const edges: AuthoredEdge[] = [];
+  for (let row = 0; row <= 6; row += 1) {
+    edges.push({ col, row, dir: "e", kind: doorRows.includes(row) ? "door" : "wall" });
+  }
+  return edges;
+}
 
 // Subdivision factors (f): expand each coarse cell into an f × f block of 1 m
 // cells so the hull classifies to the correct tier (fighter ≤ 20 m,
@@ -269,7 +282,7 @@ export const swarmDesigns: ShipDesignInput[] = [
     // stern (left) → drive flagella → ganglion/metabolic spine →
     // regen + spore-cloud screen → sting/acid battery → carapace-screened prow.
     grid: mountMultiCell(
-      subdivideGrid(swarmGrid([
+      subdivideGrid(withEdges(swarmGrid([
         "..#>x~nnnkwccc",
         "..jgfzrsBnnnwh",
         ".jgm~rfsannnwy",
@@ -277,6 +290,15 @@ export const swarmDesigns: ShipDesignInput[] = [
         ".jgm~rfsannnwy",
         "..jgfzrsnnnnwh",
         "..#<x~nnnkwccc",
+      ]), [
+        // Compartment bulkheads at the natural breaks (stern | drive | battery |
+        // prow), each walled with transit doors through the flank rows. The
+        // Devourer is crewless, so these shape the silhouette and add blast
+        // containment — closed doors block chain reactions, making a
+        // compartmentalised hull a better damage sponge than an open one.
+        ...bulkhead(4, [2, 4]),
+        ...bulkhead(7, [2, 4]),
+        ...bulkhead(10, [2, 4]),
       ]), F_DEVOURER),
       F_DEVOURER,
       [
