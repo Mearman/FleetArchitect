@@ -113,6 +113,11 @@ export interface ResolvedModule {
   slotId: string;
   moduleId: string;
   kind: ModuleEffect["kind"];
+  /** For a multi-cell anchor: the `slotId`s of its covered cells (footprint
+   *  offsets ≠ {0,0}, resolved to absolute coords). Absent on single-cell
+   *  modules and on covered/structural cells. Drives effect scaling in the
+   *  engine (a module's output magnitudes scale with its surviving covers). */
+  coverSlotIds?: string[];
   /** Integer grid coordinates of the cell this module occupies. Carried
    *  through to break-apart so 4-connected adjacency is exact, with no
    *  rounding of the ship-local world position. */

@@ -124,6 +124,9 @@ function snapshotShip(s: SimShip): CheckpointShip {
   if (s.hardwires !== undefined) ship.hardwires = s.hardwires;
   if (s.brokeOff !== undefined) ship.brokeOff = s.brokeOff;
   if (s.phantom !== undefined) ship.phantom = s.phantom;
+  // Effect-scaling metadata for multi-cell anchors: carried verbatim (the
+  // engine is catalog-free, so the unscaled base cannot be re-derived).
+  if (s.scalingMeta !== undefined) ship.scalingMeta = s.scalingMeta;
   if (s.resource !== undefined) {
     ship.resource = {
       // The runtime `moduleIndex` is a `ReadonlyMap`; copy it into a mutable
@@ -443,6 +446,9 @@ function restoreShip(s: CheckpointShip): SimShip {
   if (s.hardwires !== undefined) ship.hardwires = s.hardwires;
   if (s.brokeOff !== undefined) ship.brokeOff = s.brokeOff;
   if (s.phantom !== undefined) ship.phantom = s.phantom;
+  // Effect-scaling metadata for multi-cell anchors: carried verbatim (the
+  // engine is catalog-free, so the unscaled base cannot be re-derived).
+  if (s.scalingMeta !== undefined) ship.scalingMeta = s.scalingMeta;
   if (s.resource !== undefined) {
     // heatCapacity is a pure function of the (restored) modules + moduleIndex +
     // faction, so it is re-derived here rather than serialised in the checkpoint.

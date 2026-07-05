@@ -12,7 +12,8 @@ import { defaultAiDecisions } from "./ai-step";
 import { aliveDirectionalShields } from "./directional-shield-cache";
 import { SIM } from "./config";
 import { resetCrewForFragment } from "./crew";
-import { comTangentialVelocity, localCentreOfMass, recomputeAggregates } from "./physics";
+import { recomputeAggregatesWithScaling } from "./effect-scaling";
+import { comTangentialVelocity, localCentreOfMass } from "./physics";
 import { angleDifference, normaliseAngle, worldToLocal } from "./setup";
 import type { SimModule, SimShip } from "./types";
 
@@ -690,7 +691,16 @@ export function makeChunkShip(
   };
   // Force a clean recompute so chunk aggregates match its own modules.
   // This derives the chunk's own ship-local centre of mass (comX/comY).
-  recomputeAggregates(chunk);
+  // Carry over effect-scaling metadata for any multi-cell anchors that
+  // migrated with the chunk (covers left in the parent simply read as dead —
+  // the chunk's anchor lost them). The parent's entries for migrated anchors
+  // stay behind but are skipped (the parent's copies are now dead).
+  if (parent.scalingMeta !== undefined && parent.scalingMeta.length > 0) {
+    const chunkSlots = new Set(chunk.modules?.map((m) => m.slotId));
+    const chunkScaling = parent.scalingMeta.filter((e) => chunkSlots.has(e.slotId));
+    if (chunkScaling.length > 0) chunk.scalingMeta = chunkScaling;
+  }
+  recomputeAggregatesWithScaling(chunk);
   // Momentum split: set the chunk's linear velocity to the parent's plus the
   // tangential velocity the chunk's CoM had under the parent's spin.
   const split = comTangentialVelocity(

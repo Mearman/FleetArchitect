@@ -13,6 +13,7 @@ import type { Doctrine, FireDiscipline, ShipStance, SpatialObjective, TargetingM
 import type { ResolvedHardwire, SimCrew } from "../types";
 
 import type { UNREACHABLE } from "./config";
+import type { AnchorScalingMeta } from "./effect-scaling";
 import type { EnergyBuffer } from "./power";
 import type { RectangularTransportGraph } from "./transport-graph";
 
@@ -486,21 +487,19 @@ export interface SimShip {
   resourceGraph?: CachedTransportGraph;
   /**
    * Current count of alive modules, recomputed each tick by
-   * `recomputeAggregates` (a free side effect of its module pass). A
-   * transient derived cache: not captured by the checkpoint (re-warms after
-   * resume), so it changes no frame output. Sufficient as a topology-change
-   * signal: the engine only flips `alive` true→false, so an unchanged count
-   * holds exactly when no module died and the connectivity graph is unchanged.
+   * `recomputeAggregates`. A transient derived cache: not captured by the
+   * checkpoint (re-warms after resume). Sufficient as a topology-change signal.
    */
   aliveCount?: number;
   /**
    * The alive-module count at the last break-apart evaluation. Same derived
-   * category as `topologyFingerprint` — not captured by the checkpoint, so
-   * on resume it re-warms to `undefined` and the first pass analyses; on an
-   * unchanged topology that returns `[]` exactly as a skip would. When this
-   * equals `aliveCount`, break-apart returns `[]` without its union-find.
+   * category as `topologyFingerprint` — not captured by the checkpoint. When
+   * this equals `aliveCount`, break-apart returns `[]` without its union-find.
    */
   breakApartLastAliveCount?: number;
+  /** Per-anchor effect-scaling metadata for multi-cell modules (see
+   *  `engine/effect-scaling.ts`); built at setup, captured by the checkpoint. */
+  scalingMeta?: AnchorScalingMeta[];
 }
 
 /**

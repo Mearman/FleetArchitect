@@ -507,6 +507,10 @@ function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] 
         slotId,
         moduleId: moduleDef.id,
         kind: moduleDef.effect.kind,
+        // Only on multi-cell anchors; omitted (not undefined) — canonicaliser rejects undefined.
+        ...(moduleDef.footprint.length > 1
+          ? { coverSlotIds: moduleDef.footprint.filter((o) => o.dx !== 0 || o.dy !== 0).map((o) => `cell-${col + o.dx}-${row + o.dy}`) }
+          : {}),
         col,
         row,
         x: local.x,

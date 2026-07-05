@@ -44,7 +44,8 @@ import { moveShips } from "./movement";
 import { launchDecoys, launchDrones, stepPhantoms } from "./phantoms";
 import { stepPulses } from "./pulse-step";
 import { aggregatesChanged } from "./aggregates-fingerprint";
-import { hasAliveCommand, hasAliveReactor, recomputeAggregates } from "./physics";
+import { hasAliveCommand, hasAliveReactor } from "./physics";
+import { recomputeAggregatesWithScaling } from "./effect-scaling";
 import { electFocusTarget, pickTarget } from "./targeting";
 import { refreshRosterIncremental } from "./roster";
 import { applyBlink, applyCommandAuras, stepOvercharge } from "./tech";
@@ -455,12 +456,11 @@ export function* simulateBattle(
     //     destroyed this tick (hitscan or projectile) is reflected in the
     //     shield pool, thrust, and weapon list before regen and the snapshot.
     //     Skipped when `aggregatesChanged` reports no aggregate-relevant input
-    //     has moved since the last recompute — an unchanged hash means every
-    //     tracked flag equals its prior value, so a re-run would produce
-    //     identical aggregates. The overcharge and break-apart sites below still
-    //     run unconditionally on their own triggers (and move next tick's hash).
+    //     has moved since the last recompute — an unchanged hash means a re-run
+    //     would produce identical aggregates. Overcharge/break-apart re-run on
+    //     their own triggers; scaling (effect-scaling.ts) is applied first.
     for (const ship of state.ships) {
-      if (ship.modules !== undefined && aggregatesChanged(ship)) recomputeAggregates(ship);
+      if (ship.modules !== undefined && aggregatesChanged(ship)) recomputeAggregatesWithScaling(ship);
     }
 
     // 4b-overcharge. Reactor overcharge (factions update). With the power budget
@@ -471,7 +471,7 @@ export function* simulateBattle(
     //     unchanged for them.
     for (const ship of state.ships) {
       if (ship.modules === undefined) continue;
-      if (stepOvercharge(ship)) recomputeAggregates(ship);
+      if (stepOvercharge(ship)) recomputeAggregatesWithScaling(ship);
     }
 
     // 4b-crew/ammo. Crew AI + movement, then ammo-conduit refill — fused into a
@@ -528,7 +528,7 @@ export function* simulateBattle(
       } else {
         // Re-run aggregates on the survivor since some modules flipped
         // to dead during the split (they were migrated to chunks).
-        recomputeAggregates(ship);
+        recomputeAggregatesWithScaling(ship);
       }
     }
     if (newChunks.length > 0) {

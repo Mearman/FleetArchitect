@@ -274,6 +274,18 @@ const CheckpointShip = z.object({
   salvageMass: z.number(),
   claimedBy: z.string().optional(),
   modules: z.array(CheckpointModule).optional(),
+  // Effect-scaling metadata for multi-cell anchors (engine/effect-scaling.ts):
+  // a module's output magnitudes scale with its surviving covered cells.
+  // Carried verbatim — the engine is catalog-free, so the unscaled base cannot
+  // be re-derived on resume. Absent on ships with no multi-cell modules.
+  scalingMeta: z.array(
+    z.object({
+      slotId: z.string(),
+      totalCells: z.number().int(),
+      coverSlotIds: z.array(z.string()),
+      base: ModuleEffect,
+    }),
+  ).optional(),
   crew: z.array(CheckpointCrew).optional(),
   hullBaseThrust: z.number().optional(),
   hardwires: z.array(ResolvedHardwire).optional(),
@@ -431,8 +443,10 @@ const DeploymentReference = z.object({
  *  `reactiveHp`/`maxReactiveHp` to {@link CheckpointModule} for the finite
  *  reactive-plate (E,p-aware armour) model. v11 adds `renderOutline` to
  *  {@link CheckpointShip}, threading the bevelled render outline so a resumed
- *  battle's silhouette stays bevelled. */
-export const CHECKPOINT_VERSION = 11;
+ *  battle's silhouette stays bevelled. v12 adds `scalingMeta` to
+ *  {@link CheckpointShip}, carrying multi-cell anchors' unscaled effect bases
+ *  so effect scaling survives an interrupt/resume. */
+export const CHECKPOINT_VERSION = 12;
 
 /**
  * A complete engine checkpoint: everything needed to resume `simulateBattle`

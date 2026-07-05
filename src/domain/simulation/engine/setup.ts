@@ -18,6 +18,7 @@ import { CREW_HP, SIM } from "./config";
 import { compareByCell } from "./crew-pathfinding";
 import { recomputeAggregates, sumWeaponThrust } from "./physics";
 import { makeResourceState } from "./resource-step";
+import type { AnchorScalingMeta } from "./effect-scaling";
 import type { SimModule, SimShip } from "./types";
 
 /**
@@ -328,6 +329,25 @@ export function toSimShip(ship: CombatShip, rng: Rng): SimShip {
     }
     base.hullBaseThrust = ship.stats.thrust - sumWeaponThrust(ship);
     base.crew = spawnCrew(base.instanceId, base.modules);
+    // Build per-anchor effect-scaling metadata for multi-cell modules. The base
+    // is a clone of the anchor's resolved effect (the engine mutates the
+    // SimModule's own effect each tick, never this base). Absent on a ship with
+    // no multi-cell modules, so effect scaling is a no-op there (byte-identical
+    // to today for an all-1x1 fleet).
+    const scalingMeta: AnchorScalingMeta[] = [];
+    for (let i = 0; i < ship.modules.length; i += 1) {
+      const resolved = ship.modules[i];
+      const sim = base.modules[i];
+      if (resolved === undefined || sim === undefined) continue;
+      if (resolved.coverSlotIds === undefined) continue;
+      scalingMeta.push({
+        slotId: resolved.slotId,
+        totalCells: resolved.coverSlotIds.length + 1,
+        coverSlotIds: resolved.coverSlotIds,
+        base: structuredClone(sim.effect),
+      });
+    }
+    if (scalingMeta.length > 0) base.scalingMeta = scalingMeta;
     recomputeAggregates(base);
     // Broad-phase radius is the grid bounding radius (the farthest cell
     // centre plus half a cell), derived from the module cells rather than a

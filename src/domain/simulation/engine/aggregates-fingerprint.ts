@@ -22,9 +22,13 @@ import type { SimShip } from "./types";
  * `techActive` (what the overcharge-surge gate reads) — are packed into one byte
  * per alive module and mixed into the hash.
  *
- * Lifetime-stable fields (`x`/`y`/`mass`/`effect.*`/`command`/`hullBaseThrust`)
- * are deliberately omitted: they never change mid-battle, so folding them is
- * constant work that cannot move the fingerprint. `powered` is an OUTPUT of the
+ * Lifetime-stable fields (`x`/`y`/`mass`/`command`/`hullBaseThrust`) are
+ * deliberately omitted: they never change mid-battle, so folding them is
+ * constant work that cannot move the fingerprint. `effect.*` is the one
+ * exception — effect scaling (engine/effect-scaling.ts) mutates multi-cell
+ * anchors' output magnitudes each tick — but it is a PURE function of the alive
+ * set this fingerprint already tracks, so it cannot move without a tracked
+ * signal also moving. `powered` is an OUTPUT of the
  * recompute (set from `alive` plus the brownout cut), fully determined by the
  * tracked signals plus stable `powerDraw`, so omitting it is correct: when no
  * tracked signal moves, `powered` cannot move either, and a skipped recompute
