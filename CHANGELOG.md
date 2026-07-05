@@ -1,3 +1,10 @@
+# [1.45.0](https://github.com/Mearman/FleetArchitect/compare/v1.44.0...v1.45.0) (2026-07-05)
+
+
+### Features
+
+* **catalog:** add polyomino multi-cell modules with size variety ([c8d1243](https://github.com/Mearman/FleetArchitect/commit/c8d1243f46622b13cabd38298feeeb5fc3df017e))
+
 # [1.44.0](https://github.com/Mearman/FleetArchitect/compare/v1.43.0...v1.44.0) (2026-07-05)
 
 
