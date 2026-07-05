@@ -1,3 +1,10 @@
+# [1.47.0](https://github.com/Mearman/FleetArchitect/compare/v1.46.0...v1.47.0) (2026-07-05)
+
+
+### Features
+
+* **sim:** scale multi-cell module output by surviving covers ([216c4d3](https://github.com/Mearman/FleetArchitect/commit/216c4d306c8a9792cb2a98d91cb687f1140da1ed))
+
 # [1.46.0](https://github.com/Mearman/FleetArchitect/compare/v1.45.1...v1.46.0) (2026-07-05)
 
 
