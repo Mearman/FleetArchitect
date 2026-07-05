@@ -1,3 +1,10 @@
+## [1.45.1](https://github.com/Mearman/FleetArchitect/compare/v1.45.0...v1.45.1) (2026-07-05)
+
+
+### Bug Fixes
+
+* **designer:** remap multi-cell covers when re-centering the grid ([d58939b](https://github.com/Mearman/FleetArchitect/commit/d58939b343017c1ef8c2e3b76b0c9394f31cfc8e))
+
 # [1.45.0](https://github.com/Mearman/FleetArchitect/compare/v1.44.0...v1.45.0) (2026-07-05)
 
 
