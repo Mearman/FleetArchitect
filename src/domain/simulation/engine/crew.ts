@@ -468,25 +468,28 @@ export function advanceCrew(crew: SimCrew, cells: ReadonlyMap<string, SimModule>
     abandonHaul(crew);
     return;
   }
-  // If the path crosses a door edge, check its current state.
-  // Open doors are crossed freely; a door that closed since the path was cached
-  // blocks the step — abandon so the crew re-plans through (or around) it next tick.
+  // If the path crosses a door edge, open it (both sides of the shared edge).
+  // A door that has closed since the path was cached (the close rule at the end
+  // of `updateCrew` seals bulkheads whose two sides are crew-free) is reopened
+  // here, then crossed NEXT tick: a sealed bulkhead costs one tick of
+  // reassignment latency — the trade-off for blast containment. (Replaces the
+  // old `abandonHaul`, which could never reopen a closed door and trapped crew
+  // indefinitely behind it, leaving weapons permanently unmanned.)
   const fromMod = cells.get(crewCellKey(crew.col, crew.row));
   const dir = fromMod !== undefined ? edgeDirection(crew, next) : undefined;
   if (dir !== undefined && fromMod !== undefined && fromMod.edges[dir] === "door") {
-    if (fromMod.edges.doorStates[dir] !== "open") {
-      // Door closed under a stale cached path — abandon and re-plan.
-      abandonHaul(crew);
-      return;
-    }
-  }
-  // Open the door if this step crosses one — both sides of the shared edge.
-  if (dir !== undefined && fromMod !== undefined && fromMod.edges[dir] === "door") {
+    const wasClosed = fromMod.edges.doorStates[dir] !== "open";
     fromMod.edges.doorStates[dir] = "open";
     const toMod = cells.get(crewCellKey(next.col, next.row));
     const reverseDir = dir === "n" ? "s" : dir === "s" ? "n" : dir === "e" ? "w" : "e";
     if (toMod !== undefined && toMod.edges[reverseDir] === "door") {
       toMod.edges.doorStates[reverseDir] = "open";
+    }
+    if (wasClosed) {
+      // Reopened this tick — hold position, cross next tick.
+      crew.ox = 0;
+      crew.oy = 0;
+      return;
     }
   }
   crew.col = next.col;

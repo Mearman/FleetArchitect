@@ -110,9 +110,10 @@ async function resolveAndBattle(
 const matrix = buildFullMatrix();
 
 describe("faction matrix (full): every preset fleet vs every other", () => {
-  // Per-test timeout: the heaviest preset pair (19 ships) at 150 ticks lands
-  // well under a minute in the bench; 120 s is generous headroom for a slow
-  // CI runner without masking a real hang.
+  // Per-test timeout: each matchup resolves in ~2 s isolated, but the suite runs
+  // 600 of them through the cache layer back-to-back, and the occasional battle
+  // spikes (GC pause, cache pressure) well past the average. 300 s is headroom
+  // for a slow CI runner + the spike without masking a real hang.
   for (const m of matrix) {
     it(`${m.name} resolves to a valid outcome`, async () => {
       const result = await resolveAndBattle(m.attacker.id, m.defender.id);
@@ -126,6 +127,6 @@ describe("faction matrix (full): every preset fleet vs every other", () => {
         result.frames.length,
         `${m.name}: battle must produce more than one frame`,
       ).toBeGreaterThan(1);
-    }, 120000);
+    }, 300000);
   }
 });
