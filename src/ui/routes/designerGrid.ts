@@ -1,6 +1,7 @@
 import { catalog } from "@/data/catalog";
 import { MODULE_APPEARANCE } from "@/ui/render/moduleAppearance";
 import type { GlyphKey } from "@/ui/render/moduleAppearance";
+import type { EntityId } from "@/schema/primitives";
 import type {
   CellEdges,
   DoorState,
@@ -181,11 +182,23 @@ export function blankDesign(): WorkingDesign {
   };
 }
 
+/** Resolve the module id installed on a solid cell, whether it is the cell's
+ *  own anchor (`equipment.moduleId`) or a covered cell's back-pointer to its
+ *  anchor (`equipment.covers.moduleId`). Returns undefined for cells with no
+ *  equipment. Used to paint covered cells in their anchor module's colour. */
+function equipmentModuleId(cell: SolidCell): EntityId | undefined {
+  if (cell.equipment === undefined) return undefined;
+  if (cell.equipment.moduleId !== undefined) return cell.equipment.moduleId;
+  return cell.equipment.covers?.moduleId;
+}
+
 /** Display colour per cell. The surface tints the cell; an equipment tint
  *  overlays it so each installed module is distinguishable at a glance. The
  *  equipment hue comes from the shared {@link MODULE_APPEARANCE} table, so a
  *  weapon, an engine and a reactor read as different parts in the designer
- *  exactly as they do in the battle and isometric views. */
+ *  exactly as they do in the battle and isometric views. A covered cell of a
+ *  multi-cell module paints in its anchor module's colour too — the polyomino
+ *  reads as one merged block. */
 export function cellColour(cell: GridCell): string {
   if (cell.kind === "empty") return "transparent";
   if (cell.kind !== "solid") return "transparent";
@@ -195,11 +208,12 @@ export function cellColour(cell: GridCell): string {
     case "bare":
       return "#5a5f73"; // muted grey: framing only
     case "deck": {
-      if (cell.equipment === undefined) {
+      const moduleId = equipmentModuleId(cell);
+      if (moduleId === undefined) {
         // Warm amber-tan: walkable interior corridor.
         return "#c9a84c";
       }
-      const mod = catalog().module(cell.equipment.moduleId);
+      const mod = catalog().module(moduleId);
       if (mod === undefined) return "#6ea8ff";
       return MODULE_APPEARANCE[mod.effect.kind].colour;
     }
@@ -223,12 +237,14 @@ export function cellLabel(cell: GridCell): string {
 }
 
 /** The glyph identifying a cell's installed module, or null when the cell holds
- *  no equipment. Resolves the module's effect kind through the shared
+ *  no anchor of its own. Resolves the module's effect kind through the shared
  *  {@link MODULE_APPEARANCE} table so the designer marks an engine, a weapon and
- *  a sensor with the same glyphs the battle and isometric views use. */
+ *  a sensor with the same glyphs the battle and isometric views use. A covered
+ *  cell of a multi-cell module returns null: the glyph is the anchor's alone,
+ *  so the polyomino shows one mark rather than N. */
 export function cellGlyph(cell: GridCell): GlyphKey | null {
   if (cell.kind !== "solid" || cell.surface !== "deck") return null;
-  if (cell.equipment === undefined) return null;
+  if (cell.equipment === undefined || cell.equipment.moduleId === undefined) return null;
   const mod = catalog().module(cell.equipment.moduleId);
   if (mod === undefined) return null;
   return MODULE_APPEARANCE[mod.effect.kind].glyph;

@@ -4,8 +4,9 @@ import type { ShipDesign } from "@/schema/ship";
 /** Same ShipDesign input shape used by designs.ts: schema defaults optional. */
 type ShipDesignInput = input<typeof ShipDesign>;
 
-import { gridFromMap, PRESET_TIME, withEdges } from "@/data/presets/tokens";
+import { gridFromMap, mountMultiCell, PRESET_TIME, withEdges } from "@/data/presets/tokens";
 import { subdivideGrid } from "@/domain/shipgen";
+import { TERRAN_FOOTPRINTS } from "@/data/catalog/modules/terran-capital";
 
 // Terran designs — ferro-steel hulls, energy shields, conventional drives.
 // Angular, symmetrical warships with armoured prows and aft engine banks.
@@ -234,38 +235,50 @@ export const terranDesigns: ShipDesignInput[] = [
     // incoming fire strikes plate before it reaches the guns; antimatter cores
     // and a five-engine stern bank drive the whole mass.
     //
+    // The centre spine mounts a four-cell Spinal Lance (I) — a fixed-forward
+    // 3.5 GW capital beam replacing the old broadside railgun at the keel. Its
+    // three covered cells extend east within the keel block via `coverFootprint`
+    // (the anchor token `I` carries the module id; the helper installs the
+    // `covers` back-pointers at the matching fine sub-cells).
+    //
     // Omni transceivers (O) bolted to the prow (rows 1 and 3, col 9) give fleet
     // squad-net coverage on channel 0. RCS thrusters (J) and reaction wheels (W)
     // on the spine let the capital come about.
     //
     // Layout (13 cols × 5 rows), subdivided ×7 → 91 m cruiser:
     // stern (left) → crew/reactor spine → corridors → magazine → weapons → prow
-    grid: subdivideGrid(withEdges(gridFromMap([
-      "#>JWUTRL..#..",
-      ".EXCCTRRLO##.",
-      "EXFCCGvRRL###",
-      ".EXCCTRRLO##.",
-      "#<JeWSTRL.#..",
-    ]), [
-      { col: 2, row: 0, dir: "e", kind: "wall" },
-      { col: 2, row: 1, dir: "e", kind: "door" },
-      { col: 2, row: 2, dir: "e", kind: "wall" },
-      { col: 2, row: 3, dir: "e", kind: "door" },
-      { col: 2, row: 4, dir: "e", kind: "wall" },
-      { col: 4, row: 0, dir: "e", kind: "wall" },
-      { col: 4, row: 1, dir: "e", kind: "wall" },
-      { col: 4, row: 2, dir: "e", kind: "door" },
-      { col: 4, row: 3, dir: "e", kind: "wall" },
-      { col: 4, row: 4, dir: "e", kind: "wall" },
-      { col: 5, row: 0, dir: "e", kind: "wall" },
-      { col: 5, row: 1, dir: "e", kind: "wall" },
-      { col: 5, row: 2, dir: "e", kind: "door" },
-      { col: 5, row: 3, dir: "e", kind: "wall" },
-      { col: 5, row: 4, dir: "e", kind: "wall" },
-      { col: 7, row: 1, dir: "e", kind: "wall" },
-      { col: 7, row: 2, dir: "e", kind: "door" },
-      { col: 7, row: 3, dir: "e", kind: "wall" },
-    ]), F_LEVIATHAN),
+    grid: mountMultiCell(
+      subdivideGrid(withEdges(gridFromMap([
+        "#>JWUTRL..#..",
+        ".EXCCTRRLO##.",
+        "EXFCCGvIRL###",
+        ".EXCCTRRLO##.",
+        "#<JeWSTRL.#..",
+      ]), [
+        { col: 2, row: 0, dir: "e", kind: "wall" },
+        { col: 2, row: 1, dir: "e", kind: "door" },
+        { col: 2, row: 2, dir: "e", kind: "wall" },
+        { col: 2, row: 3, dir: "e", kind: "door" },
+        { col: 2, row: 4, dir: "e", kind: "wall" },
+        { col: 4, row: 0, dir: "e", kind: "wall" },
+        { col: 4, row: 1, dir: "e", kind: "wall" },
+        { col: 4, row: 2, dir: "e", kind: "door" },
+        { col: 4, row: 3, dir: "e", kind: "wall" },
+        { col: 4, row: 4, dir: "e", kind: "wall" },
+        { col: 5, row: 0, dir: "e", kind: "wall" },
+        { col: 5, row: 1, dir: "e", kind: "wall" },
+        { col: 5, row: 2, dir: "e", kind: "door" },
+        { col: 5, row: 3, dir: "e", kind: "wall" },
+        { col: 5, row: 4, dir: "e", kind: "wall" },
+        { col: 7, row: 1, dir: "e", kind: "wall" },
+        { col: 7, row: 2, dir: "e", kind: "door" },
+        { col: 7, row: 3, dir: "e", kind: "wall" },
+      ]), F_LEVIATHAN),
+      F_LEVIATHAN,
+      [
+        [7, 2, "ter-spinal-lance", TERRAN_FOOTPRINTS.spinalLance],
+      ],
+    ),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -285,46 +298,74 @@ export const terranDesigns: ShipDesignInput[] = [
     // weapons. Antimatter cores and crew decks drive a vast stern engine bank.
     // One anchors an entire fleet.
     //
+    // The apex hull fields the full capital multi-cell kit. The centre spine
+    // trades its railgun pair for a Spinal Mass Driver (Q, fixed-forward
+    // coilgun) and a Heavy Railgun Turret (H); the port stern engine becomes a
+    // Capital Plasma Drive (B); the keel antimatter core is replaced by the
+    // four-cell Cross-Section Antimatter command core (Z); the stern shield
+    // steps up to a 2×2 Bastion Shield Array (N); and the prow deflector
+    // becomes a two-cell Bulwark Screen (k). Each anchor's covered cells are
+    // installed by `mountMultiCell` after subdivision.
+    //
     // Layout (13 cols × 5 rows), subdivided ×12 → 156 m dreadnought:
     // stern → engines → reactor/crew spine → crew decks → magazine → weapons → prow
     // C cells (crew quarters) line the central corridor; the G (magazine) cell
     // sits between the crew block and the weapon batteries so crew can haul ammo.
-    grid: subdivideGrid(withEdges(gridFromMap([
-      ".#>JWUvRML#..",
-      ".EXCCW~RRML#.",
-      "EXFCCG~RRMML#",
-      ".EXCCW~RRML#.",
-      ".#<JeWS~RML#.",
-    ]), [
-      { col: 1, row: 1, dir: "e", kind: "wall" },
-      { col: 1, row: 2, dir: "e", kind: "door" },
-      { col: 1, row: 3, dir: "e", kind: "wall" },
-      { col: 2, row: 0, dir: "e", kind: "wall" },
-      { col: 2, row: 1, dir: "e", kind: "door" },
-      { col: 2, row: 2, dir: "e", kind: "wall" },
-      { col: 2, row: 3, dir: "e", kind: "door" },
-      { col: 2, row: 4, dir: "e", kind: "wall" },
-      { col: 4, row: 0, dir: "e", kind: "wall" },
-      { col: 4, row: 1, dir: "e", kind: "wall" },
-      { col: 4, row: 2, dir: "e", kind: "door" },
-      { col: 4, row: 3, dir: "e", kind: "wall" },
-      { col: 4, row: 4, dir: "e", kind: "wall" },
-      { col: 5, row: 0, dir: "e", kind: "wall" },
-      { col: 5, row: 1, dir: "e", kind: "wall" },
-      { col: 5, row: 2, dir: "e", kind: "door" },
-      { col: 5, row: 3, dir: "e", kind: "wall" },
-      { col: 5, row: 4, dir: "e", kind: "wall" },
-      { col: 6, row: 0, dir: "e", kind: "wall" },
-      { col: 6, row: 1, dir: "e", kind: "door" },
-      { col: 6, row: 2, dir: "e", kind: "wall" },
-      { col: 6, row: 3, dir: "e", kind: "door" },
-      { col: 6, row: 4, dir: "e", kind: "wall" },
-      { col: 7, row: 0, dir: "e", kind: "wall" },
-      { col: 7, row: 1, dir: "e", kind: "wall" },
-      { col: 7, row: 2, dir: "e", kind: "door" },
-      { col: 7, row: 3, dir: "e", kind: "wall" },
-      { col: 7, row: 4, dir: "e", kind: "wall" },
-    ]), F_TITAN),
+    grid: mountMultiCell(
+      subdivideGrid(withEdges(gridFromMap([
+        ".#>JWkvRML#..",
+        ".BXCCW~RRML#.",
+        "EZFCCG~QHMML#",
+        ".EXCCW~RRML#.",
+        ".#<JeWN~RML#.",
+      ]), [
+        { col: 1, row: 1, dir: "e", kind: "wall" },
+        { col: 1, row: 2, dir: "e", kind: "door" },
+        { col: 1, row: 3, dir: "e", kind: "wall" },
+        { col: 2, row: 0, dir: "e", kind: "wall" },
+        { col: 2, row: 1, dir: "e", kind: "door" },
+        { col: 2, row: 2, dir: "e", kind: "wall" },
+        { col: 2, row: 3, dir: "e", kind: "door" },
+        { col: 2, row: 4, dir: "e", kind: "wall" },
+        { col: 4, row: 0, dir: "e", kind: "wall" },
+        { col: 4, row: 1, dir: "e", kind: "wall" },
+        { col: 4, row: 2, dir: "e", kind: "door" },
+        { col: 4, row: 3, dir: "e", kind: "wall" },
+        { col: 4, row: 4, dir: "e", kind: "wall" },
+        { col: 5, row: 0, dir: "e", kind: "wall" },
+        { col: 5, row: 1, dir: "e", kind: "wall" },
+        { col: 5, row: 2, dir: "e", kind: "door" },
+        { col: 5, row: 3, dir: "e", kind: "wall" },
+        { col: 5, row: 4, dir: "e", kind: "wall" },
+        { col: 6, row: 0, dir: "e", kind: "wall" },
+        { col: 6, row: 1, dir: "e", kind: "door" },
+        { col: 6, row: 2, dir: "e", kind: "wall" },
+        { col: 6, row: 3, dir: "e", kind: "door" },
+        { col: 6, row: 4, dir: "e", kind: "wall" },
+        { col: 7, row: 0, dir: "e", kind: "wall" },
+        { col: 7, row: 1, dir: "e", kind: "wall" },
+        { col: 7, row: 2, dir: "e", kind: "door" },
+        { col: 7, row: 3, dir: "e", kind: "wall" },
+        { col: 7, row: 4, dir: "e", kind: "wall" },
+      ]), F_TITAN),
+      F_TITAN,
+      [
+        // Centre-spine weapon pair: a fixed-forward spinal coilgun (Q) and a
+        // heavy railgun turret (H), each claiming one extra keel sub-cell.
+        [7, 2, "ter-spinal-driver", TERRAN_FOOTPRINTS.spinalDriver],
+        [8, 2, "ter-heavy-railgun-turret", TERRAN_FOOTPRINTS.heavyRailTurret],
+        // Port stern: a three-cell Capital Plasma Drive (B) replaces the ion
+        // drive as the main propulsion.
+        [1, 1, "ter-capital-drive", TERRAN_FOOTPRINTS.capitalDrive],
+        // Keel reactor: the four-cell T-section Cross-Section Antimatter core
+        // (Z) — the 12 GW command heart, supplanting the single antimatter X.
+        [1, 2, "ter-cross-reactor", TERRAN_FOOTPRINTS.crossReactor],
+        // Stern shield: the 2×2 Bastion Shield Array (N) replaces the Mk II.
+        [6, 4, "ter-bastion-shield", TERRAN_FOOTPRINTS.bastionShield],
+        // Prow momentum screen: the two-cell Bulwark Deflector (k).
+        [5, 0, "ter-bulwark-deflector", TERRAN_FOOTPRINTS.bulwarkDeflector],
+      ],
+    ),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",

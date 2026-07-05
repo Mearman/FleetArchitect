@@ -369,7 +369,7 @@ export function GridBoard({
                 );
               })}
               <span className={cellInner}>
-                {cell.equipment !== undefined ? (
+                {cell.equipment?.moduleId !== undefined ? (
                   <span
                     className={facingTick}
                     style={{

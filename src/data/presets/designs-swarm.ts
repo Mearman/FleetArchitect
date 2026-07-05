@@ -4,8 +4,9 @@ import type { ShipDesign } from "@/schema/ship";
 /** Same ShipDesign input shape used by designs.ts: schema defaults optional. */
 type ShipDesignInput = input<typeof ShipDesign>;
 
-import { swarmGrid, PRESET_TIME, withEdges } from "@/data/presets/tokens";
+import { swarmGrid, mountMultiCell, PRESET_TIME, withEdges } from "@/data/presets/tokens";
 import { subdivideGrid } from "@/domain/shipgen";
+import { SWARM_FOOTPRINTS } from "@/data/catalog/modules/swarm-capital";
 
 // Swarm designs — bio-organic insectoid ships. Asymmetric, clawed, organic
 // silhouettes: tapered stingers, swept carapace, clustered drive flagella.
@@ -168,15 +169,22 @@ export const swarmDesigns: ShipDesignInput[] = [
     // Merged: keeps the biolaser spines (k), pheromone nets (h) and chemosensor
     // organs (y) for hive-net coverage, and adds pseudopod clusters (x) plus
     // gyral organs (z) on the spine so the capital can come about.
-    grid: subdivideGrid(withEdges(swarmGrid([
-      "..#>x~nnnkccc",
-      "..jgfzrsnnnnh",
-      ".jgm~rfsannny",
-      "ugmm~rfsaannn",
-      ".jgm~rfsannny",
-      "..jgfzrsnnnnh",
-      "..#<x~nnnkccc",
-    ]), [
+    // Capital multi-cell refit: the centre keel trades one neural sting for a
+    // four-cell Bloom Cannon (O, the heavyAutocannon-band main battery), one
+    // ganglion for a three-cell Metabolic Heart (H, a 3.6 GW compound command
+    // reactor), and the prow sting for a three-cell Barkweave Carapace (W, the
+    // heavy deflector band). Each anchor's covered cells are installed by
+    // `mountMultiCell` after subdivision.
+    grid: mountMultiCell(
+      subdivideGrid(withEdges(swarmGrid([
+        "..#>x~nnnkccc",
+        "..jgfzrsnnnnh",
+        ".jgm~rfsannny",
+        "uHmm~rfsaaOnW",
+        ".jgm~rfsannny",
+        "..jgfzrsnnnnh",
+        "..#<x~nnnkccc",
+      ]), [
       { col: 1, row: 2, dir: "e", kind: "wall" },
       { col: 1, row: 3, dir: "e", kind: "door" },
       { col: 1, row: 4, dir: "e", kind: "wall" },
@@ -214,6 +222,19 @@ export const swarmDesigns: ShipDesignInput[] = [
       { col: 11, row: 4, dir: "e", kind: "wall" },
       { col: 11, row: 5, dir: "e", kind: "wall" },
     ]), F_HIVE_LORD),
+      F_HIVE_LORD,
+      [
+        // Centre keel: a four-cell Bloom Cannon (O) supplants one neural sting
+        // — the heavyAutocannon-band capital kinetic main battery.
+        [10, 3, "swm-bloom-cannon", SWARM_FOOTPRINTS.bloomCannon],
+        // Keel reactor: a three-cell Metabolic Heart (H) replaces a ganglion —
+        // the 3.6 GW compound command reactor feeding the capital battery.
+        [1, 3, "swm-metabolic-heart", SWARM_FOOTPRINTS.metabolicHeart],
+        // Prow momentum screen: a three-cell Barkweave Carapace (W) — the heavy
+        // deflector band, scaling the carapace screen up to capital grade.
+        [12, 3, "swm-barkweave-carapace", SWARM_FOOTPRINTS.barkweaveCarapace],
+      ],
+    ),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -234,18 +255,48 @@ export const swarmDesigns: ShipDesignInput[] = [
     // no ammoCapacity so no ammon sac is required; all Swarm modules are
     // crewless. Implies hive doctrine (aggressive short-range).
     //
+    // Capital multi-cell refit. The apex hull fields the full Swarm capital
+    // kit: the centre keel takes a four-cell Bloom Cannon (O, the
+    // heavyAutocannon-band main battery) and a three-cell Acid Bank (V, the
+    // triple-nozzle corrosive battery); a Spore Battery (B) joins the upper
+    // sting rank; a three-cell Metabolic Heart (H) supplants a ganglion; the
+    // centreline stern drive becomes a 2×2 Tentacle Drive Mass (T); and the
+    // prow carapace screen steps up to a three-cell Barkweave Carapace (W).
+    // Each anchor's covered cells are installed by `mountMultiCell` after
+    // subdivision.
+    //
     // Layout (14 cols × 7 rows), subdivided ×12 → 168 m dreadnought:
     // stern (left) → drive flagella → ganglion/metabolic spine →
     // regen + spore-cloud screen → sting/acid battery → carapace-screened prow.
-    grid: subdivideGrid(swarmGrid([
-      "..#>x~nnnkwccc",
-      "..jgfzrsnnnnwh",
-      ".jgm~rfsannnwy",
-      "ugmmmrfsaannnw",
-      ".jgm~rfsannnwy",
-      "..jgfzrsnnnnwh",
-      "..#<x~nnnkwccc",
-    ]), F_DEVOURER),
+    grid: mountMultiCell(
+      subdivideGrid(swarmGrid([
+        "..#>x~nnnkwccc",
+        "..jgfzrsBnnnwh",
+        ".jgm~rfsannnwy",
+        "THmmmrfsVaOnnW",
+        ".jgm~rfsannnwy",
+        "..jgfzrsnnnnwh",
+        "..#<x~nnnkwccc",
+      ]), F_DEVOURER),
+      F_DEVOURER,
+      [
+        // Centre-spine battery: a four-cell Bloom Cannon (O) and a three-cell
+        // Acid Bank (V) — the capital kinetic + corrosive main battery.
+        [10, 3, "swm-bloom-cannon", SWARM_FOOTPRINTS.bloomCannon],
+        [8, 3, "swm-acid-bank", SWARM_FOOTPRINTS.acidBank],
+        // Upper rank: a two-cell Spore Battery (B) joins the sting cluster.
+        [8, 1, "swm-spore-battery", SWARM_FOOTPRINTS.sporeBattery],
+        // Keel reactor: a three-cell Metabolic Heart (H) replaces a ganglion —
+        // the 3.6 GW compound command reactor.
+        [1, 3, "swm-metabolic-heart", SWARM_FOOTPRINTS.metabolicHeart],
+        // Centreline stern: a 2×2 Tentacle Drive Mass (T) supplants the pulse
+        // jet — the capital-scale bio-drive cluster.
+        [0, 3, "swm-tentacle-drive-mass", SWARM_FOOTPRINTS.tentacleDriveMass],
+        // Prow momentum screen: a three-cell Barkweave Carapace (W) — the heavy
+        // deflector band, supplanting the light carapace screen.
+        [13, 3, "swm-barkweave-carapace", SWARM_FOOTPRINTS.barkweaveCarapace],
+      ],
+    ),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",

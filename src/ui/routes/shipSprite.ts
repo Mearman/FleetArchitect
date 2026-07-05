@@ -222,17 +222,21 @@ export function rasteriseShipSprite(
       }
     }
     // Glyph: bake the module's mark (a static function of kind) so the blit
-    // carries it — no per-frame save/translate/scale/stroke per cell.
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.scale(SPRITE_CELL_PX, SPRITE_CELL_PX);
-    ctx.globalAlpha = 0.78;
-    ctx.strokeStyle = "rgba(8, 10, 8, 1)";
-    ctx.lineWidth = 0.08;
-    ctx.lineJoin = "round";
-    ctx.lineCap = "round";
-    ctx.stroke(glyphPath2D(appearanceOf(c.kind).glyph));
-    ctx.restore();
+    // carries it — no per-frame save/translate/scale/stroke per cell. A covered
+    // cell of a multi-cell module (glyph === false) carries no mark — the anchor
+    // engraves the glyph once for the whole polyomino.
+    if (c.glyph !== false) {
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.scale(SPRITE_CELL_PX, SPRITE_CELL_PX);
+      ctx.globalAlpha = 0.78;
+      ctx.strokeStyle = "rgba(8, 10, 8, 1)";
+      ctx.lineWidth = 0.08;
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+      ctx.stroke(glyphPath2D(appearanceOf(c.kind).glyph));
+      ctx.restore();
+    }
   }
   ctx.globalAlpha = 1;
   // Stroke accumulated wall/door edges. Square caps fill the outer corner where

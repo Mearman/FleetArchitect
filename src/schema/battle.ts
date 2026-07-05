@@ -263,11 +263,11 @@ export const ShipCellLayout = z.object({
   maxSurfaceHp: z.number().optional(),
   /** Maximum substrate/structure HP of the cell. */
   maxHp: z.number(),
-  /** True when this cell mounts a turreted weapon, so the renderer expects a
-   *  live `turretAngle` in the cell's dynamic state. Omitted on fixed mounts and
-   *  non-weapon cells. */
+  /** True when this cell mounts a turreted weapon (renderer expects a live `turretAngle`). Omitted on fixed mounts and non-weapon cells. */
   hasTurret: z.boolean().optional(),
   edges: z.object({ n: EdgeKind, e: EdgeKind, s: EdgeKind, w: EdgeKind }).optional(), // static wall/door/open per edge for bulkhead rendering
+  /** False on a covered cell of a multi-cell module (anchor's glyph alone is drawn). */
+  glyph: z.boolean().optional(),
 });
 export type ShipCellLayout = z.infer<typeof ShipCellLayout>;
 

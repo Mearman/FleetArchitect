@@ -4,8 +4,9 @@ import type { ShipDesign } from "@/schema/ship";
 /** Same ShipDesign input shape used by designs.ts: schema defaults optional. */
 type ShipDesignInput = input<typeof ShipDesign>;
 
-import { foundryGrid, PRESET_TIME, withEdges } from "@/data/presets/tokens";
+import { foundryGrid, mountMultiCell, PRESET_TIME, withEdges } from "@/data/presets/tokens";
 import { subdivideGrid } from "@/domain/shipgen";
+import { FOUNDRY_FOOTPRINTS } from "@/data/catalog/modules/foundry-capital";
 
 // Foundry Combine designs, isolated from designs.ts so the roster file stays
 // under the max-lines guard. Slow, heavily-armoured fortress slabs: thick
@@ -84,40 +85,51 @@ export const foundryDesigns: ShipDesignInput[] = [
     faction: "Foundry",
     // Cruiser, re-armed: heavy gauss cannons (H, fnd-heavy-cannon) form the
     // broadside, flak batteries (L) shred ordnance, a bulwark deflector (U)
-    // arrests kinetics, a mine layer (M) holds the close lane, repair bay (W).
-    grid: subdivideGrid(withEdges(foundryGrid([
-      "..###H####.",
-      ".#XCFW~HAG#",
-      "#XCCW~LUAG#",
-      "PXCCFWHMAGe",
-      "#XCCW~LUAG#",
-      ".#XCFW~HAG#",
-      "..###H####.",
-    ]), [
-      { col: 1, row: 2, dir: "e", kind: "wall" },
-      { col: 1, row: 3, dir: "e", kind: "door" },
-      { col: 1, row: 4, dir: "e", kind: "wall" },
-      { col: 3, row: 1, dir: "e", kind: "wall" },
-      { col: 3, row: 2, dir: "e", kind: "wall" },
-      { col: 3, row: 3, dir: "e", kind: "door" },
-      { col: 3, row: 4, dir: "e", kind: "wall" },
-      { col: 3, row: 5, dir: "e", kind: "wall" },
-      { col: 5, row: 1, dir: "e", kind: "wall" },
-      { col: 5, row: 2, dir: "e", kind: "wall" },
-      { col: 5, row: 3, dir: "e", kind: "door" },
-      { col: 5, row: 4, dir: "e", kind: "wall" },
-      { col: 5, row: 5, dir: "e", kind: "wall" },
-      { col: 7, row: 1, dir: "e", kind: "wall" },
-      { col: 7, row: 2, dir: "e", kind: "wall" },
-      { col: 7, row: 3, dir: "e", kind: "door" },
-      { col: 7, row: 4, dir: "e", kind: "wall" },
-      { col: 7, row: 5, dir: "e", kind: "wall" },
-      { col: 8, row: 1, dir: "e", kind: "wall" },
-      { col: 8, row: 2, dir: "e", kind: "door" },
-      { col: 8, row: 3, dir: "e", kind: "wall" },
-      { col: 8, row: 4, dir: "e", kind: "door" },
-      { col: 8, row: 5, dir: "e", kind: "wall" },
-    ]), F_BATTLERAM),
+    // arrests kinetics, a mine layer (M) holds the close lane. The centre keel
+    // steps up to capital multi-cell stores: a Shell Magazine Bunker (K,
+    // 2× the standard magazine's rounds) and a Damage Control Bastion (T,
+    // 2× the repair bay's welder headcount). Each anchor's covered cell is
+    // installed by `mountMultiCell` after subdivision.
+    grid: mountMultiCell(
+      subdivideGrid(withEdges(foundryGrid([
+        "..###H####.",
+        ".#XCFW~HAG#",
+        "#XCCW~LUAG#",
+        "PXCCFTHMAKe",
+        "#XCCW~LUAG#",
+        ".#XCFW~HAG#",
+        "..###H####.",
+      ]), [
+        { col: 1, row: 2, dir: "e", kind: "wall" },
+        { col: 1, row: 3, dir: "e", kind: "door" },
+        { col: 1, row: 4, dir: "e", kind: "wall" },
+        { col: 3, row: 1, dir: "e", kind: "wall" },
+        { col: 3, row: 2, dir: "e", kind: "wall" },
+        { col: 3, row: 3, dir: "e", kind: "door" },
+        { col: 3, row: 4, dir: "e", kind: "wall" },
+        { col: 3, row: 5, dir: "e", kind: "wall" },
+        { col: 5, row: 1, dir: "e", kind: "wall" },
+        { col: 5, row: 2, dir: "e", kind: "wall" },
+        { col: 5, row: 3, dir: "e", kind: "door" },
+        { col: 5, row: 4, dir: "e", kind: "wall" },
+        { col: 5, row: 5, dir: "e", kind: "wall" },
+        { col: 7, row: 1, dir: "e", kind: "wall" },
+        { col: 7, row: 2, dir: "e", kind: "wall" },
+        { col: 7, row: 3, dir: "e", kind: "door" },
+        { col: 7, row: 4, dir: "e", kind: "wall" },
+        { col: 7, row: 5, dir: "e", kind: "wall" },
+        { col: 8, row: 1, dir: "e", kind: "wall" },
+        { col: 8, row: 2, dir: "e", kind: "door" },
+        { col: 8, row: 3, dir: "e", kind: "wall" },
+        { col: 8, row: 4, dir: "e", kind: "door" },
+        { col: 8, row: 5, dir: "e", kind: "wall" },
+      ]), F_BATTLERAM),
+      F_BATTLERAM,
+      [
+        [9, 3, "fnd-magazine-bunker", FOUNDRY_FOOTPRINTS.magazineBunker],
+        [5, 3, "fnd-repair-bastion", FOUNDRY_FOOTPRINTS.repairBastion],
+      ],
+    ),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -131,55 +143,80 @@ export const foundryDesigns: ShipDesignInput[] = [
     // sustain, torpedoes (Y) crack plate, flak (L) and bulwark deflectors (U)
     // screen every vector — the previously unfielded capital battery. Plus
     // repair bays (W) and mine layers (M).
-    grid: subdivideGrid(withEdges(foundryGrid([
-      "...##>######.",
-      "..##XCFW~HL##",
-      ".##XCCW~HQG##",
-      "##XCCCFWUQMY#",
-      "PXCCCFW~QHGe.",
-      "##XCCCFWUQMY#",
-      ".##XCCW~HQG##",
-      "..##XCFW~HL##",
-      "...##<######.",
-    ]), [
-      { col: 1, row: 4, dir: "e", kind: "door" },
-      { col: 3, row: 2, dir: "e", kind: "wall" },
-      { col: 3, row: 3, dir: "e", kind: "wall" },
-      { col: 3, row: 4, dir: "e", kind: "door" },
-      { col: 3, row: 5, dir: "e", kind: "wall" },
-      { col: 3, row: 6, dir: "e", kind: "wall" },
-      { col: 5, row: 1, dir: "e", kind: "wall" },
-      { col: 5, row: 2, dir: "e", kind: "wall" },
-      { col: 5, row: 3, dir: "e", kind: "wall" },
-      { col: 5, row: 4, dir: "e", kind: "door" },
-      { col: 5, row: 5, dir: "e", kind: "wall" },
-      { col: 5, row: 6, dir: "e", kind: "wall" },
-      { col: 5, row: 7, dir: "e", kind: "wall" },
-      { col: 7, row: 1, dir: "e", kind: "wall" },
-      { col: 7, row: 2, dir: "e", kind: "wall" },
-      { col: 7, row: 3, dir: "e", kind: "wall" },
-      { col: 7, row: 4, dir: "e", kind: "door" },
-      { col: 7, row: 5, dir: "e", kind: "wall" },
-      { col: 7, row: 6, dir: "e", kind: "wall" },
-      { col: 7, row: 7, dir: "e", kind: "wall" },
-      { col: 8, row: 1, dir: "e", kind: "wall" },
-      { col: 8, row: 2, dir: "e", kind: "wall" },
-      { col: 8, row: 3, dir: "e", kind: "wall" },
-      { col: 8, row: 4, dir: "e", kind: "door" },
-      { col: 8, row: 5, dir: "e", kind: "wall" },
-      { col: 8, row: 6, dir: "e", kind: "wall" },
-      { col: 8, row: 7, dir: "e", kind: "wall" },
-      { col: 9, row: 1, dir: "e", kind: "wall" },
-      { col: 9, row: 2, dir: "e", kind: "door" },
-      { col: 9, row: 3, dir: "e", kind: "wall" },
-      { col: 9, row: 4, dir: "e", kind: "wall" },
-      { col: 9, row: 5, dir: "e", kind: "wall" },
-      { col: 9, row: 6, dir: "e", kind: "door" },
-      { col: 9, row: 7, dir: "e", kind: "wall" },
-      { col: 10, row: 3, dir: "e", kind: "door" },
-      { col: 10, row: 4, dir: "e", kind: "wall" },
-      { col: 10, row: 5, dir: "e", kind: "door" },
-    ]), F_SIEGE_TITAN),
+    //
+    // The apex hull fields the capital multi-cell kit. The stern grav drive (P)
+    // becomes a three-cell Forge Drive train (J); the keel Industrial Core (X)
+    // becomes the four-cell T-section Cross-Section Core command heart (Z); the
+    // centre siege-plasma (Q) becomes the 2×2 Siege Cannon Heavy (S); and the
+    // flanking bulwark deflectors (U) step up to 2×2 Bulwark Bastions (N) fore
+    // and aft. Each anchor's covered cells are installed by `mountMultiCell`
+    // after subdivision.
+    grid: mountMultiCell(
+      subdivideGrid(withEdges(foundryGrid([
+        "...##>######.",
+        "..##XCFW~HL##",
+        ".##XCCW~HQG##",
+        "##XCCCFWNQMY#",
+        "JZCCCFW~SHGe.",
+        "##XCCCFWNQMY#",
+        ".##XCCW~HQG##",
+        "..##XCFW~HL##",
+        "...##<######.",
+      ]), [
+        { col: 1, row: 4, dir: "e", kind: "door" },
+        { col: 3, row: 2, dir: "e", kind: "wall" },
+        { col: 3, row: 3, dir: "e", kind: "wall" },
+        { col: 3, row: 4, dir: "e", kind: "door" },
+        { col: 3, row: 5, dir: "e", kind: "wall" },
+        { col: 3, row: 6, dir: "e", kind: "wall" },
+        { col: 5, row: 1, dir: "e", kind: "wall" },
+        { col: 5, row: 2, dir: "e", kind: "wall" },
+        { col: 5, row: 3, dir: "e", kind: "wall" },
+        { col: 5, row: 4, dir: "e", kind: "door" },
+        { col: 5, row: 5, dir: "e", kind: "wall" },
+        { col: 5, row: 6, dir: "e", kind: "wall" },
+        { col: 5, row: 7, dir: "e", kind: "wall" },
+        { col: 7, row: 1, dir: "e", kind: "wall" },
+        { col: 7, row: 2, dir: "e", kind: "wall" },
+        { col: 7, row: 3, dir: "e", kind: "wall" },
+        { col: 7, row: 4, dir: "e", kind: "door" },
+        { col: 7, row: 5, dir: "e", kind: "wall" },
+        { col: 7, row: 6, dir: "e", kind: "wall" },
+        { col: 7, row: 7, dir: "e", kind: "wall" },
+        { col: 8, row: 1, dir: "e", kind: "wall" },
+        { col: 8, row: 2, dir: "e", kind: "wall" },
+        { col: 8, row: 3, dir: "e", kind: "wall" },
+        { col: 8, row: 4, dir: "e", kind: "door" },
+        { col: 8, row: 5, dir: "e", kind: "wall" },
+        { col: 8, row: 6, dir: "e", kind: "wall" },
+        { col: 8, row: 7, dir: "e", kind: "wall" },
+        { col: 9, row: 1, dir: "e", kind: "wall" },
+        { col: 9, row: 2, dir: "e", kind: "door" },
+        { col: 9, row: 3, dir: "e", kind: "wall" },
+        { col: 9, row: 4, dir: "e", kind: "wall" },
+        { col: 9, row: 5, dir: "e", kind: "wall" },
+        { col: 9, row: 6, dir: "e", kind: "door" },
+        { col: 9, row: 7, dir: "e", kind: "wall" },
+        { col: 10, row: 3, dir: "e", kind: "door" },
+        { col: 10, row: 4, dir: "e", kind: "wall" },
+        { col: 10, row: 5, dir: "e", kind: "door" },
+      ]), F_SIEGE_TITAN),
+      F_SIEGE_TITAN,
+      [
+        // Stern: the 1×3 Forge Drive train (J) replaces the grav drive as the
+        // main capital propulsion.
+        [0, 4, "fnd-forge-drive", FOUNDRY_FOOTPRINTS.forgeDrive],
+        // Keel reactor: the T-section Cross-Section Core (Z) — the 12 GW
+        // command heart, supplanting the single Industrial Core.
+        [1, 4, "fnd-cross-section-core", FOUNDRY_FOOTPRINTS.crossSectionCore],
+        // Centre keel: the 2×2 Siege Cannon Heavy (S) replaces the
+        // siege-plasma as the heaviest alpha strike.
+        [8, 4, "fnd-siege-cannon-heavy", FOUNDRY_FOOTPRINTS.siegeCannonHeavy],
+        // Flanking momentum screens: 2×2 Bulwark Bastions (N) fore and aft.
+        [8, 3, "fnd-bulwark-bastion", FOUNDRY_FOOTPRINTS.bulwarkBastion],
+        [8, 5, "fnd-bulwark-bastion", FOUNDRY_FOOTPRINTS.bulwarkBastion],
+      ],
+    ),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",

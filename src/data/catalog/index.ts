@@ -1,14 +1,19 @@
 import { createCatalog, type Catalog } from "@/domain/catalog";
 import { LayerMaterial } from "@/schema/armor";
-import { ModuleDefinition } from "@/schema/module";
+import { ModuleDefinition, type ModuleDefinitionInput } from "@/schema/module";
 
 import { layerMaterialData } from "./layer-materials";
 import { terranModules } from "./modules/terran";
+import { terranCapitalModules } from "./modules/terran-capital";
 import { swarmModules } from "./modules/swarm";
+import { swarmCapitalModules } from "./modules/swarm-capital";
 import { crystallineModules } from "./modules/crystalline";
+import { crystallineCapitalModules } from "./modules/crystalline-capital";
 import { foundryModules } from "./modules/foundry";
+import { foundryCapitalModules } from "./modules/foundry-capital";
 import { corsairModules } from "./modules/corsair";
 import { syntheticModules } from "./modules/synthetic";
+import { syntheticCapitalModules } from "./modules/synthetic-capital";
 
 /**
  * The bundled starter catalog. Layer materials and modules are authored as
@@ -25,13 +30,18 @@ import { syntheticModules } from "./modules/synthetic";
 
 // Faction arrays are concatenated in the original catalogue order: Terran,
 // Swarm, Crystalline, Foundry, Corsair, Synthetic.
-const moduleData: ModuleDefinition[] = [
+const moduleData: ModuleDefinitionInput[] = [
   ...terranModules,
+  ...terranCapitalModules,
   ...swarmModules,
+  ...swarmCapitalModules,
   ...crystallineModules,
+  ...crystallineCapitalModules,
   ...foundryModules,
+  ...foundryCapitalModules,
   ...corsairModules,
   ...syntheticModules,
+  ...syntheticCapitalModules,
 ];
 
 export const layerMaterials: readonly LayerMaterial[] = layerMaterialData.map((m) =>

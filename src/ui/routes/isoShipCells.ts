@@ -300,7 +300,7 @@ export function drawIsoShipCells(
       ctx.moveTo(t1.x, t1.y);
       ctx.lineTo(t3.x, t3.y);
       ctx.stroke();
-    } else if (cellPx > 12) {
+    } else if (cellPx > 12 && m.glyph !== false) {
       drawTopGlyph(ctx, app.glyph, top);
       // Turret barrel from the top-face centre, raised to the cell top.
       if (m.turretAngle !== undefined) {

@@ -74,6 +74,7 @@ describe("bundled presets", () => {
         (cell): cell is SolidCell =>
           cell.kind === "solid" &&
           cell.equipment !== undefined &&
+          cell.equipment.moduleId !== undefined &&
           sensorModuleIds.has(cell.equipment.moduleId),
       ),
     );
@@ -92,6 +93,7 @@ describe("bundled presets", () => {
         (cell): cell is SolidCell =>
           cell.kind === "solid" &&
           cell.equipment !== undefined &&
+          cell.equipment.moduleId !== undefined &&
           commsModuleIds.has(cell.equipment.moduleId),
       ),
     );

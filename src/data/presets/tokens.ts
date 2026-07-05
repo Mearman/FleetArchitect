@@ -149,6 +149,19 @@ const TOKENS: Record<string, GridCell> = {
   // Manoeuvring gear (Newtonian rotation): `J` RCS thrusters, `W` reaction wheel.
   "J": deckEquip("mod-rcs-thrusters", 0),
   "W": deckEquip("mod-reaction-wheel", 0),
+  // Capital multi-cell modules — anchors only. The covered cells of each
+  // polyomino are installed after subdivision by `coverFootprint` (below),
+  // which claims the adjacent fine sub-cells as `covers` back-pointers to the
+  // anchor. The token places the anchor at the coarse cell; subdivision carries
+  // it to the top-left fine sub-cell of that block, and the footprint offsets
+  // then extend east/south within the same block.
+  "I": deckEquip("ter-spinal-lance", 0),          // 4-cell fixed spinal beam (forward)
+  "Q": deckEquip("ter-spinal-driver", 0),         // 3-cell fixed spinal coilgun (forward)
+  "H": deckEquip("ter-heavy-railgun-turret", 0),  // 2-cell heavy railgun turret
+  "B": deckEquip("ter-capital-drive", Math.PI),   // 3-cell capital plasma drive (aft)
+  "Z": deckEquip("ter-cross-reactor", 0),         // 4-cell T-section antimatter command core
+  "N": deckEquip("ter-bastion-shield", 0),        // 2x2 capital shield array
+  "k": deckEquip("ter-bulwark-deflector", 0),     // 2-cell heavy momentum screen
 };
 
 /** Single-character tokens for the ASCII grid authoring map — Swarm parts.
@@ -196,6 +209,20 @@ const SWARM_TOKENS: Record<string, GridCell> = {
   // Manoeuvring gear (Newtonian rotation): `x` pseudopod cluster, `z` gyral organ.
   "x": deckEquip("swm-pseudopod-cluster", 0),
   "z": deckEquip("swm-gyral-organ", 0),
+  // Capital multi-cell modules — anchors only. The covered cells of each
+  // polyomino are installed after subdivision by `coverFootprint` (below),
+  // which claims the adjacent fine sub-cells as `covers` back-pointers to the
+  // anchor. The token places the anchor at the coarse cell; subdivision carries
+  // it to the top-left fine sub-cell of that block, and the footprint offsets
+  // then extend east/south (or west, for the bloom cannon's T-bar) within the
+  // same block. All capital Swarm weapons remain bio-autonomous (crewless).
+  "B": deckEquip("swm-spore-battery", 0),       // 2-cell twin spore gland (forward)
+  "V": deckEquip("swm-acid-bank", 0),           // 3-cell L-shaped acid bank (forward)
+  "O": deckEquip("swm-bloom-cannon", 0),        // 4-cell T-shaped bloom cannon (forward)
+  "H": deckEquip("swm-metabolic-heart", 0),     // 3-cell compound bio-reactor (command)
+  "T": deckEquip("swm-tentacle-drive-mass", Math.PI),  // 2×2 tentacle drive cluster (aft)
+  "W": deckEquip("swm-barkweave-carapace", 0),  // 3-cell ridged deflector carapace
+  "A": deckEquip("swm-ammon-vault", 0),         // 2-cell extended magazine (crewed)
 };
 
 /** Parse an ASCII map (one string per row) into a row-major TileGrid using the
@@ -225,6 +252,93 @@ function gridFromMapWith(
 /** Parse an ASCII map using the Terran token set. */
 export function gridFromMap(rows: readonly string[]): TileGrid {
   return gridFromMapWith(rows, TOKENS);
+}
+
+/**
+ * Install the covered cells of a multi-cell module around an anchor that
+ * coarse-level authoring + subdivision already placed. Faction-agnostic: works
+ * on any subdivided grid.
+ *
+ * The anchor (placed by a coarse token such as `I` for a spinal lance) sits at
+ * the top-left fine sub-cell of coarse block `(anchorCol, anchorRow)`; after
+ * subdivision by `f` its fine position is `(anchorCol * f, anchorRow * f)`.
+ * Each non-zero footprint offset claims the fine sub-cell at that offset from
+ * the anchor, converting it from a plain deck sub-cell into a covered cell
+ * carrying a `covers` back-pointer to the anchor. The anchor itself (offset
+ * `{0,0}`) is left untouched — it already carries the module id from the token.
+ *
+ * Throws on an out-of-bounds target, a non-solid target, or a target that
+ * already carries equipment (an overlap the preset author must resolve rather
+ * than silently overwrite), so a multi-cell module that does not fit fails
+ * loudly at build time. Returns the input grid unchanged when every offset is
+ * the anchor.
+ */
+export function coverFootprint(
+  fine: TileGrid,
+  subdivisionFactor: number,
+  anchorCol: number,
+  anchorRow: number,
+  moduleId: string,
+  offsets: readonly { dx: number; dy: number }[],
+): TileGrid {
+  const fineAnchorCol = anchorCol * subdivisionFactor;
+  const fineAnchorRow = anchorRow * subdivisionFactor;
+  const cells = fine.cells.slice();
+  for (const { dx, dy } of offsets) {
+    if (dx === 0 && dy === 0) continue; // anchor already placed by the token
+    const col = fineAnchorCol + dx;
+    const row = fineAnchorRow + dy;
+    if (col < 0 || col >= fine.cols || row < 0 || row >= fine.rows) {
+      throw new Error(
+        `coverFootprint: covered cell (${col}, ${row}) for module "${moduleId}" is out of bounds`,
+      );
+    }
+    const idx = row * fine.cols + col;
+    const cell = cells[idx];
+    if (cell === undefined || cell.kind !== "solid") {
+      throw new Error(
+        `coverFootprint: covered cell (${col}, ${row}) for module "${moduleId}" is not solid`,
+      );
+    }
+    if (cell.equipment !== undefined) {
+      throw new Error(
+        `coverFootprint: covered cell (${col}, ${row}) for module "${moduleId}" already carries equipment`,
+      );
+    }
+    cells[idx] = {
+      ...cell,
+      equipment: {
+        facing: 0,
+        covers: { moduleId, anchorCol: fineAnchorCol, anchorRow: fineAnchorRow },
+      },
+    };
+  }
+  return { ...fine, cells };
+}
+
+/**
+ * Fold {@link coverFootprint} over a list of multi-cell module placements,
+ * installing each anchor's covered cells in turn. Keeps a design literal
+ * readable when a capital mounts several multi-cell modules at once: author the
+ * coarse anchors as tokens, subdivide, then pass the fine grid and the list of
+ * `(col, row, moduleId, offsets)` placements. Each placement's `(col, row)` is
+ * the COARSE position of the anchor block.
+ */
+export function mountMultiCell(
+  fine: TileGrid,
+  subdivisionFactor: number,
+  placements: readonly [
+    col: number,
+    row: number,
+    moduleId: string,
+    offsets: readonly { dx: number; dy: number }[],
+  ][],
+): TileGrid {
+  return placements.reduce(
+    (grid, [col, row, moduleId, offsets]) =>
+      coverFootprint(grid, subdivisionFactor, col, row, moduleId, offsets),
+    fine,
+  );
 }
 
 /** Parse an ASCII map using the Swarm token set. */
@@ -384,6 +498,19 @@ const CRYSTAL_TOKENS: Record<string, GridCell> = {
   "B": deckEquip("cry-blink-drive", 0),
   "K": deckEquip("cry-phase-cloak", 0),
   "v": deckEquip("cry-resonance-sensor", 0), // Resonance Sensor (omni passive array, matches Terran `v`)
+  // Capital multi-cell modules — anchors only. The covered cells of each
+  // polyomino are installed after subdivision by `coverFootprint` (below),
+  // which claims the adjacent fine sub-cells as `covers` back-pointers to the
+  // anchor. The token places the anchor at the coarse cell; subdivision carries
+  // it to the top-left fine sub-cell of that block, and the footprint offsets
+  // then extend east/south within the same block.
+  "A": deckEquip("cry-prism-array", 0),             // 2-cell paired prism-beam array (forward)
+  "I": deckEquip("cry-spinal-lance-heavy", 0),      // 3-cell heavy spinal resonance lance (forward)
+  "J": deckEquip("cry-shard-cannon-heavy", 0),      // 3-cell L-tromino heavy shard cannon (forward)
+  "N": deckEquip("cry-adaptive-bastion", 0),        // 4-cell S-zigzag capital adaptive shield
+  "W": deckEquip("cry-resonance-bulwark-array", 0), // 2-cell paired momentum screen
+  "M": deckEquip("cry-quantum-spire", 0),           // 3-cell capital antimatter command core
+  "P": deckEquip("cry-thruster-array", Math.PI),    // 2-cell paired resonance thruster (aft)
 };
 
 /** Single-character tokens for the ASCII grid authoring map — Foundry parts.
@@ -418,6 +545,16 @@ const FOUNDRY_TOKENS: Record<string, GridCell> = {
   ">": deckEquip("fnd-thruster", -Math.PI / 2),
   "<": deckEquip("fnd-thruster", Math.PI / 2),
   "M": deckEquip("fnd-mine-layer", 0),
+  // Capital multi-cell modules — polyomino-footprint variants of the
+  // single-cell catalogue (see src/data/catalog/modules/foundry-capital.ts).
+  // Each anchor's covered cells are installed by `mountMultiCell` after
+  // subdivision; the tokens here place only the anchor equipment record.
+  "S": deckEquip("fnd-siege-cannon-heavy", 0),  // 2×2 capital coilgun (forward)
+  "J": deckEquip("fnd-forge-drive", Math.PI),   // 1×3 triple heavy-plasma drive (aft)
+  "Z": deckEquip("fnd-cross-section-core", 0),  // T-section antimatter command core
+  "K": deckEquip("fnd-magazine-bunker", 0),     // 1×2 blast-door magazine bunker
+  "N": deckEquip("fnd-bulwark-bastion", 0),     // 2×2 capital deflector bastion
+  "T": deckEquip("fnd-repair-bastion", 0),      // 1×2 twin damage-control bay
 };
 
 /** Single-character tokens for the ASCII grid authoring map — Corsair parts.
@@ -448,6 +585,16 @@ const CORSAIR_TOKENS: Record<string, GridCell> = {
   "S": deckEquip("cor-raider-shield", 0),     // light shield
   "D": deckEquip("cor-raider-deflector", 0),  // light momentum screen
   "L": deckEquip("cor-decoy-launcher", 0),    // holo decoys
+  // Capital multi-cell modules — anchors only. The covered cells of each
+  // 1×2 polyomino are installed after subdivision by `coverFootprint` /
+  // `mountMultiCell` (above), which claims the adjacent fine sub-cell as a
+  // `covers` back-pointer to the anchor.
+  "Y": deckEquip("cor-broadside-swarm-rack", Math.PI / 2),  // 2-cell twin-rail broadside missile array (broadside mount)
+  "H": deckEquip("cor-heavy-raid-cannon", 0),               // 2-cell heavy autocannon (heavyAutocannon band)
+  "U": deckEquip("cor-scrambler-array", 0),                 // 2-cell wide-aperture ECM jammer array
+  "N": deckEquip("cor-raider-screen-array", 0),             // 2-cell medium-band shield projector
+  "P": deckEquip("cor-raid-drive-bank", Math.PI),           // 2-cell twin-nozzle raider drive bank (aft)
+  "X": deckEquip("cor-overdrive-reactor", 0),               // 2-cell advanced-fusion command reactor
 };
 
 /** Single-character tokens for the ASCII grid authoring map — Synthetic parts.
@@ -470,6 +617,21 @@ const SYNTHETIC_TOKENS: Record<string, GridCell> = {
   "N": deckEquip("syn-sensor-array", 0),
   "H": deckEquip("syn-drone-hangar", 0),
   "A": deckEquip("syn-coordination-aura", 0),
+  // Capital multi-cell modules — anchors only. The covered cells of each
+  // polyomino are installed after subdivision by `coverFootprint` /
+  // `mountMultiCell` (above), which claims the adjacent fine sub-cells as
+  // `covers` back-pointers to the anchor. The token places the anchor at the
+  // coarse cell; subdivision carries it to the top-left fine sub-cell of that
+  // block, and the footprint offsets then extend east/south (or west/north,
+  // for the plus-shape hub and shield) within the same block. All capital
+  // Synthetic modules stay crewless — the Collective's automation signature.
+  "K": deckEquip("syn-coilgun-bank", 0),         // 1×2 twin coilgun bank (forward)
+  "D": deckEquip("syn-drone-hangar-heavy", 0),   // 2×2 heavy drone hangar (forward)
+  "J": deckEquip("syn-coordination-hub", 0),     // plus-shape fleet datalink hub
+  "M": deckEquip("syn-quantum-core-heavy", 0),   // 1×3 ganged antimatter command core
+  "S": deckEquip("syn-shield-hub", 0),           // plus-shape capital shield projector
+  "T": deckEquip("syn-thruster-bank", Math.PI),  // 1×2 twin ion drive bank (aft)
+  "L": deckEquip("syn-interceptor-grid", 0),     // 1×2 dense point-defence grid
 };
 
 /** Parse an ASCII map using the Crystalline token set. */

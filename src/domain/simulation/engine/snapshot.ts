@@ -594,26 +594,37 @@ export function shipDescriptor(s: SimShip): ShipDescriptor {
   if (s.modules === undefined) return base;
   return {
     ...base,
-    cells: s.modules.map((m) => ({
-      slotId: m.slotId,
-      // Render kind: armour-surfaced cells render as the distinct "armour"
-      // CellKind (lighter plate, taller iso extrusion) rather than plain "hull".
-      // m.kind is the effect-kind union (no "armour"); the surface→CellKind lift
-      // happens here at the descriptor boundary where CellKind is the type.
-      kind: m.surface === "armor" ? "armour" : m.kind,
-      ox: m.x,
-      oy: m.y,
-      surface: m.surface,
-      maxSurfaceHp: m.maxSurfaceHp,
-      maxHp: m.maxHp,
-      // Turret presence mirrors the per-frame `turretAngle` emission: the
-      // renderer draws a tracking barrel only on cells flagged here.
-      ...(m.turretTurnRate > 0 ? { hasTurret: true } : {}),
-      // Static edge kinds (wall/door/open) for bulkhead/doorway rendering. The
-      // dynamic doorStates are dropped — those live per-tick in the cell state
-      // arrays. Always present: SimModule.edges is required on the live sim.
-      edges: { n: m.edges.n, e: m.edges.e, s: m.edges.s, w: m.edges.w },
-    })),
+    cells: s.modules.map((m) => {
+      // A covered cell of a multi-cell module resolves to a hull-effect
+      // placeholder whose `kind` label is the anchor module's kind (so it paints
+      // in the module's colour). Discriminate it from a real anchor/equipment
+      // cell — both of those carry effect.kind === m.kind — to suppress the
+      // glyph: a polyomino shows its glyph once, on the anchor, not once per
+      // covered cell.
+      const isCoveredCell = m.effect.kind === "hull" && m.kind !== "hull";
+      return {
+        slotId: m.slotId,
+        // Render kind: armour-surfaced cells render as the distinct "armour"
+        // CellKind (lighter plate, taller iso extrusion) rather than plain "hull".
+        // m.kind is the effect-kind union (no "armour"); the surface→CellKind lift
+        // happens here at the descriptor boundary where CellKind is the type.
+        kind: m.surface === "armor" ? "armour" : m.kind,
+        ox: m.x,
+        oy: m.y,
+        surface: m.surface,
+        maxSurfaceHp: m.maxSurfaceHp,
+        maxHp: m.maxHp,
+        // Turret presence mirrors the per-frame `turretAngle` emission: the
+        // renderer draws a tracking barrel only on cells flagged here.
+        ...(m.turretTurnRate > 0 ? { hasTurret: true } : {}),
+        // Static edge kinds (wall/door/open) for bulkhead/doorway rendering. The
+        // dynamic doorStates are dropped — those live per-tick in the cell state
+        // arrays. Always present: SimModule.edges is required on the live sim.
+        edges: { n: m.edges.n, e: m.edges.e, s: m.edges.s, w: m.edges.w },
+        // Suppress the glyph on covered cells (the anchor carries it once).
+        ...(isCoveredCell ? { glyph: false } : {}),
+      };
+    }),
   };
 }
 

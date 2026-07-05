@@ -236,7 +236,9 @@ export const fleetData: FleetInput[] = [
     // The full brood led by the apex: the Devourer dreadnought anchors the
     // centre, flanked by a Hive Lord and a pair of Ravagers; a Brood Spitter
     // stings from the back while a screen of Drones and Carrion wings floods
-    // the approach. The new apex leading a full brood — aggressive, short-range.
+    // the approach. The apex and the Hive Lord both field capital multi-cell
+    // batteries, so the screen runs one Drone thinner to hold the point budget —
+    // aggressive, short-range.
     formation: flatFormation([
       { designId: "preset-ship-devourer",  position: { x: -240, y:    0 }, facing: 0, doctrine: hiveDoctrine },
       { designId: "preset-ship-hive-lord", position: { x: -300, y: -110 }, facing: 0, doctrine: hiveDoctrine },
@@ -246,7 +248,6 @@ export const fleetData: FleetInput[] = [
       { designId: "preset-ship-carrion",   position: { x: -400, y:  -60 }, facing: 0, doctrine: hiveDoctrine },
       { designId: "preset-ship-carrion",   position: { x: -400, y:   60 }, facing: 0, doctrine: hiveDoctrine },
       { designId: "preset-ship-drone",     position: { x: -430, y: -260 }, facing: 0, doctrine: hiveDoctrine },
-      { designId: "preset-ship-drone",     position: { x: -430, y:    0 }, facing: 0, doctrine: hiveDoctrine },
       { designId: "preset-ship-drone",     position: { x: -430, y:  260 }, facing: 0, doctrine: hiveDoctrine },
     ]),
     createdAt: PRESET_TIME,

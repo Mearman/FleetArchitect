@@ -6,7 +6,7 @@ import { analyseShipDesign } from "@/domain/stats";
 import { growArmourHull, padGrid } from "@/domain/hull-armour";
 import { cellCoverageFractions } from "@/domain/hull-outline";
 import type { CellEdges, GridCell, TileGrid } from "@/schema/grid";
-import type { ModuleDefinition } from "@/schema/module";
+import { ModuleDefinition } from "@/schema/module";
 import type { ShipDesign } from "@/schema/ship";
 
 /** All-open edges for deck cells in test fixtures. */
@@ -61,7 +61,7 @@ function design(g: TileGrid): ShipDesign {
 // Extra module definitions for sensor/comms tests.
 // ---------------------------------------------------------------------------
 
-const sensorModuleDef: ModuleDefinition = {
+const sensorModuleDef = ModuleDefinition.parse({
   id: "test-sensor-array",
   faction: "Terran",
   name: "Sensor Array",
@@ -73,10 +73,10 @@ const sensorModuleDef: ModuleDefinition = {
   crewRequired: 0,
   techLevel: 1,
   effect: { kind: "sensor", sensorType: "omni", arc: Math.PI, bearing: 0, detectionRange: 200, nebulaImmune: false },
-};
+});
 
 /** Omni-directional comms unit — no crew needed, no bearing concern. */
-const commsOmniDef: ModuleDefinition = {
+const commsOmniDef = ModuleDefinition.parse({
   id: "test-comms-omni",
   faction: "Terran",
   name: "Omni Comms",
@@ -96,10 +96,10 @@ const commsOmniDef: ModuleDefinition = {
     channel: 0,
     bandwidth: 4,
   },
-};
+});
 
 /** Dish comms unit — requires crew and has a directional bearing. */
-const commsDishDef: ModuleDefinition = {
+const commsDishDef = ModuleDefinition.parse({
   id: "test-comms-dish",
   faction: "Terran",
   name: "Comms Dish",
@@ -119,7 +119,7 @@ const commsDishDef: ModuleDefinition = {
     channel: 1,
     bandwidth: 8,
   },
-};
+});
 
 /** A test catalog that extends the bundled catalog with sensor/comms modules. */
 function extendedCatalog() {

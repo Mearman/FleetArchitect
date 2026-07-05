@@ -1,4 +1,4 @@
-import type { ModuleDefinition } from "@/schema/module";
+import type { ModuleDefinitionInput } from "@/schema/module";
 import {
   crewMass,
   driveThrustNewtons,
@@ -63,15 +63,15 @@ import { poweredMotorBurnTicks, poweredMotorThrustMPerS2 } from "../ordnance-mot
 // ---------------------------------------------------------------------------
 
 /** Kinetic weapon mechanism density (kg/m³): forged turret + barrel + cooling. */
-const WEAPON_DENSITY = 6000;
+export const WEAPON_DENSITY = 6000;
 /** Reactor core + shielding density (kg/m³): forged composite pressure vessel. */
-const REACTOR_DENSITY = 6000;
+export const REACTOR_DENSITY = 6000;
 /** Engine density (kg/m³): heavy nozzle + power conditioning. */
-const ENGINE_DENSITY = 4500;
+export const ENGINE_DENSITY = 4500;
 /** Crew quarters density (kg/m³): spartan habitation, mostly air. */
-const CREW_DENSITY = 3500;
+export const CREW_DENSITY = 3500;
 /** Magazine density (kg/m³): dense ordnance stores in forged bays. */
-const MAGAZINE_DENSITY = 6500;
+export const MAGAZINE_DENSITY = 6500;
 
 // ---------------------------------------------------------------------------
 // Weapon damage, range, cooldown and projectile speed are DERIVED from the
@@ -179,7 +179,7 @@ const HEAVY_PLASMA_DRIVE_THRUST_N = driveThrustNewtons("heavyPlasma");
 // capability across the whole span.
 // ---------------------------------------------------------------------------
 
-export const foundryModules: ModuleDefinition[] = [
+export const foundryModules: ModuleDefinitionInput[] = [
   // --- Weapons: slow, heavy, armour-piercing ---
   {
     id: "fnd-autocannon",

@@ -83,25 +83,50 @@ export function isAllOpenEdges(edges: CellEdges): boolean {
 }
 
 /**
- * Equipment carried on a solid cell (at most one per cell). Replaces the old
- * `ModuleCell`. Carries the per-instance comms/sensor override fields verbatim
- * so resolve's existing per-instance logic ports with no semantic change.
+ * Equipment carried on a solid cell (at most one per cell). A cell carries
+ * EITHER an anchor's module reference (the module is installed here, with
+ * per-instance overrides) OR a covered cell's back-pointer to its anchor (this
+ * cell is part of a multi-cell module anchored elsewhere). The mutual exclusion
+ * is enforced by a refine below; the per-instance comms/sensor override fields
+ * are present verbatim so resolve's existing per-instance logic ports with no
+ * semantic change. They are meaningful only on an anchor.
  */
-export const CellEquipment = z.object({
-  moduleId: EntityId,
-  facing: z.number(),
-  /** Per-instance logical channel override for comms modules. */
-  channel: z.number().int().min(0).optional(),
-  /** Per-instance fixed-bearing bearing override for comms modules (radians). */
-  commsBearing: z.number().optional(),
-  /** Per-instance range setting for variable-type comms modules (world units). */
-  commsRange: z.number().optional(),
-  /** Per-instance fixed-bearing override for directional/dish sensor
-   *  modules (radians). */
-  sensorBearing: z.number().optional(),
-  /** Per-instance range setting for variable-type sensor modules (world units). */
-  sensorRangeSetting: z.number().optional(),
-});
+export const CellEquipment = z
+  .object({
+    /** Anchor field — present when this cell IS a module's anchor. Mutually
+     *  exclusive with `covers` (the refine below). */
+    moduleId: EntityId.optional(),
+    /** Direction the module faces, ship-local radians. Default 0 (forward).
+     *  Meaningful only on an anchor; covered cells accept the default and
+     *  ignore it. */
+    facing: z.number().default(0),
+    /** Per-instance logical channel override for comms modules. */
+    channel: z.number().int().min(0).optional(),
+    /** Per-instance fixed-bearing bearing override for comms modules (radians). */
+    commsBearing: z.number().optional(),
+    /** Per-instance range setting for variable-type comms modules (world units). */
+    commsRange: z.number().optional(),
+    /** Per-instance fixed-bearing override for directional/dish sensor
+     *  modules (radians). */
+    sensorBearing: z.number().optional(),
+    /** Per-instance range setting for variable-type sensor modules (world units). */
+    sensorRangeSetting: z.number().optional(),
+    /** Covered-cell marker — present when this cell is part of a multi-cell
+     *  module anchored elsewhere. Identifies the anchor cell that owns this
+     *  module instance. Mutually exclusive with `moduleId` (the refine below). */
+    covers: z
+      .object({
+        moduleId: EntityId,
+        anchorCol: z.number().int().min(0),
+        anchorRow: z.number().int().min(0),
+      })
+      .optional(),
+  })
+  .refine((e) => (e.moduleId !== undefined) !== (e.covers !== undefined), {
+    message:
+      "CellEquipment must carry exactly one of moduleId (anchor) or covers (covered cell)",
+    path: [],
+  });
 export type CellEquipment = z.infer<typeof CellEquipment>;
 
 // ---------------------------------------------------------------------------

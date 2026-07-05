@@ -1,4 +1,4 @@
-import type { ModuleDefinition } from "@/schema/module";
+import type { ModuleDefinitionInput } from "@/schema/module";
 import {
   beamWeaponMass,
   crewMass,
@@ -79,15 +79,15 @@ import {
 // ---------------------------------------------------------------------------
 
 /** Kinetic weapon mechanism density (kg/m³): precision turret + barrel + cooling. */
-const WEAPON_DENSITY = 4200;
+export const WEAPON_DENSITY = 4200;
 /** Beam weapon emitter density (kg/m³): precision optics + cooling. */
-const BEAM_DENSITY = 3500;
+export const BEAM_DENSITY = 3500;
 /** Shield projector density (kg/m³): field generator + emitters. */
-const SHIELD_DENSITY = 2500;
+export const SHIELD_DENSITY = 2500;
 /** Engine density (kg/m³): precision nozzle + power conditioning. */
-const ENGINE_DENSITY = 3500;
+export const ENGINE_DENSITY = 3500;
 /** Reactor core + shielding density (kg/m³): precision containment. */
-const REACTOR_DENSITY = 5000;
+export const REACTOR_DENSITY = 5000;
 /** Crew quarters density (kg/m³): server racks, dense (machine "crew" is hardware). */
 const CREW_DENSITY = 2000;
 /** Magazine density (kg/m³): ordnance stores precision-packed. */
@@ -180,7 +180,7 @@ const CUTTER_LANCE_COOLDOWN = cooldownTicks(0.6);
 // and mass scales with capability across the whole span.
 // ---------------------------------------------------------------------------
 
-export const syntheticModules: ModuleDefinition[] = [
+export const syntheticModules: ModuleDefinitionInput[] = [
   // --- Weapons: accurate kinetics and precision beams ---
   {
     id: "syn-precise-cannon",

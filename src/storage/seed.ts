@@ -106,8 +106,20 @@ import {
  * changes crew pathfinding, damage spread, and atmosphere propagation inside
  * the hull. This is a frame-changing re-author, so the pinned frame hashes and
  * the lossless digest baseline are re-baselined alongside the bump.
+ *
+ * Version 21: multi-cell (polyomino) modules on capital ships. Capital-class
+ * presets are re-authored with multi-cell footprints — spinal weapons, plus-shape
+ * reactors, line engines, array sensors/comms — and the polyomino-aware
+ * resolution path lands in the engine, so the resolved module sets, masses, and
+ * damage profiles of the capital-laden preset pairs (the heaviest pair and the
+ * cross-faction extras that include a capital) genuinely change. The all-1x1
+ * lightest pair is unchanged (its per-frame baseline is byte-identical to v20);
+ * its PINNED hash is corrected here only because the previously-committed value
+ * was stale (masked by the preset-determinism self-determinism fallback). This
+ * is a frame-changing re-author, so the pinned frame hashes and the lossless
+ * digest baseline are re-baselined alongside the bump.
  */
-const PRESETS_VERSION = 20;
+const PRESETS_VERSION = 21;
 const VERSION_KEY = "presetsVersion";
 
 /**

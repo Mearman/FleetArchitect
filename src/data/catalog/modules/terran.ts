@@ -1,4 +1,4 @@
-import type { ModuleDefinition } from "@/schema/module";
+import type { ModuleDefinitionInput } from "@/schema/module";
 import {
   beamWeaponMass,
   crewMass,
@@ -183,7 +183,7 @@ const REACTOR_ANTIMATTER_OUTPUT_W = 5e9;
 // capability across the whole span.
 // ---------------------------------------------------------------------------
 
-export const terranModules: ModuleDefinition[] = [
+export const terranModules: ModuleDefinitionInput[] = [
   // --- Weapons ---
   {
     id: "mod-pulse-laser",

@@ -4,8 +4,9 @@ import type { ShipDesign } from "@/schema/ship";
 /** Same ShipDesign input shape used by designs.ts: schema defaults optional. */
 type ShipDesignInput = input<typeof ShipDesign>;
 
-import { corsairGrid, PRESET_TIME, withEdges } from "@/data/presets/tokens";
+import { corsairGrid, mountMultiCell, PRESET_TIME, withEdges } from "@/data/presets/tokens";
 import { subdivideGrid } from "@/domain/shipgen";
+import { CORSAIR_FOOTPRINTS } from "@/data/catalog/modules/corsair";
 
 // Corsair Reavers designs — asymmetric scavenger hulls. One heavy side, one
 // light side; ragged silhouettes; missile volleys and scrambled ECM. Strike
@@ -81,15 +82,20 @@ export const corsairDesigns: ShipDesignInput[] = [
     // Raids in, empties the magazines, blinks out before the point defences
     // find their rhythm. A raid cannon (R) per broadside gives sustained fire
     // once the missile magazines run dry, and a holo decoy launcher (L) on
-    // the lower stern covers its withdrawal.
-    grid: subdivideGrid(withEdges(corsairGrid([
-      ".##>######",
-      "ECF~CMR###",
-      "EFMGCWMR##",
-      "#CFBGWM##.",
-      "##FM<GL##.",
-      ".##e#####.",
-    ]), [
+    // the lower stern covers its withdrawal. The cruiser scales up to capital
+    // multi-cell kit: a Broadside Swarm Rack (Y, twin-rail missile array on a
+    // broadside mount) and a Heavy Raid Cannon (H, heavyAutocannon-band slug).
+    // Each anchor's covered cell is installed by `mountMultiCell` after
+    // subdivision.
+    grid: mountMultiCell(
+      subdivideGrid(withEdges(corsairGrid([
+        ".##>######",
+        "ECF~CMH###",
+        "EFMGCYMR##",
+        "#CFBGWM##.",
+        "##FM<GL##.",
+        ".##e#####.",
+      ]), [
       { col: 0, row: 1, dir: "e", kind: "wall" },
       { col: 0, row: 2, dir: "e", kind: "wall" },
       { col: 3, row: 0, dir: "s", kind: "wall" },
@@ -110,6 +116,14 @@ export const corsairDesigns: ShipDesignInput[] = [
       { col: 6, row: 2, dir: "e", kind: "door" },
       { col: 5, row: 3, dir: "e", kind: "wall" },
     ]), F_WARBRINGER),
+      F_WARBRINGER,
+      [
+        // Twin-rail broadside missile array on a broadside mount.
+        [5, 2, "cor-broadside-swarm-rack", CORSAIR_FOOTPRINTS.broadsideSwarmRack],
+        // Heavy autocannon replacing a raid cannon for harder sustained fire.
+        [6, 1, "cor-heavy-raid-cannon", CORSAIR_FOOTPRINTS.heavyRaidCannon],
+      ],
+    ),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -170,15 +184,23 @@ export const corsairDesigns: ShipDesignInput[] = [
     // cor-raid-cannon, cor-swarm-missile, and cor-decoy-launcher. Implies
     // raid doctrine. Grid (13 cols × 7 rows), subdivided ×12 → 156 m
     // dreadnought.
-    grid: subdivideGrid(withEdges(corsairGrid([
-      "..##>########",
-      ".ECF~CMR#####",
-      "EFMG~CWMRR###",
-      "#CFBGOOJMWLe#",
-      "##FMG~CWMRR##",
-      ".ECF~CMR#####",
-      "..##<########",
-    ]), [
+    //
+    // The apex hull fields the capital multi-cell kit: a Broadside Swarm Rack
+    // (Y, twin-rail missile array on a broadside mount), a Heavy Raid Cannon
+    // (H, heavyAutocannon-band slug), an Overdrive Reactor (X, advanced-fusion
+    // command core), and an ECM Scrambler Array (U, wide-aperture jammer).
+    // Each anchor's covered cell is installed by `mountMultiCell` after
+    // subdivision.
+    grid: mountMultiCell(
+      subdivideGrid(withEdges(corsairGrid([
+        "..##>########",
+        ".ECF~CMR#####",
+        "EFMG~CYMHR###",
+        "#CXBGOOUMWLe#",
+        "##FMG~CWMRR##",
+        ".ECF~CMR#####",
+        "..##<########",
+      ]), [
       { col: 1, row: 1, dir: "e", kind: "wall" },
       { col: 0, row: 2, dir: "e", kind: "wall" },
       { col: 1, row: 5, dir: "e", kind: "wall" },
@@ -201,6 +223,19 @@ export const corsairDesigns: ShipDesignInput[] = [
       { col: 7, row: 1, dir: "e", kind: "wall" },
       { col: 7, row: 5, dir: "e", kind: "wall" },
     ]), F_GALLEON),
+      F_GALLEON,
+      [
+        // Twin-rail broadside missile array on a broadside mount.
+        [6, 2, "cor-broadside-swarm-rack", CORSAIR_FOOTPRINTS.broadsideSwarmRack],
+        // Heavy autocannon replacing a raid cannon for harder sustained fire.
+        [8, 2, "cor-heavy-raid-cannon", CORSAIR_FOOTPRINTS.heavyRaidCannon],
+        // Advanced-fusion overdrive reactor (command node) replacing a
+        // salvaged single-core reactor.
+        [2, 3, "cor-overdrive-reactor", CORSAIR_FOOTPRINTS.overdriveReactor],
+        // Wide-aperture ECM jammer array replacing the single scrambler.
+        [7, 3, "cor-scrambler-array", CORSAIR_FOOTPRINTS.scramblerArray],
+      ],
+    ),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",

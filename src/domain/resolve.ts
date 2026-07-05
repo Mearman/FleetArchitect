@@ -1,5 +1,5 @@
 import { analyseShipDesign } from "@/domain/stats";
-import { CELL_SIZE, cellToLocal, deriveClassification, deriveRadius, footprint } from "@/domain/grid";
+import { CELL_SIZE, cellToLocal, deriveClassification, deriveRadius, footprint, placedModules } from "@/domain/grid";
 import { computeOutline, extractShell } from "@/domain/outline";
 import { cellCoverageFractions, computeHullOutline } from "@/domain/hull-outline";
 import { growArmourHull, padGrid } from "@/domain/hull-armour";
@@ -16,6 +16,7 @@ import { collectFormationLeaves } from "@/schema/formation";
 import type { Doctrine } from "@/schema/ai";
 import type { CellEdges, GridCell, SurfaceKind } from "@/schema/grid";
 import type { ModuleEffect, WeaponEffect } from "@/schema/module";
+import type { Vec2 } from "@/schema/primitives";
 import type { ShipDesign } from "@/schema/ship";
 
 /**
@@ -144,12 +145,11 @@ function median(values: readonly number[]): number {
 function maxSightReach(design: ShipDesign, catalog: Catalog): number {
   let reach = VISUAL_LOS_REFERENCE_M;
   const grid = design.grid;
-  for (const { col, row } of footprint(grid)) {
-    const cell = grid.cells[row * grid.cols + col];
-    if (cell === undefined || cell.kind !== "solid") continue;
-    const equipment = cell.equipment;
-    if (equipment === undefined) continue;
-    const moduleDef = catalog.module(equipment.moduleId);
+  // Iterate placed modules so a multi-cell sensor reports its detection range
+  // once (at its anchor); covered cells are skipped. For an all-1x1 grid this
+  // yields one entry per equipment cell in row-major order — unchanged.
+  for (const { moduleId } of placedModules(grid)) {
+    const moduleDef = catalog.module(moduleId);
     if (moduleDef === undefined) continue;
     const effect = moduleDef.effect;
     if (effect.kind !== "sensor") continue;
@@ -458,15 +458,26 @@ export function resolveFleetToCombatShips(
  */
 function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] {
   const grid = design.grid;
-  // Per-cell coverage fraction (bevelled outline clips edge cells): partial tiles carry proportional layer HP/mass; equipment mass stays whole.
   const coverage = cellCoverageFractions(grid);
-  // Per-faction substrate; throw if unknown (else silent 0 HP/mass — analyseShipDesign faults it).
   const substrate = catalog.substrateMaterial(design.faction);
   if (substrate === undefined) {
     throw new Error(
       `resolve: faction "${design.faction}" has no substrate material in the catalog`,
     );
   }
+  // Cached anchor-module kind for covered cells (their `kind` label is the
+  // anchor's effect kind so they paint in the module's colour). Falls back to
+  // "hull" for an unknown module (analyseShipDesign reports the fault).
+  const anchorKindCache = new Map<string, ModuleEffect["kind"]>();
+  const anchorKindFor = (moduleId: string): ModuleEffect["kind"] => {
+    const cached = anchorKindCache.get(moduleId);
+    if (cached !== undefined) return cached;
+    const def = catalog.module(moduleId);
+    const kind = def !== undefined ? def.effect.kind : "hull";
+    anchorKindCache.set(moduleId, kind);
+    return kind;
+  };
+
   const out: ResolvedModule[] = [];
   for (const { col, row } of footprint(grid)) {
     const cell = grid.cells[row * grid.cols + col];
@@ -476,138 +487,131 @@ function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] 
 
     const surface = surfaceMaterialFor(cell.surface, catalog, design.faction);
     const frac = coverage[row * grid.cols + col]!;
-    const maxSurfaceHp = (surface?.hp ?? 0) * frac;
-    const maxSubstrateHp = substrate.hp * frac;
-    const surfaceMass = surface?.mass ?? 0;
-    const substrateMass = substrate.mass;
-    // Surface (armour) damage-reduction and reactive-armour fields, carried so the
-    // per-cell damage pipeline can absorb a fraction of each hit. Zero for bare/deck.
-    const surfaceReduction = surface?.damageReduction ?? 0;
-    const reactiveReduction = surface?.reactiveReduction ?? 0;
-    const reactiveWindow = surface?.reactiveWindow ?? 0;
-    // Reactive-plate capacity scales with the surface layer it plates. Zero for bare/deck and passive armour.
-    const maxReactiveHp = maxSurfaceHp * reactiveReduction;
+    const layerFields = cellStructureFields(surface, substrate, frac);
 
     const equipment = cell.equipment;
-    const moduleDef = equipment !== undefined ? catalog.module(equipment.moduleId) : undefined;
-    if (equipment !== undefined && moduleDef === undefined) {
-      // Unknown equipment: analyseShipDesign reports the fault; here we still emit a module (hull-effect placeholder) so the cell exists in the engine's grid.
+    const anchorModuleId = equipment?.moduleId;
+    const covers = equipment?.covers;
+
+    if (anchorModuleId !== undefined) {
+      const moduleDef = catalog.module(anchorModuleId);
+      if (moduleDef === undefined) {
+        // Unknown equipment: analyseShipDesign reports the fault; here we still
+        // emit a module (hull-effect placeholder) so the cell exists in the
+        // engine's grid.
+        out.push(structuralPlaceholder(slotId, anchorModuleId, "hull", col, row, local, cell, layerFields));
+        continue;
+      }
+
       out.push({
         slotId,
-        moduleId: equipment.moduleId,
-        kind: "hull",
+        moduleId: moduleDef.id,
+        kind: moduleDef.effect.kind,
         col,
         row,
         x: local.x,
         y: local.y,
         surface: cell.surface,
         edges: cell.edges,
-        maxSurfaceHp,
-        maxSubstrateHp,
-        surfaceReduction,
-        reactiveReduction,
-        reactiveWindow,
-        maxReactiveHp,
-        mass: (surfaceMass + substrateMass) * frac,
-        powerDraw: 0,
-        crewRequired: 0,
-        effect: { kind: "hull" },
-        command: false,
-        repairRate: 0,
-        shieldArc: Math.PI * 2,
-        shieldFacing: 0,
-        facing: 0,
-        weaponFacing: 0,
-        turretArc: 0,
-        turretTurnRate: 0,
-        channel: 0,
-        commsBearing: 0,
-        sensorBearing: 0,
+        ...layerFields,
+        mass: moduleDef.mass + layerFields.layerMass,
+        powerDraw: moduleDef.powerDraw,
+        crewRequired: moduleDef.crewRequired,
+        // Deep-clone so engine mutations during a battle tick do not bleed back
+        // into the shared catalog singleton across separate battles.
+        effect: structuredClone(moduleDef.effect),
+        command: moduleDef.command === true,
+        repairRate: repairRateFor(moduleDef.effect),
+        shieldArc: moduleDef.shieldArc ?? Math.PI * 2,
+        shieldFacing: moduleDef.shieldFacing ?? 0,
+        facing: engineFacingFor(moduleDef.effect, cell),
+        weaponFacing: weaponFacingFor(moduleDef.effect, cell),
+        turretArc: turretArcFor(moduleDef.effect),
+        turretTurnRate: turretTurnRateFor(moduleDef.effect),
+        channel: commsChannelFor(moduleDef.effect, cell),
+        commsBearing: commsBearingFor(moduleDef.effect, cell),
+        ...(commsRangeFor(cell) !== undefined
+          ? { commsRange: commsRangeFor(cell) }
+          : {}),
+        sensorBearing: sensorBearingFor(moduleDef.effect, cell),
+        ...(sensorRangeSettingFor(cell) !== undefined
+          ? { sensorRangeSetting: sensorRangeSettingFor(cell) }
+          : {}),
       });
       continue;
     }
 
-    if (moduleDef === undefined) {
-      // No equipment: a structural-only cell (substrate + surface). Carries a
-      // hull-effect placeholder so the engine treats it as a connectivity
-      // anchor with the layer masses/HPs.
-      out.push({
-        slotId,
-        moduleId: `cell-${cell.surface}`,
-        kind: "hull",
-        col,
-        row,
-        x: local.x,
-        y: local.y,
-        surface: cell.surface,
-        edges: cell.edges,
-        maxSurfaceHp,
-        maxSubstrateHp,
-        surfaceReduction,
-        reactiveReduction,
-        reactiveWindow,
-        maxReactiveHp,
-        mass: (surfaceMass + substrateMass) * frac,
-        powerDraw: 0,
-        crewRequired: 0,
-        effect: { kind: "hull" },
-        command: false,
-        repairRate: 0,
-        shieldArc: Math.PI * 2,
-        shieldFacing: 0,
-        facing: 0,
-        weaponFacing: 0,
-        turretArc: 0,
-        turretTurnRate: 0,
-        channel: 0,
-        commsBearing: 0,
-        sensorBearing: 0,
-      });
-      continue;
-    }
-
-    out.push({
-      slotId,
-      moduleId: moduleDef.id,
-      kind: moduleDef.effect.kind,
-      col,
-      row,
-      x: local.x,
-      y: local.y,
-      surface: cell.surface,
-      edges: cell.edges,
-      maxSurfaceHp,
-      maxSubstrateHp,
-      surfaceReduction,
-      reactiveReduction,
-      reactiveWindow,
-      maxReactiveHp,
-      mass: moduleDef.mass + (surfaceMass + substrateMass) * frac,
-      powerDraw: moduleDef.powerDraw,
-      crewRequired: moduleDef.crewRequired,
-      // Deep-clone so engine mutations during a battle tick do not bleed back
-      // into the shared catalog singleton across separate battles.
-      effect: structuredClone(moduleDef.effect),
-      command: moduleDef.command === true,
-      repairRate: repairRateFor(moduleDef.effect),
-      shieldArc: moduleDef.shieldArc ?? Math.PI * 2,
-      shieldFacing: moduleDef.shieldFacing ?? 0,
-      facing: engineFacingFor(moduleDef.effect, cell),
-      weaponFacing: weaponFacingFor(moduleDef.effect, cell),
-      turretArc: turretArcFor(moduleDef.effect),
-      turretTurnRate: turretTurnRateFor(moduleDef.effect),
-      channel: commsChannelFor(moduleDef.effect, cell),
-      commsBearing: commsBearingFor(moduleDef.effect, cell),
-      ...(commsRangeFor(cell) !== undefined
-        ? { commsRange: commsRangeFor(cell) }
-        : {}),
-      sensorBearing: sensorBearingFor(moduleDef.effect, cell),
-      ...(sensorRangeSettingFor(cell) !== undefined
-        ? { sensorRangeSetting: sensorRangeSettingFor(cell) }
-        : {}),
-    });
+    // No anchor module here. Either this is a covered cell of a multi-cell
+    // module (equipment.covers set) or a pure structural cell (no equipment).
+    // Both emit a hull-effect placeholder (the engine treats the cell as
+    // inert structure); a covered cell's `kind` label and `moduleId` come from
+    // the anchor so the renderer paints it in the module's colour.
+    const placeholderModuleId =
+      covers !== undefined ? covers.moduleId : `cell-${cell.surface}`;
+    const placeholderKind = covers !== undefined ? anchorKindFor(covers.moduleId) : "hull";
+    out.push(structuralPlaceholder(slotId, placeholderModuleId, placeholderKind, col, row, local, cell, layerFields));
   }
   return out;
+}
+
+/** Surface-layer material fields used by the per-cell structural computation. */
+interface SurfaceMaterial {
+  hp: number;
+  mass: number;
+  damageReduction: number;
+  reactiveReduction: number;
+  reactiveWindow: number;
+}
+
+/** Common per-cell structural fields shared by every resolved module shape:
+ *  layer HP (surface + substrate), reactive fields, and the layer mass
+ *  (substrate + surface, scaled by coverage). Equipment mass is added
+ *  separately, only at the anchor. */
+function cellStructureFields(
+  surface: SurfaceMaterial | undefined,
+  substrate: { hp: number; mass: number },
+  frac: number,
+) {
+  const maxSurfaceHp = (surface?.hp ?? 0) * frac;
+  const reactiveReduction = surface?.reactiveReduction ?? 0;
+  return {
+    maxSurfaceHp,
+    maxSubstrateHp: substrate.hp * frac,
+    surfaceReduction: surface?.damageReduction ?? 0,
+    reactiveReduction,
+    reactiveWindow: surface?.reactiveWindow ?? 0,
+    maxReactiveHp: maxSurfaceHp * reactiveReduction,
+    layerMass: ((surface?.mass ?? 0) + substrate.mass) * frac,
+  };
+}
+
+/** Build a hull-effect placeholder `ResolvedModule` for a cell with no
+ *  functioning module of its own — pure structure, an unknown module, or a
+ *  covered cell (inherits the anchor's kind label so the renderer paints it in
+ *  the module's colour). Inert: no power draw, no crew need, no behaviour. */
+function structuralPlaceholder(
+  slotId: string,
+  moduleId: string,
+  kind: ModuleEffect["kind"],
+  col: number,
+  row: number,
+  local: Vec2,
+  cell: Extract<GridCell, { kind: "solid" }>,
+  layerFields: ReturnType<typeof cellStructureFields>,
+): ResolvedModule {
+  return {
+    slotId, moduleId, kind, col, row,
+    x: local.x, y: local.y,
+    surface: cell.surface, edges: cell.edges,
+    ...layerFields,
+    mass: layerFields.layerMass,
+    powerDraw: 0, crewRequired: 0,
+    effect: { kind: "hull" },
+    command: false, repairRate: 0,
+    shieldArc: Math.PI * 2, shieldFacing: 0,
+    facing: 0, weaponFacing: 0, turretArc: 0, turretTurnRate: 0,
+    channel: 0, commsBearing: 0, sensorBearing: 0,
+  };
 }
 
 /** Resolve the surface material for a cell's surface kind in the given faction.
@@ -620,15 +624,7 @@ function surfaceMaterialFor(
   surface: SurfaceKind,
   catalog: Catalog,
   faction: string,
-):
-  | {
-      hp: number;
-      mass: number;
-      damageReduction: number;
-      reactiveReduction: number;
-      reactiveWindow: number;
-    }
-  | undefined {
+): SurfaceMaterial | undefined {
   if (surface === "bare") return undefined;
   if (surface === "deck") {
     const deck = catalog.deckMaterial(faction);

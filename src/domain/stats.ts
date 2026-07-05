@@ -2,11 +2,13 @@ import {
   footprint,
   isConnected4,
   occupiedCount,
+  placedModules,
   reachableFrom,
 } from "@/domain/grid";
 import { growArmourHull, padGrid } from "@/domain/hull-armour";
 import { cellCoverageFractions } from "@/domain/hull-outline";
 import { computeCompartments } from "@/domain/interior";
+import { polyominoFitFaults } from "@/domain/polyomino-fit";
 import type { LayerMaterial } from "@/schema/armor";
 import type { GridCell, HardwireResource } from "@/schema/grid";
 import type { ModuleDefinition, WeaponEffect } from "@/schema/module";
@@ -129,6 +131,18 @@ export type DesignFault =
       from: { col: number; row: number };
       to: { col: number; row: number };
       resource: HardwireResource;
+      reason: string;
+    }
+  /** A multi-cell module's footprint does not line up with its covered cells:
+   *  a non-anchor offset misses its `covers` back-pointer (or names the wrong
+   *  anchor). One fault per bad offset; the coordinate is the anchor's
+   *  authored-grid position. See `src/domain/polyomino-fit.ts`. */
+  | {
+      kind: "invalidFootprint";
+      severity: "error";
+      col: number;
+      row: number;
+      moduleId: EntityId;
       reason: string;
     };
 
@@ -257,7 +271,7 @@ export function cellMass(cell: GridCell, catalog: Catalog, faction?: string): nu
     const deck = faction !== undefined ? catalog.deckMaterial(faction) : undefined;
     if (deck !== undefined) sum += deck.mass;
   }
-  if (cell.equipment !== undefined) {
+  if (cell.equipment !== undefined && cell.equipment.moduleId !== undefined) {
     sum += catalog.module(cell.equipment.moduleId)?.mass ?? 0;
   }
   return sum;
@@ -267,14 +281,15 @@ export function cellMass(cell: GridCell, catalog: Catalog, faction?: string): nu
  *  Layer-material cells only record a surface kind (bare/deck/armor) which is
  *  shared across factions; the faction is resolved from the catalog at stat
  *  time using the design's declared faction. Cross-faction violations are
- *  therefore only detectable through explicitly-identified equipment. */
+ *  therefore only detectable through explicitly-identified equipment.
+ *
+ *  Iterates `placedModules` so a multi-cell module reports its faction once (at
+ *  its anchor); covered cells share the anchor's module faction. */
 function partFactions(grid: ShipDesign["grid"], catalog: Catalog): Set<string> {
   const factions = new Set<string>();
-  for (const cell of grid.cells) {
-    if (cell.kind === "solid" && cell.equipment !== undefined) {
-      const mod = catalog.module(cell.equipment.moduleId);
-      if (mod !== undefined) factions.add(mod.faction);
-    }
+  for (const { moduleId } of placedModules(grid)) {
+    const mod = catalog.module(moduleId);
+    if (mod !== undefined) factions.add(mod.faction);
   }
   return factions;
 }
@@ -319,13 +334,14 @@ export function analyseShipDesign(
     const cell = grid.cells[row * grid.cols + col];
     if (cell === undefined) continue;
     if (cell.kind !== "solid") continue;
-    const slotId = `cell-${col}-${row}`;
 
     // Surface + substrate HP contribution, scaled by the cell's coverage: a
     // tile the render crop truncates to a partial area carries proportional HP.
-    // Layer mass is scaled the same way (equipment mass stays full). A cell
-    // with an unknown layer material reports a fault rather than silently
-    // contributing zero.
+    // Layer mass is scaled the same way. A cell with an unknown layer material
+    // reports a fault rather than silently contributing zero. Covered cells of
+    // a multi-cell module contribute their substrate/surface mass and HP here
+    // too — they are structure; the module's own mass is added once at its
+    // anchor by the `placedModules` walk below.
     const frac = coverage[row * grid.cols + col]!;
     let layerMass = 0;
     const substrate = catalog.substrateMaterial(design.faction);
@@ -353,41 +369,54 @@ export function analyseShipDesign(
         layerMass += deck.mass;
       }
     }
-    // Layer mass scales by coverage; equipment mass is added below (full).
+    // Layer mass scales by coverage; equipment mass is added per-anchor below.
     stats.mass += layerMass * frac;
-
-    if (cell.equipment !== undefined) {
-      const moduleDef = catalog.module(cell.equipment.moduleId);
-      if (moduleDef === undefined) {
-        faults.push({ kind: "unknownModule", severity: "error", col, row, moduleId: cell.equipment.moduleId });
-        continue;
-      }
-      if (moduleDef.command === true) hasCommand = true;
-      if (moduleDef.effect.kind === "sensor") hasSensor = true;
-      if (moduleDef.effect.kind === "comms") {
-        // Resolve the effective channel: per-instance override wins over the
-        // module definition's default channel.
-        const effectiveChannel = cell.equipment.channel ?? moduleDef.effect.channel;
-        const existing = commsUnitsByChannel.get(effectiveChannel);
-        if (existing !== undefined) {
-          existing.push({ col, row, moduleId: cell.equipment.moduleId });
-        } else {
-          commsUnitsByChannel.set(effectiveChannel, [{ col, row, moduleId: cell.equipment.moduleId }]);
-        }
-        // Track aim units (dish or laser) that require crew.
-        if (
-          (moduleDef.effect.commsType === "dish" || moduleDef.effect.commsType === "laser") &&
-          moduleDef.crewRequired > 0
-        ) {
-          aimUnitPositions.push({ col, row, moduleId: cell.equipment.moduleId });
-        }
-      }
-      applyModule(stats, moduleDef, slotId);
-      // Equipment mass is whole (a module is wholly present regardless of the
-      // cell clip), so it is NOT scaled by frac.
-      stats.mass += moduleDef.mass;
-    }
   }
+
+  // Per-module walk: each placed module (anchor) applies once. A multi-cell
+  // module's covered cells are skipped (they carry `covers`, not `moduleId`),
+  // so the module's effect, mass, cost, power draw, and crew need are summed
+  // exactly once at the anchor. For an all-1x1 grid this yields one entry per
+  // equipment cell in row-major order — byte-identical to the prior per-cell
+  // equipment branch.
+  for (const { col, row, equipment, moduleId } of placedModules(grid)) {
+    const slotId = `cell-${col}-${row}`;
+    const moduleDef = catalog.module(moduleId);
+    if (moduleDef === undefined) {
+      faults.push({ kind: "unknownModule", severity: "error", col, row, moduleId });
+      continue;
+    }
+    if (moduleDef.command === true) hasCommand = true;
+    if (moduleDef.effect.kind === "sensor") hasSensor = true;
+    if (moduleDef.effect.kind === "comms") {
+      // Resolve the effective channel: per-instance override wins over the
+      // module definition's default channel.
+      const effectiveChannel = equipment.channel ?? moduleDef.effect.channel;
+      const existing = commsUnitsByChannel.get(effectiveChannel);
+      if (existing !== undefined) {
+        existing.push({ col, row, moduleId });
+      } else {
+        commsUnitsByChannel.set(effectiveChannel, [{ col, row, moduleId }]);
+      }
+      // Track aim units (dish or laser) that require crew.
+      if (
+        (moduleDef.effect.commsType === "dish" || moduleDef.effect.commsType === "laser") &&
+        moduleDef.crewRequired > 0
+      ) {
+        aimUnitPositions.push({ col, row, moduleId });
+      }
+    }
+    applyModule(stats, moduleDef, slotId);
+    // Equipment mass is whole (a module is wholly present regardless of any
+    // cell clip), so it is NOT scaled by frac.
+    stats.mass += moduleDef.mass;
+  }
+
+  // Polyomino (multi-cell module) fit: every non-anchor offset of an anchor's
+  // footprint must land on a covered cell whose back-pointer names it. Completes
+  // the design validator (every other relationship has its own fault); a no-op
+  // for the single-cell fleet. See `src/domain/polyomino-fit.ts`.
+  faults.push(...polyominoFitFaults(design, catalog));
 
   stats.powerNet = stats.powerOutput - stats.powerDraw;
   stats.crewNet = stats.crewCapacity - stats.crewRequired;
@@ -459,8 +488,15 @@ export function analyseShipDesign(
       const fromCell = grid.cells[from.row * grid.cols + from.col];
       const toCell = grid.cells[to.row * grid.cols + to.col];
 
-      // Both endpoints must be equipment cells (solid cells carrying equipment).
-      if (fromCell === undefined || fromCell.kind !== "solid" || fromCell.equipment === undefined) {
+      // Both endpoints must be equipment cells carrying an anchor (solid cells
+      // with moduleId defined). A covered cell of a multi-cell module is not a
+      // meaningful hardwire endpoint — it carries `covers`, not `moduleId`.
+      if (
+        fromCell === undefined ||
+        fromCell.kind !== "solid" ||
+        fromCell.equipment === undefined ||
+        fromCell.equipment.moduleId === undefined
+      ) {
         faults.push({
           kind: "invalidHardwire",
           severity: "error",
@@ -471,7 +507,12 @@ export function analyseShipDesign(
         });
         continue;
       }
-      if (toCell === undefined || toCell.kind !== "solid" || toCell.equipment === undefined) {
+      if (
+        toCell === undefined ||
+        toCell.kind !== "solid" ||
+        toCell.equipment === undefined ||
+        toCell.equipment.moduleId === undefined
+      ) {
         faults.push({
           kind: "invalidHardwire",
           severity: "error",
@@ -589,22 +630,22 @@ export function analyseShipDesign(
     // === "crew"). These are the sources from which crew walk to man stations.
     const quartersPositions: { col: number; row: number }[] = [];
     // Collect every crewed station (crewRequired > 0) and the positions of
-    // every magazine module and every finite-ammo weapon.
+    // every magazine module and every finite-ammo weapon. A multi-cell module
+    // reports one position (its anchor); covered cells are skipped by
+    // `placedModules`.
     const crewedStations: { col: number; row: number; moduleId: EntityId }[] = [];
     const magazinePositions: { col: number; row: number }[] = [];
     const finiteAmmoWeapons: { col: number; row: number; moduleId: EntityId }[] = [];
 
-    for (const { col, row } of footprint(grid)) {
-      const cell = grid.cells[row * grid.cols + col];
-      if (cell === undefined || cell.kind !== "solid" || cell.equipment === undefined) continue;
-      const moduleDef = catalog.module(cell.equipment.moduleId);
+    for (const { col, row, moduleId } of placedModules(grid)) {
+      const moduleDef = catalog.module(moduleId);
       if (moduleDef === undefined) continue;
 
       if (moduleDef.effect.kind === "crew") {
         quartersPositions.push({ col, row });
       }
       if (moduleDef.crewRequired > 0) {
-        crewedStations.push({ col, row, moduleId: cell.equipment.moduleId });
+        crewedStations.push({ col, row, moduleId });
       }
       if (moduleDef.effect.kind === "magazine") {
         magazinePositions.push({ col, row });
@@ -613,7 +654,7 @@ export function analyseShipDesign(
         moduleDef.effect.kind === "weapon" &&
         moduleDef.effect.ammoCapacity !== undefined
       ) {
-        finiteAmmoWeapons.push({ col, row, moduleId: cell.equipment.moduleId });
+        finiteAmmoWeapons.push({ col, row, moduleId });
       }
     }
 

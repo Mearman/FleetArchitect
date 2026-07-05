@@ -35,6 +35,8 @@ function describe(fault: DesignFault): string {
       return "Only one comms unit — a single unit cannot relay third-party contact data; add a second unit to enable relaying.";
     case "invalidHardwire":
       return `Invalid ${fault.resource} conduit from (${fault.from.col}, ${fault.from.row}) to (${fault.to.col}, ${fault.to.row}): ${fault.reason}.`;
+    case "invalidFootprint":
+      return `Multi-cell module at (${fault.col}, ${fault.row}) does not fit — ${fault.reason}.`;
   }
 }
 

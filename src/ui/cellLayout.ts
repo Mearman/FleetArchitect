@@ -36,6 +36,9 @@ export interface RenderCell {
    *  on descriptors recorded before edges were threaded through. Optional so
    *  existing RenderCell consumers need not supply it until they render edges. */
   edges?: { n: string; e: string; s: string; w: string };
+  /** False on a covered cell of a multi-cell module (the anchor carries the
+   *  glyph once). Undefined or true on ordinary cells — the renderer draws. */
+  glyph?: boolean;
   // Dynamic state for this frame.
   hp: number;
   alive: boolean;
@@ -102,6 +105,7 @@ export function renderCellsInto(
     const hasTurret = l.hasTurret === true;
     // Static edge kinds: undefined on legacy descriptors that predate the field.
     const edges = l.edges;
+    const glyph = l.glyph;
     const hp = cells.cellHp[i] ?? 0;
     const alive = (cells.cellAlive[i] ?? 0) !== 0;
     const surfaceHp = cells.cellSurfaceHp[i];
@@ -122,6 +126,7 @@ export function renderCellsInto(
         maxSurfaceHp,
         hasTurret,
         edges,
+        glyph,
         hp,
         alive,
         surfaceHp,
@@ -140,6 +145,7 @@ export function renderCellsInto(
       existing.maxSurfaceHp = maxSurfaceHp;
       existing.hasTurret = hasTurret;
       existing.edges = edges;
+      existing.glyph = glyph;
       existing.hp = hp;
       existing.alive = alive;
       existing.surfaceHp = surfaceHp;

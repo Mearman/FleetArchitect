@@ -1,4 +1,4 @@
-import type { ModuleDefinition } from "@/schema/module";
+import type { ModuleDefinitionInput } from "@/schema/module";
 import {
   crewMass,
   driveThrustNewtons,
@@ -10,6 +10,7 @@ import {
   deflectorMass,
 } from "../physics";
 import {
+  FUSION_ADVANCED_POWER_DENSITY_W_PER_M3,
   FUSION_COMPACT_POWER_DENSITY_W_PER_M3,
   MISSILE_RANGE_M,
   MODULE_POWER_DRAW_W,
@@ -158,6 +159,35 @@ const RAIDER_MISSILE_COOLDOWN = cooldownTicks(70 / 30);
 const SWARM_MISSILE_COOLDOWN = cooldownTicks(50 / 30);
 
 // ---------------------------------------------------------------------------
+// Broadside swarm-rack ordnance anchors.
+//
+// The broadside swarm rack is a twin-rail launcher throwing a heavier swarm
+// missile perpendicular to the ship's heading. Its body sits one band above
+// the swarm's 1 kg (the heavyAutocannon 3 kg) for a 120 MJ warhead, sharing
+// the swarm's cruise and feed cadence.
+// ---------------------------------------------------------------------------
+
+/** Broadside missile body mass (kg) — DERIVED from a heavyAutocannon-class
+ *  guided round (3 kg), a heavier broadside body than the swarm's 1 kg. */
+const BROADSIDE_MISSILE_MASS_KG = PROJECTILE_MASS_KG.heavyAutocannon;
+/** Broadside missile cruise velocity (m/s) — matches the swarm's autocannon/2
+ *  band: a fast light missile compatible with the swarm rack's feed. */
+const BROADSIDE_MISSILE_CRUISE_MS = MUZZLE_VELOCITY_M_PER_S.autocannon / 2;
+/** Broadside swarm-rack warhead yield (J) — 120 MJ, between the swarm's 80 MJ
+ *  and the raider's 300 MJ. */
+const BROADSIDE_MISSILE_WARHEAD_J = 1.2e8;
+/** Broadside missile finite-burn motor — DERIVED from the missile burn-time
+ *  band (same cruise/burn as the swarm missile). */
+const BROADSIDE_MISSILE_THRUST_M_PER_S2 = poweredMotorThrustMPerS2(
+  BROADSIDE_MISSILE_CRUISE_MS,
+  ORDNANCE_BURN_TIME_S.missile,
+);
+const BROADSIDE_MISSILE_BURN_TICKS = poweredMotorBurnTicks(ORDNANCE_BURN_TIME_S.missile);
+/** Broadside swarm-rack salvo interval (s) — a twin-rail recycles at the
+ *  swarm's ~1.7 s cadence. */
+const BROADSIDE_MISSILE_COOLDOWN = cooldownTicks(50 / 30);
+
+// ---------------------------------------------------------------------------
 // Reactor output targets and their derived masses.
 //
 // A reactor's mass is `reactorMass(output, powerDensity, density) = density ×
@@ -168,12 +198,18 @@ const SWARM_MISSILE_COOLDOWN = cooldownTicks(50 / 30);
 
 /** Compact fusion reactor output target (~1.2 GW) — the Corsair frigate band. */
 const REACTOR_COMPACT_OUTPUT_W = 1.2e9;
+/** Overdrive reactor output target (~2.4 GW) — 2× the salvaged single's 1.2 GW
+ *  at the advanced-fusion density band, a hot-running dual-core command node. */
+const REACTOR_OVERDRIVE_OUTPUT_W = 2.4e9;
 
 // ---------------------------------------------------------------------------
 // Propulsion: Corsair raider drives — fast and agile.
 // ---------------------------------------------------------------------------
 
 const raiderThrustN = driveThrustNewtons("raider");
+/** Raid drive bank rated thrust (N) — twin raider drives, 2× the single's 54 kN
+ *  at the same exhaust velocity and agility. */
+const RAID_DRIVE_BANK_THRUST_N = 2 * raiderThrustN;
 
 // ---------------------------------------------------------------------------
 // Corsair Reavers modules — 16 entries, capability-derived.
@@ -193,7 +229,26 @@ const raiderThrustN = driveThrustNewtons("raider");
 // scales with capability across the whole span.
 // ---------------------------------------------------------------------------
 
-export const corsairModules: ModuleDefinition[] = [
+// ---------------------------------------------------------------------------
+// Capital multi-cell footprints — each a 1×2 line anchored at {0,0}. Preset
+// designs import these to install matching `covers` back-pointers via
+// `mountMultiCell` (`data/presets/tokens.ts`), so the catalogue and the design
+// agree on each module's shape without re-authoring it.
+// ---------------------------------------------------------------------------
+const CORSAIR_LINE_2 = [
+  { dx: 0, dy: 0 },
+  { dx: 1, dy: 0 },
+];
+export const CORSAIR_FOOTPRINTS = {
+  broadsideSwarmRack: CORSAIR_LINE_2,
+  heavyRaidCannon: CORSAIR_LINE_2,
+  scramblerArray: CORSAIR_LINE_2,
+  raiderScreenArray: CORSAIR_LINE_2,
+  raidDriveBank: CORSAIR_LINE_2,
+  overdriveReactor: CORSAIR_LINE_2,
+};
+
+export const corsairModules: ModuleDefinitionInput[] = [
   // --- Weapons: missiles and light kinetics ---
   {
     id: "cor-raider-missile",
@@ -587,4 +642,153 @@ export const corsairModules: ModuleDefinition[] = [
       armingDelay: 15,
     },
   },
+  // --- Capital multi-cell variants (2-cell polyomino footprints) ---
+  // Each occupies a 1×2 line; mass traces to the same physics helpers at a
+  // heavier/doubled capability anchor. Preset designs import the matching
+  // `CORSAIR_FOOTPRINTS` shape to install `covers` back-pointers.
+  {
+    id: "cor-broadside-swarm-rack",
+    faction: "Corsair",
+    name: "Broadside Swarm Rack",
+    description: "A twin-rail broadside launcher throwing a heavy swarm of light missiles perpendicular to the ship's heading. The Reaver raid-strafe weapon — saturate a target's point defence on the pass, then break contact.",
+    category: "weapon",
+    // Twin-rail broadside launcher: heavier 3 kg body at the autocannon band
+    // (the swarm's feed), 0.8 launcher fraction matching the swarm rack.
+    // mass = 2800 × (½·3·4000² / 2e7) × 0.8 = 2,688 kg (~2.7 t).
+    mass: kineticWeaponMass(BROADSIDE_MISSILE_MASS_KG, MUZZLE_VELOCITY_M_PER_S.autocannon, WEAPON_DENSITY) * 0.8,
+    cost: 130,
+    powerDraw: MODULE_POWER_DRAW_W.ordnanceWeapon,
+    crewRequired: 2,
+    techLevel: 2,
+    footprint: CORSAIR_FOOTPRINTS.broadsideSwarmRack,
+    effect: {
+      kind: "weapon",
+      weaponType: "missile",
+      damage: BROADSIDE_MISSILE_WARHEAD_J,
+      range: MISSILE_RANGE_M,
+      cooldown: BROADSIDE_MISSILE_COOLDOWN,
+      projectileSpeed: projectileSpeedMPerTick(BROADSIDE_MISSILE_CRUISE_MS),
+      projectileMass: BROADSIDE_MISSILE_MASS_KG,
+      tracking: 3.5,
+      shieldPiercing: 0.1,
+      armourPiercing: 0.3,
+      spread: 0.6,
+      // Broadside mount: narrow turret arc (π/3), slower turn rate (0.06).
+      // The mount facing (π/2) is authored on the grid token.
+      turretArc: Math.PI / 3,
+      turretTurnRate: 0.06,
+      powered: true,
+      guided: true,
+      thrust: BROADSIDE_MISSILE_THRUST_M_PER_S2,
+      burnTicks: BROADSIDE_MISSILE_BURN_TICKS,
+      ammoCapacity: 140,
+    },
+  },
+  {
+    id: "cor-heavy-raid-cannon",
+    faction: "Corsair",
+    name: "Heavy Raid Cannon",
+    description: "A two-cell heavy autocannon built from salvaged frigate guns. Heavier round, longer reach, harder hit than the raid cannon — for finishing what the missiles strip. Damage and mass scale together at the heavyAutocannon band.",
+    category: "weapon",
+    // 3 kg @ 5 km/s (heavyAutocannon band, one band above the raid cannon's
+    // 1 kg @ 4 km/s). Muzzle energy ½·3·5000² = 37.5 MJ; range 5 km/s × 3 s =
+    // 15 km. mass = 2800 × (3.75e7 / 2e7) = 5,250 kg (~5.3 t).
+    mass: kineticWeaponMass(PROJECTILE_MASS_KG.heavyAutocannon, MUZZLE_VELOCITY_M_PER_S.heavyAutocannon, WEAPON_DENSITY),
+    cost: 70,
+    powerDraw: MODULE_POWER_DRAW_W.kineticWeapon,
+    crewRequired: 2,
+    techLevel: 2,
+    footprint: CORSAIR_FOOTPRINTS.heavyRaidCannon,
+    effect: {
+      kind: "weapon",
+      weaponType: "cannon",
+      damage: kineticDamageJoules(PROJECTILE_MASS_KG.heavyAutocannon, MUZZLE_VELOCITY_M_PER_S.heavyAutocannon),
+      range: kineticRangeM(MUZZLE_VELOCITY_M_PER_S.heavyAutocannon),
+      cooldown: cooldownTicks(RELOAD_THERMAL_TIME_S.heavyAutocannon),
+      projectileSpeed: projectileSpeedMPerTick(MUZZLE_VELOCITY_M_PER_S.heavyAutocannon),
+      projectileMass: PROJECTILE_MASS_KG.heavyAutocannon,
+      tracking: 1.0,
+      shieldPiercing: 0.15,
+      armourPiercing: 0.3,
+      spread: 0.05,
+      // Ballistic slug: unpowered and unguided, like the raid cannon.
+      powered: false,
+      guided: false,
+    },
+  },
+  {
+    id: "cor-scrambler-array",
+    faction: "Corsair",
+    name: "ECM Scrambler Array",
+    description: "A two-cell jammer array with a wider aperture. Strips more tracking from incoming guided fire and breaks missile lock more often — the Reaver answer to a missile-heavy defender covering the target.",
+    category: "defence",
+    // Two-cell array: 2× the single scrambler's sensor-density jammer stack.
+    // mass = 2 × (1200 × (54000 / 5000) × 0.15) = 3,888 kg (~3.9 t).
+    mass: 2 * engineMass(raiderThrustN, SENSOR_DENSITY) * 0.15,
+    cost: 95,
+    powerDraw: MODULE_POWER_DRAW_W.sensor,
+    crewRequired: 2,
+    techLevel: 2,
+    footprint: CORSAIR_FOOTPRINTS.scramblerArray,
+    effect: {
+      kind: "ecm",
+      trackingReduction: 0.75,
+      lockBreakChance: 0.25,
+    },
+  },
+  {
+    id: "cor-raider-screen-array",
+    faction: "Corsair",
+    name: "Raider Screen Array",
+    description: "A two-cell shield projector folding two screens into a frigate-grade bubble. Steps up to the medium shield band — enough front-loaded soak to survive the opening exchange of an ambush before the missiles land.",
+    category: "defence",
+    // Medium shield band (400 MJ, 2× the single's 200 MJ) at the Corsair shield
+    // density. mass = 1500 × (4e8 / 1.3e7) = 46,154 kg (~46 t).
+    mass: shieldMass(SHIELD_CAPACITY_J.medium, SHIELD_DENSITY),
+    cost: 70,
+    powerDraw: SHIELD_RECHARGE_W.medium,
+    crewRequired: 0,
+    techLevel: 2,
+    footprint: CORSAIR_FOOTPRINTS.raiderScreenArray,
+    effect: {
+      kind: "shield",
+      capacity: SHIELD_CAPACITY_J.medium,
+      rechargeRate: SHIELD_RECHARGE_W.medium,
+      rechargeDelay: 70,
+    },
+  },
+  {
+    id: "cor-raid-drive-bank",
+    faction: "Corsair",
+    name: "Raid Drive Bank",
+    description: "A twin-nozzle raider drive bank. Double the thrust of the single raid drive at the same exhaust velocity and agility — for closing to missile range in a hurry or breaking contact when the volley is spent.",
+    category: "propulsion",
+    // Twin raider drives: 108 kN (2 × 54 kN) at the light Corsair engine
+    // density. mass = 2500 × (108000 / 5000) = 54,000 kg (~54 t).
+    mass: engineMass(RAID_DRIVE_BANK_THRUST_N, ENGINE_DENSITY),
+    cost: 56,
+    powerDraw: MODULE_POWER_DRAW_W.drive,
+    crewRequired: 0,
+    techLevel: 2,
+    footprint: CORSAIR_FOOTPRINTS.raidDriveBank,
+    effect: { kind: "engine", thrust: RAID_DRIVE_BANK_THRUST_N },
+  },
+  {
+    id: "cor-overdrive-reactor",
+    faction: "Corsair",
+    name: "Overdrive Reactor",
+    description: "A hot-running dual-core reactor pushing advanced-fusion density. More watts per kilogram than the salvaged single-core — the over-tuned power plant a blink-and-cloak raider needs to keep every system lit through the ambush. Serves as the ship's command node.",
+    category: "system",
+    // 2.4 GW @ 6e7 W/m³ (advanced-fusion density, 2× the single's 1.2 GW at a
+    // denser core). mass = 3000 × (2.4e9 / 6e7) = 120,000 kg (~120 t).
+    mass: reactorMass(REACTOR_OVERDRIVE_OUTPUT_W, FUSION_ADVANCED_POWER_DENSITY_W_PER_M3, REACTOR_DENSITY),
+    cost: 110,
+    powerDraw: 0,
+    crewRequired: 2,
+    techLevel: 3,
+    footprint: CORSAIR_FOOTPRINTS.overdriveReactor,
+    effect: { kind: "power", output: REACTOR_OVERDRIVE_OUTPUT_W },
+    command: true,
+  },
 ];
+

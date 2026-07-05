@@ -1,4 +1,4 @@
-import type { ModuleDefinition } from "@/schema/module";
+import type { ModuleDefinitionInput } from "@/schema/module";
 import {
   beamWeaponMass,
   crewMass,
@@ -76,15 +76,15 @@ import { SENSOR_OMNI_ARC } from "../sensor-arcs";
 // ---------------------------------------------------------------------------
 
 /** Crystal weapon/turret density (kg/m³): bulky crystal mechanisms. */
-const CRYSTAL_WEAPON_DENSITY = 4500;
+export const CRYSTAL_WEAPON_DENSITY = 4500;
 /** Crystal beam weapon density (kg/m³): heavy crystal emitter + cooling. */
-const CRYSTAL_BEAM_DENSITY = 4200;
+export const CRYSTAL_BEAM_DENSITY = 4200;
 /** Crystal shield generator density (kg/m³): crystal field projectors. */
-const CRYSTAL_SHIELD_DENSITY = 3000;
+export const CRYSTAL_SHIELD_DENSITY = 3000;
 /** Crystal engine/nozzle density (kg/m³): crystal thrust assemblies. */
-const CRYSTAL_ENGINE_DENSITY = 3500;
+export const CRYSTAL_ENGINE_DENSITY = 3500;
 /** Crystal reactor containment density (kg/m³): dense crystal shielding. */
-const CRYSTAL_REACTOR_DENSITY = 5000;
+export const CRYSTAL_REACTOR_DENSITY = 5000;
 /** Crystal crew habitat density (kg/m³): dense crystal life-sustaining shell. */
 const CRYSTAL_CREW_DENSITY = 2500;
 
@@ -130,7 +130,7 @@ const SHARD_MUZZLE_MS = MUZZLE_VELOCITY_M_PER_S.heavyAutocannon;
 /** Standard crystal fusion reactor: 5e7 W/m³ × 30 m³ = 1.5 GW. */
 const CRYSTAL_FUSION_OUTPUT_W = 1.5e9;
 /** Capital crystal antimatter reactor: 2e8 W/m³ × 25 m³ = 5 GW. */
-const CRYSTAL_ANTIMATTER_OUTPUT_W = 5e9;
+export const CRYSTAL_ANTIMATTER_OUTPUT_W = 5e9;
 
 // ---------------------------------------------------------------------------
 // Crystalline Concord modules.
@@ -148,7 +148,7 @@ const CRYSTAL_ANTIMATTER_OUTPUT_W = 5e9;
 // phase-cloak + signature-damper stealth suite.
 // ---------------------------------------------------------------------------
 
-export const crystallineModules: ModuleDefinition[] = [
+export const crystallineModules: ModuleDefinitionInput[] = [
   // --- Weapons (hitscan beams, high shield-pierce, low armour-pierce) ---
   {
     id: "cry-prism-beam",

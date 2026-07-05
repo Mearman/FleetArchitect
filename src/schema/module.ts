@@ -678,5 +678,30 @@ export const ModuleDefinition = z.object({
   /** Direction the shield points, in radians. Only meaningful when shieldArc is
    *  set and less than 2π. Default 0 (pointing along the ship's +x). */
   shieldFacing: z.number().optional(),
+  /**
+   * The set of cell offsets this module occupies, anchored at {0,0} (the cell
+   * where the module's equipment record lives). A 1-cell module — every existing
+   * module — carries the default [{0,0}]. Offsets are integer cell coordinates;
+   * the polyomino is 4-connected (every offset reachable from {0,0} by
+   * edge-adjacent steps through other offsets), with no duplicates and {0,0}
+   * always present.
+   *
+   * The footprint is a geometric/visual/connectivity concept. It does NOT drive
+   * mass or stats directly: the catalog author writes the module's capability on
+   * the effect (a 3-cell weapon authors ~3x the muzzle energy), and mass falls
+   * out of the capability-derived density helpers in `data/catalog/physics.ts`.
+   */
+  footprint: z
+    .array(z.object({ dx: z.number().int(), dy: z.number().int() }))
+    .min(1)
+    .default([{ dx: 0, dy: 0 }]),
 });
 export type ModuleDefinition = z.infer<typeof ModuleDefinition>;
+
+/**
+ * The authoring shape of a `ModuleDefinition`: fields with a default (notably
+ * `footprint`, which defaults to the 1-cell `[{0,0}]` polyomino) may be omitted.
+ * Catalog faction files author against this type; `ModuleDefinition.parse`
+ * refills the defaults to produce a full `ModuleDefinition`.
+ */
+export type ModuleDefinitionInput = z.input<typeof ModuleDefinition>;

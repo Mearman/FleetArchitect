@@ -43,19 +43,23 @@ import {
  *           door-state bit (`open` = 0, `closed` = 1) for each edge whose kind
  *           is `door`, in n,e,s,w order, packed,
  *         - if `hasEquipment`: an equipment block.
- *   7.  equipment block:
- *         - varint moduleCatalogIndex (index into the bundled module catalog),
- *         - float64 `facing`,
- *         - 1 presence byte for the five optional fields (bit0 `channel`,
- *           bit1 `commsBearing`, bit2 `commsRange`, bit3 `sensorBearing`,
- *           bit4 `sensorRangeSetting`), followed by each present value in that
- *           order: `channel` as a varint integer; the other four as float64.
+ *   7.  equipment block (starts with a 1-byte tag):
+ *         - tag `0` (anchor): varint moduleCatalogIndex (index into the
+ *           bundled module catalog), float64 `facing`, 1 presence byte for
+ *           the five optional fields (bit0 `channel`, bit1 `commsBearing`,
+ *           bit2 `commsRange`, bit3 `sensorBearing`, bit4 `sensorRangeSetting`),
+ *           followed by each present value in that order: `channel` as a
+ *           varint integer; the other four as float64.
+ *         - tag `1` (covered cell of a multi-cell module): varint
+ *           moduleCatalogIndex (the anchor module's id), varint `anchorCol`,
+ *           varint `anchorRow`. A covered cell carries no per-instance config
+ *           of its own; it inherits the anchor's identity.
  *   8.  connections: varint count, then per connection varint `from.col`,
  *       `from.row`, `to.col`, `to.row`, and 2 bits `resource`
  *       (`ammo` = 0, `power` = 1, `manning` = 2).
  */
 
-const CODEC_VERSION = 1;
+const CODEC_VERSION = 2;
 
 /** Per-axis ceiling on a decoded grid's dimensions. The largest authored ship is
  *  well under 100 cells on a side, so 1000 is a generous margin (a 1000x1000
@@ -101,6 +105,11 @@ const EQUIP_COMMS_BEARING = 2;
 const EQUIP_COMMS_RANGE = 4;
 const EQUIP_SENSOR_BEARING = 8;
 const EQUIP_SENSOR_RANGE = 16;
+
+/** Equipment block tag: discriminates an anchor (moduleId present, current
+ *  shape) from a covered cell of a multi-cell module (covers back-pointer). */
+const EQUIP_TAG_ANCHOR = 0;
+const EQUIP_TAG_COVERED = 1;
 
 /** Stable mapping from module id to its index in the bundled catalog order. */
 const MODULE_ID_TO_INDEX: Map<string, number> = new Map(
@@ -295,6 +304,27 @@ function writeEdges(writer: ByteWriter, edges: CellEdges): void {
 }
 
 function writeEquipment(writer: ByteWriter, equipment: CellEquipment): void {
+  // Covered cell of a multi-cell module: write the covers back-pointer.
+  if (equipment.moduleId === undefined) {
+    if (equipment.covers === undefined) {
+      // The CellEquipment refine guarantees exactly one of moduleId/covers is
+      // set; unreachable for parsed input but guard for runtime safety.
+      throw new Error("grid codec: equipment carries neither moduleId nor covers");
+    }
+    const index = MODULE_ID_TO_INDEX.get(equipment.covers.moduleId);
+    if (index === undefined) {
+      throw new Error(
+        `grid codec: covers module '${equipment.covers.moduleId}' is not in the catalog`,
+      );
+    }
+    writer.byte(EQUIP_TAG_COVERED);
+    writer.varint(index);
+    writer.varint(equipment.covers.anchorCol);
+    writer.varint(equipment.covers.anchorRow);
+    return;
+  }
+  // Anchor: the existing shape, prefixed with the anchor tag.
+  writer.byte(EQUIP_TAG_ANCHOR);
   const index = MODULE_ID_TO_INDEX.get(equipment.moduleId);
   if (index === undefined) {
     throw new Error(
@@ -444,6 +474,20 @@ function readEdges(reader: ByteReader): CellEdges {
 }
 
 function readEquipment(reader: ByteReader): CellEquipment {
+  const tag = reader.byte();
+  if (tag === EQUIP_TAG_COVERED) {
+    const moduleIndex = reader.varint();
+    const mod = modules[moduleIndex];
+    if (mod === undefined) {
+      throw new Error(`grid codec: invalid module catalog index ${moduleIndex}`);
+    }
+    const anchorCol = reader.varint();
+    const anchorRow = reader.varint();
+    return { facing: 0, covers: { moduleId: mod.id, anchorCol, anchorRow } };
+  }
+  if (tag !== EQUIP_TAG_ANCHOR) {
+    throw new Error(`grid codec: invalid equipment tag ${tag}`);
+  }
   const moduleIndex = reader.varint();
   const mod = modules[moduleIndex];
   if (mod === undefined) {

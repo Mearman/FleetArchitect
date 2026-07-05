@@ -1,6 +1,6 @@
-import type { GridCell, TileGrid } from "@/schema/grid";
+import type { CellEquipment, GridCell, TileGrid } from "@/schema/grid";
 import type { ShipClassification } from "@/schema/armor";
-import type { Vec2 } from "@/schema/primitives";
+import type { EntityId, Vec2 } from "@/schema/primitives";
 
 /**
  * Pure geometry and derivation helpers over a `TileGrid`. No React, no Dexie,
@@ -469,4 +469,61 @@ export function isConnected4(grid: TileGrid): boolean {
     }
   }
   return seen.size === occupiedKeys.size;
+}
+
+// ---------------------------------------------------------------------------
+// Polyomino (multi-cell module) placement.
+// ---------------------------------------------------------------------------
+
+/**
+ * A module placed on the grid, yielded once at its anchor. The equipment is the
+ * anchor's record (with `moduleId` defined); covered cells of the same module
+ * are NOT yielded separately — they are skipped because their equipment carries
+ * a `covers` back-pointer instead of a `moduleId`.
+ */
+export interface PlacedModule {
+  /** Anchor cell column. */
+  readonly col: number;
+  /** Anchor cell row. */
+  readonly row: number;
+  /** The anchor's equipment record. `equipment.moduleId` is always defined for
+   *  a `PlacedModule` (covered cells, whose `moduleId` is undefined, are not
+   *  yielded). */
+  readonly equipment: CellEquipment;
+  /** The module id installed at this anchor (narrowed from
+   *  `equipment.moduleId` for caller convenience). */
+  readonly moduleId: EntityId;
+}
+
+/**
+ * Yield each placed module once, at its anchor, in row-major anchor order. A
+ * covered cell (one whose equipment carries a `covers` back-pointer rather than
+ * a `moduleId`) is skipped — it belongs to the anchor identified by its
+ * `covers.anchorCol`/`covers.anchorRow`, which is yielded in its place.
+ *
+ * This is the single migration target for every site that today iterates
+ * `cell.equipment` per cell and would otherwise double-count a multi-cell
+ * module: stats aggregation, per-module reads in resolve, faction collection,
+ * hardwire endpoints, etc. For an all-1x1 grid (every anchor has no covered
+ * cells), this yields exactly one `PlacedModule` per equipment cell, in the
+ * same row-major order the per-cell walk produces — so the migration is a
+ * no-op for existing designs.
+ *
+ * Pure and deterministic: no catalog dependency (the `covers` back-pointer on
+ * each covered cell is sufficient to identify anchors vs covered cells without
+ * resolving footprints), no RNG, no Map/Set insertion-order dependence.
+ */
+export function placedModules(grid: TileGrid): PlacedModule[] {
+  const out: PlacedModule[] = [];
+  for (const { col, row } of footprint(grid)) {
+    const cell = cellAt(col, row, grid);
+    if (cell === undefined || cell.kind !== "solid") continue;
+    const equipment = cell.equipment;
+    if (equipment === undefined) continue;
+    // Anchors carry moduleId; covered cells carry covers (and no moduleId).
+    // The CellEquipment refine guarantees exactly one is set.
+    if (equipment.moduleId === undefined) continue;
+    out.push({ col, row, equipment, moduleId: equipment.moduleId });
+  }
+  return out;
 }

@@ -1,4 +1,4 @@
-import type { ModuleDefinition } from "@/schema/module";
+import type { ModuleDefinitionInput } from "@/schema/module";
 import {
   beamWeaponMass,
   driveThrustNewtons,
@@ -81,15 +81,15 @@ import {
 // ---------------------------------------------------------------------------
 
 /** Organic turret mechanism density: wet bio-chitin muscle and chitin. */
-const SWARM_WEAPON_DENSITY_KG_PER_M3 = 2200;
+export const SWARM_WEAPON_DENSITY_KG_PER_M3 = 2200;
 /** Organic emitter/cooling density for beam weapons. */
-const SWARM_BEAM_DENSITY_KG_PER_M3 = 1800;
+export const SWARM_BEAM_DENSITY_KG_PER_M3 = 1800;
 /** Bio-organic reactor containment density (lighter than Terran shielding). */
-const SWARM_REACTOR_DENSITY_KG_PER_M3 = 2500;
+export const SWARM_REACTOR_DENSITY_KG_PER_M3 = 2500;
 /** Bio-organic nozzle and jet density. */
-const SWARM_ENGINE_DENSITY_KG_PER_M3 = 2000;
+export const SWARM_ENGINE_DENSITY_KG_PER_M3 = 2000;
 /** Organic ordnance density (chitin-shelled rounds, lighter than metal). */
-const SWARM_MAGAZINE_DENSITY_KG_PER_M3 = 3500;
+export const SWARM_MAGAZINE_DENSITY_KG_PER_M3 = 3500;
 /** Organic sensor / comms array density (wet tissue, light electronics). */
 const SWARM_ARRAY_DENSITY_KG_PER_M3 = 1500;
 /** Organic electronics for comms (slightly denser than sensors). */
@@ -181,7 +181,7 @@ const REACTOR_ANTIMATTER_OUTPUT_W = 5e9;
 // `magazineMass`, `crewMass`), using Swarm bio-organic densities.
 // ---------------------------------------------------------------------------
 
-export const swarmModules: ModuleDefinition[] = [
+export const swarmModules: ModuleDefinitionInput[] = [
   // --- Weapons ---
   {
     id: "swm-spore-launcher",

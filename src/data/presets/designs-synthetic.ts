@@ -4,8 +4,9 @@ import type { ShipDesign } from "@/schema/ship";
 /** Same ShipDesign input shape used by designs.ts: schema defaults optional. */
 type ShipDesignInput = input<typeof ShipDesign>;
 
-import { syntheticGrid, PRESET_TIME, withEdges } from "@/data/presets/tokens";
+import { syntheticGrid, mountMultiCell, PRESET_TIME, withEdges } from "@/data/presets/tokens";
 import { subdivideGrid } from "@/domain/shipgen";
+import { SYNTHETIC_FOOTPRINTS } from "@/data/catalog/modules/synthetic-capital";
 
 // Synthetic Collective designs — hardwired, crewless drone hulls. No crew, no
 // quarters, just the network. Armour rails and prow caps give the machine
@@ -93,13 +94,21 @@ export const syntheticDesigns: ShipDesignInput[] = [
     // array, and an interceptor screen. Armour rails lock the hull into its
     // machine-precise frame; a double armour cap seals the prow on the
     // centre row.
-    grid: subdivideGrid(withEdges(syntheticGrid([
-      ".#########>",
-      "EX~GRHAINe#",
-      "EPAGRHAIN##",
-      "EX~GRHAINe#",
-      ".#########<",
-    ]), [
+    //
+    // The coordinator's centre row steps up to capital multi-cell stores: a
+    // Coordination Hub (J, plus-shape datalink hub replacing a coordination
+    // node), a Coilgun Bank (K, twin barrels replacing a coilgun), and an
+    // Interceptor Grid (L, a dense two-cell screen replacing an interceptor
+    // array). Each anchor's covered cells are installed by `mountMultiCell`
+    // after subdivision.
+    grid: mountMultiCell(
+      subdivideGrid(withEdges(syntheticGrid([
+        ".#########>",
+        "EX~GRHAINe#",
+        "EPAGKHJLN##",
+        "EX~GRHAINe#",
+        ".#########<",
+      ]), [
       // Drive | reactor-and-command bulkhead.
       { col: 0, row: 1, dir: "e", kind: "wall" },
       { col: 0, row: 2, dir: "e", kind: "door" },
@@ -129,6 +138,13 @@ export const syntheticDesigns: ShipDesignInput[] = [
       { col: 7, row: 2, dir: "e", kind: "door" },
       { col: 7, row: 3, dir: "e", kind: "wall" },
     ]), F_NETWORK_HUB),
+      F_NETWORK_HUB,
+      [
+        [4, 2, "syn-coilgun-bank", SYNTHETIC_FOOTPRINTS.coilgunBank],
+        [6, 2, "syn-coordination-hub", SYNTHETIC_FOOTPRINTS.coordinationHub],
+        [7, 2, "syn-interceptor-grid", SYNTHETIC_FOOTPRINTS.interceptorGrid],
+      ],
+    ),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -147,15 +163,26 @@ export const syntheticDesigns: ShipDesignInput[] = [
     // indefinitely. Armour rails and a double prow cap give the hull its
     // unmistakable machine silhouette — no crew, no quarters, just the
     // network.
-    grid: subdivideGrid(withEdges(syntheticGrid([
-      ".###########>",
-      "EX~GHAINRR##e",
-      "EX~GAHAINR##e",
-      "EPXGAHAIRAN#e",
-      "EX~GAHAINR##e",
-      "EX~GHAINRR##e",
-      ".###########<",
-    ]), [
+    //
+    // The apex hull fields the full capital multi-cell kit on its centre row
+    // and one coordinator slot: the stern Ion Drive Bank (T, twin ion
+    // thrusters), the keel Quantum Core Array (M, three ganged antimatter
+    // cores — the capital command heart), a Coordination Hub (J, plus-shape
+    // datalink), a Heavy Drone Hangar (D, 2×2 fabrication deck), a Phalanx
+    // Shield Hub (S, plus-shape capital shield), an Interceptor Grid (L, a
+    // dense two-cell screen), and a Coilgun Bank (K, twin barrels). Each
+    // anchor's covered cells are installed by `mountMultiCell` after
+    // subdivision.
+    grid: mountMultiCell(
+      subdivideGrid(withEdges(syntheticGrid([
+        ".###########>",
+        "EX~GHAINRR##e",
+        "EX~GJHAINR##e",
+        "TPMGADSLKAN#e",
+        "EX~GAHAINR##e",
+        "EX~GHAINRR##e",
+        ".###########<",
+      ]), [
       // Drive | reactor-and-command bulkhead.
       { col: 0, row: 1, dir: "e", kind: "wall" },
       { col: 0, row: 2, dir: "e", kind: "wall" },
@@ -198,6 +225,17 @@ export const syntheticDesigns: ShipDesignInput[] = [
       { col: 4, row: 3, dir: "s", kind: "wall" },
       { col: 5, row: 3, dir: "s", kind: "door" },
     ]), F_NEXUS_PRIME),
+      F_NEXUS_PRIME,
+      [
+        [0, 3, "syn-thruster-bank", SYNTHETIC_FOOTPRINTS.thrusterBank],
+        [2, 3, "syn-quantum-core-heavy", SYNTHETIC_FOOTPRINTS.quantumCoreHeavy],
+        [4, 2, "syn-coordination-hub", SYNTHETIC_FOOTPRINTS.coordinationHub],
+        [5, 3, "syn-drone-hangar-heavy", SYNTHETIC_FOOTPRINTS.droneHangarHeavy],
+        [6, 3, "syn-shield-hub", SYNTHETIC_FOOTPRINTS.shieldHub],
+        [7, 3, "syn-interceptor-grid", SYNTHETIC_FOOTPRINTS.interceptorGrid],
+        [8, 3, "syn-coilgun-bank", SYNTHETIC_FOOTPRINTS.coilgunBank],
+      ],
+    ),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -216,13 +254,20 @@ export const syntheticDesigns: ShipDesignInput[] = [
     // ship's range and accuracy), screened by interceptor arrays and watched
     // over by active sensors. Twin quantum cores and a command processor power
     // the whole hardwired hull with no crew aboard.
-    grid: subdivideGrid(withEdges(syntheticGrid([
-      ".#########>",
-      "EX~GHHAINe#",
-      "EPAGRHAIN##",
-      "EX~GHHAINe#",
-      ".#########<",
-    ]), [
+    //
+    // The carrier's interior rows step up to capital multi-cell stores: a pair
+    // of Heavy Drone Hangars (D, 2×2 fabrication decks — four times the single
+    // hangar's swarm each), an Ion Drive Bank (T, twin ion thrusters), and an
+    // Interceptor Grid (L, a dense two-cell screen). Each anchor's covered
+    // cells are installed by `mountMultiCell` after subdivision.
+    grid: mountMultiCell(
+      subdivideGrid(withEdges(syntheticGrid([
+        ".#########>",
+        "EX~GDHAINe#",
+        "TPAGRHALN##",
+        "EX~GDHAINe#",
+        ".#########<",
+      ]), [
       // Drive | reactor-and-command bulkhead.
       { col: 0, row: 1, dir: "e", kind: "wall" },
       { col: 0, row: 2, dir: "e", kind: "door" },
@@ -248,6 +293,14 @@ export const syntheticDesigns: ShipDesignInput[] = [
       { col: 7, row: 2, dir: "e", kind: "door" },
       { col: 7, row: 3, dir: "e", kind: "wall" },
     ]), F_MAINFRAME),
+      F_MAINFRAME,
+      [
+        [0, 2, "syn-thruster-bank", SYNTHETIC_FOOTPRINTS.thrusterBank],
+        [4, 1, "syn-drone-hangar-heavy", SYNTHETIC_FOOTPRINTS.droneHangarHeavy],
+        [4, 3, "syn-drone-hangar-heavy", SYNTHETIC_FOOTPRINTS.droneHangarHeavy],
+        [7, 2, "syn-interceptor-grid", SYNTHETIC_FOOTPRINTS.interceptorGrid],
+      ],
+    ),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",

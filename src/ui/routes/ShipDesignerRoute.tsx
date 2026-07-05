@@ -288,13 +288,22 @@ export function ShipDesignerRoute() {
 
   /** Patch the equipment of the selected solid cell (facing, comms/sensor
    *  settings). No-op when nothing is selected, the design is read-only, or the
-   *  selected cell carries no equipment. */
+   *  selected cell carries no anchor module of its own (a covered cell of a
+   *  multi-cell module inherits its config from its anchor and is not patchable
+   *  here). */
   function updateSelectedEquipment(patch: Partial<CellEquipment>) {
     if (selected === null || readOnly) return;
     setWorking((prev) => {
       const idx = selected.row * prev.grid.cols + selected.col;
       const cell = prev.grid.cells[idx];
-      if (cell === undefined || cell.kind !== "solid" || cell.equipment === undefined) return prev;
+      if (
+        cell === undefined ||
+        cell.kind !== "solid" ||
+        cell.equipment === undefined ||
+        cell.equipment.moduleId === undefined
+      ) {
+        return prev;
+      }
       const cells = prev.grid.cells.slice();
       cells[idx] = { ...cell, equipment: { ...cell.equipment, ...patch } };
       return { ...prev, grid: { ...prev.grid, cells } };
@@ -431,11 +440,11 @@ export function ShipDesignerRoute() {
   const selectedCell =
     selected === null ? undefined : cellAt(selected.col, selected.row, grid);
   const selectedModuleDef =
-    selectedCell?.kind === "solid" && selectedCell.equipment !== undefined
+    selectedCell?.kind === "solid" && selectedCell.equipment?.moduleId !== undefined
       ? catalog().module(selectedCell.equipment.moduleId)
       : undefined;
   const selectedFacing =
-    selectedCell?.kind === "solid" && selectedCell.equipment !== undefined
+    selectedCell?.kind === "solid" && selectedCell.equipment?.moduleId !== undefined
       ? selectedCell.equipment.facing
       : undefined;
 
@@ -529,7 +538,7 @@ export function ShipDesignerRoute() {
         )}
       {selectedCell !== undefined &&
         selectedCell.kind === "solid" &&
-        selectedCell.equipment !== undefined &&
+        selectedCell.equipment?.moduleId !== undefined &&
         selectedModuleDef?.effect.kind === "comms" && (
           <CommsConfig
             cell={selectedCell.equipment}
@@ -541,7 +550,7 @@ export function ShipDesignerRoute() {
         )}
       {selectedCell !== undefined &&
         selectedCell.kind === "solid" &&
-        selectedCell.equipment !== undefined &&
+        selectedCell.equipment?.moduleId !== undefined &&
         selectedModuleDef?.effect.kind === "sensor" && (
           <SensorConfig
             cell={selectedCell.equipment}
