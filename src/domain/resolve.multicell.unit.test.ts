@@ -252,4 +252,65 @@ describe("analyseShipDesign polyomino fit validation", () => {
     const { faults } = analyseShipDesign(design, multicellCatalog());
     expect(faults.some((f) => f.kind === "invalidFootprint")).toBe(true);
   });
+
+  it("flags an orphaned cover whose anchor cell is gone (backward check)", () => {
+    // A cover at col 0 points at an anchor at (5, 5) — out of bounds. The
+    // forward pass never sees it (no anchor yields it); the backward pass must
+    // flag the orphan so it doesn't silently degrade to inert structure.
+    const grid: TileGrid = {
+      cols: 2,
+      rows: 1,
+      cells: [
+        {
+          kind: "solid",
+          substrate: true,
+          surface: "deck",
+          edges: OPEN,
+          equipment: {
+            facing: 0,
+            covers: { moduleId: "test-2cell-pulse-laser", anchorCol: 5, anchorRow: 5 },
+          },
+        },
+        { kind: "solid", substrate: true, surface: "deck", edges: OPEN },
+      ],
+      connections: [],
+    };
+    const design: ShipDesign = { ...twoCellDesign(), grid };
+    const { faults } = analyseShipDesign(design, multicellCatalog());
+    expect(faults.some((f) => f.kind === "invalidFootprint")).toBe(true);
+  });
+
+  it("flags a cover whose anchor holds a different module (backward check)", () => {
+    // Cover at (0,0) points at (1,0), which holds the reactor — a real cell, but
+    // not the cover's module. The anchor exists but the moduleId disagrees.
+    const grid: TileGrid = {
+      cols: 2,
+      rows: 2,
+      cells: [
+        {
+          kind: "solid",
+          substrate: true,
+          surface: "deck",
+          edges: OPEN,
+          equipment: {
+            facing: 0,
+            covers: { moduleId: "test-2cell-pulse-laser", anchorCol: 1, anchorRow: 0 },
+          },
+        },
+        {
+          kind: "solid",
+          substrate: true,
+          surface: "deck",
+          edges: OPEN,
+          equipment: { moduleId: "mod-reactor-fusion", facing: 0 },
+        },
+        { kind: "solid", substrate: true, surface: "deck", edges: OPEN },
+        { kind: "solid", substrate: true, surface: "deck", edges: OPEN },
+      ],
+      connections: [],
+    };
+    const design: ShipDesign = { ...twoCellDesign(), grid };
+    const { faults } = analyseShipDesign(design, multicellCatalog());
+    expect(faults.some((f) => f.kind === "invalidFootprint")).toBe(true);
+  });
 });
