@@ -1,4 +1,10 @@
-import type { CellEdges, GridCell, TileGrid } from "@/schema/grid";
+import type {
+  CellEdges,
+  EdgeKind,
+  GridCell,
+  SolidCell,
+  TileGrid,
+} from "@/schema/grid";
 
 /**
  * Bundled starter ships and fleets, so a brand-new player can run a battle the
@@ -224,6 +230,131 @@ export function gridFromMap(rows: readonly string[]): TileGrid {
 /** Parse an ASCII map using the Swarm token set. */
 export function swarmGrid(rows: readonly string[]): TileGrid {
   return gridFromMapWith(rows, SWARM_TOKENS);
+}
+
+// ---------------------------------------------------------------------------
+// Coarse-level edge authoring.
+// ---------------------------------------------------------------------------
+
+/** A cardinal edge direction on a cell. */
+export type EdgeDir = "n" | "e" | "s" | "w";
+
+/** One coarse-level edge override: set the edge at `(col, row)` facing `dir` to
+ *  `kind`. */
+export interface AuthoredEdge {
+  col: number;
+  row: number;
+  dir: EdgeDir;
+  kind: EdgeKind;
+}
+
+/** Apply coarse-level edge overrides to a grid built by `gridFromMap` (or any
+ *  factional variant). Each tuple sets one edge of one cell to an absolute
+ *  `kind` — `open`, `wall`, or `door` — managing the doorState invariant (a
+ *  state is present exactly on door edges). Authored doors default to open
+ *  (passable at battle start; crew close them to seal during damage control).
+ *
+ *  Each edge is mirrored onto the neighbour cell's opposite edge so the shared
+ *  boundary is symmetric: a wall blocks from either side and a door is
+ *  openable from either side. Without this, `edgePassable` and the crew
+ *  pathfinder (which read the edge off the *from* cell) would treat a one-sided
+ *  wall as passable from the open side — crew could walk straight through an
+ *  authored wall. Armour and out-of-bounds neighbours are skipped: armour's
+ *  all-wall edges are the barrier already and overwriting them would break the
+ *  invariant; a grid-boundary edge has no neighbour to mirror onto.
+ *
+ *  This runs AFTER `gridFromMap` and BEFORE `subdivideGrid`: a coarse-level
+ *  wall or door between two deck/bare cells then propagates onto the matching
+ *  sub-cell block perimeter during subdivision (see `projectedEdges` in
+ *  `shipgen.ts`). Without this step subdivision drops authored edges, since
+ *  `gridFromMap` cannot express per-cell walls or doors in the ASCII map.
+ *
+ *  Throws on an out-of-bounds coordinate or a non-solid (empty) target cell:
+ *  a preset authoring error must fail loudly at build time rather than silently
+ *  dropping an edge. Returns the input grid unchanged when `edges` is empty
+ *  (the common case, so calling sites need no guard). */
+export function withEdges(
+  grid: TileGrid,
+  edges: readonly AuthoredEdge[],
+): TileGrid {
+  if (edges.length === 0) return grid;
+  const cells = grid.cells.slice();
+  for (const edge of edges) {
+    if (
+      edge.col < 0 ||
+      edge.col >= grid.cols ||
+      edge.row < 0 ||
+      edge.row >= grid.rows
+    ) {
+      throw new Error(
+        `withEdges: edge override at (${edge.col}, ${edge.row}) is out of bounds`,
+      );
+    }
+    const idx = edge.row * grid.cols + edge.col;
+    const cell = cells[idx];
+    if (cell === undefined || cell.kind !== "solid") {
+      throw new Error(
+        `withEdges: no solid cell at (${edge.col}, ${edge.row}) to edge`,
+      );
+    }
+    cells[idx] = setEdge(cell, edge.dir, edge.kind);
+    // Mirror the edge onto the neighbour's opposite side so walls block both
+    // ways and doors open both ways (see function doc).
+    const offset = EDGE_OFFSET[edge.dir];
+    const nCol = edge.col + offset.dCol;
+    const nRow = edge.row + offset.dRow;
+    if (nCol >= 0 && nCol < grid.cols && nRow >= 0 && nRow < grid.rows) {
+      const nIdx = nRow * grid.cols + nCol;
+      const neighbour = cells[nIdx];
+      if (
+        neighbour !== undefined &&
+        neighbour.kind === "solid" &&
+        neighbour.surface !== "armor"
+      ) {
+        cells[nIdx] = setEdge(
+          neighbour,
+          EDGE_OPPOSITE[edge.dir],
+          edge.kind,
+        );
+      }
+    }
+  }
+  return { ...grid, cells };
+}
+
+/** Cardinal (dCol, dRow) offset from a cell to the neighbour across each edge. */
+const EDGE_OFFSET: Record<EdgeDir, { dCol: number; dRow: number }> = {
+  n: { dCol: 0, dRow: -1 },
+  e: { dCol: 1, dRow: 0 },
+  s: { dCol: 0, dRow: 1 },
+  w: { dCol: -1, dRow: 0 },
+};
+
+/** The direction the neighbour across an edge sees back along the shared edge. */
+const EDGE_OPPOSITE: Record<EdgeDir, EdgeDir> = { n: "s", e: "w", s: "n", w: "e" };
+
+/** Set one edge of a solid cell to `kind`, preserving the doorState invariant
+ *  on the other three edges. The doorStates entry is added exactly when the
+ *  edge becomes a door (defaulting to open, so crew can traverse at battle
+ *  start) and removed otherwise. Returns a new cell; the input is not mutated. */
+function setEdge(
+  cell: SolidCell,
+  dir: EdgeDir,
+  kind: EdgeKind,
+): SolidCell {
+  const doorStates = { ...cell.edges.doorStates };
+  if (kind === "door") {
+    doorStates[dir] = "open";
+  } else {
+    delete doorStates[dir];
+  }
+  return {
+    kind: "solid",
+    substrate: true,
+    surface: cell.surface,
+    equipment: cell.equipment,
+    edges: { ...cell.edges, [dir]: kind, doorStates },
+  };
 }
 
 /** Single-character tokens for the ASCII grid authoring map — Crystalline parts.

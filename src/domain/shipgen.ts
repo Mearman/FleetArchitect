@@ -74,12 +74,15 @@ export function subdivisionFactor(
  * - **empty** → `f × f` empty sub-cells.
  * - **armor** → `f × f` armor sub-cells; wall edges are placed on the outer
  *   perimeter of each source armor cell, interior sub-cell edges are open.
- * - **bare** → `f × f` bare sub-cells, all edges open (low-mass framing).
- * - **deck (no equipment)** → `f × f` deck sub-cells, all edges open.
+ * - **bare** → `f × f` bare sub-cells. A coarse-level wall or door authored on
+ *   the source cell propagates onto the matching outer sub-cells of the block;
+ *   interior sub-cell edges are open (low-mass framing).
+ * - **deck (no equipment)** → `f × f` deck sub-cells. Coarse-level walls and
+ *   doors propagate onto the block perimeter as for `bare`; interior edges are
+ *   open so crew can traverse the block.
  * - **deck (with equipment)** → one representative sub-cell (top-left of the
  *   block) carries the equipment; the remaining `f × f − 1` sub-cells are
- *   plain deck. All sub-cell edges are open (crew can walk through the whole
- *   block).
+ *   plain deck. Edge propagation is identical to the no-equipment case.
  *
  * Connections from the coarse grid are not carried through to the output
  * because the absolute cell coordinates change (connection rescaling is a
@@ -176,9 +179,23 @@ function expandCell(
     case "armor":
       return expandArmorSubCell(onNorth, onEast, onSouth, onWest);
     case "bare":
-      return { kind: "solid", substrate: true, surface: "bare", edges: OPEN_EDGES };
+      return {
+        kind: "solid",
+        substrate: true,
+        surface: "bare",
+        edges: projectedEdges(src.edges, onNorth, onEast, onSouth, onWest),
+      };
     case "deck":
-      return expandDeckSubCell(dc, dr, src.equipment);
+      return expandDeckSubCell(
+        dc,
+        dr,
+        src.equipment,
+        src.edges,
+        onNorth,
+        onEast,
+        onSouth,
+        onWest,
+      );
   }
 }
 
@@ -207,26 +224,69 @@ function expandArmorSubCell(
 }
 
 /**
+ * Project a coarse cell's edges onto one of its sub-cells. A sub-cell sitting
+ * on the block's outer perimeter inherits the coarse cell's edge in that
+ * direction, so a coarse-level wall or door authored between two deck/bare
+ * cells propagates to a wall or door between the corresponding sub-cell blocks.
+ * Interior sub-cell-to-sub-cell edges are `open` so the block remains
+ * internally traversable.
+ *
+ * Door states are carried only onto perimeter sub-cells, and only in
+ * directions the coarse cell authored as a door — this preserves the
+ * doorState invariant (a state is present exactly on door edges) in the
+ * output, which the schema's refine checks at parse time.
+ */
+function projectedEdges(
+  coarse: CellEdges,
+  onNorth: boolean,
+  onEast: boolean,
+  onSouth: boolean,
+  onWest: boolean,
+): CellEdges {
+  const doorStates: CellEdges["doorStates"] = {};
+  if (onNorth && coarse.n === "door") doorStates.n = coarse.doorStates.n;
+  if (onEast && coarse.e === "door") doorStates.e = coarse.doorStates.e;
+  if (onSouth && coarse.s === "door") doorStates.s = coarse.doorStates.s;
+  if (onWest && coarse.w === "door") doorStates.w = coarse.doorStates.w;
+  return {
+    n: onNorth ? coarse.n : "open",
+    e: onEast ? coarse.e : "open",
+    s: onSouth ? coarse.s : "open",
+    w: onWest ? coarse.w : "open",
+    doorStates,
+  };
+}
+
+/**
  * Build one deck sub-cell. The top-left sub-cell of the block (dc === 0,
  * dr === 0) carries any equipment from the source cell; all other sub-cells
- * are plain deck. All edges are open so crew can traverse the entire block.
+ * are plain deck. Edges are projected from the coarse cell via
+ * {@link projectedEdges}: a coarse-level wall or door on the cell propagates
+ * onto the matching outer sub-cells of the block, while interior edges stay
+ * open so crew can traverse the whole block.
  */
 function expandDeckSubCell(
   dc: number,
   dr: number,
   equipment: CellEquipment | undefined,
+  coarseEdges: CellEdges,
+  onNorth: boolean,
+  onEast: boolean,
+  onSouth: boolean,
+  onWest: boolean,
 ): GridCell {
+  const edges = projectedEdges(coarseEdges, onNorth, onEast, onSouth, onWest);
   // Equipment lives on the representative (top-left) sub-cell only.
   if (dc === 0 && dr === 0 && equipment !== undefined) {
     return {
       kind: "solid",
       substrate: true,
       surface: "deck",
-      edges: OPEN_EDGES,
+      edges,
       equipment,
     };
   }
-  return { kind: "solid", substrate: true, surface: "deck", edges: OPEN_EDGES };
+  return { kind: "solid", substrate: true, surface: "deck", edges };
 }
 
 // Export the wall-edges constant for tests that want to assert its shape.

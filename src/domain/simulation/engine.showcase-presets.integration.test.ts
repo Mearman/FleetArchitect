@@ -236,7 +236,7 @@ describe("Carrier Group byte-identity across two same-seed runs", () => {
     );
     const run = () =>
       runBattle({
-        ships,
+        ships: structuredClone(ships),
         attackerFleetId,
         defenderFleetId,
         anomalies: [],

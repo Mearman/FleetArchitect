@@ -271,7 +271,7 @@ describe("walkability", () => {
     expect(edgePassable({ col: 0, row: 0 }, { col: 1, row: 0 }, g)).toBe(false);
   });
 
-  it("edgePassable treats an open door as passable and a closed door as impassable", () => {
+  it("edgePassable treats a door as passable in either state (crew open closed doors)", () => {
     // Left cell has a door to the east, open state.
     const leftEdges: CellEdges = { ...OPEN, e: "door", doorStates: { e: "open" } };
     const rightEdges: CellEdges = { ...OPEN, w: "door", doorStates: { w: "open" } };
@@ -284,7 +284,9 @@ describe("walkability", () => {
       ],
     });
     expect(edgePassable({ col: 0, row: 0 }, { col: 1, row: 0 }, g)).toBe(true);
-    // Close the door on the left side: edge state is read off the from-cell.
+    // Close the door on the left side: still passable — the open/closed state
+    // governs atmosphere tightness (modelled in interior.ts), not crew passage.
+    // Crew open a closed door to step through, mirroring the sim crew-pathfinder.
     const closedLeft: CellEdges = { ...OPEN, e: "door", doorStates: { e: "closed" } };
     const g2 = TileGrid.parse({
       cols: 2,
@@ -294,7 +296,7 @@ describe("walkability", () => {
         { kind: "solid", substrate: true, surface: "deck", edges: rightEdges },
       ],
     });
-    expect(edgePassable({ col: 0, row: 0 }, { col: 1, row: 0 }, g2)).toBe(false);
+    expect(edgePassable({ col: 0, row: 0 }, { col: 1, row: 0 }, g2)).toBe(true);
   });
 });
 

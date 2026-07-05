@@ -54,8 +54,8 @@ export interface ShipStats {
   turnRate: number;
   weapons: readonly ResolvedWeapon[];
   /** Advisory: total compartments in the design (deck regions connected
-   *  through open edges / open doors). Surfaced for designer feedback; the
-   *  engine does not yet consume it. */
+   *  through open edges or doors — doors are crew-passable in either state).
+   *  Surfaced for designer feedback; the engine does not yet consume it. */
   compartments: number;
   /** Advisory: how many of those compartments are airtight (every perimeter
    *  edge is wall / closed door / armor). Surfaced for designer feedback. */
@@ -80,8 +80,9 @@ export type DesignFault =
    * A station that needs crew (crewRequired > 0) has no walkable path from any
    * crew-quarters cell. Only raised when at least one crew-quarters module exists
    * (a ship with no quarters simply has no crew — that is the crewDeficit case).
-   * Walkability is deck-only and edge-gated: a closed door or wall on the shared
-   * edge blocks the path.
+   * Walkability is deck-only and edge-gated: a wall on the shared edge blocks
+   * the path. Doors do not — crew open them to pass (the open/closed state
+   * governs atmosphere tightness, not crew reachability).
    */
   | { kind: "unreachableStation"; severity: "error"; col: number; row: number; moduleId: EntityId }
   /**

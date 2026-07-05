@@ -100,8 +100,14 @@ import {
  * dropped, a railgun bank swapped for a deflector Mk I, prow cap thickened); the
  * Torpedo Boat is renamed "Bombard" (id `preset-ship-torpedo` unchanged). Sibling
  * factions gain new designs and re-arms landed by the other faction implementers.
+ *
+ * Version 20: interior layouts. The preset ships now ship with authored
+ * interior grids (walls, doors, compartments) rather than open decks, which
+ * changes crew pathfinding, damage spread, and atmosphere propagation inside
+ * the hull. This is a frame-changing re-author, so the pinned frame hashes and
+ * the lossless digest baseline are re-baselined alongside the bump.
  */
-const PRESETS_VERSION = 19;
+const PRESETS_VERSION = 20;
 const VERSION_KEY = "presetsVersion";
 
 /**

@@ -4,7 +4,7 @@ import type { ShipDesign } from "@/schema/ship";
 /** Same ShipDesign input shape used by designs.ts: schema defaults optional. */
 type ShipDesignInput = input<typeof ShipDesign>;
 
-import { foundryGrid, PRESET_TIME } from "@/data/presets/tokens";
+import { foundryGrid, PRESET_TIME, withEdges } from "@/data/presets/tokens";
 import { subdivideGrid } from "@/domain/shipgen";
 
 // Foundry Combine designs, isolated from designs.ts so the roster file stays
@@ -31,12 +31,16 @@ export const foundryDesigns: ShipDesignInput[] = [
     faction: "Foundry",
     // Fighter: the heavy interceptor. A squat block of reactive plating around
     // an autocannon battery and a pair of crew barracks; slow but near-unkillable.
-    grid: subdivideGrid(foundryGrid([
+    grid: subdivideGrid(withEdges(foundryGrid([
       "###>#",
       "#CFA#",
       "EFAGe",
       "#CFA#",
       "###<#",
+    ]), [
+      { col: 2, row: 1, dir: "e", kind: "wall" },
+      { col: 2, row: 2, dir: "e", kind: "door" },
+      { col: 2, row: 3, dir: "e", kind: "wall" },
     ]), F_INGOT),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -49,12 +53,25 @@ export const foundryDesigns: ShipDesignInput[] = [
     faction: "Foundry",
     // Frigate: a fortress slab with a deep reactive prow and an autocannon
     // battery fronted by a damage-control bay. No shields — it absorbs fire.
-    grid: subdivideGrid(foundryGrid([
+    grid: subdivideGrid(withEdges(foundryGrid([
       ".###>##",
       "ECFW~A#",
       "XFW~AGe",
       "ECFW~A#",
       ".###<##",
+    ]), [
+      { col: 0, row: 1, dir: "e", kind: "wall" },
+      { col: 0, row: 2, dir: "e", kind: "door" },
+      { col: 0, row: 3, dir: "e", kind: "wall" },
+      { col: 1, row: 1, dir: "e", kind: "wall" },
+      { col: 1, row: 2, dir: "e", kind: "door" },
+      { col: 1, row: 3, dir: "e", kind: "wall" },
+      { col: 3, row: 1, dir: "e", kind: "wall" },
+      { col: 3, row: 2, dir: "e", kind: "door" },
+      { col: 3, row: 3, dir: "e", kind: "wall" },
+      { col: 4, row: 1, dir: "e", kind: "wall" },
+      { col: 4, row: 2, dir: "e", kind: "door" },
+      { col: 4, row: 3, dir: "e", kind: "wall" },
     ]), F_ANVIL),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -68,7 +85,7 @@ export const foundryDesigns: ShipDesignInput[] = [
     // Cruiser, re-armed: heavy gauss cannons (H, fnd-heavy-cannon) form the
     // broadside, flak batteries (L) shred ordnance, a bulwark deflector (U)
     // arrests kinetics, a mine layer (M) holds the close lane, repair bay (W).
-    grid: subdivideGrid(foundryGrid([
+    grid: subdivideGrid(withEdges(foundryGrid([
       "..###H####.",
       ".#XCFW~HAG#",
       "#XCCW~LUAG#",
@@ -76,6 +93,30 @@ export const foundryDesigns: ShipDesignInput[] = [
       "#XCCW~LUAG#",
       ".#XCFW~HAG#",
       "..###H####.",
+    ]), [
+      { col: 1, row: 2, dir: "e", kind: "wall" },
+      { col: 1, row: 3, dir: "e", kind: "door" },
+      { col: 1, row: 4, dir: "e", kind: "wall" },
+      { col: 3, row: 1, dir: "e", kind: "wall" },
+      { col: 3, row: 2, dir: "e", kind: "wall" },
+      { col: 3, row: 3, dir: "e", kind: "door" },
+      { col: 3, row: 4, dir: "e", kind: "wall" },
+      { col: 3, row: 5, dir: "e", kind: "wall" },
+      { col: 5, row: 1, dir: "e", kind: "wall" },
+      { col: 5, row: 2, dir: "e", kind: "wall" },
+      { col: 5, row: 3, dir: "e", kind: "door" },
+      { col: 5, row: 4, dir: "e", kind: "wall" },
+      { col: 5, row: 5, dir: "e", kind: "wall" },
+      { col: 7, row: 1, dir: "e", kind: "wall" },
+      { col: 7, row: 2, dir: "e", kind: "wall" },
+      { col: 7, row: 3, dir: "e", kind: "door" },
+      { col: 7, row: 4, dir: "e", kind: "wall" },
+      { col: 7, row: 5, dir: "e", kind: "wall" },
+      { col: 8, row: 1, dir: "e", kind: "wall" },
+      { col: 8, row: 2, dir: "e", kind: "door" },
+      { col: 8, row: 3, dir: "e", kind: "wall" },
+      { col: 8, row: 4, dir: "e", kind: "door" },
+      { col: 8, row: 5, dir: "e", kind: "wall" },
     ]), F_BATTLERAM),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -90,7 +131,7 @@ export const foundryDesigns: ShipDesignInput[] = [
     // sustain, torpedoes (Y) crack plate, flak (L) and bulwark deflectors (U)
     // screen every vector — the previously unfielded capital battery. Plus
     // repair bays (W) and mine layers (M).
-    grid: subdivideGrid(foundryGrid([
+    grid: subdivideGrid(withEdges(foundryGrid([
       "...##>######.",
       "..##XCFW~HL##",
       ".##XCCW~HQG##",
@@ -100,6 +141,44 @@ export const foundryDesigns: ShipDesignInput[] = [
       ".##XCCW~HQG##",
       "..##XCFW~HL##",
       "...##<######.",
+    ]), [
+      { col: 1, row: 4, dir: "e", kind: "door" },
+      { col: 3, row: 2, dir: "e", kind: "wall" },
+      { col: 3, row: 3, dir: "e", kind: "wall" },
+      { col: 3, row: 4, dir: "e", kind: "door" },
+      { col: 3, row: 5, dir: "e", kind: "wall" },
+      { col: 3, row: 6, dir: "e", kind: "wall" },
+      { col: 5, row: 1, dir: "e", kind: "wall" },
+      { col: 5, row: 2, dir: "e", kind: "wall" },
+      { col: 5, row: 3, dir: "e", kind: "wall" },
+      { col: 5, row: 4, dir: "e", kind: "door" },
+      { col: 5, row: 5, dir: "e", kind: "wall" },
+      { col: 5, row: 6, dir: "e", kind: "wall" },
+      { col: 5, row: 7, dir: "e", kind: "wall" },
+      { col: 7, row: 1, dir: "e", kind: "wall" },
+      { col: 7, row: 2, dir: "e", kind: "wall" },
+      { col: 7, row: 3, dir: "e", kind: "wall" },
+      { col: 7, row: 4, dir: "e", kind: "door" },
+      { col: 7, row: 5, dir: "e", kind: "wall" },
+      { col: 7, row: 6, dir: "e", kind: "wall" },
+      { col: 7, row: 7, dir: "e", kind: "wall" },
+      { col: 8, row: 1, dir: "e", kind: "wall" },
+      { col: 8, row: 2, dir: "e", kind: "wall" },
+      { col: 8, row: 3, dir: "e", kind: "wall" },
+      { col: 8, row: 4, dir: "e", kind: "door" },
+      { col: 8, row: 5, dir: "e", kind: "wall" },
+      { col: 8, row: 6, dir: "e", kind: "wall" },
+      { col: 8, row: 7, dir: "e", kind: "wall" },
+      { col: 9, row: 1, dir: "e", kind: "wall" },
+      { col: 9, row: 2, dir: "e", kind: "door" },
+      { col: 9, row: 3, dir: "e", kind: "wall" },
+      { col: 9, row: 4, dir: "e", kind: "wall" },
+      { col: 9, row: 5, dir: "e", kind: "wall" },
+      { col: 9, row: 6, dir: "e", kind: "door" },
+      { col: 9, row: 7, dir: "e", kind: "wall" },
+      { col: 10, row: 3, dir: "e", kind: "door" },
+      { col: 10, row: 4, dir: "e", kind: "wall" },
+      { col: 10, row: 5, dir: "e", kind: "door" },
     ]), F_SIEGE_TITAN),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -113,12 +192,25 @@ export const foundryDesigns: ShipDesignInput[] = [
     // Frigate PD escort: flak batteries (L, fnd-flak-battery) flank an
     // autocannon (A) to shred incoming ordnance so the slabs reach range.
     // Repair bay (W), magazine (G), balanced drives. Grid 7×5, ×3 → 21 m.
-    grid: subdivideGrid(foundryGrid([
+    grid: subdivideGrid(withEdges(foundryGrid([
       ".###>##",
       "ECFWL~#",
       "CFAGLGe",
       "ECFWL~#",
       ".###<##",
+    ]), [
+      { col: 0, row: 1, dir: "e", kind: "wall" },
+      { col: 0, row: 2, dir: "e", kind: "door" },
+      { col: 0, row: 3, dir: "e", kind: "wall" },
+      { col: 1, row: 1, dir: "e", kind: "wall" },
+      { col: 1, row: 2, dir: "e", kind: "door" },
+      { col: 1, row: 3, dir: "e", kind: "wall" },
+      { col: 2, row: 1, dir: "e", kind: "wall" },
+      { col: 2, row: 2, dir: "e", kind: "door" },
+      { col: 2, row: 3, dir: "e", kind: "wall" },
+      { col: 3, row: 1, dir: "e", kind: "wall" },
+      { col: 3, row: 2, dir: "e", kind: "door" },
+      { col: 3, row: 3, dir: "e", kind: "wall" },
     ]), F_CRUCIBLE),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
@@ -132,7 +224,7 @@ export const foundryDesigns: ShipDesignInput[] = [
     // Cruiser minelayer: sows minefields across approach lanes (M, five
     // layers) while heavy cannons (H) and flak (L) dissuade anything that
     // closes. Magazines (G) feed the ammo weapons; repair bays (W) sustain.
-    grid: subdivideGrid(foundryGrid([
+    grid: subdivideGrid(withEdges(foundryGrid([
       "..###>####.",
       ".#XCFW~MLG#",
       "#XCCW~MHAG#",
@@ -140,6 +232,30 @@ export const foundryDesigns: ShipDesignInput[] = [
       "#XCCW~MHAG#",
       ".#XCFW~MLG#",
       "..###<####.",
+    ]), [
+      { col: 1, row: 2, dir: "e", kind: "wall" },
+      { col: 1, row: 3, dir: "e", kind: "door" },
+      { col: 1, row: 4, dir: "e", kind: "wall" },
+      { col: 3, row: 1, dir: "e", kind: "wall" },
+      { col: 3, row: 2, dir: "e", kind: "wall" },
+      { col: 3, row: 3, dir: "e", kind: "door" },
+      { col: 3, row: 4, dir: "e", kind: "wall" },
+      { col: 3, row: 5, dir: "e", kind: "wall" },
+      { col: 5, row: 1, dir: "e", kind: "wall" },
+      { col: 5, row: 2, dir: "e", kind: "wall" },
+      { col: 5, row: 3, dir: "e", kind: "door" },
+      { col: 5, row: 4, dir: "e", kind: "wall" },
+      { col: 5, row: 5, dir: "e", kind: "wall" },
+      { col: 7, row: 1, dir: "e", kind: "wall" },
+      { col: 7, row: 2, dir: "e", kind: "wall" },
+      { col: 7, row: 3, dir: "e", kind: "door" },
+      { col: 7, row: 4, dir: "e", kind: "wall" },
+      { col: 7, row: 5, dir: "e", kind: "wall" },
+      { col: 8, row: 1, dir: "e", kind: "wall" },
+      { col: 8, row: 2, dir: "e", kind: "door" },
+      { col: 8, row: 3, dir: "e", kind: "wall" },
+      { col: 8, row: 4, dir: "e", kind: "door" },
+      { col: 8, row: 5, dir: "e", kind: "wall" },
     ]), F_CAULDRON),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,

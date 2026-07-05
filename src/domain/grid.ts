@@ -252,8 +252,12 @@ export function edgeDirection(
 /**
  * Whether the edge from `from` to `to` is passable for crew. Requires both
  * cells to be walkable (deck surface) and the shared edge — read off `from`'s
- * edge record in the direction of `to` — to be `open` or a door in the `open`
- * state. Walls, closed doors, armor, and bare cells all block.
+ * edge record in the direction of `to` — to be `open` or a `door`. Doors are
+ * passable in either state: crew open them to step through, then close them
+ * behind (matching the sim crew-pathfinder in `crew-pathfinding.ts`). The
+ * open/closed distinction governs atmosphere tightness, modelled separately in
+ * `interior.ts` via `doorStates` — not here. Walls, armor, and bare cells
+ * block.
  */
 export function edgePassable(
   from: { col: number; row: number },
@@ -269,15 +273,15 @@ export function edgePassable(
   if (dir === undefined) return false;
   const edge = fromCell.edges[dir];
   if (edge === "open") return true;
-  if (edge === "door") return fromCell.edges.doorStates[dir] === "open";
+  if (edge === "door") return true; // crew open closed doors to pass
   return false; // wall
 }
 
 /**
  * The 4-connected in-bounds neighbours of (col, row) reachable by crew: deck
- * cells whose shared edge is open or an open door. Reuses `neighbours4` and
- * `edgePassable`; the crew pathfinder calls this to discover the next
- * reachable cells from any position.
+ * cells whose shared edge is open or a door (open or closed — crew open them).
+ * Reuses `neighbours4` and `edgePassable`; the crew pathfinder calls this to
+ * discover the next reachable cells from any position.
  */
 export function walkableNeighbours4(
   col: number,
