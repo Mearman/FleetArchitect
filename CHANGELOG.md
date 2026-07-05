@@ -1,3 +1,16 @@
+# [1.48.0](https://github.com/Mearman/FleetArchitect/compare/v1.47.0...v1.48.0) (2026-07-05)
+
+
+### Bug Fixes
+
+* **sim:** reopen sealed doors during crew reassignment ([10ed1fd](https://github.com/Mearman/FleetArchitect/commit/10ed1fd8de6579228b8227b38243f1394630764c))
+
+
+### Features
+
+* **domain:** validate polyomino footprints at load and author-time ([3377555](https://github.com/Mearman/FleetArchitect/commit/33775551153c8a2ef1e5ab140f8b9ee43e30b3f1))
+* **presets:** author Devourer interiors; reframe Reaver open-plan ([9006171](https://github.com/Mearman/FleetArchitect/commit/900617112c8326a0a1eed340141a56abf0d04e29))
+
 # [1.47.0](https://github.com/Mearman/FleetArchitect/compare/v1.46.0...v1.47.0) (2026-07-05)
 
 
