@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { GridCell, SolidCell } from "@/schema/grid";
+import type { GridCell, SolidCell, TileGrid } from "@/schema/grid";
 import {
   applyCellBrush,
   applyEdgeBrush,
+  fitGridCentered,
   isEdgeBrush,
 } from "./designerGrid";
 import type { Brush } from "./designerConstants";
@@ -197,5 +198,57 @@ describe("isEdgeBrush", () => {
     for (const [brush, expected] of cases) {
       expect(isEdgeBrush(brush)).toBe(expected);
     }
+  });
+});
+
+describe("fitGridCentered (multi-cell cover remap)", () => {
+  it("shifts a multi-cell module's covers back-pointer by the same (dx, dy) as the cells", () => {
+    // A 2-cell horizontal module: anchor at (0,0), cover at (1,0) pointing back
+    // at (0,0). Fitting into a 6x3 viewport shifts content by (2,1); the cover
+    // must land at (3,1) referencing the anchor's NEW position (2,1), not the
+    // stale (0,0). Without the remap the polyomino is flagged malformed.
+    const anchor: SolidCell = {
+      ...DECK_SUBSTRATE,
+      equipment: { moduleId: "test-2cell", facing: 0 },
+    };
+    const cover: SolidCell = {
+      ...DECK_SUBSTRATE,
+      equipment: {
+        facing: 0,
+        covers: { moduleId: "test-2cell", anchorCol: 0, anchorRow: 0 },
+      },
+    };
+    const grid: TileGrid = {
+      cols: 2,
+      rows: 1,
+      cells: [anchor, cover],
+      connections: [],
+    };
+    const { grid: fitted, dx, dy } = fitGridCentered(grid, 6, 3);
+    expect(dx).toBe(2);
+    expect(dy).toBe(1);
+    const shiftedCover = fitted.cells[1 * fitted.cols + 3];
+    expect(shiftedCover, "cover must relocate to (3,1)").toBeDefined();
+    if (shiftedCover === undefined || shiftedCover.kind !== "solid") return;
+    expect(shiftedCover.equipment?.covers?.anchorCol).toBe(2);
+    expect(shiftedCover.equipment?.covers?.anchorRow).toBe(1);
+    // The anchor relocates to (2,1) and is unchanged (anchors carry no covers).
+    const shiftedAnchor = fitted.cells[1 * fitted.cols + 2];
+    if (shiftedAnchor === undefined || shiftedAnchor.kind !== "solid") return;
+    expect(shiftedAnchor.equipment?.moduleId).toBe("test-2cell");
+  });
+
+  it("leaves a single-cell module's equipment untouched (no covers to remap)", () => {
+    const cell: SolidCell = {
+      ...DECK_SUBSTRATE,
+      equipment: { moduleId: "mod-reactor-fusion", facing: 0 },
+    };
+    const grid: TileGrid = { cols: 1, rows: 1, cells: [cell], connections: [] };
+    const { grid: fitted, dx, dy } = fitGridCentered(grid, 4, 4);
+    expect(dx).toBeGreaterThanOrEqual(1);
+    expect(dy).toBeGreaterThanOrEqual(1);
+    const moved = fitted.cells[dy * fitted.cols + dx];
+    if (moved === undefined || moved.kind !== "solid") return;
+    expect(moved.equipment?.moduleId).toBe("mod-reactor-fusion");
   });
 });

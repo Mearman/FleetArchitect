@@ -135,8 +135,28 @@ export function fitGridCentered(
   for (let r = 0; r < grid.rows; r += 1) {
     for (let c = 0; c < grid.cols; c += 1) {
       const cell = grid.cells[r * grid.cols + c];
-      if (cell !== undefined && cell.kind !== "empty") {
+      if (cell === undefined || cell.kind === "empty") continue;
+      // A covered cell of a multi-cell module carries a `covers` back-pointer
+      // to its anchor's grid coordinate. Shifting the grid moves both the
+      // covered cell and its anchor by (dx, dy), so the back-pointer must shift
+      // by the same delta — otherwise the anchor and its covers disagree and
+      // the polyomino is flagged malformed (`invalidFootprint`) after every
+      // re-centre (load, zoom, resize, share-URL crop).
+      const equipment = cell.equipment;
+      if (equipment === undefined || equipment.covers === undefined) {
         cells[(r + dy) * cols + (c + dx)] = cell;
+      } else {
+        cells[(r + dy) * cols + (c + dx)] = {
+          ...cell,
+          equipment: {
+            ...equipment,
+            covers: {
+              ...equipment.covers,
+              anchorCol: equipment.covers.anchorCol + dx,
+              anchorRow: equipment.covers.anchorRow + dy,
+            },
+          },
+        };
       }
     }
   }
