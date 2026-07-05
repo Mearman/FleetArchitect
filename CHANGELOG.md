@@ -1,3 +1,10 @@
+# [1.44.0](https://github.com/Mearman/FleetArchitect/compare/v1.43.0...v1.44.0) (2026-07-05)
+
+
+### Features
+
+* **presets:** author realistic interior layouts for all ships ([e418086](https://github.com/Mearman/FleetArchitect/commit/e418086017b24f32ba9f23af6ad35c0154a48e1b))
+
 # [1.43.0](https://github.com/Mearman/FleetArchitect/compare/v1.42.0...v1.43.0) (2026-07-04)
 
 
