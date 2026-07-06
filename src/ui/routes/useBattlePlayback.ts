@@ -7,9 +7,8 @@ import { COMFORT_LEAD_SECONDS, PLAYBACK_EASE_FACTOR, SIM_DELIVERED_RATE_WINDOW_M
 /**
  * Props for {@link useBattlePlayback}. The hook owns the playback clock state
  * and the rAF/resize redraw loops; the cross-cutting refs (`playbackTimeRef`,
- * `bufferingRef`, `framesRef`, `simTickRateRef`) are created by the route and
- * shared with the simulation hook so both can read/write the live clock and
- * streaming accumulators.
+ * `framesRef`) are created by the route and shared with the simulation hook so
+ * both can read/write the live clock and streaming accumulators.
  *
  * The streaming-derived values (`result`, `computedTicks`, `hasFrames`,
  * `drawFrame`, `canvasSize`) are produced by sibling hooks. The route threads
@@ -33,10 +32,11 @@ export interface UseBattlePlaybackProps {
 
 /**
  * Playback clock and rAF/resize redraw loops for the BattleRoute. Owns the
- * mirrored playback-time state, the playing/speed flags, the buffering
- * state, and the discrete-nearest status frame mirrored for the module-status
- * panel. The clock itself (`playbackTimeRef`) is a route-level ref shared with
- * the simulation hook so `startBattle` can reset it on a fresh run.
+ * mirrored playback-time state, the playing/speed flags, the effective-speed
+ * ref used to ease playback toward the sim's delivered rate, and the
+ * discrete-nearest status frame mirrored for the module-status panel. The
+ * clock itself (`playbackTimeRef`) is a route-level ref shared with the
+ * simulation hook so `startBattle` can reset it on a fresh run.
  *
  * The rAF loop advances the clock by the real wall-clock delta (multiplied by
  * the speed factor), derives the fractional sim-tick position, interpolates
@@ -248,13 +248,12 @@ export function useBattlePlayback({
       }
 
       // Mirror the sim's DELIVERED rate (leading-edge advance per real second
-      // over a rolling window) for the speed slider's telemetry bar. Unlike the
-      // inter-batch sim-rate EMA (which feeds the buffering calc and freezes
-      // during a cooperative hold), this includes hold gaps, so the bar drops
-      // while the sim is held (Overdrive off) and reflects the effective rate:
-      // near the thumb when paced, past it when Overdrive is on. Computed from
-      // the shared computedTicksRef each frame; gated on value change so the
-      // slider does not re-render every animation frame.
+      // over a rolling window) for the speed slider's telemetry bar and for the
+      // streaming easing branch (via deliveredRateRef). Under Overdrive off the
+      // sim is paced to real-time so this settles near 1x; under Overdrive it
+      // pokes past the thumb. Computed from the shared computedTicksRef each
+      // frame; gated on value change so the slider does not re-render every
+      // animation frame.
       if (result === null) {
         const edge = computedTicksRef.current;
         const samples = deliveredSamplesRef.current;
@@ -316,10 +315,9 @@ export function useBattlePlayback({
   // frame, so a new batch or a recreated `drawFrame` no longer tears the loop
   // down and re-creates it ~60x/sec during streaming. Each restart resets
   // `lastTimestamp` so the first dt after a real pause is not inflated.
-  // `playbackTimeRef`/`bufferingRef`/`framesRef`/`simTickRateRef`/
-  // `computedTicksRef`/`drawFrameRef`/`statusOpenRef` are stable refs (they
-  // never change identity); listed only to satisfy exhaustive-deps lint, not
-  // because they ever retrigger the loop.
+  // `playbackTimeRef`/`framesRef`/`computedTicksRef`/`drawFrameRef`/`statusOpenRef`
+  // are stable refs (they never change identity); listed only to satisfy
+  // exhaustive-deps lint, not because they ever retrigger the loop.
   }, [hasFrames, playing, speed, result, framesRef, playbackTimeRef, computedTicksRef, drawFrameRef, statusOpenRef]);
 
   // Redraw when the canvas is resized (canvasSize changes). The draw itself is
