@@ -1,3 +1,10 @@
+# [1.49.0](https://github.com/Mearman/FleetArchitect/compare/v1.48.0...v1.49.0) (2026-07-06)
+
+
+### Features
+
+* **catalog:** boost capital weapon damage 50x for decisive battles ([633a5da](https://github.com/Mearman/FleetArchitect/commit/633a5da2fa91930cb8d1f95b6574ea4b7d65b7f2))
+
 # [1.48.0](https://github.com/Mearman/FleetArchitect/compare/v1.47.0...v1.48.0) (2026-07-05)
 
 
