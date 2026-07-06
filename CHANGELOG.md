@@ -1,3 +1,10 @@
+## [1.53.1](https://github.com/Mearman/FleetArchitect/compare/v1.53.0...v1.53.1) (2026-07-06)
+
+
+### Bug Fixes
+
+* **presets:** close armour gaps in Crystalline and Foundry ships ([8a8285f](https://github.com/Mearman/FleetArchitect/commit/8a8285f5a170a263d20597df142b9278804b585f))
+
 # [1.53.0](https://github.com/Mearman/FleetArchitect/compare/v1.52.0...v1.53.0) (2026-07-06)
 
 
