@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { TICKS_PER_SECOND } from "@/domain/simulation/types";
 import { interpolateFrame } from "@/ui/interpolateFrame";
 import type { BattleFrame, BattleResult } from "@/schema/battle";
-import { resumeLeadSeconds, SIM_DELIVERED_RATE_WINDOW_MS } from "./battleConstants";
+import { COMFORT_LEAD_SECONDS, PLAYBACK_EASE_FACTOR, SIM_DELIVERED_RATE_WINDOW_MS } from "./battleConstants";
 
 /**
  * Props for {@link useBattlePlayback}. The hook owns the playback clock state
@@ -20,9 +20,7 @@ import { resumeLeadSeconds, SIM_DELIVERED_RATE_WINDOW_MS } from "./battleConstan
  */
 export interface UseBattlePlaybackProps {
   playbackTimeRef: React.RefObject<number>;
-  bufferingRef: React.RefObject<boolean>;
   framesRef: React.RefObject<BattleFrame[]>;
-  simTickRateRef: React.RefObject<number>;
   result: BattleResult | null;
   /** Ref mirror of `computedTicks` (the streamed leading edge) so the rAF can
    *  read the current edge for the delivered-rate bar without a stale closure. */
@@ -49,9 +47,7 @@ export interface UseBattlePlaybackProps {
  */
 export function useBattlePlayback({
   playbackTimeRef,
-  bufferingRef,
   framesRef,
-  simTickRateRef,
   result,
   computedTicksRef,
   hasFrames,
@@ -69,19 +65,29 @@ export function useBattlePlayback({
   const [speed, setSpeed] = useState(1);
 
   /**
-   * True when the playback clock has caught up to the streamed leading edge and
-   * is waiting for more frames to compute. Distinct from paused: the clock is
-   * clamped to the leading edge but playback is still "on" and resumes
-   * automatically as soon as more frames arrive.
+   * Effective playback speed the clock advances at, eased toward the sustainable
+   * target each frame (see the streaming branch of the rAF loop). A ref, not
+   * state, because it changes every frame and only the clock reads it. Reset to
+   * the selected speed whenever the rAF effect re-arms (speed/play/result
+   * changes), so a deliberate speed change or a resume takes effect immediately
+   * rather than easing up from a prior slow value.
    */
-  const [buffering, setBuffering] = useState(false);
+  const effectiveSpeedRef = useRef(speed);
+  /**
+   * The sim's delivered rate (sim-seconds per real-second over the rolling
+   * window), mirrored from the sim-speed bar computation below so the streaming
+   * easing branch can read it. Updates every rAF frame and drops to 0 when the
+   * leading edge stops advancing (e.g. a hard pause).
+   */
+  const deliveredRateRef = useRef(0);
 
   /**
    * The sim-speed telemetry shown by the speed slider's cyan bar: the sim's
    * DELIVERED rate (leading-edge advance per real second over a rolling window),
-   * NOT the raw inter-batch compute rate. This includes cooperative-hold gaps,
-   * so it drops while the sim is held (Overdrive off), sits near the thumb when
-   * paced, and pokes past it when Overdrive is on. Null before the first batch
+   * NOT the raw inter-batch compute rate. Under Overdrive off the sim is paced to
+   * real-time so this settles near 1x; under Overdrive it pokes past the thumb
+   * (flat-out). Also drives playback easing via the sibling `deliveredRateRef`.
+   * Null before the first batch
    * and once the battle is fully computed. Gated by {@link lastSimSpeedRef} so it
    * only re-renders when the rounded value changes.
    */
@@ -152,6 +158,10 @@ export function useBattlePlayback({
    */
   useEffect(() => {
     if (!hasFrames) return;
+    // Re-arm resets the eased speed to the selected speed, so a speed change,
+    // resume, or the result landing takes effect immediately instead of easing
+    // up from a prior slow value.
+    effectiveSpeedRef.current = speed;
 
     let rafId = 0;
     let lastTimestamp: number | null = null;
@@ -175,52 +185,32 @@ export function useBattlePlayback({
           // and the streamed leading edge from `computedTicksRef` (so the effect
           // does NOT re-run on every batch — the ref always holds the current edge).
           const final = result !== null;
-          const newTime = playbackTimeRef.current + clampedDt * speed;
 
           if (final) {
-            // The whole battle is computed. Play straight through to the
-            // authoritative end, then stop.
+            // The whole battle is computed — no delivery constraint, so run at
+            // the full selected speed straight through to the authoritative end.
             const maxTime = result.ticks / TICKS_PER_SECOND;
+            const newTime = playbackTimeRef.current + clampedDt * speed;
             if (newTime >= maxTime) {
               playbackTimeRef.current = maxTime;
               setPlaying(false);
-              setBuffering(false);
-              bufferingRef.current = false;
             } else {
               playbackTimeRef.current = newTime;
-              if (bufferingRef.current) {
-                bufferingRef.current = false;
-                setBuffering(false);
-              }
             }
           } else {
-            // Still computing: gate playback on the streamed leading edge using
-            // the measured sim rate. Switch to buffering when the playhead
-            // catches the edge; resume only once enough lead has built up that
-            // playback can run smoothly given how fast the sim is producing
-            // frames (the rebuffer model — fewer, longer stalls over constant
-            // micro-stutter when the sim is slower than playback).
+            // Still computing: ease the effective playback speed toward what the
+            // sim can deliver so the playhead never hard-stalls at the leading
+            // edge. While the lead is comfortable playback runs at the selected
+            // speed; as the lead shrinks below the comfort threshold it eases
+            // down toward the sim's delivered rate, and back up as it recovers.
             const edgeTime = computedTicksRef.current / TICKS_PER_SECOND;
-            const playbackTickRate = TICKS_PER_SECOND * speed;
-            const resumeLead = resumeLeadSeconds(simTickRateRef.current, playbackTickRate);
-
-            if (bufferingRef.current) {
-              // Hold at the edge until the buffer has refilled to the target lead.
-              if (edgeTime - playbackTimeRef.current >= resumeLead) {
-                bufferingRef.current = false;
-                setBuffering(false);
-                playbackTimeRef.current = newTime;
-              } else {
-                playbackTimeRef.current = Math.min(playbackTimeRef.current, edgeTime);
-              }
-            } else if (newTime >= edgeTime) {
-              // Caught the leading edge — clamp and start buffering.
-              playbackTimeRef.current = edgeTime;
-              bufferingRef.current = true;
-              setBuffering(true);
-            } else {
-              playbackTimeRef.current = newTime;
-            }
+            const lead = edgeTime - playbackTimeRef.current;
+            const target = lead < COMFORT_LEAD_SECONDS ? Math.min(speed, deliveredRateRef.current) : speed;
+            effectiveSpeedRef.current += (target - effectiveSpeedRef.current) * PLAYBACK_EASE_FACTOR;
+            const advanced = playbackTimeRef.current + clampedDt * effectiveSpeedRef.current;
+            // Clamp at the leading edge as a safety net; the easing targets the
+            // delivered rate so this only bites on a sudden lead collapse.
+            playbackTimeRef.current = Math.min(advanced, edgeTime);
           }
 
           // Mirror the clock into state at decisecond resolution so the seeker
@@ -290,6 +280,9 @@ export function useBattlePlayback({
             deliveredX = ((edge - oldest.ticks) / TICKS_PER_SECOND) / (spanMs / 1000);
           }
         }
+        // Mirror the delivered rate for the streaming easing branch (one-frame
+        // latency is fine for a control law).
+        deliveredRateRef.current = deliveredX;
         // Show once the sim has produced frames; hide before the first batch.
         if (edge > 0) {
           const rounded = Math.round(deliveredX * 10) / 10;
@@ -327,7 +320,7 @@ export function useBattlePlayback({
   // `computedTicksRef`/`drawFrameRef`/`statusOpenRef` are stable refs (they
   // never change identity); listed only to satisfy exhaustive-deps lint, not
   // because they ever retrigger the loop.
-  }, [hasFrames, playing, speed, result, bufferingRef, framesRef, playbackTimeRef, simTickRateRef, computedTicksRef, drawFrameRef, statusOpenRef]);
+  }, [hasFrames, playing, speed, result, framesRef, playbackTimeRef, computedTicksRef, drawFrameRef, statusOpenRef]);
 
   // Redraw when the canvas is resized (canvasSize changes). The draw itself is
   // purely a side-effect of the current playbackTime; no clock advance needed.
@@ -348,8 +341,6 @@ export function useBattlePlayback({
     setPlaying,
     speed,
     setSpeed,
-    buffering,
-    setBuffering,
     simSpeed,
     statusFrame,
   };

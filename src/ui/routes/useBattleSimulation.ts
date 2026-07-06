@@ -19,12 +19,11 @@ import type { Fleet } from "@/schema/fleet";
 import type { FormationTemplate } from "@/schema/formation-template";
 import type { ShipDesign } from "@/schema/ship";
 import type { Bounds } from "./battleCamera";
-import { SIM_RATE_EMA_WEIGHT } from "./battleConstants";
 
 /**
  * Props for {@link useBattleSimulation}. The hook owns the simulation/streaming
- * state but shares the streaming accumulator (`framesRef`), the measured sim
- * rate (`simTickRateRef`), and the playback clock (`playbackTimeRef`) with
+ * state but shares the streaming accumulator (`framesRef`) and the playback
+ * clock (`playbackTimeRef`) with
  * sibling hooks — these are route-level refs so the rAF loop, pointer handlers,
  * and this hook all read/write the same live values.
  *
@@ -44,7 +43,6 @@ import { SIM_RATE_EMA_WEIGHT } from "./battleConstants";
  */
 export interface UseBattleSimulationProps {
   framesRef: React.RefObject<BattleFrame[]>;
-  simTickRateRef: React.RefObject<number>;
   playbackTimeRef: React.RefObject<number>;
   /** Route-owned mirror of the live descriptor map, kept current as batches
    *  stream so the camera pointer handler reads it without a render. */
@@ -52,11 +50,10 @@ export interface UseBattleSimulationProps {
   resetForNewRun: () => void;
   onFirstBatch: () => void;
   /**
-   * Whether the simulation may run faster than playback (Overdrive). When false
-   * the run starts in pausable mode so the route's auto-pacer can hold it to the
-   * playback playhead; when true the worker runs the tight, non-pausable loop at
-   * full speed. Fixed at run start — a mid-run toggle takes effect on the next
-   * battle.
+   * Whether the simulation may run faster than real-time (Overdrive). When false
+   * the worker runs the real-time paced loop (one sim-second per real-second);
+   * when true it runs the tight flat-out loop. Fixed at run start — a mid-run
+   * toggle takes effect on the next battle.
    */
   overdrive: boolean;
 }
@@ -96,7 +93,6 @@ interface BattleArgs {
  */
 export function useBattleSimulation({
   framesRef,
-  simTickRateRef,
   playbackTimeRef,
   descriptorsRef,
   resetForNewRun,
@@ -160,15 +156,9 @@ export function useBattleSimulation({
   const runAbortRef = useRef<AbortController | null>(null);
 
   /**
-   * Arrival time (ms) and tick count of the previous batch, for the rate EMA.
-   * Local to this hook: only the rAF flush reads and writes it.
-   */
-  const lastBatchRef = useRef<{ timeMs: number; ticks: number } | null>(null);
-
-  /**
    * Pending batches awaiting a rAF flush. The worker `message` handler pushes
    * each batch here and schedules a single coalesced rAF; the rAF drains the
-   * queue and does the framesRef push, setFrameCount, EMA, and bounds work.
+   * queue and does the framesRef push, setFrameCount, and bounds work.
    * Keeping the queue off the message task means the worker handler does only
    * the cheap domain-level push (the resume decorator's synchronous
    * `streamedFrames` accumulation) plus the schedule, so the `message` task
@@ -180,7 +170,6 @@ export function useBattleSimulation({
       frames: readonly BattleFrame[];
       streamedTicks: number;
       descriptors: readonly ShipDescriptor[];
-      arrivalMs: number;
     }[]
   >([]);
 
@@ -410,8 +399,6 @@ export function useBattleSimulation({
       setRawBounds(null);
       setComputedTicks(0);
       computedTicksRef.current = 0;
-      simTickRateRef.current = 0;
-      lastBatchRef.current = null;
       setResult(null);
       const freshDescriptors: Map<string, ShipDescriptor> = new Map();
       descriptorsRef.current = freshDescriptors;
@@ -445,7 +432,7 @@ export function useBattleSimulation({
       pendingBatchesRef.current = [];
 
       for (const batch of batches) {
-        const { frames, streamedTicks, descriptors: batchDescriptors, arrivalMs } = batch;
+        const { frames, streamedTicks, descriptors: batchDescriptors } = batch;
 
         // On a resume, drop any re-emitted frame whose tick is already in the
         // accumulator. The resume re-emits the frames since the last checkpoint
@@ -466,24 +453,6 @@ export function useBattleSimulation({
           descriptorsRef.current = merged;
           setDescriptors(merged);
         }
-
-        // Update the measured simulation rate (ticks computed per real second)
-        // as an EMA over batch arrivals. The rAF loop uses it to decide how much
-        // lead to buffer before resuming playback at the leading edge.
-        const prevBatch = lastBatchRef.current;
-        if (prevBatch !== null) {
-          const dtSeconds = (arrivalMs - prevBatch.timeMs) / 1000;
-          const dTicks = streamedTicks - prevBatch.ticks;
-          if (dtSeconds > 0 && dTicks > 0) {
-            const instantRate = dTicks / dtSeconds;
-            simTickRateRef.current =
-              simTickRateRef.current === 0
-                ? instantRate
-                : SIM_RATE_EMA_WEIGHT * instantRate +
-                  (1 - SIM_RATE_EMA_WEIGHT) * simTickRateRef.current;
-          }
-        }
-        lastBatchRef.current = { timeMs: arrivalMs, ticks: streamedTicks };
 
         // Capture the very first streamed frame (the tick-0 deployment snapshot)
         // before appending, so the HP-bar maxima can be taken from it. On a
@@ -573,7 +542,6 @@ export function useBattleSimulation({
         frames,
         streamedTicks,
         descriptors: batchDescriptors,
-        arrivalMs: performance.now(),
       });
       if (rafHandleRef.current === null) {
         rafHandleRef.current = requestAnimationFrame(flushPendingBatches);
