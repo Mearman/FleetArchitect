@@ -1,3 +1,10 @@
+# [1.52.0](https://github.com/Mearman/FleetArchitect/compare/v1.51.0...v1.52.0) (2026-07-06)
+
+
+### Features
+
+* **catalog:** expand multi-cell module variety across all scales and factions ([1533e13](https://github.com/Mearman/FleetArchitect/commit/1533e136aed0fb1b77b3282145d82ac701013e0f))
+
 # [1.51.0](https://github.com/Mearman/FleetArchitect/compare/v1.50.0...v1.51.0) (2026-07-06)
 
 
