@@ -1,10 +1,9 @@
 import { notifications } from "@mantine/notifications";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { resolveFleetPoints, resolveFleetToCombatShips } from "@/domain/resolve";
 import { loadTemplateTable } from "@/domain/formation-templates";
 import { expandTemplates } from "@/schema/expand-templates";
 import { BattleAbortError } from "@/domain/simulation/runner";
-import type { PacingHandle } from "@/domain/simulation/runner";
 import { battleRunner } from "@/ui/battleRunner";
 import { catalog } from "@/data/catalog";
 import { storage } from "@/storage/db";
@@ -222,17 +221,10 @@ export function useBattleSimulation({
   const lastBattleArgsRef = useRef<BattleArgs | null>(null);
 
   /**
-   * Cooperative pause/resume handle for the in-flight pausable run (Overdrive
-   * off), or null when the run is not pausable or has finished. Set by the
-   * runner's `onPacingHandle` once the worker starts; cleared on each new run
-   * and on completion. `holdSim`/`releaseSim` message through it.
-   */
-  const pacingHandleRef = useRef<PacingHandle | null>(null);
-
-  /**
-   * Ref mirror of `computedTicks` (the streamed leading edge) so the route's
-   * pacing rAF can read the current lead without a stale closure and without
-   * per-frame re-renders. Updated wherever `setComputedTicks` is.
+   * Ref mirror of `computedTicks` (the streamed leading edge) so the playback
+   * rAF can read the current edge for the delivered-rate bar and tick counter
+   * without a stale closure and without per-frame re-renders. Updated wherever
+   * `setComputedTicks` is.
    */
   const computedTicksRef = useRef(0);
 
@@ -313,34 +305,6 @@ export function useBattleSimulation({
       void runCompute(lastBattleArgsRef.current, { fresh: false });
     }
   }
-
-  /**
-   * Cooperatively hold the in-flight simulation at its next batch boundary
-   * (Overdrive off, while playback is playing and the lead is large). Distinct
-   * from {@link pauseComputation}: this does NOT abort the run or release the
-   * worker — it sends a control message, so no progress is lost and no
-   * checkpoint recompute happens on resume. No-op without a pausable handle
-   * (Overdrive on, or the run has finished). Memoised so the route's pacing
-   * effect can depend on it without re-arming every render.
-   */
-  const holdSim = useCallback((): void => {
-    pacingHandleRef.current?.pause();
-  }, []);
-
-  /**
-   * Release a cooperatively-held simulation so it resumes computing.
-   * Counterpart to {@link holdSim}; no-op without a pausable handle. Memoised
-   * for the same reason as {@link holdSim}.
-   */
-  const releaseSim = useCallback((): void => {
-    pacingHandleRef.current?.resume();
-    // Re-seed the sim-rate EMA: the next batch after a cooperative resume would
-    // otherwise span the whole hold in its inter-batch gap, crashing the EMA
-    // (and the buffering resume-lead it feeds). Dropping the previous-batch
-    // anchor makes the next batch skip the rate update and the one after
-    // re-establish a clean gap.
-    lastBatchRef.current = null;
-  }, []);
 
   /**
    * Internal compute driver shared by fresh starts and resumes. The `fresh`
@@ -434,9 +398,6 @@ export function useBattleSimulation({
     pendingBatchesRef.current = [];
     const controller = new AbortController();
     runAbortRef.current = controller;
-    // Drop any pacing handle from a previous run; a fresh one arrives (if this
-    // run is pausable) via `onPacingHandle` once the worker starts.
-    pacingHandleRef.current = null;
 
     if (fresh) {
       // Reset every streaming accumulator for the fresh run. The cross-hook
@@ -632,23 +593,15 @@ export function useBattleSimulation({
         {
           signal: controller.signal,
           onFrames,
-          // Overdrive off: start the worker in pausable mode and capture its
-          // cooperative pause/resume handle so the route's auto-pacer can hold
-          // the sim to the playback playhead. Overdrive on: tight, non-pausable.
-          pausable: !overdrive,
-          onPacingHandle: overdrive
-            ? undefined
-            : (handle: PacingHandle) => {
-                if (!controller.signal.aborted) pacingHandleRef.current = handle;
-              },
+          // Overdrive off: start the worker in the real-time paced loop (one
+          // sim-second per real-second). Overdrive on: tight, flat-out.
+          paced: !overdrive,
         },
       );
       // A superseded run that resolves anyway must not clobber the current one.
       if (controller.signal.aborted) return;
       setResult(battle);
       setComputeStatus("complete");
-      // The run is done — drop the pacing handle (the worker is gone).
-      pacingHandleRef.current = null;
       // Reconcile the descriptor map against the authoritative complete list on
       // the result, so any instance the stream did not surface (or a replay that
       // never streamed) is present for rendering.
@@ -686,8 +639,6 @@ export function useBattleSimulation({
     startBattle,
     pauseComputation,
     resumeComputation,
-    holdSim,
-    releaseSim,
     computedTicksRef,
   };
 }
