@@ -93,6 +93,23 @@ function isConvexCorner(grid: TileGrid, col: number, row: number): boolean {
 }
 
 /**
+ * Whether (col, row) is an exterior empty cell in the gap between two armour
+ * cells that are diagonally adjacent to each other — i.e. it has two orthogonal
+ * armour neighbours that share a corner (are NOT on opposite sides). This fills
+ * the inner corner of an L-shaped armour plate, so the armour band reads as
+ * solid rather than gappy. The fill is a full armour cell; the coverage system
+ * ({@link cellCoverageFractions}) later clips it to a partial block against the
+ * bevelled outline, so it contributes proportional HP/mass.
+ */
+function isDiagonalGap(grid: TileGrid, col: number, row: number): boolean {
+  const n = isArmour(grid, col, row - 1);
+  const s = isArmour(grid, col, row + 1);
+  const e = isArmour(grid, col + 1, row);
+  const w = isArmour(grid, col - 1, row);
+  return (n && e) || (n && w) || (s && e) || (s && w);
+}
+
+/**
  * Return a NEW grid with `pad` empty cells added on every side, so a ship flush
  * to the original border gains room for the hull to grow. New dimensions are
  * `(cols + 2 * pad, rows + 2 * pad)`; every existing cell at (col, row) moves to
@@ -202,8 +219,11 @@ function exteriorEmpties(grid: TileGrid): boolean[] {
 export function growArmourHull(grid: TileGrid): TileGrid {
   const { cols, rows } = grid;
 
-  // Chamfer fill, iterated to fixpoint. Each iteration snapshots the current
-  // cells so reads are consistent within it.
+  // Armour growth, iterated to fixpoint. Two rules, both checked each iteration:
+  // 1. Diagonal gap fill — an exterior empty cell with two orthogonal armour
+  //    neighbours that share a corner (the inner gap of an L-shaped plate).
+  // 2. Chamfer — an exterior empty cell at a convex corner (3-of-4 in a 2×2).
+  // Each iteration snapshots the current cells so reads are consistent.
   let grown = grid.cells;
   let changed = true;
   while (changed) {
@@ -214,9 +234,10 @@ export function growArmourHull(grid: TileGrid): TileGrid {
     for (let r = 0; r < rows; r += 1) {
       for (let c = 0; c < cols; c += 1) {
         if (!exterior[r * cols + c]) continue;
-        if (!isConvexCorner(snapshot, c, r)) continue;
-        next[r * cols + c] = freshArmourCell();
-        changed = true;
+        if (isDiagonalGap(snapshot, c, r) || isConvexCorner(snapshot, c, r)) {
+          next[r * cols + c] = freshArmourCell();
+          changed = true;
+        }
       }
     }
     grown = next;

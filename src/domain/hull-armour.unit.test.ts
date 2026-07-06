@@ -243,4 +243,23 @@ describe("padGrid", () => {
     expect(isArmour(at(out, 2, 2))).toBe(true);
     expect(out.cells.filter((c) => isArmour(c)).length).toBe(4);
   });
+
+  it("fills a diagonal gap between two armour cells at an inner corner", () => {
+    // Two armour cells diagonally adjacent (sharing a corner), with an exterior
+    // empty cell that is orthogonally adjacent to both. The gap fill adds armour
+    // there so the band reads solid.
+    //
+    //   . # .
+    //   # . .     →  the gap at (1,1) is adjacent to #@(2,0) [E] and #@(1,2) [S];
+    //   . # .        those are diagonally adjacent → fill.
+    const diag: TileGrid = gridFromAscii([
+      ".#.",
+      "#..",
+      ".#.",
+    ]);
+    const out = growArmourHull(padGrid(diag, 1));
+    // After +1 pad: # cells at (2,1),(1,2),(2,3). The gap at (2,2) is adjacent
+    // to #@(2,1) [N] and #@(1,2) [W] — diagonally adjacent → filled.
+    expect(isArmour(at(out, 2, 2))).toBe(true);
+  });
 });
