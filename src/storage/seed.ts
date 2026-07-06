@@ -119,7 +119,7 @@ import {
  * is a frame-changing re-author, so the pinned frame hashes and the lossless
  * digest baseline are re-baselined alongside the bump.
  */
-const PRESETS_VERSION = 23;
+const PRESETS_VERSION = 24;
 const VERSION_KEY = "presetsVersion";
 
 /**

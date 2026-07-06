@@ -109,9 +109,9 @@ export const swarmDesigns: ShipDesignInput[] = [
     grid: mountMultiCell(
       subdivideGrid(withEdges(swarmGrid([
         "#>jx~aa##",
-        "jgf~zaaa.",
+        "jgf~zaaa#",
         "ugm~rfaaa",
-        "jgf~zaaa.",
+        "jgf~zaaa#",
         "#<jx~aa##",
       ]), [
         { col: 0, row: 1, dir: "e", kind: "wall" },
@@ -152,11 +152,11 @@ export const swarmDesigns: ShipDesignInput[] = [
     // central deck cell, adding a heavier corrosive beam to the sting battery.
     grid: mountMultiCell(
       subdivideGrid(withEdges(swarmGrid([
-        ".#>xsnn#..",
-        ".jgfzsnnn.",
+        "##>xsnn###",
+        "#jgfzsnnn#",
         "ugm~rfsnnn",
-        ".jgfzsnnn.",
-        ".#<xsnn#..",
+        "#jgfzsnnn#",
+        "##<xsnn###",
       ]), [
         { col: 2, row: 0, dir: "e", kind: "wall" },
         { col: 2, row: 1, dir: "e", kind: "door" },
@@ -212,13 +212,13 @@ export const swarmDesigns: ShipDesignInput[] = [
     // `mountMultiCell` after subdivision.
     grid: mountMultiCell(
       subdivideGrid(withEdges(swarmGrid([
-        "..#>x~nnnkccc",
-        "..jgfzrsnnnnh",
-        ".jgm~rfsannny",
+        "###>x~nnnkccc",
+        "#.jgfzrsnnnnh",
+        "#jgm~rfsannny",
         "uHmm~rfsaaOnW",
-        ".jgm~rfsannny",
-        "..jgfzrsnnnnh",
-        "..#<x~nnnkccc",
+        "#jgm~rfsannny",
+        "#.jgfzrsnnnnh",
+        "###<x~nnnkccc",
       ]), [
       { col: 1, row: 2, dir: "e", kind: "wall" },
       { col: 1, row: 3, dir: "e", kind: "door" },
@@ -317,13 +317,13 @@ export const swarmDesigns: ShipDesignInput[] = [
     // regen + spore-cloud screen → sting/acid battery → carapace-screened prow.
     grid: mountMultiCell(
       subdivideGrid(withEdges(swarmGrid([
-        "..#>x~nnnkwccc",
-        "..jgfzrsBnnnwh",
-        ".jgm~rfsannnwy",
+        "###>x~nnnkwccc",
+        "#.jgfzrsBnnnwh",
+        "#jgm~rfsannnwy",
         "THmmmrfsVaOnnW",
-        ".jgm~rfsannnwy",
-        "..jgfzrsnnnnwh",
-        "..#<x~nnnkwccc",
+        "#jgm~rfsannnwy",
+        "#.jgfzrsnnnnwh",
+        "###<x~nnnkwccc",
       ]), [
         // Compartment bulkheads at the natural breaks (stern | drive | battery |
         // prow), each walled with transit doors through the flank rows. The

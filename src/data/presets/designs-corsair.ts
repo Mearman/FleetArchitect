@@ -109,9 +109,9 @@ export const corsairDesigns: ShipDesignInput[] = [
         ".##>######",
         "ECF~CMH###",
         "EFMGC~MR##",
-        "#CFBGWM##.",
-        "##FM<GL##.",
-        ".##e#####.",
+        "#CFBGWM###",
+        "##FM<GL###",
+        ".##e######",
       ]), [
       { col: 0, row: 1, dir: "e", kind: "wall" },
       { col: 0, row: 2, dir: "e", kind: "wall" },
@@ -172,8 +172,8 @@ export const corsairDesigns: ShipDesignInput[] = [
         ".####>###",
         "ECFC#MRe#",
         "EFM~~JOe#",
-        "#CFMGRe#.",
-        "..##<O###",
+        "#CFMGRe##",
+        ".###<O###",
       ]), [
         { col: 1, row: 1, dir: "e", kind: "door" },
         { col: 1, row: 2, dir: "e", kind: "wall" },

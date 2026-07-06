@@ -31,11 +31,12 @@ export const syntheticDesigns: ShipDesignInput[] = [
     // Fighter: a compact autonomous combat drone. A single targeting cannon and
     // an active sensor array give it precision at range; a slug reservoir feeds
     // the cannon. No crew, no quarters — the processor runs the whole hull
-    // alone. Armour rails top and bottom are the classic Synthetic silhouette.
+    // alone. A full armour shell wraps the hull — the machine silhouette — with
+    // only the lateral thrusters piercing the top and bottom rails.
     grid: subdivideGrid(withEdges(syntheticGrid([
-      ".##>..",
+      "###>##",
       "EPGCNe",
-      ".##<..",
+      "###<##",
     ]), [
       // Ammo-feed / maintenance passage between the magazine and the cannon.
       { col: 2, row: 1, dir: "e", kind: "door" },

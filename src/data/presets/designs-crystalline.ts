@@ -103,19 +103,19 @@ export const crystallineDesigns: ShipDesignInput[] = [
     // resonance sensor (v), and six resonator cores (C×6, 30 berths for 30
     // crew). Balanced drives — three aft resonance thrusters (E×3) and a
     // forward brake (e). An armour prow of crystal plate (#) caps the weapon
-    // face; the rest is deck over a grown-crystal hull that relies on its
-    // shields rather than bulk. The M, I, N, spire-plus, diamond-bastion,
+    // face and a full dorsal/ventral plate band (#) wraps the hull; the
+    // interior deck relies on its shields rather than bulk. The M, I, N, spire-plus, diamond-bastion,
     // bulwark-bastion, tri-prism-lance, and shard-vault anchors are multi-cell
     // capital modules; `mountMultiCell` installs each footprint's covered
     // cells after subdivision. Grid (13 cols × 5 rows), subdivided ×12
     // → 156 m dreadnought.
     grid: mountMultiCell(
       subdivideGrid(withEdges(crystalGrid([
-        "..###~~~~####",
+        "..###########",
         "E~#CC~~H~C~CI",
         "Ee#M~Bv~~####",
         "E~#CCN~H~~~~I",
-        "..###~~~~####",
+        "..###########",
       ]), [
         { col: 4, row: 1, dir: "e", kind: "wall" },
         { col: 4, row: 2, dir: "e", kind: "door" },
@@ -187,19 +187,19 @@ export const crystallineDesigns: ShipDesignInput[] = [
     // through a brownout, a blink drive (B), a resonance sensor (v), and
     // five resonator cores (C×5, 25 berths for 21 crew). Balanced drives —
     // three aft resonance thrusters (E×3) and a forward brake (e). Crystal
-    // plate (#) caps the prow; the grown-crystal hull relies on its shields
-    // and mobility, not bulk. Implies phase doctrine (evasive, long-range,
+    // plate (#) caps the prow and wraps the dorsal/ventral band; the
+    // grown-crystal interior relies on its shields and mobility, not bulk. Implies phase doctrine (evasive, long-range,
     // blink away from trouble). The I, N, shard-volley, and mender anchors
     // are multi-cell capital modules; `mountMultiCell` installs each
     // footprint's covered cells after subdivision. Grid (11 cols × 5 rows),
     // subdivided ×7 → 77 m cruiser.
     grid: mountMultiCell(
       subdivideGrid(withEdges(crystalGrid([
-        "##~~~~#####",
+        "#####~#####",
         "E#CCSDH~~~I",
         "EeXOBv~~C~#",
         "E#CCQN~H~~~",
-        "##~~~Y#####",
+        "#####Y#####",
       ]), [
         { col: 1, row: 2, dir: "e", kind: "door" },
         { col: 3, row: 1, dir: "e", kind: "wall" },

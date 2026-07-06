@@ -55,11 +55,11 @@ export const foundryDesigns: ShipDesignInput[] = [
     // Frigate: a fortress slab with a deep reactive prow and an autocannon
     // battery fronted by a damage-control bay. No shields — it absorbs fire.
     grid: subdivideGrid(withEdges(foundryGrid([
-      ".###>##",
+      "####>##",
       "ECFW~A#",
       "XFW~AGe",
       "ECFW~A#",
-      ".###<##",
+      "####<##",
     ]), [
       { col: 0, row: 1, dir: "e", kind: "wall" },
       { col: 0, row: 2, dir: "e", kind: "door" },
@@ -244,11 +244,11 @@ export const foundryDesigns: ShipDesignInput[] = [
     // Repair bay (W), magazine (G), balanced drives. Grid 7×5, ×3 → 21 m.
     grid: mountMultiCell(
       subdivideGrid(withEdges(foundryGrid([
-        ".###>##",
+        "####>##",
         "ECFWL~#",
         "CFAGLGe",
         "ECFWL~#",
-        ".###<##",
+        "####<##",
       ]), [
         { col: 0, row: 1, dir: "e", kind: "wall" },
         { col: 0, row: 2, dir: "e", kind: "door" },
