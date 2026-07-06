@@ -2,7 +2,7 @@
 import { createId, nowIso } from "@/domain/id";
 import { simulateBattle } from "@/domain/simulation/engine";
 import type { BattleInputs, BattleSummary } from "@/domain/simulation/types";
-import { buildShipRoster, STREAM_BATCH_INTERVAL_MS } from "@/domain/simulation/types";
+import { buildShipRoster, STREAM_BATCH_INTERVAL_MS, TICKS_PER_SECOND } from "@/domain/simulation/types";
 import type { BattleFrame, CellStateArrays, ShipDescriptor, ShipSnapshot } from "@/schema/battle";
 import type { BattleResultSummary } from "@/schema/battle";
 import type { EngineCheckpoint } from "@/schema/checkpoint";
@@ -97,29 +97,14 @@ const WORKER_CHECKPOINT_EVERY_TICKS = 30;
  * The start message the worker accepts. Carries the battle inputs plus an
  * optional {@link EngineCheckpoint} to resume from (the resume decorator passes
  * the latest persisted checkpoint so the worker re-enters the loop at
- * `checkpoint.tick + 1`), and an optional `pausable` flag selecting the paced
- * loop (Overdrive off). `postMessage` structured-clones both across the thread
- * boundary, preserving the checkpoint's `±Infinity` / `-0` fields.
+ * `checkpoint.tick + 1`), and an optional `paced` flag selecting the real-time
+ * paced loop (Overdrive off). `postMessage` structured-clones both across the
+ * thread boundary, preserving the checkpoint's `±Infinity` / `-0` fields.
  */
 interface BattleWorkerRequest {
   inputs: BattleInputs;
   resumeFrom?: EngineCheckpoint;
-  pausable?: boolean;
-}
-
-/**
- * A cooperative pacing control message, sent only for pausable runs. `pause`
- * asks the worker to stop after its current batch; `resume` asks it to continue.
- * The worker only receives these because it yields at batch boundaries in paced
- * mode — the default tight loop never yields, so it would never process them.
- */
-type BattleWorkerControl = { kind: "pause" } | { kind: "resume" };
-
-/** Narrow an unknown incoming message to a pacing control message. */
-function isBattleWorkerControl(value: unknown): value is BattleWorkerControl {
-  if (typeof value !== "object" || value === null) return false;
-  if (!("kind" in value)) return false;
-  return value.kind === "pause" || value.kind === "resume";
+  paced?: boolean;
 }
 
 /** Narrow an unknown incoming message to the start request. */
@@ -127,17 +112,6 @@ function isBattleWorkerRequest(value: unknown): value is BattleWorkerRequest {
   if (typeof value !== "object" || value === null) return false;
   return "inputs" in value;
 }
-
-/**
- * Pacing state for the run in flight. Each worker is single-use — the runner
- * spawns a fresh worker per run and terminates it on completion/abort — so one
- * module slot suffices. `pacedResume` restarts the paced compute loop after a
- * `resume`; `paused` is checked at each chunk entry so a `pause` takes effect at
- * the next batch boundary (the only place the paced loop yields to the event
- * loop and can receive the message).
- */
-let pacedResume: (() => void) | null = null;
-let paused = false;
 
 /**
  * Worker entry for the battle simulation. Receives `{ inputs, resumeFrom? }`
@@ -158,25 +132,8 @@ let paused = false;
  * at end-of-battle — the frames already crossed the boundary in batches.
  */
 self.onmessage = (event: MessageEvent<unknown>) => {
-  // Cooperative pacing control (pausable runs only). `pause` halts the paced
-  // loop at its next batch boundary; `resume` restarts it — but only when
-  // currently paused, so a duplicate resume cannot launch a second concurrent
-  // compute chunk.
-  if (isBattleWorkerControl(event.data)) {
-    if (event.data.kind === "pause") {
-      paused = true;
-    } else if (paused) {
-      paused = false;
-      pacedResume?.();
-    }
-    return;
-  }
-
   if (!isBattleWorkerRequest(event.data)) return;
-  const { inputs, resumeFrom, pausable } = event.data;
-  // Reset pacing state for this fresh run.
-  paused = false;
-  pacedResume = null;
+  const { inputs, resumeFrom, paced } = event.data;
   // The descriptor sink is populated by the generator the first frame each ship
   // instance appears. After each batch we forward descriptors captured since the
   // last post so the main thread can reconstruct cell positions for the streamed
@@ -286,52 +243,55 @@ self.onmessage = (event: MessageEvent<unknown>) => {
       ...(summary.salvage.length > 0 ? { salvage: summary.salvage } : {}),
     };
 
-    pacedResume = null;
     self.postMessage({
       kind: "result",
       summary: resultSummary,
     });
   };
 
-  if (pausable === true) {
-    // Paced loop (Overdrive off): drive the generator one batch per chunk and
-    // yield to the event loop between chunks via setTimeout, so incoming
-    // pause/resume control messages can be processed. The frame sequence is
-    // identical to the tight loop — only the batch boundaries (and thus the
-    // timing of `frames` posts) differ — so the reassembled result is
-    // byte-identical. `paused` is checked at chunk entry; when set, scheduling
-    // stops and the loop only restarts when a `resume` message fires pacedResume.
+  if (paced === true) {
+    // Real-time paced loop (Overdrive off): compute at one sim-second per
+    // real-second. A batch is posted every `ticksPerBatch` frames — a fixed
+    // slice of sim-time (~STREAM_BATCH_INTERVAL_MS worth) — and after each post
+    // the loop sleeps so wall-time tracks sim-time at 1x. If a batch takes
+    // longer than its sim-time to compute (a battle heavier than real-time),
+    // `aheadMs` is negative and no sleep occurs: the loop runs flat-out, so the
+    // throttle is a ceiling, not a floor. The frame sequence is identical to the
+    // tight loop — only batch boundaries and post timing differ — so the
+    // reassembled result is byte-identical.
+    const ticksPerBatch = Math.max(1, Math.round((TICKS_PER_SECOND * STREAM_BATCH_INTERVAL_MS) / 1000));
+    const realStartMs = performance.now();
     let next = it.next();
+    const simStartTick = !next.done ? next.value.tick : 0;
     const computeChunk = (): void => {
-      if (paused) return;
       while (!next.done) {
         batch.push(next.value);
-        const postNow = performance.now() - lastPostMs >= STREAM_BATCH_INTERVAL_MS;
-        if (postNow) {
+        const batchTick = next.value.tick;
+        next = it.next();
+        if ((batchTick - simStartTick + 1) % ticksPerBatch === 0) {
           postBatch(batch);
           batch = [];
-          lastPostMs = performance.now();
-        }
-        next = it.next();
-        if (postNow && !next.done) {
-          setTimeout(computeChunk, 0);
-          return;
+          if (!next.done) {
+            const simElapsedMs = ((batchTick + 1 - simStartTick) / TICKS_PER_SECOND) * 1000;
+            const wallElapsedMs = performance.now() - realStartMs;
+            setTimeout(computeChunk, Math.max(0, simElapsedMs - wallElapsedMs));
+            return;
+          }
         }
       }
       if (batch.length > 0) postBatch(batch);
       postResult(next.value);
     };
-    pacedResume = computeChunk;
     computeChunk();
     return;
   }
 
-  // Default tight synchronous loop (Overdrive on, or `pausable` omitted) — the
-  // historical max-throughput path, byte-identical to before `pausable` existed.
-  // It never yields, so it cannot be paused; control messages are never sent for
-  // it. Post a batch when enough wall-clock time has elapsed since the last one;
-  // the frame count per batch scales with the simulation's speed, so the main
-  // thread always receives several seconds of playback per update.
+  // Default tight synchronous loop (Overdrive on, or `paced` omitted) — the
+  // historical max-throughput path. It never yields, so it runs flat-out to
+  // completion with no real-time pacing. Post a batch when enough wall-clock time
+  // has elapsed since the last one; the frame count per batch scales with the
+  // simulation's speed, so the main thread always receives several seconds of
+  // playback per update.
   let next = it.next();
   while (!next.done) {
     const frame = next.value;

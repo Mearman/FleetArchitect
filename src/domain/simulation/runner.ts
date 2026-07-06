@@ -86,20 +86,6 @@ export type OnFramesCallback = (
   descriptors: readonly ShipDescriptor[],
 ) => void;
 
-/**
- * Cooperative pause/resume handle for a pausable run. When a run is started with
- * `pausable: true`, the worker yields at its batch boundaries and honours these
- * control messages: `pause()` asks it to stop computing after its current batch
- * (without aborting — no progress is lost, no worker respawn); `resume()` asks it
- * to continue. This lets the caller hold the simulation near the playback
- * playhead (Overdrive off) with zero recompute. No-op once the run has finished
- * or been aborted (the worker is gone and `postMessage` silently drops).
- */
-export interface PacingHandle {
-  pause(): void;
-  resume(): void;
-}
-
 /** Options common to every {@link BattleRunner.run} call. */
 export interface BattleRunOptions {
   signal?: AbortSignal;
@@ -132,21 +118,13 @@ export interface BattleRunOptions {
    */
   onCheckpoint?: (checkpoint: EngineCheckpoint) => void;
   /**
-   * Start the worker in pausable mode (Overdrive off): it yields at batch
-   * boundaries and honours `pause`/`resume` control messages, so the caller can
-   * hold the simulation to the playback playhead without aborting the run.
-   * Honoured only by {@link WorkerBattleRunner}; {@link DirectBattleRunner} runs
-   * synchronously to completion and ignores it (no handle is produced). Default
-   * (omitted/false) keeps the historical tight, non-pausable compute loop.
+   * Start the worker in the real-time paced loop (Overdrive off): it computes at
+   * one sim-second per real-second, falling back to flat-out only when a battle
+   * is heavier than real-time. Honoured only by {@link WorkerBattleRunner};
+   * {@link DirectBattleRunner} runs synchronously to completion and ignores it.
+   * Default (omitted/false) keeps the tight flat-out compute loop (Overdrive).
    */
-  pausable?: boolean;
-  /**
-   * Receives a {@link PacingHandle} bound to the live worker, called once shortly
-   * after a pausable run starts (only when `pausable` is true and the run actually
-   * spawns a worker — not on a cache hit). The caller stores it and uses it to
-   * cooperatively pause/resume the simulation.
-   */
-  onPacingHandle?: (handle: PacingHandle) => void;
+  paced?: boolean;
 }
 
 /**
@@ -389,21 +367,8 @@ export class WorkerBattleRunner implements BattleRunner {
       // Post the inputs and any resume checkpoint together: the worker threads
       // `resumeFrom` into `simulateBattle` so the resumed run reproduces the
       // fresh tail byte-identically and yields only frames after the checkpoint.
-      // `pausable` selects the worker's paced loop (Overdrive off) so it yields at
-      // batch boundaries and honours pause/resume control messages.
-      worker.postMessage({ inputs, resumeFrom: options?.resumeFrom, pausable: options?.pausable === true });
-      // Hand back a cooperative pause/resume handle bound to this worker so the
-      // caller can hold the simulation to the playback playhead without aborting.
-      if (options?.pausable === true) {
-        options.onPacingHandle?.({
-          pause: () => {
-            worker.postMessage({ kind: "pause" });
-          },
-          resume: () => {
-            worker.postMessage({ kind: "resume" });
-          },
-        });
-      }
+      // `paced` selects the worker's real-time paced loop (Overdrive off).
+      worker.postMessage({ inputs, resumeFrom: options?.resumeFrom, paced: options?.paced === true });
     });
   }
 }
