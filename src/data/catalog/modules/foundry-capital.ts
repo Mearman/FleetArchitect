@@ -182,7 +182,7 @@ export const foundryCapitalModules: ModuleDefinitionInput[] = [
       damage: kineticDamageJoules(
         SIEGE_CANNON_HEAVY_MASS_KG,
         SIEGE_CANNON_HEAVY_MUZZLE_MS,
-      ),
+      ) * 50,
       range: kineticRangeM(SIEGE_CANNON_HEAVY_MUZZLE_MS),
       cooldown: SIEGE_CANNON_HEAVY_COOLDOWN,
       projectileSpeed: projectileSpeedMPerTick(SIEGE_CANNON_HEAVY_MUZZLE_MS),

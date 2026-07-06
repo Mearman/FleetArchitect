@@ -90,10 +90,22 @@ export const PINNED_FRAME_HASHES: readonly [
  */
 let cachedSignature: Promise<string> | undefined;
 
+/**
+ * Manual engine revision — a SUPPLEMENT to the content-addressed
+ * {@link PINNED_FRAME_HASHES}, bumped when a code or catalog change affects
+ * battle outcomes but the six 40-tick preset hashes don't capture it (the
+ * horizon is too short for the change to manifest — e.g. a weapon-damage
+ * retune whose effect appears only once ships start dying past tick 40).
+ * Folded into {@link engineAlgorithmSignature} so the cache key flips and stale
+ * entries are missed. Bump on any engine/catalog change that moves frames at
+ * longer horizons but leaves the 40-tick preset hashes unchanged.
+ */
+const ENGINE_REVISION = "damage-retune-50x";
+
 export function engineAlgorithmSignature(): Promise<string> {
   if (cachedSignature !== undefined) return cachedSignature;
   cachedSignature = (async () => {
-    const json = JSON.stringify([...PINNED_FRAME_HASHES]);
+    const json = JSON.stringify([...PINNED_FRAME_HASHES]) + ENGINE_REVISION;
     const digest = await crypto.subtle.digest(
       "SHA-256",
       new TextEncoder().encode(json),

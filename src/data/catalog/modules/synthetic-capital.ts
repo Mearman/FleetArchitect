@@ -185,7 +185,7 @@ export const syntheticCapitalModules: ModuleDefinitionInput[] = [
     effect: {
       kind: "weapon",
       weaponType: "cannon",
-      damage: kineticDamageJoules(COILGUN_BANK_MASS_KG, COILGUN_BANK_MUZZLE_MS),
+      damage: kineticDamageJoules(COILGUN_BANK_MASS_KG, COILGUN_BANK_MUZZLE_MS) * 50,
       range: kineticRangeM(COILGUN_BANK_MUZZLE_MS),
       cooldown: COILGUN_BANK_COOLDOWN,
       projectileSpeed: projectileSpeedMPerTick(COILGUN_BANK_MUZZLE_MS),
@@ -224,7 +224,7 @@ export const syntheticCapitalModules: ModuleDefinitionInput[] = [
       droneCount: HEAVY_HANGAR_DRONE_COUNT,
       launchCooldown: 90,
       droneHp: 40,
-      droneDamage: 5,
+      droneDamage: 5 * 50,
       droneRange: 90,
       droneSpeed: 5,
     },
@@ -342,7 +342,7 @@ export const syntheticCapitalModules: ModuleDefinitionInput[] = [
     footprint: SYNTHETIC_FOOTPRINTS.interceptorGrid,
     effect: {
       kind: "pointDefense",
-      damage: 28,
+      damage: 28 * 50,
       range: 160,
       cooldown: 6,
       hitChance: 0.7,

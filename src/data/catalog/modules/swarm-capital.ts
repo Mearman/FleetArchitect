@@ -180,7 +180,7 @@ export const swarmCapitalModules: ModuleDefinitionInput[] = [
     effect: {
       kind: "weapon",
       weaponType: "cannon",
-      damage: kineticDamageJoules(SPORE_BATTERY_MASS_KG, SPORE_BATTERY_MUZZLE_MS),
+      damage: kineticDamageJoules(SPORE_BATTERY_MASS_KG, SPORE_BATTERY_MUZZLE_MS) * 50,
       range: kineticRangeM(SPORE_BATTERY_MUZZLE_MS),
       cooldown: SPORE_BATTERY_COOLDOWN,
       projectileSpeed: projectileSpeedMPerTick(SPORE_BATTERY_MUZZLE_MS),
@@ -212,7 +212,7 @@ export const swarmCapitalModules: ModuleDefinitionInput[] = [
     effect: {
       kind: "weapon",
       weaponType: "beam",
-      damage: beamDamageJoules(ACID_BANK_POWER_W, ACID_BANK_COOLDOWN),
+      damage: beamDamageJoules(ACID_BANK_POWER_W, ACID_BANK_COOLDOWN) * 50,
       range: BEAM_RANGE_M,
       cooldown: ACID_BANK_COOLDOWN,
       projectileSpeed: 0,
@@ -246,7 +246,7 @@ export const swarmCapitalModules: ModuleDefinitionInput[] = [
     effect: {
       kind: "weapon",
       weaponType: "cannon",
-      damage: kineticDamageJoules(BLOOM_CANNON_MASS_KG, BLOOM_CANNON_MUZZLE_MS),
+      damage: kineticDamageJoules(BLOOM_CANNON_MASS_KG, BLOOM_CANNON_MUZZLE_MS) * 50,
       range: kineticRangeM(BLOOM_CANNON_MUZZLE_MS),
       cooldown: BLOOM_CANNON_COOLDOWN,
       projectileSpeed: projectileSpeedMPerTick(BLOOM_CANNON_MUZZLE_MS),

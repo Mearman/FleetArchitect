@@ -189,7 +189,7 @@ export const crystallineCapitalModules: ModuleDefinitionInput[] = [
     effect: {
       kind: "weapon",
       weaponType: "beam",
-      damage: beamDamageJoules(PRISM_ARRAY_POWER_W, PRISM_ARRAY_COOLDOWN),
+      damage: beamDamageJoules(PRISM_ARRAY_POWER_W, PRISM_ARRAY_COOLDOWN) * 50,
       range: BEAM_RANGE_M,
       cooldown: PRISM_ARRAY_COOLDOWN,
       projectileSpeed: 0,
@@ -218,7 +218,7 @@ export const crystallineCapitalModules: ModuleDefinitionInput[] = [
     effect: {
       kind: "weapon",
       weaponType: "beam",
-      damage: beamDamageJoules(HEAVY_SPINAL_POWER_W, HEAVY_SPINAL_COOLDOWN),
+      damage: beamDamageJoules(HEAVY_SPINAL_POWER_W, HEAVY_SPINAL_COOLDOWN) * 50,
       range: BEAM_RANGE_M,
       cooldown: HEAVY_SPINAL_COOLDOWN,
       projectileSpeed: 0,
@@ -254,7 +254,7 @@ export const crystallineCapitalModules: ModuleDefinitionInput[] = [
     effect: {
       kind: "weapon",
       weaponType: "cannon",
-      damage: kineticDamageJoules(HEAVY_SHARD_MASS_KG, HEAVY_SHARD_MUZZLE_MS),
+      damage: kineticDamageJoules(HEAVY_SHARD_MASS_KG, HEAVY_SHARD_MUZZLE_MS) * 50,
       range: kineticRangeM(HEAVY_SHARD_MUZZLE_MS),
       cooldown: HEAVY_SHARD_COOLDOWN,
       projectileSpeed: projectileSpeedMPerTick(HEAVY_SHARD_MUZZLE_MS),

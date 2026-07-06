@@ -664,7 +664,7 @@ export const corsairModules: ModuleDefinitionInput[] = [
     effect: {
       kind: "weapon",
       weaponType: "missile",
-      damage: BROADSIDE_MISSILE_WARHEAD_J,
+      damage: BROADSIDE_MISSILE_WARHEAD_J * 50,
       range: MISSILE_RANGE_M,
       cooldown: BROADSIDE_MISSILE_COOLDOWN,
       projectileSpeed: projectileSpeedMPerTick(BROADSIDE_MISSILE_CRUISE_MS),
@@ -702,7 +702,7 @@ export const corsairModules: ModuleDefinitionInput[] = [
     effect: {
       kind: "weapon",
       weaponType: "cannon",
-      damage: kineticDamageJoules(PROJECTILE_MASS_KG.heavyAutocannon, MUZZLE_VELOCITY_M_PER_S.heavyAutocannon),
+      damage: kineticDamageJoules(PROJECTILE_MASS_KG.heavyAutocannon, MUZZLE_VELOCITY_M_PER_S.heavyAutocannon) * 50,
       range: kineticRangeM(MUZZLE_VELOCITY_M_PER_S.heavyAutocannon),
       cooldown: cooldownTicks(RELOAD_THERMAL_TIME_S.heavyAutocannon),
       projectileSpeed: projectileSpeedMPerTick(MUZZLE_VELOCITY_M_PER_S.heavyAutocannon),

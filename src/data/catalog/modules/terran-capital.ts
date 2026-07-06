@@ -172,7 +172,7 @@ export const terranCapitalModules: ModuleDefinitionInput[] = [
     effect: {
       kind: "weapon",
       weaponType: "beam",
-      damage: beamDamageJoules(SPINAL_LANCE_POWER_W, SPINAL_LANCE_COOLDOWN),
+      damage: beamDamageJoules(SPINAL_LANCE_POWER_W, SPINAL_LANCE_COOLDOWN) * 50,
       range: BEAM_RANGE_M,
       cooldown: SPINAL_LANCE_COOLDOWN,
       projectileSpeed: 0,
@@ -201,7 +201,7 @@ export const terranCapitalModules: ModuleDefinitionInput[] = [
     effect: {
       kind: "weapon",
       weaponType: "cannon",
-      damage: kineticDamageJoules(SPINAL_DRIVER_MASS_KG, SPINAL_DRIVER_MUZZLE_MS),
+      damage: kineticDamageJoules(SPINAL_DRIVER_MASS_KG, SPINAL_DRIVER_MUZZLE_MS) * 50,
       range: kineticRangeM(SPINAL_DRIVER_MUZZLE_MS),
       cooldown: SPINAL_DRIVER_COOLDOWN,
       projectileSpeed: projectileSpeedMPerTick(SPINAL_DRIVER_MUZZLE_MS),
@@ -234,7 +234,7 @@ export const terranCapitalModules: ModuleDefinitionInput[] = [
     effect: {
       kind: "weapon",
       weaponType: "cannon",
-      damage: kineticDamageJoules(HEAVY_RAIL_MASS_KG, HEAVY_RAIL_MUZZLE_MS),
+      damage: kineticDamageJoules(HEAVY_RAIL_MASS_KG, HEAVY_RAIL_MUZZLE_MS) * 50,
       range: kineticRangeM(HEAVY_RAIL_MUZZLE_MS),
       cooldown: HEAVY_RAIL_COOLDOWN,
       projectileSpeed: projectileSpeedMPerTick(HEAVY_RAIL_MUZZLE_MS),
