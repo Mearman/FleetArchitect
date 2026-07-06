@@ -104,27 +104,38 @@ export const swarmDesigns: ShipDesignInput[] = [
     // Frigate: a regenerating brawler. Banks of acid sprayers over a
     // self-knitting carapace, a metabolic core, and a cluster of flagella and
     // pulse jets. No discrete ammo weapons so no ammon sac needed.
-    grid: subdivideGrid(withEdges(swarmGrid([
-      "#>jx~aa##",
-      "jgf~zaaa.",
-      "ugm~rfaaa",
-      "jgf~zaaa.",
-      "#<jx~aa##",
-    ]), [
-      { col: 0, row: 1, dir: "e", kind: "wall" },
-      { col: 0, row: 2, dir: "e", kind: "door" },
-      { col: 0, row: 3, dir: "e", kind: "wall" },
-      { col: 2, row: 0, dir: "e", kind: "wall" },
-      { col: 2, row: 1, dir: "e", kind: "door" },
-      { col: 2, row: 2, dir: "e", kind: "wall" },
-      { col: 2, row: 3, dir: "e", kind: "door" },
-      { col: 2, row: 4, dir: "e", kind: "wall" },
-      { col: 4, row: 0, dir: "e", kind: "wall" },
-      { col: 4, row: 1, dir: "e", kind: "wall" },
-      { col: 4, row: 2, dir: "e", kind: "door" },
-      { col: 4, row: 3, dir: "e", kind: "wall" },
-      { col: 4, row: 4, dir: "e", kind: "wall" },
-    ]), F_RAVAGER),
+    // Catalogue-expansion refit: a two-cell Twin Sting Launcher is grafted onto
+    // the prow deck cell, adding a homing-ordnance battery to the acid brawler.
+    grid: mountMultiCell(
+      subdivideGrid(withEdges(swarmGrid([
+        "#>jx~aa##",
+        "jgf~zaaa.",
+        "ugm~rfaaa",
+        "jgf~zaaa.",
+        "#<jx~aa##",
+      ]), [
+        { col: 0, row: 1, dir: "e", kind: "wall" },
+        { col: 0, row: 2, dir: "e", kind: "door" },
+        { col: 0, row: 3, dir: "e", kind: "wall" },
+        { col: 2, row: 0, dir: "e", kind: "wall" },
+        { col: 2, row: 1, dir: "e", kind: "door" },
+        { col: 2, row: 2, dir: "e", kind: "wall" },
+        { col: 2, row: 3, dir: "e", kind: "door" },
+        { col: 2, row: 4, dir: "e", kind: "wall" },
+        { col: 4, row: 0, dir: "e", kind: "wall" },
+        { col: 4, row: 1, dir: "e", kind: "wall" },
+        { col: 4, row: 2, dir: "e", kind: "door" },
+        { col: 4, row: 3, dir: "e", kind: "wall" },
+        { col: 4, row: 4, dir: "e", kind: "wall" },
+      ]), F_RAVAGER),
+      F_RAVAGER,
+      [
+        // Prow deck cell: a two-cell Twin Sting Launcher (missile) adds a
+        // homing-ordnance battery. Anchor on the `~` at coarse (4,0); the
+        // east offset stays within the anchor's block.
+        [4, 0, "swm-twin-sting-launcher", SWARM_FOOTPRINTS.twinStingLauncher],
+      ],
+    ),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -137,29 +148,40 @@ export const swarmDesigns: ShipDesignInput[] = [
     // Frigate: living artillery. A fan of neural stingers spits homing tendrils
     // downrange; spore clouds screen it. Neural stings have no ammoCapacity so
     // no ammon sac is required. Regen membranes and a metabolic core sustain it.
-    grid: subdivideGrid(withEdges(swarmGrid([
-      ".#>xsnn#..",
-      ".jgfzsnnn.",
-      "ugm~rfsnnn",
-      ".jgfzsnnn.",
-      ".#<xsnn#..",
-    ]), [
-      { col: 2, row: 0, dir: "e", kind: "wall" },
-      { col: 2, row: 1, dir: "e", kind: "door" },
-      { col: 2, row: 2, dir: "e", kind: "wall" },
-      { col: 2, row: 3, dir: "e", kind: "door" },
-      { col: 2, row: 4, dir: "e", kind: "wall" },
-      { col: 4, row: 0, dir: "e", kind: "wall" },
-      { col: 4, row: 1, dir: "e", kind: "wall" },
-      { col: 4, row: 2, dir: "e", kind: "door" },
-      { col: 4, row: 3, dir: "e", kind: "wall" },
-      { col: 4, row: 4, dir: "e", kind: "wall" },
-      { col: 5, row: 0, dir: "e", kind: "wall" },
-      { col: 5, row: 1, dir: "e", kind: "door" },
-      { col: 5, row: 2, dir: "e", kind: "wall" },
-      { col: 5, row: 3, dir: "e", kind: "door" },
-      { col: 5, row: 4, dir: "e", kind: "wall" },
-    ]), F_SPITTER),
+    // Catalogue-expansion refit: a two-cell Acid Dripper is grafted onto the
+    // central deck cell, adding a heavier corrosive beam to the sting battery.
+    grid: mountMultiCell(
+      subdivideGrid(withEdges(swarmGrid([
+        ".#>xsnn#..",
+        ".jgfzsnnn.",
+        "ugm~rfsnnn",
+        ".jgfzsnnn.",
+        ".#<xsnn#..",
+      ]), [
+        { col: 2, row: 0, dir: "e", kind: "wall" },
+        { col: 2, row: 1, dir: "e", kind: "door" },
+        { col: 2, row: 2, dir: "e", kind: "wall" },
+        { col: 2, row: 3, dir: "e", kind: "door" },
+        { col: 2, row: 4, dir: "e", kind: "wall" },
+        { col: 4, row: 0, dir: "e", kind: "wall" },
+        { col: 4, row: 1, dir: "e", kind: "wall" },
+        { col: 4, row: 2, dir: "e", kind: "door" },
+        { col: 4, row: 3, dir: "e", kind: "wall" },
+        { col: 4, row: 4, dir: "e", kind: "wall" },
+        { col: 5, row: 0, dir: "e", kind: "wall" },
+        { col: 5, row: 1, dir: "e", kind: "door" },
+        { col: 5, row: 2, dir: "e", kind: "wall" },
+        { col: 5, row: 3, dir: "e", kind: "door" },
+        { col: 5, row: 4, dir: "e", kind: "wall" },
+      ]), F_SPITTER),
+      F_SPITTER,
+      [
+        // Central deck cell: a two-cell Acid Dripper (beam) adds a heavier
+        // corrosive jet. Anchor on the `~` at coarse (3,2); the east offset
+        // stays within the anchor's block.
+        [3, 2, "swm-acid-dripper", SWARM_FOOTPRINTS.acidDripper],
+      ],
+    ),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -246,6 +268,18 @@ export const swarmDesigns: ShipDesignInput[] = [
         // Prow momentum screen: a three-cell Barkweave Carapace (W) — the heavy
         // deflector band, scaling the carapace screen up to capital grade.
         [12, 3, "swm-barkweave-carapace", SWARM_FOOTPRINTS.barkweaveCarapace],
+        // --- Catalogue-expansion refit: three new bio-organs grafted onto the
+        // central deck column (col 4 `~` cells), each anchored on an empty deck
+        // cell so coverFootprint installs it without a dedicated token. ---
+        // Upper deck: a three-cell Bile Mortar (L-tromino) — a slow-lob heavy
+        // gauss-band kinetic, the cruiser's new artillery option.
+        [4, 2, "swm-bile-mortar", SWARM_FOOTPRINTS.bileMortar],
+        // Centreline deck: a 2×2 Heavy Flagellum Mass — a capital plasma-drive
+        // cluster adding thrust above the tentacle drive's lightPlasma banding.
+        [4, 3, "swm-heavy-flagellum-mass", SWARM_FOOTPRINTS.heavyFlagellumMass],
+        // Lower deck: a two-cell Spore-Mine Organ — the Swarm's first mine
+        // layer, seeding static proximity mines for area denial.
+        [4, 4, "swm-spore-mine-organ", SWARM_FOOTPRINTS.sporeMineOrgan],
       ],
     ),
     createdAt: PRESET_TIME,
@@ -317,6 +351,18 @@ export const swarmDesigns: ShipDesignInput[] = [
         // Prow momentum screen: a three-cell Barkweave Carapace (W) — the heavy
         // deflector band, supplanting the light carapace screen.
         [13, 3, "swm-barkweave-carapace", SWARM_FOOTPRINTS.barkweaveCarapace],
+        // --- Catalogue-expansion refit: two new bio-organs grafted onto the
+        // central deck column (col 4 `~` cells). The crewed Ammon Cyst is
+        // omitted: every Swarm preset is crewless, so a crewed magazine would
+        // break the crew-balance gate (it stays a catalogue-only option, like
+        // the existing swm-ammon-vault). ---
+        // Upper deck: a 2×2 Spore-Drone Spawner — a bloated brood bay that
+        // launches autonomous spore-drones, a new carrier doctrine angle.
+        [4, 2, "swm-spore-drone-spawner", SWARM_FOOTPRINTS.sporeDroneSpawner],
+        // Lower deck: a plus-shape Radial Metabolic Heart — a 6 GW compound
+        // command reactor alongside the existing H, scaling the keel core up.
+        // The west/north offsets land on solid `m`/`r` neighbours.
+        [4, 4, "swm-plus-metabolic-heart", SWARM_FOOTPRINTS.plusMetabolicHeart],
       ],
     ),
     createdAt: PRESET_TIME,

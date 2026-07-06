@@ -5,6 +5,7 @@ import {
   driveThrustNewtons,
   engineMass,
   kineticWeaponMass,
+  magazineMass,
   reactorMass,
   shieldMass,
 } from "../physics";
@@ -117,6 +118,66 @@ const THRUSTER_ARRAY_THRUST_N = 2 * driveThrustNewtons("crystal");
  *  load, mirroring the 2× thrust. */
 const THRUSTER_ARRAY_POWER_DRAW_W = 2 * MODULE_POWER_DRAW_W.drive;
 
+// ---------------------------------------------------------------------------
+// Catalog-expansion anchors — multi-cell variants that close the Crystalline
+// Concord's doctrine gaps (repair, point-defence, magazine, frigate twin
+// prism, capital 2×2 diamond shield, T-tetromino beam line, plus-shape
+// command spire). Each anchor is a named multiple of an existing single-cell
+// band, so mass follows from the physics helpers, never hand-tuned.
+// ---------------------------------------------------------------------------
+
+/** Twin Prism sustained beam power (W) — the disruptor band (4.5e8 W), one
+ *  step above the single prism beam's pulse. Two crystals fire in concert. */
+const TWIN_PRISM_POWER_W = BEAM_POWER_W.disruptor;
+/** Twin Prism refire / dwell (s) — the prism beam's fast 1 s crystal cycle. */
+const TWIN_PRISM_COOLDOWN = cooldownTicks(1.0);
+
+/** Tri-Prism Lance sustained beam power (W) — 2× the disruptor band (9e8 W),
+ *  a cruiser-grade three-crystal spinal line. */
+const TRI_PRISM_LANCE_POWER_W = 2 * BEAM_POWER_W.disruptor;
+/** Tri-Prism Lance thermal cycle (s) — the phase lance's resonant dwell. */
+const TRI_PRISM_LANCE_COOLDOWN = cooldownTicks(1.6);
+
+/** Resonance Shard Volley round mass (kg) — 2× the heavy-autocannon band
+ *  (6 kg), a twin shard volley heavier than the single resonance cannon. */
+const SHARD_VOLLEY_MASS_KG = 2 * PROJECTILE_MASS_KG.heavyAutocannon;
+/** Resonance Shard Volley muzzle velocity (m/s) — the heavy-autocannon band. */
+const SHARD_VOLLEY_MUZZLE_MS = MUZZLE_VELOCITY_M_PER_S.heavyAutocannon;
+/** Resonance Shard Volley load cycle (s) — the heavy-autocannon band. */
+const SHARD_VOLLEY_COOLDOWN = cooldownTicks(RELOAD_THERMAL_TIME_S.heavyAutocannon);
+
+/** Refractor Grid power draw (W) — 2× the PD mount's electronics load. */
+const REFRACTOR_GRID_POWER_DRAW_W = 2 * MODULE_POWER_DRAW_W.pointDefense;
+
+/** Resonance Mender power draw (W) — a sensor-class electronics load for the
+ *  resonance repair array. */
+const RESONANCE_MENDER_POWER_DRAW_W = MODULE_POWER_DRAW_W.sensor;
+
+/** Shard Vault power draw (W) — magazine-handling gear. */
+const SHARD_VAULT_POWER_DRAW_W = MODULE_POWER_DRAW_W.magazine;
+
+/** Diamond Bastion capacity (J) — 3× the heavy shield band (1.8 GJ), the
+ *  Concord's signature capital diamond projector lattice. */
+const DIAMOND_BASTION_CAPACITY_J = 3 * SHIELD_CAPACITY_J.heavy;
+/** Diamond Bastion recharge (W) — 3× the heavy shield's recharge rate. */
+const DIAMOND_BASTION_RECHARGE_W = 3 * SHIELD_RECHARGE_W.heavy;
+
+/** Resonance Bulwark Bastion capacity (kg·m/s) — 3× the medium deflector band
+ *  (1.5e6 kg·m/s), a 2×2 capital momentum screen. */
+const BULWARK_BASTION_CAPACITY_KG_MPS = 3 * DEFLECTOR_CAPACITY_KG_MPS.medium;
+/** Resonance Bulwark Bastion recharge (kg·m/s per s) — 3× the medium
+ *  deflector's rebuild rate. */
+const BULWARK_BASTION_RECHARGE_KG_MPS = 3 * DEFLECTOR_RECHARGE_KG_MPS_PER_S.medium;
+
+/** Twin Thruster Cluster rated thrust (N) — 2× the crystal drive band. */
+const TWIN_THRUSTER_CLUSTER_THRUST_N = 2 * driveThrustNewtons("crystal");
+/** Twin Thruster Cluster power draw (W) — 2× the drive's load. */
+const TWIN_THRUSTER_CLUSTER_POWER_DRAW_W = 2 * MODULE_POWER_DRAW_W.drive;
+
+/** Quantum Spire Plus output (W) — 5× the crystal antimatter band (25 GW),
+ *  the Concord's capital plus-shape command core. */
+const SPIRE_PLUS_OUTPUT_W = 5 * CRYSTAL_ANTIMATTER_OUTPUT_W;
+
 /**
  * Footprint polyominoes for the capital multi-cell modules — each anchored at
  * `{0,0}` (the cell the equipment record lives on) and listed in stable offset
@@ -158,6 +219,66 @@ export const CRYSTALLINE_FOOTPRINTS = {
   thrusterArray: [
     { dx: 0, dy: 0 },
     { dx: 1, dy: 0 },
+  ],
+  // --- Catalog-expansion footprints ---
+  /** Twin Prism: two focusing crystals side by side (2-line, forward). */
+  twinPrism: [
+    { dx: 0, dy: 0 },
+    { dx: 1, dy: 0 },
+  ],
+  /** Resonance Shard Volley: a twin shard-thrower battery (2-line). */
+  resonanceShardVolley: [
+    { dx: 0, dy: 0 },
+    { dx: 1, dy: 0 },
+  ],
+  /** Tri-Prism Lance: three resonant crystals in series (3-line, spinal). */
+  triPrismLance: [
+    { dx: 0, dy: 0 },
+    { dx: 1, dy: 0 },
+    { dx: 2, dy: 0 },
+  ],
+  /** Refractor Grid: a paired point-defence crystal facet (2-line). */
+  refractorGrid: [
+    { dx: 0, dy: 0 },
+    { dx: 1, dy: 0 },
+  ],
+  /** Resonance Mender: a three-celled resonance repair cluster (L-tromino). */
+  resonanceMender: [
+    { dx: 0, dy: 0 },
+    { dx: 1, dy: 0 },
+    { dx: 0, dy: 1 },
+  ],
+  /** Shard Vault: a dense-packed crystal magazine (2-line). */
+  shardVault: [
+    { dx: 0, dy: 0 },
+    { dx: 1, dy: 0 },
+  ],
+  /** Diamond Bastion: the Concord's signature 2×2 capital shield diamond. */
+  diamondBastion: [
+    { dx: 0, dy: 0 },
+    { dx: 1, dy: 0 },
+    { dx: 0, dy: 1 },
+    { dx: 1, dy: 1 },
+  ],
+  /** Resonance Bulwark Bastion: a 2×2 capital momentum screen. */
+  resonanceBulwarkBastion: [
+    { dx: 0, dy: 0 },
+    { dx: 1, dy: 0 },
+    { dx: 0, dy: 1 },
+    { dx: 1, dy: 1 },
+  ],
+  /** Twin Thruster Cluster: two resonance thrusters in parallel (2-line). */
+  twinThrusterCluster: [
+    { dx: 0, dy: 0 },
+    { dx: 1, dy: 0 },
+  ],
+  /** Quantum Spire Plus: a five-celled plus-shape command core. */
+  spirePlus: [
+    { dx: 0, dy: 0 },
+    { dx: 1, dy: 0 },
+    { dx: -1, dy: 0 },
+    { dx: 0, dy: 1 },
+    { dx: 0, dy: -1 },
   ],
 };
 
@@ -353,5 +474,250 @@ export const crystallineCapitalModules: ModuleDefinitionInput[] = [
     techLevel: 2,
     footprint: CRYSTALLINE_FOOTPRINTS.thrusterArray,
     effect: { kind: "engine", thrust: THRUSTER_ARRAY_THRUST_N },
+  },
+  // --- Catalog-expansion modules (doctrine-gap fillers) ---
+  {
+    id: "cry-twin-prism",
+    faction: "Crystalline",
+    name: "Twin Prism",
+    description:
+      "Two focusing crystals fired in concert at the disruptor band, one step above the single prism beam's pulse. A frigate-grade 2-cell twin-prism battery — the Concord's line skirmisher upgrade. A 2x1 array.",
+    category: "weapon",
+    // mass = beamWeaponMass(4.5e8, 4200) = 4200 × (4.5e8 / 4e7) = 47,250 kg.
+    mass: beamWeaponMass(TWIN_PRISM_POWER_W, CRYSTAL_BEAM_DENSITY),
+    cost: 200,
+    // A beam's draw IS its delivered optical power.
+    powerDraw: TWIN_PRISM_POWER_W,
+    crewRequired: 2,
+    techLevel: 2,
+    footprint: CRYSTALLINE_FOOTPRINTS.twinPrism,
+    effect: {
+      kind: "weapon",
+      weaponType: "beam",
+      damage: beamDamageJoules(TWIN_PRISM_POWER_W, TWIN_PRISM_COOLDOWN) * 50,
+      range: BEAM_RANGE_M,
+      cooldown: TWIN_PRISM_COOLDOWN,
+      projectileSpeed: 0,
+      projectileMass: 0,
+      tracking: 0,
+      shieldPiercing: 0.6,
+      armourPiercing: 0.1,
+      spread: 0,
+    },
+  },
+  {
+    id: "cry-resonance-shard-volley",
+    faction: "Crystalline",
+    name: "Resonance Shard Volley",
+    description:
+      "A twin shard-thrower battery hurling two heavy-autocannon-grade crystal slugs in volley — the kinetic upgrade for when a beam's line of sight is unwanted. Uses a heavier band than the single resonance cannon. A 2x1 array.",
+    category: "weapon",
+    // 6 kg @ 5 km/s. Muzzle energy ½·6·5000² = 7.5e7 J.
+    // mass = kineticWeaponMass(6, 5000, 4500) = 4500 × (7.5e7 / 2e7) = 16,875 kg.
+    mass: kineticWeaponMass(
+      SHARD_VOLLEY_MASS_KG,
+      SHARD_VOLLEY_MUZZLE_MS,
+      CRYSTAL_WEAPON_DENSITY,
+    ),
+    cost: 130,
+    powerDraw: MODULE_POWER_DRAW_W.kineticWeapon,
+    crewRequired: 1,
+    techLevel: 2,
+    footprint: CRYSTALLINE_FOOTPRINTS.resonanceShardVolley,
+    effect: {
+      kind: "weapon",
+      weaponType: "cannon",
+      damage: kineticDamageJoules(SHARD_VOLLEY_MASS_KG, SHARD_VOLLEY_MUZZLE_MS) * 50,
+      range: kineticRangeM(SHARD_VOLLEY_MUZZLE_MS),
+      cooldown: SHARD_VOLLEY_COOLDOWN,
+      projectileSpeed: projectileSpeedMPerTick(SHARD_VOLLEY_MUZZLE_MS),
+      projectileMass: SHARD_VOLLEY_MASS_KG,
+      tracking: 1,
+      shieldPiercing: 0.4,
+      armourPiercing: 0.15,
+      spread: 0.03,
+      // Ballistic shard: unpowered and unguided.
+      powered: false,
+      guided: false,
+    },
+  },
+  {
+    id: "cry-tri-prism-lance",
+    faction: "Crystalline",
+    name: "Tri-Prism Lance",
+    description:
+      "Three resonant crystals grown in series — a cruiser-grade spinal beam that deposits twice the disruptor band's sustained power on the phase lance's resonant cycle. A 1x3 resonance line.",
+    category: "weapon",
+    // mass = beamWeaponMass(9e8, 4200) = 4200 × (9e8 / 4e7) = 94,500 kg.
+    mass: beamWeaponMass(TRI_PRISM_LANCE_POWER_W, CRYSTAL_BEAM_DENSITY),
+    cost: 400,
+    // A beam's draw IS its delivered optical power.
+    powerDraw: TRI_PRISM_LANCE_POWER_W,
+    crewRequired: 3,
+    techLevel: 3,
+    footprint: CRYSTALLINE_FOOTPRINTS.triPrismLance,
+    effect: {
+      kind: "weapon",
+      weaponType: "beam",
+      damage: beamDamageJoules(TRI_PRISM_LANCE_POWER_W, TRI_PRISM_LANCE_COOLDOWN) * 50,
+      range: BEAM_RANGE_M,
+      cooldown: TRI_PRISM_LANCE_COOLDOWN,
+      projectileSpeed: 0,
+      projectileMass: 0,
+      tracking: 0,
+      shieldPiercing: 0.7,
+      armourPiercing: 0.15,
+      spread: 0,
+    },
+  },
+  {
+    id: "cry-refractor-grid",
+    faction: "Crystalline",
+    name: "Refractor Grid",
+    description:
+      "A paired crystal point-defence facet — the Concord's first dedicated interceptor grid, refracting incoming ordnance into harm. Closes the point-defence doctrine gap. A 2x1 array.",
+    category: "defence",
+    // Sized as a small fraction of the crystal drive (a compact refractor
+    // facet, not a full mechanism): 2 × engineMass(crystal) × 0.12.
+    mass: 2 * (engineMass(driveThrustNewtons("crystal"), CRYSTAL_ENGINE_DENSITY) * 0.12),
+    cost: 140,
+    powerDraw: REFRACTOR_GRID_POWER_DRAW_W,
+    crewRequired: 1,
+    techLevel: 2,
+    footprint: CRYSTALLINE_FOOTPRINTS.refractorGrid,
+    effect: {
+      kind: "pointDefense",
+      damage: 10,
+      range: 110,
+      cooldown: 7,
+      hitChance: 0.45,
+      tracking: 1.8,
+    },
+  },
+  {
+    id: "cry-resonance-mender",
+    faction: "Crystalline",
+    name: "Resonance Mender",
+    description:
+      "A three-celled resonance repair cluster — the crystal analogue of a repair bay, channelling resonant energy through damaged lattices to re-grow them mid-fight. Closes the repair doctrine gap. An L-tromino crystal facet.",
+    category: "defence",
+    // Sized as a fraction of the crystal drive (a compact resonance repair
+    // emitter): 3 × engineMass(crystal) × 0.25.
+    mass: 3 * (engineMass(driveThrustNewtons("crystal"), CRYSTAL_ENGINE_DENSITY) * 0.25),
+    cost: 170,
+    powerDraw: RESONANCE_MENDER_POWER_DRAW_W,
+    crewRequired: 1,
+    techLevel: 2,
+    footprint: CRYSTALLINE_FOOTPRINTS.resonanceMender,
+    effect: {
+      kind: "repair",
+      repairRate: 5,
+    },
+  },
+  {
+    id: "cry-shard-vault",
+    faction: "Crystalline",
+    name: "Shard Vault",
+    description:
+      "A dense-packed crystal magazine storing 600 resonance shards for sustained shard-cannon fire. Closes the magazine doctrine gap — crystal shards are crystal-mechanism mass, so the vault masses at the weapon density. A 2x1 bay.",
+    category: "system",
+    // mass = magazineMass(600, 4500) = 4500 × (600 / 30) = 90,000 kg.
+    mass: magazineMass(600, CRYSTAL_WEAPON_DENSITY),
+    cost: 130,
+    powerDraw: SHARD_VAULT_POWER_DRAW_W,
+    crewRequired: 1,
+    techLevel: 2,
+    footprint: CRYSTALLINE_FOOTPRINTS.shardVault,
+    effect: {
+      kind: "magazine",
+      ammoStored: 600,
+    },
+  },
+  {
+    id: "cry-diamond-bastion",
+    faction: "Crystalline",
+    name: "Diamond Bastion",
+    description:
+      "The Concord's signature capital shield — a 2×2 diamond of adaptive projectors with triple the heavy shield's capacity and a steep recovery ramp. The strongest bulwark in the fleet. A 2x2 diamond (their signature shape).",
+    category: "defence",
+    // mass = shieldMass(1.8e9, 3000) = 3000 × (1.8e9 / 1.3e7) ≈ 415,385 kg.
+    mass: shieldMass(DIAMOND_BASTION_CAPACITY_J, CRYSTAL_SHIELD_DENSITY),
+    cost: 700,
+    // A shield's draw IS its recharge wattage.
+    powerDraw: DIAMOND_BASTION_RECHARGE_W,
+    crewRequired: 3,
+    techLevel: 5,
+    footprint: CRYSTALLINE_FOOTPRINTS.diamondBastion,
+    effect: {
+      kind: "shield",
+      capacity: DIAMOND_BASTION_CAPACITY_J,
+      rechargeRate: DIAMOND_BASTION_RECHARGE_W,
+      rechargeDelay: 65,
+      adaptiveRampRate: 0.06,
+    },
+  },
+  {
+    id: "cry-resonance-bulwark-bastion",
+    faction: "Crystalline",
+    name: "Resonance Bulwark Bastion",
+    description:
+      "A 2×2 capital momentum screen — three times the Mk I medium deflector's arrest capacity, grown as a resonant crystal block. Stops capital-grade kinetics cold. A 2x2 block.",
+    category: "defence",
+    // mass = deflectorMass(1.5e6, 3000) = 3000 × (1.5e6 / 1.5e4) = 300,000 kg.
+    mass: deflectorMass(BULWARK_BASTION_CAPACITY_KG_MPS, CRYSTAL_SHIELD_DENSITY),
+    cost: 360,
+    // A deflector's draw IS its momentum-rebuild rate.
+    powerDraw: BULWARK_BASTION_RECHARGE_KG_MPS,
+    crewRequired: 2,
+    techLevel: 4,
+    footprint: CRYSTALLINE_FOOTPRINTS.resonanceBulwarkBastion,
+    effect: {
+      kind: "deflector",
+      capacity: BULWARK_BASTION_CAPACITY_KG_MPS,
+      rechargeRate: BULWARK_BASTION_RECHARGE_KG_MPS,
+      rechargeDelay: 55,
+    },
+  },
+  {
+    id: "cry-twin-thruster-cluster",
+    faction: "Crystalline",
+    name: "Twin Thruster Cluster",
+    description:
+      "Two resonance thrusters grown in parallel with gimballed nozzles. The Concord still repositions by blinking, but a gimballed pair adds straight-line authority and a measure of vectorable torque. A 2x1 array.",
+    category: "propulsion",
+    // mass = engineMass(96000, 3500) = 3500 × (96000 / 5000) = 67,200 kg.
+    mass: engineMass(TWIN_THRUSTER_CLUSTER_THRUST_N, CRYSTAL_ENGINE_DENSITY),
+    cost: 95,
+    powerDraw: TWIN_THRUSTER_CLUSTER_POWER_DRAW_W,
+    crewRequired: 0,
+    techLevel: 2,
+    footprint: CRYSTALLINE_FOOTPRINTS.twinThrusterCluster,
+    effect: {
+      kind: "engine",
+      thrust: TWIN_THRUSTER_CLUSTER_THRUST_N,
+      gimbalArc: Math.PI / 8,
+    },
+  },
+  {
+    id: "cry-spire-plus",
+    faction: "Crystalline",
+    name: "Quantum Spire Plus",
+    description:
+      "A five-celled plus-shape antimatter spire — the Concord's capital command core, feeding spinal arrays, diamond bastions, and full blink-cloak fits simultaneously from one resonant heart. A plus-shaped cross-roads core; command module.",
+    category: "system",
+    // 25 GW @ 2e8 W/m³ (antimatter density), crystal containment.
+    // mass = reactorMass(2.5e10, 2e8, 5000) = 5000 × 125 = 625,000 kg.
+    mass: reactorMass(
+      SPIRE_PLUS_OUTPUT_W,
+      ANTIMATTER_POWER_DENSITY_W_PER_M3,
+      CRYSTAL_REACTOR_DENSITY,
+    ),
+    cost: 1200,
+    powerDraw: 0,
+    crewRequired: 3,
+    techLevel: 5,
+    footprint: CRYSTALLINE_FOOTPRINTS.spirePlus,
+    effect: { kind: "power", output: SPIRE_PLUS_OUTPUT_W },
+    command: true,
   },
 ];

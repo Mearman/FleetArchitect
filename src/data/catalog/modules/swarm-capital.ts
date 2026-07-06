@@ -14,6 +14,7 @@ import {
   DEFLECTOR_CAPACITY_KG_MPS,
   DEFLECTOR_RECHARGE_KG_MPS_PER_S,
   FUSION_COMPACT_POWER_DENSITY_W_PER_M3,
+  MISSILE_RANGE_M,
   MODULE_POWER_DRAW_W,
   MUZZLE_VELOCITY_M_PER_S,
   PROJECTILE_MASS_KG,
@@ -25,6 +26,11 @@ import {
   projectileSpeedMPerTick,
 } from "../combat-scale";
 import {
+  STING_BURN_TICKS,
+  STING_CRUISE_MS,
+  STING_LAUNCHER_COOLDOWN,
+  STING_THRUST_M_PER_S2,
+  STING_WARHEAD_J,
   SWARM_BEAM_DENSITY_KG_PER_M3,
   SWARM_ENGINE_DENSITY_KG_PER_M3,
   SWARM_MAGAZINE_DENSITY_KG_PER_M3,
@@ -99,6 +105,47 @@ const TENTACLE_DRIVE_THRUST_N = 4 * driveThrustNewtons("lightPlasma");
  *  chambers. */
 const AMMON_VAULT_ROUNDS = 2 * 250;
 
+// ---------------------------------------------------------------------------
+// Catalogue-expansion anchors (fighter-grade 2-cell lines through capital
+// plus-shapes). Each is a multiple of an existing single-cell Swarm band, so
+// capability scales visibly across the fighter → capital span and mass follows
+// from the SAME physics helpers at Swarm bio-organic densities — no hand-tuned
+// literals. Imported sting anchors (STING_*) carry the neural-sting's authored
+// warhead, cruise velocity and motor derivation so the twin-sting launcher
+// tracks the single-cell sting without duplicating its authored 6e7 J warhead.
+// ---------------------------------------------------------------------------
+
+/** Ion-drive thrust proxy for small organic subsystems (a spawner bay, a blink
+ *  sac) — the same anchor `swarm.ts` uses for sensors/comms/PD fractions. */
+const SWARM_ION_THRUST_N = driveThrustNewtons("ion");
+
+/** Acid dripper bio-gland recharge (s): the same fast 0.7 s cycle as the acid
+ *  sprayer, feeding two converging nozzles from one enlarged corrosive gland. */
+const ACID_DRIPPER_COOLDOWN = cooldownTicks(0.7);
+
+/** Bile mortar projectile mass (kg) — the gauss band (20 kg), a dense lobbed
+ *  spore-mass at cruiser scale. */
+const BILE_MORTAR_MASS_KG = PROJECTILE_MASS_KG.gauss;
+/** Bile mortar muzzle velocity (m/s) — half the gauss band (a lobbed, arcing
+ *  bio-mortar round, slower than a straight-launched slug). */
+const BILE_MORTAR_MUZZLE_MS = MUZZLE_VELOCITY_M_PER_S.gauss / 2;
+/** Bile mortar load cycle (s) — the gauss thermal-recovery band. */
+const BILE_MORTAR_COOLDOWN = cooldownTicks(RELOAD_THERMAL_TIME_S.gauss);
+
+/** Radial metabolic heart output (W) — 5× the compact-fusion ganglion (6 GW),
+ *  a plus-section command core between the metabolic heart and the antimatter
+ *  metabolic core. */
+const PLUS_METABOLIC_HEART_OUTPUT_W = 5 * 1.2e9;
+
+/** Heavy flagellum mass thrust (N) — 4× the plasma band, four muscular jet
+ *  organs co-ordinated as a 2×2 capital drive cluster (above the tentacle
+ *  drive's lightPlasma banding). */
+const HEAVY_FLAGELLUM_THRUST_N = 4 * driveThrustNewtons("plasma");
+
+/** Ammon cyst round reserve — 3× the ammon sac's 250, three lobed fermentation
+ *  chambers (the crewed capital magazine line). */
+const AMMON_CYST_ROUNDS = 3 * 250;
+
 /**
  * Footprint polyominoes for the capital multi-cell modules — each anchored at
  * `{0,0}` (the cell the equipment record lives on) and listed in stable offset
@@ -142,6 +189,71 @@ export const SWARM_FOOTPRINTS = {
   ammonVault: [
     { dx: 0, dy: 0 },
     { dx: 1, dy: 0 },
+  ],
+  // --- Catalogue-expansion polyominoes (fighter-grade 2-cell lines through
+  // capital plus-shapes and 2x2 blobs). Each anchors at {0,0}; negative offsets
+  // reach into the previous coarse block, so the mount plan must keep that
+  // neighbour solid. See designs-swarm.ts for the matching mountMultiCell
+  // anchors. ---
+  /** Twin sting launcher: 2-cell horizontal gland (frigate grade). */
+  twinStingLauncher: [
+    { dx: 0, dy: 0 },
+    { dx: 1, dy: 0 },
+  ],
+  /** Acid dripper: 2-cell corrosive beam (frigate grade). */
+  acidDripper: [
+    { dx: 0, dy: 0 },
+    { dx: 1, dy: 0 },
+  ],
+  /** Bile mortar: L-tromino slow-lob heavy kinetic (cruiser grade). */
+  bileMortar: [
+    { dx: 0, dy: 0 },
+    { dx: 1, dy: 0 },
+    { dx: 0, dy: 1 },
+  ],
+  /** Spore-mine organ: 2-cell mine-laying gland. */
+  sporeMineOrgan: [
+    { dx: 0, dy: 0 },
+    { dx: 1, dy: 0 },
+  ],
+  /** Spore-drone spawner: 2x2 bloated brood bay (capital grade). */
+  sporeDroneSpawner: [
+    { dx: 0, dy: 0 },
+    { dx: 1, dy: 0 },
+    { dx: 0, dy: 1 },
+    { dx: 1, dy: 1 },
+  ],
+  /** Phase-blink sac: 2-cell tactical-jump organ. */
+  blinkSac: [
+    { dx: 0, dy: 0 },
+    { dx: 1, dy: 0 },
+  ],
+  /** Bulwark carapace: 3-cell ridged momentum screen (capital grade). */
+  bulwarkCarapace: [
+    { dx: 0, dy: 0 },
+    { dx: 1, dy: 0 },
+    { dx: 2, dy: 0 },
+  ],
+  /** Ammon cyst: L-tromino extended ammunition reservoir (crewed). */
+  ammonCyst: [
+    { dx: 0, dy: 0 },
+    { dx: 1, dy: 0 },
+    { dx: 0, dy: 1 },
+  ],
+  /** Radial metabolic heart: plus-shape compound command reactor (capital). */
+  plusMetabolicHeart: [
+    { dx: 0, dy: 0 },
+    { dx: 1, dy: 0 },
+    { dx: -1, dy: 0 },
+    { dx: 0, dy: 1 },
+    { dx: 0, dy: -1 },
+  ],
+  /** Heavy flagellum mass: 2x2 capital drive cluster. */
+  heavyFlagellumMass: [
+    { dx: 0, dy: 0 },
+    { dx: 1, dy: 0 },
+    { dx: 0, dy: 1 },
+    { dx: 1, dy: 1 },
   ],
 };
 
@@ -341,5 +453,288 @@ export const swarmCapitalModules: ModuleDefinitionInput[] = [
     techLevel: 2,
     footprint: SWARM_FOOTPRINTS.ammonVault,
     effect: { kind: "magazine", ammoStored: AMMON_VAULT_ROUNDS },
+  },
+
+  // ===========================================================================
+  // Catalogue expansion — bio-thematic multi-cell variants spanning
+  // fighter-grade 2-cell lines through capital plus-shapes and 2x2 blobs.
+  // Each mass traces to the SAME physics helpers at Swarm bio-organic
+  // densities, applied to a named multiple of an existing single-cell band.
+  // Swarm weapons stay bio-autonomous (crewRequired 0); only the ammon cyst
+  // (the magazine line) scales crew, mirroring the single-cell ammon sac.
+  // ===========================================================================
+
+  {
+    id: "swm-twin-sting-launcher",
+    faction: "Swarm",
+    name: "Twin Sting Launcher",
+    description:
+      "A paired neural-sting gland — two bio-electric tendrils fed from a shared launcher node. It doubles the weight of homing fire of a single sting for a modest bulk increase, the Swarm's frigate-grade multi-cell ordnance. Bio-autonomous (no crew, like every Swarm weapon).",
+    category: "weapon",
+    // mass = 2 × kineticWeaponMass(autocannon band) × 0.7 (matching the single
+    // sting's organic-bus envelope fraction): two chambers, one launcher node.
+    mass:
+      2 *
+      kineticWeaponMass(
+        PROJECTILE_MASS_KG.autocannon,
+        MUZZLE_VELOCITY_M_PER_S.autocannon,
+        SWARM_WEAPON_DENSITY_KG_PER_M3,
+      ) *
+      0.7,
+    cost: 130,
+    // Two chambers draw twice the single sting launcher's handling load.
+    powerDraw: 2 * MODULE_POWER_DRAW_W.ordnanceWeapon,
+    crewRequired: 0,
+    techLevel: 2,
+    footprint: SWARM_FOOTPRINTS.twinStingLauncher,
+    effect: {
+      kind: "weapon",
+      weaponType: "missile",
+      damage: 2 * STING_WARHEAD_J,
+      range: MISSILE_RANGE_M,
+      cooldown: STING_LAUNCHER_COOLDOWN,
+      projectileSpeed: projectileSpeedMPerTick(STING_CRUISE_MS),
+      projectileMass: PROJECTILE_MASS_KG.autocannon,
+      tracking: 3.5,
+      shieldPiercing: 0.1,
+      armourPiercing: 0.2,
+      spread: 0.05,
+      // Powered guided bio-electric tendril: same motor as the single sting.
+      powered: true,
+      guided: true,
+      thrust: STING_THRUST_M_PER_S2,
+      burnTicks: STING_BURN_TICKS,
+    },
+  },
+  {
+    id: "swm-acid-dripper",
+    faction: "Swarm",
+    name: "Acid Dripper",
+    description:
+      "An enlarged corrosive gland feeding two converging spray nozzles. The heavier acid volume sustains a beam one band above the acid sprayer's, dissolving armour far faster than a single sprayer while keeping the bio-chemical gland's fast recharge cycle.",
+    category: "weapon",
+    // pulse band = 3e8 W (3× the acid sprayer's pdPulse).
+    // mass = beamWeaponMass(3e8, 1800) = 1800 × 7.5 = 13,500 kg.
+    mass: beamWeaponMass(BEAM_POWER_W.pulse, SWARM_BEAM_DENSITY_KG_PER_M3),
+    cost: 100,
+    // A beam's draw IS its delivered optical power.
+    powerDraw: BEAM_POWER_W.pulse,
+    crewRequired: 0,
+    techLevel: 1,
+    footprint: SWARM_FOOTPRINTS.acidDripper,
+    effect: {
+      kind: "weapon",
+      weaponType: "beam",
+      damage: beamDamageJoules(BEAM_POWER_W.pulse, ACID_DRIPPER_COOLDOWN),
+      range: BEAM_RANGE_M,
+      cooldown: ACID_DRIPPER_COOLDOWN,
+      projectileSpeed: 0,
+      projectileMass: 0,
+      tracking: 0,
+      shieldPiercing: 0,
+      armourPiercing: 0.45,
+      spread: 0,
+    },
+  },
+  {
+    id: "swm-bile-mortar",
+    faction: "Swarm",
+    name: "Bile Mortar",
+    description:
+      "A lobbed bio-mortar grown in an L-shaped cluster of three digestive sacs. It fires a dense gauss-band spore-mass (20 kg) on a slow, arcing trajectory — the Swarm's cruiser-grade heavy kinetic, slow-cycling but devastating per hit. Mass and damage both derive from the same muzzle-energy figure, so the scaling is physical, not tuned.",
+    category: "weapon",
+    // 20 kg @ 4.75 km/s (gauss/2, a lobbed arc). Muzzle energy ½·20·4750² = 225 MJ.
+    // mass = kineticWeaponMass(20, 4750, 2200) = 2200 × (225e6 / 2e7) = 24,750 kg.
+    mass: kineticWeaponMass(
+      BILE_MORTAR_MASS_KG,
+      BILE_MORTAR_MUZZLE_MS,
+      SWARM_WEAPON_DENSITY_KG_PER_M3,
+    ),
+    cost: 140,
+    powerDraw: MODULE_POWER_DRAW_W.kineticWeapon,
+    crewRequired: 0,
+    techLevel: 3,
+    footprint: SWARM_FOOTPRINTS.bileMortar,
+    effect: {
+      kind: "weapon",
+      weaponType: "cannon",
+      damage: kineticDamageJoules(BILE_MORTAR_MASS_KG, BILE_MORTAR_MUZZLE_MS),
+      range: kineticRangeM(BILE_MORTAR_MUZZLE_MS),
+      cooldown: BILE_MORTAR_COOLDOWN,
+      projectileSpeed: projectileSpeedMPerTick(BILE_MORTAR_MUZZLE_MS),
+      projectileMass: BILE_MORTAR_MASS_KG,
+      tracking: 0.8,
+      shieldPiercing: 0.15,
+      armourPiercing: 0.1,
+      spread: 0.12,
+      // Ballistic lobbed spore-mass: unpowered and unguided.
+      powered: false,
+      guided: false,
+    },
+  },
+  {
+    id: "swm-spore-mine-organ",
+    faction: "Swarm",
+    name: "Spore-Mine Organ",
+    description:
+      "A bio-mine layering gland grown as two linked chambers. It seeds the Swarm's living proximity mines — static spore clusters that detonate when a hull drifts within their blast radius. The Swarm has no other mine layer; this organ opens area-denial as a new doctrine angle. Bio-autonomous (no crew).",
+    category: "weapon",
+    // mass = kineticWeaponMass(autocannon band) × 1.2 (a mine organ is a denser
+    // launch mechanism than a spore gun, scaling the autocannon envelope up).
+    mass:
+      kineticWeaponMass(
+        PROJECTILE_MASS_KG.autocannon,
+        MUZZLE_VELOCITY_M_PER_S.autocannon,
+        SWARM_WEAPON_DENSITY_KG_PER_M3,
+      ) * 1.2,
+    cost: 100,
+    powerDraw: MODULE_POWER_DRAW_W.ordnanceWeapon,
+    crewRequired: 0,
+    techLevel: 2,
+    footprint: SWARM_FOOTPRINTS.sporeMineOrgan,
+    effect: {
+      kind: "mineLayer",
+      mineCount: 6,
+      mineDamage: 60,
+      mineRadius: 80,
+      layCooldown: 200,
+      armingDelay: 12,
+    },
+  },
+  {
+    id: "swm-spore-drone-spawner",
+    faction: "Swarm",
+    name: "Spore-Drone Spawner",
+    description:
+      "A bloated 2×2 brood bay that grows and launches autonomous spore-drones — tiny living combatants that swarm a target. Each drone is fragile but fast; the bay replaces losses on a short cycle. A new doctrine angle for the Swarm, turning a capital bio-form into a carrier. Bio-autonomous (no crew).",
+    category: "weapon",
+    // mass = 4 × (engineMass(ion thrust, Swarm engine density) × 0.3): four
+    // fabrication + launch cells, each a small fraction of a bio-engine.
+    mass:
+      4 *
+      (engineMass(SWARM_ION_THRUST_N, SWARM_ENGINE_DENSITY_KG_PER_M3) * 0.3),
+    cost: 160,
+    powerDraw: MODULE_POWER_DRAW_W.ordnanceWeapon,
+    crewRequired: 0,
+    techLevel: 3,
+    footprint: SWARM_FOOTPRINTS.sporeDroneSpawner,
+    effect: {
+      kind: "hangar",
+      droneCount: 6,
+      launchCooldown: 80,
+      droneHp: 35,
+      droneDamage: 4,
+      droneRange: 80,
+      droneSpeed: 6,
+    },
+  },
+  {
+    id: "swm-blink-sac",
+    faction: "Swarm",
+    name: "Phase-Blink Sac",
+    description:
+      "A two-cell organ that folds space across a short tactical range, teleporting the host bio-form to a new position on a short cooldown. The Swarm has no other blink drive; this sac gives a hive-cluster a sudden reposition it could not otherwise manage. Bio-autonomous (no crew).",
+    category: "propulsion",
+    // mass = 2 × (engineMass(ion thrust, Swarm engine density) × 0.25): two
+    // phase-fold cells, each a fraction of a bio-engine (a membrane, not a
+    // mechanism).
+    mass:
+      2 *
+      (engineMass(SWARM_ION_THRUST_N, SWARM_ENGINE_DENSITY_KG_PER_M3) * 0.25),
+    cost: 140,
+    powerDraw: MODULE_POWER_DRAW_W.drive,
+    crewRequired: 0,
+    techLevel: 3,
+    footprint: SWARM_FOOTPRINTS.blinkSac,
+    effect: {
+      kind: "blink",
+      mode: "tactical",
+      jumpRange: 240,
+      cooldown: 70,
+    },
+  },
+  {
+    id: "swm-bulwark-carapace",
+    faction: "Swarm",
+    name: "Bulwark Carapace",
+    description:
+      "A long ridged deflector plate of woven bio-crystal grown as three layered carapace segments. Together they project a reinforced momentum screen at twice the heavy deflector band — the Swarm's capital-grade answer to a mass-driver salvo, scaling the barkweave carapace up to a true bulwark. Bio-autonomous (no crew).",
+    category: "defence",
+    // 2× heavy deflector band = 4e6 kg·m/s.
+    // mass = deflectorMass(4e6) = 2000 × (4e6 / 1.5e4) ≈ 533,333 kg.
+    mass: deflectorMass(2 * DEFLECTOR_CAPACITY_KG_MPS.heavy),
+    cost: 170,
+    // A deflector's draw IS its momentum-rebuild rate (mirrors the single
+    // carapace screen, doubled for the two extra cells).
+    powerDraw: 2 * DEFLECTOR_RECHARGE_KG_MPS_PER_S.heavy,
+    crewRequired: 0,
+    techLevel: 3,
+    footprint: SWARM_FOOTPRINTS.bulwarkCarapace,
+    effect: {
+      kind: "deflector",
+      capacity: 2 * DEFLECTOR_CAPACITY_KG_MPS.heavy,
+      rechargeRate: 2 * DEFLECTOR_RECHARGE_KG_MPS_PER_S.heavy,
+      rechargeDelay: 100,
+    },
+  },
+  {
+    id: "swm-ammon-cyst",
+    faction: "Swarm",
+    name: "Ammon Cyst",
+    description:
+      "An extended bio-organic ammunition reservoir grown as three lobed fermentation chambers. It triples the round reserve of an ammon sac, with two extra crew to haul the harvested spore-clusters to hungry weapons. The crewed capital sibling of the ammon vault — the one Swarm multi-cell line that scales crew.",
+    category: "system",
+    // 750 rounds. mass = magazineMass(750, 3500) = 3500 × (750 / 30) = 87,500 kg.
+    mass: magazineMass(AMMON_CYST_ROUNDS, SWARM_MAGAZINE_DENSITY_KG_PER_M3),
+    cost: 130,
+    // Three chambers draw three times the single magazine's handling load.
+    powerDraw: 3 * MODULE_POWER_DRAW_W.magazine,
+    crewRequired: 3,
+    techLevel: 3,
+    footprint: SWARM_FOOTPRINTS.ammonCyst,
+    effect: { kind: "magazine", ammoStored: AMMON_CYST_ROUNDS },
+  },
+  {
+    id: "swm-plus-metabolic-heart",
+    faction: "Swarm",
+    name: "Radial Metabolic Heart",
+    description:
+      "A plus-section compound bio-reactor of five fusion-heated digestive lobes arranged around a central node. It amplifies the hive's metabolic output to 6 GW — between the metabolic heart and the antimatter metabolic core — feeding the energy-hungry weapons of the largest bio-forms. Like every Swarm reactor it doubles as a command node.",
+    category: "system",
+    // 6 GW @ 4e7 W/m³ (compact-fusion density), bio-organic containment.
+    // mass = reactorMass(6e9, 4e7, 2500) = 2500 × 150 = 375,000 kg.
+    mass: reactorMass(
+      PLUS_METABOLIC_HEART_OUTPUT_W,
+      FUSION_COMPACT_POWER_DENSITY_W_PER_M3,
+      SWARM_REACTOR_DENSITY_KG_PER_M3,
+    ),
+    cost: 170,
+    powerDraw: 0,
+    crewRequired: 0,
+    techLevel: 4,
+    footprint: SWARM_FOOTPRINTS.plusMetabolicHeart,
+    effect: { kind: "power", output: PLUS_METABOLIC_HEART_OUTPUT_W },
+    command: true,
+  },
+  {
+    id: "swm-heavy-flagellum-mass",
+    faction: "Swarm",
+    name: "Heavy Flagellum Mass",
+    description:
+      "A dense 2×2 cluster of four heavy plasma-flagellum organs. Co-ordinated contraction cycles deliver capital-scale thrust well above the tentacle drive's lightPlasma banding, driving the largest bio-forms through space with unsettling speed. Gimbals like the pulse-jet organ, so a heavy bio-hull can still vector its thrust.",
+    category: "propulsion",
+    // 4× plasma = 480 kN. mass = engineMass(480000, 2000) = 2000 × 96 = 192,000 kg.
+    mass: engineMass(HEAVY_FLAGELLUM_THRUST_N, SWARM_ENGINE_DENSITY_KG_PER_M3),
+    cost: 140,
+    // Four organs draw four times the single drive's conditioning load.
+    powerDraw: 4 * MODULE_POWER_DRAW_W.drive,
+    crewRequired: 0,
+    techLevel: 3,
+    footprint: SWARM_FOOTPRINTS.heavyFlagellumMass,
+    effect: {
+      kind: "engine",
+      thrust: HEAVY_FLAGELLUM_THRUST_N,
+      gimbalArc: Math.PI / 8,
+    },
   },
 ];

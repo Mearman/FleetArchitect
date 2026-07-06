@@ -1,18 +1,36 @@
 import type { ModuleDefinitionInput } from "@/schema/module";
-import { engineMass, kineticWeaponMass, reactorMass, shieldMass } from "../physics";
 import {
+  beamWeaponMass,
+  deflectorMass,
+  driveThrustNewtons,
+  engineMass,
+  kineticWeaponMass,
+  reactorMass,
+  shieldMass,
+} from "../physics";
+import {
+  ACTIVE_SENSOR_EMISSION_SCALE,
   ANTIMATTER_ADVANCED_POWER_DENSITY_W_PER_M3,
+  BEAM_POWER_W,
+  BEAM_RANGE_M,
+  DEFLECTOR_CAPACITY_KG_MPS,
+  DEFLECTOR_RECHARGE_KG_MPS_PER_S,
+  KM_DETECTION_RANGE_SCALE,
   MODULE_POWER_DRAW_W,
+  MUZZLE_VELOCITY_M_PER_S,
   PROJECTILE_MASS_KG,
   SHIELD_CAPACITY_J,
   SHIELD_RECHARGE_W,
+  beamDamageJoules,
   cooldownTicks,
   kineticDamageJoules,
   kineticRangeM,
   projectileSpeedMPerTick,
   RELOAD_THERMAL_TIME_S,
 } from "../combat-scale";
+import { SENSOR_OMNI_ARC } from "../sensor-arcs";
 import {
+  BEAM_DENSITY,
   ENGINE_DENSITY,
   REACTOR_DENSITY,
   SHIELD_DENSITY,
@@ -94,6 +112,70 @@ const COORDINATION_HUB_MASS = 5 * 20_000;
  *  defining screen). */
 const INTERCEPTOR_GRID_MASS = 2 * 16_000;
 
+// ---------------------------------------------------------------------------
+// Expansion anchors — frigate/cruiser/capital multi-cell variants spanning
+// roles the single-cell catalogue and the original capital set leave open.
+// Each anchor is a named multiple of an existing capability band, so mass
+// follows from the SAME physics helpers — no hand-tuned literals.
+// ---------------------------------------------------------------------------
+
+/** Twin cutter beam power (W) — one band above the single Cutter Lance's pulse
+ *  (BEAM_POWER_W.beam, 600 MW sustained). */
+const TWIN_CUTTER_POWER_W = BEAM_POWER_W.beam;
+/** Twin cutter beam dwell / thermal-recovery interval — same as the single
+ *  Cutter Lance (0.6 s). */
+const TWIN_CUTTER_COOLDOWN = cooldownTicks(0.6);
+
+/** Targeting bank round mass (kg) — twice the single Targeting Cannon's 1 kg
+ *  autocannon slug (2 kg), doubling throw weight at the same muzzle velocity. */
+const TARGETING_BANK_MASS_KG = 2 * PROJECTILE_MASS_KG.autocannon;
+/** Targeting bank muzzle velocity (m/s) — the autocannon band (4 km/s). */
+const TARGETING_BANK_MUZZLE_MS = MUZZLE_VELOCITY_M_PER_S.autocannon;
+/** Targeting bank cyclic-feed interval — the autocannon band's reload. */
+const TARGETING_BANK_COOLDOWN = cooldownTicks(RELOAD_THERMAL_TIME_S.autocannon);
+
+/** Tetromino coilgun round mass (kg) — twice the single Coilgun's 10 kg railgun
+ *  slug (20 kg) at the same muzzle velocity, tripling the bank's alpha strike
+ *  with one more barrel on a T-shaped mount. */
+const TETROMINO_COILGUN_MASS_KG = 2 * PROJECTILE_MASS_KG.railgun;
+/** Tetromino coilgun muzzle velocity (m/s) — the railgun band (8 km/s). */
+const TETROMINO_COILGUN_MUZZLE_MS = MUZZLE_VELOCITY_M_PER_S.railgun;
+/** Tetromino coilgun load cycle — the railgun band's capacitor recharge. */
+const TETROMINO_COILGUN_COOLDOWN = cooldownTicks(RELOAD_THERMAL_TIME_S.railgun);
+
+/** Precision drive thrust (N) — the `precision` drive class the single Ion
+ *  Thruster uses (60 kN). Imported locally for the blink-drive mass fraction. */
+const PRECISION_THRUST_N = driveThrustNewtons("precision");
+/** Twin ion-thruster bank thrust (N) — 2× the precision drive, two ganged
+ *  nozzles on the Ion Drive Bank. */
+const TWIN_ION_THRUST_N = 2 * PRECISION_THRUST_N;
+
+/** Mine-drone layer mass (kg) — three cells of precision emplacement, each 0.8×
+ *  a single Targeting Cannon's derived mechanism mass. */
+const MINE_DRONE_LAYER_MASS =
+  3 * (kineticWeaponMass(
+    PROJECTILE_MASS_KG.autocannon,
+    MUZZLE_VELOCITY_M_PER_S.autocannon,
+    WEAPON_DENSITY,
+  ) * 0.8);
+
+/** Tactical blink mass (kg) — two cells of phase-shift coils, each 0.2× a
+ *  single precision-drive mechanism (a blink sac is a fraction of a real
+ *  engine's throw weight). */
+const TACTICAL_BLINK_MASS = 2 * (engineMass(PRECISION_THRUST_N, ENGINE_DENSITY) * 0.2);
+
+/** ECCM bastion mass (kg) — four cells of dense electronics at the single
+ *  ECCM Suite's derived 12,000 kg per cell. */
+const ECCM_BASTION_MASS = 4 * 12_000;
+
+/** Sensor bastion mass (kg) — three cells of dense optics at the single Active
+ *  Sensor Array's derived 16,000 kg per cell. */
+const SENSOR_BASTION_MASS = 3 * 16_000;
+
+/** Drone launch deck mass (kg) — three cells of fabrication + launch mechanism
+ *  at the single Drone Hangar's derived 84,000 kg per cell. */
+const DRONE_LAUNCH_DECK_MASS = 3 * 84_000;
+
 /**
  * Footprint polyominoes for the capital multi-cell modules — each anchored at
  * `{0,0}` (the cell the equipment record lives on) and listed in stable offset
@@ -146,6 +228,62 @@ export const SYNTHETIC_FOOTPRINTS = {
   interceptorGrid: [
     { dx: 0, dy: 0 },
     { dx: 1, dy: 0 },
+  ],
+  // --- Expansion footprints ---
+  /** 1×2 line — twin sustained cutter beams on a common emitter. */
+  twinCutter: [
+    { dx: 0, dy: 0 },
+    { dx: 1, dy: 0 },
+  ],
+  /** 1×2 line — twin precision cannons on a traversing bank. */
+  targetingBank: [
+    { dx: 0, dy: 0 },
+    { dx: 1, dy: 0 },
+  ],
+  /** T-tetromino — three coilgun barrels on a traversing mount (centre + east
+   *  + west barrels and a south feed). */
+  tetrominoCoilgun: [
+    { dx: 0, dy: 0 },
+    { dx: 1, dy: 0 },
+    { dx: -1, dy: 0 },
+    { dx: 0, dy: 1 },
+  ],
+  /** L-tromino — three cells of precision mine emplacement. */
+  mineDroneLayer: [
+    { dx: 0, dy: 0 },
+    { dx: 1, dy: 0 },
+    { dx: 0, dy: 1 },
+  ],
+  /** 1×2 line — twin phase-shift coils for a tactical blink. */
+  tacticalBlink: [
+    { dx: 0, dy: 0 },
+    { dx: 1, dy: 0 },
+  ],
+  /** 2×2 block — four cells of ECCM electronics. */
+  eccmBastion: [
+    { dx: 0, dy: 0 },
+    { dx: 1, dy: 0 },
+    { dx: 0, dy: 1 },
+    { dx: 1, dy: 1 },
+  ],
+  /** L-tromino — three cells of dense active-sensor optics. */
+  sensorBastion: [
+    { dx: 0, dy: 0 },
+    { dx: 1, dy: 0 },
+    { dx: 0, dy: 1 },
+  ],
+  /** 2×2 block — four cells of capital momentum-screen projectors. */
+  phalanxDeflector: [
+    { dx: 0, dy: 0 },
+    { dx: 1, dy: 0 },
+    { dx: 0, dy: 1 },
+    { dx: 1, dy: 1 },
+  ],
+  /** 1×3 line — three ganged fabrication + launch cells for a drone swarm. */
+  droneLaunchDeck: [
+    { dx: 0, dy: 0 },
+    { dx: 1, dy: 0 },
+    { dx: 2, dy: 0 },
   ],
 };
 
@@ -314,14 +452,14 @@ export const syntheticCapitalModules: ModuleDefinitionInput[] = [
     // density.
     // mass = 3500 × (120000 / 5000) = 84,000 kg (~84 t) — twice the single
     // Ion Thruster's 42,000 kg.
-    mass: engineMass(120_000, ENGINE_DENSITY),
+    mass: engineMass(TWIN_ION_THRUST_N, ENGINE_DENSITY),
     cost: 90,
     // Two nozzles draw twice the single drive's power-conditioning load.
     powerDraw: 2 * MODULE_POWER_DRAW_W.drive,
     crewRequired: 0,
     techLevel: 2,
     footprint: SYNTHETIC_FOOTPRINTS.thrusterBank,
-    effect: { kind: "engine", thrust: 120_000 },
+    effect: { kind: "engine", thrust: TWIN_ION_THRUST_N },
   },
   {
     id: "syn-interceptor-grid",
@@ -349,5 +487,268 @@ export const syntheticCapitalModules: ModuleDefinitionInput[] = [
       tracking: 2.6,
     },
     pointDefense: true,
+  },
+  // --- Expansion modules: frigate/cruiser/capital multi-cell variants ---
+  {
+    id: "syn-twin-cutter",
+    faction: "Synthetic",
+    name: "Twin Cutter",
+    description:
+      "Twin sustained cutter beams on a common emitter mounting. One band above the single Cutter Lance's pulse — a 2×1 battery the Collective's cruiser line brings to bear for stripping shields and drones.",
+    category: "weapon",
+    // 600 MW beam (BEAM_POWER_W.beam, one band above the cutter lance's 300 MW
+    // pulse). Mass derived from beam power at the precision emitter density.
+    // mass = 3500 × (6e8 / 4e7) = 52,500 kg (~53 t).
+    mass: beamWeaponMass(TWIN_CUTTER_POWER_W, BEAM_DENSITY),
+    cost: 140,
+    // A beam's draw IS its delivered optical power.
+    powerDraw: TWIN_CUTTER_POWER_W,
+    crewRequired: 0,
+    techLevel: 3,
+    footprint: SYNTHETIC_FOOTPRINTS.twinCutter,
+    effect: {
+      kind: "weapon",
+      weaponType: "beam",
+      damage: beamDamageJoules(TWIN_CUTTER_POWER_W, TWIN_CUTTER_COOLDOWN) * 50,
+      range: BEAM_RANGE_M,
+      cooldown: TWIN_CUTTER_COOLDOWN,
+      projectileSpeed: 0,
+      projectileMass: 0,
+      tracking: 0,
+      shieldPiercing: 0.5,
+      armourPiercing: 0.15,
+      spread: 0,
+    },
+  },
+  {
+    id: "syn-targeting-bank",
+    faction: "Synthetic",
+    name: "Targeting Bank",
+    description:
+      "Twin precision cannons on a traversing bank. Twice the throw weight of the single Targeting Cannon at the same muzzle velocity and a tighter tracking cluster — the Collective's frigate-grade kinetic upgrade.",
+    category: "weapon",
+    // 2 kg @ 4 km/s (twice the autocannon mass band). Mass derived from muzzle
+    // energy at the mid-density machined-alloy weapon density.
+    // mass = 4200 × (1.6e7 / 2e7) = 3,360 kg (~3.4 t).
+    mass: kineticWeaponMass(
+      TARGETING_BANK_MASS_KG,
+      TARGETING_BANK_MUZZLE_MS,
+      WEAPON_DENSITY,
+    ),
+    cost: 110,
+    // Two barrels draw twice the single cannon's capacitor-recharge load.
+    powerDraw: 2 * MODULE_POWER_DRAW_W.kineticWeapon,
+    crewRequired: 0,
+    techLevel: 2,
+    footprint: SYNTHETIC_FOOTPRINTS.targetingBank,
+    effect: {
+      kind: "weapon",
+      weaponType: "cannon",
+      damage: kineticDamageJoules(TARGETING_BANK_MASS_KG, TARGETING_BANK_MUZZLE_MS) * 50,
+      range: kineticRangeM(TARGETING_BANK_MUZZLE_MS),
+      cooldown: TARGETING_BANK_COOLDOWN,
+      projectileSpeed: projectileSpeedMPerTick(TARGETING_BANK_MUZZLE_MS),
+      projectileMass: TARGETING_BANK_MASS_KG,
+      tracking: 1.8,
+      shieldPiercing: 0.2,
+      armourPiercing: 0.35,
+      spread: 0.008,
+      turretArc: Math.PI / 2,
+      turretTurnRate: 0.07,
+      powered: false,
+      guided: false,
+      ammoCapacity: 440,
+    },
+  },
+  {
+    id: "syn-tetromino-coilgun",
+    faction: "Synthetic",
+    name: "Tetromino Coilgun",
+    description:
+      "A T-shaped three-barrel coilgun array. One more barrel over the Coilgun Bank on a traversing mount, tripling the dreadnought's alpha strike with the same electromagnetic reach.",
+    category: "weapon",
+    // 20 kg @ 8 km/s (twice the single Coilgun's 10 kg railgun slug). Mass
+    // derived from muzzle energy at the mid-density machined-alloy weapon
+    // density.
+    // mass = 4200 × (6.4e8 / 2e7) = 134,400 kg (~134 t).
+    mass: kineticWeaponMass(
+      TETROMINO_COILGUN_MASS_KG,
+      TETROMINO_COILGUN_MUZZLE_MS,
+      WEAPON_DENSITY,
+    ),
+    cost: 280,
+    // Three barrels draw three times the single coilgun's capacitor load.
+    powerDraw: 2 * MODULE_POWER_DRAW_W.kineticWeapon,
+    crewRequired: 0,
+    techLevel: 4,
+    footprint: SYNTHETIC_FOOTPRINTS.tetrominoCoilgun,
+    effect: {
+      kind: "weapon",
+      weaponType: "cannon",
+      damage: kineticDamageJoules(TETROMINO_COILGUN_MASS_KG, TETROMINO_COILGUN_MUZZLE_MS) * 50,
+      range: kineticRangeM(TETROMINO_COILGUN_MUZZLE_MS),
+      cooldown: TETROMINO_COILGUN_COOLDOWN,
+      projectileSpeed: projectileSpeedMPerTick(TETROMINO_COILGUN_MUZZLE_MS),
+      projectileMass: TETROMINO_COILGUN_MASS_KG,
+      tracking: 1.3,
+      shieldPiercing: 0.3,
+      armourPiercing: 0.65,
+      spread: 0.005,
+      turretArc: Math.PI / 2,
+      turretTurnRate: 0.07,
+      powered: false,
+      guided: false,
+      ammoCapacity: 360,
+    },
+  },
+  {
+    id: "syn-mine-drone-layer",
+    faction: "Synthetic",
+    name: "Mine-Drone Layer",
+    description:
+      "An L-shaped three-cell mine-emplacement bay. Precision-laid proximity mines the Collective drops in an enemy's path — a role the single-cell catalogue leaves open.",
+    category: "weapon",
+    // Three cells of precision emplacement mechanism, each 0.8× a single
+    // Targeting Cannon's derived mechanism mass.
+    mass: MINE_DRONE_LAYER_MASS,
+    cost: 200,
+    powerDraw: MODULE_POWER_DRAW_W.ordnanceWeapon,
+    crewRequired: 0,
+    techLevel: 3,
+    footprint: SYNTHETIC_FOOTPRINTS.mineDroneLayer,
+    effect: {
+      kind: "mineLayer",
+      mineCount: 8,
+      mineDamage: 60,
+      mineRadius: 90,
+      layCooldown: 180,
+      armingDelay: 10,
+    },
+  },
+  {
+    id: "syn-tactical-blink",
+    faction: "Synthetic",
+    name: "Tactical Blink Drive",
+    description:
+      "A 2×1 phase-shift coil bank that teleports the hull a short distance on a short cooldown. The Collective's first blink drive — a combat reposition the single-cell catalogue does not field.",
+    category: "propulsion",
+    // Two cells of phase-shift coils, each 0.2× a single precision-drive
+    // mechanism (a blink coil is a fraction of a real engine's throw weight).
+    mass: TACTICAL_BLINK_MASS,
+    cost: 150,
+    powerDraw: MODULE_POWER_DRAW_W.drive,
+    crewRequired: 0,
+    techLevel: 3,
+    footprint: SYNTHETIC_FOOTPRINTS.tacticalBlink,
+    effect: {
+      kind: "blink",
+      mode: "tactical",
+      jumpRange: 200,
+      cooldown: 60,
+    },
+  },
+  {
+    id: "syn-eccm-bastion",
+    faction: "Synthetic",
+    name: "ECCM Bastion",
+    description:
+      "A 2×2 block of four ECCM suites. Capital-grade counter-jamming that nearly fully restores weapon tracking and missile lock stripped by enemy ECM — a role the single-cell suite only partially covers.",
+    category: "system",
+    // Four cells of dense electronics at the single ECCM Suite's derived
+    // 12,000 kg per cell.
+    // mass = 4 × 12,000 = 48,000 kg (~48 t).
+    mass: ECCM_BASTION_MASS,
+    cost: 240,
+    // Four cells draw four times the single suite's sensor-class load.
+    powerDraw: 4 * MODULE_POWER_DRAW_W.sensor,
+    crewRequired: 0,
+    techLevel: 4,
+    footprint: SYNTHETIC_FOOTPRINTS.eccmBastion,
+    effect: {
+      kind: "eccm",
+      trackingRestore: 0.9,
+    },
+  },
+  {
+    id: "syn-sensor-bastion",
+    faction: "Synthetic",
+    name: "Sensor Bastion",
+    description:
+      "An L-tromino of three dense active-sensor arrays. Wider detection range and the same cloak-piercing active sweep the Collective uses to catch stealth raiders — a capital-grade upgrade over the single array.",
+    category: "system",
+    // Three cells of dense optics + electronics at the single Active Sensor
+    // Array's derived 16,000 kg per cell.
+    // mass = 3 × 16,000 = 48,000 kg (~48 t).
+    mass: SENSOR_BASTION_MASS,
+    cost: 240,
+    // Three cells draw three times the single array's sensor-class load.
+    powerDraw: 3 * MODULE_POWER_DRAW_W.sensor,
+    crewRequired: 0,
+    techLevel: 4,
+    footprint: SYNTHETIC_FOOTPRINTS.sensorBastion,
+    effect: {
+      kind: "sensor",
+      sensorType: "omni",
+      detectionRange: 1.5 * 600 * KM_DETECTION_RANGE_SCALE,
+      arc: SENSOR_OMNI_ARC,
+      bearing: 0,
+      nebulaImmune: true,
+      pierceCloak: true,
+      mode: "active",
+      sweepRate: 0.15,
+      emitStrength: 1000 * ACTIVE_SENSOR_EMISSION_SCALE,
+      gain: 3.0,
+    },
+  },
+  {
+    id: "syn-phalanx-deflector",
+    faction: "Synthetic",
+    name: "Phalanx Deflector",
+    description:
+      "A 2×2 block of four capital momentum-screen projectors. Arrests three times the single Grid Deflector's impulse before collapsing, buying the point-defence net the time it needs to exhaust an attacker's volley.",
+    category: "defence",
+    // Three times the single Grid Deflector's light-band momentum capacity.
+    // Mass derived from momentum capacity at the Synthetic shield density.
+    mass: deflectorMass(3 * DEFLECTOR_CAPACITY_KG_MPS.light, SHIELD_DENSITY),
+    cost: 240,
+    // Three cells of projector draw three times the single deflector's
+    // recharge wattage.
+    powerDraw: 3 * DEFLECTOR_RECHARGE_KG_MPS_PER_S.light,
+    crewRequired: 0,
+    techLevel: 4,
+    footprint: SYNTHETIC_FOOTPRINTS.phalanxDeflector,
+    effect: {
+      kind: "deflector",
+      capacity: 3 * DEFLECTOR_CAPACITY_KG_MPS.light,
+      rechargeRate: 3 * DEFLECTOR_RECHARGE_KG_MPS_PER_S.light,
+      rechargeDelay: 60,
+    },
+  },
+  {
+    id: "syn-drone-launch-deck",
+    faction: "Synthetic",
+    name: "Drone Launch Deck",
+    description:
+      "A 1×3 fabrication and launch deck. Three cells of precision manufacturing feed a twelve-drone swarm the Collective's flagship puts into space before the lines close — the heaviest drone capability in the catalogue.",
+    category: "weapon",
+    // Three cells of fabrication + launch mechanism at the single Drone
+    // Hangar's derived 84,000 kg per cell.
+    // mass = 3 × 84,000 = 252,000 kg (~252 t).
+    mass: DRONE_LAUNCH_DECK_MASS,
+    cost: 450,
+    // Three cells draw three times the single hangar's ordnance-handling load.
+    powerDraw: 3 * MODULE_POWER_DRAW_W.ordnanceWeapon,
+    crewRequired: 0,
+    techLevel: 5,
+    footprint: SYNTHETIC_FOOTPRINTS.droneLaunchDeck,
+    effect: {
+      kind: "hangar",
+      droneCount: 12,
+      launchCooldown: 70,
+      droneHp: 45,
+      droneDamage: 5 * 50,
+      droneRange: 100,
+      droneSpeed: 5,
+    },
   },
 ];

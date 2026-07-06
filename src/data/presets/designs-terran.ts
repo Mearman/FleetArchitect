@@ -88,29 +88,38 @@ export const terranDesigns: ShipDesignInput[] = [
     // central magazine (G) fed by a floor corridor, twin fusion reactors, crew
     // quarters, and an engine bank. The Mk I shields protect the flanks, and a
     // light armour shoulder (#) caps each prow corner ahead of the railguns.
-    grid: subdivideGrid(withEdges(gridFromMap([
-      ".>JsRL##",
-      ".EFC~YWR",
-      "EFFCGv#R",
-      ".EFC~sWR",
-      ".<JeRL##",
-    ]), [
-      { col: 2, row: 0, dir: "e", kind: "wall" },
-      { col: 2, row: 1, dir: "e", kind: "door" },
-      { col: 2, row: 2, dir: "e", kind: "wall" },
-      { col: 2, row: 3, dir: "e", kind: "door" },
-      { col: 2, row: 4, dir: "e", kind: "wall" },
-      { col: 3, row: 0, dir: "e", kind: "wall" },
-      { col: 3, row: 1, dir: "e", kind: "wall" },
-      { col: 3, row: 2, dir: "e", kind: "door" },
-      { col: 3, row: 3, dir: "e", kind: "wall" },
-      { col: 3, row: 4, dir: "e", kind: "wall" },
-      { col: 4, row: 0, dir: "e", kind: "wall" },
-      { col: 4, row: 1, dir: "e", kind: "door" },
-      { col: 4, row: 2, dir: "e", kind: "wall" },
-      { col: 4, row: 3, dir: "e", kind: "door" },
-      { col: 4, row: 4, dir: "e", kind: "wall" },
-    ]), F_GUNSHIP),
+    grid: mountMultiCell(
+      subdivideGrid(withEdges(gridFromMap([
+        ".>JsRL##",
+        ".EFC~YWR",
+        "EFFCGv#R",
+        ".EFC~sWR",
+        ".<JeRL##",
+      ]), [
+        { col: 2, row: 0, dir: "e", kind: "wall" },
+        { col: 2, row: 1, dir: "e", kind: "door" },
+        { col: 2, row: 2, dir: "e", kind: "wall" },
+        { col: 2, row: 3, dir: "e", kind: "door" },
+        { col: 2, row: 4, dir: "e", kind: "wall" },
+        { col: 3, row: 0, dir: "e", kind: "wall" },
+        { col: 3, row: 1, dir: "e", kind: "wall" },
+        { col: 3, row: 2, dir: "e", kind: "door" },
+        { col: 3, row: 3, dir: "e", kind: "wall" },
+        { col: 3, row: 4, dir: "e", kind: "wall" },
+        { col: 4, row: 0, dir: "e", kind: "wall" },
+        { col: 4, row: 1, dir: "e", kind: "door" },
+        { col: 4, row: 2, dir: "e", kind: "wall" },
+        { col: 4, row: 3, dir: "e", kind: "door" },
+        { col: 4, row: 4, dir: "e", kind: "wall" },
+      ]), F_GUNSHIP),
+      F_GUNSHIP,
+      [
+        // Twin Pulse Array on the central deck corridor (wingtip battery
+        // upgrade), Twin Rail Turret on the lower deck corridor.
+        [4, 1, "ter-twin-pulse-array", TERRAN_FOOTPRINTS.twinPulseArray],
+        [4, 3, "ter-twin-rail-turret", TERRAN_FOOTPRINTS.twinRailTurret],
+      ],
+    ),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -126,29 +135,36 @@ export const terranDesigns: ShipDesignInput[] = [
     // armour anchor) and lets it screen a Leviathan against railgun spam. No
     // finite-ammo weapons means no magazine required; fusion reactors and a deep
     // crew and engine block run it.
-    grid: subdivideGrid(withEdges(gridFromMap([
-      "#>JWS~L#",
-      ".EFCYS~L",
-      "EEFFCYvL",
-      ".EFCSS~L",
-      "#<JeWS~#",
-    ]), [
-      { col: 2, row: 0, dir: "e", kind: "wall" },
-      { col: 2, row: 1, dir: "e", kind: "door" },
-      { col: 2, row: 2, dir: "e", kind: "wall" },
-      { col: 2, row: 3, dir: "e", kind: "door" },
-      { col: 2, row: 4, dir: "e", kind: "wall" },
-      { col: 3, row: 0, dir: "e", kind: "wall" },
-      { col: 3, row: 1, dir: "e", kind: "door" },
-      { col: 3, row: 2, dir: "e", kind: "wall" },
-      { col: 3, row: 3, dir: "e", kind: "door" },
-      { col: 3, row: 4, dir: "e", kind: "wall" },
-      { col: 5, row: 0, dir: "e", kind: "wall" },
-      { col: 5, row: 1, dir: "e", kind: "door" },
-      { col: 5, row: 2, dir: "e", kind: "wall" },
-      { col: 5, row: 3, dir: "e", kind: "door" },
-      { col: 5, row: 4, dir: "e", kind: "wall" },
-    ]), F_BULWARK),
+    grid: mountMultiCell(
+      subdivideGrid(withEdges(gridFromMap([
+        "#>JWS~L#",
+        ".EFCYS~L",
+        "EEFFCYvL",
+        ".EFCSS~L",
+        "#<JeWS~#",
+      ]), [
+        { col: 2, row: 0, dir: "e", kind: "wall" },
+        { col: 2, row: 1, dir: "e", kind: "door" },
+        { col: 2, row: 2, dir: "e", kind: "wall" },
+        { col: 2, row: 3, dir: "e", kind: "door" },
+        { col: 2, row: 4, dir: "e", kind: "wall" },
+        { col: 3, row: 0, dir: "e", kind: "wall" },
+        { col: 3, row: 1, dir: "e", kind: "door" },
+        { col: 3, row: 2, dir: "e", kind: "wall" },
+        { col: 3, row: 3, dir: "e", kind: "door" },
+        { col: 3, row: 4, dir: "e", kind: "wall" },
+        { col: 5, row: 0, dir: "e", kind: "wall" },
+        { col: 5, row: 1, dir: "e", kind: "door" },
+        { col: 5, row: 2, dir: "e", kind: "wall" },
+        { col: 5, row: 3, dir: "e", kind: "door" },
+        { col: 5, row: 4, dir: "e", kind: "wall" },
+      ]), F_BULWARK),
+      F_BULWARK,
+      [
+        // Damage Control Bay on the upper deck corridor near the reactor bay.
+        [6, 1, "ter-damage-control-bay", TERRAN_FOOTPRINTS.damageControlBay],
+      ],
+    ),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -165,26 +181,34 @@ export const terranDesigns: ShipDesignInput[] = [
     // corridor feeds all railguns; slow, unyielding, the thing you park in
     // front of a Leviathan. This is the clean split with the Bulwark: Bulwark =
     // shields + mobility, Aegis = plate + momentum screen.
-    grid: subdivideGrid(withEdges(gridFromMap([
-      "#>J~~YR##",
-      ".EFCCG#R#",
-      "EXEFWGvY#",
-      ".EFCCG#R#",
-      "#<JeW~#e#",
-    ]), [
-      { col: 2, row: 0, dir: "e", kind: "wall" },
-      { col: 2, row: 1, dir: "e", kind: "door" },
-      { col: 2, row: 2, dir: "e", kind: "wall" },
-      { col: 2, row: 3, dir: "e", kind: "door" },
-      { col: 2, row: 4, dir: "e", kind: "wall" },
-      { col: 4, row: 0, dir: "e", kind: "wall" },
-      { col: 4, row: 1, dir: "e", kind: "door" },
-      { col: 4, row: 2, dir: "e", kind: "wall" },
-      { col: 4, row: 3, dir: "e", kind: "door" },
-      { col: 4, row: 4, dir: "e", kind: "wall" },
-      { col: 5, row: 0, dir: "e", kind: "door" },
-      { col: 5, row: 2, dir: "e", kind: "door" },
-    ]), F_AEGIS),
+    grid: mountMultiCell(
+      subdivideGrid(withEdges(gridFromMap([
+        "#>J~~YR##",
+        ".EFCCG#R#",
+        "EXEFWGvY#",
+        ".EFCCG#R#",
+        "#<JeW~#e#",
+      ]), [
+        { col: 2, row: 0, dir: "e", kind: "wall" },
+        { col: 2, row: 1, dir: "e", kind: "door" },
+        { col: 2, row: 2, dir: "e", kind: "wall" },
+        { col: 2, row: 3, dir: "e", kind: "door" },
+        { col: 2, row: 4, dir: "e", kind: "wall" },
+        { col: 4, row: 0, dir: "e", kind: "wall" },
+        { col: 4, row: 1, dir: "e", kind: "door" },
+        { col: 4, row: 2, dir: "e", kind: "wall" },
+        { col: 4, row: 3, dir: "e", kind: "door" },
+        { col: 4, row: 4, dir: "e", kind: "wall" },
+        { col: 5, row: 0, dir: "e", kind: "door" },
+        { col: 5, row: 2, dir: "e", kind: "door" },
+      ]), F_AEGIS),
+      F_AEGIS,
+      [
+        // Mine Layer Bank on the aft deck corridor — area-denial matching
+        // the Aegis's armour-anchor doctrine.
+        [5, 4, "ter-mine-layer-bank", TERRAN_FOOTPRINTS.mineLayerBank],
+      ],
+    ),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -199,26 +223,34 @@ export const terranDesigns: ShipDesignInput[] = [
     // reactor bay feeding all weapons; five crew quarters sustain the large crew
     // needed to man torpedoes and missiles; titanium armour plate (#) on the prow
     // shoulders and core, plus shields, protect the fragile innards.
-    grid: subdivideGrid(withEdges(gridFromMap([
-      "#>JeMM#.#",
-      ".EFCCEWTT",
-      "EXFGCv#TT",
-      ".EFCCEWTT",
-      "#<JeMM#.#",
-    ]), [
-      { col: 2, row: 0, dir: "e", kind: "wall" },
-      { col: 2, row: 1, dir: "e", kind: "door" },
-      { col: 2, row: 2, dir: "e", kind: "wall" },
-      { col: 2, row: 3, dir: "e", kind: "door" },
-      { col: 2, row: 4, dir: "e", kind: "wall" },
-      { col: 4, row: 0, dir: "e", kind: "wall" },
-      { col: 4, row: 1, dir: "e", kind: "door" },
-      { col: 4, row: 2, dir: "e", kind: "wall" },
-      { col: 4, row: 3, dir: "e", kind: "door" },
-      { col: 4, row: 4, dir: "e", kind: "wall" },
-      { col: 5, row: 1, dir: "e", kind: "door" },
-      { col: 5, row: 3, dir: "e", kind: "door" },
-    ]), F_TORPEDO),
+    grid: mountMultiCell(
+      subdivideGrid(withEdges(gridFromMap([
+        "#>Je~M#.#",
+        ".EFCCEWTT",
+        "EXFGCv#TT",
+        ".EFCCEWTT",
+        "#<JeMM#.#",
+      ]), [
+        { col: 2, row: 0, dir: "e", kind: "wall" },
+        { col: 2, row: 1, dir: "e", kind: "door" },
+        { col: 2, row: 2, dir: "e", kind: "wall" },
+        { col: 2, row: 3, dir: "e", kind: "door" },
+        { col: 2, row: 4, dir: "e", kind: "wall" },
+        { col: 4, row: 0, dir: "e", kind: "wall" },
+        { col: 4, row: 1, dir: "e", kind: "door" },
+        { col: 4, row: 2, dir: "e", kind: "wall" },
+        { col: 4, row: 3, dir: "e", kind: "door" },
+        { col: 4, row: 4, dir: "e", kind: "wall" },
+        { col: 5, row: 1, dir: "e", kind: "door" },
+        { col: 5, row: 3, dir: "e", kind: "door" },
+      ]), F_TORPEDO),
+      F_TORPEDO,
+      [
+        // Broadside Missile Bank on the freed prow missile cell — capital-grade
+        // alpha strike replacing the singleton wingtip rack.
+        [4, 0, "ter-broadside-missile-bank", TERRAN_FOOTPRINTS.broadsideMissileBank],
+      ],
+    ),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -250,10 +282,10 @@ export const terranDesigns: ShipDesignInput[] = [
     grid: mountMultiCell(
       subdivideGrid(withEdges(gridFromMap([
         "#>JWUTRL..#..",
+        ".EXCCT~RLO##.",
+        "EXFCCGvI~L###",
         ".EXCCTRRLO##.",
-        "EXFCCGvIRL###",
-        ".EXCCTRRLO##.",
-        "#<JeWSTRL.#..",
+        "#<JeW~TRL.#..",
       ]), [
         { col: 2, row: 0, dir: "e", kind: "wall" },
         { col: 2, row: 1, dir: "e", kind: "door" },
@@ -277,6 +309,14 @@ export const terranDesigns: ShipDesignInput[] = [
       F_LEVIATHAN,
       [
         [7, 2, "ter-spinal-lance", TERRAN_FOOTPRINTS.spinalLance],
+        // Light Spear Lance on the freed upper railgun cell — a fixed spinal
+        // secondary beam for the cruiser.
+        [6, 1, "ter-light-spear-lance", TERRAN_FOOTPRINTS.lightSpearLance],
+        // Flak Bastion on the freed prow railgun cell — capital PD coverage.
+        [8, 2, "ter-flak-bastion", TERRAN_FOOTPRINTS.flakBastion],
+        // Bulwark Shield Bank on the freed stern shield cell — capital-grade
+        // shield wall upgrading the Leviathan's Mk II.
+        [5, 4, "ter-bulwark-shield-bank", TERRAN_FOOTPRINTS.bulwarkShieldBank],
       ],
     ),
     createdAt: PRESET_TIME,
@@ -364,6 +404,12 @@ export const terranDesigns: ShipDesignInput[] = [
         [6, 4, "ter-bastion-shield", TERRAN_FOOTPRINTS.bastionShield],
         // Prow momentum screen: the two-cell Bulwark Deflector (k).
         [5, 0, "ter-bulwark-deflector", TERRAN_FOOTPRINTS.bulwarkDeflector],
+        // Plus-Section Fusion Core on the central keel deck corridor — a 7.5 GW
+        // advanced-fusion command core alongside the existing antimatter heart.
+        [6, 2, "ter-plus-reactor", TERRAN_FOOTPRINTS.plusReactor],
+        // Compass Drone Hangar on the lower-deck corridor — drone capability,
+        // a new doctrine angle for the Titan.
+        [6, 3, "ter-drone-hangar", TERRAN_FOOTPRINTS.droneHangar],
       ],
     ),
     createdAt: PRESET_TIME,

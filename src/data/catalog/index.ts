@@ -12,6 +12,7 @@ import { crystallineCapitalModules } from "./modules/crystalline-capital";
 import { foundryModules } from "./modules/foundry";
 import { foundryCapitalModules } from "./modules/foundry-capital";
 import { corsairModules } from "./modules/corsair";
+import { corsairCapitalModules } from "./modules/corsair-capital";
 import { syntheticModules } from "./modules/synthetic";
 import { syntheticCapitalModules } from "./modules/synthetic-capital";
 
@@ -40,6 +41,7 @@ const moduleData: ModuleDefinitionInput[] = [
   ...foundryModules,
   ...foundryCapitalModules,
   ...corsairModules,
+  ...corsairCapitalModules,
   ...syntheticModules,
   ...syntheticCapitalModules,
 ];

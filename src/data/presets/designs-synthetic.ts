@@ -54,13 +54,14 @@ export const syntheticDesigns: ShipDesignInput[] = [
     // flanked by an interceptor array and a sensor suite. Paired slug
     // reservoirs keep both weapons fed. Armour rails wrap the grid; an armour
     // cap seals the prow behind the gun battery.
-    grid: subdivideGrid(withEdges(syntheticGrid([
-      ".#####>",
-      "EXGCINe",
-      "EPGCRN#",
-      "EXGCINe",
-      ".#####<",
-    ]), [
+    grid: mountMultiCell(
+      subdivideGrid(withEdges(syntheticGrid([
+        ".#####>",
+        "EXGCINe",
+        "EPG~RN#",
+        "EXGCINe",
+        ".#####<",
+      ]), [
       // Drive | reactor bulkhead.
       { col: 0, row: 1, dir: "e", kind: "wall" },
       { col: 0, row: 2, dir: "e", kind: "door" },
@@ -78,6 +79,13 @@ export const syntheticDesigns: ShipDesignInput[] = [
       { col: 4, row: 2, dir: "e", kind: "door" },
       { col: 4, row: 3, dir: "e", kind: "wall" },
     ]), F_NODE),
+      F_NODE,
+      [
+        // Twin precision cannon bank replaces the centre-row targeting cannon
+        // — twice the throw weight at the same muzzle velocity.
+        [3, 2, "syn-targeting-bank", SYNTHETIC_FOOTPRINTS.targetingBank],
+      ],
+    ),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -143,6 +151,12 @@ export const syntheticDesigns: ShipDesignInput[] = [
         [4, 2, "syn-coilgun-bank", SYNTHETIC_FOOTPRINTS.coilgunBank],
         [6, 2, "syn-coordination-hub", SYNTHETIC_FOOTPRINTS.coordinationHub],
         [7, 2, "syn-interceptor-grid", SYNTHETIC_FOOTPRINTS.interceptorGrid],
+        // Twin sustained cutter beam on the upper deck corridor — the
+        // Collective's first capital-grade beam battery.
+        [2, 3, "syn-twin-cutter", SYNTHETIC_FOOTPRINTS.twinCutter],
+        // Tactical blink drive on the lower deck corridor — the Collective's
+        // first phase-shift repositioning drive.
+        [2, 1, "syn-tactical-blink", SYNTHETIC_FOOTPRINTS.tacticalBlink],
       ],
     ),
     createdAt: PRESET_TIME,
@@ -178,7 +192,7 @@ export const syntheticDesigns: ShipDesignInput[] = [
         ".###########>",
         "EX~GHAINRR##e",
         "EX~GJHAINR##e",
-        "TPMGADSLKAN#e",
+        "TPMGADSL~AN#e",
         "EX~GAHAINR##e",
         "EX~GHAINRR##e",
         ".###########<",
@@ -233,7 +247,18 @@ export const syntheticDesigns: ShipDesignInput[] = [
         [5, 3, "syn-drone-hangar-heavy", SYNTHETIC_FOOTPRINTS.droneHangarHeavy],
         [6, 3, "syn-shield-hub", SYNTHETIC_FOOTPRINTS.shieldHub],
         [7, 3, "syn-interceptor-grid", SYNTHETIC_FOOTPRINTS.interceptorGrid],
-        [8, 3, "syn-coilgun-bank", SYNTHETIC_FOOTPRINTS.coilgunBank],
+        // T-tetromino coilgun replaces the 2-cell coilgun bank — one more
+        // barrel, a heavier alpha strike at the same electromagnetic reach.
+        [8, 3, "syn-tetromino-coilgun", SYNTHETIC_FOOTPRINTS.tetrominoCoilgun],
+        // Capital ECCM bastion on the upper keel deck.
+        [2, 2, "syn-eccm-bastion", SYNTHETIC_FOOTPRINTS.eccmBastion],
+        // Capital sensor bastion on the lower keel deck.
+        [2, 4, "syn-sensor-bastion", SYNTHETIC_FOOTPRINTS.sensorBastion],
+        // Y8 phalanx-deflector and Y9 drone-launch-deck remain in the catalogue
+        // but are not mounted here: the Nexus Armada fleet budget (20 000 pts)
+        // cannot absorb five capital additions on one hull. The two omitted are
+        // the most redundant — a second defence screen alongside the existing
+        // shield-hub, and a second drone bay alongside the drone-hangar-heavy.
       ],
     ),
     createdAt: PRESET_TIME,

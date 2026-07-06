@@ -7,6 +7,7 @@ type ShipDesignInput = input<typeof ShipDesign>;
 import { corsairGrid, mountMultiCell, PRESET_TIME, withEdges } from "@/data/presets/tokens";
 import { subdivideGrid } from "@/domain/shipgen";
 import { CORSAIR_FOOTPRINTS } from "@/data/catalog/modules/corsair";
+import { CORSAIR_CAPITAL_FOOTPRINTS } from "@/data/catalog/modules/corsair-capital";
 
 // Corsair Reavers designs — asymmetric scavenger hulls. One heavy side, one
 // light side; ragged silhouettes; missile volleys and scrambled ECM. Strike
@@ -61,14 +62,27 @@ export const corsairDesigns: ShipDesignInput[] = [
     // containment), which the raid doctrine — frequent retargeting, sparse crew
     // — can't spare. The crew door bug that once forced this choice is fixed
     // (advanceCrew now reopens sealed doors), but the responsiveness trade-off
-    // makes open-plan the right raider design regardless.
-    grid: subdivideGrid(corsairGrid([
-      ".####>.",
-      "ECF##Me",
-      "EFM~GJe",
-      "#CFMGe.",
-      "..##<..",
-    ]), F_REAVER),
+    // makes open-plan the right raider design regardless. The Reaver also fields
+    // a Twin Raid Cannon (2-cell kinetic battery) on the central deck bay — a
+    // fighter-mountable module hosted here because the Cutlass fighter has no
+    // deck bay to receive it.
+    grid: mountMultiCell(
+      subdivideGrid(corsairGrid([
+        ".####>.",
+        "ECF##Me",
+        "EFM~GJe",
+        "#CFMGe.",
+        "..##<..",
+      ]), F_REAVER),
+      F_REAVER,
+      [
+        // Twin raid cannon: a 2-cell kinetic battery on the central deck bay.
+        // (Spec put K3 on the Cutlass fighter, which has no `~` cell and no
+        // raid-cannon cell to replace; the Reaver is the frigate with a ready
+        // deck bay for the twin cannon.)
+        [3, 2, "cor-twin-raid-cannon", CORSAIR_CAPITAL_FOOTPRINTS.twinRaidCannon],
+      ],
+    ),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -86,15 +100,15 @@ export const corsairDesigns: ShipDesignInput[] = [
     // find their rhythm. A raid cannon (R) per broadside gives sustained fire
     // once the missile magazines run dry, and a holo decoy launcher (L) on
     // the lower stern covers its withdrawal. The cruiser scales up to capital
-    // multi-cell kit: a Broadside Swarm Rack (Y, twin-rail missile array on a
-    // broadside mount) and a Heavy Raid Cannon (H, heavyAutocannon-band slug).
-    // Each anchor's covered cell is installed by `mountMultiCell` after
-    // subdivision.
+    // multi-cell kit: a Heavy Swarm Rack (3-cell L-tromino broadside array), a
+    // Heavy Raid Cannon (H, heavyAutocannon-band slug), and a Drone Spawner
+    // (the Reavers' first carrier bay) on the prow deck. Each anchor's covered
+    // cell is installed by `mountMultiCell` after subdivision.
     grid: mountMultiCell(
       subdivideGrid(withEdges(corsairGrid([
         ".##>######",
         "ECF~CMH###",
-        "EFMGCYMR##",
+        "EFMGC~MR##",
         "#CFBGWM##.",
         "##FM<GL##.",
         ".##e#####.",
@@ -121,10 +135,14 @@ export const corsairDesigns: ShipDesignInput[] = [
     ]), F_WARBRINGER),
       F_WARBRINGER,
       [
-        // Twin-rail broadside missile array on a broadside mount.
-        [5, 2, "cor-broadside-swarm-rack", CORSAIR_FOOTPRINTS.broadsideSwarmRack],
+        // Heavy swarm rack (L-tromino) replacing the twin-rail broadside array
+        // for a heavier 3-cell volley; the Y token at (5,2) is opened to a deck
+        // anchor for the heavy rack.
+        [5, 2, "cor-heavy-swarm-rack", CORSAIR_CAPITAL_FOOTPRINTS.heavySwarmRack],
         // Heavy autocannon replacing a raid cannon for harder sustained fire.
         [6, 1, "cor-heavy-raid-cannon", CORSAIR_FOOTPRINTS.heavyRaidCannon],
+        // Drone spawner: the Reavers' first carrier capability, on the prow bay.
+        [3, 1, "cor-drone-spawner", CORSAIR_CAPITAL_FOOTPRINTS.droneSpawner],
       ],
     ),
     createdAt: PRESET_TIME,
@@ -145,28 +163,41 @@ export const corsairDesigns: ShipDesignInput[] = [
     // forward brake (e), lateral (>/<) — let it hold position long enough to
     // board, then scatter. Fields the previously unshipped cor-boarding-pod
     // as its primary armament. Implies raid doctrine (aggressive, short-range,
-    // scatter). Grid (9 cols × 5 rows), subdivided ×3 → 27 m frigate.
-    grid: subdivideGrid(withEdges(corsairGrid([
-      ".####>###",
-      "ECFC#MRe#",
-      "EFM~GJOe#",
-      "#CFMGRe#.",
-      "..##<O###",
-    ]), [
-      { col: 1, row: 1, dir: "e", kind: "door" },
-      { col: 1, row: 2, dir: "e", kind: "wall" },
-      { col: 1, row: 3, dir: "e", kind: "door" },
-      { col: 2, row: 1, dir: "s", kind: "wall" },
-      { col: 2, row: 3, dir: "n", kind: "wall" },
-      { col: 2, row: 3, dir: "e", kind: "wall" },
-      { col: 2, row: 2, dir: "e", kind: "door" },
-      { col: 3, row: 2, dir: "e", kind: "door" },
-      { col: 3, row: 3, dir: "e", kind: "wall" },
-      { col: 5, row: 1, dir: "e", kind: "wall" },
-      { col: 5, row: 2, dir: "e", kind: "door" },
-      { col: 4, row: 4, dir: "n", kind: "door" },
-      { col: 6, row: 3, dir: "e", kind: "wall" },
-    ]), F_MARAUDER),
+    // scatter). The frigate also fields the new capital kit: a Salvage Cutter
+    // (the Reavers' first beam) on the central deck bay and a Salvage Magazine
+    // Vault (3-cell) replacing the standard magazine. Grid (9 cols × 5 rows),
+    // subdivided ×3 → 27 m frigate.
+    grid: mountMultiCell(
+      subdivideGrid(withEdges(corsairGrid([
+        ".####>###",
+        "ECFC#MRe#",
+        "EFM~~JOe#",
+        "#CFMGRe#.",
+        "..##<O###",
+      ]), [
+        { col: 1, row: 1, dir: "e", kind: "door" },
+        { col: 1, row: 2, dir: "e", kind: "wall" },
+        { col: 1, row: 3, dir: "e", kind: "door" },
+        { col: 2, row: 1, dir: "s", kind: "wall" },
+        { col: 2, row: 3, dir: "n", kind: "wall" },
+        { col: 2, row: 3, dir: "e", kind: "wall" },
+        { col: 2, row: 2, dir: "e", kind: "door" },
+        { col: 3, row: 2, dir: "e", kind: "door" },
+        { col: 3, row: 3, dir: "e", kind: "wall" },
+        { col: 5, row: 1, dir: "e", kind: "wall" },
+        { col: 5, row: 2, dir: "e", kind: "door" },
+        { col: 4, row: 4, dir: "n", kind: "door" },
+        { col: 6, row: 3, dir: "e", kind: "wall" },
+      ]), F_MARAUDER),
+      F_MARAUDER,
+      [
+        // Salvage cutter beam: the Reavers' first beam, on the central deck bay.
+        [3, 2, "cor-salvage-cutter", CORSAIR_CAPITAL_FOOTPRINTS.salvageCutter],
+        // Salvage magazine vault: a 3-cell vault replacing the standard magazine
+        // (the G token at (4,2) is opened to a deck anchor for the vault).
+        [4, 2, "cor-salvage-magazine-vault", CORSAIR_CAPITAL_FOOTPRINTS.salvageMagazineVault],
+      ],
+    ),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -191,9 +222,11 @@ export const corsairDesigns: ShipDesignInput[] = [
     // The apex hull fields the capital multi-cell kit: a Broadside Swarm Rack
     // (Y, twin-rail missile array on a broadside mount), a Heavy Raid Cannon
     // (H, heavyAutocannon-band slug), an Overdrive Reactor (X, advanced-fusion
-    // command core), and an ECM Scrambler Array (U, wide-aperture jammer).
-    // Each anchor's covered cell is installed by `mountMultiCell` after
-    // subdivision.
+    // command core), and an ECM Scrambler Array (U, wide-aperture jammer), plus
+    // a Raider Shield Bastion (2×2 capital bubble), a Plus Scrambler Hub
+    // (5-cell ECM cross-roads), and a Triple Raid Drive (1×3 thrust-train) on
+    // the lower deck bays. Each anchor's covered cell is installed by
+    // `mountMultiCell` after subdivision.
     grid: mountMultiCell(
       subdivideGrid(withEdges(corsairGrid([
         "..##>########",
@@ -237,6 +270,17 @@ export const corsairDesigns: ShipDesignInput[] = [
         [2, 3, "cor-overdrive-reactor", CORSAIR_FOOTPRINTS.overdriveReactor],
         // Wide-aperture ECM jammer array replacing the single scrambler.
         [7, 3, "cor-scrambler-array", CORSAIR_FOOTPRINTS.scramblerArray],
+        // Raider shield bastion: a 2×2 capital shield bubble on the lower deck
+        // bay. (The spec referenced a prow shield cell that does not exist in
+        // this grid; the Galleon has no shield module, so this adds one.)
+        [5, 4, "cor-raider-shield-bastion", CORSAIR_CAPITAL_FOOTPRINTS.raiderShieldBastion],
+        // Plus scrambler hub: a wide-aperture 5-cell ECM cross-roads on the
+        // central keel deck bay.
+        [4, 2, "cor-plus-scrambler-hub", CORSAIR_CAPITAL_FOOTPRINTS.plusScramblerHub],
+        // Triple raid drive: a 3-cell thrust-train on the lower keel deck bay.
+        // (The spec referenced an aft drive-bank cell that does not exist; this
+        // adds a triple drive alongside the existing stern drives.)
+        [4, 5, "cor-raider-drive-triple", CORSAIR_CAPITAL_FOOTPRINTS.raiderDriveTriple],
       ],
     ),
     createdAt: PRESET_TIME,

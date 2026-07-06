@@ -73,19 +73,19 @@ import { poweredMotorBurnTicks, poweredMotorThrustMPerS2 } from "../ordnance-mot
 // ---------------------------------------------------------------------------
 
 /** Kinetic weapon mechanism density (kg/m³): salvaged turrets, lighter. */
-const WEAPON_DENSITY = 2800;
+export const WEAPON_DENSITY = 2800;
 /** Shield projector density (kg/m³): scavenged field generators. */
-const SHIELD_DENSITY = 1500;
+export const SHIELD_DENSITY = 1500;
 /** Engine density (kg/m³): salvaged nozzles, lighter. */
-const ENGINE_DENSITY = 2500;
+export const ENGINE_DENSITY = 2500;
 /** Reactor core + shielding density (kg/m³): patched-together containment. */
-const REACTOR_DENSITY = 3000;
+export const REACTOR_DENSITY = 3000;
 /** Crew quarters density (kg/m³): cramped berths, mostly air. */
-const CREW_DENSITY = 700;
+export const CREW_DENSITY = 700;
 /** Magazine density (kg/m³): ordnance stores in scrap bays. */
-const MAGAZINE_DENSITY = 4000;
+export const MAGAZINE_DENSITY = 4000;
 /** Sensor / comms / stealth density (kg/m³): scavenged electronics. */
-const SENSOR_DENSITY = 1200;
+export const SENSOR_DENSITY = 1200;
 
 // ---------------------------------------------------------------------------
 // Weapon damage, range, cooldown and projectile speed are DERIVED from the
@@ -136,7 +136,7 @@ const SWARM_MISSILE_MASS_KG = PROJECTILE_MASS_KG.autocannon;
 const SWARM_MISSILE_CRUISE_MS = MUZZLE_VELOCITY_M_PER_S.autocannon / 2;
 /** Corsair swarm-missile warhead yield (J) — authored catalogue content: a
  *  light saturation warhead, lowest per-hit yield, fired in volleys. */
-const SWARM_MISSILE_WARHEAD_J = 8e7;
+export const SWARM_MISSILE_WARHEAD_J = 8e7;
 /**
  * Corsair missile finite-burn motors — DERIVED from the missile burn-time band.
  * A raider missile (cruise 2000 m/s, 40 s burn): thrust 30 m/s², burn 1200 ticks.

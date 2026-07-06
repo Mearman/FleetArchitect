@@ -128,6 +128,10 @@ export const foundryDesigns: ShipDesignInput[] = [
       [
         [9, 3, "fnd-magazine-bunker", FOUNDRY_FOOTPRINTS.magazineBunker],
         [5, 3, "fnd-repair-bastion", FOUNDRY_FOOTPRINTS.repairBastion],
+        // Repair lathe: an L-tromino welder cluster running alongside the
+        // damage-control bastion. (The gauss turret bank was relocated to the
+        // Cauldron — the Battleram's crew headroom takes only one of the two.)
+        [5, 2, "fnd-repair-lathe", FOUNDRY_FOOTPRINTS.repairLathe],
       ],
     ),
     createdAt: PRESET_TIME,
@@ -215,6 +219,15 @@ export const foundryDesigns: ShipDesignInput[] = [
         // Flanking momentum screens: 2×2 Bulwark Bastions (N) fore and aft.
         [8, 3, "fnd-bulwark-bastion", FOUNDRY_FOOTPRINTS.bulwarkBastion],
         [8, 5, "fnd-bulwark-bastion", FOUNDRY_FOOTPRINTS.bulwarkBastion],
+        // Twin siege mortar: a 2×2 capital plasma battery alongside the
+        // siege-plasma battery — the apex alpha strike.
+        [7, 2, "fnd-twin-siege-mortar", FOUNDRY_FOOTPRINTS.twinSiegeMortar],
+        // Plus-section forge core: a five-cell advanced-fusion command cross
+        // at the central keel deck cross-roads, alongside the antimatter core.
+        [7, 4, "fnd-plus-forge-core", FOUNDRY_FOOTPRINTS.plusForgeCore],
+        // Heavy magazine bunker: a 2×2 blast-door reserve feeding the
+        // dreadnought's siege battery through a long slugging match.
+        [7, 6, "fnd-magazine-bunker-heavy", FOUNDRY_FOOTPRINTS.magazineBunkerHeavy],
       ],
     ),
     createdAt: PRESET_TIME,
@@ -229,26 +242,37 @@ export const foundryDesigns: ShipDesignInput[] = [
     // Frigate PD escort: flak batteries (L, fnd-flak-battery) flank an
     // autocannon (A) to shred incoming ordnance so the slabs reach range.
     // Repair bay (W), magazine (G), balanced drives. Grid 7×5, ×3 → 21 m.
-    grid: subdivideGrid(withEdges(foundryGrid([
-      ".###>##",
-      "ECFWL~#",
-      "CFAGLGe",
-      "ECFWL~#",
-      ".###<##",
-    ]), [
-      { col: 0, row: 1, dir: "e", kind: "wall" },
-      { col: 0, row: 2, dir: "e", kind: "door" },
-      { col: 0, row: 3, dir: "e", kind: "wall" },
-      { col: 1, row: 1, dir: "e", kind: "wall" },
-      { col: 1, row: 2, dir: "e", kind: "door" },
-      { col: 1, row: 3, dir: "e", kind: "wall" },
-      { col: 2, row: 1, dir: "e", kind: "wall" },
-      { col: 2, row: 2, dir: "e", kind: "door" },
-      { col: 2, row: 3, dir: "e", kind: "wall" },
-      { col: 3, row: 1, dir: "e", kind: "wall" },
-      { col: 3, row: 2, dir: "e", kind: "door" },
-      { col: 3, row: 3, dir: "e", kind: "wall" },
-    ]), F_CRUCIBLE),
+    grid: mountMultiCell(
+      subdivideGrid(withEdges(foundryGrid([
+        ".###>##",
+        "ECFWL~#",
+        "CFAGLGe",
+        "ECFWL~#",
+        ".###<##",
+      ]), [
+        { col: 0, row: 1, dir: "e", kind: "wall" },
+        { col: 0, row: 2, dir: "e", kind: "door" },
+        { col: 0, row: 3, dir: "e", kind: "wall" },
+        { col: 1, row: 1, dir: "e", kind: "wall" },
+        { col: 1, row: 2, dir: "e", kind: "door" },
+        { col: 1, row: 3, dir: "e", kind: "wall" },
+        { col: 2, row: 1, dir: "e", kind: "wall" },
+        { col: 2, row: 2, dir: "e", kind: "door" },
+        { col: 2, row: 3, dir: "e", kind: "wall" },
+        { col: 3, row: 1, dir: "e", kind: "wall" },
+        { col: 3, row: 2, dir: "e", kind: "door" },
+        { col: 3, row: 3, dir: "e", kind: "wall" },
+      ]), F_CRUCIBLE),
+      F_CRUCIBLE,
+      [
+        // Twin torpedo bank: a 2-cell capital-grade alpha strike on a frigate
+        // hull, mounted on the forward deck.
+        [5, 1, "fnd-twin-torpedo-bank", FOUNDRY_FOOTPRINTS.twinTorpedoBank],
+        // Twin autocannon: a 2-cell gauss-band battery. Fielded on the
+        // Crucible (the Anvil carries no crew headroom for a crewed upgrade).
+        [5, 3, "fnd-twin-autocannon", FOUNDRY_FOOTPRINTS.twinAutocannon],
+      ],
+    ),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -261,39 +285,51 @@ export const foundryDesigns: ShipDesignInput[] = [
     // Cruiser minelayer: sows minefields across approach lanes (M, five
     // layers) while heavy cannons (H) and flak (L) dissuade anything that
     // closes. Magazines (G) feed the ammo weapons; repair bays (W) sustain.
-    grid: subdivideGrid(withEdges(foundryGrid([
-      "..###>####.",
-      ".#XCFW~MLG#",
-      "#XCCW~MHAG#",
-      "PXCCFWMHAGe",
-      "#XCCW~MHAG#",
-      ".#XCFW~MLG#",
-      "..###<####.",
-    ]), [
-      { col: 1, row: 2, dir: "e", kind: "wall" },
-      { col: 1, row: 3, dir: "e", kind: "door" },
-      { col: 1, row: 4, dir: "e", kind: "wall" },
-      { col: 3, row: 1, dir: "e", kind: "wall" },
-      { col: 3, row: 2, dir: "e", kind: "wall" },
-      { col: 3, row: 3, dir: "e", kind: "door" },
-      { col: 3, row: 4, dir: "e", kind: "wall" },
-      { col: 3, row: 5, dir: "e", kind: "wall" },
-      { col: 5, row: 1, dir: "e", kind: "wall" },
-      { col: 5, row: 2, dir: "e", kind: "wall" },
-      { col: 5, row: 3, dir: "e", kind: "door" },
-      { col: 5, row: 4, dir: "e", kind: "wall" },
-      { col: 5, row: 5, dir: "e", kind: "wall" },
-      { col: 7, row: 1, dir: "e", kind: "wall" },
-      { col: 7, row: 2, dir: "e", kind: "wall" },
-      { col: 7, row: 3, dir: "e", kind: "door" },
-      { col: 7, row: 4, dir: "e", kind: "wall" },
-      { col: 7, row: 5, dir: "e", kind: "wall" },
-      { col: 8, row: 1, dir: "e", kind: "wall" },
-      { col: 8, row: 2, dir: "e", kind: "door" },
-      { col: 8, row: 3, dir: "e", kind: "wall" },
-      { col: 8, row: 4, dir: "e", kind: "door" },
-      { col: 8, row: 5, dir: "e", kind: "wall" },
-    ]), F_CAULDRON),
+    grid: mountMultiCell(
+      subdivideGrid(withEdges(foundryGrid([
+        "..###>####.",
+        ".#XCFW~MLG#",
+        "#XCCW~MHAG#",
+        "PXCCFWMHAGe",
+        "#XCCW~MHAG#",
+        ".#XCFW~MLG#",
+        "..###<####.",
+      ]), [
+        { col: 1, row: 2, dir: "e", kind: "wall" },
+        { col: 1, row: 3, dir: "e", kind: "door" },
+        { col: 1, row: 4, dir: "e", kind: "wall" },
+        { col: 3, row: 1, dir: "e", kind: "wall" },
+        { col: 3, row: 2, dir: "e", kind: "wall" },
+        { col: 3, row: 3, dir: "e", kind: "door" },
+        { col: 3, row: 4, dir: "e", kind: "wall" },
+        { col: 3, row: 5, dir: "e", kind: "wall" },
+        { col: 5, row: 1, dir: "e", kind: "wall" },
+        { col: 5, row: 2, dir: "e", kind: "wall" },
+        { col: 5, row: 3, dir: "e", kind: "door" },
+        { col: 5, row: 4, dir: "e", kind: "wall" },
+        { col: 5, row: 5, dir: "e", kind: "wall" },
+        { col: 7, row: 1, dir: "e", kind: "wall" },
+        { col: 7, row: 2, dir: "e", kind: "wall" },
+        { col: 7, row: 3, dir: "e", kind: "door" },
+        { col: 7, row: 4, dir: "e", kind: "wall" },
+        { col: 7, row: 5, dir: "e", kind: "wall" },
+        { col: 8, row: 1, dir: "e", kind: "wall" },
+        { col: 8, row: 2, dir: "e", kind: "door" },
+        { col: 8, row: 3, dir: "e", kind: "wall" },
+        { col: 8, row: 4, dir: "e", kind: "door" },
+        { col: 8, row: 5, dir: "e", kind: "wall" },
+      ]), F_CAULDRON),
+      F_CAULDRON,
+      [
+        // Flak bunker: a 2×2 capital point-defence block on the cruiser's
+        // central deck — four ganged flak turrets behind blast walls.
+        [5, 2, "fnd-flak-bunker", FOUNDRY_FOOTPRINTS.flakBunker],
+        // Gauss turret bank: a 2-cell traversing twin coilgun. Relocated from
+        // the Battleram (crew-tight) to this cruiser, where it joins the
+        // heavy-cannon broadside.
+        [5, 4, "fnd-gauss-turret-bank", FOUNDRY_FOOTPRINTS.gaussTurretBank],
+      ],
+    ),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",

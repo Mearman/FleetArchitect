@@ -135,28 +135,28 @@ const SPORE_LAUNCHER_COOLDOWN = cooldownTicks(RELOAD_THERMAL_TIME_S.autocannon);
 /** Neural-sting body mass (kg) — DERIVED from a frigate-scale guided round
  *  (the `autocannon` banding): a light bio-electric tendril, not a heavy
  *  warhead. */
-const STING_MASS_KG = PROJECTILE_MASS_KG.autocannon;
+export const STING_MASS_KG = PROJECTILE_MASS_KG.autocannon;
 /** Neural-sting cruise velocity (m/s) — DERIVED as a fraction of an autocannon
  *  muzzle velocity: a powered homing tendril is slower than a launched slug. */
-const STING_CRUISE_MS = MUZZLE_VELOCITY_M_PER_S.autocannon / 2;
+export const STING_CRUISE_MS = MUZZLE_VELOCITY_M_PER_S.autocannon / 2;
 /** Neural-sting warhead yield (J) — authored catalogue content: a light
  *  bio-electric charge, sized below a frigate missile so the Swarm trades raw
  *  per-hit yield for fast refire and tracking. */
-const STING_WARHEAD_J = 6e7;
+export const STING_WARHEAD_J = 6e7;
 /** Neural-sting launch-node reload interval (s): the hive-mind regeneration
  *  cycle between guided tendril launches. */
-const STING_LAUNCHER_COOLDOWN = cooldownTicks(RELOAD_THERMAL_TIME_S.missile);
+export const STING_LAUNCHER_COOLDOWN = cooldownTicks(RELOAD_THERMAL_TIME_S.missile);
 /**
  * Neural-sting finite-burn motor — DERIVED from the missile burn-time band.
  * A bio-electric tendril is powered+guided: it launches slow and accelerates
  * to cruise over its burn. For a neural-sting (cruise 2000 m/s, 40 s burn):
  * thrust 30 m/s², burn 1200 ticks.
  */
-const STING_THRUST_M_PER_S2 = poweredMotorThrustMPerS2(
+export const STING_THRUST_M_PER_S2 = poweredMotorThrustMPerS2(
   STING_CRUISE_MS,
   ORDNANCE_BURN_TIME_S.missile,
 );
-const STING_BURN_TICKS = poweredMotorBurnTicks(ORDNANCE_BURN_TIME_S.missile);
+export const STING_BURN_TICKS = poweredMotorBurnTicks(ORDNANCE_BURN_TIME_S.missile);
 
 // ---------------------------------------------------------------------------
 // Reactor output targets and their derived masses.

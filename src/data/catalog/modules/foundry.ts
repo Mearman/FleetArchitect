@@ -117,8 +117,10 @@ const SIEGE_PLASMA_MASS_KG = PROJECTILE_MASS_KG.driver;
  *  velocity: a lobbed plasma bolt is slow. */
 const SIEGE_PLASMA_MUZZLE_MS = MUZZLE_VELOCITY_M_PER_S.driver / 5;
 /** Foundry siege-plasma warhead yield (J) — authored catalogue content: a
- *  capital matter-plasma bolt, ~GJ, the Foundry's signature alpha strike. */
-const SIEGE_PLASMA_WARHEAD_J = 1.8e9;
+ *  capital matter-plasma bolt, ~GJ, the Foundry's signature alpha strike.
+ *  Re-exported so the multi-cell capital variants in `foundry-capital.ts` can
+ *  gang multiples of the same warhead without re-authoring the band. */
+export const SIEGE_PLASMA_WARHEAD_J = 1.8e9;
 /** Foundry torpedo body mass (kg) — DERIVED from a capital-class round
  *  (`driver` banding): a heavy armour-cracking torpedo. */
 const TORPEDO_MASS_KG = PROJECTILE_MASS_KG.driver;
@@ -126,8 +128,9 @@ const TORPEDO_MASS_KG = PROJECTILE_MASS_KG.driver;
  *  velocity: a heavy torpedo is the slowest round in flight. */
 const TORPEDO_CRUISE_MS = MUZZLE_VELOCITY_M_PER_S.driver / 8;
 /** Foundry torpedo warhead yield (J) — authored catalogue content: a heavy
- *  armour-cracking warhead, ~GJ. */
-const TORPEDO_WARHEAD_J = 1.2e9;
+ *  armour-cracking warhead, ~GJ. Re-exported for the multi-cell capital
+ *  torpedo bank in `foundry-capital.ts`. */
+export const TORPEDO_WARHEAD_J = 1.2e9;
 /**
  * Foundry torpedo finite-burn motor — DERIVED from `ORDNANCE_BURN_TIME_S.torpedo`
  * (the short heavy-burn band). For a Foundry torpedo (cruise 1250 m/s, 8 s
@@ -148,8 +151,10 @@ const TORPEDO_BURN_TICKS = poweredMotorBurnTicks(ORDNANCE_BURN_TIME_S.torpedo);
 // Foundry reactors are big, dense, and powerful — the best in the catalogue.
 // ---------------------------------------------------------------------------
 
-/** Standard fusion reactor output target (~1.5 GW) — the legacy frigate band. */
-const REACTOR_FUSION_OUTPUT_W = 1.5e9;
+/** Standard fusion reactor output target (~1.5 GW) — the legacy frigate band.
+ *  Re-exported so the plus-section forge core in `foundry-capital.ts` can
+ *  anchor at 5× this band. */
+export const REACTOR_FUSION_OUTPUT_W = 1.5e9;
 /** Standard antimatter reactor output target (~5 GW) — a capital core feeding
  *  a capital lance and multiple repair bays. */
 const REACTOR_ANTIMATTER_OUTPUT_W = 5e9;
@@ -159,7 +164,9 @@ const REACTOR_ANTIMATTER_OUTPUT_W = 5e9;
 // ---------------------------------------------------------------------------
 
 const thermalThrustN = driveThrustNewtons("thermal");
-const HEAVY_PLASMA_DRIVE_THRUST_N = driveThrustNewtons("heavyPlasma");
+/** Re-exported so the twin grav drive in `foundry-capital.ts` can anchor at
+ *  2× this band. */
+export const HEAVY_PLASMA_DRIVE_THRUST_N = driveThrustNewtons("heavyPlasma");
 
 // ---------------------------------------------------------------------------
 // Foundry Combine modules — 13 entries, capability-derived.

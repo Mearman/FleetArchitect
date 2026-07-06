@@ -259,19 +259,33 @@ export function gridFromMap(rows: readonly string[]): TileGrid {
  * coarse-level authoring + subdivision already placed. Faction-agnostic: works
  * on any subdivided grid.
  *
- * The anchor (placed by a coarse token such as `I` for a spinal lance) sits at
- * the top-left fine sub-cell of coarse block `(anchorCol, anchorRow)`; after
- * subdivision by `f` its fine position is `(anchorCol * f, anchorRow * f)`.
- * Each non-zero footprint offset claims the fine sub-cell at that offset from
- * the anchor, converting it from a plain deck sub-cell into a covered cell
- * carrying a `covers` back-pointer to the anchor. The anchor itself (offset
- * `{0,0}`) is left untouched — it already carries the module id from the token.
+ * The anchor sits at the top-left fine sub-cell of coarse block
+ * `(anchorCol, anchorRow)`; after subdivision by `f` its fine position is
+ * `(anchorCol * f, anchorRow * f)`. Each non-zero footprint offset claims the
+ * fine sub-cell at that offset from the anchor, converting it from a plain
+ * deck sub-cell into a covered cell carrying a `covers` back-pointer to the
+ * anchor.
  *
- * Throws on an out-of-bounds target, a non-solid target, or a target that
- * already carries equipment (an overlap the preset author must resolve rather
- * than silently overwrite), so a multi-cell module that does not fit fails
- * loudly at build time. Returns the input grid unchanged when every offset is
- * the anchor.
+ * The anchor itself (offset `{0,0}`) is installed here, NOT left to the token:
+ *  - If the anchor cell already carries equipment for THIS module (placed by a
+ *    coarse token such as `I` for a spinal lance, or `B` for an aft-facing
+ *    capital drive), it is PRESERVED as-is — the token authors the anchor's
+ *    `facing` (e.g. `Math.PI` for an aft drive), which the helper must not
+ *    clobber.
+ *  - If the anchor cell has NO equipment (the new use case — a plain `~` deck
+ *    cell or corridor), the helper installs `{ moduleId, facing: 0 }` itself.
+ *
+ * That second branch is what lets `mountMultiCell` mount a multi-cell module
+ * on ANY deck cell without requiring a dedicated single-character grid token
+ * per new module id, so new modules can be added to the catalogue and mounted
+ * in presets without touching this file's token tables.
+ *
+ * Throws on an out-of-bounds target, a non-solid target, or a non-anchor
+ * covered cell that already carries equipment (an overlap the preset author
+ * must resolve rather than silently overwrite), so a multi-cell module that
+ * does not fit fails loudly at build time. The anchor placement is by design
+ * (it is the mount target). Returns the input grid unchanged when the offset
+ * list is empty.
  */
 export function coverFootprint(
   fine: TileGrid,
@@ -285,7 +299,6 @@ export function coverFootprint(
   const fineAnchorRow = anchorRow * subdivisionFactor;
   const cells = fine.cells.slice();
   for (const { dx, dy } of offsets) {
-    if (dx === 0 && dy === 0) continue; // anchor already placed by the token
     const col = fineAnchorCol + dx;
     const row = fineAnchorRow + dy;
     if (col < 0 || col >= fine.cols || row < 0 || row >= fine.rows) {
@@ -299,6 +312,16 @@ export function coverFootprint(
       throw new Error(
         `coverFootprint: covered cell (${col}, ${row}) for module "${moduleId}" is not solid`,
       );
+    }
+    if (dx === 0 && dy === 0) {
+      // Anchor: preserve a token-placed equipment record for this module
+      // (it carries the token's authored `facing`, e.g. `Math.PI` for an aft
+      // drive). Only install fresh equipment when the anchor cell is empty —
+      // the mountMultiCell-on-any-deck-cell path that needs no dedicated token.
+      if (cell.equipment === undefined) {
+        cells[idx] = { ...cell, equipment: { moduleId, facing: 0 } };
+      }
+      continue;
     }
     if (cell.equipment !== undefined) {
       throw new Error(

@@ -237,7 +237,7 @@ export const fleetData: FleetInput[] = [
     // centre, flanked by a Hive Lord and a pair of Ravagers; a Brood Spitter
     // stings from the back while a screen of Drones and Carrion wings floods
     // the approach. The apex and the Hive Lord both field capital multi-cell
-    // batteries, so the screen runs one Drone thinner to hold the point budget —
+    // batteries, so the screen runs one Carrion thinner to hold the point budget —
     // aggressive, short-range.
     formation: flatFormation([
       { designId: "preset-ship-devourer",  position: { x: -240, y:    0 }, facing: 0, doctrine: hiveDoctrine },
@@ -246,7 +246,6 @@ export const fleetData: FleetInput[] = [
       { designId: "preset-ship-ravager",   position: { x: -340, y:  200 }, facing: 0, doctrine: hiveDoctrine },
       { designId: "preset-ship-spitter",   position: { x: -340, y:    0 }, facing: 0, doctrine: hiveDoctrine },
       { designId: "preset-ship-carrion",   position: { x: -400, y:  -60 }, facing: 0, doctrine: hiveDoctrine },
-      { designId: "preset-ship-carrion",   position: { x: -400, y:   60 }, facing: 0, doctrine: hiveDoctrine },
       { designId: "preset-ship-drone",     position: { x: -430, y: -260 }, facing: 0, doctrine: hiveDoctrine },
       { designId: "preset-ship-drone",     position: { x: -430, y:  260 }, facing: 0, doctrine: hiveDoctrine },
     ]),
@@ -352,7 +351,6 @@ export const fleetData: FleetInput[] = [
       { designId: "preset-ship-crucible",    position: { x: -380, y:  -80 }, facing: 0, doctrine: siegeDoctrine },
       { designId: "preset-ship-crucible",    position: { x: -380, y:   80 }, facing: 0, doctrine: siegeDoctrine },
       { designId: "preset-ship-ingot",       position: { x: -420, y: -240 }, facing: 0, doctrine: siegeDoctrine },
-      { designId: "preset-ship-ingot",       position: { x: -420, y:  240 }, facing: 0, doctrine: siegeDoctrine },
     ]),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
