@@ -118,8 +118,19 @@ import {
  * was stale (masked by the preset-determinism self-determinism fallback). This
  * is a frame-changing re-author, so the pinned frame hashes and the lossless
  * digest baseline are re-baselined alongside the bump.
+ *
+ * Version 25: perimeter armour gap-fill on crystalline and foundry presets.
+ * Open `.` cells sitting in the armour band of the crystalline frigate/fighter
+ * and edge caps across both factions are closed to `#` so `growArmourHull`'s
+ * diagonal gap-fill and chamfer face a contiguous authored band rather than a
+ * notched one. The foundry-edited smallest pair (Phase Lance vs Iron Wall)
+ * moves frames from tick 0; the untouched largest pair is byte-identical, so
+ * only the three smallest-pair PINNED hashes and the lossless digest baseline
+ * are re-baselined. The engine code itself is unchanged, so ENGINE_REVISION is
+ * not bumped — the content-addressed signature already flips via the pinned
+ * hashes.
  */
-const PRESETS_VERSION = 24;
+const PRESETS_VERSION = 25;
 const VERSION_KEY = "presetsVersion";
 
 /**

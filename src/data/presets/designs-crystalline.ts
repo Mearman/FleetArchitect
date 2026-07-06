@@ -39,9 +39,9 @@ export const crystallineDesigns: ShipDesignInput[] = [
     // Grid (11 cols × 3 rows), subdivided ×4 → 44 m frigate.
     grid: mountMultiCell(
       subdivideGrid(withEdges(crystalGrid([
-        "###....####",
+        "###########",
         "EeFCCSBKv~H",
-        "###....####",
+        "###########",
       ]), [
         { col: 1, row: 1, dir: "e", kind: "door" },
         { col: 4, row: 1, dir: "e", kind: "door" },
@@ -73,9 +73,9 @@ export const crystallineDesigns: ShipDesignInput[] = [
     // caps (##) give it its dart silhouette. Grid (8 cols × 3 rows),
     // subdivided ×2 → 16 m fighter.
     grid: subdivideGrid(withEdges(crystalGrid([
-      "##....##",
+      "########",
       "EeFCvK~L",
-      "##....##",
+      "########",
     ]), [
       { col: 6, row: 1, dir: "e", kind: "door" },
     ]), F_SPLINTER),
@@ -198,7 +198,7 @@ export const crystallineDesigns: ShipDesignInput[] = [
         "#####~#####",
         "E#CCSDH~~~I",
         "EeXOBv~~C~#",
-        "E#CCQN~H~~~",
+        "E#CCQN~H~~#",
         "#####Y#####",
       ]), [
         { col: 1, row: 2, dir: "e", kind: "door" },

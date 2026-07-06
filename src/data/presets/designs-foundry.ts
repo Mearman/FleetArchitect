@@ -161,7 +161,7 @@ export const foundryDesigns: ShipDesignInput[] = [
         "..##XCFW~HL##",
         ".##XCCW~HQG##",
         "##XCCCFWNQMY#",
-        "JZCCCFW~SHGe.",
+        "JZCCCFW~SHGe#",
         "##XCCCFWNQMY#",
         ".##XCCW~HQG##",
         "..##XCFW~HL##",
