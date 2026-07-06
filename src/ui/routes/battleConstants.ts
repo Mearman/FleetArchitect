@@ -1,4 +1,3 @@
-import { TICKS_PER_SECOND } from "@/domain/simulation/types";
 import { BattleAnomalyKind, CellKind } from "@/schema/battle";
 import type { WeaponType } from "@/schema/module";
 import { MODULE_APPEARANCE } from "@/ui/render/moduleAppearance";
@@ -104,77 +103,33 @@ export const CARRYING_COLOUR: Record<string, string> = {
 export const DEFAULT_BOUNDS: Bounds = { minX: -700, maxX: 700, minY: -430, maxY: 430 };
 
 /**
- * Exponential-moving-average weight for the measured simulation rate (ticks
- * computed per real second). Each batch nudges the estimate towards its instant
- * rate by this fraction, smoothing the spiky per-batch timings without lagging
- * far behind a genuine change in compute speed.
+ * Lead (in playback seconds) below which playback eases its speed down toward
+ * what the simulation is currently delivering. Above it, playback runs at the
+ * selected speed — there is enough computed buffer to do so. The threshold is
+ * small so playback only eases when the playhead is genuinely close to the
+ * leading edge, and the easing itself keeps the playhead from ever hard-stalling
+ * there.
  */
-export const SIM_RATE_EMA_WEIGHT = 0.3;
+export const COMFORT_LEAD_SECONDS = 0.5;
 
 /**
- * How many real seconds of uninterrupted playback to buffer for before resuming
- * once playback has stalled at the leading edge. When the simulation is slower
- * than playback this sets how much lead to accumulate, trading a longer single
- * rebuffer for fewer stop-start stutters (the streaming-video rebuffer model).
+ * Per-frame low-pass factor at which the playback clock eases its effective
+ * speed toward the target. Small enough to ride out a single slow batch without
+ * a visible drop, large enough to track a sustained change in delivered rate
+ * within about a second. Applied to the delta between the target and the current
+ * effective speed each rAF tick.
  */
-export const REBUFFER_TARGET_SECONDS = 3;
+export const PLAYBACK_EASE_FACTOR = 0.1;
 
 /**
- * Minimum lead (in playback seconds) required to (re)start playback at the
- * leading edge when the simulation is keeping up. A small cushion so a single
- * slow batch does not immediately stall playback again.
- */
-export const MIN_RESUME_LEAD_SECONDS = 0.3;
-
-/**
- * Overdrive-OFF pacing thresholds (playback seconds of computed lead ahead of
- * the playhead). When Overdrive is off the simulation is paced: once the lead
- * exceeds {@link PACE_PAUSE_LEAD_SECONDS} the auto-pacer asks the worker to
- * pause (cooperatively, at its next batch boundary); it resumes once the lead
- * drops back below {@link PACE_RESUME_LEAD_SECONDS}.
- *
- * The window is sized for a comfortable buffer rather than a tight pace. The sim
- * is allowed to run slightly ahead of playback (up to the pause threshold) and
- * is only released once the lead drops back to the resume threshold, which stays
- * well above {@link MIN_RESUME_LEAD_SECONDS}. That headroom means the playhead
- * cannot catch the leading edge during the pacer's reaction time (a rAF tick)
- * plus the worker's cooperative-resume latency (a batch interval) — the lead
- * shrinks at the playback speed during that gap, so the margin matters most at
- * high speeds, where a tight pace would dip below the buffering threshold and
- * stutter. Pausing playback releases the sim (only the bezel Pause-computation
- * button actually stops it), so these engage solely while playback is playing.
- */
-export const PACE_PAUSE_LEAD_SECONDS = 3.0;
-export const PACE_RESUME_LEAD_SECONDS = 1.5;
-
-/**
- * Rolling-window length (ms) for the sim-speed bar's DELIVERED rate (leading-edge
- * advance per real second). Long enough to average the Overdrive-off hold/run
- * cycle down to the effective (paced) rate, short enough to stay responsive. The
- * delivered rate includes cooperative-hold gaps, so the bar drops while the sim
- * is held and reflects the effective rate rather than the raw compute rate.
- * Tunable.
+ * Rolling-window length (ms) for the delivered sim rate (leading-edge advance
+ * per real second), shown by the speed slider's cyan bar and used to drive
+ * playback easing. Long enough to average batch arrivals down to a stable rate,
+ * short enough to react to a real change in compute speed within about a second.
+ * The delivered rate includes any real-time-pacing idle, so under Overdrive off
+ * it settles near 1x; under Overdrive it pokes past. Tunable.
  */
 export const SIM_DELIVERED_RATE_WINDOW_MS = 2000;
-
-/**
- * Resume threshold in playback seconds: how far the streamed leading edge must
- * be ahead of the playhead before playback (re)starts. Driven by the measured
- * simulation rate versus the playback consumption rate. When the sim keeps up
- * (rate >= playback rate) a minimal cushion suffices; when it lags, buffer
- * enough lead to sustain `REBUFFER_TARGET_SECONDS` of smooth playback before the
- * playhead would next catch the edge.
- */
-export function resumeLeadSeconds(simTickRate: number, playbackTickRate: number): number {
-  if (simTickRate <= 0 || simTickRate >= playbackTickRate) {
-    return MIN_RESUME_LEAD_SECONDS;
-  }
-  // Net ticks the buffer drains per real second while playing (playback consumes
-  // faster than the sim produces). The lead must cover the whole rebuffer window.
-  const drainPerSecond = playbackTickRate - simTickRate;
-  const neededTicks = drainPerSecond * REBUFFER_TARGET_SECONDS;
-  return Math.max(MIN_RESUME_LEAD_SECONDS, neededTicks / TICKS_PER_SECOND);
-}
 
 export const ANOMALY_LABEL: Record<BattleAnomalyKind, string> = {
   asteroidField: "Asteroid field",

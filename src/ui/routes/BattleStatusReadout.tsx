@@ -9,8 +9,6 @@ import { AnnunciatorLamp } from "@/ui/components/Annunciator";
 export interface BattleStatusReadoutProps {
   /** Whether the battle computation is paused by the user. */
   paused: boolean;
-  /** Whether playback has stalled at the streamed leading edge. */
-  buffering: boolean;
   /** Highest tick streamed so far. Battles run with no fixed tick cap, so this
    *  is an open-ended count rather than a fraction of a known total. */
   computedTicks: number;
@@ -18,15 +16,16 @@ export interface BattleStatusReadoutProps {
 
 /**
  * Streaming-progress readout mounted on the chassis bezel strip while a run is
- * computing. A lit annunciator lamp signals ongoing work (flipping to amber
- * "buffering" when playback outruns the streamed frames, or amber "paused" when
- * the user has halted the computation) and a live tick count tracks the streamed
- * leading edge. Battles run with no fixed tick cap, so there is no total to show
- * a percentage against.
+ * computing. A lit annunciator lamp signals ongoing work — cyan "Computing"
+ * while frames stream, amber "Paused" when the user has halted the computation
+ * — and a live tick count tracks the streamed leading edge. Battles run with no
+ * fixed tick cap, so there is no total to show a percentage against. Playback
+ * that outruns the sim no longer flips a "Buffering" face; it smoothly eases
+ * down instead, signalled by the speed slider's cyan bar trailing the thumb.
  */
-export function BattleStatusReadout({ paused, buffering, computedTicks }: BattleStatusReadoutProps) {
-  const lampLabel = paused ? "Paused" : buffering ? "Buffering" : "Computing";
-  const lampTint = paused ? "amber" : buffering ? "amber" : "cyan";
+export function BattleStatusReadout({ paused, computedTicks }: BattleStatusReadoutProps) {
+  const lampLabel = paused ? "Paused" : "Computing";
+  const lampTint = paused ? "amber" : "cyan";
 
   return (
     <Group gap={6} align="center" wrap="nowrap">

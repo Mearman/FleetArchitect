@@ -98,9 +98,7 @@ export function BattleRoute() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const cameraRef = useRef<Camera>(DEFAULT_CAMERA);
   const framesRef = useRef<BattleFrame[]>([]);
-  const simTickRateRef = useRef(0);
   const playbackTimeRef = useRef(0);
-  const bufferingRef = useRef(false);
   const descriptorsRef = useRef<DescriptorMap>(new Map());
 
   /**
@@ -120,7 +118,6 @@ export function BattleRoute() {
   // --- Simulation hook (streaming/run lifecycle) --------------------------
   const simulation = useBattleSimulation({
     framesRef,
-    simTickRateRef,
     playbackTimeRef,
     descriptorsRef,
     resetForNewRun: () => engineCallbacksRef.current.resetForNewRun(),
@@ -219,9 +216,7 @@ export function BattleRoute() {
   // --- Playback hook (clock + rAF/resize loops) ---------------------------
   const playback = useBattlePlayback({
     playbackTimeRef,
-    bufferingRef,
     framesRef,
-    simTickRateRef,
     result: simulation.result,
     computedTicksRef: simulation.computedTicksRef,
     hasFrames,
@@ -238,8 +233,6 @@ export function BattleRoute() {
   useEffect(() => {
     engineCallbacksRef.current = {
       resetForNewRun: () => {
-        playback.setBuffering(false);
-        bufferingRef.current = false;
         playback.setPlaying(false);
       },
       onFirstBatch: () => {
@@ -404,7 +397,6 @@ export function BattleRoute() {
 
   const onSeek = (val: number) => {
     playback.setPlaying(false);
-    playback.setBuffering(false);
     const newTime = val / TICKS_PER_SECOND;
     playbackTimeRef.current = newTime;
     playback.setPlaybackTime(newTime);
@@ -557,7 +549,6 @@ export function BattleRoute() {
                     (simulation.computing || simulation.paused) && (
                       <BattleStatusReadout
                         paused={simulation.paused}
-                        buffering={playback.buffering}
                         computedTicks={simulation.computedTicks}
                       />
                     )}
