@@ -1,3 +1,10 @@
+# [1.51.0](https://github.com/Mearman/FleetArchitect/compare/v1.50.0...v1.51.0) (2026-07-06)
+
+
+### Features
+
+* **sim:** fill diagonal armour gaps as partial blocks ([30447e1](https://github.com/Mearman/FleetArchitect/commit/30447e1f2d22459e87981bf65135bc0ce7b27834))
+
 # [1.50.0](https://github.com/Mearman/FleetArchitect/compare/v1.49.0...v1.50.0) (2026-07-06)
 
 
