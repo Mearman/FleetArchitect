@@ -1,6 +1,7 @@
 import { catalog } from "@/data/catalog";
 import { MODULE_APPEARANCE } from "@/ui/render/moduleAppearance";
 import type { GlyphKey } from "@/ui/render/moduleAppearance";
+import { rotateOffset } from "@/domain/grid";
 import type { EntityId } from "@/schema/primitives";
 import type {
   CellEdges,
@@ -358,8 +359,10 @@ export function moduleFits(
   col: number,
   row: number,
   moduleDef: PlacementModule,
+  rotation = 0,
 ): boolean {
-  for (const { dx, dy } of moduleDef.footprint) {
+  for (const offset of moduleDef.footprint) {
+    const { dx, dy } = rotateOffset(offset, rotation);
     const c = col + dx;
     const r = row + dy;
     if (c < 0 || c >= grid.cols || r < 0 || r >= grid.rows) return false;
@@ -388,15 +391,17 @@ export function placeModule(
   col: number,
   row: number,
   moduleDef: PlacementModule,
+  rotation = 0,
 ): TileGrid {
-  if (!moduleFits(grid, col, row, moduleDef)) return grid;
+  if (!moduleFits(grid, col, row, moduleDef, rotation)) return grid;
   const cells = grid.cells.slice();
-  for (const { dx, dy } of moduleDef.footprint) {
+  for (const offset of moduleDef.footprint) {
+    const { dx, dy } = rotateOffset(offset, rotation);
     const idx = (row + dy) * grid.cols + (col + dx);
     const cell = cells[idx];
     if (cell === undefined || cell.kind !== "solid") continue;
     if (dx === 0 && dy === 0) {
-      cells[idx] = { ...cell, equipment: { moduleId: moduleDef.id, facing: 0 } };
+      cells[idx] = { ...cell, equipment: { moduleId: moduleDef.id, facing: 0, ...(rotation > 0 ? { rotation } : {}) } };
     } else {
       cells[idx] = {
         ...cell,

@@ -475,6 +475,30 @@ export function isConnected4(grid: TileGrid): boolean {
 // Polyomino (multi-cell module) placement.
 // ---------------------------------------------------------------------------
 
+/** Footprint rotation: 0=canonical, 1=90° CW, 2=180°, 3=270° CW. */
+export type FootprintRotation = 0 | 1 | 2 | 3;
+
+/**
+ * Rotate a footprint offset by `rotation` (clockwise, 0-3). 0° = identity,
+ * 90° CW maps (dx,dy) → (dy,-dx), 180° → (-dx,-dy), 270° CW → (-dy,dx).
+ * The anchor offset {0,0} is invariant under all rotations.
+ */
+export function rotateOffset(
+  offset: { dx: number; dy: number },
+  rotation: number,
+): { dx: number; dy: number } {
+  switch (((rotation % 4) + 4) % 4) {
+    case 0:
+      return { dx: offset.dx, dy: offset.dy };
+    case 1:
+      return { dx: offset.dy, dy: -offset.dx };
+    case 2:
+      return { dx: -offset.dx, dy: -offset.dy };
+    default:
+      return { dx: -offset.dy, dy: offset.dx };
+  }
+}
+
 /**
  * A module placed on the grid, yielded once at its anchor. The equipment is the
  * anchor's record (with `moduleId` defined); covered cells of the same module

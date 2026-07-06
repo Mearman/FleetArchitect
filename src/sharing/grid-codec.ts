@@ -105,6 +105,8 @@ const EQUIP_COMMS_BEARING = 2;
 const EQUIP_COMMS_RANGE = 4;
 const EQUIP_SENSOR_BEARING = 8;
 const EQUIP_SENSOR_RANGE = 16;
+/** Equipment presence bit 5: multi-cell anchor has a non-canonical rotation. */
+const EQUIP_ROTATION = 32;
 
 /** Equipment block tag: discriminates an anchor (moduleId present, current
  *  shape) from a covered cell of a multi-cell module (covers back-pointer). */
@@ -340,6 +342,7 @@ function writeEquipment(writer: ByteWriter, equipment: CellEquipment): void {
   if (equipment.commsRange !== undefined) presence |= EQUIP_COMMS_RANGE;
   if (equipment.sensorBearing !== undefined) presence |= EQUIP_SENSOR_BEARING;
   if (equipment.sensorRangeSetting !== undefined) presence |= EQUIP_SENSOR_RANGE;
+  if (equipment.rotation !== undefined && equipment.rotation > 0) presence |= EQUIP_ROTATION;
   writer.byte(presence);
 
   if (equipment.channel !== undefined) writer.varint(equipment.channel);
@@ -349,6 +352,7 @@ function writeEquipment(writer: ByteWriter, equipment: CellEquipment): void {
   if (equipment.sensorRangeSetting !== undefined) {
     writer.float64(equipment.sensorRangeSetting);
   }
+  if (equipment.rotation !== undefined && equipment.rotation > 0) writer.byte(equipment.rotation);
 }
 
 /** Encode a parsed `TileGrid` to a compact, deterministic byte buffer. */
@@ -506,6 +510,7 @@ function readEquipment(reader: ByteReader): CellEquipment {
   if ((presence & EQUIP_SENSOR_RANGE) !== 0) {
     equipment.sensorRangeSetting = reader.float64();
   }
+  if ((presence & EQUIP_ROTATION) !== 0) equipment.rotation = reader.byte();
   return equipment;
 }
 

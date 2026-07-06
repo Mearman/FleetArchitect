@@ -29,7 +29,7 @@ import { analyseShipDesign } from "@/domain/stats";
 import { growArmourHull } from "@/domain/hull-armour";
 import { createId, nowIso } from "@/domain/id";
 import { catalog } from "@/data/catalog";
-import { cellAt } from "@/domain/grid";
+import { cellAt, rotateOffset } from "@/domain/grid";
 import { AnnunciatorButton } from "@/ui/components/Annunciator";
 import { CassettePanel } from "@/ui/components/CassettePanel";
 import { FaultList } from "@/ui/components/FaultList";
@@ -118,6 +118,8 @@ export function ShipDesignerRoute() {
     paint,
     paintEdge,
     updateSelectedEquipment,
+    rotation,
+    cycleRotation,
   } = useDesignerBrush(setWorking, readOnly);
   const [zoom, setZoom] = useState(ZOOM_DEFAULT);
   // Trackpad pinch-to-zoom (two-finger scroll pans natively) plus the viewport's
@@ -204,10 +206,10 @@ export function ShipDesignerRoute() {
     const def = catalog().module(brush.moduleId);
     if (def === undefined) return null;
     return {
-      cells: def.footprint.map(({ dx, dy }) => ({ col: hovered.col + dx, row: hovered.row + dy })),
-      fits: moduleFits(working.grid, hovered.col, hovered.row, def),
+      cells: def.footprint.map((o) => { const r = rotateOffset(o, rotation); return { col: hovered.col + r.dx, row: hovered.row + r.dy }; }),
+      fits: moduleFits(working.grid, hovered.col, hovered.row, def, rotation),
     };
-  }, [brush, hovered, working.grid]);
+  }, [brush, hovered, working.grid, rotation]);
 
   // Display grid: armour grown in-place (no padding, same coordinate space as
   // working.grid) so GridBoard shows the auto-derived armour ring. Painting and
@@ -605,6 +607,7 @@ export function ShipDesignerRoute() {
                 onEdge={paintEdge}
                 onMoveCursor={(col, row) => setSelected({ col, row })}
                 onHover={setHovered}
+                onRotate={cycleRotation}
               />
             </div>
           </div>

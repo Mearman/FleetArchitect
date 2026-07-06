@@ -100,6 +100,11 @@ export const CellEquipment = z
      *  Meaningful only on an anchor; covered cells accept the default and
      *  ignore it. */
     facing: z.number().default(0),
+    /** Polyomino footprint rotation (0=canonical, 1=90° CW, 2=180°, 3=270° CW).
+     *  Meaningful only on an anchor; covered cells accept the default and ignore
+     *  it. Rotates the module's footprint offsets for cover placement and
+     *  fit validation. Absent = 0 (canonical orientation). */
+    rotation: z.number().int().min(0).max(3).optional(),
     /** Per-instance logical channel override for comms modules. */
     channel: z.number().int().min(0).optional(),
     /** Per-instance fixed-bearing bearing override for comms modules (radians). */

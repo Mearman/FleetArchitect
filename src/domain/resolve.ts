@@ -1,5 +1,5 @@
 import { analyseShipDesign } from "@/domain/stats";
-import { CELL_SIZE, cellToLocal, deriveClassification, deriveRadius, footprint, placedModules } from "@/domain/grid";
+import { CELL_SIZE, cellToLocal, deriveClassification, deriveRadius, footprint, placedModules, rotateOffset } from "@/domain/grid";
 import { computeOutline, extractShell } from "@/domain/outline";
 import { cellCoverageFractions, computeHullOutline } from "@/domain/hull-outline";
 import { growArmourHull, padGrid } from "@/domain/hull-armour";
@@ -509,7 +509,7 @@ function resolveModules(design: ShipDesign, catalog: Catalog): ResolvedModule[] 
         kind: moduleDef.effect.kind,
         // Only on multi-cell anchors; omitted (not undefined) — canonicaliser rejects undefined.
         ...(moduleDef.footprint.length > 1
-          ? { coverSlotIds: moduleDef.footprint.filter((o) => o.dx !== 0 || o.dy !== 0).map((o) => `cell-${col + o.dx}-${row + o.dy}`) }
+          ? { coverSlotIds: moduleDef.footprint.filter((o) => o.dx || o.dy).map((o) => { const r = rotateOffset(o, equipment?.rotation ?? 0); return `cell-${col + r.dx}-${row + r.dy}`; }) }
           : {}),
         col,
         row,

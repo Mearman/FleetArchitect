@@ -1,4 +1,4 @@
-import { footprint, placedModules } from "@/domain/grid";
+import { footprint, placedModules, rotateOffset } from "@/domain/grid";
 import type { Catalog } from "@/domain/catalog";
 import type { DesignFault } from "@/domain/stats";
 import type { EntityId } from "@/schema/primitives";
@@ -29,17 +29,19 @@ import type { TileGrid } from "@/schema/grid";
 export function polyominoFitFaults(design: ShipDesign, catalog: Catalog): DesignFault[] {
   const faults: DesignFault[] = [];
   const grid = design.grid;
-  for (const { col, row, moduleId } of placedModules(grid)) {
+  for (const { col, row, equipment, moduleId } of placedModules(grid)) {
     const moduleDef = catalog.module(moduleId);
     // An unknown module is reported by `unknownModule` in analyseShipDesign;
     // skip it here rather than faulting twice.
     if (moduleDef === undefined) continue;
+    const rotation = equipment?.rotation ?? 0;
     for (const offset of moduleDef.footprint) {
       if (offset.dx === 0 && offset.dy === 0) continue;
+      const rotated = rotateOffset(offset, rotation);
       const reason = footprintOffsetFault(
         grid,
-        col + offset.dx,
-        row + offset.dy,
+        col + rotated.dx,
+        row + rotated.dy,
         moduleId,
         col,
         row,

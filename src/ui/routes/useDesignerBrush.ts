@@ -46,6 +46,8 @@ export function useDesignerBrush(
   setSelected: Dispatch<SetStateAction<CellCoord | null>>;
   hovered: CellCoord | null;
   setHovered: Dispatch<SetStateAction<CellCoord | null>>;
+  rotation: number;
+  cycleRotation: () => void;
   paint: (col: number, row: number) => void;
   paintEdge: (col: number, row: number, dir: "n" | "e" | "s" | "w") => void;
   updateSelectedEquipment: (patch: Partial<CellEquipment>) => void;
@@ -53,8 +55,14 @@ export function useDesignerBrush(
   const [brush, setBrush] = useState<Brush>({ kind: "substrate-deck" });
   const [selected, setSelected] = useState<CellCoord | null>(null);
   const [hovered, setHovered] = useState<CellCoord | null>(null);
+  const [rotation, setRotation] = useState(0);
 
   const resolve = (id: EntityId): ModuleDefinition | undefined => catalog().module(id);
+
+  /** Cycle the multi-cell footprint rotation: 0 → 1 → 2 → 3 → 0 (CW). */
+  function cycleRotation() {
+    setRotation((r) => (r + 1) % 4);
+  }
 
   /** Paint a whole cell with the active cell-brush (multi-cell aware). */
   function paint(col: number, row: number) {
@@ -64,7 +72,7 @@ export function useDesignerBrush(
       if (brush.kind === "equipment") {
         const def = catalog().module(brush.moduleId);
         if (def === undefined) return prev;
-        const next = placeModule(grid, col, row, def);
+        const next = placeModule(grid, col, row, def, rotation);
         return next === grid ? prev : { ...prev, grid: next };
       }
       if (brush.kind === "empty") {
@@ -136,6 +144,8 @@ export function useDesignerBrush(
     setSelected,
     hovered,
     setHovered,
+    rotation,
+    cycleRotation,
     paint,
     paintEdge,
     updateSelectedEquipment,

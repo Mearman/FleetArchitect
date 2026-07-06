@@ -78,6 +78,7 @@ export function GridBoard({
   onEdge,
   onMoveCursor,
   onHover,
+  onRotate,
 }: {
   grid: TileGrid;
   selected: { col: number; row: number } | null;
@@ -107,6 +108,8 @@ export function GridBoard({
   /** Report the cell under the pointer (for the placement ghost), or null when
    *  the pointer leaves the board. */
   onHover: (coord: { col: number; row: number } | null) => void;
+  /** Rotate the active multi-cell footprint (R key). No-op when no equipment brush. */
+  onRotate?: () => void;
 }) {
   /** True while the pointer is held down inside the board — enables
    *  drag-to-paint. */
@@ -287,6 +290,11 @@ export function GridBoard({
       case " ":
         e.preventDefault();
         onPaint(col, row);
+        break;
+      case "r":
+      case "R":
+        e.preventDefault();
+        onRotate?.();
         break;
       default:
         break;
