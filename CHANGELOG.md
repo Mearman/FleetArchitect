@@ -1,3 +1,10 @@
+# [1.50.0](https://github.com/Mearman/FleetArchitect/compare/v1.49.0...v1.50.0) (2026-07-06)
+
+
+### Features
+
+* **designer:** rotate multi-cell module footprints with R ([f18c3cf](https://github.com/Mearman/FleetArchitect/commit/f18c3cf136b4e8907825316611677c1bb379da02))
+
 # [1.49.0](https://github.com/Mearman/FleetArchitect/compare/v1.48.0...v1.49.0) (2026-07-06)
 
 
