@@ -183,7 +183,7 @@ export function BattleSetupPanel({
         <Tooltip
           multiline
           maw={240}
-          label="Overdrive — let the simulation run faster than playback and pre-compute frames ahead. Off (default): the simulation stays paced to playback for a live view."
+          label="Overdrive — compute the simulation flat-out, faster than real-time, banking frames ahead. Off (default): the sim paces itself to real-time (1x); playback faster than the sim can deliver eases down smoothly instead of stalling."
         >
           <Switch
             size="xs"

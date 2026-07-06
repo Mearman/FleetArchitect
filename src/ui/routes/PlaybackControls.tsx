@@ -120,7 +120,7 @@ export function PlaybackControls({
         <Tooltip
           multiline
           maw={220}
-          label="Playback speed — drag to set. The cyan bar is how fast the battle is computing (sim speed): it sits under the thumb when the sim keeps up, trails it when the sim can't keep up, and pokes past it when the sim is faster."
+          label="Playback speed — drag to set. The cyan bar is how fast the battle is computing (sim speed): it sits under the thumb when the sim keeps up, trails it when the sim can't, and pokes past it when the sim is faster (Overdrive). When the bar trails the thumb, playback eases down to the sim's speed rather than stalling."
         >
           <div className={speedSliderWrap}>
             <Slider
