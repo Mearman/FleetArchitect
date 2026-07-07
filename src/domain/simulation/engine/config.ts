@@ -386,8 +386,8 @@ export const SIM = {
   /**
    * Per-PD-module per-tick chance of intercepting a single in-range missile
    * or torpedo. Multiple PD modules stack their chances (1 - (1-p)^n) but
-   * the cumulative chance is capped here so a screen of PD modules can never
-   * be a 100% certainty.
+   * the cumulative chance is capped (`pdMaxStackedChance`) so a screen of PD
+   * modules can never be a 100% certainty.
    *
    * Classification: authored catalogue content (a PD-module accuracy figure).
    */
@@ -399,6 +399,17 @@ export const SIM = {
    * model, so no screen is ever a certainty).
    */
   pdMaxStackedChance: 0.95,
+  /**
+   * Lead-aim slack (rad/tick) added to a PD module's `tracking` in the
+   * deterministic angular-rate gate. `omega = |dx·p.vy − dy·p.vx| / r²` is the
+   * projectile's traverse across the mount; a candidate fires only when
+   * `omega <= tracking + pdTrackingEpsilon`. The epsilon lets a `tracking: 0`
+   * mount still engage a near-radial infleeder so authored `0` reads as
+   * "fixed mount, radial-only", not "never fires".
+   *
+   * Classification: unit-spec-rate-epsilon (a geometric slack band in rad/tick).
+   */
+  pdTrackingEpsilon: 0.01,
   /**
    * Rounds a crew member carries per ammo-run from a magazine to a dry weapon.
    * One trip tops a weapon up by at most this much (and never beyond the
@@ -444,12 +455,10 @@ export const SIM = {
   powerWiringRadius: 7,
   /**
    * Innate visual line-of-sight radius (metres) every ship has before any sensor
-   * module extends it — the baseline omnidirectional receiver (sensor-free
-   * sight). Grounded (Phase 9) in the EM reception model: it is the
-   * continuous-emission range at which a quiescent hull's ambient self-emission
-   * (`EM_HULL_AMBIENT_EMISSION`) is received at exactly the noise floor by a
-   * sensor-free receiver — `continuousRange(ambient, floor, 1)`, evaluated as
-   * `VISUAL_LOS_RADIUS_M` above. The radius now FALLS OUT of the inverse-square
+   * extends it — the baseline omnidirectional receiver. Grounded (Phase 9) in
+   * the EM reception model: the continuous-emission range at which a quiescent
+   * hull's ambient self-emission is received at the noise floor by a
+   * sensor-free receiver (`continuousRange(ambient, floor, 1)`, evaluated as
    * physics rather than being hand-picked; the ambient emission is anchored to
    * keep it below typical weapon ranges so a sensorless fleet is genuinely
    * myopic and must close to engage.
@@ -475,38 +484,32 @@ export const SIM = {
   /**
    * Weight on enemy cost in the awareness threat score
    * `threat = -dist + threatCostWeight * cost`. Small, so distance dominates
-   * (a near contact is the more pressing threat), but a far, very expensive
-   * capital still ranks above a near, cheap fighter — exactly the prioritisation
-   * a relay's bounded bandwidth should forward first. Re-grounded for km combat
-   * (Phase 3): distances now run to tens of thousands of world units (weapon
-   * reach is tens of km) while costs stay a few hundred catalogue points, so the
-   * weight is cut ~100× from the pre-km 0.01 to keep one cost point worth ~0.01
-   * of the NEW distance scale (~one metre of nearness per cost point at km
-   * ranges); the relative distance-vs-cost balance is preserved across the
-   * rescale rather than letting cost swamp distance now that distances are 100×
-   * larger.
+   * (a near contact is the more pressing threat), but a far expensive capital
+   * still ranks above a near cheap fighter. Re-grounded for km combat (Phase 3):
+   * distances now run to tens of thousands of world units while costs stay a
+   * few hundred catalogue points, so the weight is cut ~100× from the pre-km
+   * 0.01 — preserving the distance-vs-cost balance rather than letting cost
+   * swamp distance now distances are 100× larger.
    *
    * Classification: unit-spec-rate-epsilon (a scoring weight that normalises
    * two authored scales — world distance and catalogue cost points).
    */
   threatCostWeight: 0.0001,
   /**
-   * Ticks a ghost contact survives after its target leaves sensor coverage.
-   * The observer keeps engaging the last-known position until this counts down
-   * to zero, modelling tracking memory / dead reckoning. 60 ticks is ~2 s at
-   * 30 ticks/s — long enough to keep firing through a brief occlusion, short
-   * enough that a ship that has truly slipped away stops drawing fire.
+   * Ticks a ghost contact survives after its target leaves sensor coverage —
+   * the observer keeps engaging the last-known position, modelling tracking
+   * memory. 60 ticks (~2 s at 30 tps) covers a brief occlusion; a ship that
+   * truly slipped away stops drawing fire.
    *
    * Classification: unit-spec-rate-epsilon (a tracking-memory TTL in ticks).
    */
   ghostFadeTicks: 60,
   /**
-   * Hard upper bound on the number of candidate comms unit pairs processed per
-   * side per tick. Comms pairing is O(n^2) in comms units; on a pathologically
-   * large fleet this caps the work. Candidate pairs are processed in canonical
-   * sorted order and any beyond the budget are dropped (with a single
-   * `console.warn` per run per side), so the result stays deterministic even
-   * when the cap fires. Sized far above any realistic fleet's comms-unit count.
+   * Hard upper bound on candidate comms-unit pairs processed per side per tick
+   * (pairing is O(n²); on a pathologically large fleet this caps the work).
+   * Pairs beyond the budget are dropped in canonical sorted order (one
+   * `console.warn` per run per side), so the result stays deterministic when
+   * the cap fires. Sized far above any realistic fleet's comms-unit count.
    *
    * Classification: unit-spec-rate-epsilon (a deterministic-work performance
    * budget; not a physics quantity).
@@ -594,14 +597,11 @@ export const SIM = {
    */
   droneDefaultLifetime: 4000,
   /**
-   * Explosive chain reactions (realism overhaul, Phase 4). When a volatile
-   * module is destroyed it detonates, dealing radial damage to the other alive
-   * modules on the SAME ship with linear falloff to a blast radius. HP is in the
-   * same energy-equivalent units as weapon damage, so the yields below are in
-   * those units too — sized to be meaningful but survivable, not annihilating.
-   *
-   * Classification: authored catalogue content
-   */
+   * Explosive chain reactions (realism overhaul, Phase 4). A destroyed volatile
+   * module detonates, dealing radial damage to the other alive modules on the
+   * SAME ship (linear falloff to a blast radius). Yields share weapon damage's
+   * energy-equivalent units — meaningful but survivable, not annihilating.
+   * Classification: authored catalogue content. */
   chainReaction: {
     /**
      * Reactor (`power`) blast yield as a fraction of the plant's `output`. A

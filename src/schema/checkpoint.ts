@@ -319,6 +319,8 @@ const CheckpointProjectile = z.object({
   range: z.number(),
   travelled: z.number(),
   ttl: z.number(),
+  hp: z.number(),
+  maxHp: z.number(),
   ownerId: z.string(),
   ownerSide: CombatantSide,
   targetId: z.string(),
@@ -445,8 +447,10 @@ const DeploymentReference = z.object({
  *  {@link CheckpointShip}, threading the bevelled render outline so a resumed
  *  battle's silhouette stays bevelled. v12 adds `scalingMeta` to
  *  {@link CheckpointShip}, carrying multi-cell anchors' unscaled effect bases
- *  so effect scaling survives an interrupt/resume. */
-export const CHECKPOINT_VERSION = 12;
+ *  so effect scaling survives an interrupt/resume. v13 adds `hp`/`maxHp` to
+ *  {@link CheckpointProjectile} so point-defence damage chips a resumed
+ *  projectile from its live integrity rather than re-instantiating it whole. */
+export const CHECKPOINT_VERSION = 13;
 
 /**
  * A complete engine checkpoint: everything needed to resume `simulateBattle`

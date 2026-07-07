@@ -393,7 +393,7 @@ export const foundryModules: ModuleDefinitionInput[] = [
     techLevel: 2,
     effect: {
       kind: "pointDefense",
-      damage: 12,
+      damage: 14,
       range: 110,
       cooldown: 8,
       hitChance: 0.45,

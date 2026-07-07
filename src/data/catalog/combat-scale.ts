@@ -474,11 +474,10 @@ export const ANTIMATTER_REACTOR_OUTPUT_W =
 
 // Reactor thermal efficiency η (0–1): the fraction of released power that
 // becomes usable electricity; the remainder `output × (1/η − 1)` is waste heat
-// the radiators must shed. 0.85 is the high end of the direct-conversion band
-// (the in-universe reactor decelerates charged fusion products electrostatically,
-// sidestepping the Carnot limit) — chosen so a fusion reactor's waste heat
-// (~265 MW at 1.5 GW) is within what a realistically-deployed radiator can
-// shed below the 1500 K material limit.
+// the radiators must shed. 0.85 (the high end of direct-conversion — the
+// in-universe reactor decelerates charged fusion products electrostatically,
+// sidestepping Carnot) is chosen so a fusion reactor's waste heat (~265 MW at
+// 1.5 GW) is within a realistically-deployed radiator's shed below 1500 K.
 export const REACTOR_THERMAL_EFFICIENCY = 0.85;
 
 // Waste heat (W) a reactor dumps into the hull: `output × (1/η − 1)`. This is
@@ -490,9 +489,8 @@ export function reactorWasteHeatWatts(outputWatts: number): number {
 // Deployed-fin effective-area amplification factor (dimensionless) for a
 // radiator cell: how many times its bare 1 m² footprint a deployed radiator
 // unfolds (a real spacecraft radiator is a large folded fin array, not a flat
-// hull patch). 800× lands a fusion reactor's waste-heat cell at ~1340 K — below
-// the 1500 K material limit with margin — while a combat heat spike that
-// destroys radiator cells still crosses the threshold and triggers overheat.
+// hull patch). 800× lands a fusion waste-heat cell at ~1340 K — below the 1500 K
+// material limit — while a heat spike that destroys radiator cells still trips overheat.
 export const RADIATOR_FIN_AREA_FACTOR = 800;
 
 // ---------------------------------------------------------------------------
@@ -628,6 +626,12 @@ export const DEFLECTOR_RECHARGE_KG_MPS_PER_S = {
 };
 /** Default deflector-piercing per weapon type (torpedoes punch; others mostly caught). */
 export const DEFLECTOR_PIERCING_DEFAULT: Record<WeaponType, number> = { beam: 0, cannon: 0.1, missile: 0.1, torpedo: 0.3, plasma: 0.1 };
+
+/** Projectile integrity at spawn per weapon kind — the hull a PD screen must
+ *  chip through. A missile (30) dies in a couple of hits; a torpedo (120) tanks
+ *  a screen that deals less than its HP cumulatively. Beams, cannon, and plasma
+ *  default to 1 (binary kill). A weapon overrides via `projectileHp`. */
+export const PROJECTILE_HP_BY_KIND: Record<WeaponType, number> = { beam: 1, cannon: 1, missile: 30, torpedo: 120, plasma: 1 };
 
 // ---------------------------------------------------------------------------
 // Attitude-control slew spec (radians per second, seconds, newton-metres).
@@ -790,11 +794,7 @@ const INTERIOR_BULKHEAD_MASS_KG = 7850 * 0.02;
 export const WALL_STOPPING_J =
   INTERIOR_BULKHEAD_MASS_KG * specificDestructionEnergy("Terran");
 
-/**
- * Stopping energy (joules) a closed door edge absorbs — DERIVED as a fraction
- * of the wall stopping energy: a door is a thinner, weaker barrier than a solid
- * bulkhead. Set to a third of the wall value so a door slows a penetrating round
- * but stops far less of it than a full wall, preserving the wall-stronger-than-
- * door ordering the engine's penetration model relies on.
- */
+/** Stopping energy (joules) a closed door edge absorbs — DERIVED as a third of
+ *  the wall value: a thinner barrier that slows a round but stops far less,
+ *  preserving the wall-stronger-than-door ordering the penetration model needs. */
 export const DOOR_STOPPING_J = WALL_STOPPING_J / 3;

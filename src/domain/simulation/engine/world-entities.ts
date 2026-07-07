@@ -85,6 +85,15 @@ export interface SimProjectile {
   range: number;
   travelled: number;
   ttl: number;
+  /** Current integrity, chipped by point-defence `damage` each intercept that
+   *  lands a hit. A round reaches the hull so long as it stays above 0; PD that
+   *  deals less than `maxHp` over its run only softens it. Derived at spawn from
+   *  `WeaponEffect.projectileHp` / `PROJECTILE_HP_BY_KIND` and decremented in
+   *  `tryPointDefenseIntercept`. */
+  hp: number;
+  /** Integrity the projectile spawned with (`hp`'s initial value), captured so a
+   *  resumed battle carries the original hull strength through a checkpoint. */
+  maxHp: number;
   ownerId: string;
   ownerSide: "attacker" | "defender";
   targetId: string;

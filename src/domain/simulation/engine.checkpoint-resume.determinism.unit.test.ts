@@ -403,4 +403,95 @@ describe("engine checkpoint-resume determinism", () => {
     );
     expect(frameHash(resumed)).toBe(frameHash(freshTail));
   }, 60000);
+
+  it("a chipped torpedo's hp round-trips through a checkpoint (PD + torpedo)", () => {
+    // A torpedo launcher vs a PD screen that CHIPS but does not one-shot (PD
+    // damage 30 < torpedo hp 120): by the mid-battle checkpoint several
+    // in-flight torpedoes carry a live `hp` below their `maxHp`. If `hp`/`maxHp`
+    // failed to round-trip, the resumed PD path would read a different hull and
+    // the frames would byte-diverge from the fresh tail — so the byte-identity
+    // assertion is the contract that the new projectile fields survive capture
+    // and restore.
+    const torpedoLauncher: ModuleEffect = {
+      kind: "weapon",
+      weaponType: "torpedo",
+      damage: 200,
+      range: 5000,
+      cooldown: 6,
+      projectileSpeed: 10,
+      projectileMass: 1,
+      tracking: 0,
+      shieldPiercing: 0,
+      armourPiercing: 0,
+      spread: 0,
+      facing: 0,
+    };
+    const pdEffect: ModuleEffect = {
+      kind: "pointDefense",
+      damage: 10,
+      range: 200,
+      cooldown: 0,
+      hitChance: 1,
+      tracking: 0,
+    };
+    const torpedoAttacker = (id: string, side: "attacker" | "defender", x: number): CombatShip => ({
+      instanceId: id,
+      designId: `d-${id}`,
+      faction: "Terran",
+      side,
+      stats: statsFor(99999),
+      position: { x, y: 0 },
+      facing: 0,
+      doctrine: HOLD_DOCTRINE,
+      classification: "frigate",
+      modules: [
+        moduleOf(`${id}-cmd`, { kind: "power", output: 1000 }, 0, 0, 50, { command: true }),
+        moduleOf(`${id}-q`, { kind: "crew", capacity: 3 }, 1, 0, 50),
+        moduleOf(`${id}-gun`, torpedoLauncher, 2, 0, 50, { crewRequired: 1 }),
+      ],
+    });
+    const pdDefender = (id: string, side: "attacker" | "defender", x: number): CombatShip => ({
+      instanceId: id,
+      designId: `d-${id}`,
+      faction: "Terran",
+      side,
+      stats: statsFor(99999),
+      position: { x, y: 0 },
+      facing: Math.PI,
+      doctrine: HOLD_DOCTRINE,
+      classification: "frigate",
+      modules: [
+        moduleOf(`${id}-cmd`, { kind: "power", output: 1000 }, 0, 0, 50, { command: true }),
+        moduleOf(`${id}-pd`, pdEffect, 1, 0, 50),
+      ],
+    });
+    const ships = [
+      torpedoAttacker("att", "attacker", 0),
+      pdDefender("def", "defender", 80),
+    ];
+    const inputs = battle(ships, 7, 80);
+    const freshCheckpoints = new Map<number, EngineCheckpoint>();
+    const freshFrames = drain(inputs, {
+      checkpointEvery: 1,
+      onCheckpoint: (cp) => freshCheckpoints.set(cp.tick, cp),
+    });
+    // Pick a checkpoint tick at which a torpedo is genuinely chipped (0 < hp <
+    // maxHp), so the resumed run carries a non-default `hp` and the byte-identity
+    // assertion really exercises the new field's round-trip.
+    const cpTick = [...freshCheckpoints.keys()]
+      .sort((a, b) => a - b)
+      .find((t) => {
+        const cp = freshCheckpoints.get(t);
+        return cp?.projectiles.some((p) => p.hp > 0 && p.hp < p.maxHp) ?? false;
+      });
+    expect(cpTick, "some checkpoint must carry an in-flight chipped torpedo").toBeDefined();
+    const checkpoint = freshCheckpoints.get(cpTick ?? -1);
+    const resumed = drain(inputs, { resumeFrom: checkpoint });
+    const freshTail = freshFrames.filter((f) => (f.tick ?? 0) > (cpTick ?? 0));
+    expect(resumed.length, "resume yields one frame per fresh tick after the checkpoint").toBe(
+      freshTail.length,
+    );
+    expect(resumed, "resumed frames stay byte-identical once hp round-trips").toEqual(freshTail);
+    expect(frameHash(resumed)).toBe(frameHash(freshTail));
+  }, 60000);
 });

@@ -116,6 +116,14 @@ export const WeaponEffect = z.object({
    *  (fires along ship heading) so existing modules that never declared it
    *  behave exactly as before. */
   facing: z.number().optional(),
+  /** Integrity the spawned projectile starts with, chipped by point-defence
+   *  `damage` on each successful intercept. Omitted ⇒ the per-kind default
+   *  (`PROJECTILE_HP_BY_KIND` in `@/data/catalog/combat-scale`): missiles and
+   *  torpedoes carry a real hull (30 / 120); beams, cannon, and plasma default
+   *  to 1, preserving the binary-kill behaviour for rounds PD would have
+   *  one-shot anyway. A heavy torpedo tanks a screen that deals less than its
+   *  HP cumulatively; a missile dies in a couple of typical hits. */
+  projectileHp: z.number().min(0).optional(),
   /**
    * Turret traverse: the half-arc (radians, ship-local) the mount can swing
    * either side of its mount direction (`facing`). A weapon with
@@ -246,7 +254,11 @@ export type CrewEffect = z.infer<typeof CrewEffect>;
  */
 export const PointDefenseEffect = z.object({
   kind: z.literal("pointDefense"),
-  /** Damage per intercept; the projectile is destroyed on any successful hit. */
+  /** Damage applied to a projectile's `hp` on a successful intercept. Each
+   *  firing PD module in range contributes its `damage` to the cumulative chip
+   *  in walk order; the projectile is destroyed only once its `hp` reaches 0.
+   *  A heavy torpedo (hp 120) therefore tanks a screen that deals less than
+   *  its HP cumulatively, while a missile (hp 30) dies in a couple of hits. */
   damage: z.number().min(0),
   /** Range (battle units) at which a PD module can reach a passing projectile. */
   range: z.number().min(0),
@@ -254,7 +266,11 @@ export const PointDefenseEffect = z.object({
   cooldown: z.number().int().min(0),
   /** Per-tick hit chance against a single in-range projectile (0..1). */
   hitChance: zeroToOne,
-  /** Steering accuracy; 0 means fixed, >0 lets the PD lead its target. */
+  /** Max angular rate (radians/tick) the mount can follow; 0 engages only
+   *  near-radial inbounders (a projectile whose traverse across the mount is
+   *  within `SIM.pdTrackingEpsilon`). A higher `tracking` lets the mount engage
+   *  fast-crossing ordnance. A deterministic geometric filter, not an rng
+   *  draw, so the rng stream length is unaffected. */
   tracking: z.number().min(0),
 });
 export type PointDefenseEffect = z.infer<typeof PointDefenseEffect>;

@@ -1,12 +1,17 @@
 import type { CellEdges } from "@/schema/grid";
 import { describe, expect, it } from "vitest";
 import { runBattle } from "@/domain/simulation/engine";
+import { toSimShip } from "@/domain/simulation/engine/setup";
+import { mulberry32 } from "@/domain/simulation/rng";
+import { tryPointDefenseIntercept, type PdCandidate } from "@/domain/simulation/engine/point-defence";
 import { CELL_SIZE } from "@/domain/grid";
 import { DEFAULT_MAX_TICKS } from "@/domain/simulation/types";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
 import type { Doctrine } from "@/schema/ai";
 import type { ModuleEffect, PointDefenseEffect, WeaponEffect } from "@/schema/module";
 import type { ShipStats } from "@/domain/stats";
+import type { SimProjectile, SimShip } from "@/domain/simulation/engine/types";
+import type { WeaponType } from "@/schema/module";
 
 
 const OPEN_EDGES: CellEdges = {
@@ -46,11 +51,13 @@ function missileLauncher(over: Partial<WeaponEffect> = {}): WeaponEffect {
   };
 }
 
-/** A modest PD module: short range, instant refire, moderate per-tick chance. */
+/** A PD module tuned to one-shot a missile (hp 30): damage 30, short range,
+ *  instant refire, moderate per-tick chance. The chip-damage model is exercised
+ *  by the dedicated tests below with explicit `damage` overrides. */
 function pdModule(over: Partial<PointDefenseEffect> = {}): PointDefenseEffect {
   return {
     kind: "pointDefense",
-    damage: 10,
+    damage: 30,
     range: 120,
     cooldown: 0,
     hitChance: 0.4,
@@ -316,5 +323,166 @@ describe("engine.point-defense", () => {
     const b = mk();
     expect(b.frames).toEqual(a.frames);
     expect(b.winner).toBe(a.winner);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Direct unit tests of the projectile-HP / chip-damage model. Calling
+// `tryPointDefenseIntercept` directly with a hand-built projectile and a
+// single patched-open PD candidate isolates the damage step from the rng and
+// from the rest of the battle loop, so the chip semantics are asserted
+// exactly rather than through noisy end-of-battle structure totals.
+// ---------------------------------------------------------------------------
+
+/** A PD candidate's host ship: a command reactor + one PD module at the
+ *  origin, built through `toSimShip` so the SimModule structure is real. The
+ *  PD module's gates are then forced open so the only thing under test is the
+ *  damage step (or, in the lead-aim test file, the angular-rate gate). */
+function pdShipWith(pdEffect: PointDefenseEffect): {
+  ship: SimShip;
+  candidate: PdCandidate;
+} {
+  const modules: ResolvedModule[] = [
+    moduleOf("p1", { kind: "power", output: 40 }, 0, -1, 20, 5, 0, true),
+    moduleOf("pd1", pdEffect, 1, 0, 30, 4, 5),
+  ];
+  const ship = toSimShip(
+    {
+      instanceId: "pd-ship",
+      designId: "d-pd",
+      faction: "Terran",
+      side: "defender",
+      stats: statsBlank(),
+      position: { x: 0, y: 0 },
+      facing: 0,
+      doctrine: holdDoctrine,
+      classification: "frigate",
+      modules,
+    },
+    mulberry32(1),
+  );
+  ship.x = 0;
+  ship.y = 0;
+  ship.alive = true;
+  const pdModule = ship.modules?.find((m) => m.effect.kind === "pointDefense");
+  if (pdModule === undefined) throw new Error("no PD module on pdShipWith fixture");
+  // Force every functional gate open so the intercept decision reduces to the
+  // damage step under test here.
+  pdModule.alive = true;
+  pdModule.hp = 999;
+  pdModule.powered = true;
+  pdModule.powerCut = false;
+  pdModule.manned = true;
+  pdModule.charge = 999;
+  pdModule.cooldown = 0;
+  // Narrow the discriminated union by kind — no assertion needed.
+  const effect: PointDefenseEffect =
+    pdModule.effect.kind === "pointDefense" ? pdModule.effect : unreachable();
+  return { ship, candidate: { ship, module: pdModule, effect } };
+}
+
+function unreachable(): never {
+  throw new Error("unreachable: PD module effect was not pointDefense");
+}
+
+function statsBlank(): ShipStats {
+  return {
+    mass: 10, cost: 100, powerDraw: 0, powerOutput: 0, powerNet: 0,
+    crewRequired: 0, crewCapacity: 0, crewNet: 0, structure: 9999,
+    damageReduction: 0, shieldCapacity: 0, shieldRechargeRate: 0,
+    shieldRechargeDelay: 30, deflectorCapacity: 0, deflectorRechargeRate: 0,
+    deflectorRechargeDelay: 0, thrust: 0.9, turnRate: 0.15, weapons: [],
+    compartments: 0, airtightCompartments: 0,
+  };
+}
+
+/** Build a SimProjectile. Defaults model a torpedo (hp 120) flying radially
+ *  toward a PD ship at the origin, so a tracking-0 PD candidate engages it. */
+function projectile(over: Partial<SimProjectile> & { kind?: WeaponType } = {}): SimProjectile {
+  return {
+    id: "proj-test",
+    x: 50,
+    y: 0,
+    vx: -10,
+    vy: 0,
+    kind: "torpedo",
+    mass: 1,
+    muzzleLocalX: 0,
+    muzzleLocalY: 0,
+    damage: 100,
+    tracking: 0,
+    shieldPiercing: 0,
+    deflectorPiercing: 0,
+    armourPiercing: 0,
+    range: 5000,
+    travelled: 0,
+    ttl: 1000,
+    ownerId: "attacker",
+    ownerSide: "attacker",
+    targetId: "pd-ship",
+    powered: false,
+    guided: false,
+    thrust: 0,
+    burnTicks: 0,
+    hp: 120,
+    maxHp: 120,
+    ...over,
+  };
+}
+
+/** rng that always returns 0 (below any non-zero `capped`), forcing a hit so
+ *  the damage step is deterministic and isolated from the hitChance roll. */
+const alwaysHit = () => 0;
+
+describe("engine.point-defense projectile-HP damage model", () => {
+  it("a torpedo (hp 120) survives a PD hit that deals less than its HP", () => {
+    // One PD module dealing 50: a single intercept chips 50 off the 120 hull,
+    // leaving 70 — the torpedo is NOT destroyed (returns false).
+    const { candidate } = pdShipWith(pdModule({ damage: 50, range: 120, cooldown: 0, hitChance: 1, tracking: 0 }));
+    const p = projectile();
+    expect(tryPointDefenseIntercept(p, [candidate], alwaysHit)).toBe(false);
+    expect(p.hp).toBe(70);
+    // The PD module still pays its cooldown even though the torpedo survived.
+    expect(candidate.module.cooldown).toBe(0); // effect.cooldown is 0 here
+  });
+
+  it("a torpedo dies in one hit when a single PD module's damage meets its HP", () => {
+    // damage 120 == torpedo hp 120: one intercept destroys it.
+    const { candidate } = pdShipWith(pdModule({ damage: 120, range: 120, cooldown: 0, hitChance: 1, tracking: 0 }));
+    const p = projectile();
+    expect(tryPointDefenseIntercept(p, [candidate], alwaysHit)).toBe(true);
+    expect(p.hp).toBeLessThanOrEqual(0);
+  });
+
+  it("a torpedo tanks a weak PD screen across several intercepts before dying", () => {
+    // damage 50, torpedo hp 120: three successful intercepts kill it
+    // (120 -> 70 -> 20 -> -30). The chip accumulates across calls.
+    const { candidate } = pdShipWith(pdModule({ damage: 50, range: 120, cooldown: 0, hitChance: 1, tracking: 0 }));
+    const p = projectile();
+    expect(tryPointDefenseIntercept(p, [candidate], alwaysHit)).toBe(false); // 70
+    candidate.module.cooldown = 0; // instant refire for the next intercept
+    expect(tryPointDefenseIntercept(p, [candidate], alwaysHit)).toBe(false); // 20
+    candidate.module.cooldown = 0;
+    expect(tryPointDefenseIntercept(p, [candidate], alwaysHit)).toBe(true);  // -30
+  });
+
+  it("multiple PD modules' damage stacks cumulatively in one intercept", () => {
+    // Two PD modules each dealing 60 fire in the same tick: 60 + 60 = 120 meets
+    // the torpedo's HP, so a single intercept destroys it. Individually (60 < 120)
+    // neither would kill it in one hit — the kill is the cumulative sum.
+    const a = pdShipWith(pdModule({ damage: 60, range: 120, cooldown: 0, hitChance: 1, tracking: 0 }));
+    const b = pdShipWith(pdModule({ damage: 60, range: 120, cooldown: 0, hitChance: 1, tracking: 0 }));
+    const p = projectile();
+    expect(tryPointDefenseIntercept(p, [a.candidate, b.candidate], alwaysHit)).toBe(true);
+    expect(p.hp).toBe(0);
+  });
+
+  it("a miss leaves the projectile's hull untouched (no chip on a failed roll)", () => {
+    // rng returns 1 (>= any capped chance) → the intercept misses; no damage is
+    // applied and the torpedo keeps its full hull.
+    const { candidate } = pdShipWith(pdModule({ damage: 999, range: 120, cooldown: 0, hitChance: 1, tracking: 0 }));
+    const p = projectile();
+    expect(tryPointDefenseIntercept(p, [candidate], () => 1)).toBe(false);
+    expect(p.hp).toBe(120);
   });
 });

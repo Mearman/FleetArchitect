@@ -45,11 +45,28 @@ export function buildPdCandidates(byId: Map<string, SimShip>): PdCandidate[] {
  * resolves the stack, keeping the rng stream length independent of how many PD
  * modules fire.
  *
+ * Two deterministic filters gate which candidates fire, both preserving the
+ * single-draw contract:
+ *
+ *  - Lead-aim (tracking): the projectile's angular rate across the mount
+ *    `omega = |cross| / r²` (cross = dx·p.vy − dy·p.vx, the 2-D analogue of
+ *    r×v) must not exceed `cand.effect.tracking + SIM.pdTrackingEpsilon`. The
+ *    epsilon lets a `tracking: 0` mount still engage a near-radial infleeder
+ *    (omega ≈ 0). This filter runs BEFORE the hitChance stack, so it composes
+ *    with the per-module hitChance already wired; it draws no rng.
+ *
+ *  - Damage step (all-or-nothing, single draw): if the rng roll misses the
+ *    stacked chance the projectile passes untouched; if it hits, EVERY firing
+ *    candidate applies its `effect.damage` to `p.hp` in walk order, then the
+ *    projectile is destroyed iff `p.hp <= 0`. So a heavy torpedo (hp 120) tanks
+ *    a screen that deals < 120 cumulative damage; a missile (hp 30) dies to a
+ *    couple of typical hits. Only one rng draw is consumed either way.
+ *
  * `pdCandidates` (buildPdCandidates, once per tick) gives the structural PD
  * set in walk order; per-projectile gates are re-applied here so this is
- * byte-identical to the former ship×module walk. The count and cooldown
- * passes share one collection (lossless: nothing mutates between them within
- * a single projectile).
+ * byte-identical to the former ship×module walk. The count, lead-aim, and
+ * cooldown passes share one collection (lossless: nothing mutates between them
+ * within a single projectile until the damage step, which runs after the draw).
  */
 export function tryPointDefenseIntercept(
   p: SimProjectile,
@@ -70,7 +87,19 @@ export function tryPointDefenseIntercept(
     if (m.cooldown > 0) continue;
     const dx = ship.x - p.x;
     const dy = ship.y - p.y;
-    if (fastHypot(dx, dy) <= cand.effect.range) firing.push(cand);
+    if (fastHypot(dx, dy) > cand.effect.range) continue;
+    // Lead-aim gate: a mount can only follow a projectile whose traverse
+    // across it stays within the mount's `tracking` (plus the radial-inbound
+    // epsilon). `cross = dx·p.vy − dy·p.vx` is the 2-D r×v; |cross|/r² is the
+    // angular rate. No rng — a deterministic geometric filter that composes
+    // with the hitChance stack below.
+    const r2 = dx * dx + dy * dy;
+    if (r2 > 0) {
+      const cross = dx * p.vy - dy * p.vx;
+      const omega = Math.abs(cross) / r2;
+      if (omega > cand.effect.tracking + SIM.pdTrackingEpsilon) continue;
+    }
+    firing.push(cand);
   }
   if (firing.length === 0) return false;
   // Stack per-module hit chances: each candidate multiplies the projectile's
@@ -89,5 +118,14 @@ export function tryPointDefenseIntercept(
   for (const cand of firing) {
     cand.module.cooldown = cand.effect.cooldown;
   }
-  return rng() < capped;
+  // All-or-nothing damage step (preserves the single-draw contract). A miss
+  // leaves the projectile untouched; a hit applies every firing candidate's
+  // authored `damage` to `p.hp` in walk order, then the projectile dies iff its
+  // hull is gone. A heavy torpedo (hp 120) tanks a screen that deals < 120
+  // cumulatively; a missile (hp 30) dies to ~2 typical hits.
+  if (rng() >= capped) return false;
+  for (const cand of firing) {
+    p.hp -= cand.effect.damage;
+  }
+  return p.hp <= 0;
 }

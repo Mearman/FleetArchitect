@@ -661,7 +661,7 @@ export const terranCapitalModules: ModuleDefinitionInput[] = [
     footprint: TERRAN_FOOTPRINTS.flakBastion,
     effect: {
       kind: "pointDefense",
-      damage: 12,
+      damage: 20,
       range: 120,
       cooldown: 8,
       hitChance: 0.5,

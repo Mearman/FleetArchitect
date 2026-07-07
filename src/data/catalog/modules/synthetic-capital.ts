@@ -490,7 +490,7 @@ export const syntheticCapitalModules: ModuleDefinitionInput[] = [
     footprint: SYNTHETIC_FOOTPRINTS.interceptorGrid,
     effect: {
       kind: "pointDefense",
-      damage: 1400,
+      damage: 36,
       range: 160,
       cooldown: 6,
       hitChance: 0.7,

@@ -22,7 +22,7 @@ import { ACCEL_PER_TICK_FROM_SI } from "../types";
 import { beamDamageFactor, lensingDeflection } from "./optics";
 import { isCharged } from "./crew";
 import { applyImpact } from "./damage-impact";
-import { DEFLECTOR_PIERCING_DEFAULT } from "@/data/catalog/combat-scale";
+import { DEFLECTOR_PIERCING_DEFAULT, PROJECTILE_HP_BY_KIND } from "@/data/catalog/combat-scale";
 import {
   beamImpactProfile,
   kineticImpactProfile,
@@ -157,6 +157,12 @@ export function spawnProjectile(
     guided: isGuided,
     thrust: isPowered ? weapon.thrust ?? 0 : 0,
     burnTicks: isPowered ? weapon.burnTicks ?? 0 : 0,
+    // Projectile integrity chipped by point-defence `damage`. A weapon that
+    // authors `projectileHp` carries that hull; otherwise the per-kind default
+    // (missile 30, torpedo 120, every other kind 1). The trailing `?? 1` covers
+    // a weaponType not in the table, preserving the binary-kill behaviour.
+    hp: weapon.projectileHp ?? PROJECTILE_HP_BY_KIND[weapon.weaponType] ?? 1,
+    maxHp: weapon.projectileHp ?? PROJECTILE_HP_BY_KIND[weapon.weaponType] ?? 1,
   };
 }
 

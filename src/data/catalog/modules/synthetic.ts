@@ -304,7 +304,7 @@ export const syntheticModules: ModuleDefinitionInput[] = [
     techLevel: 3,
     effect: {
       kind: "pointDefense",
-      damage: 14,
+      damage: 30,
       range: 130,
       cooldown: 6,
       hitChance: 0.6,

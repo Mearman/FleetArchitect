@@ -320,7 +320,7 @@ export const swarmModules: ModuleDefinitionInput[] = [
     techLevel: 2,
     effect: {
       kind: "pointDefense",
-      damage: 8,
+      damage: 14,
       range: 100,
       cooldown: 10,
       hitChance: 0.35,

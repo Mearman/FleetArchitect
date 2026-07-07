@@ -221,6 +221,8 @@ function makeState(): { state: EngineState; rng: ReturnType<typeof mulberry32> }
     guided: false,
     thrust: 0,
     burnTicks: 0,
+    hp: 1,
+    maxHp: 1,
   };
   const mine: SimMine = {
     id: "a1#mine#3#1",

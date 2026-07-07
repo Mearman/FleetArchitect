@@ -636,7 +636,7 @@ export const crystallineCapitalModules: ModuleDefinitionInput[] = [
     footprint: CRYSTALLINE_FOOTPRINTS.refractorGrid,
     effect: {
       kind: "pointDefense",
-      damage: 10,
+      damage: 18,
       range: 110,
       cooldown: 7,
       hitChance: 0.45,

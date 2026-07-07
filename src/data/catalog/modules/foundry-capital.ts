@@ -642,7 +642,7 @@ export const foundryCapitalModules: ModuleDefinitionInput[] = [
     footprint: FOUNDRY_FOOTPRINTS.flakBunker,
     effect: {
       kind: "pointDefense",
-      damage: 20,
+      damage: 24,
       range: 140,
       cooldown: 7,
       hitChance: 0.55,
