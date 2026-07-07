@@ -1,3 +1,10 @@
+# [1.58.0](https://github.com/Mearman/FleetArchitect/compare/v1.57.0...v1.58.0) (2026-07-07)
+
+
+### Features
+
+* **presets:** mount signature-dampers, activating the stealth doctrine ([122cafc](https://github.com/Mearman/FleetArchitect/commit/122cafc68ab37de7c7ae7a922aacc656663a63e5))
+
 # [1.57.0](https://github.com/Mearman/FleetArchitect/compare/v1.56.0...v1.57.0) (2026-07-07)
 
 
