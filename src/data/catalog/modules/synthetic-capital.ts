@@ -346,6 +346,7 @@ export const syntheticCapitalModules: ModuleDefinitionInput[] = [
       // Ballistic slug: unpowered and unguided.
       powered: false,
       guided: false,
+      ammo: 240,
       ammoCapacity: 240,
     },
   },
@@ -567,6 +568,7 @@ export const syntheticCapitalModules: ModuleDefinitionInput[] = [
       turretTurnRate: 0.07,
       powered: false,
       guided: false,
+      ammo: 440,
       ammoCapacity: 440,
     },
   },
@@ -609,6 +611,7 @@ export const syntheticCapitalModules: ModuleDefinitionInput[] = [
       turretTurnRate: 0.07,
       powered: false,
       guided: false,
+      ammo: 360,
       ammoCapacity: 360,
     },
   },

@@ -4,7 +4,14 @@ import type { ShipDesign } from "@/schema/ship";
 /** Same ShipDesign input shape used by designs.ts: schema defaults optional. */
 type ShipDesignInput = input<typeof ShipDesign>;
 
-import { syntheticGrid, mountMultiCell, PRESET_TIME, withEdges } from "@/data/presets/tokens";
+import {
+  ammoConduit,
+  mountMultiCell,
+  PRESET_TIME,
+  syntheticGrid,
+  withConnections,
+  withEdges,
+} from "@/data/presets/tokens";
 import { subdivideGrid } from "@/domain/shipgen";
 import { SYNTHETIC_FOOTPRINTS } from "@/data/catalog/modules/synthetic-capital";
 
@@ -33,14 +40,22 @@ export const syntheticDesigns: ShipDesignInput[] = [
     // the cannon. No crew, no quarters — the processor runs the whole hull
     // alone. A full armour shell wraps the hull — the machine silhouette — with
     // only the lateral thrusters piercing the top and bottom rails.
-    grid: subdivideGrid(withEdges(syntheticGrid([
-      "###>##",
-      "EPGCNe",
-      "###<##",
-    ]), [
-      // Ammo-feed / maintenance passage between the magazine and the cannon.
-      { col: 2, row: 1, dir: "e", kind: "door" },
-    ]), F_AUTOMATON),
+    grid: withConnections(
+      subdivideGrid(
+        withEdges(syntheticGrid([
+          "###>##",
+          "EPGCNe",
+          "###<##",
+        ]), [
+          // Ammo-feed / maintenance passage between the magazine and the cannon.
+          { col: 2, row: 1, dir: "e", kind: "door" },
+        ]),
+        F_AUTOMATON,
+      ),
+      // Hardwire ammo conduit: the crewless hull feeds the targeting cannon
+      // straight from the slug reservoir — no crew haul (crewRequired is 0).
+      ammoConduit(F_AUTOMATON, { col: 2, row: 1 }, [{ col: 3, row: 1 }]),
+    ),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
@@ -55,36 +70,49 @@ export const syntheticDesigns: ShipDesignInput[] = [
     // flanked by an interceptor array and a sensor suite. Paired slug
     // reservoirs keep both weapons fed. Armour rails wrap the grid; an armour
     // cap seals the prow behind the gun battery.
-    grid: mountMultiCell(
-      subdivideGrid(withEdges(syntheticGrid([
-        ".#####>",
-        "EXGCINe",
-        "EPG~RN#",
-        "EXGCINe",
-        ".#####<",
-      ]), [
-      // Drive | reactor bulkhead.
-      { col: 0, row: 1, dir: "e", kind: "wall" },
-      { col: 0, row: 2, dir: "e", kind: "door" },
-      { col: 0, row: 3, dir: "e", kind: "wall" },
-      // Reactor | magazine bulkhead.
-      { col: 1, row: 1, dir: "e", kind: "wall" },
-      { col: 1, row: 2, dir: "e", kind: "door" },
-      { col: 1, row: 3, dir: "e", kind: "wall" },
-      // Magazine | weapons battery bulkhead.
-      { col: 2, row: 1, dir: "e", kind: "wall" },
-      { col: 2, row: 2, dir: "e", kind: "door" },
-      { col: 2, row: 3, dir: "e", kind: "wall" },
-      // Weapons battery | sensors bulkhead.
-      { col: 4, row: 1, dir: "e", kind: "wall" },
-      { col: 4, row: 2, dir: "e", kind: "door" },
-      { col: 4, row: 3, dir: "e", kind: "wall" },
-    ]), F_NODE),
-      F_NODE,
+    grid: withConnections(
+      mountMultiCell(
+        subdivideGrid(withEdges(syntheticGrid([
+          ".#####>",
+          "EXGCINe",
+          "EPG~RN#",
+          "EXGCINe",
+          ".#####<",
+        ]), [
+        // Drive | reactor bulkhead.
+        { col: 0, row: 1, dir: "e", kind: "wall" },
+        { col: 0, row: 2, dir: "e", kind: "door" },
+        { col: 0, row: 3, dir: "e", kind: "wall" },
+        // Reactor | magazine bulkhead.
+        { col: 1, row: 1, dir: "e", kind: "wall" },
+        { col: 1, row: 2, dir: "e", kind: "door" },
+        { col: 1, row: 3, dir: "e", kind: "wall" },
+        // Magazine | weapons battery bulkhead.
+        { col: 2, row: 1, dir: "e", kind: "wall" },
+        { col: 2, row: 2, dir: "e", kind: "door" },
+        { col: 2, row: 3, dir: "e", kind: "wall" },
+        // Weapons battery | sensors bulkhead.
+        { col: 4, row: 1, dir: "e", kind: "wall" },
+        { col: 4, row: 2, dir: "e", kind: "door" },
+        { col: 4, row: 3, dir: "e", kind: "wall" },
+        ]), F_NODE),
+        F_NODE,
+        [
+          // Twin precision cannon bank replaces the centre-row targeting cannon
+          // — twice the throw weight at the same muzzle velocity.
+          [3, 2, "syn-targeting-bank", SYNTHETIC_FOOTPRINTS.targetingBank],
+        ],
+      ),
+      // Hardwire ammo conduits: each slug reservoir feeds the weapons on its row
+      // — the centre magazine feeds both the targeting bank and the coilgun.
+      // No crew haul on a crewless hull (crewRequired is 0).
       [
-        // Twin precision cannon bank replaces the centre-row targeting cannon
-        // — twice the throw weight at the same muzzle velocity.
-        [3, 2, "syn-targeting-bank", SYNTHETIC_FOOTPRINTS.targetingBank],
+        ...ammoConduit(F_NODE, { col: 2, row: 1 }, [{ col: 3, row: 1 }]),
+        ...ammoConduit(F_NODE, { col: 2, row: 2 }, [
+          { col: 3, row: 2 },
+          { col: 4, row: 2 },
+        ]),
+        ...ammoConduit(F_NODE, { col: 2, row: 3 }, [{ col: 3, row: 3 }]),
       ],
     ),
     createdAt: PRESET_TIME,
@@ -110,54 +138,64 @@ export const syntheticDesigns: ShipDesignInput[] = [
     // Interceptor Grid (L, a dense two-cell screen replacing an interceptor
     // array). Each anchor's covered cells are installed by `mountMultiCell`
     // after subdivision.
-    grid: mountMultiCell(
-      subdivideGrid(withEdges(syntheticGrid([
-        ".#########>",
-        "EX~GRHAINe#",
-        "EPAGKHJLN##",
-        "EX~GRHAINe#",
-        ".#########<",
-      ]), [
-      // Drive | reactor-and-command bulkhead.
-      { col: 0, row: 1, dir: "e", kind: "wall" },
-      { col: 0, row: 2, dir: "e", kind: "door" },
-      { col: 0, row: 3, dir: "e", kind: "wall" },
-      // Command core | magazine shaft.
-      { col: 2, row: 1, dir: "e", kind: "wall" },
-      { col: 2, row: 2, dir: "e", kind: "door" },
-      { col: 2, row: 3, dir: "e", kind: "wall" },
-      // Magazine | railgun battery.
-      { col: 3, row: 1, dir: "e", kind: "wall" },
-      { col: 3, row: 2, dir: "e", kind: "door" },
-      { col: 3, row: 3, dir: "e", kind: "wall" },
-      // Railgun | drone hangars.
-      { col: 4, row: 1, dir: "e", kind: "wall" },
-      { col: 4, row: 2, dir: "e", kind: "door" },
-      { col: 4, row: 3, dir: "e", kind: "wall" },
-      // Hangars | coordination matrix.
-      { col: 5, row: 1, dir: "e", kind: "wall" },
-      { col: 5, row: 2, dir: "e", kind: "door" },
-      { col: 5, row: 3, dir: "e", kind: "wall" },
-      // Coordination | PD screen.
-      { col: 6, row: 1, dir: "e", kind: "wall" },
-      { col: 6, row: 2, dir: "e", kind: "door" },
-      { col: 6, row: 3, dir: "e", kind: "wall" },
-      // PD screen | sensors and brake.
-      { col: 7, row: 1, dir: "e", kind: "wall" },
-      { col: 7, row: 2, dir: "e", kind: "door" },
-      { col: 7, row: 3, dir: "e", kind: "wall" },
-    ]), F_NETWORK_HUB),
-      F_NETWORK_HUB,
+    grid: withConnections(
+      mountMultiCell(
+        subdivideGrid(withEdges(syntheticGrid([
+          ".#########>",
+          "EX~GRHAINe#",
+          "EPAGKHJLN##",
+          "EX~GRHAINe#",
+          ".#########<",
+        ]), [
+        // Drive | reactor-and-command bulkhead.
+        { col: 0, row: 1, dir: "e", kind: "wall" },
+        { col: 0, row: 2, dir: "e", kind: "door" },
+        { col: 0, row: 3, dir: "e", kind: "wall" },
+        // Command core | magazine shaft.
+        { col: 2, row: 1, dir: "e", kind: "wall" },
+        { col: 2, row: 2, dir: "e", kind: "door" },
+        { col: 2, row: 3, dir: "e", kind: "wall" },
+        // Magazine | railgun battery.
+        { col: 3, row: 1, dir: "e", kind: "wall" },
+        { col: 3, row: 2, dir: "e", kind: "door" },
+        { col: 3, row: 3, dir: "e", kind: "wall" },
+        // Railgun | drone hangars.
+        { col: 4, row: 1, dir: "e", kind: "wall" },
+        { col: 4, row: 2, dir: "e", kind: "door" },
+        { col: 4, row: 3, dir: "e", kind: "wall" },
+        // Hangars | coordination matrix.
+        { col: 5, row: 1, dir: "e", kind: "wall" },
+        { col: 5, row: 2, dir: "e", kind: "door" },
+        { col: 5, row: 3, dir: "e", kind: "wall" },
+        // Coordination | PD screen.
+        { col: 6, row: 1, dir: "e", kind: "wall" },
+        { col: 6, row: 2, dir: "e", kind: "door" },
+        { col: 6, row: 3, dir: "e", kind: "wall" },
+        // PD screen | sensors and brake.
+        { col: 7, row: 1, dir: "e", kind: "wall" },
+        { col: 7, row: 2, dir: "e", kind: "door" },
+        { col: 7, row: 3, dir: "e", kind: "wall" },
+        ]), F_NETWORK_HUB),
+        F_NETWORK_HUB,
+        [
+          [4, 2, "syn-coilgun-bank", SYNTHETIC_FOOTPRINTS.coilgunBank],
+          [6, 2, "syn-coordination-hub", SYNTHETIC_FOOTPRINTS.coordinationHub],
+          [7, 2, "syn-interceptor-grid", SYNTHETIC_FOOTPRINTS.interceptorGrid],
+          // Twin sustained cutter beam on the upper deck corridor — one band
+          // above the Cutter Lance, fed by the twin quantum cores.
+          [2, 3, "syn-twin-cutter", SYNTHETIC_FOOTPRINTS.twinCutter],
+          // Tactical blink drive on the lower deck corridor — the Collective's
+          // first phase-shift repositioning drive.
+          [2, 1, "syn-tactical-blink", SYNTHETIC_FOOTPRINTS.tacticalBlink],
+        ],
+      ),
+      // Hardwire ammo conduits: each slug reservoir feeds the kinetic battery on
+      // its row — the coilgun bank on the centre row, a coilgun above and below.
+      // No crew haul on a crewless hull (crewRequired is 0).
       [
-        [4, 2, "syn-coilgun-bank", SYNTHETIC_FOOTPRINTS.coilgunBank],
-        [6, 2, "syn-coordination-hub", SYNTHETIC_FOOTPRINTS.coordinationHub],
-        [7, 2, "syn-interceptor-grid", SYNTHETIC_FOOTPRINTS.interceptorGrid],
-        // Twin sustained cutter beam on the upper deck corridor — one band
-        // above the Cutter Lance, fed by the twin quantum cores.
-        [2, 3, "syn-twin-cutter", SYNTHETIC_FOOTPRINTS.twinCutter],
-        // Tactical blink drive on the lower deck corridor — the Collective's
-        // first phase-shift repositioning drive.
-        [2, 1, "syn-tactical-blink", SYNTHETIC_FOOTPRINTS.tacticalBlink],
+        ...ammoConduit(F_NETWORK_HUB, { col: 3, row: 1 }, [{ col: 4, row: 1 }]),
+        ...ammoConduit(F_NETWORK_HUB, { col: 3, row: 2 }, [{ col: 4, row: 2 }]),
+        ...ammoConduit(F_NETWORK_HUB, { col: 3, row: 3 }, [{ col: 4, row: 3 }]),
       ],
     ),
     createdAt: PRESET_TIME,
@@ -188,78 +226,91 @@ export const syntheticDesigns: ShipDesignInput[] = [
     // dense two-cell screen), and a Coilgun Bank (K, twin barrels). Each
     // anchor's covered cells are installed by `mountMultiCell` after
     // subdivision.
-    grid: mountMultiCell(
-      subdivideGrid(withEdges(syntheticGrid([
-        ".###########>",
-        "EX~GHAINRR##e",
-        "EX~GJHAINR##e",
-        "TPMGADSL~AN#e",
-        "EX~GAHAINR##e",
-        "EX~GHAINRR##e",
-        ".###########<",
-      ]), [
-      // Drive | reactor-and-command bulkhead.
-      { col: 0, row: 1, dir: "e", kind: "wall" },
-      { col: 0, row: 2, dir: "e", kind: "wall" },
-      { col: 0, row: 3, dir: "e", kind: "door" },
-      { col: 0, row: 4, dir: "e", kind: "wall" },
-      { col: 0, row: 5, dir: "e", kind: "wall" },
-      // Command core | magazine shaft.
-      { col: 2, row: 1, dir: "e", kind: "wall" },
-      { col: 2, row: 2, dir: "e", kind: "wall" },
-      { col: 2, row: 3, dir: "e", kind: "door" },
-      { col: 2, row: 4, dir: "e", kind: "wall" },
-      { col: 2, row: 5, dir: "e", kind: "wall" },
-      // Magazine | drone hangar bay.
-      { col: 3, row: 1, dir: "e", kind: "wall" },
-      { col: 3, row: 2, dir: "e", kind: "wall" },
-      { col: 3, row: 3, dir: "e", kind: "door" },
-      { col: 3, row: 4, dir: "e", kind: "wall" },
-      { col: 3, row: 5, dir: "e", kind: "wall" },
-      // Hangar bay | coordination matrix.
-      { col: 5, row: 1, dir: "e", kind: "wall" },
-      { col: 5, row: 2, dir: "e", kind: "wall" },
-      { col: 5, row: 3, dir: "e", kind: "door" },
-      { col: 5, row: 4, dir: "e", kind: "wall" },
-      { col: 5, row: 5, dir: "e", kind: "wall" },
-      // Coordination | PD screen.
-      { col: 6, row: 1, dir: "e", kind: "wall" },
-      { col: 6, row: 2, dir: "e", kind: "wall" },
-      { col: 6, row: 3, dir: "e", kind: "door" },
-      { col: 6, row: 4, dir: "e", kind: "wall" },
-      { col: 6, row: 5, dir: "e", kind: "wall" },
-      // PD screen | railgun battery.
-      { col: 7, row: 1, dir: "e", kind: "wall" },
-      { col: 7, row: 2, dir: "e", kind: "wall" },
-      { col: 7, row: 3, dir: "e", kind: "door" },
-      { col: 7, row: 4, dir: "e", kind: "wall" },
-      { col: 7, row: 5, dir: "e", kind: "wall" },
-      // Hangar bay stacked decks: col 4 walled, col 5 the launch corridor.
-      { col: 4, row: 2, dir: "s", kind: "wall" },
-      { col: 5, row: 2, dir: "s", kind: "door" },
-      { col: 4, row: 3, dir: "s", kind: "wall" },
-      { col: 5, row: 3, dir: "s", kind: "door" },
-    ]), F_NEXUS_PRIME),
-      F_NEXUS_PRIME,
+    grid: withConnections(
+      mountMultiCell(
+        subdivideGrid(withEdges(syntheticGrid([
+          ".###########>",
+          "EX~GHAINRR##e",
+          "EX~GJHAINR##e",
+          "TPMGADSL~AN#e",
+          "EX~GAHAINR##e",
+          "EX~GHAINRR##e",
+          ".###########<",
+        ]), [
+        // Drive | reactor-and-command bulkhead.
+        { col: 0, row: 1, dir: "e", kind: "wall" },
+        { col: 0, row: 2, dir: "e", kind: "wall" },
+        { col: 0, row: 3, dir: "e", kind: "door" },
+        { col: 0, row: 4, dir: "e", kind: "wall" },
+        { col: 0, row: 5, dir: "e", kind: "wall" },
+        // Command core | magazine shaft.
+        { col: 2, row: 1, dir: "e", kind: "wall" },
+        { col: 2, row: 2, dir: "e", kind: "wall" },
+        { col: 2, row: 3, dir: "e", kind: "door" },
+        { col: 2, row: 4, dir: "e", kind: "wall" },
+        { col: 2, row: 5, dir: "e", kind: "wall" },
+        // Magazine | drone hangar bay.
+        { col: 3, row: 1, dir: "e", kind: "wall" },
+        { col: 3, row: 2, dir: "e", kind: "wall" },
+        { col: 3, row: 3, dir: "e", kind: "door" },
+        { col: 3, row: 4, dir: "e", kind: "wall" },
+        { col: 3, row: 5, dir: "e", kind: "wall" },
+        // Hangar bay | coordination matrix.
+        { col: 5, row: 1, dir: "e", kind: "wall" },
+        { col: 5, row: 2, dir: "e", kind: "wall" },
+        { col: 5, row: 3, dir: "e", kind: "door" },
+        { col: 5, row: 4, dir: "e", kind: "wall" },
+        { col: 5, row: 5, dir: "e", kind: "wall" },
+        // Coordination | PD screen.
+        { col: 6, row: 1, dir: "e", kind: "wall" },
+        { col: 6, row: 2, dir: "e", kind: "wall" },
+        { col: 6, row: 3, dir: "e", kind: "door" },
+        { col: 6, row: 4, dir: "e", kind: "wall" },
+        { col: 6, row: 5, dir: "e", kind: "wall" },
+        // PD screen | railgun battery.
+        { col: 7, row: 1, dir: "e", kind: "wall" },
+        { col: 7, row: 2, dir: "e", kind: "wall" },
+        { col: 7, row: 3, dir: "e", kind: "door" },
+        { col: 7, row: 4, dir: "e", kind: "wall" },
+        { col: 7, row: 5, dir: "e", kind: "wall" },
+        // Hangar bay stacked decks: col 4 walled, col 5 the launch corridor.
+        { col: 4, row: 2, dir: "s", kind: "wall" },
+        { col: 5, row: 2, dir: "s", kind: "door" },
+        { col: 4, row: 3, dir: "s", kind: "wall" },
+        { col: 5, row: 3, dir: "s", kind: "door" },
+        ]), F_NEXUS_PRIME),
+        F_NEXUS_PRIME,
+        [
+          [0, 3, "syn-thruster-bank", SYNTHETIC_FOOTPRINTS.thrusterBank],
+          [2, 3, "syn-quantum-core-heavy", SYNTHETIC_FOOTPRINTS.quantumCoreHeavy],
+          [4, 2, "syn-coordination-hub", SYNTHETIC_FOOTPRINTS.coordinationHub],
+          [5, 3, "syn-drone-hangar-heavy", SYNTHETIC_FOOTPRINTS.droneHangarHeavy],
+          [6, 3, "syn-shield-hub", SYNTHETIC_FOOTPRINTS.shieldHub],
+          [7, 3, "syn-interceptor-grid", SYNTHETIC_FOOTPRINTS.interceptorGrid],
+          // T-tetromino coilgun replaces the 2-cell coilgun bank — one more
+          // barrel, a heavier alpha strike at the same electromagnetic reach.
+          [8, 3, "syn-tetromino-coilgun", SYNTHETIC_FOOTPRINTS.tetrominoCoilgun],
+          // Capital ECCM bastion on the upper keel deck.
+          [2, 2, "syn-eccm-bastion", SYNTHETIC_FOOTPRINTS.eccmBastion],
+          // Capital sensor bastion on the lower keel deck.
+          [2, 4, "syn-sensor-bastion", SYNTHETIC_FOOTPRINTS.sensorBastion],
+          // Y8 phalanx-deflector and Y9 drone-launch-deck remain in the catalogue
+          // but are not mounted here: the Nexus Armada fleet budget (20 000 pts)
+          // cannot absorb five capital additions on one hull. The two omitted are
+          // the most redundant — a second defence screen alongside the existing
+          // shield-hub, and a second drone bay alongside the drone-hangar-heavy.
+        ],
+      ),
+      // Hardwire ammo conduits: each row's slug reservoir feeds the kinetic
+      // battery on its row — the railgun pairs on rows 1 and 5, the lone
+      // railguns on rows 2 and 4, and the T-tetromino coilgun on the centre
+      // row. No crew haul on a crewless hull (crewRequired is 0).
       [
-        [0, 3, "syn-thruster-bank", SYNTHETIC_FOOTPRINTS.thrusterBank],
-        [2, 3, "syn-quantum-core-heavy", SYNTHETIC_FOOTPRINTS.quantumCoreHeavy],
-        [4, 2, "syn-coordination-hub", SYNTHETIC_FOOTPRINTS.coordinationHub],
-        [5, 3, "syn-drone-hangar-heavy", SYNTHETIC_FOOTPRINTS.droneHangarHeavy],
-        [6, 3, "syn-shield-hub", SYNTHETIC_FOOTPRINTS.shieldHub],
-        [7, 3, "syn-interceptor-grid", SYNTHETIC_FOOTPRINTS.interceptorGrid],
-        // T-tetromino coilgun replaces the 2-cell coilgun bank — one more
-        // barrel, a heavier alpha strike at the same electromagnetic reach.
-        [8, 3, "syn-tetromino-coilgun", SYNTHETIC_FOOTPRINTS.tetrominoCoilgun],
-        // Capital ECCM bastion on the upper keel deck.
-        [2, 2, "syn-eccm-bastion", SYNTHETIC_FOOTPRINTS.eccmBastion],
-        // Capital sensor bastion on the lower keel deck.
-        [2, 4, "syn-sensor-bastion", SYNTHETIC_FOOTPRINTS.sensorBastion],
-        // Y8 phalanx-deflector and Y9 drone-launch-deck remain in the catalogue
-        // but are not mounted here: the Nexus Armada fleet budget (20 000 pts)
-        // cannot absorb five capital additions on one hull. The two omitted are
-        // the most redundant — a second defence screen alongside the existing
-        // shield-hub, and a second drone bay alongside the drone-hangar-heavy.
+        ...ammoConduit(F_NEXUS_PRIME, { col: 3, row: 1 }, [{ col: 8, row: 1 }, { col: 9, row: 1 }]),
+        ...ammoConduit(F_NEXUS_PRIME, { col: 3, row: 2 }, [{ col: 9, row: 2 }]),
+        ...ammoConduit(F_NEXUS_PRIME, { col: 3, row: 3 }, [{ col: 8, row: 3 }]),
+        ...ammoConduit(F_NEXUS_PRIME, { col: 3, row: 4 }, [{ col: 9, row: 4 }]),
+        ...ammoConduit(F_NEXUS_PRIME, { col: 3, row: 5 }, [{ col: 8, row: 5 }, { col: 9, row: 5 }]),
       ],
     ),
     createdAt: PRESET_TIME,
@@ -286,46 +337,52 @@ export const syntheticDesigns: ShipDesignInput[] = [
     // hangar's swarm each), an Ion Drive Bank (T, twin ion thrusters), and an
     // Interceptor Grid (L, a dense two-cell screen). Each anchor's covered
     // cells are installed by `mountMultiCell` after subdivision.
-    grid: mountMultiCell(
-      subdivideGrid(withEdges(syntheticGrid([
-        ".#########>",
-        "EX~GDHAINe#",
-        "TPAGRHALN##",
-        "EX~GDHAINe#",
-        ".#########<",
-      ]), [
-      // Drive | reactor-and-command bulkhead.
-      { col: 0, row: 1, dir: "e", kind: "wall" },
-      { col: 0, row: 2, dir: "e", kind: "door" },
-      { col: 0, row: 3, dir: "e", kind: "wall" },
-      // Command core | magazine shaft.
-      { col: 2, row: 1, dir: "e", kind: "wall" },
-      { col: 2, row: 2, dir: "e", kind: "door" },
-      { col: 2, row: 3, dir: "e", kind: "wall" },
-      // Magazine | drone hangar bay.
-      { col: 3, row: 1, dir: "e", kind: "wall" },
-      { col: 3, row: 2, dir: "e", kind: "door" },
-      { col: 3, row: 3, dir: "e", kind: "wall" },
-      // Hangar bay | coordination matrix.
-      { col: 5, row: 1, dir: "e", kind: "wall" },
-      { col: 5, row: 2, dir: "e", kind: "door" },
-      { col: 5, row: 3, dir: "e", kind: "wall" },
-      // Coordination | PD screen.
-      { col: 6, row: 1, dir: "e", kind: "wall" },
-      { col: 6, row: 2, dir: "e", kind: "door" },
-      { col: 6, row: 3, dir: "e", kind: "wall" },
-      // PD screen | sensors and brake.
-      { col: 7, row: 1, dir: "e", kind: "wall" },
-      { col: 7, row: 2, dir: "e", kind: "door" },
-      { col: 7, row: 3, dir: "e", kind: "wall" },
-    ]), F_MAINFRAME),
-      F_MAINFRAME,
-      [
-        [0, 2, "syn-thruster-bank", SYNTHETIC_FOOTPRINTS.thrusterBank],
-        [4, 1, "syn-drone-hangar-heavy", SYNTHETIC_FOOTPRINTS.droneHangarHeavy],
-        [4, 3, "syn-drone-hangar-heavy", SYNTHETIC_FOOTPRINTS.droneHangarHeavy],
-        [7, 2, "syn-interceptor-grid", SYNTHETIC_FOOTPRINTS.interceptorGrid],
-      ],
+    grid: withConnections(
+      mountMultiCell(
+        subdivideGrid(withEdges(syntheticGrid([
+          ".#########>",
+          "EX~GDHAINe#",
+          "TPAGRHALN##",
+          "EX~GDHAINe#",
+          ".#########<",
+        ]), [
+        // Drive | reactor-and-command bulkhead.
+        { col: 0, row: 1, dir: "e", kind: "wall" },
+        { col: 0, row: 2, dir: "e", kind: "door" },
+        { col: 0, row: 3, dir: "e", kind: "wall" },
+        // Command core | magazine shaft.
+        { col: 2, row: 1, dir: "e", kind: "wall" },
+        { col: 2, row: 2, dir: "e", kind: "door" },
+        { col: 2, row: 3, dir: "e", kind: "wall" },
+        // Magazine | drone hangar bay.
+        { col: 3, row: 1, dir: "e", kind: "wall" },
+        { col: 3, row: 2, dir: "e", kind: "door" },
+        { col: 3, row: 3, dir: "e", kind: "wall" },
+        // Hangar bay | coordination matrix.
+        { col: 5, row: 1, dir: "e", kind: "wall" },
+        { col: 5, row: 2, dir: "e", kind: "door" },
+        { col: 5, row: 3, dir: "e", kind: "wall" },
+        // Coordination | PD screen.
+        { col: 6, row: 1, dir: "e", kind: "wall" },
+        { col: 6, row: 2, dir: "e", kind: "door" },
+        { col: 6, row: 3, dir: "e", kind: "wall" },
+        // PD screen | sensors and brake.
+        { col: 7, row: 1, dir: "e", kind: "wall" },
+        { col: 7, row: 2, dir: "e", kind: "door" },
+        { col: 7, row: 3, dir: "e", kind: "wall" },
+        ]), F_MAINFRAME),
+        F_MAINFRAME,
+        [
+          [0, 2, "syn-thruster-bank", SYNTHETIC_FOOTPRINTS.thrusterBank],
+          [4, 1, "syn-drone-hangar-heavy", SYNTHETIC_FOOTPRINTS.droneHangarHeavy],
+          [4, 3, "syn-drone-hangar-heavy", SYNTHETIC_FOOTPRINTS.droneHangarHeavy],
+          [7, 2, "syn-interceptor-grid", SYNTHETIC_FOOTPRINTS.interceptorGrid],
+        ],
+      ),
+      // Hardwire ammo conduit: the centre-row slug reservoir feeds the lone
+      // coilgun — the only direct-fire battery on this carrier. No crew haul
+      // on a crewless hull (crewRequired is 0).
+      ammoConduit(F_MAINFRAME, { col: 3, row: 2 }, [{ col: 4, row: 2 }]),
     ),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,

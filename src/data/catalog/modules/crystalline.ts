@@ -242,7 +242,7 @@ export const crystallineModules: ModuleDefinitionInput[] = [
     id: "cry-resonance-cannon",
     faction: "Crystalline",
     name: "Resonance Cannon",
-    description: "Lobbed shard of coherent crystal. A projectile option for when a beam's line of sight is unwanted; unlimited ammunition.",
+    description: "Lobbed shard of coherent crystal. A projectile option for when a beam's line of sight is unwanted; draws on a finite shard reserve fed by a Shard Vault.",
     category: "weapon",
     // Resonance Cannon: a fighter-class lobbed crystal shard. Uses the
     // heavy-autocannon band (3 kg, 5 km/s) for a heavy fighter/light frigate
@@ -269,6 +269,13 @@ export const crystallineModules: ModuleDefinitionInput[] = [
       // Ballistic shard: unpowered and unguided.
       powered: false,
       guided: false,
+      // Finite magazine: `ammo` (start) AND `ammoCapacity` (crew top-up
+      // ceiling) must both be set — omitting `ammo` leaves it at
+      // DEFAULT_WEAPON_AMMO (effectively unlimited). Capacity 80 (>= 60) so a
+      // crew ammo-run dispatches while rounds remain, keeping the gun firing
+      // through the haul cycle. Fed by a Shard Vault.
+      ammo: 80,
+      ammoCapacity: 80,
     },
   },
   // --- Defence: adaptive shields (their signature), thin crystal plate ---

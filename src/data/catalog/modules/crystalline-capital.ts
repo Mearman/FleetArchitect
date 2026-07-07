@@ -5,6 +5,7 @@ import {
   driveThrustNewtons,
   engineMass,
   kineticWeaponMass,
+  magazineMass,
   reactorMass,
   shieldMass,
 } from "../physics";
@@ -175,6 +176,13 @@ const REFRACTOR_GRID_POWER_DRAW_W = 2 * MODULE_POWER_DRAW_W.pointDefense;
  *  resonance repair array. */
 const RESONANCE_MENDER_POWER_DRAW_W = MODULE_POWER_DRAW_W.sensor;
 
+/** Shard Vault power draw (W) — magazine-handling gear. */
+const SHARD_VAULT_POWER_DRAW_W = MODULE_POWER_DRAW_W.magazine;
+
+/** Shard Vault stored-round count — a 600-round resonance-shard reserve, the
+ *  magazine that feeds the Concord's shard cannons for sustained fire. */
+const SHARD_VAULT_ROUNDS = 600;
+
 /** Diamond Bastion capacity (J) — 3× the heavy shield band (1.8 GJ), the
  *  Concord's signature capital diamond projector lattice. */
 const DIAMOND_BASTION_CAPACITY_J = 3 * SHIELD_CAPACITY_J.heavy;
@@ -266,6 +274,11 @@ export const CRYSTALLINE_FOOTPRINTS = {
     { dx: 0, dy: 0 },
     { dx: 1, dy: 0 },
     { dx: 0, dy: 1 },
+  ],
+  /** Shard Vault: a dense-packed crystal magazine (2-line). */
+  shardVault: [
+    { dx: 0, dy: 0 },
+    { dx: 1, dy: 0 },
   ],
   /** Diamond Bastion: the Concord's signature 2×2 capital shield diamond. */
   diamondBastion: [
@@ -409,6 +422,13 @@ export const crystallineCapitalModules: ModuleDefinitionInput[] = [
       // Ballistic shard: unpowered and unguided.
       powered: false,
       guided: false,
+      // Finite magazine: `ammo` (start) AND `ammoCapacity` (crew top-up
+      // ceiling) must both be set — omitting `ammo` leaves it at
+      // DEFAULT_WEAPON_AMMO (effectively unlimited). Capacity 100 (>= 60) so a
+      // crew ammo-run dispatches while rounds remain, keeping the gun firing
+      // through the haul cycle. Fed by a Shard Vault.
+      ammo: 100,
+      ammoCapacity: 100,
     },
   },
   {
@@ -561,6 +581,13 @@ export const crystallineCapitalModules: ModuleDefinitionInput[] = [
       // Ballistic shard: unpowered and unguided.
       powered: false,
       guided: false,
+      // Finite magazine: `ammo` (start) AND `ammoCapacity` (crew top-up
+      // ceiling) must both be set — omitting `ammo` leaves it at
+      // DEFAULT_WEAPON_AMMO (effectively unlimited). Capacity 100 (>= 60) so a
+      // crew ammo-run dispatches while rounds remain, keeping the battery
+      // firing through the haul cycle. Fed by a Shard Vault.
+      ammo: 100,
+      ammoCapacity: 100,
     },
   },
   {
@@ -634,6 +661,25 @@ export const crystallineCapitalModules: ModuleDefinitionInput[] = [
     effect: {
       kind: "repair",
       repairRate: 5,
+    },
+  },
+  {
+    id: "cry-shard-vault",
+    faction: "Crystalline",
+    name: "Shard Vault",
+    description:
+      "A dense-packed crystal magazine storing 600 resonance shards for sustained shard-cannon fire. Closes the magazine doctrine gap — crystal shards are crystal-mechanism mass, so the vault masses at the weapon density. A 2x1 bay.",
+    category: "system",
+    // mass = magazineMass(600, 4500) = 4500 × (600 / 30) = 90,000 kg.
+    mass: magazineMass(SHARD_VAULT_ROUNDS, CRYSTAL_WEAPON_DENSITY),
+    cost: 130,
+    powerDraw: SHARD_VAULT_POWER_DRAW_W,
+    crewRequired: 1,
+    techLevel: 2,
+    footprint: CRYSTALLINE_FOOTPRINTS.shardVault,
+    effect: {
+      kind: "magazine",
+      ammoStored: SHARD_VAULT_ROUNDS,
     },
   },
   {

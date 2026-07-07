@@ -316,6 +316,9 @@ export const corsairCapitalModules: ModuleDefinitionInput[] = [
       guided: true,
       thrust: HEAVY_SWARM_THRUST_M_PER_S2,
       burnTicks: HEAVY_SWARM_BURN_TICKS,
+      // Finite magazine: `ammo` start count mirrors `ammoCapacity` so the
+      // heavy rack begins full and the crew-haul economy refills it as it fires.
+      ammo: HEAVY_SWARM_AMMO_CAPACITY,
       ammoCapacity: HEAVY_SWARM_AMMO_CAPACITY,
     },
   },

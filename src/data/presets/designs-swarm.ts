@@ -12,10 +12,10 @@ import { SWARM_FOOTPRINTS } from "@/data/catalog/modules/swarm-capital";
 // Swarm designs — bio-organic insectoid ships. Asymmetric, clawed, organic
 // silhouettes: tapered stingers, swept carapace, clustered drive flagella.
 // Swarm weapons are all bio-organic — spore launchers (cannon), acid sprayers
-// (beam), and neural stings (missile with tracking). Neural stings have no
-// ammoCapacity in the schema (guided bio-electric tendrils, not discrete
-// rounds), so no ammon sac is needed even for sting-armed ships. All Swarm
-// crewRequired values are 0; no crew quarters are needed either. Isolated
+// (beam), and neural stings (missile with tracking). None carry ammoCapacity
+// (bio-electric tendrils and glands, not discrete rounds), so Swarm ships use
+// no magazines — the bio logic sustains fire without ammunition stores. All
+// Swarm crewRequired values are 0; no crew quarters are needed either. Isolated
 // from designs.ts so the roster file stays under the max-lines guard.
 
 /** A vertical compartment bulkhead at `col` (its east edges): wall on every row
@@ -103,7 +103,7 @@ export const swarmDesigns: ShipDesignInput[] = [
     faction: "Swarm",
     // Frigate: a regenerating brawler. Banks of acid sprayers over a
     // self-knitting carapace, a metabolic core, and a cluster of flagella and
-    // pulse jets. No discrete ammo weapons so no ammon sac needed.
+    // pulse jets. No discrete ammo weapons, so no magazine is required.
     // Catalogue-expansion refit: a two-cell Twin Sting Launcher is grafted onto
     // the prow deck cell, adding a homing-ordnance battery to the acid brawler.
     grid: mountMultiCell(
@@ -146,8 +146,8 @@ export const swarmDesigns: ShipDesignInput[] = [
     name: "Brood Spitter",
     faction: "Swarm",
     // Frigate: living artillery. A fan of neural stingers spits homing tendrils
-    // downrange; spore clouds screen it. Neural stings have no ammoCapacity so
-    // no ammon sac is required. Regen membranes and a metabolic core sustain it.
+    // downrange; spore clouds screen it. Neural stings have no ammoCapacity, so
+    // no magazine is required. Regen membranes and a metabolic core sustain it.
     // Catalogue-expansion refit: a two-cell Acid Dripper is grafted onto the
     // central deck cell, adding a heavier corrosive beam to the sting battery.
     grid: mountMultiCell(
@@ -194,7 +194,7 @@ export const swarmDesigns: ShipDesignInput[] = [
     // Cruiser: the swarm capital. A great clawed prow of neural stingers and
     // acid sprayers over a regenerating carapace, ringed by spore-cloud defences,
     // with a metabolic heart and a bank of pulse-jet flagella driving the whole
-    // mass. No discrete ammo weapons; no ammon sac needed.
+    // mass. No discrete ammo weapons, so no magazine is required.
     // Phase B: pheromone nets (h) on rows 1 and 5 provide omni squad-net
     // coverage on channel 0. Chemosensor organs (y) on rows 2 and 4 extend
     // the hive's detection reach well beyond weapon range. A biolaser spine
@@ -303,7 +303,7 @@ export const swarmDesigns: ShipDesignInput[] = [
     // it come about. It is a force multiplier for the brood, not a solo killer
     // — no spinal-lance-class alpha, just short-range sting and acid pressure
     // behind a screen of spores and living momentum baffles. Neural stings have
-    // no ammoCapacity so no ammon sac is required; all Swarm modules are
+    // no ammoCapacity, so no magazine is required; all Swarm modules are
     // crewless. Implies hive doctrine (aggressive short-range).
     //
     // Capital multi-cell refit. The apex hull fields the full Swarm capital
@@ -356,10 +356,7 @@ export const swarmDesigns: ShipDesignInput[] = [
         // deflector band, supplanting the light carapace screen.
         [13, 3, "swm-barkweave-carapace", SWARM_FOOTPRINTS.barkweaveCarapace],
         // --- Catalogue-expansion refit: two new bio-organs grafted onto the
-        // central deck column (col 4 `~` cells). The crewed Ammon Cyst is
-        // omitted: every Swarm preset is crewless, so a crewed magazine would
-        // break the crew-balance gate (it stays a catalogue-only option, like
-        // the existing swm-ammon-vault). ---
+        // central deck column (col 4 `~` cells). ---
         // Upper deck: a 2×2 Spore-Drone Spawner — a bloated brood bay that
         // launches autonomous spore-drones, a new carrier doctrine angle.
         [4, 2, "swm-spore-drone-spawner", SWARM_FOOTPRINTS.sporeDroneSpawner],

@@ -216,6 +216,9 @@ export const syntheticModules: ModuleDefinitionInput[] = [
       // Ballistic slug: unpowered and unguided.
       powered: false,
       guided: false,
+      // Finite magazine: `ammo` (start count) AND `ammoCapacity` (conduit top-up
+      // ceiling) must both be set — omitting `ammo` defaults it to DEFAULT_WEAPON_AMMO.
+      ammo: 220,
       ammoCapacity: 220,
     },
   },
@@ -251,6 +254,7 @@ export const syntheticModules: ModuleDefinitionInput[] = [
       // Ballistic slug: unpowered and unguided.
       powered: false,
       guided: false,
+      ammo: 120,
       ammoCapacity: 120,
     },
   },

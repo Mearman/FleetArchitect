@@ -4,7 +4,6 @@ import {
   driveThrustNewtons,
   engineMass,
   kineticWeaponMass,
-  magazineMass,
   reactorMass,
   deflectorMass,
 } from "../physics";
@@ -53,8 +52,6 @@ import {
 //    electrical output, core power density, and bio-organic containment;
 //  - engine mass         = `engineMass(thrust, 2000)` from rated thrust and
 //    bio-nozzle density;
-//  - magazine mass       = `magazineMass(ammoStored, 3500)` from round count and
-//    organic ordnance density;
 //  - crew mass           = `crewMass(capacity, 600)` from berth count and water-
 //    rich tissue density.
 //  - sensor / comms mass = `engineMass(ionThrust, 1500)` fraction (organic
@@ -88,8 +85,6 @@ export const SWARM_BEAM_DENSITY_KG_PER_M3 = 1800;
 export const SWARM_REACTOR_DENSITY_KG_PER_M3 = 2500;
 /** Bio-organic nozzle and jet density. */
 export const SWARM_ENGINE_DENSITY_KG_PER_M3 = 2000;
-/** Organic ordnance density (chitin-shelled rounds, lighter than metal). */
-export const SWARM_MAGAZINE_DENSITY_KG_PER_M3 = 3500;
 /** Organic sensor / comms array density (wet tissue, light electronics). */
 const SWARM_ARRAY_DENSITY_KG_PER_M3 = 1500;
 /** Organic electronics for comms (slightly denser than sensors). */
@@ -172,13 +167,13 @@ const REACTOR_FUSION_COMPACT_OUTPUT_W = 1.2e9;
 const REACTOR_ANTIMATTER_OUTPUT_W = 5e9;
 
 // ---------------------------------------------------------------------------
-// Swarm modules — 21 entries, capability-derived.
+// Swarm modules — capability-derived.
 //
 // The module list preserves the legacy id, name, role, and category of each
 // entry; ONLY the capability values and the mass derivation change. Mass now
 // traces to the module's actual capability via the physics-layer functions
 // (`kineticWeaponMass`, `beamWeaponMass`, `reactorMass`, `engineMass`,
-// `magazineMass`, `crewMass`), using Swarm bio-organic densities.
+// `crewMass`), using Swarm bio-organic densities.
 // ---------------------------------------------------------------------------
 
 export const swarmModules: ModuleDefinitionInput[] = [
@@ -441,20 +436,6 @@ export const swarmModules: ModuleDefinitionInput[] = [
     techLevel: 3,
     effect: { kind: "power", output: REACTOR_ANTIMATTER_OUTPUT_W },
     command: true,
-  },
-  {
-    id: "swm-ammon-sac",
-    faction: "Swarm",
-    name: "Ammon Sac",
-    description: "Bio-organic ammunition reservoir producing and storing organic projectile clusters. Crew distribute harvested rounds to weapons.",
-    category: "system",
-    // 250 rounds: magazineMass(250, 3500) = 3500 × (250 / 30) ≈ 29,167 kg.
-    mass: magazineMass(250, SWARM_MAGAZINE_DENSITY_KG_PER_M3),
-    cost: 55,
-    powerDraw: MODULE_POWER_DRAW_W.magazine,
-    crewRequired: 1,
-    techLevel: 2,
-    effect: { kind: "magazine", ammoStored: 250 },
   },
 
   // --- Swarm system: bio-sensors (directional, mirroring the Terran family) ---

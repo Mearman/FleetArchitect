@@ -335,6 +335,10 @@ export const foundryCapitalModules: ModuleDefinitionInput[] = [
       // Ballistic slug: unpowered and unguided. Fixed capital mount (no turret).
       powered: false,
       guided: false,
+      // Finite magazine: `ammo` (start) AND `ammoCapacity` (crew top-up
+      // ceiling) must both be set — omitting `ammo` leaves it at
+      // DEFAULT_WEAPON_AMMO (effectively unlimited).
+      ammo: 60,
       ammoCapacity: 60,
     },
   },
@@ -479,6 +483,10 @@ export const foundryCapitalModules: ModuleDefinitionInput[] = [
       // Ballistic slug: unpowered and unguided. Fixed twin broadside mount.
       powered: false,
       guided: false,
+      // Finite magazine: `ammo` (start) AND `ammoCapacity` (crew top-up
+      // ceiling) must both be set — omitting `ammo` leaves it at
+      // DEFAULT_WEAPON_AMMO (effectively unlimited).
+      ammo: 200,
       ammoCapacity: 200,
     },
   },
@@ -522,6 +530,10 @@ export const foundryCapitalModules: ModuleDefinitionInput[] = [
       // Ballistic slug: unpowered and unguided.
       powered: false,
       guided: false,
+      // Finite magazine: `ammo` (start) AND `ammoCapacity` (crew top-up
+      // ceiling) must both be set — omitting `ammo` leaves it at
+      // DEFAULT_WEAPON_AMMO (effectively unlimited).
+      ammo: 120,
       ammoCapacity: 120,
     },
   },
@@ -562,7 +574,10 @@ export const foundryCapitalModules: ModuleDefinitionInput[] = [
       // Self-luminous hot bolt: unpowered and unguided.
       powered: false,
       guided: false,
-      ammoCapacity: 40,
+      // Retuned 40 -> 80 and `ammo` set full, so a crew haul
+      // (SIM.ammoRunAmount = 60) dispatches before the mortar is bone-dry.
+      ammo: 80,
+      ammoCapacity: 80,
     },
   },
   {
@@ -603,7 +618,10 @@ export const foundryCapitalModules: ModuleDefinitionInput[] = [
       guided: true,
       thrust: TWIN_TORPEDO_THRUST_M_PER_S2,
       burnTicks: TWIN_TORPEDO_BURN_TICKS,
-      ammoCapacity: 30,
+      // Retuned 30 -> 80 and `ammo` set full, so a crew haul
+      // (SIM.ammoRunAmount = 60) dispatches before the bank is bone-dry.
+      ammo: 80,
+      ammoCapacity: 80,
     },
   },
   {

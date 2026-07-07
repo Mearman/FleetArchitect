@@ -242,14 +242,14 @@ export const terranModules: ModuleDefinitionInput[] = [
       shieldPiercing: 0.35,
       armourPiercing: 0.5,
       spread: 0.02,
-      // Ballistic slug: unpowered and unguided. It still has `tracking > 0`
-      // because the turret slews, but the projectile itself flies straight.
+      // Ballistic slug: unpowered and unguided. `tracking > 0` is the turret slewing, not the round curving.
       powered: false,
       guided: false,
       // A 90° (±π/2) turret that slews briskly to bear on its target.
       turretArc: Math.PI / 2,
       turretTurnRate: 0.08,
-      /** Railgun needs finite ammo resupply. */
+      // Finite magazine: `ammo` (start count) AND `ammoCapacity` (crew top-up ceiling) must both be set — omitting `ammo` defaults it to DEFAULT_WEAPON_AMMO.
+      ammo: 200,
       ammoCapacity: 200,
     },
   },
@@ -290,7 +290,7 @@ export const terranModules: ModuleDefinitionInput[] = [
       // A full 360° launcher (±π) that slews slowly.
       turretArc: Math.PI,
       turretTurnRate: 0.05,
-      /** Missiles need finite ammo resupply. */
+      ammo: 140,
       ammoCapacity: 140,
     },
   },
@@ -325,7 +325,7 @@ export const terranModules: ModuleDefinitionInput[] = [
       guided: true,
       thrust: TORPEDO_THRUST_M_PER_S2,
       burnTicks: TORPEDO_BURN_TICKS,
-      /** Torpedoes need finite ammo resupply. */
+      ammo: 90,
       ammoCapacity: 90,
     },
   },

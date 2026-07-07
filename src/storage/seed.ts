@@ -130,7 +130,7 @@ import {
  * not bumped — the content-addressed signature already flips via the pinned
  * hashes.
  */
-const PRESETS_VERSION = 26;
+const PRESETS_VERSION = 27;
 const VERSION_KEY = "presetsVersion";
 
 /**

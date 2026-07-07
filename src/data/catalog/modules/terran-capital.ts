@@ -351,7 +351,12 @@ export const terranCapitalModules: ModuleDefinitionInput[] = [
       // Ballistic dart: unpowered and unguided. Fixed spinal mount (no turret).
       powered: false,
       guided: false,
-      ammoCapacity: 60,
+      // Spinal driver magazine. Capacity 80 (not 60) so a crew ammo-run
+      // dispatches (ammoShortfall >= SIM.ammoRunAmount of 60) while ~20 rounds
+      // remain, keeping the gun firing through the haul cycle instead of going
+      // dry at the threshold. Start full.
+      ammo: 80,
+      ammoCapacity: 80,
     },
   },
   {
@@ -386,6 +391,9 @@ export const terranCapitalModules: ModuleDefinitionInput[] = [
       guided: false,
       turretArc: Math.PI / 2,
       turretTurnRate: 0.08,
+      /** Heavy railgun draws from a finite magazine; start full (see
+       *  mod-railgun in terran.ts). */
+      ammo: 160,
       ammoCapacity: 160,
     },
   },
@@ -559,6 +567,9 @@ export const terranCapitalModules: ModuleDefinitionInput[] = [
       guided: false,
       turretArc: Math.PI / 2,
       turretTurnRate: 0.08,
+      /** Twin rail draws from a finite magazine; start full (see mod-railgun
+       *  in terran.ts). */
+      ammo: 200,
       ammoCapacity: 200,
     },
   },
@@ -627,6 +638,9 @@ export const terranCapitalModules: ModuleDefinitionInput[] = [
       burnTicks: BROADSIDE_MISSILE_BURN_TICKS,
       turretArc: Math.PI / 2,
       turretTurnRate: 0.05,
+      /** Broadside missiles draw from a finite magazine; start full (see
+       *  mod-railgun in terran.ts). */
+      ammo: 280,
       ammoCapacity: 280,
     },
   },

@@ -215,21 +215,13 @@ const raiderThrustN = driveThrustNewtons("raider");
 const RAID_DRIVE_BANK_THRUST_N = 2 * raiderThrustN;
 
 // ---------------------------------------------------------------------------
-// Corsair Reavers modules — 16 entries, capability-derived.
+// Corsair Reavers modules — capability-derived.
 //
-// The module list preserves the legacy id, name, role, and category of each
-// entry; ONLY the capability values and the mass derivation change. Mass now
-// traces to the module's actual capability via the physics-layer functions
+// Each module's mass traces to its capability via the physics-layer functions
 // (`kineticWeaponMass`, `reactorMass`, `engineMass`, `shieldMass`,
-// `magazineMass`, `crewMass`).
-//
-// To span a realistic fighter→capital range while keeping 16 modules, the
-// capability values of several entries have been re-anchored to the
-// broadened menus in `combat-scale.ts` (a compact fusion core at 1.2 GW,
-// a raider drive at 54 kN, missile bodies banded against railgun and
-// autocannon rounds, etc.) — so a fighter missile rack and a capital
-// railgun no longer converge on a single "mediumWeapon" band, and mass
-// scales with capability across the whole span.
+// `magazineMass`, `crewMass`). Capability anchors span a fighter→capital range
+// via the broadened menus in `combat-scale.ts`, so mass scales with capability
+// across the whole span.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -288,7 +280,10 @@ export const corsairModules: ModuleDefinitionInput[] = [
       guided: true,
       thrust: RAIDER_MISSILE_THRUST_M_PER_S2,
       burnTicks: RAIDER_MISSILE_BURN_TICKS,
-      ammoCapacity: 60,
+      // Capacity 60 -> 80 so a crew haul (SIM.ammoRunAmount = 60) dispatches
+      // before the rack is bone-dry. `ammo` mirrors it (start full).
+      ammo: 80,
+      ammoCapacity: 80,
     },
   },
   {
@@ -325,6 +320,7 @@ export const corsairModules: ModuleDefinitionInput[] = [
       guided: true,
       thrust: SWARM_MISSILE_THRUST_M_PER_S2,
       burnTicks: SWARM_MISSILE_BURN_TICKS,
+      ammo: 80,
       ammoCapacity: 80,
     },
   },
@@ -684,6 +680,7 @@ export const corsairModules: ModuleDefinitionInput[] = [
       guided: true,
       thrust: BROADSIDE_MISSILE_THRUST_M_PER_S2,
       burnTicks: BROADSIDE_MISSILE_BURN_TICKS,
+      ammo: 140,
       ammoCapacity: 140,
     },
   },

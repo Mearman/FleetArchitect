@@ -1,5 +1,7 @@
 import type {
+  CellCoord,
   CellEdges,
+  Connection,
   EdgeKind,
   GridCell,
   SolidCell,
@@ -167,7 +169,6 @@ const TOKENS: Record<string, GridCell> = {
 /** Single-character tokens for the ASCII grid authoring map — Swarm parts.
  *  Distinct set so a Swarm grid can be authored without ambiguity. Hull tiles
  *  collapse to armor surfaces; struts to bare; bio-membrane passages to deck.
- *  `q` ammon sac (swm-ammon-sac, the Swarm magazine equivalent).
  *  Sensors: `e` electro-receptor membrane (omni), `y` chemosensor palp
  *  (directional cone). Both face forward (bearing 0).
  *  Comms: `h` pheromone net (omni), `i` synapse focus organ (dish), `k` biolaser spine.
@@ -198,7 +199,6 @@ const SWARM_TOKENS: Record<string, GridCell> = {
   "g": deckEquip("swm-neural-ganglion", 0),
   "m": deckEquip("swm-metabolic-core", 0),
   "s": deckEquip("swm-spore-cloud", 0),
-  "q": deckEquip("swm-ammon-sac", 0),
   // Sensors
   "e": deckEquip("swm-electro-membrane", 0),
   "y": deckEquip("swm-chemosensor-organ", 0),
@@ -222,7 +222,6 @@ const SWARM_TOKENS: Record<string, GridCell> = {
   "H": deckEquip("swm-metabolic-heart", 0),     // 3-cell compound bio-reactor (command)
   "T": deckEquip("swm-tentacle-drive-mass", Math.PI),  // 2×2 tentacle drive cluster (aft)
   "W": deckEquip("swm-barkweave-carapace", 0),  // 3-cell ridged deflector carapace
-  "A": deckEquip("swm-ammon-vault", 0),         // 2-cell extended magazine (crewed)
 };
 
 /** Parse an ASCII map (one string per row) into a row-major TileGrid using the
@@ -472,6 +471,51 @@ export function withEdges(
     }
   }
   return { ...grid, cells };
+}
+
+/**
+ * Append hardwire conduit {@link Connection}s to a grid. Author AFTER
+ * subdivision and `mountMultiCell`: `subdivideGrid` strips connections
+ * (`shipgen.ts`), so conduits must be added to the fine grid whose endpoints
+ * are the magazine/weapon anchor sub-cells. Each connection is resolved to a
+ * per-ship hardwire by `resolveHardwires` (`resolve.ts`), which validates the
+ * source/sink module kinds via `stats.ts` (an ammo conduit's source must be a
+ * magazine, sink a finite-ammo weapon). Returns the input grid unchanged when
+ * `connections` is empty.
+ */
+export function withConnections(
+  grid: TileGrid,
+  connections: readonly Connection[],
+): TileGrid {
+  if (connections.length === 0) return grid;
+  return { ...grid, connections: [...grid.connections, ...connections] };
+}
+
+/**
+ * Build ammo-conduit {@link Connection}s from a magazine to one or more
+ * finite-ammo weapons, authoring in COARSE grid coordinates (the same coords
+ * `mountMultiCell` placements use) and scaling by the design's subdivision
+ * factor to land on each anchor's top-left fine sub-cell — the cell carrying
+ * the equipment. Call `withConnections(grid, ammoConduit(f, mag, weapons))`
+ * as the LAST step of a design's grid pipeline (after `mountMultiCell`).
+ */
+export function ammoConduit(
+  subdivisionFactor: number,
+  magazineCoarse: CellCoord,
+  weaponCoarses: readonly CellCoord[],
+): Connection[] {
+  const from: CellCoord = {
+    col: magazineCoarse.col * subdivisionFactor,
+    row: magazineCoarse.row * subdivisionFactor,
+  };
+  return weaponCoarses.map((w) => ({
+    from,
+    to: {
+      col: w.col * subdivisionFactor,
+      row: w.row * subdivisionFactor,
+    },
+    resource: "ammo",
+  }));
 }
 
 /** Cardinal (dCol, dRow) offset from a cell to the neighbour across each edge. */

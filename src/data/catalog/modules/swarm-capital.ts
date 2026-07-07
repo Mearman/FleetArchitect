@@ -4,7 +4,6 @@ import {
   driveThrustNewtons,
   engineMass,
   kineticWeaponMass,
-  magazineMass,
   reactorMass,
   deflectorMass,
 } from "../physics";
@@ -33,7 +32,6 @@ import {
   STING_WARHEAD_J,
   SWARM_BEAM_DENSITY_KG_PER_M3,
   SWARM_ENGINE_DENSITY_KG_PER_M3,
-  SWARM_MAGAZINE_DENSITY_KG_PER_M3,
   SWARM_REACTOR_DENSITY_KG_PER_M3,
   SWARM_WEAPON_DENSITY_KG_PER_M3,
 } from "./swarm";
@@ -48,7 +46,7 @@ import {
 // bank, a 3.6 GW metabolic heart, a 4-cell tentacle drive mass, a heavy
 // barkweave carapace). Their mass still traces to the SAME physics-layer
 // helpers (`kineticWeaponMass`, `beamWeaponMass`, `engineMass`, `reactorMass`,
-// `magazineMass`, `deflectorMass`) applied to these heavier anchors at the
+// `deflectorMass`) applied to these heavier anchors at the
 // Swarm bio-organic densities re-exported from `swarm.ts`, so a stronger
 // capital module is proportionally heavier — by physics, not by a size class.
 //
@@ -111,10 +109,6 @@ const METABOLIC_HEART_OUTPUT_W = 3 * 1.2e9;
  *  organs co-ordinated as a 2×2 capital drive cluster. */
 const TENTACLE_DRIVE_THRUST_N = 4 * driveThrustNewtons("lightPlasma");
 
-/** Ammon vault round reserve — 2× the ammon sac's 250, two linked fermentation
- *  chambers. */
-const AMMON_VAULT_ROUNDS = 2 * 250;
-
 // ---------------------------------------------------------------------------
 // Catalogue-expansion anchors (fighter-grade 2-cell lines through capital
 // plus-shapes). Each is a multiple of an existing single-cell Swarm band, so
@@ -151,10 +145,6 @@ const PLUS_METABOLIC_HEART_OUTPUT_W = 5 * 1.2e9;
  *  organs co-ordinated as a 2×2 capital drive cluster (above the tentacle
  *  drive's lightPlasma banding). */
 const HEAVY_FLAGELLUM_THRUST_N = 4 * driveThrustNewtons("plasma");
-
-/** Ammon cyst round reserve — 3× the ammon sac's 250, three lobed fermentation
- *  chambers (the crewed capital magazine line). */
-const AMMON_CYST_ROUNDS = 3 * 250;
 
 /**
  * Footprint polyominoes for the capital multi-cell modules — each anchored at
@@ -195,10 +185,6 @@ export const SWARM_FOOTPRINTS = {
     { dx: 0, dy: 0 },
     { dx: 1, dy: 0 },
     { dx: 2, dy: 0 },
-  ],
-  ammonVault: [
-    { dx: 0, dy: 0 },
-    { dx: 1, dy: 0 },
   ],
   // --- Catalogue-expansion polyominoes (fighter-grade 2-cell lines through
   // capital plus-shapes and 2x2 blobs). Each anchors at {0,0}; negative offsets
@@ -244,12 +230,6 @@ export const SWARM_FOOTPRINTS = {
     { dx: 1, dy: 0 },
     { dx: 2, dy: 0 },
   ],
-  /** Ammon cyst: L-tromino extended ammunition reservoir (crewed). */
-  ammonCyst: [
-    { dx: 0, dy: 0 },
-    { dx: 1, dy: 0 },
-    { dx: 0, dy: 1 },
-  ],
   /** Radial metabolic heart: plus-shape compound command reactor (capital). */
   plusMetabolicHeart: [
     { dx: 0, dy: 0 },
@@ -275,8 +255,7 @@ export const SWARM_FOOTPRINTS = {
  * the anchor (see `coverFootprint` in `data/presets/tokens.ts`). Mass traces to
  * the same physics helpers via the heavier capital anchors above at Swarm
  * bio-organic densities. Like every Swarm weapon these are bio-autonomous:
- * crewRequired 0, except the ammon vault (the one Swarm module line that is
- * crewed, scaling crew with cells).
+ * crewRequired 0, since Swarm bio-forms have no crew.
  */
 export const swarmCapitalModules: ModuleDefinitionInput[] = [
   {
@@ -447,31 +426,14 @@ export const swarmCapitalModules: ModuleDefinitionInput[] = [
       rechargeDelay: 100,
     },
   },
-  {
-    id: "swm-ammon-vault",
-    faction: "Swarm",
-    name: "Ammon Vault",
-    description:
-      "An extended bio-organic ammunition reservoir. Two linked fermentation chambers double the round reserve of an ammon sac, with a second crew member to haul the harvested spore-clusters to hungry weapons. The one Swarm multi-cell module that scales crew, since only the magazine line is crewed in the existing catalogue.",
-    category: "system",
-    // 500 rounds. mass = magazineMass(500, 3500) = 3500 × (500 / 30) ≈ 58,333 kg.
-    mass: magazineMass(AMMON_VAULT_ROUNDS, SWARM_MAGAZINE_DENSITY_KG_PER_M3),
-    cost: 110,
-    // Two chambers draw twice the single magazine's handling load.
-    powerDraw: 2 * MODULE_POWER_DRAW_W.magazine,
-    crewRequired: 2,
-    techLevel: 2,
-    footprint: SWARM_FOOTPRINTS.ammonVault,
-    effect: { kind: "magazine", ammoStored: AMMON_VAULT_ROUNDS },
-  },
 
   // ===========================================================================
   // Catalogue expansion — bio-thematic multi-cell variants spanning
   // fighter-grade 2-cell lines through capital plus-shapes and 2x2 blobs.
   // Each mass traces to the SAME physics helpers at Swarm bio-organic
   // densities, applied to a named multiple of an existing single-cell band.
-  // Swarm weapons stay bio-autonomous (crewRequired 0); only the ammon cyst
-  // (the magazine line) scales crew, mirroring the single-cell ammon sac.
+  // Swarm weapons stay bio-autonomous (crewRequired 0); Swarm bio-forms have
+  // no crew, so no module here scales crew.
   // ===========================================================================
 
   {
@@ -686,23 +648,6 @@ export const swarmCapitalModules: ModuleDefinitionInput[] = [
       rechargeRate: 2 * DEFLECTOR_RECHARGE_KG_MPS_PER_S.heavy,
       rechargeDelay: 100,
     },
-  },
-  {
-    id: "swm-ammon-cyst",
-    faction: "Swarm",
-    name: "Ammon Cyst",
-    description:
-      "An extended bio-organic ammunition reservoir grown as three lobed fermentation chambers. It triples the round reserve of an ammon sac, with two extra crew to haul the harvested spore-clusters to hungry weapons. The crewed capital sibling of the ammon vault — the one Swarm multi-cell line that scales crew.",
-    category: "system",
-    // 750 rounds. mass = magazineMass(750, 3500) = 3500 × (750 / 30) = 87,500 kg.
-    mass: magazineMass(AMMON_CYST_ROUNDS, SWARM_MAGAZINE_DENSITY_KG_PER_M3),
-    cost: 130,
-    // Three chambers draw three times the single magazine's handling load.
-    powerDraw: 3 * MODULE_POWER_DRAW_W.magazine,
-    crewRequired: 3,
-    techLevel: 3,
-    footprint: SWARM_FOOTPRINTS.ammonCyst,
-    effect: { kind: "magazine", ammoStored: AMMON_CYST_ROUNDS },
   },
   {
     id: "swm-plus-metabolic-heart",

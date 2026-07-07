@@ -15,7 +15,7 @@ import { CRYSTALLINE_FOOTPRINTS } from "@/data/catalog/modules/crystalline-capit
 // Subdivision factors (f): expand each coarse cell into an f × f block of 1 m
 // cells so the hull classifies to the correct tier (fighter ≤ 20 m,
 // frigate ≤ 60 m, cruiser ≤ 150 m, dreadnought > 150 m).
-const F_SHARD    = 4;   // 11 m × 4 → 44 m (frigate)
+const F_SHARD    = 4;   // 12 m × 4 → 48 m (frigate)
 const F_SPLINTER = 2;   // 8 m × 2 → 16 m (fighter)
 const F_MONOLITH = 12;  // 13 m × 12 → 156 m (dreadnought)
 const F_OBELISK  = 7;   // 11 m × 7 → 77 m (cruiser)
@@ -27,22 +27,25 @@ export const crystallineDesigns: ShipDesignInput[] = [
     name: "Shard",
     faction: "Crystalline",
     // A phase skirmisher built to blink in, strike, and cloak out. A power
-    // crystal (F, command) and two resonator cores (C×2, 10 berths for 8 crew)
+    // crystal (F, command) and two resonator cores (C×2, 10 berths for 9 crew)
     // anchor a spine carrying an adaptive shield (S), a resonance shard volley
     // (the 2-cell cry-resonance-shard-volley mounted on the former bulwark
     // cell — a powerable capital-grade kinetic pairing with the phase lance's
-    // beam) and a phase lance (H) as the main battery, a blink drive (B), a
-    // resonance sensor (v), and a phase-cloak (K). Balanced drives — an aft
-    // resonance thruster (E) plus a forward-firing brake (e) — let it hold a
-    // kite. The flanking armour caps (##) form its brittle crystal silhouette;
-    // it relies on shields and mobility, not hull. The shard-volley anchor is a
-    // multi-cell module; `mountMultiCell` installs its covered cell after
-    // subdivision. Grid (11 cols × 3 rows), subdivided ×4 → 44 m frigate.
+    // beam) and a phase lance (H) as the main battery, a shard vault (the
+    // 2-cell cry-shard-vault mounted on the aft deck cell — the magazine whose
+    // crew-haul resupply keeps the volley fed past its 100-round reserve), a
+    // blink drive (B), a resonance sensor (v), and a phase-cloak (K). Balanced
+    // drives — an aft resonance thruster (E) plus a forward-firing brake (e)
+    // — let it hold a kite. The flanking armour caps (##) form its brittle
+    // crystal silhouette; it relies on shields and mobility, not hull. The
+    // shard-volley and shard-vault anchors are multi-cell modules;
+    // `mountMultiCell` installs their covered cells after subdivision. Grid
+    // (12 cols × 3 rows), subdivided ×4 → 48 m frigate.
     grid: mountMultiCell(
       subdivideGrid(withEdges(crystalGrid([
-        "###########",
-        "EeFCCSBKv~H",
-        "###########",
+        "############",
+        "EeFCCSBKv~H~",
+        "############",
       ]), [
         { col: 1, row: 1, dir: "e", kind: "door" },
         { col: 4, row: 1, dir: "e", kind: "door" },
@@ -54,6 +57,10 @@ export const crystallineDesigns: ShipDesignInput[] = [
         // with a paired shard-thrower battery — a capital-grade kinetic the
         // frigate's power crystal can feed (the capital beams are not).
         [9, 1, "cry-resonance-shard-volley", CRYSTALLINE_FOOTPRINTS.resonanceShardVolley],
+        // Shard Vault (2-cell) on the aft deck cell — the 600-round magazine
+        // whose crew-haul resupply keeps the volley's 100-round reserve fed.
+        // Same walkable row as the volley, so a crew ammo-run reaches it.
+        [11, 1, "cry-shard-vault", CRYSTALLINE_FOOTPRINTS.shardVault],
       ],
     ),
     createdAt: PRESET_TIME,
@@ -103,15 +110,17 @@ export const crystallineDesigns: ShipDesignInput[] = [
     // bastion (the 2×2 cry-resonance-bulwark-bastion on the former bulwark Mk II
     // cell), a diamond bastion (the 2×2 cry-diamond-bastion) and an adaptive
     // bastion (N) — the capital multi-cell shields — for defence, a blink
-    // drive (B), a resonance sensor (v), and six resonator cores (C×6, 30
-    // berths for 30 crew). Balanced drives — three aft resonance thrusters
+    // drive (B), a resonance sensor (v), a shard vault (the 2-cell
+    // cry-shard-vault on the central deck — the magazine whose crew-haul
+    // resupply keeps the shard battery fed), and six resonator cores (C×6, 30
+    // berths for 28 crew). Balanced drives — three aft resonance thrusters
     // (E×3) and a forward brake (e). An armour prow of crystal plate (#)
     // caps the weapon face and a full dorsal/ventral plate band (#) wraps
     // the hull; the interior deck relies on its shields rather than bulk. The
     // M, I, J, N, spire-apex, spire-plus, diamond-bastion, bulwark-bastion,
-    // and shard-volley anchors are multi-cell capital modules; `mountMultiCell`
-    // installs each footprint's covered cells after subdivision. Grid (13
-    // cols × 5 rows), subdivided ×12 → 156 m dreadnought.
+    // shard-volley, and shard-vault anchors are multi-cell capital modules;
+    // `mountMultiCell` installs each footprint's covered cells after
+    // subdivision. Grid (13 cols × 5 rows), subdivided ×12 → 156 m dreadnought.
     grid: mountMultiCell(
       subdivideGrid(withEdges(crystalGrid([
         "..###########",
@@ -167,6 +176,11 @@ export const crystallineDesigns: ShipDesignInput[] = [
         // Quantum Spire Plus (plus-shape) on the central keel deck — a
         // 25 GW command core alongside the existing 15 GW M spire.
         [8, 2, "cry-spire-plus", CRYSTALLINE_FOOTPRINTS.spirePlus],
+        // Shard Vault (2-cell) on the central deck — the 600-round magazine
+        // whose crew-haul resupply keeps the heavy shard cannon (J) and the
+        // shard volley fed past their reserves. The central deck corridor is
+        // one walkable component, so a crew ammo-run reaches both weapons.
+        [6, 1, "cry-shard-vault", CRYSTALLINE_FOOTPRINTS.shardVault],
       ],
     ),
     createdAt: PRESET_TIME,
@@ -194,15 +208,17 @@ export const crystallineDesigns: ShipDesignInput[] = [
     // cry-resonance-mender on the central deck — Crystalline's first repair
     // module), an overcharger (O) — the previously unfielded cry-overcharger
     // — to surge the arrays through a brownout, a blink drive (B), a
-    // resonance sensor (v), and five resonator cores (C×5, 25 berths for 21
+    // resonance sensor (v), a shard vault (the 2-cell cry-shard-vault on the
+    // central corridor — the magazine whose crew-haul resupply keeps the
+    // shard battery fed), and five resonator cores (C×5, 25 berths for 22
     // crew). Balanced drives — three aft resonance thrusters (E×3) and a
     // forward brake (e). Crystal plate (#) caps the prow and wraps the
     // dorsal/ventral band; the grown-crystal interior relies on its shields
     // and mobility, not bulk. Implies phase doctrine (evasive, long-range,
-    // blink away from trouble). The J, N, shard-volley, and mender anchors
-    // are multi-cell capital modules; `mountMultiCell` installs each
-    // footprint's covered cells after subdivision. Grid (11 cols × 5 rows),
-    // subdivided ×7 → 77 m cruiser.
+    // blink away from trouble). The J, N, shard-volley, mender, and
+    // shard-vault anchors are multi-cell capital modules; `mountMultiCell`
+    // installs each footprint's covered cells after subdivision. Grid (11
+    // cols × 5 rows), subdivided ×7 → 77 m cruiser.
     grid: mountMultiCell(
       subdivideGrid(withEdges(crystalGrid([
         "#####~#####",
@@ -239,6 +255,12 @@ export const crystallineDesigns: ShipDesignInput[] = [
         // Resonance Mender (L-tromino) on the central deck — Crystalline's
         // first repair module.
         [7, 2, "cry-resonance-mender", CRYSTALLINE_FOOTPRINTS.resonanceMender],
+        // Shard Vault (2-cell) on the central corridor — the 600-round
+        // magazine whose crew-haul resupply keeps the heavy shard cannon (J),
+        // shard volley, and resonance cannon (Y) fed past their reserves.
+        // The corridor is one walkable component, so a crew ammo-run reaches
+        // every ammo weapon from here.
+        [6, 2, "cry-shard-vault", CRYSTALLINE_FOOTPRINTS.shardVault],
       ],
     ),
     createdAt: PRESET_TIME,
