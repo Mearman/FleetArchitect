@@ -497,7 +497,6 @@ export const crystallineModules: ModuleDefinitionInput[] = [
       bearing: 0,
       nebulaImmune: false,
       mode: "passive",
-      passiveBands: ["thermal", "radar"],
       gain: 1.0,
     },
   },

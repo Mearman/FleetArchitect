@@ -338,7 +338,7 @@ export function emReceives(
   for (const unit of sensors) {
     const range = attenuatedSensorRange(unit, anomalies);
     if (range <= 0) continue;
-    const gain = sensorGain(range);
+    const gain = sensorGain(range) * (unit.effect.gain ?? 1);
     if (!continuousContact(emission, dist, floor, gain)) continue;
     const arc = effectiveSensorArc(unit);
     if (arc >= Math.PI) return true;
@@ -439,7 +439,7 @@ export function mediumReceives(
   for (const unit of sensors) {
     const range = attenuatedSensorRange(unit, anomalies);
     if (range <= 0) continue;
-    const gain = sensorGain(range);
+    const gain = sensorGain(range) * (unit.effect.gain ?? 1);
     // `continuousContact` gates on the inverse-square received strength
     // clearing the threshold; a sensor cone further constrains the bearing.
     if (!continuousContact(strength, dist, floor, gain)) continue;

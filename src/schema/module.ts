@@ -362,9 +362,6 @@ export const SensorEffect = z.object({
    *  and how detectable the sensor is to passive receivers on the enemy side.
    *  Relevant when mode is 'active' or 'hybrid'. */
   emitStrength: z.number().nonnegative().optional(),
-  /** Frequency bands the sensor receives on (e.g. 'thermal', 'radar', 'lidar').
-   *  Relevant when mode is 'passive' or 'hybrid'. */
-  passiveBands: z.array(z.string()).optional(),
   /** Antenna gain factor — multiplies detection sensitivity; higher values give
    *  better detection at range at the cost of narrower effective coverage. */
   gain: z.number().positive().optional(),

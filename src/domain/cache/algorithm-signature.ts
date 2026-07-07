@@ -100,7 +100,7 @@ let cachedSignature: Promise<string> | undefined;
  * entries are missed. Bump on any engine/catalog change that moves frames at
  * longer horizons but leaves the 40-tick preset hashes unchanged.
  */
-const ENGINE_REVISION = "regen-ammo-1";
+const ENGINE_REVISION = "wire-dormant-fields-1";
 
 export function engineAlgorithmSignature(): Promise<string> {
   if (cachedSignature !== undefined) return cachedSignature;

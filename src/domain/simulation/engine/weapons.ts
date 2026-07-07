@@ -7,15 +7,15 @@ import { CELL_SIZE } from "@/domain/grid";
 import { ranged } from "@/domain/simulation/rng";
 import type { Rng } from "@/domain/simulation/rng";
 import { type SpatialHash, cellWorldPosition, cellWorldPositionCs } from "@/domain/simulation/spatial-hash";
-import type { BattleAnomalyKind, BattleSide } from "@/schema/battle";
+import type { BattleAnomalyKind } from "@/schema/battle";
 import { hasAnomaly } from "@/domain/anomaly";
-import type { PointDefenseEffect, WeaponEffect } from "@/schema/module";
+import type { WeaponEffect } from "@/schema/module";
 import type { BattleInputs } from "../types";
 
 import { CELL_CONTACT_DISTANCE, buildShipCellHash, nearestCellAlongSegment } from "./collision";
 import type { ShipCell } from "./collision";
 import { SIM, GAS_DRAG_CROSS_SECTION_PROJECTILE_M2, claimProjectileId } from "./config";
-import { fastHypot } from "./hypot";
+import { buildPdCandidates, tryPointDefenseIntercept, type PdCandidate } from "./point-defence";
 import { TICKS_PER_SECOND } from "../types";
 import { POWERED_SPAWN_FRACTION_OF_CRUISE } from "@/data/catalog/ordnance-motor";
 import { ACCEL_PER_TICK_FROM_SI } from "../types";
@@ -447,74 +447,6 @@ export function fireOne(
       spawnProjectile(ship, weapon, weaponFacing, muzzleLocalX, muzzleLocalY, target, rng, accuracyBonus),
     );
   }
-}
-
-/** A PD candidate: a PD module on a modular ship, captured once per tick in
- *  walk order. Only structural facts are baked in; dynamic gates are
- *  re-checked per projectile so mid-tick kills/cooldowns are handled as before. */
-interface PdCandidate {
-  readonly ship: SimShip;
-  readonly module: SimModule;
-  readonly effect: PointDefenseEffect;
-}
-
-/** Enumerate every PD module on every modular ship once per tick in walk
- *  order, so the per-projectile loop iterates only PD modules. */
-export function buildPdCandidates(byId: Map<string, SimShip>): PdCandidate[] {
-  const candidates: PdCandidate[] = [];
-  for (const [, ship] of byId) {
-    if (ship.modules === undefined) continue; // legacy ships don't run PD
-    for (const m of ship.modules) {
-      if (m.effect.kind !== "pointDefense") continue;
-      candidates.push({ ship, module: m, effect: m.effect });
-    }
-  }
-  return candidates;
-}
-
-/**
- * Roll for a point-defence intercept (true if the projectile was shot down).
- * In-range, online, off-cooldown PD modules on the opposing side stack their
- * per-module hit chance as 1 - (1 - p)^n (capped at SIM.pdMaxStackedChance);
- * only modular ships carry PD, and PD needs an alive command module.
- *
- * `pdCandidates` (buildPdCandidates, once per tick) gives the structural PD
- * set in walk order; per-projectile gates are re-applied here so this is
- * byte-identical to the former ship×module walk. The count and cooldown
- * passes share one collection (lossless: nothing mutates between them within
- * a single projectile).
- */
-export function tryPointDefenseIntercept(
-  p: SimProjectile,
-  pdCandidates: readonly PdCandidate[],
-  rng: () => number,
-): boolean {
-  const enemySide: BattleSide = p.ownerSide === "attacker" ? "defender" : "attacker";
-  // Collect in-range, online, off-cooldown PD modules. A single rng draw
-  // resolves the stacked chance — keeps the stream length independent of how
-  // many PD modules fire.
-  const firing: PdCandidate[] = [];
-  for (const cand of pdCandidates) {
-    const ship = cand.ship;
-    if (!ship.alive || ship.side !== enemySide) continue;
-    if (!hasAliveCommand(ship)) continue; // no bridge → no coordination
-    const m = cand.module;
-    if (!m.alive || !m.powered || m.powerCut || !m.manned || !isCharged(m)) continue;
-    if (m.cooldown > 0) continue;
-    const dx = ship.x - p.x;
-    const dy = ship.y - p.y;
-    if (fastHypot(dx, dy) <= cand.effect.range) firing.push(cand);
-  }
-  if (firing.length === 0) return false;
-  const stacked = 1 - Math.pow(1 - SIM.pdHitChancePerModule, firing.length);
-  const capped = Math.min(stacked, SIM.pdMaxStackedChance);
-  // Consume one cycle on every contributing module regardless of outcome — a
-  // PD battery firing into the sky still pays its cooldown, spacing salvos
-  // across ticks rather than back-to-back.
-  for (const cand of firing) {
-    cand.module.cooldown = cand.effect.cooldown;
-  }
-  return rng() < capped;
 }
 
 /**
