@@ -154,24 +154,30 @@ export const corsairDesigns: ShipDesignInput[] = [
     id: "preset-ship-marauder",
     name: "Marauder",
     faction: "Corsair",
-    // Frigate: the ambush payoff specialist — closes under cloak, looses
-    // boarding pods (O) to disable a target's systems, then finishes with
-    // raid cannons (R) at point-blank. A raider missile rack (M) softens the
-    // approach and an ECM scrambler (J) spoils the return fire. Twin
-    // magazines (G) feed the missile rack and pods; salvaged reactors and
+    // Frigate: the ambush payoff specialist — closes under cloak (K), emission
+    // damper shrinks its acquisition range on the approach, looses boarding
+    // pods (O) to disable a target's systems, then finishes with raid cannons
+    // (R) at point-blank. A pair of raider missile racks (M×2) softens the
+    // closing target and an ECM scrambler (J) spoils the return fire once the
+    // cloak drops on the first volley. The central K (cor-cloak) and the
+    // 1-cell cor-signature-damper on the adjacent deck cell together realise
+    // the cloak-and-damper stealth doctrine the engine supports but no preset
+    // had previously mounted — the cloak hides the ship while the damper
+    // widens the range at which it stays hidden, the opening move of every
+    // Reaver ambush. Twin magazines (the G token plus the 3-cell Salvage
+    // Magazine Vault) feed the missile racks and pods; salvaged reactors and
     // crew quarters keep the raid sustained. Balanced raid drives — aft (E),
     // forward brake (e), lateral (>/<) — let it hold position long enough to
     // board, then scatter. Fields the previously unshipped cor-boarding-pod
     // as its primary armament. Implies raid doctrine (aggressive, short-range,
-    // scatter). The frigate fields a Salvage Magazine Vault (3-cell) replacing
-    // the standard magazine; the Salvage Cutter is a capital-scale beam that no
-    // frigate reactor can feed, so it stays on the Galleon. Grid (9 cols ×
-    // 5 rows), subdivided ×3 → 27 m frigate.
+    // scatter). The Salvage Cutter is a capital-scale beam that no frigate
+    // reactor can feed, so it stays on the Galleon. Grid (9 cols × 5 rows),
+    // subdivided ×3 → 27 m frigate.
     grid: mountMultiCell(
       subdivideGrid(withEdges(corsairGrid([
         ".####>###",
         "ECFC#MRe#",
-        "EFM~~JOe#",
+        "EFK~~JOe#",
         "#CFMGRe##",
         ".###<O###",
       ]), [
@@ -191,8 +197,14 @@ export const corsairDesigns: ShipDesignInput[] = [
       ]), F_MARAUDER),
       F_MARAUDER,
       [
-        // Salvage magazine vault: a 3-cell vault replacing the standard magazine
-        // (the G token at (4,2) is opened to a deck anchor for the vault).
+        // Emission dampener (1-cell) on the free deck cell next to the cloak —
+        // the always-on field that shrinks acquisition range, complementing
+        // the cloak (K) on the approach. Together they activate the
+        // signature-damper stealth doctrine the engine implements but no
+        // preset had mounted.
+        [3, 2, "cor-signature-damper", [{ dx: 0, dy: 0 }]],
+        // Salvage magazine vault: a 3-cell vault alongside the standard
+        // magazine (G) for deep missile and pod reserves.
         [4, 2, "cor-salvage-magazine-vault", CORSAIR_CAPITAL_FOOTPRINTS.salvageMagazineVault],
       ],
     ),

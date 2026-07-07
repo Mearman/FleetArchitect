@@ -77,17 +77,29 @@ export const crystallineDesigns: ShipDesignInput[] = [
     // beam strike, and folds clear; it trades the Shard's signature kit (blink
     // drive, phase lance) for a bare-minimum raider. A power crystal (F,
     // command) and one resonator core (C, 5 berths for 3 crew) feed a prism
-    // beam (L), a phase-cloak (K), and a resonance sensor (v). Balanced drives
-    // — an aft resonance thruster (E) and a forward brake (e). Brittle armour
-    // caps (##) give it its dart silhouette. Grid (8 cols × 3 rows),
-    // subdivided ×2 → 16 m fighter.
-    grid: subdivideGrid(withEdges(crystalGrid([
-      "########",
-      "EeFCvK~L",
-      "########",
-    ]), [
-      { col: 6, row: 1, dir: "e", kind: "door" },
-    ]), F_SPLINTER),
+    // beam (L), a phase-cloak (K), a resonance sensor (v), and a signature
+    // damper (the 1-cell cry-signature-damper on the free deck cell — the
+    // always-on field that shrinks acquisition range, complementing the
+    // phase-cloak to complete the stealth suite). Balanced drives — an aft
+    // resonance thruster (E) and a forward brake (e). Brittle armour caps (##)
+    // give it its dart silhouette. Grid (8 cols × 3 rows), subdivided ×2 →
+    // 16 m fighter.
+    grid: mountMultiCell(
+      subdivideGrid(withEdges(crystalGrid([
+        "########",
+        "EeFCvK~L",
+        "########",
+      ]), [
+        { col: 6, row: 1, dir: "e", kind: "door" },
+      ]), F_SPLINTER),
+      F_SPLINTER,
+      [
+        // Signature Damper (1-cell) on the free deck cell — the always-on
+        // acquisition-shrinking field that completes the phase-cloak stealth
+        // suite (the cloak hides; the damper widens the hide).
+        [6, 1, "cry-signature-damper", [{ dx: 0, dy: 0 }]],
+      ],
+    ),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",
