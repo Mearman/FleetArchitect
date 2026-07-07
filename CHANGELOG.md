@@ -1,3 +1,10 @@
+# [1.56.0](https://github.com/Mearman/FleetArchitect/compare/v1.55.0...v1.56.0) (2026-07-07)
+
+
+### Features
+
+* **sim:** regenerating ammunition for Swarm bio-weapons ([5712a6f](https://github.com/Mearman/FleetArchitect/commit/5712a6f8bd9dedf46b5620dc7f2cfbd36502f4d6))
+
 # [1.55.0](https://github.com/Mearman/FleetArchitect/compare/v1.54.0...v1.55.0) (2026-07-07)
 
 
