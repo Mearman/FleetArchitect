@@ -1,3 +1,10 @@
+# [1.54.0](https://github.com/Mearman/FleetArchitect/compare/v1.53.1...v1.54.0) (2026-07-07)
+
+
+### Features
+
+* **catalog:** fold capital weapon damage into physics anchors ([ed5ae80](https://github.com/Mearman/FleetArchitect/commit/ed5ae805824c712cc1ba8f271b3e0e0545facc49))
+
 ## [1.53.1](https://github.com/Mearman/FleetArchitect/compare/v1.53.0...v1.53.1) (2026-07-06)
 
 
