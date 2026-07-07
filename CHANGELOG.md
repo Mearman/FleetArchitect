@@ -1,3 +1,10 @@
+# [1.57.0](https://github.com/Mearman/FleetArchitect/compare/v1.56.0...v1.57.0) (2026-07-07)
+
+
+### Features
+
+* **sim:** wire dormant PD hitChance + sensor gain, drop passiveBands ([2c1fa58](https://github.com/Mearman/FleetArchitect/commit/2c1fa58ca5cb8ee97ea919c5d6a85c78df2224a8)), closes [hi#gain](https://github.com/hi/issues/gain)
+
 # [1.56.0](https://github.com/Mearman/FleetArchitect/compare/v1.55.0...v1.56.0) (2026-07-07)
 
 
