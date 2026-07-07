@@ -163,10 +163,10 @@ export const corsairDesigns: ShipDesignInput[] = [
     // forward brake (e), lateral (>/<) — let it hold position long enough to
     // board, then scatter. Fields the previously unshipped cor-boarding-pod
     // as its primary armament. Implies raid doctrine (aggressive, short-range,
-    // scatter). The frigate also fields the new capital kit: a Salvage Cutter
-    // (the Reavers' first beam) on the central deck bay and a Salvage Magazine
-    // Vault (3-cell) replacing the standard magazine. Grid (9 cols × 5 rows),
-    // subdivided ×3 → 27 m frigate.
+    // scatter). The frigate fields a Salvage Magazine Vault (3-cell) replacing
+    // the standard magazine; the Salvage Cutter is a capital-scale beam that no
+    // frigate reactor can feed, so it stays on the Galleon. Grid (9 cols ×
+    // 5 rows), subdivided ×3 → 27 m frigate.
     grid: mountMultiCell(
       subdivideGrid(withEdges(corsairGrid([
         ".####>###",
@@ -191,8 +191,6 @@ export const corsairDesigns: ShipDesignInput[] = [
       ]), F_MARAUDER),
       F_MARAUDER,
       [
-        // Salvage cutter beam: the Reavers' first beam, on the central deck bay.
-        [3, 2, "cor-salvage-cutter", CORSAIR_CAPITAL_FOOTPRINTS.salvageCutter],
         // Salvage magazine vault: a 3-cell vault replacing the standard magazine
         // (the G token at (4,2) is opened to a deck anchor for the vault).
         [4, 2, "cor-salvage-magazine-vault", CORSAIR_CAPITAL_FOOTPRINTS.salvageMagazineVault],
@@ -225,15 +223,17 @@ export const corsairDesigns: ShipDesignInput[] = [
     // command core), and an ECM Scrambler Array (U, wide-aperture jammer), plus
     // a Raider Shield Bastion (2×2 capital bubble), a Plus Scrambler Hub
     // (5-cell ECM cross-roads), and a Triple Raid Drive (1×3 thrust-train) on
-    // the lower deck bays. Each anchor's covered cell is installed by
-    // `mountMultiCell` after subdivision.
+    // the lower deck bays. The prow battery is crowned by a Salvage Cutter
+    // (the Reavers' first capital beam) fed by a four-cell Raider Core reactor
+    // — without which the cutter's 15 GW draw would black the hull out. Each
+    // anchor's covered cell is installed by `mountMultiCell` after subdivision.
     grid: mountMultiCell(
       subdivideGrid(withEdges(corsairGrid([
         "..##>########",
         ".ECF~CMR#####",
         "EFMG~CYMHR###",
         "#CXBGOOUMWLe#",
-        "##FMG~CWMRR##",
+        "##FMG~CWM~~##",
         ".ECF~CMR#####",
         "..##<########",
       ]), [
@@ -281,6 +281,15 @@ export const corsairDesigns: ShipDesignInput[] = [
         // (The spec referenced an aft drive-bank cell that does not exist; this
         // adds a triple drive alongside the existing stern drives.)
         [4, 5, "cor-raider-drive-triple", CORSAIR_CAPITAL_FOOTPRINTS.raiderDriveTriple],
+        // Salvage cutter: the Reavers' first capital beam, on the prow deck
+        // cells freed by retiring two forward raid cannons. Facing 0 (forward)
+        // so the hitscan beam reaches out to the right (prow). The cutter's
+        // 15 GW draw is fed by the Raider Core below.
+        [9, 4, "cor-salvage-cutter", CORSAIR_CAPITAL_FOOTPRINTS.salvageCutter, 0],
+        // Raider core: a four-cell advanced-fusion capital reactor mounted on
+        // the adjacent prow deck cell. Sized to light the 15 GW cutter with
+        // headroom for shields, drives, and sensors.
+        [10, 4, "cor-raider-core", CORSAIR_CAPITAL_FOOTPRINTS.raiderCore],
       ],
     ),
     createdAt: PRESET_TIME,

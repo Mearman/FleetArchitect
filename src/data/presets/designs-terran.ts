@@ -304,7 +304,7 @@ export const terranDesigns: ShipDesignInput[] = [
         "########..#..",
         "#>JWUTRL..#..",
         ".EXCCT~RLO##.",
-        "EXFCCGvI~L###",
+        "E~FCCGvI~L###",
         ".EXCCTRRLO##.",
         "#<JeW~TRL.#..",
         "########..#..",
@@ -339,6 +339,11 @@ export const terranDesigns: ShipDesignInput[] = [
         // Bulwark Shield Bank on the freed stern shield cell — capital-grade
         // shield wall upgrading the Leviathan's Mk II.
         [5, 5, "ter-bulwark-shield-bank", TERRAN_FOOTPRINTS.bulwarkShieldBank],
+        // Leviathan Core on the freed centreline keel cell (was a standard
+        // antimatter X) — a 200 GW capital command heart feeding the spinal
+        // lance. Mounted on a plain deck cell, so coverFootprint installs the
+        // anchor fresh (the token map is untouched).
+        [1, 3, "ter-leviathan-core", TERRAN_FOOTPRINTS.leviathanCore],
       ],
     ),
     createdAt: PRESET_TIME,

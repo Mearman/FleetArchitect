@@ -5,11 +5,13 @@ import {
   engineMass,
   kineticWeaponMass,
   magazineMass,
+  reactorMass,
   shieldMass,
 } from "../physics";
 import {
   BEAM_POWER_W,
   BEAM_RANGE_M,
+  FUSION_ADVANCED_POWER_DENSITY_W_PER_M3,
   MISSILE_RANGE_M,
   MODULE_POWER_DRAW_W,
   MUZZLE_VELOCITY_M_PER_S,
@@ -28,6 +30,7 @@ import { poweredMotorBurnTicks, poweredMotorThrustMPerS2 } from "../ordnance-mot
 import {
   ENGINE_DENSITY,
   MAGAZINE_DENSITY,
+  REACTOR_DENSITY,
   SENSOR_DENSITY,
   SHIELD_DENSITY,
   SWARM_MISSILE_WARHEAD_J,
@@ -83,6 +86,21 @@ const SALVAGED_EMITTER_DENSITY = 2500;
  *  slightly slower than a Terran pulse laser's 1 s cool. */
 const SALVAGE_CUTTER_COOLDOWN = cooldownTicks(1.2);
 
+/** Salvage cutter sustained beam power (W) — the capital-grade sustained power
+ *  of a salvaged pulse emitter, sized so a two-cell cutter's per-shot pulse
+ *  lands in the capital band on its 1.2 s cycle. Local to this module so the
+ *  shared `BEAM_POWER_W.pulse` anchor (the single-cell pulse band) is
+ *  untouched; the cutter's mass and powerDraw re-derive from this anchor too. */
+const SALVAGE_CUTTER_POWER_W = 50 * BEAM_POWER_W.pulse;
+
+/** Raider core output target (~25 GW) — the capital-grade reactor a Galleon
+ *  needs to feed a 15 GW salvage cutter with comfortable headroom for the
+ *  shield recharge, drives, and sensors a capital hull runs alongside its
+ *  main battery. Sized ~10× the overdrive reactor's 2.4 GW at the same
+ *  advanced-fusion density band, so mass scales visibly across the
+ *  frigate → capital span. */
+const RAIDER_CORE_OUTPUT_W = 2.5e10;
+
 // --- K2 Heavy Swarm Rack ordnance anchors (L-tromino, 3 cells) -------------
 
 /** Heavy swarm-missile body mass (kg) — the heavyAutocannon band (3 kg), one
@@ -92,9 +110,9 @@ const HEAVY_SWARM_MASS_KG = PROJECTILE_MASS_KG.heavyAutocannon;
 /** Heavy swarm-missile cruise velocity (m/s) — autocannon/2, matching the
  *  swarm rack's feed cadence. */
 const HEAVY_SWARM_CRUISE_MS = MUZZLE_VELOCITY_M_PER_S.autocannon / 2;
-/** Heavy swarm-missile warhead yield (J) — 3× the swarm's 80 MJ, a heavier
+/** Heavy swarm-missile warhead yield (J) — 150× the swarm's 80 MJ, a heavier
  *  saturation warhead fired in volleys of three rails. */
-const HEAVY_SWARM_WARHEAD_J = 3 * SWARM_MISSILE_WARHEAD_J;
+const HEAVY_SWARM_WARHEAD_J = 150 * SWARM_MISSILE_WARHEAD_J;
 /** Heavy swarm-missile finite-burn motor — DERIVED from the missile burn-time
  *  band (same cruise/burn as the swarm missile). */
 const HEAVY_SWARM_THRUST_M_PER_S2 = poweredMotorThrustMPerS2(
@@ -111,9 +129,9 @@ const HEAVY_SWARM_AMMO_CAPACITY = 180;
 
 // --- K3 Twin Raid Cannon anchors (1×2 line, 2 cells) -----------------------
 
-/** Twin raid-cannon round mass (kg) — 2× the raid cannon's 1 kg autocannon
- *  band, two ganged barrels firing a paired slug. */
-const TWIN_RAID_MASS_KG = 2 * PROJECTILE_MASS_KG.autocannon;
+/** Twin raid-cannon round mass (kg) — 100× the raid cannon's 1 kg autocannon
+ *  band, two ganged capital-scale barrels firing a paired slug. */
+const TWIN_RAID_MASS_KG = 100 * PROJECTILE_MASS_KG.autocannon;
 /** Twin raid-cannon muzzle velocity (m/s) — the autocannon band, matching the
  *  raid cannon's fast light slug. */
 const TWIN_RAID_MUZZLE_MS = MUZZLE_VELOCITY_M_PER_S.autocannon;
@@ -201,6 +219,13 @@ export const CORSAIR_CAPITAL_FOOTPRINTS = {
     { dx: 1, dy: 0 },
     { dx: 0, dy: 1 },
   ],
+  /** 2×2 block — a four-cell advanced-fusion capital reactor. */
+  raiderCore: [
+    { dx: 0, dy: 0 },
+    { dx: 1, dy: 0 },
+    { dx: 0, dy: 1 },
+    { dx: 1, dy: 1 },
+  ],
 };
 
 /**
@@ -212,11 +237,10 @@ export const CORSAIR_CAPITAL_FOOTPRINTS = {
  * anchor (see `mountMultiCell` in `data/presets/tokens.ts`). Mass traces to
  * the same physics helpers via the heavier capital anchors above.
  *
- * Capital weapons carry the catalogue's standard `× 50` per-shot damage scalar
- * (every multi-cell weapon across the faction files applies it), so a
- * polyomino weapon hits proportionally harder per shot to justify its
- * footprint — mass and capability scale together by physics, damage by the
- * established convention.
+ * Capital weapons use heavier capability anchors than their single-cell
+ * cousins (a heavier round, a higher sustained beam power, a larger warhead),
+ * so a polyomino weapon hits proportionally harder per shot — mass and damage
+ * scale together by physics, both folded into the same anchor.
  */
 export const corsairCapitalModules: ModuleDefinitionInput[] = [
   {
@@ -226,20 +250,20 @@ export const corsairCapitalModules: ModuleDefinitionInput[] = [
     description:
       "A two-cell salvaged pulse cutter — the first beam weapon the Reavers ever fielded, bolted together from a stripped-down disruptor and a scavenged cooling jacket. Cuts through plating to gut the modules underneath; a raider's answer to a target that still has hull when the missiles run dry.",
     category: "weapon",
-    // Salvaged pulse emitter at the pulse band (3e8 W), massed at a mid
-    // salvaged-emitter density between a precision and a forged stack.
-    // mass = 2500 × (3e8 / 4e7) = 18,750 kg (~19 t).
-    mass: beamWeaponMass(BEAM_POWER_W.pulse, SALVAGED_EMITTER_DENSITY),
+    // Salvaged pulse emitter at the capital cutter band (1.5e10 W), massed at a
+    // mid salvaged-emitter density between a precision and a forged stack.
+    // mass = 2500 × (1.5e10 / 4e7) = 937,500 kg (~938 t).
+    mass: beamWeaponMass(SALVAGE_CUTTER_POWER_W, SALVAGED_EMITTER_DENSITY),
     cost: 110,
     // A beam's draw IS its delivered optical power.
-    powerDraw: BEAM_POWER_W.pulse,
+    powerDraw: SALVAGE_CUTTER_POWER_W,
     crewRequired: 1,
     techLevel: 2,
     footprint: CORSAIR_CAPITAL_FOOTPRINTS.salvageCutter,
     effect: {
       kind: "weapon",
       weaponType: "beam",
-      damage: beamDamageJoules(BEAM_POWER_W.pulse, SALVAGE_CUTTER_COOLDOWN) * 50,
+      damage: beamDamageJoules(SALVAGE_CUTTER_POWER_W, SALVAGE_CUTTER_COOLDOWN),
       range: BEAM_RANGE_M,
       cooldown: SALVAGE_CUTTER_COOLDOWN,
       // Hitscan beam: no projectile.
@@ -276,7 +300,7 @@ export const corsairCapitalModules: ModuleDefinitionInput[] = [
     effect: {
       kind: "weapon",
       weaponType: "missile",
-      damage: HEAVY_SWARM_WARHEAD_J * 50,
+      damage: HEAVY_SWARM_WARHEAD_J,
       range: MISSILE_RANGE_M,
       cooldown: HEAVY_SWARM_COOLDOWN,
       projectileSpeed: projectileSpeedMPerTick(HEAVY_SWARM_CRUISE_MS),
@@ -302,8 +326,9 @@ export const corsairCapitalModules: ModuleDefinitionInput[] = [
     description:
       "Two ganged raid-cannon barrels on one mount — double the round mass of the single raid cannon at the same fast muzzle, for finishing what the missiles strip when a single barrel isn't enough. Cheap, punchy, and small enough to mount on a fighter.",
     category: "weapon",
-    // 2 kg @ 4 km/s (2× the raid cannon's 1 kg autocannon band). Muzzle energy
-    // ½·2·4000² = 16 MJ; mass = 2800 × (1.6e7 / 2e7) = 2,240 kg (~2.2 t).
+    // 100 kg @ 4 km/s (100× the raid cannon's 1 kg autocannon band). Muzzle
+    // energy ½·100·4000² = 800 MJ; mass = 2800 × (8e8 / 2e7) = 112,000 kg
+    // (~112 t).
     mass: kineticWeaponMass(TWIN_RAID_MASS_KG, TWIN_RAID_MUZZLE_MS, WEAPON_DENSITY),
     cost: 90,
     powerDraw: MODULE_POWER_DRAW_W.kineticWeapon,
@@ -313,7 +338,7 @@ export const corsairCapitalModules: ModuleDefinitionInput[] = [
     effect: {
       kind: "weapon",
       weaponType: "cannon",
-      damage: kineticDamageJoules(TWIN_RAID_MASS_KG, TWIN_RAID_MUZZLE_MS) * 50,
+      damage: kineticDamageJoules(TWIN_RAID_MASS_KG, TWIN_RAID_MUZZLE_MS),
       range: kineticRangeM(TWIN_RAID_MUZZLE_MS),
       cooldown: cooldownTicks(RELOAD_THERMAL_TIME_S.autocannon),
       projectileSpeed: projectileSpeedMPerTick(TWIN_RAID_MUZZLE_MS),
@@ -356,7 +381,7 @@ export const corsairCapitalModules: ModuleDefinitionInput[] = [
       droneCount: 8,
       launchCooldown: 80,
       droneHp: 30,
-      droneDamage: 4 * 50,
+      droneDamage: 200,
       droneRange: 80,
       droneSpeed: 6,
     },
@@ -438,5 +463,31 @@ export const corsairCapitalModules: ModuleDefinitionInput[] = [
     techLevel: 3,
     footprint: CORSAIR_CAPITAL_FOOTPRINTS.salvageMagazineVault,
     effect: { kind: "magazine", ammoStored: SALVAGE_VAULT_ROUNDS },
+  },
+  {
+    id: "cor-raider-core",
+    faction: "Corsair",
+    name: "Raider Core",
+    description:
+      "A four-cell advanced-fusion command reactor — the salvaged heart of a Galleon, bolted together from stripped cruiser cores and over-tuned to push the advanced-fusion density band past anything a frigate reactor can sink. Sized to light a 15 GW salvage cutter with headroom for shields, drives, and sensors; without it, the cutter's draw would black out the hull the moment it fired.",
+    category: "system",
+    // 25 GW @ 6e7 W/m³ (advanced-fusion density, ~10× the overdrive reactor's
+    // 2.4 GW output at the same band). The reactor's mass traces to its output
+    // via reactorMass — a denser core is proportionally lighter for the same
+    // watts, but a capital reactor is still thousands of tonnes.
+    // mass = reactorMass(2.5e10, 6e7, 3000) = 3000 × (2.5e10 / 6e7) = 1,250,000 kg
+    // (~1250 t) — heavy, but mass is not fault-gated; only power, crew, and
+    // cost are checked.
+    mass: reactorMass(
+      RAIDER_CORE_OUTPUT_W,
+      FUSION_ADVANCED_POWER_DENSITY_W_PER_M3,
+      REACTOR_DENSITY,
+    ),
+    cost: 200,
+    powerDraw: 0,
+    crewRequired: 3,
+    techLevel: 4,
+    footprint: CORSAIR_CAPITAL_FOOTPRINTS.raiderCore,
+    effect: { kind: "power", output: RAIDER_CORE_OUTPUT_W },
   },
 ];

@@ -5,11 +5,11 @@ import {
   driveThrustNewtons,
   engineMass,
   kineticWeaponMass,
-  magazineMass,
   reactorMass,
   shieldMass,
 } from "../physics";
 import {
+  ANTIMATTER_ADVANCED_POWER_DENSITY_W_PER_M3,
   ANTIMATTER_POWER_DENSITY_W_PER_M3,
   BEAM_POWER_W,
   BEAM_RANGE_M,
@@ -42,15 +42,18 @@ import {
 // The single-cell catalogue in `crystalline.ts` spans fighter → frigate →
 // cruiser capability on one cell each. The modules here are the multi-cell
 // capital variants: each occupies a polyomino footprint and re-anchors its
-// capability at a multiple of the single-cell band (a 6 GW prism array, a
-// 3 GW heavy spinal lance, a railgun-grade heavy shard cannon, a 1.6 GJ
-// adaptive bastion, a paired resonance bulwark, a 15 GW quantum spire, a
-// 96 kN resonance thruster array). Their mass still traces to the SAME
-// physics-layer helpers (`beamWeaponMass`, `kineticWeaponMass`, `engineMass`,
-// `reactorMass`, `shieldMass`, `deflectorMass`) applied to these heavier
-// anchors, with the SAME Crystalline-specific densities exported from
-// `crystalline.ts`, so a stronger capital module is proportionally heavier —
-// by physics, not by a size class.
+// capability at a multiple of the single-cell band. The CAPITAL weapons (the
+// prism array, the heavy spinal lance) carry the capital-array damage fold
+// (×50) baked into their anchor so per-shot damage derives purely from
+// `beamDamageJoules` / `kineticDamageJoules`; the frigate- and cruiser-grade
+// lines (twin prism, tri-prism lance) are re-anchored at their labelled grade
+// with NO capital fold, so a frigate/cruiser hull can feed them from its
+// existing reactors. Their mass still traces to the SAME physics-layer helpers
+// (`beamWeaponMass`, `kineticWeaponMass`, `engineMass`, `reactorMass`,
+// `shieldMass`, `deflectorMass`) applied to these heavier anchors, with the
+// SAME Crystalline-specific densities exported from `crystalline.ts`, so a
+// stronger capital module is proportionally heavier — by physics, not by a
+// size class.
 //
 // Isolated from `crystalline.ts` so that file stays under the per-file
 // max-lines guard (mirroring the `terran.ts` / `terran-capital.ts` split). The
@@ -63,32 +66,39 @@ import {
 // ---------------------------------------------------------------------------
 // Capital anchors.
 //
-// Each constant is a multiple of an existing single-cell band (2× the prism
-// beam, 3× the spinal lance, 4× the medium shield, 3× the quantum lattice
-// core's output, 2× the crystal drive, etc.), so capability scales visibly
-// across the fighter → capital span and mass follows from the physics helpers,
-// never hand-tuned.
+// Each constant is a multiple of an existing single-cell band (the prism
+// beam, the spinal lance, the medium shield, the quantum lattice core's
+// output, the crystal drive, etc.). The capital weapons (prism array, heavy
+// spinal lance) bake the capital-array damage fold (×50) into their anchor so
+// per-shot energy derives purely from the physics helpers; the frigate- and
+// cruiser-grade lines (twin prism, tri-prism lance) omit that fold and re-anchor
+// at their labelled grade. Capability scales visibly across the fighter →
+// capital span and mass follows from the physics helpers, never hand-tuned.
 // ---------------------------------------------------------------------------
 
-/** Prism Array sustained beam power (W) — 2× the prism beam's pulse band. The
- *  two crystals fire in concert, so the array's pulse deposits 6e8 J on the
- *  prism beam's fast 1 s cycle. */
-const PRISM_ARRAY_POWER_W = 2 * BEAM_POWER_W.pulse;
+/** Prism Array sustained beam power (W) — the two crystals fire in concert
+ *  (2× the prism beam's pulse band) at the capital-array damage fold (×50), so
+ *  the per-shot energy derives purely from `beamDamageJoules`. Mass and
+ *  powerDraw scale with this anchor. */
+const PRISM_ARRAY_POWER_W = 2 * 50 * BEAM_POWER_W.pulse;
 /** Prism Array refire / dwell (s) — the prism beam's fast-cycling thermal
  *  band (the two emitters share a common cycle). */
 const PRISM_ARRAY_COOLDOWN = cooldownTicks(1.0);
 
-/** Heavy Spinal Lance sustained beam power (W) — 3× the spinal lance band, the
- *  heaviest Concord beam. A slow 7 s thermal cycle dumps a 21 GJ pulse
- *  (`beamDamageJoules(HEAVY_SPINAL_POWER_W, HEAVY_SPINAL_COOLDOWN)`). */
-const HEAVY_SPINAL_POWER_W = 3 * BEAM_POWER_W.lance;
+/** Heavy Spinal Lance sustained beam power (W) — three crystals in series (3×
+ *  the spinal lance band) at the capital-array damage fold (×50), the heaviest
+ *  Concord beam. A slow 7 s thermal cycle dumps the per-shot energy derived
+ *  purely from `beamDamageJoules`. */
+const HEAVY_SPINAL_POWER_W = 3 * 50 * BEAM_POWER_W.lance;
 /** Heavy Spinal Lance thermal cycle (s) — the spinal lance's long emitter-
  *  recovery dwell, shared by the heavier three-crystal line. */
 const HEAVY_SPINAL_COOLDOWN = cooldownTicks(7);
 
-/** Heavy Shard Cannon round mass (kg) — the railgun band (10 kg), a heavier
- *  crystal slug than the resonance cannon's fighter-class lobbed shard. */
-const HEAVY_SHARD_MASS_KG = PROJECTILE_MASS_KG.railgun;
+/** Heavy Shard Cannon round mass (kg) — the railgun band at the capital-array
+ *  damage fold (×50), a 500 kg crystal slug far heavier than the resonance
+ *  cannon's fighter-class lobbed shard. Per-shot kinetic energy derives purely
+ *  from `kineticDamageJoules`. */
+const HEAVY_SHARD_MASS_KG = 50 * PROJECTILE_MASS_KG.railgun;
 /** Heavy Shard Cannon muzzle velocity (m/s) — the railgun band (8 km/s). */
 const HEAVY_SHARD_MUZZLE_MS = MUZZLE_VELOCITY_M_PER_S.railgun;
 /** Heavy Shard Cannon load cycle (s) — the railgun band's capacitor recharge. */
@@ -112,6 +122,12 @@ const BULWARK_ARRAY_RECHARGE_KG_MPS = 2 * DEFLECTOR_RECHARGE_KG_MPS_PER_S.medium
  *  band, the Concord's capital power plant. */
 const QUANTUM_SPIRE_OUTPUT_W = 3 * CRYSTAL_ANTIMATTER_OUTPUT_W;
 
+/** Quantum Spire Apex output (W) — 35× the crystal antimatter band (175 GW),
+ *  the Concord's apex capital power plant: sized to feed a 150 GW heavy spinal
+ *  lance with ~15% margin for shields, drive, and sensors. Re-anchored at the
+ *  advanced antimatter power density (3e8 W/m³), the densest band. */
+const SPIRE_APEX_OUTPUT_W = 35 * CRYSTAL_ANTIMATTER_OUTPUT_W;
+
 /** Resonance Thruster Array rated thrust (N) — 2× the crystal drive band. */
 const THRUSTER_ARRAY_THRUST_N = 2 * driveThrustNewtons("crystal");
 /** Resonance Thruster Array power draw (W) — 2× the drive's power-conditioning
@@ -126,21 +142,27 @@ const THRUSTER_ARRAY_POWER_DRAW_W = 2 * MODULE_POWER_DRAW_W.drive;
 // band, so mass follows from the physics helpers, never hand-tuned.
 // ---------------------------------------------------------------------------
 
-/** Twin Prism sustained beam power (W) — the disruptor band (4.5e8 W), one
- *  step above the single prism beam's pulse. Two crystals fire in concert. */
-const TWIN_PRISM_POWER_W = BEAM_POWER_W.disruptor;
+/** Twin Prism sustained beam power (W) — two crystals fired in concert at the
+ *  disruptor band (2× it), a frigate-grade battery with NO capital fold so a
+ *  frigate's power crystal can feed it. Per-shot energy derives purely from
+ *  `beamDamageJoules`. */
+const TWIN_PRISM_POWER_W = 2 * BEAM_POWER_W.disruptor;
 /** Twin Prism refire / dwell (s) — the prism beam's fast 1 s crystal cycle. */
 const TWIN_PRISM_COOLDOWN = cooldownTicks(1.0);
 
-/** Tri-Prism Lance sustained beam power (W) — 2× the disruptor band (9e8 W),
- *  a cruiser-grade three-crystal spinal line. */
-const TRI_PRISM_LANCE_POWER_W = 2 * BEAM_POWER_W.disruptor;
+/** Tri-Prism Lance sustained beam power (W) — three crystals in series at the
+ *  disruptor band (3× it), a cruiser-grade spinal line with NO capital fold so
+ *  a cruiser's quantum lattice can feed it. Per-shot energy derives purely
+ *  from `beamDamageJoules`. */
+const TRI_PRISM_LANCE_POWER_W = 3 * BEAM_POWER_W.disruptor;
 /** Tri-Prism Lance thermal cycle (s) — the phase lance's resonant dwell. */
 const TRI_PRISM_LANCE_COOLDOWN = cooldownTicks(1.6);
 
-/** Resonance Shard Volley round mass (kg) — 2× the heavy-autocannon band
- *  (6 kg), a twin shard volley heavier than the single resonance cannon. */
-const SHARD_VOLLEY_MASS_KG = 2 * PROJECTILE_MASS_KG.heavyAutocannon;
+/** Resonance Shard Volley round mass (kg) — a twin shard volley (2× the
+ *  heavy-autocannon band) at the capital-array damage fold (×50), heavier than
+ *  the single resonance cannon. Per-shot kinetic energy derives purely from
+ *  `kineticDamageJoules`. */
+const SHARD_VOLLEY_MASS_KG = 2 * 50 * PROJECTILE_MASS_KG.heavyAutocannon;
 /** Resonance Shard Volley muzzle velocity (m/s) — the heavy-autocannon band. */
 const SHARD_VOLLEY_MUZZLE_MS = MUZZLE_VELOCITY_M_PER_S.heavyAutocannon;
 /** Resonance Shard Volley load cycle (s) — the heavy-autocannon band. */
@@ -152,9 +174,6 @@ const REFRACTOR_GRID_POWER_DRAW_W = 2 * MODULE_POWER_DRAW_W.pointDefense;
 /** Resonance Mender power draw (W) — a sensor-class electronics load for the
  *  resonance repair array. */
 const RESONANCE_MENDER_POWER_DRAW_W = MODULE_POWER_DRAW_W.sensor;
-
-/** Shard Vault power draw (W) — magazine-handling gear. */
-const SHARD_VAULT_POWER_DRAW_W = MODULE_POWER_DRAW_W.magazine;
 
 /** Diamond Bastion capacity (J) — 3× the heavy shield band (1.8 GJ), the
  *  Concord's signature capital diamond projector lattice. */
@@ -248,11 +267,6 @@ export const CRYSTALLINE_FOOTPRINTS = {
     { dx: 1, dy: 0 },
     { dx: 0, dy: 1 },
   ],
-  /** Shard Vault: a dense-packed crystal magazine (2-line). */
-  shardVault: [
-    { dx: 0, dy: 0 },
-    { dx: 1, dy: 0 },
-  ],
   /** Diamond Bastion: the Concord's signature 2×2 capital shield diamond. */
   diamondBastion: [
     { dx: 0, dy: 0 },
@@ -280,6 +294,14 @@ export const CRYSTALLINE_FOOTPRINTS = {
     { dx: 0, dy: 1 },
     { dx: 0, dy: -1 },
   ],
+  /** Quantum Spire Apex: a 2×2 capital antimatter command core (the apex
+   *  power plant that feeds a heavy spinal lance). */
+  spireApex: [
+    { dx: 0, dy: 0 },
+    { dx: 1, dy: 0 },
+    { dx: 0, dy: 1 },
+    { dx: 1, dy: 1 },
+  ],
 };
 
 /**
@@ -299,7 +321,7 @@ export const crystallineCapitalModules: ModuleDefinitionInput[] = [
     description:
       "Two focusing crystals grown side by side and fired in concert. Doubles the prism beam's pulse-grade output for a modest increase in fitting cost. A 2x1 array (the Concord's prism-array pattern).",
     category: "weapon",
-    // mass = beamWeaponMass(6e8, 4200) = 4200 × (6e8 / 4e7) = 63,000 kg (~63 t).
+    // mass = beamWeaponMass(3e10, 4200) = 4200 × (3e10 / 4e7) = 3,150,000 kg (~3150 t).
     mass: beamWeaponMass(PRISM_ARRAY_POWER_W, CRYSTAL_BEAM_DENSITY),
     cost: 130,
     // A beam's draw IS its delivered optical power.
@@ -310,7 +332,7 @@ export const crystallineCapitalModules: ModuleDefinitionInput[] = [
     effect: {
       kind: "weapon",
       weaponType: "beam",
-      damage: beamDamageJoules(PRISM_ARRAY_POWER_W, PRISM_ARRAY_COOLDOWN) * 50,
+      damage: beamDamageJoules(PRISM_ARRAY_POWER_W, PRISM_ARRAY_COOLDOWN),
       range: BEAM_RANGE_M,
       cooldown: PRISM_ARRAY_COOLDOWN,
       projectileSpeed: 0,
@@ -328,7 +350,7 @@ export const crystallineCapitalModules: ModuleDefinitionInput[] = [
     description:
       "Three resonant crystals grown in series along the keel — the heaviest Concord beam, a fixed-forward capital array that deposits a battleship-killing pulse on a long thermal cycle. A 1x3 resonance-lance line.",
     category: "weapon",
-    // mass = beamWeaponMass(3e9, 4200) = 4200 × (3e9 / 4e7) = 315,000 kg (~315 t).
+    // mass = beamWeaponMass(1.5e11, 4200) = 4200 × (1.5e11 / 4e7) = 15,750,000 kg (~15,750 t).
     mass: beamWeaponMass(HEAVY_SPINAL_POWER_W, CRYSTAL_BEAM_DENSITY),
     cost: 840,
     // A beam's draw IS its delivered optical power.
@@ -339,7 +361,7 @@ export const crystallineCapitalModules: ModuleDefinitionInput[] = [
     effect: {
       kind: "weapon",
       weaponType: "beam",
-      damage: beamDamageJoules(HEAVY_SPINAL_POWER_W, HEAVY_SPINAL_COOLDOWN) * 50,
+      damage: beamDamageJoules(HEAVY_SPINAL_POWER_W, HEAVY_SPINAL_COOLDOWN),
       range: BEAM_RANGE_M,
       cooldown: HEAVY_SPINAL_COOLDOWN,
       projectileSpeed: 0,
@@ -360,8 +382,8 @@ export const crystallineCapitalModules: ModuleDefinitionInput[] = [
     description:
       "A three-celled shard battery grown as a bent crystal cluster, hurling a railgun-grade slug for when a beam's line of sight is unwanted and a fighter-class lobbed round would not suffice. Uses a higher capability band than the 1-cell resonance cannon (3 kg / 5 km/s); mass follows the capability derivation. An L-tromino crystal facet.",
     category: "weapon",
-    // 10 kg @ 8 km/s. Muzzle energy ½·10·8000² = 3.2 GJ.
-    // mass = kineticWeaponMass(10, 8000, 4500) = 4500 × (3.2e8 / 2e7) = 72,000 kg.
+    // 500 kg @ 8 km/s. Muzzle energy ½·500·8000² = 1.6e10 J (16 GJ).
+    // mass = kineticWeaponMass(500, 8000, 4500) = 4500 × (1.6e10 / 2e7) = 3,600,000 kg.
     mass: kineticWeaponMass(
       HEAVY_SHARD_MASS_KG,
       HEAVY_SHARD_MUZZLE_MS,
@@ -375,7 +397,7 @@ export const crystallineCapitalModules: ModuleDefinitionInput[] = [
     effect: {
       kind: "weapon",
       weaponType: "cannon",
-      damage: kineticDamageJoules(HEAVY_SHARD_MASS_KG, HEAVY_SHARD_MUZZLE_MS) * 50,
+      damage: kineticDamageJoules(HEAVY_SHARD_MASS_KG, HEAVY_SHARD_MUZZLE_MS),
       range: kineticRangeM(HEAVY_SHARD_MUZZLE_MS),
       cooldown: HEAVY_SHARD_COOLDOWN,
       projectileSpeed: projectileSpeedMPerTick(HEAVY_SHARD_MUZZLE_MS),
@@ -481,9 +503,9 @@ export const crystallineCapitalModules: ModuleDefinitionInput[] = [
     faction: "Crystalline",
     name: "Twin Prism",
     description:
-      "Two focusing crystals fired in concert at the disruptor band, one step above the single prism beam's pulse. A frigate-grade 2-cell twin-prism battery — the Concord's line skirmisher upgrade. A 2x1 array.",
+      "Two focusing crystals fired in concert at the disruptor band, one step above the single prism beam's pulse. A frigate-grade 2-cell twin-prism battery — the Concord's line skirmisher upgrade, feedable by a frigate's power crystal. A 2x1 array.",
     category: "weapon",
-    // mass = beamWeaponMass(4.5e8, 4200) = 4200 × (4.5e8 / 4e7) = 47,250 kg.
+    // mass = beamWeaponMass(9e8, 4200) = 4200 × (9e8 / 4e7) = 94,500 kg (~94.5 t).
     mass: beamWeaponMass(TWIN_PRISM_POWER_W, CRYSTAL_BEAM_DENSITY),
     cost: 200,
     // A beam's draw IS its delivered optical power.
@@ -494,7 +516,7 @@ export const crystallineCapitalModules: ModuleDefinitionInput[] = [
     effect: {
       kind: "weapon",
       weaponType: "beam",
-      damage: beamDamageJoules(TWIN_PRISM_POWER_W, TWIN_PRISM_COOLDOWN) * 50,
+      damage: beamDamageJoules(TWIN_PRISM_POWER_W, TWIN_PRISM_COOLDOWN),
       range: BEAM_RANGE_M,
       cooldown: TWIN_PRISM_COOLDOWN,
       projectileSpeed: 0,
@@ -512,8 +534,8 @@ export const crystallineCapitalModules: ModuleDefinitionInput[] = [
     description:
       "A twin shard-thrower battery hurling two heavy-autocannon-grade crystal slugs in volley — the kinetic upgrade for when a beam's line of sight is unwanted. Uses a heavier band than the single resonance cannon. A 2x1 array.",
     category: "weapon",
-    // 6 kg @ 5 km/s. Muzzle energy ½·6·5000² = 7.5e7 J.
-    // mass = kineticWeaponMass(6, 5000, 4500) = 4500 × (7.5e7 / 2e7) = 16,875 kg.
+    // 300 kg @ 5 km/s. Muzzle energy ½·300·5000² = 3.75e9 J (3.75 GJ).
+    // mass = kineticWeaponMass(300, 5000, 4500) = 4500 × (3.75e9 / 2e7) = 843,750 kg.
     mass: kineticWeaponMass(
       SHARD_VOLLEY_MASS_KG,
       SHARD_VOLLEY_MUZZLE_MS,
@@ -527,7 +549,7 @@ export const crystallineCapitalModules: ModuleDefinitionInput[] = [
     effect: {
       kind: "weapon",
       weaponType: "cannon",
-      damage: kineticDamageJoules(SHARD_VOLLEY_MASS_KG, SHARD_VOLLEY_MUZZLE_MS) * 50,
+      damage: kineticDamageJoules(SHARD_VOLLEY_MASS_KG, SHARD_VOLLEY_MUZZLE_MS),
       range: kineticRangeM(SHARD_VOLLEY_MUZZLE_MS),
       cooldown: SHARD_VOLLEY_COOLDOWN,
       projectileSpeed: projectileSpeedMPerTick(SHARD_VOLLEY_MUZZLE_MS),
@@ -546,9 +568,9 @@ export const crystallineCapitalModules: ModuleDefinitionInput[] = [
     faction: "Crystalline",
     name: "Tri-Prism Lance",
     description:
-      "Three resonant crystals grown in series — a cruiser-grade spinal beam that deposits twice the disruptor band's sustained power on the phase lance's resonant cycle. A 1x3 resonance line.",
+      "Three resonant crystals grown in series — a cruiser-grade spinal beam that deposits three times the disruptor band's sustained power on the phase lance's resonant cycle, feedable by a cruiser's quantum lattice. A 1x3 resonance line.",
     category: "weapon",
-    // mass = beamWeaponMass(9e8, 4200) = 4200 × (9e8 / 4e7) = 94,500 kg.
+    // mass = beamWeaponMass(1.35e9, 4200) = 4200 × (1.35e9 / 4e7) = 141,750 kg (~141.75 t).
     mass: beamWeaponMass(TRI_PRISM_LANCE_POWER_W, CRYSTAL_BEAM_DENSITY),
     cost: 400,
     // A beam's draw IS its delivered optical power.
@@ -559,7 +581,7 @@ export const crystallineCapitalModules: ModuleDefinitionInput[] = [
     effect: {
       kind: "weapon",
       weaponType: "beam",
-      damage: beamDamageJoules(TRI_PRISM_LANCE_POWER_W, TRI_PRISM_LANCE_COOLDOWN) * 50,
+      damage: beamDamageJoules(TRI_PRISM_LANCE_POWER_W, TRI_PRISM_LANCE_COOLDOWN),
       range: BEAM_RANGE_M,
       cooldown: TRI_PRISM_LANCE_COOLDOWN,
       projectileSpeed: 0,
@@ -612,25 +634,6 @@ export const crystallineCapitalModules: ModuleDefinitionInput[] = [
     effect: {
       kind: "repair",
       repairRate: 5,
-    },
-  },
-  {
-    id: "cry-shard-vault",
-    faction: "Crystalline",
-    name: "Shard Vault",
-    description:
-      "A dense-packed crystal magazine storing 600 resonance shards for sustained shard-cannon fire. Closes the magazine doctrine gap — crystal shards are crystal-mechanism mass, so the vault masses at the weapon density. A 2x1 bay.",
-    category: "system",
-    // mass = magazineMass(600, 4500) = 4500 × (600 / 30) = 90,000 kg.
-    mass: magazineMass(600, CRYSTAL_WEAPON_DENSITY),
-    cost: 130,
-    powerDraw: SHARD_VAULT_POWER_DRAW_W,
-    crewRequired: 1,
-    techLevel: 2,
-    footprint: CRYSTALLINE_FOOTPRINTS.shardVault,
-    effect: {
-      kind: "magazine",
-      ammoStored: 600,
     },
   },
   {
@@ -718,6 +721,30 @@ export const crystallineCapitalModules: ModuleDefinitionInput[] = [
     techLevel: 5,
     footprint: CRYSTALLINE_FOOTPRINTS.spirePlus,
     effect: { kind: "power", output: SPIRE_PLUS_OUTPUT_W },
+    command: true,
+  },
+  {
+    id: "cry-spire-apex",
+    faction: "Crystalline",
+    name: "Quantum Spire Apex",
+    description:
+      "A 2×2 antimatter spire grown as the Concord's apex capital power plant — the resonant heart that feeds a heavy spinal lance (150 GW) with margin for shields, drive, and sensors simultaneously. A 2×2 capital command core; command module.",
+    category: "system",
+    // 175 GW @ 3e8 W/m³ (advanced antimatter density — the densest band), crystal
+    // containment. Sized for a 150 GW heavy spinal lance + ~15% margin.
+    // mass = reactorMass(1.75e11, 3e8, 5000) = 5000 × (1.75e11 / 3e8)
+    //   = 5000 × 583.33 ≈ 2,916,667 kg (~2917 t).
+    mass: reactorMass(
+      SPIRE_APEX_OUTPUT_W,
+      ANTIMATTER_ADVANCED_POWER_DENSITY_W_PER_M3,
+      CRYSTAL_REACTOR_DENSITY,
+    ),
+    cost: 1500,
+    powerDraw: 0,
+    crewRequired: 3,
+    techLevel: 5,
+    footprint: CRYSTALLINE_FOOTPRINTS.spireApex,
+    effect: { kind: "power", output: SPIRE_APEX_OUTPUT_W },
     command: true,
   },
 ];

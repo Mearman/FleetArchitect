@@ -69,25 +69,35 @@ import {
 // hand-tuned.
 // ---------------------------------------------------------------------------
 
-/** Spore battery projectile mass (kg) — 2× the spore round (the autocannon
- *  banding), the same muzzle so a twin-chambered gland doubles the weight of
- *  fire for the same launch energy per round. */
-const SPORE_BATTERY_MASS_KG = 2 * PROJECTILE_MASS_KG.autocannon;
+/** Spore battery projectile mass (kg) — 100× the autocannon band, a capital-
+ *  scale spore-mass that hits fifty times harder per round than the single
+ *  spore launcher's fighter-class round at the same muzzle velocity. Folding
+ *  the legacy capital `× 50` per-shot scalar into the projectile mass keeps
+ *  the damage derivation purely physical (`½·m·v²`) and scales the launcher
+ *  mass proportionally, so a stronger capital weapon is genuinely heavier. */
+const SPORE_BATTERY_MASS_KG = 100 * PROJECTILE_MASS_KG.autocannon;
 /** Spore battery muzzle velocity (m/s) — the autocannon band (4 km/s). */
 const SPORE_BATTERY_MUZZLE_MS = MUZZLE_VELOCITY_M_PER_S.autocannon;
 /** Spore battery cyclic interval (s) — matches the single spore launcher. */
 const SPORE_BATTERY_COOLDOWN = cooldownTicks(RELOAD_THERMAL_TIME_S.autocannon);
 
-/** Acid bank sustained beam power (W) — 3× the acid sprayer's pdPulse band,
- *  feeding three converging nozzles from one enlarged corrosive reservoir. */
-const ACID_BANK_POWER_W = 3 * BEAM_POWER_W.pdPulse;
+/** Acid bank sustained beam power (W) — 150× the pdPulse band (fifty times the
+ *  single acid sprayer's three-nozzle output), feeding a capital-scale
+ *  corrosive reservoir. Folding the legacy capital `× 50` per-shot scalar
+ *  into the beam power keeps the damage derivation purely physical
+ *  (`power × dwell`) and scales the emitter mass proportionally, so a stronger
+ *  capital beam is genuinely heavier and draws genuinely more power. */
+const ACID_BANK_POWER_W = 150 * BEAM_POWER_W.pdPulse;
 /** Acid bank bio-chemical recharge (s) — the same fast gland cycle as the acid
  *  sprayer; the larger reservoir sustains a heavier jet on the same rhythm. */
 const ACID_BANK_COOLDOWN = cooldownTicks(0.7);
 
-/** Bloom cannon projectile mass (kg) — the heavyAutocannon band (3 kg), a dense
- *  spore-mass at capital scale. */
-const BLOOM_CANNON_MASS_KG = PROJECTILE_MASS_KG.heavyAutocannon;
+/** Bloom cannon projectile mass (kg) — 50× the heavyAutocannon band, a dense
+ *  capital-scale spore-mass. Folding the legacy capital `× 50` per-shot scalar
+ *  into the projectile mass keeps the damage derivation purely physical
+ *  (`½·m·v²`) and scales the launcher mass proportionally, so a stronger
+ *  capital weapon is genuinely heavier. */
+const BLOOM_CANNON_MASS_KG = 50 * PROJECTILE_MASS_KG.heavyAutocannon;
 /** Bloom cannon muzzle velocity (m/s) — the heavyAutocannon band (5 km/s). */
 const BLOOM_CANNON_MUZZLE_MS = MUZZLE_VELOCITY_M_PER_S.heavyAutocannon;
 /** Bloom cannon load cycle (s) — the heavyAutocannon thermal-recovery band. */
@@ -276,8 +286,8 @@ export const swarmCapitalModules: ModuleDefinitionInput[] = [
     description:
       "Twin-chambered spore gland feeding a shared cyclic launcher. Two fermentation lobes double the weight of fire of a single spore gun for a modest increase in bulk — the Swarm's lightest multi-cell kinetic. Bio-autonomous (no crew, like every Swarm weapon).",
     category: "weapon",
-    // 2 kg @ 4 km/s. Muzzle energy ½·2·4000² = 16 MJ.
-    // mass = kineticWeaponMass(2, 4000, 2200) = 2200 × (16e6 / 2e7) = 1760 kg.
+    // 100 kg @ 4 km/s. Muzzle energy ½·100·4000² = 800 MJ.
+    // mass = kineticWeaponMass(100, 4000, 2200) = 2200 × (800e6 / 2e7) = 88,000 kg.
     mass: kineticWeaponMass(
       SPORE_BATTERY_MASS_KG,
       SPORE_BATTERY_MUZZLE_MS,
@@ -292,7 +302,7 @@ export const swarmCapitalModules: ModuleDefinitionInput[] = [
     effect: {
       kind: "weapon",
       weaponType: "cannon",
-      damage: kineticDamageJoules(SPORE_BATTERY_MASS_KG, SPORE_BATTERY_MUZZLE_MS) * 50,
+      damage: kineticDamageJoules(SPORE_BATTERY_MASS_KG, SPORE_BATTERY_MUZZLE_MS),
       range: kineticRangeM(SPORE_BATTERY_MUZZLE_MS),
       cooldown: SPORE_BATTERY_COOLDOWN,
       projectileSpeed: projectileSpeedMPerTick(SPORE_BATTERY_MUZZLE_MS),
@@ -313,7 +323,7 @@ export const swarmCapitalModules: ModuleDefinitionInput[] = [
     description:
       "A lobed corrosive reservoir feeding three converging spray nozzles, grown in an L-shape so each nozzle covers a distinct firing arc. The enlarged acid volume sustains a heavier corrosive jet that strips armour far faster than a single sprayer; the bio-chemical gland keeps the Swarm's fast recharge cycle.",
     category: "weapon",
-    // 3× the pdPulse band = 3e8 W. mass = beamWeaponMass(3e8, 1800) = 1800 × 7.5 = 13,500 kg.
+    // 150× the pdPulse band = 1.5e10 W. mass = beamWeaponMass(1.5e10, 1800) = 1800 × 375 = 675,000 kg.
     mass: beamWeaponMass(ACID_BANK_POWER_W, SWARM_BEAM_DENSITY_KG_PER_M3),
     cost: 155,
     // A beam's draw IS its delivered optical power.
@@ -324,7 +334,7 @@ export const swarmCapitalModules: ModuleDefinitionInput[] = [
     effect: {
       kind: "weapon",
       weaponType: "beam",
-      damage: beamDamageJoules(ACID_BANK_POWER_W, ACID_BANK_COOLDOWN) * 50,
+      damage: beamDamageJoules(ACID_BANK_POWER_W, ACID_BANK_COOLDOWN),
       range: BEAM_RANGE_M,
       cooldown: ACID_BANK_COOLDOWN,
       projectileSpeed: 0,
@@ -342,8 +352,8 @@ export const swarmCapitalModules: ModuleDefinitionInput[] = [
     description:
       "A four-chambered bio-cannon grown around a chitin-lined bore. It launches a dense spore-mass at capital scale using the heavyAutocannon band (3 kg @ 5000 m/s) — the Swarm's answer to a cruiser's main battery, slow-cycling but devastating per hit. Mass and damage both derive from the same muzzle-energy figure, so the capital scaling is physical, not tuned.",
     category: "weapon",
-    // 3 kg @ 5 km/s. Muzzle energy ½·3·5000² = 37.5 MJ.
-    // mass = kineticWeaponMass(3, 5000, 2200) = 2200 × (37.5e6 / 2e7) = 4125 kg.
+    // 150 kg @ 5 km/s. Muzzle energy ½·150·5000² = 1.875 GJ.
+    // mass = kineticWeaponMass(150, 5000, 2200) = 2200 × (1.875e9 / 2e7) = 206,250 kg.
     mass: kineticWeaponMass(
       BLOOM_CANNON_MASS_KG,
       BLOOM_CANNON_MUZZLE_MS,
@@ -358,7 +368,7 @@ export const swarmCapitalModules: ModuleDefinitionInput[] = [
     effect: {
       kind: "weapon",
       weaponType: "cannon",
-      damage: kineticDamageJoules(BLOOM_CANNON_MASS_KG, BLOOM_CANNON_MUZZLE_MS) * 50,
+      damage: kineticDamageJoules(BLOOM_CANNON_MASS_KG, BLOOM_CANNON_MUZZLE_MS),
       range: kineticRangeM(BLOOM_CANNON_MUZZLE_MS),
       cooldown: BLOOM_CANNON_COOLDOWN,
       projectileSpeed: projectileSpeedMPerTick(BLOOM_CANNON_MUZZLE_MS),

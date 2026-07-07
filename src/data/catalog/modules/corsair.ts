@@ -57,10 +57,6 @@ import { poweredMotorBurnTicks, poweredMotorThrustMPerS2 } from "../ordnance-mot
 // Masses are in kilograms. Thrust is in Newtons. Range is in metres (world
 // coordinates). Power output and module power draw are in watts. Crew values
 // are unit-free counts.
-//
-// The module list, id, name, role, and category are preserved from the
-// legacy catalogue; ONLY the capability values and the mass derivation
-// change. Stale class-band references are retired.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -173,9 +169,10 @@ const BROADSIDE_MISSILE_MASS_KG = PROJECTILE_MASS_KG.heavyAutocannon;
 /** Broadside missile cruise velocity (m/s) — matches the swarm's autocannon/2
  *  band: a fast light missile compatible with the swarm rack's feed. */
 const BROADSIDE_MISSILE_CRUISE_MS = MUZZLE_VELOCITY_M_PER_S.autocannon / 2;
-/** Broadside swarm-rack warhead yield (J) — 120 MJ, between the swarm's 80 MJ
- *  and the raider's 300 MJ. */
-const BROADSIDE_MISSILE_WARHEAD_J = 1.2e8;
+/** Broadside swarm-rack warhead yield (J) — 6 GJ capital-class saturation
+ *  warhead, between the swarm's 80 MJ and the raider's 300 MJ scaled to the
+ *  twin-rail capital mount. */
+const BROADSIDE_MISSILE_WARHEAD_J = 6e9;
 /** Broadside missile finite-burn motor — DERIVED from the missile burn-time
  *  band (same cruise/burn as the swarm missile). */
 const BROADSIDE_MISSILE_THRUST_M_PER_S2 = poweredMotorThrustMPerS2(
@@ -186,6 +183,12 @@ const BROADSIDE_MISSILE_BURN_TICKS = poweredMotorBurnTicks(ORDNANCE_BURN_TIME_S.
 /** Broadside swarm-rack salvo interval (s) — a twin-rail recycles at the
  *  swarm's ~1.7 s cadence. */
 const BROADSIDE_MISSILE_COOLDOWN = cooldownTicks(50 / 30);
+
+/** Heavy raid-cannon round mass (kg) — 50× the heavyAutocannon band (3 kg),
+ *  a heavier capital-scale slug on the same fast heavy-autocannon muzzle.
+ *  Local to this module so the shared `PROJECTILE_MASS_KG.heavyAutocannon`
+ *  anchor is untouched; mass and damage re-derive from this anchor too. */
+const HEAVY_RAID_MASS_KG = 50 * PROJECTILE_MASS_KG.heavyAutocannon;
 
 // ---------------------------------------------------------------------------
 // Reactor output targets and their derived masses.
@@ -664,7 +667,7 @@ export const corsairModules: ModuleDefinitionInput[] = [
     effect: {
       kind: "weapon",
       weaponType: "missile",
-      damage: BROADSIDE_MISSILE_WARHEAD_J * 50,
+      damage: BROADSIDE_MISSILE_WARHEAD_J,
       range: MISSILE_RANGE_M,
       cooldown: BROADSIDE_MISSILE_COOLDOWN,
       projectileSpeed: projectileSpeedMPerTick(BROADSIDE_MISSILE_CRUISE_MS),
@@ -690,10 +693,11 @@ export const corsairModules: ModuleDefinitionInput[] = [
     name: "Heavy Raid Cannon",
     description: "A two-cell heavy autocannon built from salvaged frigate guns. Heavier round, longer reach, harder hit than the raid cannon — for finishing what the missiles strip. Damage and mass scale together at the heavyAutocannon band.",
     category: "weapon",
-    // 3 kg @ 5 km/s (heavyAutocannon band, one band above the raid cannon's
-    // 1 kg @ 4 km/s). Muzzle energy ½·3·5000² = 37.5 MJ; range 5 km/s × 3 s =
-    // 15 km. mass = 2800 × (3.75e7 / 2e7) = 5,250 kg (~5.3 t).
-    mass: kineticWeaponMass(PROJECTILE_MASS_KG.heavyAutocannon, MUZZLE_VELOCITY_M_PER_S.heavyAutocannon, WEAPON_DENSITY),
+    // 150 kg @ 5 km/s (50× the heavyAutocannon band, one band above the raid
+    // cannon's 1 kg @ 4 km/s). Muzzle energy ½·150·5000² = 1.875 GJ; range
+    // 5 km/s × 3 s = 15 km. mass = 2800 × (1.875e9 / 2e7) = 262,500 kg
+    // (~263 t).
+    mass: kineticWeaponMass(HEAVY_RAID_MASS_KG, MUZZLE_VELOCITY_M_PER_S.heavyAutocannon, WEAPON_DENSITY),
     cost: 70,
     powerDraw: MODULE_POWER_DRAW_W.kineticWeapon,
     crewRequired: 2,
@@ -702,11 +706,11 @@ export const corsairModules: ModuleDefinitionInput[] = [
     effect: {
       kind: "weapon",
       weaponType: "cannon",
-      damage: kineticDamageJoules(PROJECTILE_MASS_KG.heavyAutocannon, MUZZLE_VELOCITY_M_PER_S.heavyAutocannon) * 50,
+      damage: kineticDamageJoules(HEAVY_RAID_MASS_KG, MUZZLE_VELOCITY_M_PER_S.heavyAutocannon),
       range: kineticRangeM(MUZZLE_VELOCITY_M_PER_S.heavyAutocannon),
       cooldown: cooldownTicks(RELOAD_THERMAL_TIME_S.heavyAutocannon),
       projectileSpeed: projectileSpeedMPerTick(MUZZLE_VELOCITY_M_PER_S.heavyAutocannon),
-      projectileMass: PROJECTILE_MASS_KG.heavyAutocannon,
+      projectileMass: HEAVY_RAID_MASS_KG,
       tracking: 1.0,
       shieldPiercing: 0.15,
       armourPiercing: 0.3,

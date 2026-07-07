@@ -71,9 +71,10 @@ import {
 // helpers, never hand-tuned.
 // ---------------------------------------------------------------------------
 
-/** Siege cannon heavy round mass (kg) — the `superDriver` band (120 kg), the
- *  heaviest projectile menu entry: a 120 kg super-driver slug. */
-const SIEGE_CANNON_HEAVY_MASS_KG = PROJECTILE_MASS_KG.superDriver;
+/** Siege cannon heavy round mass (kg) — 50× the `superDriver` band (6,000 kg),
+ *  folding the catalogue's former `× 50` per-shot damage scalar into the
+ *  physics anchor so damage, range-band mass, and recoil all scale together. */
+const SIEGE_CANNON_HEAVY_MASS_KG = 50 * PROJECTILE_MASS_KG.superDriver;
 /** Siege cannon heavy muzzle velocity (m/s) — the `superDriver` band (12 km/s),
  *  the fastest muzzle menu entry. */
 const SIEGE_CANNON_HEAVY_MUZZLE_MS = MUZZLE_VELOCITY_M_PER_S.superDriver;
@@ -298,12 +299,14 @@ export const foundryCapitalModules: ModuleDefinitionInput[] = [
     faction: "Foundry",
     name: "Siege Cannon Heavy",
     description:
-      "A four-cell capital coilgun throwing a 120 kg super-driver slug at 12 km/s. The barrel assembly fills a 2×2 bulkhead and the recoil cracks plating on anything smaller than a dreadnought — the Foundry's heaviest alpha strike.",
+      "A four-cell capital coilgun throwing a 6,000 kg super-driver shot at 12 km/s — fifty times the singleton super-driver slug, folded into the round so the gun's mass and recoil rise with its punch. The barrel assembly fills a 2×2 bulkhead and the recoil cracks plating on anything smaller than a dreadnought — the Foundry's heaviest alpha strike.",
     category: "weapon",
-    // 120 kg @ 12 km/s (superDriver band). Muzzle energy ½·120·12000² = 8.64 GJ.
-    // mass = kineticWeaponMass(120, 12000, 6000)
-    //      = 6000 × (8.64e9 / 2e7) = 2,592,000 kg (~2,592 t) — ~9.6× the 1-cell
-    // heavy cannon for the higher capability anchor band.
+    // 6,000 kg @ 12 km/s (50× the superDriver band). Muzzle energy
+    // ½·6000·12000² = 432 GJ.
+    // mass = kineticWeaponMass(6000, 12000, 6000)
+    //      = 6000 × (4.32e11 / 2e7) = 129,600,000 kg (~129,600 t) — the former
+    //      `× 50` per-shot damage scalar folded into the round mass, so the
+    //      gun scales with its punch rather than inflating damage alone.
     mass: kineticWeaponMass(
       SIEGE_CANNON_HEAVY_MASS_KG,
       SIEGE_CANNON_HEAVY_MUZZLE_MS,
@@ -320,7 +323,7 @@ export const foundryCapitalModules: ModuleDefinitionInput[] = [
       damage: kineticDamageJoules(
         SIEGE_CANNON_HEAVY_MASS_KG,
         SIEGE_CANNON_HEAVY_MUZZLE_MS,
-      ) * 50,
+      ),
       range: kineticRangeM(SIEGE_CANNON_HEAVY_MUZZLE_MS),
       cooldown: SIEGE_CANNON_HEAVY_COOLDOWN,
       projectileSpeed: projectileSpeedMPerTick(SIEGE_CANNON_HEAVY_MUZZLE_MS),

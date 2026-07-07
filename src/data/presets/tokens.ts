@@ -286,6 +286,13 @@ export function gridFromMap(rows: readonly string[]): TileGrid {
  * does not fit fails loudly at build time. The anchor placement is by design
  * (it is the mount target). Returns the input grid unchanged when the offset
  * list is empty.
+ *
+ * The optional `facing` argument only applies on the empty-anchor branch
+ * (where the helper installs the equipment record itself): it lets a
+ * `mountMultiCell` placement author the anchor's facing — e.g. `Math.PI` for
+ * an aft drive mounted on a plain deck cell — without a dedicated grid token.
+ * A token-placed anchor (the `cell.equipment !== undefined` branch) keeps the
+ * facing the token authored, since the token is the authority there.
  */
 export function coverFootprint(
   fine: TileGrid,
@@ -294,6 +301,7 @@ export function coverFootprint(
   anchorRow: number,
   moduleId: string,
   offsets: readonly { dx: number; dy: number }[],
+  facing: number = 0,
 ): TileGrid {
   const fineAnchorCol = anchorCol * subdivisionFactor;
   const fineAnchorRow = anchorRow * subdivisionFactor;
@@ -317,9 +325,10 @@ export function coverFootprint(
       // Anchor: preserve a token-placed equipment record for this module
       // (it carries the token's authored `facing`, e.g. `Math.PI` for an aft
       // drive). Only install fresh equipment when the anchor cell is empty —
-      // the mountMultiCell-on-any-deck-cell path that needs no dedicated token.
+      // the mountMultiCell-on-any-deck-cell path that needs no dedicated token,
+      // using the caller-supplied `facing` (default 0, forward).
       if (cell.equipment === undefined) {
-        cells[idx] = { ...cell, equipment: { moduleId, facing: 0 } };
+        cells[idx] = { ...cell, equipment: { moduleId, facing } };
       }
       continue;
     }
@@ -346,6 +355,11 @@ export function coverFootprint(
  * coarse anchors as tokens, subdivide, then pass the fine grid and the list of
  * `(col, row, moduleId, offsets)` placements. Each placement's `(col, row)` is
  * the COARSE position of the anchor block.
+ *
+ * The optional fifth element `facing` lets a placement author the anchor's
+ * facing on the empty-anchor branch (a mount on a plain `~` deck cell with no
+ * dedicated grid token) — e.g. `Math.PI` for an aft drive. It has no effect on
+ * a token-placed anchor, whose facing the token already authored.
  */
 export function mountMultiCell(
   fine: TileGrid,
@@ -355,11 +369,12 @@ export function mountMultiCell(
     row: number,
     moduleId: string,
     offsets: readonly { dx: number; dy: number }[],
+    facing?: number,
   ][],
 ): TileGrid {
   return placements.reduce(
-    (grid, [col, row, moduleId, offsets]) =>
-      coverFootprint(grid, subdivisionFactor, col, row, moduleId, offsets),
+    (grid, [col, row, moduleId, offsets, facing]) =>
+      coverFootprint(grid, subdivisionFactor, col, row, moduleId, offsets, facing),
     fine,
   );
 }

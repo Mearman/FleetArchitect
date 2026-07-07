@@ -152,8 +152,8 @@ export const syntheticDesigns: ShipDesignInput[] = [
         [4, 2, "syn-coilgun-bank", SYNTHETIC_FOOTPRINTS.coilgunBank],
         [6, 2, "syn-coordination-hub", SYNTHETIC_FOOTPRINTS.coordinationHub],
         [7, 2, "syn-interceptor-grid", SYNTHETIC_FOOTPRINTS.interceptorGrid],
-        // Twin sustained cutter beam on the upper deck corridor — the
-        // Collective's first capital-grade beam battery.
+        // Twin sustained cutter beam on the upper deck corridor — one band
+        // above the Cutter Lance, fed by the twin quantum cores.
         [2, 3, "syn-twin-cutter", SYNTHETIC_FOOTPRINTS.twinCutter],
         // Tactical blink drive on the lower deck corridor — the Collective's
         // first phase-shift repositioning drive.

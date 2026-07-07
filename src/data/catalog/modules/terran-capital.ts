@@ -62,25 +62,27 @@ import { poweredMotorBurnTicks, poweredMotorThrustMPerS2 } from "../ordnance-mot
 // follows from the physics helpers, never hand-tuned.
 // ---------------------------------------------------------------------------
 
-/** Spinal lance sustained beam power (W) — ~3.5× the capital lance band, the
- *  heaviest Terran energy weapon. A slow 6 s thermal cycle dumps a 21 GJ pulse
- *  (`beamDamageJoules(SPINAL_LANCE_POWER_W, SPINAL_LANCE_COOLDOWN)`). */
-const SPINAL_LANCE_POWER_W = 3.5 * BEAM_POWER_W.lance;
+/** Spinal lance sustained beam power (W) — the capital spinal-lance band: 50×
+ *  the 3.5 GW cruiser lance, a 175 GW prow-to-stern emitter. A beam's draw IS
+ *  its delivered optical power, so this ONE anchor drives mass, grid draw AND
+ *  per-shot damage (no separate damage multiplier). The Leviathan Core capital
+ *  reactor is sized to feed it. */
+const SPINAL_LANCE_POWER_W = 50 * 3.5 * BEAM_POWER_W.lance;
 /** Spinal lance thermal cycle (s) — a long emitter-recovery dwell between
  *  pulses. */
 const SPINAL_LANCE_COOLDOWN = cooldownTicks(6);
 
-/** Spinal mass driver round mass (kg) — 3× the capital driver round, a 150 kg
+/** Spinal mass driver round mass (kg) — 150× the capital driver round, a 7,500 kg
  *  tungsten dart. */
-const SPINAL_DRIVER_MASS_KG = 3 * PROJECTILE_MASS_KG.driver;
+const SPINAL_DRIVER_MASS_KG = 150 * PROJECTILE_MASS_KG.driver;
 /** Spinal mass driver muzzle velocity (m/s) — the driver band (10 km/s). */
 const SPINAL_DRIVER_MUZZLE_MS = MUZZLE_VELOCITY_M_PER_S.driver;
 /** Spinal mass driver load cycle (s) — the super-driver band, the slowest
  *  kinetic refire. */
 const SPINAL_DRIVER_COOLDOWN = cooldownTicks(RELOAD_THERMAL_TIME_S.superDriver);
 
-/** Heavy railgun slug mass (kg) — 2× the railgun slug, a 20 kg dart. */
-const HEAVY_RAIL_MASS_KG = 2 * PROJECTILE_MASS_KG.railgun;
+/** Heavy railgun slug mass (kg) — 100× the railgun slug, a 1,000 kg dart. */
+const HEAVY_RAIL_MASS_KG = 100 * PROJECTILE_MASS_KG.railgun;
 /** Heavy railgun muzzle velocity (m/s) — the railgun band (8 km/s). */
 const HEAVY_RAIL_MUZZLE_MS = MUZZLE_VELOCITY_M_PER_S.railgun;
 /** Heavy railgun capacitor-recharge interval (s) — the railgun band. */
@@ -115,15 +117,29 @@ const BULWARK_RECHARGE_KG_MPS_PER_S = 2 * DEFLECTOR_RECHARGE_KG_MPS_PER_S.heavy;
 // physics helpers at these heavier anchors — never hand-tuned.
 // ---------------------------------------------------------------------------
 
-/** Twin pulse array sustained beam power (W) — 2× the pulse laser band. */
+/** Twin pulse array sustained beam power (W) — 2× the pulse laser band, a
+ *  frigate-grade dual emitter. This single anchor drives mass, grid draw AND
+ *  per-shot damage (no separate damage multiplier). */
 const TWIN_PULSE_POWER_W = 2 * BEAM_POWER_W.pulse;
 /** Twin pulse array refire / dwell (s) — matches the pulse laser band. */
 const TWIN_PULSE_COOLDOWN = cooldownTicks(1);
 
-/** Light spear lance sustained beam power (W) — the heavy lance band. */
+/** Light spear lance sustained beam power (W) — the heavy-lance band, a
+ *  cruiser-grade fixed spinal beam. This single anchor drives mass, grid draw
+ *  AND per-shot damage (no separate damage multiplier). */
 const LIGHT_SPEAR_POWER_W = BEAM_POWER_W.heavyLance;
 /** Light spear lance thermal cycle (s) — a 2.5 s spinal-grade dwell. */
 const LIGHT_SPEAR_COOLDOWN = cooldownTicks(2.5);
+
+/** Twin rail turret slug mass (kg) — 50× the railgun slug, a 500 kg dart. The
+ *  twin's shared capacitor bank and heavier mounting fire a much heavier round
+ *  than the singleton railgun (10 kg), so the multi-cell upgrade is a real
+ *  per-shot gain, not a cosmetic second barrel. */
+const TWIN_RAIL_MASS_KG = 50 * PROJECTILE_MASS_KG.railgun;
+/** Twin rail turret muzzle velocity (m/s) — the railgun band (8 km/s). */
+const TWIN_RAIL_MUZZLE_MS = MUZZLE_VELOCITY_M_PER_S.railgun;
+/** Twin rail turret capacitor-recharge interval (s) — the railgun band. */
+const TWIN_RAIL_COOLDOWN = cooldownTicks(RELOAD_THERMAL_TIME_S.railgun);
 
 /** Broadside missile warhead yield (J) — 2× the Terran missile-rack band. */
 const BROADSIDE_MISSILE_WARHEAD_J = 2 * 4e8;
@@ -145,6 +161,15 @@ const BULWARK_SHIELD_BANK_RECHARGE_W = 3 * SHIELD_RECHARGE_W.heavy;
 
 /** Plus-section fusion core output (W) — 5× the standard fusion band. */
 const PLUS_REACTOR_OUTPUT_W = 5 * FUSION_REACTOR_OUTPUT_W;
+
+/** Leviathan Core output (W) — a 200 GW capital command heart at advanced
+ *  antimatter density, sized to feed a 175 GW spinal lance plus the light-spear
+ *  (~0.8 GW), shields, drive and sensors with comfortable margin. A reactor's
+ *  mass traces to its output via `reactorMass(output, density)`, NOT to its
+ *  footprint, so a compact single-cell 200 GW core is physically sound — it is
+ *  simply a very heavy cell. The Leviathan cruiser mounts this in place of one
+ *  standard antimatter core to field its spinal lance. */
+const LEVIATHAN_CORE_OUTPUT_W = 2e11;
 
 /**
  * Footprint polyominoes for the capital multi-cell modules — each anchored at
@@ -250,6 +275,11 @@ export const TERRAN_FOOTPRINTS = {
     { dx: 0, dy: 1 },
     { dx: 0, dy: -1 },
   ],
+  /** Leviathan Core: a 1-cell compact capital command heart (hyper-dense
+   *  advanced-antimatter core; mass scales with output, not footprint). */
+  leviathanCore: [
+    { dx: 0, dy: 0 },
+  ],
 };
 
 /**
@@ -267,9 +297,9 @@ export const terranCapitalModules: ModuleDefinitionInput[] = [
     faction: "Terran",
     name: "Spinal Lance",
     description:
-      "Four-cell capital beam lance running the ship's full length. The emitter stack and cooling train stretch prow to stern, dumping a 3.5 GW sustained pulse that carves gigajoule armour in a few clean hits. Fixed spinal mount — the whole ship must bear.",
+      "Four-cell capital beam lance running the ship's full length. The emitter stack and cooling train stretch prow to stern, dumping a 175 GW sustained pulse that carves capital armour in a few clean hits. Fixed spinal mount — the whole ship must bear, and a Leviathan Core reactor must feed it.",
     category: "weapon",
-    // mass = beamWeaponMass(3.5e9) = 2500 × (3.5e9 / 4e7) = 218,750 kg (~219 t).
+    // mass = beamWeaponMass(1.75e11) = 2500 × (1.75e11 / 4e7) = 10,937,500 kg (~10,938 t).
     mass: beamWeaponMass(SPINAL_LANCE_POWER_W),
     cost: 640,
     // A beam's draw IS its delivered optical power.
@@ -280,7 +310,7 @@ export const terranCapitalModules: ModuleDefinitionInput[] = [
     effect: {
       kind: "weapon",
       weaponType: "beam",
-      damage: beamDamageJoules(SPINAL_LANCE_POWER_W, SPINAL_LANCE_COOLDOWN) * 50,
+      damage: beamDamageJoules(SPINAL_LANCE_POWER_W, SPINAL_LANCE_COOLDOWN),
       range: BEAM_RANGE_M,
       cooldown: SPINAL_LANCE_COOLDOWN,
       projectileSpeed: 0,
@@ -296,10 +326,10 @@ export const terranCapitalModules: ModuleDefinitionInput[] = [
     faction: "Terran",
     name: "Spinal Mass Driver",
     description:
-      "Three-cell capital coilgun straddling the keel. A 150 kg tungsten dart leaves the muzzle at 10 km/s, depositing 7.5 GJ on target — the heaviest single kinetic hit in the Terran inventory. Slow to load and requires a large hull to mount.",
+      "Three-cell capital coilgun straddling the keel. A 7,500 kg tungsten dart leaves the muzzle at 10 km/s, depositing 375 GJ on target — the heaviest single kinetic hit in the Terran inventory. Slow to load and requires a large hull to mount.",
     category: "weapon",
-    // 150 kg @ 10 km/s. Muzzle energy ½·150·10000² = 7.5 GJ.
-    // mass = kineticWeaponMass(150, 10000) = 3500 × (7.5e9 / 2e7) = 1,312,500 kg.
+    // 7,500 kg @ 10 km/s. Muzzle energy ½·7500·10000² = 375 GJ.
+    // mass = kineticWeaponMass(7500, 10000) = 3500 × (3.75e11 / 2e7) = 65,625,000 kg.
     mass: kineticWeaponMass(SPINAL_DRIVER_MASS_KG, SPINAL_DRIVER_MUZZLE_MS),
     cost: 540,
     powerDraw: MODULE_POWER_DRAW_W.kineticWeapon,
@@ -309,7 +339,7 @@ export const terranCapitalModules: ModuleDefinitionInput[] = [
     effect: {
       kind: "weapon",
       weaponType: "cannon",
-      damage: kineticDamageJoules(SPINAL_DRIVER_MASS_KG, SPINAL_DRIVER_MUZZLE_MS) * 50,
+      damage: kineticDamageJoules(SPINAL_DRIVER_MASS_KG, SPINAL_DRIVER_MUZZLE_MS),
       range: kineticRangeM(SPINAL_DRIVER_MUZZLE_MS),
       cooldown: SPINAL_DRIVER_COOLDOWN,
       projectileSpeed: projectileSpeedMPerTick(SPINAL_DRIVER_MUZZLE_MS),
@@ -329,10 +359,10 @@ export const terranCapitalModules: ModuleDefinitionInput[] = [
     faction: "Terran",
     name: "Heavy Railgun Turret",
     description:
-      "Two-cell dual-rail turret on a powered mounting. A paired barrel assembly firing a heavier 20 kg slug than the single-cell railgun, slewing across a 90 degree arc. The standard cruiser-grade kinetic battery.",
+      "Two-cell dual-rail turret on a powered mounting. A paired barrel assembly firing a heavier 1,000 kg slug than the single-cell railgun, slewing across a 90 degree arc. The standard cruiser-grade kinetic battery.",
     category: "weapon",
-    // 20 kg @ 8 km/s. Muzzle energy ½·20·8000² = 640 MJ.
-    // mass = kineticWeaponMass(20, 8000) = 3500 × (6.4e8 / 2e7) = 112,000 kg.
+    // 1,000 kg @ 8 km/s. Muzzle energy ½·1000·8000² = 32 GJ.
+    // mass = kineticWeaponMass(1000, 8000) = 3500 × (3.2e10 / 2e7) = 5,600,000 kg.
     mass: kineticWeaponMass(HEAVY_RAIL_MASS_KG, HEAVY_RAIL_MUZZLE_MS),
     cost: 200,
     powerDraw: MODULE_POWER_DRAW_W.kineticWeapon,
@@ -342,7 +372,7 @@ export const terranCapitalModules: ModuleDefinitionInput[] = [
     effect: {
       kind: "weapon",
       weaponType: "cannon",
-      damage: kineticDamageJoules(HEAVY_RAIL_MASS_KG, HEAVY_RAIL_MUZZLE_MS) * 50,
+      damage: kineticDamageJoules(HEAVY_RAIL_MASS_KG, HEAVY_RAIL_MUZZLE_MS),
       range: kineticRangeM(HEAVY_RAIL_MUZZLE_MS),
       cooldown: HEAVY_RAIL_COOLDOWN,
       projectileSpeed: projectileSpeedMPerTick(HEAVY_RAIL_MUZZLE_MS),
@@ -398,6 +428,28 @@ export const terranCapitalModules: ModuleDefinitionInput[] = [
     techLevel: 4,
     footprint: TERRAN_FOOTPRINTS.crossReactor,
     effect: { kind: "power", output: CROSS_REACTOR_OUTPUT_W },
+    command: true,
+  },
+  {
+    id: "ter-leviathan-core",
+    faction: "Terran",
+    name: "Leviathan Core",
+    description:
+      "A single-cell hyper-dense capital antimatter core — the command heart of a Leviathan-class cruiser. A 200 GW advanced-antimatter reaction squeezed into a compact, heavily-shielded envelope: enough to feed a 175 GW spinal lance and still top up the light-spear, shields, drive and sensors. A reactor's mass scales with its electrical output, not its footprint, so the compact core is simply very heavy rather than physically implausible.",
+    category: "system",
+    // 200 GW @ 3e8 W/m³ (advanced antimatter density).
+    // mass = reactorMass(2e11, 3e8) = 4000 × (2e11 / 3e8) ≈ 2,666,667 kg (~2,667 t).
+    // Heavy, as a capital reactor must be; mass is not fault-gated.
+    mass: reactorMass(
+      LEVIATHAN_CORE_OUTPUT_W,
+      ANTIMATTER_ADVANCED_POWER_DENSITY_W_PER_M3,
+    ),
+    cost: 800,
+    powerDraw: 0,
+    crewRequired: 3,
+    techLevel: 4,
+    footprint: TERRAN_FOOTPRINTS.leviathanCore,
+    effect: { kind: "power", output: LEVIATHAN_CORE_OUTPUT_W },
     command: true,
   },
   {
@@ -465,7 +517,7 @@ export const terranCapitalModules: ModuleDefinitionInput[] = [
     effect: {
       kind: "weapon",
       weaponType: "beam",
-      damage: beamDamageJoules(TWIN_PULSE_POWER_W, TWIN_PULSE_COOLDOWN) * 50,
+      damage: beamDamageJoules(TWIN_PULSE_POWER_W, TWIN_PULSE_COOLDOWN),
       range: BEAM_RANGE_M,
       cooldown: TWIN_PULSE_COOLDOWN,
       projectileSpeed: 0,
@@ -481,13 +533,11 @@ export const terranCapitalModules: ModuleDefinitionInput[] = [
     faction: "Terran",
     name: "Twin Rail Turret",
     description:
-      "A two-cell dual-rail turret on a powered mounting. Two railgun barrels sharing a capacitor bank and a slewing base — the standard frigate kinetic-battery upgrade, throwing a heavier salvo than the singleton railgun across the same wide arc.",
+      "A two-cell dual-rail turret on a powered mounting. Two railgun barrels sharing a capacitor bank and a slewing base — the standard frigate kinetic-battery upgrade, throwing a much heavier 500 kg salvo than the singleton railgun's 10 kg slug across the same wide arc.",
     category: "weapon",
-    // 10 kg @ 8 km/s (railgun band). mass = kineticWeaponMass(10, 8000) = 56,000 kg.
-    mass: kineticWeaponMass(
-      PROJECTILE_MASS_KG.railgun,
-      MUZZLE_VELOCITY_M_PER_S.railgun,
-    ),
+    // 500 kg @ 8 km/s. Muzzle energy ½·500·8000² = 16 GJ.
+    // mass = kineticWeaponMass(500, 8000) = 3500 × (1.6e10 / 2e7) = 2,800,000 kg.
+    mass: kineticWeaponMass(TWIN_RAIL_MASS_KG, TWIN_RAIL_MUZZLE_MS),
     cost: 160,
     powerDraw: MODULE_POWER_DRAW_W.kineticWeapon,
     crewRequired: 2,
@@ -496,15 +546,11 @@ export const terranCapitalModules: ModuleDefinitionInput[] = [
     effect: {
       kind: "weapon",
       weaponType: "cannon",
-      damage:
-        kineticDamageJoules(
-          PROJECTILE_MASS_KG.railgun,
-          MUZZLE_VELOCITY_M_PER_S.railgun,
-        ) * 50,
-      range: kineticRangeM(MUZZLE_VELOCITY_M_PER_S.railgun),
-      cooldown: cooldownTicks(3.2),
-      projectileSpeed: projectileSpeedMPerTick(MUZZLE_VELOCITY_M_PER_S.railgun),
-      projectileMass: PROJECTILE_MASS_KG.railgun,
+      damage: kineticDamageJoules(TWIN_RAIL_MASS_KG, TWIN_RAIL_MUZZLE_MS),
+      range: kineticRangeM(TWIN_RAIL_MUZZLE_MS),
+      cooldown: TWIN_RAIL_COOLDOWN,
+      projectileSpeed: projectileSpeedMPerTick(TWIN_RAIL_MUZZLE_MS),
+      projectileMass: TWIN_RAIL_MASS_KG,
       tracking: 0.5,
       shieldPiercing: 0.35,
       armourPiercing: 0.5,
@@ -533,7 +579,7 @@ export const terranCapitalModules: ModuleDefinitionInput[] = [
     effect: {
       kind: "weapon",
       weaponType: "beam",
-      damage: beamDamageJoules(LIGHT_SPEAR_POWER_W, LIGHT_SPEAR_COOLDOWN) * 50,
+      damage: beamDamageJoules(LIGHT_SPEAR_POWER_W, LIGHT_SPEAR_COOLDOWN),
       range: BEAM_RANGE_M,
       cooldown: LIGHT_SPEAR_COOLDOWN,
       projectileSpeed: 0,

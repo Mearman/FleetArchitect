@@ -276,7 +276,11 @@ export const swarmDesigns: ShipDesignInput[] = [
         [4, 2, "swm-bile-mortar", SWARM_FOOTPRINTS.bileMortar],
         // Centreline deck: a 2×2 Heavy Flagellum Mass — a capital plasma-drive
         // cluster adding thrust above the tentacle drive's lightPlasma banding.
-        [4, 3, "swm-heavy-flagellum-mass", SWARM_FOOTPRINTS.heavyFlagellumMass],
+        // Facing π (aft) so it drives the ship forward: the ship faces +x, the
+        // stern is at col 4, and a default facing-0 mount would fire forward
+        // and brake the ship. The 5-tuple form passes the facing through
+        // mountMultiCell → coverFootprint's empty-anchor install branch.
+        [4, 3, "swm-heavy-flagellum-mass", SWARM_FOOTPRINTS.heavyFlagellumMass, Math.PI],
         // Lower deck: a two-cell Spore-Mine Organ — the Swarm's first mine
         // layer, seeding static proximity mines for area denial.
         [4, 4, "swm-spore-mine-organ", SWARM_FOOTPRINTS.sporeMineOrgan],

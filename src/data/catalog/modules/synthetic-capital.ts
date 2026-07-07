@@ -77,9 +77,10 @@ import {
 // from the physics helpers, never hand-tuned.
 // ---------------------------------------------------------------------------
 
-/** Coilgun bank round mass (kg) — the `gauss` band (20 kg), twice the single
- *  coilgun's 10 kg railgun slug, doubling muzzle energy at the same velocity. */
-const COILGUN_BANK_MASS_KG = PROJECTILE_MASS_KG.gauss;
+/** Coilgun bank round mass (kg) — the capital-band coilgun round (1000 kg),
+ *  fifty times the gauss band, folding the capital per-shot damage scalar into
+ *  the anchor so damage derives purely from muzzle energy. */
+const COILGUN_BANK_MASS_KG = 50 * PROJECTILE_MASS_KG.gauss;
 /** Coilgun bank muzzle velocity (m/s) — the railgun band (8 km/s), unchanged
  *  from the single coilgun so the bank keeps the same reach and projectile
  *  speed while throwing twice the mass per salvo. */
@@ -119,25 +120,33 @@ const INTERCEPTOR_GRID_MASS = 2 * 16_000;
 // follows from the SAME physics helpers — no hand-tuned literals.
 // ---------------------------------------------------------------------------
 
-/** Twin cutter beam power (W) — one band above the single Cutter Lance's pulse
- *  (BEAM_POWER_W.beam, 600 MW sustained). */
+/** Twin cutter sustained beam power (W) — one band above the single Cutter
+ *  Lance's pulse (BEAM_POWER_W.beam, 600 MW sustained). A cruiser-grade beam
+ *  battery (the Collective's cruiser line fields it on the Network Hub, a 66 m
+ *  cruiser), so the anchor carries no capital scalar: this one sustained-power
+ *  figure drives mass, powerDraw AND damage, exactly like the single Cutter
+ *  Lance one band below. A cruiser grid physically cannot field the tens of
+ *  gigawatts a capital-fold would draw, so the weapon is re-anchored at its
+ *  labelled grade rather than folded. */
 const TWIN_CUTTER_POWER_W = BEAM_POWER_W.beam;
 /** Twin cutter beam dwell / thermal-recovery interval — same as the single
  *  Cutter Lance (0.6 s). */
 const TWIN_CUTTER_COOLDOWN = cooldownTicks(0.6);
 
-/** Targeting bank round mass (kg) — twice the single Targeting Cannon's 1 kg
- *  autocannon slug (2 kg), doubling throw weight at the same muzzle velocity. */
-const TARGETING_BANK_MASS_KG = 2 * PROJECTILE_MASS_KG.autocannon;
+/** Targeting bank round mass (kg) — the capital-band targeting round (100 kg),
+ *  fifty times the twin-cannon's 2 kg autocannon slug, folding the capital
+ *  per-shot damage scalar into the anchor. */
+const TARGETING_BANK_MASS_KG = 100 * PROJECTILE_MASS_KG.autocannon;
 /** Targeting bank muzzle velocity (m/s) — the autocannon band (4 km/s). */
 const TARGETING_BANK_MUZZLE_MS = MUZZLE_VELOCITY_M_PER_S.autocannon;
 /** Targeting bank cyclic-feed interval — the autocannon band's reload. */
 const TARGETING_BANK_COOLDOWN = cooldownTicks(RELOAD_THERMAL_TIME_S.autocannon);
 
-/** Tetromino coilgun round mass (kg) — twice the single Coilgun's 10 kg railgun
- *  slug (20 kg) at the same muzzle velocity, tripling the bank's alpha strike
- *  with one more barrel on a T-shaped mount. */
-const TETROMINO_COILGUN_MASS_KG = 2 * PROJECTILE_MASS_KG.railgun;
+/** Tetromino coilgun round mass (kg) — the capital-band three-barrel round
+ *  (1500 kg), three railgun slugs' throw weight on a T-shaped mount with the
+ *  capital damage scalar folded in, 1.5× the 2-cell Coilgun Bank's per-shot
+ *  mass to match the 3-vs-2 barrel ratio. */
+const TETROMINO_COILGUN_MASS_KG = 150 * PROJECTILE_MASS_KG.railgun;
 /** Tetromino coilgun muzzle velocity (m/s) — the railgun band (8 km/s). */
 const TETROMINO_COILGUN_MUZZLE_MS = MUZZLE_VELOCITY_M_PER_S.railgun;
 /** Tetromino coilgun load cycle — the railgun band's capacitor recharge. */
@@ -304,11 +313,11 @@ export const syntheticCapitalModules: ModuleDefinitionInput[] = [
     description:
       "Twin coilgun barrels on a traversing mount. Same reach as the single coilgun (muzzle velocity unchanged) but twice the throw weight per salvo — a 2×1 bank of Synthetic electromagnetic slugs a frigate line brings to bear.",
     category: "weapon",
-    // 20 kg @ 8 km/s (gauss mass, railgun muzzle). Muzzle energy
-    // ½·20·8000² = 640 MJ, twice the single coilgun's 320 MJ. Mass derived
-    // from muzzle energy at the mid-density machined-alloy weapon density.
-    // mass = 4200 × (6.4e8 / 2e7) = 134,400 kg (~134 t) — twice the single
-    // coilgun's 67,200 kg.
+    // 1000 kg @ 8 km/s (capital-band gauss mass, railgun muzzle). Muzzle energy
+    // ½·1000·8000² = 32 GJ. Mass derived from muzzle energy at the mid-density
+    // machined-alloy weapon density.
+    // mass = 4200 × (3.2e10 / 2e7) = 6,720,000 kg (~6720 t) — fifty times the
+    // single coilgun's 134,400 kg, matching the folded damage scalar.
     mass: kineticWeaponMass(
       COILGUN_BANK_MASS_KG,
       COILGUN_BANK_MUZZLE_MS,
@@ -323,7 +332,7 @@ export const syntheticCapitalModules: ModuleDefinitionInput[] = [
     effect: {
       kind: "weapon",
       weaponType: "cannon",
-      damage: kineticDamageJoules(COILGUN_BANK_MASS_KG, COILGUN_BANK_MUZZLE_MS) * 50,
+      damage: kineticDamageJoules(COILGUN_BANK_MASS_KG, COILGUN_BANK_MUZZLE_MS),
       range: kineticRangeM(COILGUN_BANK_MUZZLE_MS),
       cooldown: COILGUN_BANK_COOLDOWN,
       projectileSpeed: projectileSpeedMPerTick(COILGUN_BANK_MUZZLE_MS),
@@ -362,7 +371,7 @@ export const syntheticCapitalModules: ModuleDefinitionInput[] = [
       droneCount: HEAVY_HANGAR_DRONE_COUNT,
       launchCooldown: 90,
       droneHp: 40,
-      droneDamage: 5 * 50,
+      droneDamage: 250,
       droneRange: 90,
       droneSpeed: 5,
     },
@@ -480,7 +489,7 @@ export const syntheticCapitalModules: ModuleDefinitionInput[] = [
     footprint: SYNTHETIC_FOOTPRINTS.interceptorGrid,
     effect: {
       kind: "pointDefense",
-      damage: 28 * 50,
+      damage: 1400,
       range: 160,
       cooldown: 6,
       hitChance: 0.7,
@@ -496,8 +505,9 @@ export const syntheticCapitalModules: ModuleDefinitionInput[] = [
     description:
       "Twin sustained cutter beams on a common emitter mounting. One band above the single Cutter Lance's pulse — a 2×1 battery the Collective's cruiser line brings to bear for stripping shields and drones.",
     category: "weapon",
-    // 600 MW beam (BEAM_POWER_W.beam, one band above the cutter lance's 300 MW
-    // pulse). Mass derived from beam power at the precision emitter density.
+    // 600 MW sustained beam (BEAM_POWER_W.beam, one band above the cutter
+    // lance's 300 MW pulse). Mass derived from beam power at the precision
+    // emitter density.
     // mass = 3500 × (6e8 / 4e7) = 52,500 kg (~53 t).
     mass: beamWeaponMass(TWIN_CUTTER_POWER_W, BEAM_DENSITY),
     cost: 140,
@@ -509,7 +519,7 @@ export const syntheticCapitalModules: ModuleDefinitionInput[] = [
     effect: {
       kind: "weapon",
       weaponType: "beam",
-      damage: beamDamageJoules(TWIN_CUTTER_POWER_W, TWIN_CUTTER_COOLDOWN) * 50,
+      damage: beamDamageJoules(TWIN_CUTTER_POWER_W, TWIN_CUTTER_COOLDOWN),
       range: BEAM_RANGE_M,
       cooldown: TWIN_CUTTER_COOLDOWN,
       projectileSpeed: 0,
@@ -527,9 +537,9 @@ export const syntheticCapitalModules: ModuleDefinitionInput[] = [
     description:
       "Twin precision cannons on a traversing bank. Twice the throw weight of the single Targeting Cannon at the same muzzle velocity and a tighter tracking cluster — the Collective's frigate-grade kinetic upgrade.",
     category: "weapon",
-    // 2 kg @ 4 km/s (twice the autocannon mass band). Mass derived from muzzle
+    // 100 kg @ 4 km/s (capital-band autocannon mass). Mass derived from muzzle
     // energy at the mid-density machined-alloy weapon density.
-    // mass = 4200 × (1.6e7 / 2e7) = 3,360 kg (~3.4 t).
+    // mass = 4200 × (8e8 / 2e7) = 168,000 kg (~168 t).
     mass: kineticWeaponMass(
       TARGETING_BANK_MASS_KG,
       TARGETING_BANK_MUZZLE_MS,
@@ -544,7 +554,7 @@ export const syntheticCapitalModules: ModuleDefinitionInput[] = [
     effect: {
       kind: "weapon",
       weaponType: "cannon",
-      damage: kineticDamageJoules(TARGETING_BANK_MASS_KG, TARGETING_BANK_MUZZLE_MS) * 50,
+      damage: kineticDamageJoules(TARGETING_BANK_MASS_KG, TARGETING_BANK_MUZZLE_MS),
       range: kineticRangeM(TARGETING_BANK_MUZZLE_MS),
       cooldown: TARGETING_BANK_COOLDOWN,
       projectileSpeed: projectileSpeedMPerTick(TARGETING_BANK_MUZZLE_MS),
@@ -567,10 +577,11 @@ export const syntheticCapitalModules: ModuleDefinitionInput[] = [
     description:
       "A T-shaped three-barrel coilgun array. One more barrel over the Coilgun Bank on a traversing mount, tripling the dreadnought's alpha strike with the same electromagnetic reach.",
     category: "weapon",
-    // 20 kg @ 8 km/s (twice the single Coilgun's 10 kg railgun slug). Mass
-    // derived from muzzle energy at the mid-density machined-alloy weapon
-    // density.
-    // mass = 4200 × (6.4e8 / 2e7) = 134,400 kg (~134 t).
+    // 1500 kg @ 8 km/s (three railgun slugs on a T-shaped three-barrel mount,
+    // capital damage scalar folded in — 1.5× the 2-cell Coilgun Bank's per-shot
+    // mass). Mass derived from muzzle energy at the mid-density machined-alloy
+    // weapon density.
+    // mass = 4200 × (4.8e10 / 2e7) = 10,080,000 kg (~10080 t).
     mass: kineticWeaponMass(
       TETROMINO_COILGUN_MASS_KG,
       TETROMINO_COILGUN_MUZZLE_MS,
@@ -578,14 +589,14 @@ export const syntheticCapitalModules: ModuleDefinitionInput[] = [
     ),
     cost: 280,
     // Three barrels draw three times the single coilgun's capacitor load.
-    powerDraw: 2 * MODULE_POWER_DRAW_W.kineticWeapon,
+    powerDraw: 3 * MODULE_POWER_DRAW_W.kineticWeapon,
     crewRequired: 0,
     techLevel: 4,
     footprint: SYNTHETIC_FOOTPRINTS.tetrominoCoilgun,
     effect: {
       kind: "weapon",
       weaponType: "cannon",
-      damage: kineticDamageJoules(TETROMINO_COILGUN_MASS_KG, TETROMINO_COILGUN_MUZZLE_MS) * 50,
+      damage: kineticDamageJoules(TETROMINO_COILGUN_MASS_KG, TETROMINO_COILGUN_MUZZLE_MS),
       range: kineticRangeM(TETROMINO_COILGUN_MUZZLE_MS),
       cooldown: TETROMINO_COILGUN_COOLDOWN,
       projectileSpeed: projectileSpeedMPerTick(TETROMINO_COILGUN_MUZZLE_MS),
@@ -746,7 +757,7 @@ export const syntheticCapitalModules: ModuleDefinitionInput[] = [
       droneCount: 12,
       launchCooldown: 70,
       droneHp: 45,
-      droneDamage: 5 * 50,
+      droneDamage: 250,
       droneRange: 100,
       droneSpeed: 5,
     },
