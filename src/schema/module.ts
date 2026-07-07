@@ -105,6 +105,13 @@ export const WeaponEffect = z.object({
   /** Local magazine size (int >= 0) that a crew ammo-run tops the weapon up to.
    *  Distinct from `ammo` (starting count). When omitted, weapon is unlimited. */
   ammoCapacity: z.number().int().min(0).optional(),
+  /** Passive bio-regrowth rate (rounds per second). Each tick the engine tops
+   *  `ammo` back up toward `ammoCapacity` at this rate — no crew, magazine, or
+   *  hardwire required. A weapon with this field depletes under fire faster than
+   *  it regrows and recovers during a lull. Omitted by weapons that use the
+   *  magazine doctrine instead. Applied on a floor-difference schedule so `ammo`
+   *  stays an integer (the snapshot stores it as Int32). */
+  ammoRegenPerSec: z.number().min(0).optional(),
   /** Direction the weapon fires, in radians, ship-local. Defaults to 0
    *  (fires along ship heading) so existing modules that never declared it
    *  behave exactly as before. */

@@ -83,9 +83,22 @@ function moduleOf(
   };
 }
 
-/** A modular attacker whose single weapon has a small, finite magazine. */
-function modularShooter(id: string, x: number, ammo: number): CombatShip {
-  const weapon = beam({ damage: 25, cooldown: 1, ammo });
+/** A modular attacker whose single weapon has a small, finite magazine. The
+ *  optional `ammoCapacity` / `ammoRegenPerSec` arm the bio-regrowth path. */
+function modularShooter(
+  id: string,
+  x: number,
+  ammo: number,
+  ammoCapacity?: number,
+  ammoRegenPerSec?: number,
+): CombatShip {
+  const weapon = beam({
+    damage: 25,
+    cooldown: 1,
+    ammo,
+    ...(ammoCapacity !== undefined ? { ammoCapacity } : {}),
+    ...(ammoRegenPerSec !== undefined ? { ammoRegenPerSec } : {}),
+  });
   const modules: ResolvedModule[] = [
     moduleOf("w1", weapon, 12, 0, 50),
     // The reactor doubles as the command module (as it does in the catalog),
@@ -237,6 +250,36 @@ describe("engine.weapon-ammo", () => {
 
   it("is deterministic for ammo-bounded battles", () => {
     const mk = () => runBattle(inputs([modularShooter("a1", 0, 5), toughTarget("d1", 80)]));
+    const a = mk();
+    const b = mk();
+    expect(b.frames).toEqual(a.frames);
+    expect(b.winner).toBe(a.winner);
+  });
+});
+
+describe("engine.weapon-ammo-regen", () => {
+  it("a regenerating weapon resumes firing after its magazine runs dry", () => {
+    // ammo 3, capacity 10, regen 5/s: the weapon depletes quickly, then the
+    // bio-regrowth floor-difference schedule feeds it ~5 rounds/s, so it keeps
+    // firing indefinitely (no flat tail the way a dry finite magazine has).
+    const result = runBattle(
+      inputs([modularShooter("a1", 0, 3, 10, 5), toughTarget("d1", 80)]),
+    );
+    const structures = result.frames.map((f) => structureOf(f, "d1") ?? 0);
+    const initial = structures[0] ?? 0;
+    const final = structures.at(-1) ?? initial;
+    expect(final, "regenerating weapon should keep dealing damage").toBeLessThan(initial);
+    // The tail must still be trending down -- the weapon resumes after regen.
+    const tail = structures.slice(-20);
+    expect(
+      tail.at(-1) ?? 0,
+      "regenerating weapon should still be firing late in the battle",
+    ).toBeLessThan(tail[0] ?? 0);
+  });
+
+  it("is deterministic for regen-bounded battles", () => {
+    const mk = () =>
+      runBattle(inputs([modularShooter("a1", 0, 3, 10, 5), toughTarget("d1", 80)]));
     const a = mk();
     const b = mk();
     expect(b.frames).toEqual(a.frames);

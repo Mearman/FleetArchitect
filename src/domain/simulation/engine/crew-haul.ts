@@ -6,6 +6,7 @@
  */
 
 import type { SimCrew } from "../types";
+import { TICKS_PER_SECOND } from "../types";
 
 import { SIM } from "./config";
 import { abandonHaul } from "./crew";
@@ -39,6 +40,35 @@ export function refillHardwiredPower(ship: SimShip): void {
         sink.charge = SIM.chargeBufferMax;
         break;
       }
+    }
+  }
+}
+
+/**
+ * Regenerate ammo for weapons with passive bio-regrowth
+ * (`effect.ammoRegenPerSec`). Each tick, top such a weapon's `ammo` back up
+ * toward `effect.ammoCapacity` at the authored per-second rate -- no crew,
+ * magazine, or hardwire required. Computed on a floor-difference schedule
+ * (`floor((tick + 1) * rate / TPS) - floor(tick * rate / TPS)`) so `ammo` stays
+ * an integer (the snapshot stores it as an Int32Array) and the result is a pure
+ * function of the global tick and the authored rate, hence deterministic across
+ * checkpoint/resume with no per-weapon accumulator state. A no-op on ships with
+ * no regenerating weapons. Iterated in module (col, row) order; order-
+ * independent (each weapon is set, not accumulated).
+ */
+export function regenerateAmmo(ship: SimShip, tick: number): void {
+  if (ship.modules === undefined) return;
+  for (const m of ship.modules) {
+    if (!m.alive || m.effect.kind !== "weapon") continue;
+    const rate = m.effect.ammoRegenPerSec;
+    if (rate === undefined || rate <= 0) continue;
+    const cap = m.effect.ammoCapacity;
+    if (cap === undefined) continue;
+    const inc =
+      Math.floor(((tick + 1) * rate) / TICKS_PER_SECOND) -
+      Math.floor((tick * rate) / TICKS_PER_SECOND);
+    if (inc > 0 && m.ammo < cap) {
+      m.ammo = Math.min(cap, m.ammo + inc);
     }
   }
 }

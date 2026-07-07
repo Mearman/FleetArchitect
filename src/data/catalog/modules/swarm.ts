@@ -208,6 +208,11 @@ export const swarmModules: ModuleDefinitionInput[] = [
       // Ballistic spore burst: unpowered and unguided.
       powered: false,
       guided: false,
+      // Bio-regrowth: fires ~3.7/s (autocannon band), regrows 2/s, so sustained
+      // fire depletes the 30-round reserve and a lull recovers it (no magazine).
+      ammo: 30,
+      ammoCapacity: 30,
+      ammoRegenPerSec: 2,
     },
   },
   {
@@ -271,6 +276,12 @@ export const swarmModules: ModuleDefinitionInput[] = [
       guided: true,
       thrust: STING_THRUST_M_PER_S2,
       burnTicks: STING_BURN_TICKS,
+      // Bio-regrowth: the tendril organ regrows faster than the slow ~0.33/s
+      // (missile band) fire rate drains it, so it rarely depletes, but a
+      // sustained focus can suppress it (no magazine).
+      ammo: 8,
+      ammoCapacity: 8,
+      ammoRegenPerSec: 0.2,
     },
   },
   // --- Defence: bio-regen instead of shields ---

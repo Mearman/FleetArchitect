@@ -293,6 +293,11 @@ export const swarmCapitalModules: ModuleDefinitionInput[] = [
       // Ballistic spore burst: unpowered and unguided.
       powered: false,
       guided: false,
+      // Bio-regrowth: fires ~3.7/s (autocannon band), regrows 3/s, so sustained
+      // fire depletes the 50-round reserve and a lull recovers it (no magazine).
+      ammo: 50,
+      ammoCapacity: 50,
+      ammoRegenPerSec: 3,
     },
   },
   {
@@ -359,6 +364,11 @@ export const swarmCapitalModules: ModuleDefinitionInput[] = [
       // Ballistic spore-mass: unpowered and unguided.
       powered: false,
       guided: false,
+      // Bio-regrowth: fires ~2/s (heavyAutocannon band), regrows 1/s, so the
+      // 25-round reserve depletes under sustained capital fire (no magazine).
+      ammo: 25,
+      ammoCapacity: 25,
+      ammoRegenPerSec: 1,
     },
   },
   {
@@ -476,6 +486,11 @@ export const swarmCapitalModules: ModuleDefinitionInput[] = [
       guided: true,
       thrust: STING_THRUST_M_PER_S2,
       burnTicks: STING_BURN_TICKS,
+      // Bio-regrowth: twin tendril organs regrow ~0.3/s against a ~0.33/s fire
+      // rate, so the 12-round reserve rarely depletes but can be suppressed.
+      ammo: 12,
+      ammoCapacity: 12,
+      ammoRegenPerSec: 0.3,
     },
   },
   {
@@ -542,6 +557,11 @@ export const swarmCapitalModules: ModuleDefinitionInput[] = [
       // Ballistic lobbed spore-mass: unpowered and unguided.
       powered: false,
       guided: false,
+      // Bio-regrowth: fires ~0.22/s (gauss band), regrows 0.15/s, so the
+      // 6-round reserve depletes slowly under sustained fire (no magazine).
+      ammo: 6,
+      ammoCapacity: 6,
+      ammoRegenPerSec: 0.15,
     },
   },
   {

@@ -31,7 +31,7 @@ import { collectMediumEmissions } from "./medium-emissions";
 import { ageBeams } from "./beams";
 import { stepPlume } from "./particle-sources";
 import { updateCrew } from "./crew";
-import { refillHardwiredAmmo } from "./crew-haul";
+import { refillHardwiredAmmo, regenerateAmmo } from "./crew-haul";
 import { resourceStep } from "./resource-step";
 import { spawnDebris, stepDebris } from "./debris";
 import { claimHulls, collectDebris, isClaimed, summariseSalvage } from "./salvage";
@@ -474,18 +474,18 @@ export function* simulateBattle(
       if (stepOvercharge(ship)) recomputeAggregatesWithScaling(ship);
     }
 
-    // 4b-crew/ammo. Crew AI + movement, then ammo-conduit refill — fused into a
-    //     single per-ship pass because both are fully per-ship, so interleaving
-    //     is byte-identical to the prior two-pass form. After aggregates settle
-    //     `powered`, crew walk one cell toward an under-manned station and
-    //     `manned` is recomputed (before break-apart so splits partition crew by
-    //     post-move cell); then conduit-fed weapons refill from their magazine,
-    //     dividing each magazine across its sinks at crew-deposit latency. A
-    //     no-op on designs with no crew / no ammo hardwires.
+    // 4b-crew/ammo. Crew AI + movement, ammo-conduit refill, then bio-regrowth —
+    //     fused into a single per-ship pass (all three are fully per-ship, so
+    //     interleaving is byte-identical to the prior two-pass form). After
+    //     aggregates settle `powered`, crew walk one cell toward an under-manned
+    //     station and `manned` is recomputed; conduit-fed weapons refill from
+    //     their magazine; regenerating weapons top up toward capacity. A no-op on
+    //     designs with no crew, no ammo hardwires, and no regenerating weapons.
     for (const ship of state.ships) {
       if (!ship.alive || ship.modules === undefined) continue;
       updateCrew(ship);
       refillHardwiredAmmo(ship);
+      regenerateAmmo(ship, tick);
     }
 
     // 4b-resource. Resource & environment step (Phase 12). Advance thermal,

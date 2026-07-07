@@ -89,8 +89,10 @@ export type DesignFault =
   | { kind: "unreachableStation"; severity: "error"; col: number; row: number; moduleId: EntityId }
   /**
    * A weapon with a finite ammo capacity (ammoCapacity is set) has no magazine
-   * module (effect.kind === "magazine") reachable via a walkable path. Only
-   * raised when at least one such weapon exists on the design.
+   * module (effect.kind === "magazine") reachable via a walkable path and no
+   * valid ammo hardwire. Only raised when at least one such weapon exists on the
+   * design. Weapons with passive bio-regrowth (ammoRegenPerSec) are exempt --
+   * they self-supply and need no magazine.
    */
   | { kind: "noAmmoSource"; severity: "error"; col: number; row: number; moduleId: EntityId }
   // ---- Warning-level faults (informational, do not block deployment) ----
@@ -652,7 +654,8 @@ export function analyseShipDesign(
       }
       if (
         moduleDef.effect.kind === "weapon" &&
-        moduleDef.effect.ammoCapacity !== undefined
+        moduleDef.effect.ammoCapacity !== undefined &&
+        moduleDef.effect.ammoRegenPerSec === undefined
       ) {
         finiteAmmoWeapons.push({ col, row, moduleId });
       }
