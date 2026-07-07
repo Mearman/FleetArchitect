@@ -1,3 +1,10 @@
+# [1.55.0](https://github.com/Mearman/FleetArchitect/compare/v1.54.0...v1.55.0) (2026-07-07)
+
+
+### Features
+
+* **sim:** activate the ammunition doctrine fleet-wide ([ca80b62](https://github.com/Mearman/FleetArchitect/commit/ca80b62f78425dbec7bdf7be2744d3e832c77c1c))
+
 # [1.54.0](https://github.com/Mearman/FleetArchitect/compare/v1.53.1...v1.54.0) (2026-07-07)
 
 
