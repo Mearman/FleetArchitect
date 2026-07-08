@@ -1,3 +1,10 @@
+# [1.59.0](https://github.com/Mearman/FleetArchitect/compare/v1.58.0...v1.59.0) (2026-07-08)
+
+
+### Features
+
+* **sim:** point-defence projectile-HP + lead-aim subsystems ([c89bc1a](https://github.com/Mearman/FleetArchitect/commit/c89bc1a8399923a0788d76efedfd08109f31d68c))
+
 # [1.58.0](https://github.com/Mearman/FleetArchitect/compare/v1.57.0...v1.58.0) (2026-07-07)
 
 
