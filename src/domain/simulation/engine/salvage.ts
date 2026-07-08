@@ -56,16 +56,15 @@ function byInstanceId(a: SimShip, b: SimShip): number {
 }
 
 /**
- * Whether `hull` is a derelict that a salvager may claim: every weapon and drive
- * module disabled (dead, so at zero HP), no living crew left aboard, and not
- * already claimed. A legacy non-modular hull (no module list) is never claimable
- * — it has no per-module death to read — so claiming is opt-in to modular ships,
- * exactly the ships boarding and break-apart already act on. Phantoms (drones /
- * decoys) are transient projections, never hulls, so they are never claimable.
+ * The structural half of claimability — everything `isClaimable` checks except
+ * the `claimedBy` (already-claimed) flag. This is a function of hull state only
+ * (phantom, module list, crew, weapon/engine cell liveness), none of which
+ * changes during a single `claimHulls` call — only `claimedBy` mutates there.
+ * Pulled out so `claimHulls` can compute it once per hull up front instead of
+ * re-deriving it from the module list for every (salvager, hull) pair.
  */
-export function isClaimable(hull: SimShip): boolean {
+function isStructurallyClaimable(hull: SimShip): boolean {
   if (hull.phantom !== undefined) return false;
-  if (isClaimed(hull)) return false;
   if (hull.modules === undefined) return false;
   // A living crew member aboard still mans and defends the hull — only a hull
   // emptied of crew is a derelict. `crew` is always present (possibly empty) on
@@ -83,6 +82,19 @@ export function isClaimable(hull: SimShip): boolean {
   // begin with; treat it as non-claimable so claiming targets only genuine
   // disarmed warships, not unarmed tenders or pure-hull chunks.
   return hasOffensiveOrMobilityCell;
+}
+
+/**
+ * Whether `hull` is a derelict that a salvager may claim: structurally claimable
+ * (every weapon and drive module disabled, no living crew, modular) AND not
+ * already claimed. A legacy non-modular hull (no module list) is never claimable
+ * — it has no per-module death to read — so claiming is opt-in to modular ships,
+ * exactly the ships boarding and break-apart already act on. Phantoms (drones /
+ * decoys) are transient projections, never hulls, so they are never claimable.
+ */
+export function isClaimable(hull: SimShip): boolean {
+  if (isClaimed(hull)) return false;
+  return isStructurallyClaimable(hull);
 }
 
 /**
@@ -133,18 +145,37 @@ export function collectDebris(ships: readonly SimShip[], debris: Debris[]): void
  * so a later salvager scanning the same hull skips it.
  *
  * Deterministic: both the salvagers and the candidate hulls are iterated in
- * instanceId order, and `isClaimable` reads only ship state, so the assignment is
+ * instanceId order, and claimability reads only ship state, so the assignment is
  * a pure function of the roster — no rng, no insertion order.
+ *
+ * Structural claimability (phantom, modules, crew, weapon/engine cell liveness)
+ * depends only on hull state and is invariant across a single call — only
+ * `claimedBy` changes, as hulls get claimed. So the per-hull structural check is
+ * computed once up front in a single O(N x M) pass, instead of re-deriving it
+ * from the module list for every (salvager, hull) pair. The inner loop then
+ * skips a hull iff it is already claimed or structurally non-claimable — exactly
+ * the complement of `isClaimable`. The claimed check reads `claimedBy` live, so
+ * a hull claimed earlier this same pass is skipped without a separate tracker,
+ * preserving the same skip-order, the same first-claimant-wins rule, and the
+ * identical per-salvager choice.
  */
 export function claimHulls(ships: readonly SimShip[]): void {
   const sorted = [...ships].sort(byInstanceId);
+  // Precompute the set of structurally-claimable hull ids once (O(N x M)); this
+  // does not change during the call.
+  const structurallyClaimableIds: Set<string> = new Set();
+  for (const hull of sorted) {
+    if (isStructurallyClaimable(hull)) structurallyClaimableIds.add(hull.instanceId);
+  }
   for (const salvager of sorted) {
     if (!salvager.alive || salvager.phantom !== undefined || isClaimed(salvager)) {
       continue;
     }
     for (const hull of sorted) {
       if (hull.side === salvager.side) continue;
-      if (!isClaimable(hull)) continue;
+      // Skip iff claimed-now or structurally non-claimable — the complement of
+      // isClaimable(hull) at this instant, without re-scanning the module list.
+      if (isClaimed(hull) || !structurallyClaimableIds.has(hull.instanceId)) continue;
       const dx = hull.x - salvager.x;
       const dy = hull.y - salvager.y;
       if (dx * dx + dy * dy > SALVAGE_RANGE_SQ) continue;
