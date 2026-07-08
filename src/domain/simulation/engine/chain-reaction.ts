@@ -89,7 +89,8 @@ function blastYield(m: SimModule): number {
  *                  itself; this function skips the source ship automatically).
  */
 export function resolveChainReactions(ship: SimShip, allShips: readonly SimShip[]): void {
-  if (ship.modules === undefined) return;
+  const modules = ship.modules;
+  if (modules === undefined) return;
   // OPTIMISED path: build the spatial index once for the whole chain so each
   // blast gathers candidates via a radius-box lookup instead of scanning the
   // whole hull. Every cell keyed by its integer grid position; cells only ever
@@ -97,7 +98,10 @@ export function resolveChainReactions(ship: SimShip, allShips: readonly SimShip[
   // live `alive` flag — no removal needed. Passed as a thunk so drainChainReactions
   // only evaluates it after the collectPending early-return confirms a pending
   // detonation — a battle with no volatile deaths never pays for the build.
-  drainChainReactions(ship, ship.modules, allShips, () => buildCellIndex(ship.modules));
+  // `modules` is captured by the thunk (not `ship.modules`): the line-92 guard
+  // narrows the local const, but TS re-widens `ship.modules` inside a closure
+  // over the mutable `ship` ref, so the const is what keeps the type narrow.
+  drainChainReactions(ship, modules, allShips, () => buildCellIndex(modules));
 }
 
 /**
