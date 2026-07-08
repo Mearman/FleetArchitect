@@ -30,6 +30,7 @@ import { CHECKPOINT_VERSION } from "@/schema/checkpoint";
 import type { Rng } from "@/domain/simulation/rng";
 import { getProjectileCounter } from "./projectile-id";
 import { buildHeatCapacity } from "./resource-step";
+import { buildTechCaches } from "./tech";
 import {
   particleStoreFromParticles,
   particlesFromStore,
@@ -440,7 +441,14 @@ function restoreShip(s: CheckpointShip): SimShip {
   if (s.outline !== undefined) ship.outline = s.outline;
   if (s.renderOutline !== undefined) ship.renderOutline = s.renderOutline;
   if (s.claimedBy !== undefined) ship.claimedBy = s.claimedBy;
-  if (s.modules !== undefined) ship.modules = s.modules.map(restoreModule);
+  if (s.modules !== undefined) {
+    ship.modules = s.modules.map(restoreModule);
+    // Rebuild the static tech classification from the freshly restored module
+    // objects (restoreModule produces brand-new SimModule instances, so any
+    // cache the live ship held is gone). Mirrors the heatCapacity re-derivation
+    // below: a pure function of the restored modules, never serialised.
+    ship.techCaches = buildTechCaches(ship.modules);
+  }
   if (s.crew !== undefined) ship.crew = s.crew;
   if (s.hullBaseThrust !== undefined) ship.hullBaseThrust = s.hullBaseThrust;
   if (s.hardwires !== undefined) ship.hardwires = s.hardwires;

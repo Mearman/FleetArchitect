@@ -5,7 +5,80 @@
 
 import { isOperational } from "./crew";
 import { enemyCentroid, isClosingStance } from "./movement";
-import type { SimShip } from "./types";
+import type { CommandAuraEffect } from "@/schema/module";
+import type { SimModule, SimShip } from "./types";
+
+/**
+ * Static per-ship tech classification, derived once from the module set by
+ * {@link buildTechCaches} and held on `SimShip.techCaches`. All three fields are
+ * pure functions of `effect.kind` and `powerDraw`, neither of which changes at
+ * runtime (effect scaling scales magnitudes only, never `kind`; nothing mutates
+ * `powerDraw`), so one build lasts the life of the module array. The per-tick
+ * `alive` / `powered` / `isOperational` gates remain in the consumer loops.
+ */
+export interface TechCaches {
+  /** commandAura projectors in module-array order. The narrowed element type
+   *  lets `applyCommandAuras` read the aura fields without a per-tick kind
+   *  check. Empty when the ship carries no aura carrier. */
+  auraModules: AuraModule[];
+  /** weapon / pointDefence / shield modules with `powerDraw > 0`, in
+   *  module-array order — the only modules `isBrownedOut` can ever report on.
+   *  Empty when none qualify. */
+  brownoutConsumers: SimModule[];
+  /** Whether the ship carries any overcharge module. When false,
+   *  `stepOvercharge` short-circuits before the brownout scan. */
+  hasOvercharge: boolean;
+}
+
+/**
+ * A `SimModule` narrowed so its effect is a `commandAura` projector. The cache
+ * builder narrows via the discriminated `kind` (see {@link isAuraModule}), so
+ * the per-tick read loop accesses `radius` / `rangeBonus` / `accuracyBonus`
+ * directly, with no runtime kind check. A real narrowing, not an assertion.
+ */
+export type AuraModule = SimModule & { effect: CommandAuraEffect };
+
+/**
+ * Classify a ship's modules into the static tech subsets the per-tick loops in
+ * this file consume: command-aura projectors, brownout-eligible power
+ * consumers, and whether any overcharge module is present. A single pass in
+ * module-array order; the returned sub-arrays preserve that order so the
+ * existing max-bonus and first-ready scans are byte-identical.
+ *
+ * Re-run by `restoreShip` (checkpoint modules are brand-new objects) and
+ * `makeChunkShip` (a severed fragment gets its own module copies and so its own
+ * cache) so the cache always references the live module objects.
+ */
+export function buildTechCaches(modules: readonly SimModule[]): TechCaches {
+  const auraModules: AuraModule[] = [];
+  const brownoutConsumers: SimModule[] = [];
+  let hasOvercharge = false;
+  for (const m of modules) {
+    if (isAuraModule(m)) {
+      auraModules.push(m);
+    } else if (m.effect.kind === "overcharge") {
+      hasOvercharge = true;
+    }
+    const kind = m.effect.kind;
+    if (
+      m.powerDraw > 0 &&
+      (kind === "weapon" || kind === "pointDefense" || kind === "shield")
+    ) {
+      brownoutConsumers.push(m);
+    }
+  }
+  return { auraModules, brownoutConsumers, hasOvercharge };
+}
+
+/**
+ * Type guard narrowing a `SimModule` to its command-aura projector subtype.
+ * Used only at cache build time so the narrowed element type ({@link AuraModule})
+ * lets the per-tick read loop skip the kind check; the guard body is the single
+ * discriminated-union check, so this is a real narrowing, not an assertion.
+ */
+function isAuraModule(m: SimModule): m is AuraModule {
+  return m.effect.kind === "commandAura";
+}
 
 /**
  * Fire any ready blink drive on a ship at the start of its movement, teleporting
@@ -156,13 +229,19 @@ export function afterburnerMultipliers(
  * the reactor budget. Mirrors the cut set the brownout loop produces, so a ship
  * whose whole demand fits its supply reports no brownout. Pure read of the
  * `powered` flags the latest recompute left.
+ *
+ * Iterates the precomputed `techCaches.brownoutConsumers` (weapon/PD/shield with
+ * `powerDraw > 0`) instead of the full module array: the static kind and
+ * power-draw filters are folded into the cache at ship construction, leaving
+ * only the per-tick `alive` / `powered` read in the loop. `techCaches` is
+ * `undefined` exactly when the ship has no modules (legacy aggregated path or a
+ * phantom), which previously returned false here too.
  */
 export function isBrownedOut(ship: SimShip): boolean {
-  if (ship.modules === undefined) return false;
-  for (const m of ship.modules) {
-    if (!m.alive || m.powerDraw <= 0) continue;
-    const kind = m.effect.kind;
-    if (kind !== "weapon" && kind !== "pointDefense" && kind !== "shield") continue;
+  const consumers = ship.techCaches?.brownoutConsumers;
+  if (consumers === undefined) return false;
+  for (const m of consumers) {
+    if (!m.alive) continue;
     if (!m.powered) return true;
   }
   return false;
@@ -177,11 +256,19 @@ export function isBrownedOut(ship: SimShip): boolean {
  * re-run aggregates and bring the surge to bear this same tick. Opt-in: a ship
  * with no overcharge module, or one not browned out, returns false and is
  * untouched. Modules scanned in (col, row) order; the first ready module fires.
+ *
+ * The static `hasOvercharge` flag (built once at ship construction) short-
+ * circuits the whole call for the common case of a ship carrying no overcharge
+ * module, skipping the brownout scan entirely — an overcharge that can never
+ * exist can never fire, and `isBrownedOut` has no side effects, so eliding it is
+ * byte-identical to the previous "scan, find nothing, return false" path.
  */
 export function stepOvercharge(ship: SimShip): boolean {
-  if (ship.modules === undefined) return false;
+  const { modules, techCaches } = ship;
+  if (modules === undefined || techCaches === undefined) return false;
+  if (!techCaches.hasOvercharge) return false;
   if (!isBrownedOut(ship)) return false;
-  for (const m of ship.modules) {
+  for (const m of modules) {
     if (m.effect.kind !== "overcharge") continue;
     if (!isOperational(m)) continue;
     if (m.techActive > 0 || m.techCooldown > 0) continue;
@@ -212,9 +299,16 @@ export function applyCommandAuras(ships: readonly SimShip[]): void {
     s.auraAccuracyBonus = 0;
   }
   for (const source of ships) {
-    if (!source.alive || source.modules === undefined) continue;
-    for (const m of source.modules) {
-      if (m.effect.kind !== "commandAura") continue;
+    if (!source.alive) continue;
+    // The per-ship `auraModules` list is the full module array filtered to
+    // commandAura projectors at ship construction (a static kind). A ship with
+    // no cache (no modules — legacy or phantom) or an empty list carries no
+    // aura, so it is skipped without scanning its module array this tick. The
+    // `isOperational` gate and the radius/bonus comparisons below are unchanged,
+    // so byte output is identical to the previous full-module-array scan.
+    const auraModules = source.techCaches?.auraModules;
+    if (auraModules === undefined || auraModules.length === 0) continue;
+    for (const m of auraModules) {
       if (!isOperational(m)) continue;
       const aura = m.effect;
       const radiusSq = aura.radius * aura.radius;

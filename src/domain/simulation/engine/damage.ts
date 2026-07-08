@@ -14,6 +14,7 @@ import { SIM } from "./config";
 import { resetCrewForFragment } from "./crew";
 import { recomputeAggregatesWithScaling } from "./effect-scaling";
 import { comTangentialVelocity, localCentreOfMass } from "./physics";
+import { buildTechCaches } from "./tech";
 import { angleDifference, normaliseAngle, worldToLocal } from "./setup";
 import type { SimModule, SimShip } from "./types";
 
@@ -689,6 +690,12 @@ export function makeChunkShip(
     // receiver (battlefield-medium phase 5).
     sensorSaturation: parent.sensorSaturation,
   };
+  // A severed fragment gets its own module copies, so build its own static tech
+  // classification from them (a chunk may inherit a commandAura or overcharge
+  // module from the parent; without this the per-tick tech loops would silently
+  // skip it). chunkModules are independent objects, so the cache references the
+  // chunk's copies, not the parent's.
+  chunk.techCaches = buildTechCaches(chunkModules);
   // Force a clean recompute so chunk aggregates match its own modules.
   // This derives the chunk's own ship-local centre of mass (comX/comY).
   // Carry over effect-scaling metadata for any multi-cell anchors that

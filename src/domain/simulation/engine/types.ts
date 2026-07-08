@@ -15,6 +15,7 @@ import type { AnchorScalingMeta } from "./effect-scaling";
 import type { EnergyBuffer } from "./power";
 import type { RectangularTransportGraph } from "./transport-graph";
 import type { ResourceTransportWork } from "./transport-field";
+import type { TechCaches } from "./tech";
 
 /**
  * Per-ship resource state (Phase 12). The three transport-field φ arrays —
@@ -486,21 +487,20 @@ export interface SimShip {
    * module death or chunk split invalidates it.
    */
   resourceGraph?: CachedTransportGraph;
-  /**
-   * Current count of alive modules, recomputed each tick by
-   * `recomputeAggregates`. A transient derived cache: not captured by the
-   * checkpoint (re-warms after resume). Sufficient as a topology-change signal.
-   */
+  /** Current count of alive modules, recomputed each tick by
+   *  `recomputeAggregates`. A transient derived cache: not captured by the
+   *  checkpoint (re-warms after resume). Sufficient as a topology-change signal. */
   aliveCount?: number;
-  /**
-   * The alive-module count at the last break-apart evaluation. Same derived
-   * category as `topologyFingerprint` — not captured by the checkpoint. When
-   * this equals `aliveCount`, break-apart returns `[]` without its union-find.
-   */
+  /** Alive-module count at the last break-apart evaluation. Same derived
+   *  category as `topologyFingerprint` — not captured by the checkpoint. When
+   *  this equals `aliveCount`, break-apart returns `[]` without its union-find. */
   breakApartLastAliveCount?: number;
-  /** Per-anchor effect-scaling metadata for multi-cell modules (see
-   *  `engine/effect-scaling.ts`); built at setup, captured by the checkpoint. */
+  /** Per-anchor effect-scaling metadata for multi-cell modules; built at setup,
+   *  captured by the checkpoint. See `engine/effect-scaling.ts`. */
   scalingMeta?: AnchorScalingMeta[];
+  /** Static tech classification (aura/overcharge/brownout subsets); built once
+   *  by `buildTechCaches`, rebuilt on resume. See `TechCaches` (tech.ts). */
+  techCaches?: TechCaches;
 }
 
 /**
