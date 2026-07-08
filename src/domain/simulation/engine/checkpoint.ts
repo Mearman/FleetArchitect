@@ -89,8 +89,14 @@ function snapshotShip(s: SimShip): CheckpointShip {
     radius: s.radius,
     dilationFactor: s.dilationFactor,
     cost: s.cost,
+    // `weapons` stays spread: the live field is `readonly WeaponEffect[]`, so
+    // the spread widens to the schema's mutable `WeaponEffect[]` (a bare
+    // reference would not type-check). `weaponCooldowns` is already a mutable
+    // `number[]`, so assign the live reference and let the single final
+    // structuredClone in `captureCheckpoint` own the only copy — the previous
+    // spread allocated a fresh array that the clone then walked a second time.
     weapons: [...s.weapons],
-    weaponCooldowns: [...s.weaponCooldowns],
+    weaponCooldowns: s.weaponCooldowns,
     doctrine: s.doctrine,
     // Formation identity (formation overhaul). Captured so a resumed
     // doctrine-active battle keeps its formation grouping — the doctrine pass
