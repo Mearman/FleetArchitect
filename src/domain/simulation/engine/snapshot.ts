@@ -14,7 +14,7 @@ import { STANDARD_CELL_GAS_MASS_KG, CREW_VACUUM_SURVIVABLE_FRACTION } from "./li
 import type { MediumField, MediumState } from "./medium-field";
 import type { SimCrew } from "../types";
 
-import { crewCellKey } from "./crew-pathfinding";
+import { cellNum } from "./crew-pathfinding";
 import type { Debris } from "./debris";
 import type { Emission } from "./emissions";
 import type { SimPulse } from "./pulses";
@@ -38,25 +38,85 @@ import type { SimMine, SimModule, SimPod, SimProjectile, SimShip } from "./types
 const RESOURCE_EVERY = 6;
 
 /**
- * Per-ship cache of `crewCellKey(col, row)` → `SimModule` for the crew
- * snapshot. Lifetime-stable: a module's `col`/`row`/`x`/`y` are immutable
+ * Per-ship cache of `cellNum(col, row)` → `SimModule` for the crew snapshot.
+ * Lifetime-stable: a module's `col`/`row`/`x`/`y` are immutable
  * post-construction, dead modules stay in `ship.modules` marked dead (never
  * removed), and break-apart builds a fresh `SimShip` whose cache rebuilds once
  * on first snapshot. WeakMap-keyed by ship so the entry is collected with the
  * ship; checkpoint resume and break-apart create new ship objects, giving an
- * automatic cache miss → rebuild identical to a cold start.
+ * automatic cache miss → rebuild identical to a cold start. Keyed by the numeric
+ * cell encoding (col * CELL_KEY_STRIDE + row) rather than the `"col,row"`
+ * template-literal string so every per-tick crew lookup avoids a fresh string
+ * allocation — the same pattern crew-pathfinding's own pathCache uses.
  */
-const moduleByCellCache = new WeakMap<SimShip, Map<string, SimModule>>();
+const moduleByCellCache = new WeakMap<SimShip, Map<number, SimModule>>();
 
 function moduleByCellFor(
   ship: SimShip,
   modules: readonly SimModule[],
-): Map<string, SimModule> {
+): Map<number, SimModule> {
   const cached = moduleByCellCache.get(ship);
   if (cached !== undefined) return cached;
-  const built = new Map<string, SimModule>();
-  for (const m of modules) built.set(crewCellKey(m.col, m.row), m);
+  const built = new Map<number, SimModule>();
+  for (const m of modules) built.set(cellNum(m.col, m.row), m);
   moduleByCellCache.set(ship, built);
+  return built;
+}
+
+/**
+ * The six booleans that gate which optional typed-array columns
+ * {@link buildCellArrays} allocates. Purely structural: each is a function of
+ * `turretTurnRate`, `crewRequired`, `effect.kind` + `ammoCapacity`, `powerDraw`,
+ * `reactiveReduction`, or the presence of `edges.doorStates` entries — all set
+ * once at ship/module construction and read-only thereafter (dead modules stay
+ * in the array marked dead, never removed; `doorStates` keys are seeded at
+ * construction, only their values flip open/closed at runtime). Lifetime-stable
+ * for a given `SimShip` object, so cached once and reused on every tick exactly
+ * like {@link moduleByCellFor}; a resumed or break-apart ship is a fresh object
+ * that misses the cache and recomputes once.
+ */
+interface CellArrayCapabilities {
+  hasTurret: boolean;
+  hasManned: boolean;
+  hasAmmo: boolean;
+  hasCharge: boolean;
+  hasDoors: boolean;
+  hasReactiveHp: boolean;
+}
+
+const cellCapabilitiesCache = new WeakMap<SimShip, CellArrayCapabilities>();
+
+function cellCapabilitiesFor(
+  ship: SimShip,
+  modules: readonly SimModule[],
+): CellArrayCapabilities {
+  const cached = cellCapabilitiesCache.get(ship);
+  if (cached !== undefined) return cached;
+  let hasTurret = false;
+  let hasManned = false;
+  let hasAmmo = false;
+  let hasCharge = false;
+  let hasDoors = false;
+  let hasReactiveHp = false;
+  for (const m of modules) {
+    if (m.turretTurnRate > 0) hasTurret = true;
+    if (m.crewRequired > 0) hasManned = true;
+    if (m.effect.kind === "weapon" && m.effect.ammoCapacity !== undefined) hasAmmo = true;
+    if (m.powerDraw > 0) hasCharge = true;
+    if (m.reactiveReduction > 0) hasReactiveHp = true;
+    const ds = m.edges.doorStates;
+    if (ds.n !== undefined || ds.e !== undefined || ds.s !== undefined || ds.w !== undefined)
+      hasDoors = true;
+  }
+  const built: CellArrayCapabilities = {
+    hasTurret,
+    hasManned,
+    hasAmmo,
+    hasCharge,
+    hasDoors,
+    hasReactiveHp,
+  };
+  cellCapabilitiesCache.set(ship, built);
   return built;
 }
 
@@ -119,7 +179,7 @@ function snapshotShip(tick: number, s: SimShip): ShipSnapshot {
   // structured-clone cost that was the source of the `[Violation] 'message'
   // handler` warnings on the heaviest frames. Float64Array holds the same
   // IEEE-754 doubles the engine uses.
-  ship.cells = buildCellArrays(s.modules);
+  ship.cells = buildCellArrays(s, s.modules);
   // Resource state — emitted when the ship has run the resource step AND we are
   // on a resource-emission tick (tick % RESOURCE_EVERY === 0), so the renderer
   // and analytics can read thermal, propellant, atmosphere and power-buffer
@@ -148,7 +208,7 @@ function snapshotShip(tick: number, s: SimShip): ShipSnapshot {
   if (s.crew === undefined || s.crew.length === 0) return ship;
   const moduleByCell = moduleByCellFor(s, s.modules);
   ship.crew = s.crew.map((c) => {
-    const cell = moduleByCell.get(crewCellKey(c.col, c.row));
+    const cell = moduleByCell.get(cellNum(c.col, c.row));
     const cx = cell !== undefined ? cell.x : 0;
     const cy = cell !== undefined ? cell.y : 0;
     return {
@@ -430,7 +490,7 @@ function particleSnapshotsFromStore(store: ParticleStore): ParticleSnapshot[] {
  *    only when the ship has at least one door.
  *  - `cellReactiveHp` (Float64Array) — NaN for non-reactive cells.
  */
-function buildCellArrays(modules: readonly SimModule[]): CellStateArrays {
+function buildCellArrays(ship: SimShip, modules: readonly SimModule[]): CellStateArrays {
   const n = modules.length;
   const cellHp = new Float64Array(n);
   const cellAlive = new Uint8Array(n);
@@ -438,25 +498,13 @@ function buildCellArrays(modules: readonly SimModule[]): CellStateArrays {
   // (0 for bare cells), and the original snapshot emitted it unconditionally.
   const cellSurfaceHp = new Float64Array(n);
 
-  // First pass: detect which optional fields are present on at least one module.
-  let hasTurret = false;
-  let hasManned = false;
-  let hasAmmo = false;
-  let hasCharge = false;
-  let hasDoors = false;
-  let hasReactiveHp = false;
-  for (let i = 0; i < n; i += 1) {
-    const m = modules[i];
-    if (m === undefined) continue;
-    if (m.turretTurnRate > 0) hasTurret = true;
-    if (m.crewRequired > 0) hasManned = true;
-    if (m.effect.kind === "weapon" && m.effect.ammoCapacity !== undefined) hasAmmo = true;
-    if (m.powerDraw > 0) hasCharge = true;
-    if (m.reactiveReduction > 0) hasReactiveHp = true;
-    const ds = m.edges.doorStates;
-    if (ds.n !== undefined || ds.e !== undefined || ds.s !== undefined || ds.w !== undefined)
-      hasDoors = true;
-  }
+  // Which optional fields are present on at least one module. These six flags
+  // are lifetime-stable for a given ship object (structural module properties
+  // set at construction and read-only thereafter), so resolved once via the
+  // per-ship WeakMap cache and reused on every subsequent tick instead of a
+  // brute-force O(modules) walk per snapshot.
+  const { hasTurret, hasManned, hasAmmo, hasCharge, hasDoors, hasReactiveHp } =
+    cellCapabilitiesFor(ship, modules);
 
   // Allocate the optional arrays (filled with sentinels by default).
   const cellTurretAngle = hasTurret ? new Float64Array(n) : undefined;
