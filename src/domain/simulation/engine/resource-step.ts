@@ -77,8 +77,6 @@ import {
 import {
   TICK_DURATION_SECONDS,
   type EnergyBuffer,
-  type PowerTerminal,
-  netPower,
   stepEnergyBuffer,
 } from "@/domain/simulation/engine/power";
 import type { ResourceScratch, ResourceState, SimModule, SimShip } from "@/domain/simulation/engine/types";
@@ -560,16 +558,35 @@ function runResourceStep(
 
   // --- Propellant substance ---
   // Per-tick engine thrust command: each alive engine's rated thrust scaled by
-  // `ship.engineThrottle` (Gate 1 below enforces the flame-out). The exhaust
-  // NORMALS are folded into the cached graph (`graph.exhaust`) since engine
-  // facing is fixed for life; only the thrust magnitude is rebuilt here.
+  // `ship.engineThrottle`. Exhaust normals are folded into the cached graph
+  // (`graph.exhaust`); only the magnitude is rebuilt here.
+  // Fused single pass over ship.modules (was three O(modules) scans): builds
+  // engineThrust, the deckCells mask, and the net-power running sum. Aliveness
+  // is stable from the overheat pass above through to the power budget below
+  // (transport steps and crew-vacuum pass touch fields/crew, not module.alive),
+  // and fixed module-array order throughout keeps Map/Set insertion order and
+  // the source-before-sink net order byte-identical to the old three-loop path.
   const throttle = ship.engineThrottle;
   const engineThrust = scratch.engineThrust;
+  const deckCells = scratch.deckCells;
+  let net = 0;
   for (const m of ship.modules) {
-    if (!m.alive || m.effect.kind !== "engine") continue;
-    const i = idx(m);
-    if (i !== undefined && throttle > 0) {
-      engineThrust.set(i, m.effect.thrust * throttle);
+    if (!m.alive) continue;
+    if (m.effect.kind === "engine" && throttle > 0) {
+      const i = idx(m);
+      if (i !== undefined) engineThrust.set(i, m.effect.thrust * throttle);
+    }
+    // Deck cells are NOT folded into the cached graph: the overheat pass above
+    // can kill a deck cell mid-tick after the graph is fetched.
+    if (isDeck(m)) {
+      const i = idx(m);
+      if (i !== undefined) deckCells.add(i);
+    }
+    if (m.effect.kind === "power") {
+      net += m.effect.output;
+    }
+    if (m.powerDraw > 0) {
+      net -= m.powerDraw;
     }
   }
   // Pipes: every open interior face is part of the fuel manifold. The pre-built
@@ -611,20 +628,11 @@ function runResourceStep(
       if (i !== undefined) crewMap.set(i, (crewMap.get(i) ?? 0) + 1);
     }
   }
-  // Deck mask: alive deck cells (advection flows only between two decks). NOT
-  // folded into the cached graph because the overheat pass above can kill a deck
-  // cell mid-tick AFTER the graph is fetched — only a per-tick build reflects
-  // that. Built in fixed module-array order.
-  const deckCells = scratch.deckCells;
-  for (const m of ship.modules) {
-    if (!m.alive || !isDeck(m)) continue;
-    const i = idx(m);
-    if (i !== undefined) deckCells.add(i);
-  }
   // Vents: the live vent mask from the alive-cell topology (empty for an intact,
   // sealed hull). The atmosphere substance is cached on the graph and captures
-  // `crewMap`/`deckCells` by reference; its `breached` flag is a pure function
-  // of `graph.ventMask`, recomputed when the graph is rebuilt.
+  // `crewMap`/`deckCells` by reference (deckCells is built in the fused pass
+  // above); its `breached` flag is a pure function of `graph.ventMask`,
+  // recomputed when the graph is rebuilt.
   const atmosphereField: TransportField = {
     substance: graph.atmosphereSubstance,
     faces: graph.faces,
@@ -698,20 +706,10 @@ function runResourceStep(
   }
 
   // --- Power budget ---
-  // Terminals: alive reactors (sources, watts = output) and alive
-  // powered modules (sinks, watts = powerDraw). Iterated in module array
-  // order for determinism.
-  const terminals: PowerTerminal[] = [];
-  for (const m of ship.modules) {
-    if (!m.alive) continue;
-    if (m.effect.kind === "power") {
-      terminals.push({ watts: m.effect.output, direction: "source" });
-    }
-    if (m.powerDraw > 0) {
-      terminals.push({ watts: m.powerDraw, direction: "sink" });
-    }
-  }
-  const net = netPower(terminals);
+  // Net power for this tick: the running sum accumulated in the fused pass
+  // above (alive reactor outputs minus module draws, source-before-sink per
+  // module in module-array order) — the same value the old terminal-array build
+  // plus netPower produced.
   const bufferBefore = state.powerBuffer.energy;
   state.powerBuffer = stepEnergyBuffer(state.powerBuffer, net);
 
