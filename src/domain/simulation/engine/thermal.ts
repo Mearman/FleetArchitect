@@ -81,13 +81,17 @@ export const CELSIUS_ZERO_K = 273.15;
  * Per-cell heat-source map: cell index → thermal power in watts. A reactor
  * cell dumps waste heat; weapons and engines dump heat when they fire. The
  * caller builds this from the live module state; an empty map means a
- * quiescent, coasting ship.
+ * quiescent, coasting ship. Used by {@link makeThermalSubstanceReference} (the
+ * Map-based oracle); production materialises this into a dense
+ * {@link ThermalArrays.sources} array once per topology window.
  */
 export type ThermalSourceMap = ReadonlyMap<number, number>;
 
 /** Per-cell radiator mask: which cells are radiator panels venting to space.
  *  A cell with no radiator panel is thermally insulated at the hull (no
- *  boundary flux); a radiator cell carries the T⁴ outflux. */
+ *  boundary flux); a radiator cell carries the T⁴ outflux. Used by
+ *  {@link makeThermalSubstanceReference}; production materialises it into the
+ *  dense {@link ThermalArrays.radiators} mask. */
 export type RadiatorMask = ReadonlySet<number>;
 
 /**
@@ -97,7 +101,9 @@ export type RadiatorMask = ReadonlySet<number>;
  * to convert watts into a kelvin-per-second rate, since the transported field φ
  * is a temperature. A cell absent from the map carries
  * {@link DEFAULT_CELL_HEAT_CAPACITY_J_PER_K}, so a sparse map degrades to a
- * uniform heat capacity rather than dividing by zero.
+ * uniform heat capacity rather than dividing by zero. Used by
+ * {@link makeThermalSubstanceReference}; production bakes the default into
+ * {@link ThermalArrays.heatCapacity} at materialisation time.
  */
 export type HeatCapacityMap = ReadonlyMap<number, number>;
 
@@ -113,25 +119,71 @@ export type HeatCapacityMap = ReadonlyMap<number, number>;
 export const DEFAULT_CELL_HEAT_CAPACITY_J_PER_K = 1e5;
 
 /**
- * Build a thermal substance configuration.
+ * Dense typed-array form of the topology-invariant thermal inputs, indexed by
+ * the dense cell index 0..n−1. The production thermal substance
+ * ({@link makeThermalSubstance}) reads these by direct index instead of hashing
+ * a `Map`/`Set` on every per-cell per-sub-step call. Materialised once per
+ * topology window (alongside the transport graph) by
+ * {@link materialiseThermalInputs} and reused every tick.
+ */
+export interface ThermalArrays {
+  /** Heat-injection watts per cell; 0 for a cell with no source. */
+  readonly sources: Float64Array;
+  /** 1 for a radiator cell (carries the T⁴ boundary outflux), 0 otherwise. */
+  readonly radiators: Uint8Array;
+  /** Heat capacity per cell (J/K), with {@link DEFAULT_CELL_HEAT_CAPACITY_J_PER_K}
+   *  already substituted for absent / non-positive entries. */
+  readonly heatCapacity: Float64Array;
+}
+
+/**
+ * Materialise the topology-invariant thermal inputs from their Map/Set form into
+ * the dense {@link ThermalArrays} the production substance indexes directly.
  *
- * `sources` is the per-cell heat-injection map (watts); `radiators` is the set
- * of cells venting radiatively; `heatCapacity` maps each cell to its heat
- * capacity in J/K. All three are captured by closure so the returned
- * `TransportSubstance` reflects the live ship state when the integrator reads
- * it. The source and radiative boundary flux are both watt quantities divided by
- * the cell's heat capacity to give the kelvin-per-second rate the temperature
- * field integrates.
+ * The heat-capacity default ({@link DEFAULT_CELL_HEAT_CAPACITY_J_PER_K}) is
+ * baked in here for cells absent from the map or carrying a non-positive
+ * capacity, exactly matching the reference {@link makeThermalSubstanceReference}
+ * per-call `capacityOf` fallback — so the array closure reads the final value
+ * with no per-call branch. Sources materialise as 0 for absent cells (matching
+ * `sources.get(cell) ?? 0`); the radiator mask as 1 for members. Built once per
+ * topology window (a cold path — only on module death), so the per-tick hot
+ * path pays only the array indexing.
+ */
+export function materialiseThermalInputs(
+  sources: ReadonlyMap<number, number>,
+  radiators: ReadonlySet<number>,
+  heatCapacity: ReadonlyMap<number, number>,
+  cellCount: number,
+): ThermalArrays {
+  const src = new Float64Array(cellCount);
+  const rad = new Uint8Array(cellCount);
+  const cap = new Float64Array(cellCount);
+  for (let i = 0; i < cellCount; i += 1) {
+    src[i] = sources.get(i) ?? 0;
+    rad[i] = radiators.has(i) ? 1 : 0;
+    const c = heatCapacity.get(i);
+    cap[i] = c !== undefined && c > 0 ? c : DEFAULT_CELL_HEAT_CAPACITY_J_PER_K;
+  }
+  return { sources: src, radiators: rad, heatCapacity: cap };
+}
+
+/**
+ * Build a thermal substance configuration over the dense typed-array inputs.
+ *
+ * Production path: `sources`, `radiators`, and `heatCapacity` are the
+ * {@link ThermalArrays} materialised once per topology window, so every
+ * per-cell per-sub-step read is a direct array index rather than a
+ * `Map.get`/`Set.has` hash lookup. The heat-capacity default is already baked
+ * into the array (see {@link materialiseThermalInputs}), so the closures read
+ * the final value directly with no per-call branch. Byte-identical to
+ * {@link makeThermalSubstanceReference}; the equivalence test
+ * (`engine.thermal.equivalence.unit.test.ts`) proves it.
  */
 export function makeThermalSubstance(
-  sources: ThermalSourceMap,
-  radiators: RadiatorMask,
-  heatCapacity: HeatCapacityMap,
+  sources: Float64Array,
+  radiators: Uint8Array,
+  heatCapacity: Float64Array,
 ): TransportSubstance {
-  const capacityOf = (cell: number): number => {
-    const c = heatCapacity.get(cell);
-    return c !== undefined && c > 0 ? c : DEFAULT_CELL_HEAT_CAPACITY_J_PER_K;
-  };
   return {
     name: "thermal",
     coefficient: HULL_THERMAL_DIFFUSIVITY_M2_PER_S,
@@ -144,7 +196,63 @@ export function makeThermalSubstance(
     nonNegative: true,
     floor: SPACE_TEMPERATURE_K,
     // Source is a heat power (W); divide by the cell's heat capacity (J/K) to
-    // get the temperature rate (K/s) the field integrates: dT/dt = P / C.
+    // get the temperature rate (K/s) the field integrates: dT/dt = P / C. The
+    // heatCapacity array is materialised for every dense cell index, so the
+    // index is always in range.
+    source: (cell) => {
+      const watts = sources[cell] ?? 0;
+      return watts === 0 ? 0 : watts / heatCapacity[cell]!;
+    },
+    boundaryFlux: (cell, phi, out) => {
+      out.cell = cell;
+      out.momentumX = 0;
+      out.momentumY = 0;
+      if (radiators[cell] !== 1) {
+        out.scalarFlux = 0;
+        return;
+      }
+      const t = phi[cell] ?? SPACE_TEMPERATURE_K;
+      // Net radiated power: ε·σ·A·(T⁴ − T_space⁴), watts. Positive ⇒ heat leaves
+      // the cell. Divided by the cell's heat capacity to express the outflux as
+      // a temperature rate (K/s), matching the temperature field. Photons carry
+      // negligible momentum at ship scale (radiation pressure σT⁴/c is ~µN·m⁻²
+      // at 300 K), so the reaction force is zero — thermal radiation does not
+      // recoil the hull.
+      const radiatedWatts =
+        RADIATOR_EMISSIVITY *
+        STEFAN_BOLTZMANN_W_PER_M2_K4 *
+        RADIATOR_AREA_PER_CELL_M2 *
+        (t * t * t * t - SPACE_TEMPERATURE_K ** 4);
+      out.scalarFlux = radiatedWatts / heatCapacity[cell]!;
+    },
+  };
+}
+
+/**
+ * REFERENCE (oracle) thermal substance: the naive Map/Set-lookup path, kept as
+ * a first-class implementation the equivalence test
+ * (`engine.thermal.equivalence.unit.test.ts`) compares against the optimised
+ * array-indexing path. Not wired into production; production runs
+ * {@link makeThermalSubstance} over materialised {@link ThermalArrays}. Each
+ * per-cell call does `sources.get` / `radiators.has` / `heatCapacity.get` (via
+ * `capacityOf`) — the hash-lookup path the array index replaces. Both paths
+ * return identical values for identical inputs, so the post-step φ array,
+ * accumulated momentum, and diagnostics are byte-identical.
+ */
+export function makeThermalSubstanceReference(
+  sources: ThermalSourceMap,
+  radiators: RadiatorMask,
+  heatCapacity: HeatCapacityMap,
+): TransportSubstance {
+  const capacityOf = (cell: number): number => {
+    const c = heatCapacity.get(cell);
+    return c !== undefined && c > 0 ? c : DEFAULT_CELL_HEAT_CAPACITY_J_PER_K;
+  };
+  return {
+    name: "thermal",
+    coefficient: HULL_THERMAL_DIFFUSIVITY_M2_PER_S,
+    nonNegative: true,
+    floor: SPACE_TEMPERATURE_K,
     source: (cell) => {
       const watts = sources.get(cell) ?? 0;
       return watts === 0 ? 0 : watts / capacityOf(cell);
@@ -158,12 +266,6 @@ export function makeThermalSubstance(
         return;
       }
       const t = phi[cell] ?? SPACE_TEMPERATURE_K;
-      // Net radiated power: ε·σ·A·(T⁴ − T_space⁴), watts. Positive ⇒ heat leaves
-      // the cell. Divided by the cell's heat capacity to express the outflux as
-      // a temperature rate (K/s), matching the temperature field. Photons carry
-      // negligible momentum at ship scale (radiation pressure σT⁴/c is ~µN·m⁻²
-      // at 300 K), so the reaction force is zero — thermal radiation does not
-      // recoil the hull.
       const radiatedWatts =
         RADIATOR_EMISSIVITY *
         STEFAN_BOLTZMANN_W_PER_M2_K4 *
