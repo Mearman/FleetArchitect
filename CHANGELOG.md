@@ -1,3 +1,10 @@
+# [1.60.0](https://github.com/Mearman/FleetArchitect/compare/v1.59.0...v1.60.0) (2026-07-08)
+
+
+### Features
+
+* **presets:** mount the orphan capital modules ([91ea38c](https://github.com/Mearman/FleetArchitect/commit/91ea38c4642fe32e0793211df90985c0648682b9))
+
 # [1.59.0](https://github.com/Mearman/FleetArchitect/compare/v1.58.0...v1.59.0) (2026-07-08)
 
 
