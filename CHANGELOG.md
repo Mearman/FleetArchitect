@@ -1,3 +1,10 @@
+## [1.60.1](https://github.com/Mearman/FleetArchitect/compare/v1.60.0...v1.60.1) (2026-07-08)
+
+
+### Bug Fixes
+
+* **sim:** man launchers, add Swarm sensors, power the Monolith lance ([833c7c3](https://github.com/Mearman/FleetArchitect/commit/833c7c37fabb2316e25b7fb4e8ea6f7e532c9232)), closes [14-#17](https://github.com/14-/issues/17) [#15](https://github.com/Mearman/FleetArchitect/issues/15) [#16](https://github.com/Mearman/FleetArchitect/issues/16) [#14](https://github.com/Mearman/FleetArchitect/issues/14) [#14](https://github.com/Mearman/FleetArchitect/issues/14) [#17](https://github.com/Mearman/FleetArchitect/issues/17)
+
 # [1.60.0](https://github.com/Mearman/FleetArchitect/compare/v1.59.0...v1.60.0) (2026-07-08)
 
 
