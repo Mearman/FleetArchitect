@@ -186,13 +186,23 @@ function buildContext(
  * the firing, targeting, movement and crew steps read the fresh decision. Ships
  * with no rules and the default stance evaluate to every flag false and no
  * stance override, preserving the historical behaviour byte-for-byte.
+ *
+ * Returns the per-ship {@link TriggerContext} map (keyed by instanceId) for
+ * every non-phantom ship whose doctrine has at least one rule — the context
+ * `stepFormationDoctrine` reuses later this same tick so it does not rebuild the
+ * shield/structure fractions, the target hypot, and the destroyed-module scan a
+ * second time. Rule-less ships never read a context (their loop is empty), so
+ * they are omitted; the formation pass also skips them. `outclassed` carries
+ * the real fleet-strength value here — the formation pass overrides it back to
+ * its hardcoded `false` on reuse.
  */
 export function stepAi(
   ships: readonly SimShip[],
   byId: ReadonlyMap<string, SimShip>,
-): void {
+): Map<string, TriggerContext> {
   const attackerStrength = sideStrength(ships, "attacker");
   const defenderStrength = sideStrength(ships, "defender");
+  const contexts = new Map<string, TriggerContext>();
   for (const ship of ships) {
     // Phantoms carry no AI of their own; leave their (default) fields.
     if (ship.phantom !== undefined) continue;
@@ -200,13 +210,14 @@ export function stepAi(
     // down and never reads the trigger context, so skip building it (no target
     // lookup, hypot, or destroyed-kind scan) and go straight to the base state.
     // Byte-identical to running an empty rules array through effectiveDoctrineAi.
-    const state =
-      ship.doctrine.rules.length > 0
-        ? effectiveDoctrineAi(
-            ship.doctrine,
-            buildContext(ship, byId, attackerStrength, defenderStrength),
-          )
-        : baseAiState(ship.doctrine.base.stance ?? "balanced");
+    let state;
+    if (ship.doctrine.rules.length > 0) {
+      const context = buildContext(ship, byId, attackerStrength, defenderStrength);
+      state = effectiveDoctrineAi(ship.doctrine, context);
+      contexts.set(ship.instanceId, context);
+    } else {
+      state = baseAiState(ship.doctrine.base.stance ?? "balanced");
+    }
     ship.aiHoldFire = state.holdFire;
     ship.aiFocusFire = state.focusFire;
     ship.aiRetreat = state.retreat;
@@ -219,4 +230,5 @@ export function stepAi(
     const baseStance = ship.doctrine.base.stance ?? "balanced";
     ship.aiStance = state.stance !== baseStance ? state.stance : null;
   }
+  return contexts;
 }

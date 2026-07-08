@@ -29,6 +29,7 @@ import {
   type Point,
   type ResolveReference,
 } from "./formation-doctrine";
+import { buildFormationReferenceIndex } from "./formation-reference-index";
 import {
   cohesionCentroidFor,
   desiredPoint,
@@ -248,8 +249,15 @@ export function moveShips(
         a.instanceId < b.instanceId ? -1 : a.instanceId > b.instanceId ? 1 : 0,
       );
     formationAggregates = buildAggregates(sortedForFormation);
+    // Tick-invariant reference index (side, role)/(side, archetype), built once
+    // here so makeResolver's friendly/enemy/enemyArchetype resolutions are O(1)
+    // lookups instead of the per-call O(ships) rescan + Set/Map allocation the
+    // resolver used to run on every reference (once per alive ship per tick).
+    // Single pass over the same sorted array — identical encounter order and
+    // tie-break, no arithmetic reordering.
+    const formationReferenceIndex = buildFormationReferenceIndex(sortedForFormation);
     formationResolve = makeResolver(
-      sortedForFormation,
+      formationReferenceIndex,
       byId,
       formationAggregates,
       deployment,

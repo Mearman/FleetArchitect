@@ -9,6 +9,7 @@
 import type { SpatialObjective } from "@/schema/ai";
 import type { SimShip } from "./types";
 import type { DeploymentReference } from "./movement";
+import type { TriggerContext } from "./ai";
 
 /** Minimal valid SimShip for formation-doctrine tests. Only the fields the pass
  *  reads are meaningful; the rest carry inert defaults so the literal
@@ -106,3 +107,9 @@ export function index(ships: readonly SimShip[]): Map<string, SimShip> {
   for (const s of ships) m.set(s.instanceId, s);
   return m;
 }
+
+/** Empty per-ship TriggerContext map for tests that drive `stepFormationDoctrine`
+ *  without first running `stepAi`: the pass falls back to its local context
+ *  builder, byte-identical to the pre-reuse behaviour. Shared singleton — the
+ *  pass only reads it via `.get`. */
+export const NO_CONTEXTS: ReadonlyMap<string, TriggerContext> = new Map();
