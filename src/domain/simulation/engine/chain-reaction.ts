@@ -94,11 +94,10 @@ export function resolveChainReactions(ship: SimShip, allShips: readonly SimShip[
   // blast gathers candidates via a radius-box lookup instead of scanning the
   // whole hull. Every cell keyed by its integer grid position; cells only ever
   // die (never resurrect), so a stale entry is simply skipped on lookup via its
-  // live `alive` flag — no removal needed. Built only when there is at least one
-  // pending detonation (the undefined guard above plus the collectPending
-  // early-return inside drainChainReactions), so a battle with no volatile
-  // deaths never pays for it.
-  drainChainReactions(ship, ship.modules, allShips, buildCellIndex(ship.modules));
+  // live `alive` flag — no removal needed. Passed as a thunk so drainChainReactions
+  // only evaluates it after the collectPending early-return confirms a pending
+  // detonation — a battle with no volatile deaths never pays for the build.
+  drainChainReactions(ship, ship.modules, allShips, () => buildCellIndex(ship.modules));
 }
 
 /**
@@ -113,23 +112,25 @@ export function resolveChainReactions(ship: SimShip, allShips: readonly SimShip[
  */
 export function resolveChainReactionsReference(ship: SimShip, allShips: readonly SimShip[]): void {
   if (ship.modules === undefined) return;
-  drainChainReactions(ship, ship.modules, allShips, undefined);
+  drainChainReactions(ship, ship.modules, allShips, () => undefined);
 }
 
 /**
  * Shared chain drain: seeds the work queue with every volatile module that has
  * died but not yet detonated, then iterates the queue applying each blast via
- * {@link detonate} until the chain settles. The `cellIndex` parameter selects
- * the candidate-gathering strategy (spatial radius-box lookup when present,
- * full-hull scan when `undefined`); both strategies return the identical
- * candidate list (same members, same order), so the drain is byte-identical
- * either way.
+ * {@link detonate} until the chain settles. The `cellIndexBuilder` thunk selects
+ * the candidate-gathering strategy (spatial radius-box lookup when it returns a
+ * Map, full-hull scan when it returns `undefined`); both strategies return the
+ * identical candidate list (same members, same order), so the drain is
+ * byte-identical either way. The thunk is invoked only after the collectPending
+ * early-return confirms a pending detonation, so the common no-volatile-death
+ * path pays nothing for the index build.
  */
 function drainChainReactions(
   ship: SimShip,
   modules: readonly SimModule[],
   allShips: readonly SimShip[],
-  cellIndex: Map<number, SimModule> | undefined,
+  cellIndexBuilder: () => Map<number, SimModule> | undefined,
 ): void {
   // Seed the queue with every volatile module that has died but not yet
   // detonated. The chain may add more as blasts kill further volatile cells.
@@ -140,6 +141,12 @@ function drainChainReactions(
 
   let pending = collectPending();
   if (pending.length === 0) return; // no volatile death: the common case, untouched.
+
+  // Build the spatial index only now that a detonation is actually pending,
+  // deferring the Map allocation and full-module scan away from the common
+  // no-op path. Its content is byte-identical to an eagerly built index — only
+  // the call timing changes.
+  const cellIndex = cellIndexBuilder();
 
   // Sort other ships by instanceId once so every detonation iterates them in
   // the same deterministic order without re-sorting per blast.
