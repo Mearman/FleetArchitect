@@ -434,7 +434,7 @@ export function* simulateBattle(
     //     disabling modules via recomputeAggregates inside boardShip. Runs in
     //     the damage phase so the aggregate recompute below reflects modules a
     //     boarding disabled this tick. A no-op when no pods exist.
-    state.pods = updatePods(state.pods, state.ships);
+    state.pods = updatePods(state.pods, state.byId);
 
     // 4-phantoms. Drones and decoys (factions update). Drones home on the
     //     nearest real enemy and strike it (via applyDamage); decoys count down.
