@@ -8,7 +8,7 @@ import {
 import { buildDirectContactsReference } from "@/domain/simulation/engine/awareness.reference";
 import { emReceives, hullDazzleContribution } from "@/domain/simulation/engine/em-reception";
 import { freshAwarenessScratch } from "@/domain/simulation/engine/awareness";
-import { sensorUnitsOf } from "@/domain/simulation/engine/sensors";
+import { fillSensorUnits, sensorUnitsOf } from "@/domain/simulation/engine/sensors";
 import { toSimShip } from "@/domain/simulation/engine/setup";
 import type { SimShip } from "@/domain/simulation/engine/types";
 import {
@@ -208,7 +208,12 @@ describe("engine.awareness early-out — matches the reference oracle", () => {
   }
 
   /** Run a direct-detection builder on a FRESH accumulator + scratch over the
-   *  shared (read-only) fleet, returning the contact map and accumulator. */
+   *  shared (read-only) fleet, returning the contact map and accumulator.
+   *  `sensorsByShip` is populated exactly as `computeAwareness` populates it, so
+   *  the optimised path ({@link buildDirectContacts}, which reads the pooled
+   *  sensor arrays from scratch) and the frozen oracle
+   *  ({@link buildDirectContactsReference}, which calls `sensorUnitsOf` inline)
+   *  are exercised against identical precomputed sensor data. */
   function run(
     builder: typeof buildDirectContacts,
     ships: readonly SimShip[],
@@ -216,6 +221,14 @@ describe("engine.awareness early-out — matches the reference oracle", () => {
     const { alive, enemiesBySide } = aliveAndEnemies(ships);
     const dazzle = seededDazzleAccum(alive);
     const scratch = freshAwarenessScratch();
+    for (const s of alive) {
+      let pooled = scratch.sensorsByShip.get(s.instanceId);
+      if (pooled === undefined) {
+        pooled = [];
+        scratch.sensorsByShip.set(s.instanceId, pooled);
+      }
+      fillSensorUnits(s, pooled);
+    }
     const direct = builder(alive, [], [], dazzle, enemiesBySide, scratch);
     return { direct, dazzle };
   }
