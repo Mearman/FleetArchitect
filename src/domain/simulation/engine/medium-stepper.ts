@@ -193,6 +193,14 @@ function runMediumStep(
   const D = config.rhoDiffusionM2PerS;
   const vMax = config.rhoMaxVelocityMPerS;
   const gradRef = MEDIUM_DENSITY_GRAD_REF_KG_PER_M3;
+  // densityGradientVelocity's cell volume and degeneracy guard, hoisted out of
+  // the per-cell / per-direction neighbour loop: pitch, slabDepth and gradRef
+  // are all config-derived (call-invariant), so the `pitch · pitch · slabDepth`
+  // multiply and the guard test happen once per step instead of per cell × per
+  // direction × per sub-step. Pure code motion — same operand order as the
+  // closure's old in-body multiply — so frames stay byte-identical.
+  const gradCellVolumeM3 = pitch * pitch * slabDepth;
+  const gradEnabled = pitch > 0 && slabDepth > 0 && gradRef > 0;
   const Deps = config.epsDiffusionM2PerS;
   const Dmom = config.momentumDiffusionM2PerS;
   const drag = config.momentumDragPerS;
@@ -279,9 +287,12 @@ function runMediumStep(
           myDif += Dmom * invPitch2 * (myThere - myHere);
         }
 
-        // ρ gradient-flow advection (existing bulk-flow closure).
-        if (vMax > 0) {
-          const u = densityGradientVelocity(rhoHere, rhoThere, pitch, slabDepth, vMax, gradRef);
+        // ρ gradient-flow advection (existing bulk-flow closure). The cell
+        // volume is hoisted above; gradEnabled collapses the closure's old
+        // early-return, so a degenerate config skips this block exactly as the
+        // early-return did (u = 0 → neither branch fires → rhoAdv unchanged).
+        if (vMax > 0 && gradEnabled) {
+          const u = densityGradientVelocity(rhoHere, rhoThere, gradCellVolumeM3, vMax, gradRef);
           if (u > 0) rhoAdv -= u * invPitch * rhoHere;
           else if (u < 0) rhoAdv -= u * invPitch * rhoThere;
         }

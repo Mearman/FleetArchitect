@@ -676,19 +676,23 @@ export function zeroMediumSources(field: MediumField): MediumSources {
  * stepper can apply the per-face advection formula `u · φ / pitch` directly in
  * extensive (kg) units.
  *
- * Returns zero when the inputs are degenerate (zero pitch or slab depth) —
- * those never occur in a real field but keep the closure total.
+ * The cell volume (`pitch² · slabDepth`, m³) is supplied by the caller rather
+ * than recomputed in the body: it is step-invariant (config-derived), so the
+ * stepper hoists the `pitch · pitch · slabDepth` multiply out of the per-cell /
+ * per-direction neighbour loop alongside its other call-invariant coefficients.
+ * The caller MUST guarantee `cellVolumeM3 > 0` and `gradRefKgPerM3 > 0`
+ * (degenerate configs never occur in a real field; the stepper collapses the
+ * old early-return into a hoisted `gradEnabled` flag). The arithmetic and
+ * operand order are identical to the previous pitch/slabDepth-signature form,
+ * so frames stay byte-identical — this is pure code motion.
  */
 export function densityGradientVelocity(
   rhoFrom: number,
   rhoTo: number,
-  pitchM: number,
-  slabDepthM: number,
+  cellVolumeM3: number,
   vMax: number,
   gradRefKgPerM3: number,
 ): number {
-  if (pitchM <= 0 || slabDepthM <= 0 || gradRefKgPerM3 <= 0) return 0;
-  const cellVolumeM3 = pitchM * pitchM * slabDepthM;
   const densityFrom = rhoFrom / cellVolumeM3;
   const densityTo = rhoTo / cellVolumeM3;
   // Linear closure: u = vMax · (ρ_from − ρ_to) / gradRef, clamped.
