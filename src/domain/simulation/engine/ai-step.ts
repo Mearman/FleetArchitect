@@ -22,10 +22,11 @@
  */
 
 import {
+  baseAiState,
   effectiveDoctrineAi,
   type TriggerContext,
 } from "@/domain/simulation/engine/ai";
-import type { ModuleKind } from "@/schema/ai";
+import type { Condition, Doctrine, ModuleKind } from "@/schema/ai";
 import type { SimShip } from "@/domain/simulation/engine/types";
 
 /** The transient AI-decision fields every SimShip is born with, before its first
@@ -74,6 +75,56 @@ function sideStrength(ships: readonly SimShip[], side: "attacker" | "defender"):
 }
 
 /**
+ * Whether a single condition tree references the `moduleDestroyed` kind,
+ * recursing through the bounded `all`/`any` combinators. The condition schema
+ * caps each combinator at four sub-conditions but permits arbitrary nesting
+ * depth, so this is a recursive scan rather than a flat check.
+ */
+function conditionUsesModuleDestroyed(condition: Condition): boolean {
+  switch (condition.kind) {
+    case "moduleDestroyed":
+      return true;
+    case "all":
+    case "any":
+      return condition.of.some(conditionUsesModuleDestroyed);
+    default:
+      return false;
+  }
+}
+
+/**
+ * Whether any of a doctrine's rules can read the destroyed-module-kinds set —
+ * i.e. whether its condition tree contains a `moduleDestroyed` kind anywhere.
+ * A doctrine's rules are static for the lifetime of a battle (`ship.doctrine`
+ * is never reassigned mid-sim, only inside test fixtures), so this is a fixed
+ * property of the doctrine object, memoised on it via a {@link WeakMap}. The
+ * first lookup pays the recursive scan; every later tick for the same doctrine
+ * hits the cache. Ships whose doctrine never uses `moduleDestroyed` — the
+ * common case across the preset corpus, where every rules array is empty or
+ * uses only formation/spatial kinds — skip the per-tick module scan and Set
+ * allocation in {@link buildContext} entirely.
+ */
+const DOCTRINE_USES_MODULE_DESTROYED = new WeakMap<Doctrine, boolean>();
+
+/** Memoised predicate (see {@link DOCTRINE_USES_MODULE_DESTROYED}). Exported so
+ *  the recursion over `all`/`any` combinators is unit-testable in isolation. */
+export function doctrineUsesModuleDestroyed(doctrine: Doctrine): boolean {
+  const cached = DOCTRINE_USES_MODULE_DESTROYED.get(doctrine);
+  if (cached !== undefined) return cached;
+  const result = doctrine.rules.some((r) =>
+    conditionUsesModuleDestroyed(r.condition),
+  );
+  DOCTRINE_USES_MODULE_DESTROYED.set(doctrine, result);
+  return result;
+}
+
+/** Shared empty sentinel for ships whose doctrine never reads destroyed kinds.
+ *  Only ever assigned to {@link TriggerContext.destroyedModuleKinds}, which the
+ *  interpreter reads via `.has` alone — never mutated — so a single shared
+ *  instance is safe. */
+const EMPTY_KINDS: ReadonlySet<ModuleKind> = new Set<ModuleKind>();
+
+/**
  * The set of module kinds with at least one destroyed module on the ship, in
  * module array order (the deterministic order modules are scanned elsewhere).
  * A kind appears once even if several of its modules are destroyed.
@@ -118,7 +169,13 @@ function buildContext(
       ship.maxStructure > 0 ? ship.structure / ship.maxStructure : 0,
     targetRange,
     targetClassification: target?.classification,
-    destroyedModuleKinds: destroyedModuleKinds(ship),
+    // Build the destroyed-kind set only when the doctrine can read it; the
+    // common case (no `moduleDestroyed` condition anywhere in the rules) passes
+    // a shared empty sentinel, skipping the O(module-count) scan and Set
+    // allocation. The sentinel is read via `.has` alone, so sharing is safe.
+    destroyedModuleKinds: doctrineUsesModuleDestroyed(ship.doctrine)
+      ? destroyedModuleKinds(ship)
+      : EMPTY_KINDS,
     outclassed,
   };
 }
@@ -139,8 +196,17 @@ export function stepAi(
   for (const ship of ships) {
     // Phantoms carry no AI of their own; leave their (default) fields.
     if (ship.phantom !== undefined) continue;
-    const ctx = buildContext(ship, byId, attackerStrength, defenderStrength);
-    const state = effectiveDoctrineAi(ship.doctrine, ctx);
+    // A doctrine with no rules evaluates to its base stance with every flag
+    // down and never reads the trigger context, so skip building it (no target
+    // lookup, hypot, or destroyed-kind scan) and go straight to the base state.
+    // Byte-identical to running an empty rules array through effectiveDoctrineAi.
+    const state =
+      ship.doctrine.rules.length > 0
+        ? effectiveDoctrineAi(
+            ship.doctrine,
+            buildContext(ship, byId, attackerStrength, defenderStrength),
+          )
+        : baseAiState(ship.doctrine.base.stance ?? "balanced");
     ship.aiHoldFire = state.holdFire;
     ship.aiFocusFire = state.focusFire;
     ship.aiRetreat = state.retreat;

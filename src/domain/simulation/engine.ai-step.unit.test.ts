@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { stepAi } from "./engine/ai-step";
-import type { DoctrineRule } from "@/schema/ai";
+import { doctrineUsesModuleDestroyed, stepAi } from "./engine/ai-step";
+import type { Condition, Doctrine, DoctrineRule } from "@/schema/ai";
 import type { SimShip } from "./engine/types";
 
 /** Minimal valid SimShip for AI-step tests. Only the fields stepAi reads are
@@ -149,5 +149,84 @@ describe("engine.ai-step", () => {
     expect(shipA.aiHoldFire).toBe(true);
     // The defender is not outclassed (its side is stronger), so it fires.
     expect(shipD.aiHoldFire).toBe(false);
+  });
+
+  describe("doctrineUsesModuleDestroyed", () => {
+    // Guards the buildContext gate: the destroyed-module-kind set is built
+    // only when this returns true, so its recursion over the condition tree
+    // (including nested all/any combinators) must be exactly correct. A
+    // false-negative would silently drop a moduleDestroyed rule's effect.
+    function doctrineWith(condition: Condition): Doctrine {
+      return { base: {}, rules: [{ condition, then: { fire: "holdFire" } }] };
+    }
+
+    it("is false for an empty rules array", () => {
+      expect(doctrineUsesModuleDestroyed({ base: {}, rules: [] })).toBe(false);
+    });
+
+    it("is false for a non-moduleDestroyed top-level condition", () => {
+      expect(
+        doctrineUsesModuleDestroyed(
+          doctrineWith({ kind: "outclassed" }),
+        ),
+      ).toBe(false);
+    });
+
+    it("is true for a top-level moduleDestroyed condition", () => {
+      expect(
+        doctrineUsesModuleDestroyed(
+          doctrineWith({ kind: "moduleDestroyed", moduleKind: "weapon" }),
+        ),
+      ).toBe(true);
+    });
+
+    it("is true when moduleDestroyed is nested inside an `all` combinator", () => {
+      expect(
+        doctrineUsesModuleDestroyed(
+          doctrineWith({
+            kind: "all",
+            of: [
+              { kind: "outclassed" },
+              { kind: "moduleDestroyed", moduleKind: "shield" },
+            ],
+          }),
+        ),
+      ).toBe(true);
+    });
+
+    it("is true when moduleDestroyed is nested inside an `any` combinator", () => {
+      expect(
+        doctrineUsesModuleDestroyed(
+          doctrineWith({
+            kind: "any",
+            of: [
+              { kind: "shieldBelow", fraction: 0.5 },
+              {
+                kind: "all",
+                of: [
+                  { kind: "outclassed" },
+                  { kind: "moduleDestroyed", moduleKind: "engine" },
+                ],
+              },
+            ],
+          }),
+        ),
+      ).toBe(true);
+    });
+
+    it("is memoised: a repeated lookup returns the cached value", () => {
+      // The same doctrine object must hit the WeakMap cache on the second call;
+      // this also confirms a cached `false` is not recomputed (which would be
+      // correct but wasteful) nor turned into `true` by a faulty fallback.
+      const doctrine = doctrineWith({
+        kind: "any",
+        of: [
+          { kind: "outclassed" },
+          { kind: "shieldBelow", fraction: 0.5 },
+        ],
+      });
+      expect(doctrineUsesModuleDestroyed(doctrine)).toBe(false);
+      expect(doctrineUsesModuleDestroyed(doctrine)).toBe(false);
+    });
   });
 });
