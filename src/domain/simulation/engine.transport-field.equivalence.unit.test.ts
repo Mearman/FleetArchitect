@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  createTransportWorkBuffers,
   TICKS_PER_SECOND,
   stepTransportField,
   stepTransportFieldReference,
@@ -225,5 +226,62 @@ describe("engine.transport-field — reference vs optimised equivalence", () => 
     // diagnostics on), proving the equivalence assertion covered the deltas.
     const sanity = stepTransportField(field, [10, 0], { diagnostics: true });
     expect(sanity.deltas.length, "diagnostics must be populated").toBe(2);
+  });
+
+  // -------------------------------------------------------------------------
+  // Fixture 5: persistent ping-pong work buffers threaded across many ticks —
+  // the production resource-step path.
+  //
+  // resource-step owns one `TransportWorkBuffers` pair per substance on
+  // ResourceState and passes it to `stepTransportField` every tick. After a tick
+  // the returned φ aliases whichever work buffer the last sub-step wrote, so the
+  // next tick the integrator must cross-copy that aliased input into the OTHER
+  // buffer (never a self-copy). This fixture reproduces that exact pattern: feed
+  // the optimised path's own output back in as the next input (so φ aliases a
+  // work buffer between ticks), and assert every tick is byte-identical to the
+  // reference (slicing) oracle run on deep-cloned inputs. The substance mixes
+  // all four terms (multi-substep diffusion + advection + source + boundary) so
+  // both even and odd sub-step counts are exercised over 60 ticks.
+  // -------------------------------------------------------------------------
+  it("threaded work buffers: byte-identical to oracle across 60 ticks", () => {
+    const substance: TransportSubstance = {
+      name: "full-with-buffers",
+      coefficient: 10, // forces multi-substep diffusion
+      maxVelocity: 5,
+      velocity: (face) => 2 * face.nx,
+      source: (cell) => (cell === 0 ? 6 / TICKS_PER_SECOND : 0),
+      nonNegative: true,
+      floor: 0,
+      boundaryFlux: (cell, phi, out) => {
+        out.cell = cell;
+        out.scalarFlux = (phi[cell] ?? 0) > 0 ? 1 : 0;
+        out.momentumX = -1;
+        out.momentumY = 0;
+      },
+    };
+    const faces: TransportFace[] = [
+      { from: 0, to: 1, nx: 1, ny: 0, area: 1, open: true, boundary: false },
+      { from: 1, to: 0, nx: -1, ny: 0, area: 1, open: true, boundary: false },
+    ];
+    const field: TransportField = { substance, faces, boundaryCells: [0] };
+
+    let refPhi: number[] = [10, 0];
+    let optPhi: number[] = [10, 0];
+    const work = createTransportWorkBuffers(optPhi.length);
+    for (let tick = 0; tick < 60; tick += 1) {
+      // Optimised path: feed its own output back in (φ aliases a work buffer),
+      // exactly as resource-step stores `state.X = result.phi`.
+      const refResult = stepTransportFieldReference(field, structuredClone(refPhi));
+      const optResult = stepTransportField(field, optPhi, undefined, work);
+      expect(optResult.phi).toEqual(refResult.phi);
+      expect(optResult.momentumX).toBe(refResult.momentumX);
+      expect(optResult.momentumY).toBe(refResult.momentumY);
+      refPhi = refResult.phi;
+      optPhi = optResult.phi;
+    }
+    // Sanity: the field evolved and the boundary cell drained, so the 60
+    // assertions were meaningful (not trivially equal because nothing happened).
+    const finalRef = stepTransportFieldReference(field, structuredClone(refPhi));
+    expect(finalRef.phi[0]!, "boundary cell drained over the run").toBeLessThan(10);
   });
 });

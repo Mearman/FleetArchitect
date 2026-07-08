@@ -62,6 +62,7 @@ import type {
   RectangularTransportGraph,
 } from "@/domain/simulation/engine/transport-graph";
 import {
+  createResourceTransportWork,
   stepTransportField,
   TRANSPORT_DT_S,
   type TransportFace,
@@ -498,7 +499,14 @@ function runResourceStep(
   if (state.scratch === undefined) {
     state.scratch = { engineThrust: new Map(), crewMap: new Map(), deckCells: new Set(), crewOrder: [] };
   }
+  // Persistent per-substance transport ping-pong buffers, reused every tick
+  // (mirrors ArenaMedium.work). Lazily built, never serialised — a checkpoint
+  // restore rebuilds state without these, and the φ arrays restore by value.
+  if (state.transportWork === undefined) {
+    state.transportWork = createResourceTransportWork(state.thermal.length);
+  }
   const scratch = state.scratch;
+  const work = state.transportWork;
 
   const graph = transportGraph(ship, state, scratch);
   const idx = makeIdx(state);
@@ -518,13 +526,11 @@ function runResourceStep(
   }
 
   // --- Thermal substance ---
-  // Heat sources (alive reactors' WASTE heat — not their electrical output;
-  // see `reactorWasteHeatWatts`, which rejects output×(1/η−1) as heat) and the
-  // per-cell heat capacity are folded into the cached graph as dense typed
-  // arrays (`graph.thermalArrays`), since reactor output and the alive set are
-  // stable across the topology window. The radiator surface is
-  // `graph.boundaryCellSet`, materialised into the same array. The thermal
-  // substance itself is cached on the graph and reused every tick.
+  // Heat sources (alive reactors' WASTE heat, not electrical output — see
+  // `reactorWasteHeatWatts`) and per-cell heat capacity are folded into the
+  // cached graph as dense typed arrays (`graph.thermalArrays`), stable across
+  // the topology window. The radiator surface is `graph.boundaryCellSet`. The
+  // thermal substance itself is cached on the graph and reused every tick.
   const thermalField: TransportField = {
     substance: graph.thermalSubstance,
     faces: graph.faces,
@@ -532,7 +538,7 @@ function runResourceStep(
     boundaryCells: graph.boundaryCells,
     boundaryCellSet: graph.boundaryCellSet,
   };
-  state.thermal = stepTransportField(thermalField, state.thermal).phi;
+  state.thermal = stepTransportField(thermalField, state.thermal, undefined, work.thermal).phi;
 
   // Gate 3 — Overheat shutdown. An alive cell over the failure threshold is
   // killed through the battle-damage death path (HPs zeroed, `alive` cleared) so
@@ -553,11 +559,10 @@ function runResourceStep(
   }
 
   // --- Propellant substance ---
-  // Engine thrust command (per-tick: throttle varies). Each alive engine's
-  // rated thrust scaled by `ship.engineThrottle`; fuel burns in proportion to
-  // the thrust genuinely produced (Gate 1 below enforces the flame-out). The
-  // exhaust NORMALS are folded into the cached graph (`graph.exhaust`) since
-  // engine facing is fixed for life; only the thrust magnitude is rebuilt here.
+  // Per-tick engine thrust command: each alive engine's rated thrust scaled by
+  // `ship.engineThrottle` (Gate 1 below enforces the flame-out). The exhaust
+  // NORMALS are folded into the cached graph (`graph.exhaust`) since engine
+  // facing is fixed for life; only the thrust magnitude is rebuilt here.
   const throttle = ship.engineThrottle;
   const engineThrust = scratch.engineThrust;
   for (const m of ship.modules) {
@@ -567,10 +572,10 @@ function runResourceStep(
       engineThrust.set(i, m.effect.thrust * throttle);
     }
   }
-  // Pipes: every open interior face is part of the fuel manifold. The
-  // pre-built set from the cached graph avoids O(n_faces) string allocations
-  // per tick. The propellant substance is cached on the graph and captures
-  // `engineThrust` by reference, so it reads the live per-tick thrust map.
+  // Pipes: every open interior face is part of the fuel manifold. The pre-built
+  // set from the cached graph avoids O(n_faces) string allocations per tick. The
+  // propellant substance is cached on the graph and captures `engineThrust` by
+  // reference, so it reads the live per-tick thrust map.
   const propellantField: TransportField = {
     substance: graph.propellantSubstance,
     faces: graph.faces,
@@ -578,7 +583,7 @@ function runResourceStep(
     boundaryCells: graph.boundaryCells,
     boundaryCellSet: graph.boundaryCellSet,
   };
-  state.propellant = stepTransportField(propellantField, state.propellant).phi;
+  state.propellant = stepTransportField(propellantField, state.propellant, undefined, work.propellant).phi;
 
   // Gate 1 — Dry-tank flame-out. An alive engine commanded to thrust this tick
   // (`throttle > 0`) whose cell holds no fuel is marked `fuelStarved` (movement/
@@ -606,22 +611,20 @@ function runResourceStep(
       if (i !== undefined) crewMap.set(i, (crewMap.get(i) ?? 0) + 1);
     }
   }
-  // Deck mask: alive deck cells (pressurised compartments). Advection flows
-  // only between two decks. NOT folded into the cached graph: the overheat pass
-  // above can kill a deck cell mid-tick AFTER the graph is fetched, and such a
-  // cell must be excluded from THIS tick's advection — only a per-tick build
-  // reflects that. Built in fixed module-array order.
+  // Deck mask: alive deck cells (advection flows only between two decks). NOT
+  // folded into the cached graph because the overheat pass above can kill a deck
+  // cell mid-tick AFTER the graph is fetched — only a per-tick build reflects
+  // that. Built in fixed module-array order.
   const deckCells = scratch.deckCells;
   for (const m of ship.modules) {
     if (!m.alive || !isDeck(m)) continue;
     const i = idx(m);
     if (i !== undefined) deckCells.add(i);
   }
-  // Vents: the live vent mask from the alive-cell topology (empty for an
-  // intact, sealed hull). The atmosphere substance is cached on the graph and
-  // captures `crewMap`/`deckCells` by reference, so it reads the live per-tick
-  // contents. The `breached` flag it baked in at build time is a pure function
-  // of `graph.ventMask`, recomputed exactly when the graph is rebuilt.
+  // Vents: the live vent mask from the alive-cell topology (empty for an intact,
+  // sealed hull). The atmosphere substance is cached on the graph and captures
+  // `crewMap`/`deckCells` by reference; its `breached` flag is a pure function
+  // of `graph.ventMask`, recomputed when the graph is rebuilt.
   const atmosphereField: TransportField = {
     substance: graph.atmosphereSubstance,
     faces: graph.faces,
@@ -629,7 +632,7 @@ function runResourceStep(
     boundaryCells: graph.boundaryCells,
     boundaryCellSet: graph.boundaryCellSet,
   };
-  const atmosphereResult = stepTransportField(atmosphereField, state.atmosphere);
+  const atmosphereResult = stepTransportField(atmosphereField, state.atmosphere, undefined, work.atmosphere);
   state.atmosphere = atmosphereResult.phi;
 
   // Vent recoil: net reaction force from gas escaping every breach, applied at
@@ -712,14 +715,11 @@ function runResourceStep(
   const bufferBefore = state.powerBuffer.energy;
   state.powerBuffer = stepEnergyBuffer(state.powerBuffer, net);
 
-  // Gate 2 — Brownout enforcement. The buffer rides through a transient draw
-  // spike, but once stored charge cannot cover the reactor-vs-draw shortfall the
-  // grid sheds load. `stepEnergyBuffer` clamps the buffer non-negative, so the
-  // deficit is read from the energy balance: over `dt` seconds the grid delivers
-  // `reactorOutput·dt + storedCharge` J against `draw·dt` J demand. The shortfall
-  // in watts is `-(bufferBefore/dt + net)` — positive only when charge plus
-  // reactor output fall short of the draw. Shed in fixed priority order until
-  // the recovered draw covers it.
+  // Gate 2 — Brownout enforcement. The buffer rides through transient spikes,
+  // but once stored charge cannot cover the reactor-vs-draw shortfall the grid
+  // sheds load. The deficit (W) is `-(bufferBefore/dt + net)` — positive only
+  // when charge plus reactor output fall short of draw·dt over the tick. Shed
+  // in fixed priority order until the recovered draw covers it.
   const deficitWatts = -(bufferBefore / TICK_DURATION_SECONDS + net);
   if (deficitWatts > 0) shedBrownoutLoad(ship, deficitWatts);
 

@@ -1,9 +1,7 @@
 /**
  * Mutable engine-internal types: the per-ship / per-module / per-entity
- * runtime state the simulation carries across ticks.
- *
- * Leaf module: imports only schema/domain types, so no cycle can originate
- * here.
+ * runtime state the simulation carries across ticks. Imports only types (no
+ * runtime values), so no cycle can originate here.
  */
 
 import type { ShipClassification } from "@/schema/armor";
@@ -16,6 +14,7 @@ import type { UNREACHABLE } from "./config";
 import type { AnchorScalingMeta } from "./effect-scaling";
 import type { EnergyBuffer } from "./power";
 import type { RectangularTransportGraph } from "./transport-graph";
+import type { ResourceTransportWork } from "./transport-field";
 
 /**
  * Per-ship resource state (Phase 12). The three transport-field φ arrays —
@@ -40,17 +39,19 @@ export interface ResourceState {
   /**
    * Per-cell thermal heat capacity (J/K), keyed by dense φ index — `cell mass ×
    * the faction material's specific heat`. The thermal field divides each watt
-   * source and watt radiative flux by this to get a kelvin-per-second rate. A
-   * cell's mass is fixed for the battle (damage destroys a cell, it does not
-   * lighten it) and the index map is fixed, so this is built ONCE in
-   * `makeResourceState` and reused every tick rather than rebuilt — the thermal
-   * step would otherwise rebuild an n-entry map per ship per tick, a measurable
-   * cost on capital ships with thousands of cells.
+   * source and radiative flux by this to get a kelvin-per-second rate. Built
+   * ONCE in `makeResourceState` (a cell's mass is fixed for the battle) and
+   * reused every tick rather than rebuilt.
    */
   heatCapacity: ReadonlyMap<number, number>;
   /** Pooled per-tick scratch (see {@link ResourceScratch}); cleared, not
    *  reallocated, each call. Lazily allocated; never serialised. */
   scratch?: ResourceScratch;
+  /** Persistent per-substance transport ping-pong buffers, reused every tick
+   *  so the FTCS integrator allocates nothing per call (mirrors
+   *  `ArenaMedium.work`). Lazily allocated; never serialised — a checkpoint
+   *  restore rebuilds ResourceState without these. */
+  transportWork?: ResourceTransportWork;
 }
 
 /** Reusable per-tick scratch pooled on `ResourceState.scratch`, cleared (not
