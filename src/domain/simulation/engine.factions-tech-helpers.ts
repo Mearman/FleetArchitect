@@ -8,7 +8,7 @@
 import { ACCEL_PER_TICK_FROM_SI } from "@/domain/simulation/types";
 import type { BattleInputs, CombatShip, ResolvedModule } from "@/domain/simulation/types";
 import type { CellEdges } from "@/schema/grid";
-import type { ModuleEffect, WeaponEffect } from "@/schema/module";
+import type { ModuleEffect, WeaponEffect, WeaponType } from "@/schema/module";
 import type { ShipClassification } from "@/schema/armor";
 import type { Doctrine } from "@/schema/ai";
 import type { ShipStats } from "@/domain/stats";
@@ -609,18 +609,26 @@ export function targetDummy(opts: {
    *  multiple shots before dying, for fixture patterns that count landed hits
    *  rather than structure decrements. */
   absorbingSubstrateHp?: number;
+  /** Substrate HP of the off-axis bridge, keeper, and shield cells — the
+   *  critical cells that must survive so the dummy stays commanded and on the
+   *  board. Defaults to 99999 (the original value, fine for small-scale tests).
+   *  Pass a catalogue-scale value (e.g. 1e14) when fielding the dummy against
+   *  real preset ships whose weapons deal 1e6–1e12 damage per hit, so a stray
+   *  off-axis hit cannot break the command path during a short battle. */
+  criticalHp?: number;
 }): CombatShip {
   const prefix = opts.id;
   const shieldCapacity = opts.shield ?? 0;
   const absorbingCount = opts.absorbingCells ?? 5;
   const absorbingSurfaceHp = opts.absorbingSurfaceHp ?? 0;
   const absorbingSubstrateHp = opts.absorbingSubstrateHp ?? 0;
+  const criticalHp = opts.criticalHp ?? 99999;
   const modules: ResolvedModule[] = [
     // Bridge one row off the primary (x) axis: alive and high-HP so the
     // ship never dies from losing its on-axis cells. At row 1 its world-y
     // is one cell off the line of fire, so `penetrationPath` excludes it.
     {
-      ...moduleOf(`${prefix}-cmd`, { kind: "hull" }, 0, 1, 99999, 5, 0),
+      ...moduleOf(`${prefix}-cmd`, { kind: "hull" }, 0, 1, criticalHp, 5, 0),
       command: true,
     },
     // A high-HP keeper cell one row further off-axis, edge-adjacent to the
@@ -628,7 +636,7 @@ export function targetDummy(opts: {
     // connected to the keeper, so the survivor is a single connected
     // component (no break-apart split) and `hasAliveCommand` keeps the
     // ship on the board.
-    moduleOf(`${prefix}-keep`, { kind: "hull" }, 0, 2, 99999, 5, 0),
+    moduleOf(`${prefix}-keep`, { kind: "hull" }, 0, 2, criticalHp, 5, 0),
   ];
   // On-axis hull cells along the primary (row 0) axis. These are the
   // cells a projectile travelling along the ship's facing finds. Defaults
@@ -661,7 +669,7 @@ export function targetDummy(opts: {
         },
         -1,
         1,
-        99999,
+        criticalHp,
         5,
         0,
       ),
@@ -690,6 +698,100 @@ export function targetDummy(opts: {
     position: { x: opts.x, y: opts.y },
     facing: opts.facing ?? Math.PI,
     doctrine: ordersToDoctrine(opts.orders),
+    classification: opts.classification ?? "frigate",
+    modules,
+    outline: moduleOutline(modules),
+  };
+}
+
+/** The {@link fixedTurret}'s weapon defaults, scaled to the catalogue's SI
+ *  combat magnitudes. The functionality suite overrides `damage`/`tracking` per
+ *  ship (interceptor pools ~1e9, dreadnoughts ~1e13); these are fall-backs. */
+const TURRET_RANGE_M = 40_000;
+const TURRET_DAMAGE_J = 1e8;
+const TURRET_TRACKING = 2;
+function turretWeapon(
+  kind: WeaponType,
+  damage: number = TURRET_DAMAGE_J,
+  tracking: number = TURRET_TRACKING,
+): WeaponEffect {
+  if (kind === "beam") return beam({ damage, cooldown: 3, range: TURRET_RANGE_M });
+  return {
+    kind: "weapon", weaponType: kind, damage, range: TURRET_RANGE_M, cooldown: 3,
+    projectileSpeed: 15_000, projectileMass: 0.5, tracking, shieldPiercing: 0,
+    armourPiercing: 0, spread: 0, facing: 0, powered: false, guided: false,
+    thrust: 0, burnTicks: 0,
+  };
+}
+
+/** Build a fixed-turret CombatShip: {@link targetDummy}'s durable stationary
+ *  body (off-axis bridge + keeper) extended with an omni sensor, a power
+ *  reactor, and a catalogue-scale turreted weapon the engine AI fires at the
+ *  attacker — exercising the ship's defence (PD interception, shield
+ *  absorption, survival). The weapon is a full-traverse turret
+ *  (`turretArc: π`, `turretTurnRate: 2π`) so it bears on the ship wherever it
+ *  drifts. All fixture cells carry a very large HP pool so a hit from the ship
+ *  under test (catalogue damage ~1e6–1e12) cannot break the command or power
+ *  path during a short battle. `facing` defaults to π (toward decreasing x,
+ *  where the attacker sits), matching targetDummy. */
+const TURRET_CELL_HP = 1e14;
+export function fixedTurret(opts: {
+  id: string;
+  side: "attacker" | "defender";
+  x: number;
+  y: number;
+  facing?: number;
+  structure?: number;
+  /** Weapon kind the turret mounts. Defaults to `cannon`. */
+  weaponKind?: WeaponType;
+  /** Per-hit damage. Override per ship so the turret dents a shield without
+   *  one-shotting the hull — small interceptors have ~1e9 HP pools, dreadnoughts
+   *  ~1e13, so a single fixed value can't fit both. Defaults to 1e8. */
+  weaponDamage?: number;
+  /** Projectile homing rate. Higher values hit reliably (the functionality
+   *  suite uses a high value so the cannon actually connects to exercise shield
+   *  absorption). Defaults to 2. */
+  weaponTracking?: number;
+  classification?: ShipClassification;
+}): CombatShip {
+  const prefix = opts.id;
+  const weapon = turretWeapon(
+    opts.weaponKind ?? "cannon",
+    opts.weaponDamage,
+    opts.weaponTracking,
+  );
+  // Bridge + keeper off-axis (durable body), an on-axis hull joiner
+  // 4-connecting the bridge to the equipment row, then sensor / reactor /
+  // weapon along row 0 — one connected component (no opening-tick split).
+  // detectionRange covers any deployment gap the resolver produces.
+  const modules: ResolvedModule[] = [
+    { ...moduleOf(`${prefix}-cmd`, { kind: "hull" }, 0, 1, TURRET_CELL_HP, 5, 0), command: true },
+    moduleOf(`${prefix}-keep`, { kind: "hull" }, 0, 2, TURRET_CELL_HP, 5, 0),
+    moduleOf(`${prefix}-join`, { kind: "hull" }, 0, 0, TURRET_CELL_HP, 5, 0),
+    moduleOf(
+      `${prefix}-sen`,
+      { kind: "sensor", sensorType: "omni", arc: Math.PI, bearing: 0, detectionRange: 50_000, nebulaImmune: false },
+      1, 0, TURRET_CELL_HP, 5, 0,
+    ),
+    moduleOf(`${prefix}-pwr`, { kind: "power", output: 9999 }, 2, 0, TURRET_CELL_HP, 5, 0),
+    { ...moduleOf(`${prefix}-wpn`, weapon, 3, 0, TURRET_CELL_HP, 5, 0), turretArc: Math.PI, turretTurnRate: Math.PI * 2 },
+  ];
+  const stats: ShipStats = baseStats({
+    mass: 10,
+    structure: opts.structure ?? 1e14,
+    thrust: 0,
+    turnRate: 0,
+    weapons: [{ slotId: `${prefix}-wpn`, effect: weapon }],
+  });
+  return {
+    instanceId: opts.id,
+    designId: `design-${opts.id}`,
+    faction: "Terran",
+    side: opts.side,
+    stats,
+    position: { x: opts.x, y: opts.y },
+    facing: opts.facing ?? Math.PI,
+    doctrine: ordersToDoctrine(undefined),
     classification: opts.classification ?? "frigate",
     modules,
     outline: moduleOutline(modules),
