@@ -15,7 +15,7 @@ import { ARRIVAL_CLOSING_SPEED_MPS, SIM } from "./config";
 import { availableThrust, maxCommandableTorque } from "./physics";
 import type { ThrustMode } from "./physics";
 import { angleDifference, angularAccelPerTick, anomalyAdjustedRange } from "./setup";
-import { effectiveSensorRange, sensorUnitsOf } from "./sensors";
+import { effectiveSensorRange } from "./sensors";
 import type { DeploymentReference } from "./movement";
 import { effectiveStance, isRetreating } from "./movement";
 import { isHoldRange, rangeBand } from "./doctrine";
@@ -37,8 +37,18 @@ import type { SimShip } from "./types";
  */
 function sightReach(ship: SimShip): number {
   let reach = SIM.visualLosRadius;
-  for (const unit of sensorUnitsOf(ship)) {
-    const r = effectiveSensorRange(unit);
+  if (ship.modules === undefined) return reach;
+  // Iterate ship.modules directly instead of allocating a fresh SensorUnit[]
+  // (and one wrapper object per alive manned sensor) via sensorUnitsOf each
+  // tick: sightReach only takes a max of effectiveSensorRange and discards the
+  // units, so the wrapper buys nothing. Guards mirror sensorUnitsOf exactly,
+  // preserving module-array iteration order.
+  for (const m of ship.modules) {
+    if (!m.alive) continue;
+    const effect = m.effect;
+    if (effect.kind !== "sensor") continue;
+    if (m.crewRequired > 0 && !m.manned) continue;
+    const r = effectiveSensorRange(effect, m);
     if (r > reach) reach = r;
   }
   return reach;

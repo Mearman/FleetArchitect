@@ -50,12 +50,13 @@ export function sensorUnitsOf(ship: SimShip): SensorUnit[] {
   return out;
 }
 
-/** Effective detection range of a sensor unit. Variable units interpolate
- *  between their range bounds using the per-instance `sensorRangeSetting`
- *  (a longer range trades down the arc; see `effectiveSensorArc`); every other
- *  type uses the static effect range. */
-export function effectiveSensorRange(unit: SensorUnit): number {
-  const { effect, module } = unit;
+/** Effective detection range of a sensor. Variable units interpolate between
+ *  their range bounds using the per-instance `sensorRangeSetting` (a longer
+ *  range trades down the arc; see `effectiveSensorArc`); every other type uses
+ *  the static effect range. Takes the raw `(effect, module)` so callers that
+ *  iterate `ship.modules` directly (without building a `SensorUnit` wrapper)
+ *  share one implementation. */
+export function effectiveSensorRange(effect: SensorEffect, module: SimModule): number {
   if (effect.sensorType !== "variable") return effect.detectionRange;
   const minR = effect.minRange ?? effect.detectionRange;
   const maxR = effect.maxRange ?? effect.detectionRange;
@@ -64,36 +65,39 @@ export function effectiveSensorRange(unit: SensorUnit): number {
   return Math.max(minR, Math.min(maxR, desired));
 }
 
-/** Effective half-arc of a sensor unit. Variable units trade arc against range:
- *  at minimum range the arc is widest (`maxArc`), at maximum range narrowest
+/** Effective half-arc of a sensor. Variable units trade arc against range: at
+ *  minimum range the arc is widest (`maxArc`), at maximum range narrowest
  *  (`minArc`), interpolating linearly with the chosen range. Every other type
  *  uses the static effect arc. */
-export function effectiveSensorArc(unit: SensorUnit): number {
-  const { effect } = unit;
+export function effectiveSensorArc(effect: SensorEffect, module: SimModule): number {
   if (effect.sensorType !== "variable") return effect.arc;
   const minR = effect.minRange ?? effect.detectionRange;
   const maxR = effect.maxRange ?? effect.detectionRange;
   const minA = effect.minArc ?? effect.arc;
   const maxA = effect.maxArc ?? effect.arc;
-  const range = effectiveSensorRange(unit);
+  const range = effectiveSensorRange(effect, module);
   const span = maxR - minR;
   const t = span > 0 ? (range - minR) / span : 0;
   return maxA + (minA - maxA) * t;
 }
 
-/** World-space bearing (radians) a sensor unit's cone is centred on: its
- *  ship-local mount bearing rotated by the ship's facing. */
-export function effectiveSensorBearing(unit: SensorUnit): number {
-  return unit.module.sensorBearing + unit.ship.facing;
+/** World-space bearing (radians) a sensor's cone is centred on: its ship-local
+ *  mount bearing rotated by the ship's facing. */
+export function effectiveSensorBearing(module: SimModule, ship: SimShip): number {
+  return module.sensorBearing + ship.facing;
 }
 
-/** Effective range of a sensor unit after anomaly attenuation. In a nebula a
+/** Effective range of a sensor after anomaly attenuation. In a nebula a
  *  non-immune sensor's range is scaled by `nebulaSensorFactor`; an immune one
  *  (active LIDAR / gravimetric) keeps its full range. */
-export function attenuatedSensorRange(unit: SensorUnit, anomalies: readonly BattleAnomalyKind[]): number {
-  const range = effectiveSensorRange(unit);
+export function attenuatedSensorRange(
+  effect: SensorEffect,
+  module: SimModule,
+  anomalies: readonly BattleAnomalyKind[],
+): number {
+  const range = effectiveSensorRange(effect, module);
   if (!hasAnomaly(anomalies, "nebula")) return range;
-  return unit.effect.nebulaImmune ? range : range * SIM.nebulaSensorFactor;
+  return effect.nebulaImmune ? range : range * SIM.nebulaSensorFactor;
 }
 
 /** Alive comms modules on a ship, in module-array order. */
