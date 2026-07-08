@@ -111,15 +111,39 @@ export function applyModuleDamage(
     return;
   }
 
-  // Nearest-alive fallback (hitscan / legacy).
-  while (remaining > 0) {
-    const target = nearestAliveModule(ship, local);
-    if (target === undefined) {
-      spillToStructure(ship, remaining, armourPiercing);
-      return;
+  // Nearest-alive fallback (hitscan / legacy, or any no-path impact). The prior
+  // loop re-ran nearestAliveModule per overflow step, re-scanning the whole
+  // module array each time (O(K x M) for a hit spilling through K modules).
+  // damageCell only mutates the cell it is passed, so no module other than the
+  // one being damaged flips alive mid-call; the alive set captured once is
+  // stable and can be walked in selection order without a rescan per step.
+  if (ship.modules !== undefined) {
+    if (local === undefined) {
+      // No impact point: nearestAliveModule returns the first alive module in
+      // array order, so a single in-order walk (skipping dead) reproduces the
+      // exact selection the old repeated rescan produced.
+      for (const m of ship.modules) {
+        if (remaining <= 0) return;
+        if (!m.alive) continue;
+        remaining = damageCell(m, remaining, armourPiercing, eFrac, pFrac);
+      }
+    } else {
+      // First target via one linear scan, so a hit absorbed by the nearest
+      // module pays no sort. Only when it spills onward do we materialise the
+      // distance order once and advance along it, replacing the per-step rescan.
+      const target = nearestAliveModule(ship, local);
+      if (target !== undefined) {
+        remaining = damageCell(target, remaining, armourPiercing, eFrac, pFrac);
+        if (remaining > 0) {
+          for (const m of aliveModulesByDistance(ship.modules, local)) {
+            if (remaining <= 0) return;
+            remaining = damageCell(m, remaining, armourPiercing, eFrac, pFrac);
+          }
+        }
+      }
     }
-    remaining = damageCell(target, remaining, armourPiercing, eFrac, pFrac);
   }
+  if (remaining > 0) spillToStructure(ship, remaining, armourPiercing);
 }
 
 /** Apply damage to a cell via two streams meeting at the substrate, returning
@@ -215,11 +239,12 @@ export function directionalShieldFor(
 }
 
 /** The alive module whose cell is nearest the given local point (or the
- *  first alive module in array order when there's no impact point). Iterates
- *  `ship.modules` in place rather than allocating a filtered copy, since this
- *  runs per beam/hitscan hit; dead modules are skipped, and the strict `<`
- *  comparison preserves the original "first wins" tie-break on equal distances
- *  (same array order, same selected module). */
+ *  first alive module in array order when there's no impact point). Used for the
+ *  first target of a no-path impact; the subsequent overflow walk is handled by
+ *  `aliveModulesByDistance`, which materialises the distance order once instead
+ *  of re-scanning per step. Iterates `ship.modules` in place rather than
+ *  allocating a filtered copy; the strict `<` comparison preserves the original
+ *  "first wins" tie-break on equal distances (same array order, same module). */
 export function nearestAliveModule(
   ship: SimShip,
   local: { x: number; y: number } | undefined,
@@ -242,6 +267,32 @@ export function nearestAliveModule(
     }
   }
   return best;
+}
+
+/** The currently-alive modules ordered by squared distance to `local`, with
+ *  ties broken by original array order. Materialised once per spilling no-path
+ *  impact so the overflow walk advances along the same selection order that
+ *  repeated `nearestAliveModule` calls would have produced, without re-scanning
+ *  every module per step. The explicit `<`/`>` comparator matches
+ *  `nearestAliveModule`'s strict-< "first wins" behaviour exactly, and
+ *  `Array.prototype.sort`'s stability (ES2019) preserves array order on equal
+ *  distances — so the order is byte-identical to the prior per-step rescan. */
+function aliveModulesByDistance(
+  modules: readonly SimModule[],
+  local: { x: number; y: number },
+): SimModule[] {
+  const alive: SimModule[] = [];
+  for (const m of modules) {
+    if (m.alive) alive.push(m);
+  }
+  alive.sort((a, b) => {
+    const da = (a.x - local.x) ** 2 + (a.y - local.y) ** 2;
+    const db = (b.x - local.x) ** 2 + (b.y - local.y) ** 2;
+    if (da < db) return -1;
+    if (da > db) return 1;
+    return 0;
+  });
+  return alive;
 }
 
 /**
