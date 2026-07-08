@@ -28,7 +28,7 @@ import {
   sensorGain,
 } from "./em-reception";
 import { DAZZLE_THRESHOLD_MULT } from "./em-anchors";
-import { contactThreat, effectiveSensorRange, sensorUnitsOf } from "./sensors";
+import { contactThreat, effectiveSensorRange } from "./sensors";
 import type { SensorUnit } from "./sensors";
 import type { Contact, SimShip } from "./types";
 import type { AwarenessScratch } from "./awareness";
@@ -153,7 +153,11 @@ export function buildDirectContacts(
     }
     const enemies =
       observer.side === "attacker" ? enemiesBySide.attacker : enemiesBySide.defender;
-    const observerSensors = sensorUnitsOf(observer);
+    // Precomputed once per observer per tick by computeAwareness and shared
+    // with the medium-reception pass. `observer` is drawn from `alive`, and
+    // `scratch.sensorsByShip` is built from that same `alive` set, so the entry
+    // is always present; contents/order are identical to a fresh sensorUnitsOf.
+    const observerSensors = scratch.sensorsByShip.get(observer.instanceId)!;
     const observerSpeedMag = earlyOut
       ? Math.sqrt(observer.velX * observer.velX + observer.velY * observer.velY)
       : 0;

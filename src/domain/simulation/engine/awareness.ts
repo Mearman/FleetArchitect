@@ -15,8 +15,8 @@ import { SATURATION_DECAY_FACTOR } from "./em-anchors";
 import { collectMediumEmissions } from "./medium-emissions";
 import type { Emission } from "./emissions";
 import type { ArenaMedium } from "./medium-setup";
-import type { CommsLink, CommsUnit } from "./sensors";
-import { aimDishes, commsUnitOperable, commsUnitsOf, linkForms, sensorUnitsOf } from "./sensors";
+import type { CommsLink, CommsUnit, SensorUnit } from "./sensors";
+import { aimDishes, commsUnitOperable, commsUnitsOf, fillSensorUnits, linkForms } from "./sensors";
 import type { Contact, GhostContact, SimShip } from "./types";
 import { buildDirectContacts } from "./awareness-direct";
 
@@ -48,6 +48,12 @@ export interface AwarenessScratch {
   sideByObserver: Map<string, "attacker" | "defender">;
   clusterParent: Map<string, string>;
   clusterGroups: Map<string, string[]>;
+  // Per-observer sensor units, built once per tick, shared by the direct and
+  // medium passes (each previously called `sensorUnitsOf` independently).
+  sensorsByShip: Map<string, SensorUnit[]>;
+  // Per-ship final-awareness Map, cleared-and-reused each tick (replaces a
+  // fresh `new Map` per ship per tick in refreshGhostsAndAwareness).
+  awarenessByShip: Map<string, Map<string, Contact>>;
 }
 
 export function freshAwarenessScratch(): AwarenessScratch {
@@ -70,6 +76,8 @@ export function freshAwarenessScratch(): AwarenessScratch {
     sideByObserver: new Map(),
     clusterParent: new Map(),
     clusterGroups: new Map(),
+    sensorsByShip: new Map(),
+    awarenessByShip: new Map(),
   };
 }
 
@@ -134,8 +142,20 @@ export function computeAwareness(
   //     ({@link SATURATION_DECAY_FACTOR}) uniformly. Order-independent (each
   //     ship decays from its own carried value), but done in the canonical
   //     instanceId order for consistency with the rest of the phase.
+  // Per-observer sensor units, built once this tick and shared between the
+  // direct (b) and medium (g) passes (each previously called `sensorUnitsOf`
+  // independently with identical results). Inner array pooled by instanceId via
+  // `fillSensorUnits`, mirroring `directContactLists`; lossless, halves the scan.
+  const sensorsByShip = scr.sensorsByShip;
+  sensorsByShip.clear();
   for (const ship of alive) {
     ship.sensorSaturation *= SATURATION_DECAY_FACTOR;
+    let pooled = sensorsByShip.get(ship.instanceId);
+    if (pooled === undefined) {
+      pooled = [];
+      sensorsByShip.set(ship.instanceId, pooled);
+    }
+    fillSensorUnits(ship, pooled);
   }
   // Per-observer dazzle accumulator: the total boost this tick's received
   // emissions contribute, added to the (already-decayed) saturation AFTER the
@@ -238,7 +258,13 @@ export function computeAwareness(
   // (f) Per-ship awareness + ghost memory. The live pool drives ghost refresh;
   //     the merged awareness (live ∪ surviving ghosts) is what targeting reads.
   for (const ship of alive) {
-    refreshGhostsAndAwareness(ship, liveByShip.get(ship.instanceId) ?? new Map<string, Contact>(), byId, scr.ghostById);
+    refreshGhostsAndAwareness(
+      ship,
+      liveByShip.get(ship.instanceId) ?? new Map<string, Contact>(),
+      byId,
+      scr.ghostById,
+      scr.awarenessByShip,
+    );
   }
   // A ship that died is not in `alive`; its ghosts/awareness are irrelevant
   // (it never targets again) and its stale awareness map is harmless.
@@ -256,6 +282,7 @@ export function computeAwareness(
     occluders,
     anomalies,
     dazzleAccum,
+    sensorsByShip,
     precomputedEmissions,
   );
 
@@ -288,6 +315,10 @@ function collectMediumContacts(
   occluders: readonly Disc[],
   anomalies: readonly BattleAnomalyKind[],
   dazzleAccum: Map<string, number>,
+  /** Per-observer sensor units precomputed by {@link computeAwareness} and
+   *  shared with the direct-detection pass. Each observer in `alive` has an
+   *  entry; contents/order match `sensorUnitsOf`. */
+  sensorsByShip: ReadonlyMap<string, SensorUnit[]>,
   precomputedEmissions?: readonly Emission[],
 ): Contact[] {
   if (medium === undefined || tick === undefined) return [];
@@ -295,9 +326,9 @@ function collectMediumContacts(
   if (mediumEmissions.length === 0) return [];
   const out: Contact[] = [];
   for (const observer of alive) {
-    // The observer's sensor set is constant across every medium emission this
-    // tick — gather once per observer and thread it into mediumReceives.
-    const observerSensors = sensorUnitsOf(observer);
+    // Precomputed per observer this tick; `observer` ∈ `alive` and
+    // `sensorsByShip` is built from that set, so the entry is always present.
+    const observerSensors = sensorsByShip.get(observer.instanceId)!;
     for (const emission of mediumEmissions) {
       // An occluder between the observer and the radiating cell blocks the
       // light path, exactly as it blocks continuous ship-ship reception.
@@ -544,6 +575,12 @@ export function refreshGhostsAndAwareness(
    * one-call Map. Omitted → fresh allocation (standalone/test).
    */
   ghostByIdScratch?: Map<string, GhostContact>,
+  /** Reusable per-ship final-awareness Map (on
+   *  `EngineState.awarenessScratch.awarenessByShip`), cleared and refilled each
+   *  tick in the same insertion order (surviving ghosts by enemyId, then live
+   *  contacts) as the discarded `new Map`, then assigned back onto
+   *  `ship.awareness`. Omitted → fresh allocation (standalone/test). */
+  awarenessByShipScratch?: Map<string, Map<string, Contact>>,
 ): void {
   const ghostById = ghostByIdScratch ?? new Map<string, GhostContact>();
   ghostById.clear();
@@ -578,8 +615,20 @@ export function refreshGhostsAndAwareness(
   );
   ship.ghosts = surviving;
 
-  // Final awareness = live ∪ ghost last-known (live overrides ghost).
-  const finalAwareness = new Map<string, Contact>();
+  // Final awareness = live ∪ ghost last-known (live overrides ghost). The Map
+  // is pooled per ship, cleared+refilled each tick in the same insertion order
+  // (surviving ghosts by enemyId, then live contacts) so iteration order is
+  // byte-identical to the discarded fresh Map; the same instance is assigned
+  // back onto `ship.awareness`.
+  let finalAwareness = awarenessByShipScratch?.get(ship.instanceId);
+  if (finalAwareness === undefined) {
+    finalAwareness = new Map<string, Contact>();
+    if (awarenessByShipScratch !== undefined) {
+      awarenessByShipScratch.set(ship.instanceId, finalAwareness);
+    }
+  } else {
+    finalAwareness.clear();
+  }
   for (const g of surviving) {
     finalAwareness.set(g.enemyId, {
       enemyId: g.enemyId,
@@ -615,14 +664,28 @@ export function buildAwarenessSnapshot(
   // Occluders: emit verbatim (computeOccluders already returns a fixed order).
   const snapOccluders = occluders.map((d) => ({ x: d.x, y: d.y, r: d.r }));
 
+  // Same-side partitions of `alive` and `links`, each built once in a single
+  // pass instead of a `.filter` per side. Push-partitioning retains original
+  // order (identical to `.filter`), so union-find and byInstance orders match.
+  const attackerShips: SimShip[] = [];
+  const defenderShips: SimShip[] = [];
+  const attackerLinks: CommsLink[] = [];
+  const defenderLinks: CommsLink[] = [];
+  for (const s of alive) {
+    (s.side === "attacker" ? attackerShips : defenderShips).push(s);
+  }
+  for (const l of links) {
+    (l.side === "attacker" ? attackerLinks : defenderLinks).push(l);
+  }
   // Clusters per side from the link union-find.
   const clusters: AwarenessSnapshot["clusters"] = [];
   const sides: ("attacker" | "defender")[] = ["attacker", "defender"];
   for (const side of sides) {
-    const sideShips = alive.filter((s) => s.side === side);
-    const sideLinks = links.filter((l) => l.side === side);
+    const sideShips = side === "attacker" ? attackerShips : defenderShips;
+    const sideLinks = side === "attacker" ? attackerLinks : defenderLinks;
     const groups = clusterComponents(sideShips, sideLinks, scratch);
-    const byInstance = new Map(sideShips.map((s) => [s.instanceId, s]));
+    const byInstance = new Map<string, SimShip>();
+    for (const s of sideShips) byInstance.set(s.instanceId, s);
     for (const memberIds of groups.values()) {
       const sortedMembers = [...memberIds].sort((p, q) => (p < q ? -1 : p > q ? 1 : 0));
       const id = `${side}|${sortedMembers.join(",")}`;

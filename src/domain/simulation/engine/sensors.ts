@@ -37,7 +37,20 @@ export type CoverageShape = AwarenessSnapshot["clusters"][number]["coverage"][nu
  *  a crewless sensor is always manned. */
 export function sensorUnitsOf(ship: SimShip): SensorUnit[] {
   const out: SensorUnit[] = [];
-  if (ship.modules === undefined) return out;
+  fillSensorUnits(ship, out);
+  return out;
+}
+
+/** Fill `out` (length reset to 0 first) with the alive sensor units of `ship`,
+ *  in (col, row) module-array order — the same scan {@link sensorUnitsOf}
+ *  performs. Factored out so the awareness phase can pool one output array per
+ *  observer per tick (on `AwarenessScratch.sensorsByShip`) and share it between
+ *  the direct-detection and medium-reception passes, instead of each pass
+ *  allocating and scanning independently. The produced contents and order are
+ *  identical to a fresh {@link sensorUnitsOf} call. */
+export function fillSensorUnits(ship: SimShip, out: SensorUnit[]): void {
+  out.length = 0;
+  if (ship.modules === undefined) return;
   for (const m of ship.modules) {
     if (!m.alive) continue;
     const effect = m.effect;
@@ -47,7 +60,6 @@ export function sensorUnitsOf(ship: SimShip): SensorUnit[] {
     if (m.crewRequired > 0 && !m.manned) continue;
     out.push({ ship, module: m, effect });
   }
-  return out;
 }
 
 /** Effective detection range of a sensor. Variable units interpolate between
