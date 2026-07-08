@@ -48,7 +48,7 @@
  * skipping near-zero cells.
  */
 
-import { EXCITATION_DECAY_TIMESCALE_S } from "./medium-field";
+import { EXCITATION_DECAY_TIMESCALE_S, type MediumField } from "./medium-field";
 import { EM_HULL_AMBIENT_EMISSION } from "./em-anchors";
 import type { Emission } from "./emissions";
 import type { ArenaMedium } from "./medium-setup";
@@ -215,10 +215,39 @@ export function mediumCellSourceId(col: number, row: number): string {
  * mutation, fixed row-major order — two same-seed runs produce byte-identical
  * emission sets.
  */
+/**
+ * Per-cell medium-emission `sourceId` table, memoised on the (immutable,
+ * battle-stable) {@link MediumField}. A cell's `(col, row)` — and therefore its
+ * `medium#<col>_<row>` id — never changes for the battle's life, so the table is
+ * built once (first emission collection) and indexed by flat cell index each
+ * tick instead of rebuilding the template-literal string per active cell per
+ * tick. Keyed on the field object so the table is GC'd with its battle's field.
+ */
+const mediumSourceIdsByField: WeakMap<MediumField, readonly string[]> = new WeakMap();
+
+/**
+ * The memoised per-cell `sourceId` table for `field`, built lazily on first
+ * access. Row-major: index `row * widthM + col` holds `medium#<col>_<row>`.
+ */
+function mediumSourceIds(field: MediumField): readonly string[] {
+  const cached = mediumSourceIdsByField.get(field);
+  if (cached !== undefined) return cached;
+  const { widthM, heightM } = field.config;
+  const cellCount = widthM * heightM;
+  const table: string[] = new Array<string>(cellCount);
+  for (let i = 0; i < cellCount; i += 1) {
+    // i = row * widthM + col → row = floor(i / widthM), col = i % widthM.
+    table[i] = mediumCellSourceId(i % widthM, Math.floor(i / widthM));
+  }
+  mediumSourceIdsByField.set(field, table);
+  return table;
+}
+
 export function collectMediumEmissions(medium: ArenaMedium): Emission[] {
   const { widthM, heightM, pitchM } = medium.field.config;
   const eps = medium.state.eps;
   const birthTicks = medium.birthTicks;
+  const sourceIds = mediumSourceIds(medium.field);
   const out: Emission[] = [];
   // Row-major scan: row 0..heightM-1 outer, col 0..widthM-1 inner. The flat
   // cell index is `row * widthM + col`, so a single row-major pass over the ε
@@ -231,7 +260,7 @@ export function collectMediumEmissions(medium: ArenaMedium): Emission[] {
       if (epsHere === undefined || epsHere <= MEDIUM_EPS_EMISSION_THRESHOLD_J) continue;
       const cellX = (col + 0.5 - widthM / 2) * pitchM;
       out.push({
-        sourceId: mediumCellSourceId(col, row),
+        sourceId: sourceIds[idx] ?? mediumCellSourceId(col, row),
         x: cellX,
         y: cellY,
         strength: mediumCellEmissionStrength(epsHere),

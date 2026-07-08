@@ -32,7 +32,7 @@ import { stepMediumField } from "./medium-stepper";
 import type { MediumField, MediumState, MediumSources, MediumWorkBuffers } from "./medium-field";
 import { MEDIUM_EPS_EMISSION_THRESHOLD_J } from "./medium-emissions";
 import type { EngineCheckpoint } from "@/schema/checkpoint";
-import { cellWorldPosition } from "@/domain/simulation/spatial-hash";
+import { cellWorldPositionCs } from "@/domain/simulation/spatial-hash";
 import type { BattleAnomalyKind } from "@/schema/battle";
 import { hasAnomaly } from "@/domain/anomaly";
 import type { SimShip } from "./types";
@@ -104,9 +104,8 @@ export interface MediumSourceBuffers {
 
 /**
  * Allocate the per-battle transient scratch on the {@link ArenaMedium}: source
- * buffers, stepper ping-pong pairs, and the pre-step ε snapshot. Not part of
- * the checkpoint; rebuilt by {@link buildArenaMedium} and
- * {@link restoreArenaMedium}.
+ * buffers, stepper ping-pong pairs, and the pre-step ε snapshot. Rebuilt by
+ * {@link buildArenaMedium} and {@link restoreArenaMedium} (not checkpointed).
  */
 function createMediumScratch(
   cellCount: number,
@@ -551,13 +550,14 @@ function depositMediumSources(
 ): void {
   const cellCount = field.cellCount;
 
-  // --- Thruster exhaust: every firing engine/afterburner cell deposits a
-  // fraction of its expelled propellant mass as local density and a fraction of
-  // its jet power as excitation, along the exhaust direction (`−moduleFacing`,
-  // mapped into world space by the ship pose). ---
+  // --- Thruster exhaust: every firing engine cell deposits a fraction of its
+  // expelled propellant mass as local density and jet power as excitation. ---
   for (const ship of ships) {
     const modules = ship.modules;
     if (modules === undefined || ship.engineThrottle <= 0) continue;
+    // Hoist ship-pose trig per ship (cellWorldPositionCs ≡ cellWorldPosition).
+    const cosF = Math.cos(ship.facing);
+    const sinF = Math.sin(ship.facing);
     for (const m of modules) {
       if (!m.alive) continue;
       const thrust = m.effect.kind === "engine" ? m.effect.thrust : 0;
@@ -566,7 +566,7 @@ function depositMediumSources(
       const forceN = thrust * burnFraction;
       const massBurnedKg = (forceN / MEDIUM_EXHAUST_VELOCITY_M_PER_S) * MEDIUM_DT_S;
       if (massBurnedKg <= 0) continue;
-      const { wx, wy } = cellWorldPosition(ship.x, ship.y, ship.facing, m.x, m.y);
+      const { wx, wy } = cellWorldPositionCs(ship.x, ship.y, cosF, sinF, m.x, m.y);
       const exhaustAngle = ship.facing + (m.facing ?? 0) + Math.PI;
       const exDx = Math.cos(exhaustAngle);
       const exDy = Math.sin(exhaustAngle);

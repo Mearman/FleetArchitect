@@ -265,17 +265,46 @@ export function emitExhaustParticles(args: {
   energyJ: number;
   dt: number;
 }): ExhaustParticle[] {
-  if (args.throttle <= 0) return [];
-  return [
-    {
-      x: args.nozzleX,
-      y: args.nozzleY,
-      vx: args.dirX * args.exhaustSpeed,
-      vy: args.dirY * args.exhaustSpeed,
-      intensity: particleIntensityFromEnergy(args.energyJ, EXHAUST_ENERGY_HALFSAT_J),
-      age: 0,
-    },
-  ];
+  const out: ExhaustParticle[] = [];
+  pushExhaustParticles(
+    out,
+    args.nozzleX,
+    args.nozzleY,
+    args.dirX,
+    args.dirY,
+    args.exhaustSpeed,
+    args.throttle,
+    args.energyJ,
+  );
+  return out;
+}
+
+/**
+ * The emission core behind {@link emitExhaustParticles}: pushes the firing
+ * nozzle's parcel(s) straight into `out` instead of allocating and returning a
+ * throwaway array. Hot callers (the per-tick gather) share one running `out`
+ * across every source. Identical arithmetic and field order to the prior
+ * returned-array form — byte-identical output, no intermediate array.
+ */
+export function pushExhaustParticles(
+  out: ExhaustParticle[],
+  nozzleX: number,
+  nozzleY: number,
+  dirX: number,
+  dirY: number,
+  exhaustSpeed: number,
+  throttle: number,
+  energyJ: number,
+): void {
+  if (throttle <= 0) return;
+  out.push({
+    x: nozzleX,
+    y: nozzleY,
+    vx: dirX * exhaustSpeed,
+    vy: dirY * exhaustSpeed,
+    intensity: particleIntensityFromEnergy(energyJ, EXHAUST_ENERGY_HALFSAT_J),
+    age: 0,
+  });
 }
 
 /**
@@ -316,24 +345,47 @@ export function emitBeamChannelParticles(args: {
   energyJ: number;
   dt: number;
 }): ExhaustParticle[] {
-  const dx = args.targetX - args.sourceX;
-  const dy = args.targetY - args.sourceY;
+  const out: ExhaustParticle[] = [];
+  pushBeamChannelParticles(
+    out,
+    args.sourceX,
+    args.sourceY,
+    args.targetX,
+    args.targetY,
+    args.energyJ,
+  );
+  return out;
+}
+
+/**
+ * The emission core behind {@link emitBeamChannelParticles}: pushes the channel
+ * sample parcels straight into `out`. Same sampling, arithmetic, and order as
+ * the prior returned-array form — byte-identical output, no throwaway array.
+ */
+export function pushBeamChannelParticles(
+  out: ExhaustParticle[],
+  sourceX: number,
+  sourceY: number,
+  targetX: number,
+  targetY: number,
+  energyJ: number,
+): void {
+  const dx = targetX - sourceX;
+  const dy = targetY - sourceY;
   const len = Math.hypot(dx, dy);
   const n = Math.max(1, Math.ceil(len / BEAM_CHANNEL_SAMPLE_STEP_M));
-  const intensity = particleIntensityFromEnergy(args.energyJ, BEAM_ENERGY_HALFSAT_J);
-  const out: ExhaustParticle[] = [];
+  const intensity = particleIntensityFromEnergy(energyJ, BEAM_ENERGY_HALFSAT_J);
   for (let i = 0; i <= n; i += 1) {
     const t = i / n;
     out.push({
-      x: args.sourceX + dx * t,
-      y: args.sourceY + dy * t,
+      x: sourceX + dx * t,
+      y: sourceY + dy * t,
       vx: 0,
       vy: 0,
       intensity,
       age: 0,
     });
   }
-  return out;
 }
 
 /**
@@ -348,16 +400,30 @@ export function emitProjectileWakeParticles(args: {
   energyJ: number;
   dt: number;
 }): ExhaustParticle[] {
-  return [
-    {
-      x: args.x,
-      y: args.y,
-      vx: 0,
-      vy: 0,
-      intensity: particleIntensityFromEnergy(args.energyJ, WAKE_ENERGY_HALFSAT_J),
-      age: 0,
-    },
-  ];
+  const out: ExhaustParticle[] = [];
+  pushProjectileWakeParticles(out, args.x, args.y, args.energyJ);
+  return out;
+}
+
+/**
+ * The emission core behind {@link emitProjectileWakeParticles}: pushes the wake
+ * parcel straight into `out`. Identical arithmetic to the prior returned-array
+ * form — byte-identical output, no throwaway array.
+ */
+export function pushProjectileWakeParticles(
+  out: ExhaustParticle[],
+  x: number,
+  y: number,
+  energyJ: number,
+): void {
+  out.push({
+    x,
+    y,
+    vx: 0,
+    vy: 0,
+    intensity: particleIntensityFromEnergy(energyJ, WAKE_ENERGY_HALFSAT_J),
+    age: 0,
+  });
 }
 
 /** Number of particles in an impact burst. Enough to read as a radial flash. */
@@ -379,21 +445,35 @@ export function emitImpactBurstParticles(args: {
   energyJ: number;
   dt: number;
 }): ExhaustParticle[] {
-  const n = IMPACT_BURST_PARTICLE_COUNT;
-  const intensity = particleIntensityFromEnergy(args.energyJ, IMPACT_ENERGY_HALFSAT_J);
   const out: ExhaustParticle[] = [];
+  pushImpactBurstParticles(out, args.x, args.y, args.energyJ);
+  return out;
+}
+
+/**
+ * The emission core behind {@link emitImpactBurstParticles}: pushes the radial
+ * burst parcels straight into `out`. Identical angles, speed, and order to the
+ * prior returned-array form — byte-identical output, no throwaway array.
+ */
+export function pushImpactBurstParticles(
+  out: ExhaustParticle[],
+  x: number,
+  y: number,
+  energyJ: number,
+): void {
+  const n = IMPACT_BURST_PARTICLE_COUNT;
+  const intensity = particleIntensityFromEnergy(energyJ, IMPACT_ENERGY_HALFSAT_J);
   for (let i = 0; i < n; i += 1) {
     const angle = (i / n) * Math.PI * 2;
     out.push({
-      x: args.x,
-      y: args.y,
+      x,
+      y,
       vx: Math.cos(angle) * IMPACT_BURST_SPEED_M_PER_S,
       vy: Math.sin(angle) * IMPACT_BURST_SPEED_M_PER_S,
       intensity,
       age: 0,
     });
   }
-  return out;
 }
 
 // ---------------------------------------------------------------------------
