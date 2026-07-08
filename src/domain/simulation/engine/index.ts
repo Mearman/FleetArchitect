@@ -400,7 +400,7 @@ export function* simulateBattle(
     //    array rather than `concat`-allocating a fresh one — same contents,
     //    same order (existing entries preserved, new ones appended), byte-
     //    identical snapshot output.
-    for (const p of fireWeapons(state.ships, state.byId, rng, tick, inputs.anomalies, state.beams)) {
+    for (const p of fireWeapons(state.ships, state.byId, rng, tick, inputs.anomalies, state.beams, state.penetrationPathScratch)) {
       state.projectiles.push(p);
     }
 
@@ -422,7 +422,7 @@ export function* simulateBattle(
     }
 
     // 4. Projectile travel, homing, asteroid deflection, and collision.
-    state.projectiles = updateProjectiles(state.projectiles, state.byId, inputs.anomalies, rng, state.medium, state.shipCellHashScratch, state.pdFiringScratch);
+    state.projectiles = updateProjectiles(state.projectiles, state.byId, inputs.anomalies, rng, state.medium, state.shipCellHashScratch, state.pdFiringScratch, state.penetrationPathScratch);
 
     // 4-mines. Mines (factions update). Arm down, then detonate any armed mine
     //     with an enemy in range against the nearest (via applyDamage). Runs in

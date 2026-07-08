@@ -26,6 +26,7 @@ import type { Rng } from "@/domain/simulation/rng";
 import { freshAwarenessScratch } from "./awareness";
 import { newCollisionScratch } from "./collision";
 import type { ShipCell } from "./collision";
+import { freshPenetrationPathScratch } from "./weapons";
 import { SpatialHash } from "../spatial-hash";
 import type { SepBody } from "./separation";
 import type { EngineState } from "./state";
@@ -167,6 +168,7 @@ export function bootstrapEngine(
       separationHashScratch: new SpatialHash<SepBody>(),
       collisionScratch: newCollisionScratch(),
       pdFiringScratch: [],
+      penetrationPathScratch: freshPenetrationPathScratch(),
     };
     return { state, startTick: 1 };
   }
@@ -234,6 +236,7 @@ export function bootstrapEngine(
     separationHashScratch: new SpatialHash<SepBody>(),
     collisionScratch: newCollisionScratch(),
     pdFiringScratch: [],
+    penetrationPathScratch: freshPenetrationPathScratch(),
   };
   return { state, startTick: restored.tick + 1 };
 }
