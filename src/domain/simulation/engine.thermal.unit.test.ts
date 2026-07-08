@@ -14,6 +14,7 @@ import {
   RADIATOR_EMISSIVITY,
   SPACE_TEMPERATURE_K,
   makeThermalSubstance,
+  materialiseThermalInputs,
   radiatorEquilibriumTemperature,
 } from "@/domain/simulation/engine/thermal";
 import {
@@ -57,7 +58,8 @@ describe("thermal substance", () => {
     //   phi0_new = phi0 + D·(phi1 − phi0)·dt
     //   phi1_new = phi1 + D·(phi0 − phi1)·dt
     // (one open face each way, unit area and pitch).
-    const substance = makeThermalSubstance(new Map(), new Set(), new Map());
+    const inputs = materialiseThermalInputs(new Map(), new Set(), new Map(), 2);
+    const substance = makeThermalSubstance(inputs.sources, inputs.radiators, inputs.heatCapacity);
     const faces = [
       { from: 0, to: 1, nx: 1, ny: 0, area: 1, open: true, boundary: false },
       { from: 1, to: 0, nx: -1, ny: 0, area: 1, open: true, boundary: false },
@@ -84,11 +86,13 @@ describe("thermal substance", () => {
     // (P / C)·dt. No radiator here, so the source is the only term.
     const powerWatts = 1e8; // 100 MW
     const heatCapacityJperK = 1e6; // 1 MJ/K
-    const substance = makeThermalSubstance(
+    const inputs = materialiseThermalInputs(
       new Map([[0, powerWatts]]),
       new Set(),
       new Map([[0, heatCapacityJperK]]),
+      1,
     );
+    const substance = makeThermalSubstance(inputs.sources, inputs.radiators, inputs.heatCapacity);
     const dt = 1 / 30;
     const phi = [300];
     const expected = 300 + (powerWatts / heatCapacityJperK) * dt;
@@ -103,11 +107,13 @@ describe("thermal substance", () => {
     // One cell with a radiator, no neighbours: the only heat loss is the
     // T⁴ boundary flux. Temperature should fall.
     const radiators = new Set([0]);
-    const substance = makeThermalSubstance(
+    const inputs = materialiseThermalInputs(
       new Map(),
       radiators,
       new Map([[0, 1e6]]),
+      1,
     );
+    const substance = makeThermalSubstance(inputs.sources, inputs.radiators, inputs.heatCapacity);
     const phi = [400];
     const result = stepTransportField(
       { substance, faces: [], boundaryCells: [0] },
@@ -151,11 +157,13 @@ describe("thermal substance", () => {
   });
 
   it("does not radiate from a non-radiator (insulated) boundary cell", () => {
-    const substance = makeThermalSubstance(
+    const inputs = materialiseThermalInputs(
       new Map(),
       new Set(),
       new Map([[0, 1e6]]),
+      1,
     );
+    const substance = makeThermalSubstance(inputs.sources, inputs.radiators, inputs.heatCapacity);
     const result = stepTransportField(
       { substance, faces: [], boundaryCells: [0] },
       [400],
