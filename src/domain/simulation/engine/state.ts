@@ -18,6 +18,7 @@ import type { Emission } from "./emissions";
 import type { ParticleStore } from "./exhaust-particles";
 import type { ArenaMedium, ProjectileMediumEntry } from "./medium-setup";
 import type { AwarenessScratch } from "./awareness";
+import type { PdCandidate } from "./point-defence";
 import type { CollisionScratch, ShipCell } from "./collision";
 import type { SpatialHash } from "../spatial-hash";
 import type { SepBody } from "./separation";
@@ -152,6 +153,10 @@ export interface EngineState {
    *  tick: ship-ship collision + projectile-cell hits). Entry objects recycled
    *  via the free-list; cleared-and-reused across ticks. Not checkpointed. */
   shipCellHashScratch: SpatialHash<ShipCell>;
+  /** Reusable `PdCandidate[]` scratch for `tryPointDefenseIntercept`'s firing
+   *  subset — cleared and refilled once per PD-able projectile per tick. Same
+   *  clear-and-reuse contract as {@link shipCellHashScratch}; not checkpointed. */
+  pdFiringScratch: PdCandidate[];
   /** Reusable `SpatialHash<SepBody>` for `buildSeparationSnapshot` (built once
    *  per tick for the inter-ship separation field). Same clear-and-refill
    *  contract as {@link shipCellHashScratch}; the candidate walk is byte-identical

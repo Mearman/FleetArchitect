@@ -501,6 +501,10 @@ export function updateProjectiles(
   /** Reusable cell-hash scratch (`state.shipCellHashScratch`) — cleared and
    *  refilled by `buildShipCellHash`. When omitted a fresh hash is allocated. */
   cellHashScratch?: SpatialHash<ShipCell>,
+  /** Reusable PD firing-subset scratch (`state.pdFiringScratch`) — cleared and
+   *  refilled by `tryPointDefenseIntercept` per projectile. Same clear-and-reuse
+   *  contract as `cellHashScratch`. When omitted a fresh array is allocated. */
+  pdFiringScratch?: PdCandidate[],
 ): SimProjectile[] {
   const survivors: SimProjectile[] = [];
   if (projectiles.length === 0) return survivors;
@@ -524,7 +528,7 @@ export function updateProjectiles(
     // defending ship to have an alive command module — coordination matters.
     if (p.kind === "missile" || p.kind === "torpedo") {
       if (pdCandidates === undefined) pdCandidates = buildPdCandidates(byId);
-      if (tryPointDefenseIntercept(p, pdCandidates, rng)) continue;
+      if (tryPointDefenseIntercept(p, pdCandidates, rng, pdFiringScratch)) continue;
     }
 
     // Finite-burn motor: a powered projectile with fuel remaining accelerates

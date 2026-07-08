@@ -153,6 +153,7 @@ function stateWith(ships: SimShip[]): EngineState {
     shipCellHashScratch: new SpatialHash<ShipCell>(),
     separationHashScratch: new SpatialHash<SepBody>(),
     collisionScratch: newCollisionScratch(),
+    pdFiringScratch: [],
   };
 }
 

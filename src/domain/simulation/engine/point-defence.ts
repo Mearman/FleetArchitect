@@ -72,16 +72,31 @@ export function tryPointDefenseIntercept(
   p: SimProjectile,
   pdCandidates: readonly PdCandidate[],
   rng: () => number,
+  /** Reusable scratch for the firing subset (`state.pdFiringScratch`) — cleared
+   *  at the top of each call. When omitted a fresh array is allocated. Same
+   *  clear-and-reuse contract as `cellHashScratch` in `updateProjectiles`. */
+  firingScratch?: PdCandidate[],
 ): boolean {
   const enemySide: BattleSide = p.ownerSide === "attacker" ? "defender" : "attacker";
   // Collect in-range, online, off-cooldown PD modules. A single rng draw
   // resolves the stacked chance — keeps the stream length independent of how
   // many PD modules fire.
-  const firing: PdCandidate[] = [];
+  const firing = firingScratch ?? [];
+  firing.length = 0;
+  // `hasAliveCommand` linear-scans ship.modules, so it is O(cells). The cheap
+  // O(1) gates (module state, cooldown, range, lead-aim) run first so a
+  // candidate already excluded by a trivial check never pays that scan.
+  // pdCandidates is built ship-major (buildPdCandidates walks byId), so a
+  // ship's candidates are contiguous; cache the bridge-alive result per ship
+  // to compute it once per (ship, projectile) instead of once per PD module.
+  // Nothing mutates module alive/hp between candidates in this collection loop
+  // (cooldown and hp writes happen strictly after the firing set is finalised),
+  // so the cached value is valid for the whole loop.
+  let lastShip: SimShip | undefined;
+  let lastShipHasCommand = false;
   for (const cand of pdCandidates) {
     const ship = cand.ship;
     if (!ship.alive || ship.side !== enemySide) continue;
-    if (!hasAliveCommand(ship)) continue; // no bridge → no coordination
     const m = cand.module;
     if (!m.alive || !m.powered || m.powerCut || !m.manned || !isCharged(m)) continue;
     if (m.cooldown > 0) continue;
@@ -99,6 +114,11 @@ export function tryPointDefenseIntercept(
       const omega = Math.abs(cross) / r2;
       if (omega > cand.effect.tracking + SIM.pdTrackingEpsilon) continue;
     }
+    if (ship !== lastShip) {
+      lastShip = ship;
+      lastShipHasCommand = hasAliveCommand(ship);
+    }
+    if (!lastShipHasCommand) continue; // no bridge → no coordination
     firing.push(cand);
   }
   if (firing.length === 0) return false;
