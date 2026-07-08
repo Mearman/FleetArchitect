@@ -54,6 +54,20 @@ export function recomputeAggregatesWithScaling(ship: SimShip): void {
 }
 
 /**
+ * Per-ship slotId → module lookup for effect scaling, keyed on the identity of
+ * `ship.modules`. The mapping is invariant for the lifetime of a given array
+ * reference: module objects are mutated in place but never removed, reordered,
+ * or re-keyed, and `slotId` is authored once and never reassigned. A WeakMap
+ * keys on the array object, so the survivor path (which keeps the same
+ * `ship.modules` reference through break-apart) reuses the cached Map, while a
+ * fresh chunk array (break-apart's `chunkModules`) naturally misses and rebuilds
+ * once. Mirrors the WeakMap precedent in `directional-shield-cache.ts`. Only
+ * used for point lookups (`.get`), never iterated, so its construction order has
+ * no bearing on the fold's arithmetic — pure allocation removal.
+ */
+const slotIndexCache = new WeakMap<readonly SimModule[], Map<string, SimModule>>();
+
+/**
  * Overwrite each alive anchor's effect magnitudes with `base × fraction`, where
  * `fraction = (1 + aliveCovers) / totalCells`. No-op when the ship carries no
  * multi-cell modules (the all-1×1 case) so existing fleets are byte-identical.
@@ -64,9 +78,13 @@ export function applyEffectScaling(ship: SimShip): void {
   if (meta === undefined || meta.length === 0) return;
   const modules = ship.modules;
   if (modules === undefined) return;
-  // One pass: slotId → module lookup, covering both the anchor and its covers.
-  const bySlot = new Map<string, SimModule>();
-  for (const m of modules) bySlot.set(m.slotId, m);
+  // slotId → module lookup, cached per modules-array identity (see above).
+  let bySlot = slotIndexCache.get(modules);
+  if (bySlot === undefined) {
+    bySlot = new Map<string, SimModule>();
+    for (const m of modules) bySlot.set(m.slotId, m);
+    slotIndexCache.set(modules, bySlot);
+  }
   for (const entry of meta) {
     const anchor = bySlot.get(entry.slotId);
     // A dead anchor is an inert cell; its effect is not read by consumers, so
