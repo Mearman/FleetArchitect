@@ -441,9 +441,16 @@ export function generateCandidateContactsOptimised(
  * impulse sequence is deterministic regardless of map iteration order.
  */
 function resolveCandidateContacts(candidates: CandidateContacts): ShipContact[] {
-  const ordered = [...candidates.values()].sort((x, y) =>
-    pairKey(x.a, x.b) < pairKey(y.a, y.b) ? -1 : pairKey(x.a, x.b) > pairKey(y.a, y.b) ? 1 : 0,
-  );
+  // Schwartzian transform: compute pairKey once per candidate instead of up to
+  // twice per sort comparison call. The same string values are compared via the
+  // same '<'/'>' semantics, so the resulting order is byte-identical — this is
+  // pure allocation removal, not an arithmetic or ordering change.
+  const keyed = [...candidates.values()].map((contact) => ({
+    contact,
+    key: pairKey(contact.a, contact.b),
+  }));
+  keyed.sort((x, y) => (x.key < y.key ? -1 : x.key > y.key ? 1 : 0));
+  const ordered = keyed.map((entry) => entry.contact);
   const resolved: ShipContact[] = [];
   for (const contact of ordered) {
     // Polygon narrow-phase: the disc-based broad-phase above pairs cells whose
