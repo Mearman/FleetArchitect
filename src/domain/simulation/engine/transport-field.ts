@@ -335,6 +335,62 @@ export interface TransportStepResult {
 }
 
 /**
+ * Persistent ping-pong work buffers for the transport stepper: two `number[]`
+ * buffers per substance, owned by the ship's `ResourceState` (one pair each for
+ * thermal / propellant / atmosphere) and reused every tick so the FTCS step
+ * allocates nothing per call. Each tick the stepper copies the input φ into the
+ * buffer it does NOT alias — always a cross-copy, since the live state aliases
+ * one buffer from the previous tick's result (so the other is a distinct
+ * array), and a fresh state aliases neither and lands in buffer A — then
+ * ping-pongs between the two across sub-steps. The post-step state aliases
+ * whichever buffer the last sub-step wrote. Mirrors `MediumWorkBuffers`
+ * (medium-field.ts); the manual element copy is the `number[]` equivalent of
+ * the TypedArray `.set` the medium stepper relies on.
+ */
+export interface TransportWorkBuffers {
+  /** First ping-pong buffer (length = field cell count). */
+  readonly a: number[];
+  /** Second ping-pong buffer (length = field cell count). */
+  readonly b: number[];
+}
+
+/** Allocate a fresh {@link TransportWorkBuffers} pair for a field of `n` cells.
+ *  The stepper overwrites every index before reading it (the copy fills the
+ *  start buffer, each sub-step fills its `next` buffer), so the arrays are left
+ *  sparse (`new Array(n)`) rather than zero-filled — matching the existing
+ *  per-call `new Array(n)` allocation this replaces. Called once per substance
+ *  per ship; reused every tick. */
+export function createTransportWorkBuffers(n: number): TransportWorkBuffers {
+  return { a: new Array<number>(n), b: new Array<number>(n) };
+}
+
+/**
+ * All three substances' ping-pong work buffers for one ship, owned on its
+ * `ResourceState` (`transportWork`) and reused every tick so the per-tick
+ * resource step allocates nothing for the FTCS integrator. The direct analogue
+ * of `MediumWorkBuffers` (one bundle per arena medium, holding every substance's
+ * A/B pair); each substance's pair is threaded into the matching
+ * `stepTransportField` call. Built once per ship (sized to the module count) and
+ * rebuilt lazily after a checkpoint restore.
+ */
+export interface ResourceTransportWork {
+  readonly thermal: TransportWorkBuffers;
+  readonly propellant: TransportWorkBuffers;
+  readonly atmosphere: TransportWorkBuffers;
+}
+
+/** Allocate a {@link ResourceTransportWork} bundle (three substance pairs) for
+ *  a ship whose φ arrays are `n` cells long. Called once per ship on the first
+ *  resource step; reused every tick thereafter. */
+export function createResourceTransportWork(n: number): ResourceTransportWork {
+  return {
+    thermal: createTransportWorkBuffers(n),
+    propellant: createTransportWorkBuffers(n),
+    atmosphere: createTransportWorkBuffers(n),
+  };
+}
+
+/**
  * Diffusive flux into `cell` from its open faces, φ-units per second.
  *
  * For each open face, the conductance is `D·A/d` and the driving gradient is
@@ -378,8 +434,9 @@ export function stepTransportField(
   field: TransportField,
   phi: readonly number[],
   options?: { diagnostics?: boolean },
+  work?: TransportWorkBuffers,
 ): TransportStepResult {
-  return runTransportStep(field, phi, options, true);
+  return runTransportStep(field, phi, options, true, work);
 }
 
 /**
@@ -398,25 +455,32 @@ export function stepTransportFieldReference(
   phi: readonly number[],
   options?: { diagnostics?: boolean },
 ): TransportStepResult {
-  return runTransportStep(field, phi, options, false);
+  return runTransportStep(field, phi, options, false, undefined);
 }
 
 /**
  * Shared transport-step core. The ONLY difference between the reference
  * (oracle) and optimised (production) paths is the per-sub-step buffer
- * strategy, selected by `reuse`:
+ * strategy, selected by `reuse` (and, on the optimised path, whether a
+ * persistent `work` pair is supplied):
  *  - `reuse = false` (reference): allocates a fresh `next = current.slice()`
  *    every sub-step — the naive O(subSteps) allocation pattern.
- *  - `reuse = true` (optimised): ping-pongs between two pre-allocated buffers
- *    (`bufA`, `bufB`) so no per-sub-step allocation occurs.
+ *  - `reuse = true`, `work` supplied (production): copies φ once into the
+ *    persistent buffer it does NOT alias, then ping-pongs between the two
+ *    `work` buffers across sub-steps — no per-call allocation.
+ *  - `reuse = true`, `work` omitted: allocates a per-call `phi.slice()` +
+ *    `new Array(n)` pair, then ping-pongs between them across sub-steps.
  *
- * The inner cell loop is identical in both paths: it reads only from
- * `current` and writes every cell of `next`, so the computed values — and
- * therefore the post-step φ array, accumulated momentum, and diagnostics —
- * are byte-identical regardless of which array objects hold `current` and
- * `next`. Ping-pong safety: `current` and `next` are always distinct arrays
- * (bufA vs bufB), matching the slice() path's read-from-current /
- * write-to-next discipline, so no cell ever reads a half-written value.
+ * The inner cell loop is identical in all paths: it reads only from `current`
+ * and writes every cell of `next`, so the computed values — and therefore the
+ * post-step φ array, accumulated momentum, and diagnostics — are byte-identical
+ * regardless of which array objects hold `current` and `next`. Ping-pong
+ * safety: `current` and `next` are always distinct arrays (bufA vs bufB),
+ * matching the slice() path's read-from-current / write-to-next discipline, so
+ * no cell ever reads a half-written value. The persistent-buffer copy is a
+ * value-for-value copy of the IEEE-754 doubles on a dense array, bit-exact
+ * against `slice()` — the same bit-exactness the medium stepper's `.set`
+ * relies on — so the production path is byte-identical to the oracle.
  *
  * Boundary flux: the substance writes into the integrator-owned `scratch`
  * BoundaryFlux (out-param contract), reused across every boundary cell and
@@ -429,19 +493,42 @@ function runTransportStep(
   phi: readonly number[],
   options: { diagnostics?: boolean } | undefined,
   reuse: boolean,
+  work: TransportWorkBuffers | undefined,
 ): TransportStepResult {
   const n = phi.length;
   const subSteps = transportSubSteps(field.substance);
   const dt = TRANSPORT_DT_S / subSteps;
   const floor = field.substance.nonNegative ? (field.substance.floor ?? 0) : -Infinity;
 
-  // Work on a mutable copy so the input is untouched (deterministic, pure).
-  const bufA = phi.slice();
-  // In the optimised path bufB is the ping-pong partner; in the reference path
-  // the slice() branch is always taken so bufB is never read (aliased to bufA
-  // to avoid a pointless allocation in the naive baseline).
-  const bufB = reuse ? new Array<number>(n) : bufA;
-  let current = bufA;
+  // Buffer strategy (see the function header): all three branches yield
+  // byte-identical post-step φ. When the caller supplies a persistent `work`
+  // pair (the production resource step owns one pair per substance on
+  // ResourceState and reuses it every tick), copy φ into the buffer it does NOT
+  // alias (always a cross-copy: the live state aliases one work buffer from the
+  // previous tick's result, so the other is distinct; a fresh state aliases
+  // neither and lands in buffer A) and ping-pong between the two — zero
+  // per-call allocation. Without `work` the optimised path falls back to a
+  // per-call `phi.slice()` + `new Array(n)` pair. The reference path always
+  // slices fresh every sub-step.
+  let bufA: number[];
+  let bufB: number[];
+  let current: number[];
+  if (reuse && work !== undefined) {
+    bufA = work.a;
+    bufB = work.b;
+    current = phi === bufA ? bufB : bufA;
+    for (let i = 0; i < n; i += 1) current[i] = phi[i]!;
+  } else if (reuse) {
+    bufA = phi.slice();
+    bufB = new Array<number>(n);
+    current = bufA;
+  } else {
+    // Reference path: the slice() branch is always taken so bufB is never read
+    // (aliased to bufA to avoid a pointless allocation in the naive baseline).
+    bufA = phi.slice();
+    bufB = bufA;
+    current = bufA;
+  }
   let momentumX = 0;
   let momentumY = 0;
   // Diagnostics are skipped by default (expensive allocation) — only computed
