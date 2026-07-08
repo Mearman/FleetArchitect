@@ -11,6 +11,7 @@ import { crewTaskOrder, type CrewTaskKind } from "./crew-priority";
 import { ammoShortfall, chargeShortfall, chooseAmmoRun, choosePowerRun, hasLiveManningHardwire, reactorWiringReach, refillHardwiredPower, resolveAmmoArrival, resolvePowerArrival } from "./crew-haul";
 import { aliveCellMap, compareByCell, crewCellKey, findCrewPath, modulesBySlot, refreshPathCache } from "./crew-pathfinding";
 import { edgeDirection } from "@/domain/grid";
+import type { ModuleEffect } from "@/schema/module";
 import type { SimModule, SimShip } from "./types";
 
 /**
@@ -100,7 +101,7 @@ export function updateCrew(ship: SimShip): void {
   const hasIdle = ordered.some((c) => c.job === "idle");
   const stations = hasIdle
     ? ship.modules
-        .filter((m) => m.alive && m.crewRequired > 0 && stationNeedsCrew(m))
+        .filter((m) => m.alive && m.crewRequired > 0 && stationNeedsCrew(m.effect.kind))
         .slice()
         .sort(compareByCell)
     : [];
@@ -367,14 +368,24 @@ export function abandonHaul(crew: SimCrew): void {
  * manning requirement of their own, so a non-zero `crewRequired` on them is
  * still honoured but they are not treated as combat stations to chase. We gate
  * exactly the kinds whose `crewRequired` matters to output.
+ *
+ * Takes the effect kind alone — the function switches on nothing else, and
+ * passing the kind (not the whole module) lets the exhaustive switch be unit
+ * tested without constructing full runtime modules.
  */
-export function stationNeedsCrew(m: SimModule): boolean {
+export function stationNeedsCrew(kind: ModuleEffect["kind"]): boolean {
   // A crewed sensor array only contributes its detection range when manned, and
   // a crewed comms unit (a manned dish or laser relay) only forms links when
   // manned — so both are crew stations alongside weapons, engines, etc. The
   // caller already gates on crewRequired > 0, so a crewless sensor/comms unit
   // (always manned) never reaches here.
-  switch (m.effect.kind) {
+  //
+  // Launchers (mineLayer, decoy, hangar, boarding) are crew stations too: their
+  // launch functions (layMines, launchDecoys, launchDrones, launchPods) all
+  // gate on isOperational, which requires `manned`. Excluding them left crew
+  // never dispatched to man the station, so a crewRequired > 0 launcher stayed
+  // unmanned and never fired on any ship, any horizon.
+  switch (kind) {
     case "weapon":
     case "engine":
     case "shield":
@@ -384,6 +395,10 @@ export function stationNeedsCrew(m: SimModule): boolean {
     case "magazine":
     case "sensor":
     case "comms":
+    case "mineLayer":
+    case "decoy":
+    case "hangar":
+    case "boarding":
       return true;
     case "crew":
     case "repair":
@@ -397,11 +412,7 @@ export function stationNeedsCrew(m: SimModule): boolean {
     case "signature":
     case "ecm":
     case "eccm":
-    case "decoy":
     case "commandAura":
-    case "hangar":
-    case "mineLayer":
-    case "boarding":
       return false;
   }
 }

@@ -69,17 +69,14 @@ const BLINK_JUMP_METRES = 10;
  * resolved and the assertions pass.
  */
 const KNOWN_BROKEN: ReadonlyMap<string, string> = new Map<string, string>([
-  ["preset-ship-titan", "weapons never fire despite target+power+crew (capital power-distribution/weapon-gating defect)"],
-  ["preset-ship-monolith", "weapons never fire despite target+power+crew (capital power-distribution/weapon-gating defect)"],
-  ["preset-ship-carrion", "never acquires a target — sits dead-still, fires nothing (Swarm sensor/targeting gap)"],
-  ["preset-ship-ravager", "never acquires a target — sits dead-still, fires nothing (Swarm sensor/targeting gap)"],
-  ["preset-ship-spitter", "never acquires a target — sits dead-still, fires nothing (Swarm sensor/targeting gap)"],
-  ["preset-ship-aegis", "mine layer never triggers"],
-  ["preset-ship-siege-titan", "mine layer never triggers"],
-  ["preset-ship-warbringer", "decoy launcher never triggers"],
-  ["preset-ship-galleon", "decoy launcher never triggers"],
-  ["preset-ship-drone", "deploys outside own weapon range; never closes"],
-  ["preset-ship-automaton", "deploys outside own weapon range; never closes"],
+  // Test-pacing artefact, not a ship defect: these two short-ranged fighters
+  // deploy at ~their own weapon range from the midline (so ~2x range from the
+  // mirrored fixture) and can't close that gap in the 80-tick horizon, even
+  // though doctrine + engines correctly command closing. They fire in a real
+  // (longer) battle. A closer fixture placement was tried but distorts doctrine
+  // (triggers disengagement) for other ships, so these stay skipped.
+  ["preset-ship-drone", "deploys outside own weapon range; never closes in the short horizon"],
+  ["preset-ship-automaton", "deploys outside own weapon range; never closes in the short horizon"],
 ]);
 
 
@@ -209,14 +206,13 @@ function runForDesign(
   const kinds = readKinds(ship);
   const shipId = ship.instanceId;
 
-  // Mirror the ship's resolver-derived deployment x so the ship-to-fixture
-  // gap is within both the ship's own weapon range and the turret's, whatever
-  // scale the resolver chose for this design. The ship deploys at -x; the
-  // fixtures sit at +|x|. Both carry a very large HP pool so they survive the
-  // full 80-tick battle against real preset weapons (some dreadnoughts deal
-  // >1e14 damage over 80 ticks, so 1e16). The fixedTarget has a wide absorbing
-  // row (30 cells ≈ 60 m) so the ship's shots connect at range rather than
-  // missing a ~10 m sliver.
+  // Fixtures at +|x| (mirroring the resolver-derived deployment), so the
+  // ship-to-fixture gap is the per-side deployment inset on each side. Both
+  // carry a very large HP pool (1e16) so they survive the full battle; the
+  // fixedTarget has a wide absorbing row (30 cells ≈ 60 m) so shots connect.
+  // (Short-ranged ships that can't close this gap within the horizon stay in
+  // KNOWN_BROKEN — see drone/automaton — rather than distorting the placement
+  // for every other ship.)
   const defenderX = Math.abs(ship.position.x);
   const fixedTarget = targetDummy({
     id: FIXED_TARGET_ID,
@@ -261,8 +257,12 @@ function runForDesign(
     weaponKind: "beam",
     weaponDamage: turretDamage,
   });
+  // Dreadnoughts run longer: on ×12-subdivided hulls crew walk ~1 sub-cell/tick
+  // from the quarters to the prow weapons, so they need ~108 ticks to man them.
+  // Shorter horizons leave the capital battery unmanned + silent.
+  const maxTicks = ship.classification === "dreadnought" ? 200 : MAX_TICKS;
   const result = runBattle(
-    inputs([ship, fixedTarget, turret], MAX_TICKS, SEED),
+    inputs([ship, fixedTarget, turret], maxTicks, SEED),
   );
 
   if (result.frames.length === 0) {

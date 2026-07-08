@@ -142,7 +142,7 @@ import {
  * roster ships whose first 40 ticks are byte-identical), so the cache
  * algorithm signature is retained and ENGINE_REVISION is not bumped.
  */
-const PRESETS_VERSION = 32;
+const PRESETS_VERSION = 33;
 const VERSION_KEY = "presetsVersion";
 
 /**

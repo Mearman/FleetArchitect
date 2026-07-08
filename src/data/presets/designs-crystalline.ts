@@ -4,7 +4,7 @@ import type { ShipDesign } from "@/schema/ship";
 /** Same ShipDesign input shape used by designs.ts: schema defaults optional. */
 type ShipDesignInput = input<typeof ShipDesign>;
 
-import { crystalGrid, mountMultiCell, PRESET_TIME, withEdges } from "@/data/presets/tokens";
+import { crystalGrid, mountMultiCell, powerConduit, PRESET_TIME, withConnections, withEdges } from "@/data/presets/tokens";
 import { subdivideGrid } from "@/domain/shipgen";
 import { CRYSTALLINE_FOOTPRINTS } from "@/data/catalog/modules/crystalline-capital";
 
@@ -143,7 +143,7 @@ export const crystallineDesigns: ShipDesignInput[] = [
     // shard-vault, and twin-thruster-cluster anchors are multi-cell capital
     // modules; `mountMultiCell` installs each footprint's covered cells after
     // subdivision. Grid (13 cols × 5 rows), subdivided ×12 → 156 m dreadnought.
-    grid: mountMultiCell(
+    grid: withConnections(mountMultiCell(
       subdivideGrid(withEdges(crystalGrid([
         "..###########",
         "E~#CC~~H~C~CI",
@@ -209,7 +209,7 @@ export const crystallineDesigns: ShipDesignInput[] = [
         // one walkable component, so a crew ammo-run reaches both weapons.
         [6, 1, "cry-shard-vault", CRYSTALLINE_FOOTPRINTS.shardVault],
       ],
-    ),
+    ), powerConduit(F_MONOLITH, { col: 4, row: 2 }, [{ col: 12, row: 1 }])),
     createdAt: PRESET_TIME,
     updatedAt: PRESET_TIME,
     source: "preset",

@@ -518,6 +518,34 @@ export function ammoConduit(
   }));
 }
 
+/**
+ * Build power-conduit {@link Connection}s from a reactor to one or more
+ * power-drawing modules, authoring in COARSE grid coordinates and scaling by
+ * the design's subdivision factor (mirroring {@link ammoConduit}). Use for a
+ * high-draw module that sits beyond `powerWiringRadius` of every reactor (e.g.
+ * a capital spinal lance on a deeply subdivided hull) so `refillHardwiredPower`
+ * tops its charge each tick. Call `withConnections(grid, powerConduit(f, reactor, sinks))`
+ * as the LAST step of a design's grid pipeline.
+ */
+export function powerConduit(
+  subdivisionFactor: number,
+  reactorCoarse: CellCoord,
+  sinkCoarses: readonly CellCoord[],
+): Connection[] {
+  const from: CellCoord = {
+    col: reactorCoarse.col * subdivisionFactor,
+    row: reactorCoarse.row * subdivisionFactor,
+  };
+  return sinkCoarses.map((s) => ({
+    from,
+    to: {
+      col: s.col * subdivisionFactor,
+      row: s.row * subdivisionFactor,
+    },
+    resource: "power",
+  }));
+}
+
 /** Cardinal (dCol, dRow) offset from a cell to the neighbour across each edge. */
 const EDGE_OFFSET: Record<EdgeDir, { dCol: number; dRow: number }> = {
   n: { dCol: 0, dRow: -1 },

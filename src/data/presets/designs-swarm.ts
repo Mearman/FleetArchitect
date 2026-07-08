@@ -79,10 +79,13 @@ export const swarmDesigns: ShipDesignInput[] = [
     // jet (u) over the flagella gives it the speed edge. The armour shoulders
     // are gone — only a pair of carapace screens (w) at the prow offer token
     // kinetic defence. The ganglion core and flagella bank fill out the hull.
+    // An electro-receptor membrane (e) on the centreline deck cell gives the
+    // flanker hive-net awareness beyond its 5 km visual radius so it acquires
+    // targets at engagement range (it was blind without it).
     grid: subdivideGrid(withEdges(swarmGrid([
       "..>xaw.",
       "j~gfaa.",
-      "ug~gfaa",
+      "ugegfaa",
       "j~gfaa.",
       "..<xaw.",
     ]), [
@@ -110,7 +113,7 @@ export const swarmDesigns: ShipDesignInput[] = [
       subdivideGrid(withEdges(swarmGrid([
         "#>jx~aa##",
         "jgf~zaaa#",
-        "ugm~rfaaa",
+        "ugmerfaaa",
         "jgf~zaaa#",
         "#<jx~aa##",
       ]), [
@@ -154,7 +157,7 @@ export const swarmDesigns: ShipDesignInput[] = [
       subdivideGrid(withEdges(swarmGrid([
         "##>xsnn###",
         "#jgfzsnnn#",
-        "ugm~rfsnnn",
+        "ugm~rfsenn",
         "#jgfzsnnn#",
         "##<xsnn###",
       ]), [
