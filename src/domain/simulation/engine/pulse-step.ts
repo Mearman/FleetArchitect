@@ -38,8 +38,9 @@ import type { BattleAnomalyKind } from "@/schema/battle";
 /** The active-emission strength of a sensor unit. An authored `emitStrength`
  *  (watts) governs how far the ping reaches; a unit that declares an active mode
  *  but no explicit transmit power falls back to a strength derived from its
- *  detection range so the round-trip return is still measurable at that range. */
-function emitStrengthOf(unit: SensorUnit, range: number): number {
+ *  detection range so the round-trip return is still measurable at that range.
+ *  Pure; shared with the reference oracle in ./pulse-step.reference. */
+export function emitStrengthOf(unit: SensorUnit, range: number): number {
   const declared = unit.effect.emitStrength;
   if (declared !== undefined && declared > 0) return declared;
   // No authored transmit power: pick the strength whose omni return at the
@@ -50,23 +51,57 @@ function emitStrengthOf(unit: SensorUnit, range: number): number {
 }
 
 /** Whether a sensor unit currently emits active pulses: its mode must be
- *  `active` or `hybrid` (a passive or mode-less sensor only listens). */
-function emitsActively(unit: SensorUnit): boolean {
+ *  `active` or `hybrid` (a passive or mode-less sensor only listens). Pure;
+ *  shared with the reference oracle in ./pulse-step.reference. */
+export function emitsActively(unit: SensorUnit): boolean {
   return unit.effect.mode === "active" || unit.effect.mode === "hybrid";
 }
 
-/** Expand a pulse one tick WITHOUT applying the max-range cull. `advancePulse`
- *  in the primitives both grows the sphere and culls; this step needs to grow a
- *  pulse and still give it one illumination/return pass on the tick it overshoots
- *  (c per tick dwarfs battle distances, so the first advance covers the whole
- *  arena). The growth — radius += c, sweep += sweepRate — is identical to the
- *  primitive; only the cull is deferred to the caller. */
-function advancePulseUnculled(pulse: SimPulse): SimPulse {
-  return {
-    ...pulse,
-    radius: pulse.radius + SPEED_OF_LIGHT_M_PER_TICK,
-    sweepAngle: pulse.sweepAngle + pulse.sweepRate,
-  };
+/** Whether any alive ship carries at least one operational active-mode sensor
+ *  unit that the emit pass could fire this tick — the gate condition for the
+ *  whole pulse step. Mirrors the emit pass's own `sensorUnitsOf` +
+ *  `emitsActively` filter exactly (alive ship, alive manned sensor module,
+ *  active/hybrid mode) but scans the module array directly with no allocation,
+ *  so the common no-active-sensor tick can skip the O(n log n) alive-filtered
+ *  sort + array allocation entirely. Pure. */
+function anyActiveEmitter(ships: readonly SimShip[]): boolean {
+  for (const ship of ships) {
+    if (!ship.alive) continue;
+    const modules = ship.modules;
+    if (modules === undefined) continue;
+    for (const m of modules) {
+      if (!m.alive) continue;
+      const effect = m.effect;
+      if (effect.kind !== "sensor") continue;
+      const mode = effect.mode;
+      if (mode !== "active" && mode !== "hybrid") continue;
+      // A sensor that needs crew contributes only when manned; a crewless one
+      // is always manned. Matches sensorUnitsOf, so the gate never disagrees
+      // with the emit pass about whether a unit is operational.
+      if (m.crewRequired > 0 && !m.manned) continue;
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Expand a pulse one tick IN PLACE without applying the max-range cull.
+ *  `advancePulse` in the primitives both grows the sphere and culls; this step
+ *  needs to grow a pulse and still give it one illumination/return pass on the
+ *  tick it overshoots (c per tick dwarfs battle distances, so the first advance
+ *  covers the whole arena). The growth — radius += c, sweep += sweepRate — is
+ *  identical to the primitive's arithmetic (and to the reference's spread-clone
+ *  version in ./pulse-step.reference: `a + b` is bit-identical whether assigned
+ *  via a fresh object or mutated in place); only the cull is deferred to the
+ *  caller and the allocation is removed.
+ *
+ *  Aliasing is safe: within stepPulses the caller's `pulses` array is read only
+ *  here (then wholesale rebuilt at the end from `survivors`), the checkpoint
+ *  path structuredClone's the array, and the snapshot path builds fresh frame
+ *  records via `.map`. Nothing observes the old vs new object identity. */
+function advancePulseInPlace(pulse: SimPulse): void {
+  pulse.radius += SPEED_OF_LIGHT_M_PER_TICK;
+  pulse.sweepAngle += pulse.sweepRate;
 }
 
 /**
@@ -94,6 +129,19 @@ export function stepPulses(
   tick: number,
   pulseSeq: number,
 ): number {
+  // GATED: when there are no live pulses AND no alive ship carries an
+  // operational active-mode sensor, nothing will be advanced, emitted,
+  // illuminated, or received this tick — the function is a genuine no-op
+  // (pulses stays empty, pulseSeq returned unchanged). Short-circuit before the
+  // O(n log n) alive-filtered sort + array allocation. This is the common case
+  // for passive-only fleets and for any quiet tick in an active-sensor battle;
+  // byte-identical because `anyActiveEmitter` mirrors the emit pass's own
+  // `sensorUnitsOf` + `emitsActively` filter, so the gate never disagrees with
+  // the emit loop about whether an emission would occur.
+  if (pulses.length === 0 && !anyActiveEmitter(ships)) {
+    return pulseSeq;
+  }
+
   // Ships in lexicographic instanceId order — the determinism contract for
   // every accumulation/iteration pass over ships.
   const ordered = [...ships]
@@ -108,9 +156,12 @@ export function stepPulses(
   //    whole sphere on the first advanced tick; it must therefore get one
   //    illumination/return pass on the tick it overshoots before being dropped.
   //    The cull is applied at the end (survivors keep only radius <= maxRange).
+  //    The advance mutates each pulse in place (the caller's array is wholesale
+  //    rebuilt from `survivors` below, so no stale identity escapes).
   const advanced: SimPulse[] = [];
   for (const pulse of pulses) {
-    advanced.push(advancePulseUnculled(pulse));
+    advancePulseInPlace(pulse);
+    advanced.push(pulse);
   }
 
   // 1. Emit one outbound pulse per operational active-mode sensor.
