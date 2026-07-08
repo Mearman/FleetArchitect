@@ -257,8 +257,35 @@ export function launchDecoys(
  * focus and victory without a separate prune pass. Deterministic: phantoms
  * iterate in array (creation) order; the nearest enemy is chosen by squared
  * distance with ship array order as the tie-break; no rng.
+ *
+ * Optimisation (lossless): rather than re-scan the full `ships` array per
+ * drone — re-evaluating the alive/side/phantom filter against friendlies, dead
+ * hulls, and other phantoms each time — build the two per-side enemy lists
+ * ONCE at the top of the step. Each list is the order-preserving set of alive,
+ * non-phantom ships on that side (so a drone on side A reads the list of the
+ * opposite side). The list entries are live references to the SimShip objects,
+ * not snapshots: when an earlier drone's `applyImpact` kills its target this
+ * tick, `target.alive` flips to false on the shared object, and the inner
+ * loop's `!e.alive` check excludes that target for every later drone — the
+ * intra-tick kill reactivity of the original full rescan, preserved exactly.
+ * Rebuilt fresh each tick; never cached across ticks. The frozen full-scan
+ * oracle lives in `phantoms.reference.ts` and is A/B-tested in
+ * `engine.phantoms.equivalence`.
  */
 export function stepPhantoms(ships: readonly SimShip[]): void {
+  // Per-side lists of alive, non-phantom ships, in ships-array order. A drone
+  // homes against the OPPOSITE side's list (an attacker drone reads
+  // `defenders`, a defender drone reads `attackers`). The filter is the exact
+  // conjunction the original inner loop re-evaluated per drone per enemy, so
+  // the candidate set and iteration order are unchanged.
+  const attackers: SimShip[] = [];
+  const defenders: SimShip[] = [];
+  for (const e of ships) {
+    if (!e.alive || e.phantom !== undefined) continue;
+    if (e.side === "attacker") attackers.push(e);
+    else defenders.push(e);
+  }
+
   for (const s of ships) {
     if (s.phantom === undefined || !s.alive) continue;
     const ph = s.phantom;
@@ -268,11 +295,14 @@ export function stepPhantoms(ships: readonly SimShip[]): void {
       continue;
     }
     if (ph.kind === "drone") {
-      // Home on the nearest real enemy and strike if in range.
+      // Home on the nearest real enemy and strike if in range. The enemy list
+      // is the opposite side's; a target killed by an earlier drone this tick
+      // is excluded via the shared `.alive` flag (the intra-tick tombstone).
+      const enemies = s.side === "attacker" ? defenders : attackers;
       let nearest: SimShip | undefined;
       let nearestSq = Number.POSITIVE_INFINITY;
-      for (const e of ships) {
-        if (!e.alive || e.side === s.side || e.phantom !== undefined) continue;
+      for (const e of enemies) {
+        if (!e.alive) continue;
         const dx = e.x - s.x;
         const dy = e.y - s.y;
         const dSq = dx * dx + dy * dy;
