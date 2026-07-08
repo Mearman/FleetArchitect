@@ -52,8 +52,16 @@ const EDGE_TO_CORNER: Readonly<Record<"n" | "e" | "s" | "w", number>> = {
   w: 3,
 };
 
-/** The screen geometry of one extruded cell: the projected ground quad, the
- *  raised top quad, the projected centre, and the screen-space rise `zS`. */
+/**
+ * The screen geometry of one extruded cell: the projected ground quad, the
+ * raised top quad, the projected centre, and the screen-space rise `zS`. The
+ * quad/centre slots are mutable {@link Pt} objects owned by the caller and
+ * rewritten in place by {@link isoCellBox} each call, so a single CellBox is
+ * allocated once and reused across every cell of every ship of every frame
+ * (see {@link drawIsoShipCells}'s `boxScratch` parameter) — the per-rAF iso
+ * path allocates no geometry once warmed. The arithmetic is identical to the
+ * allocating form; only the destination of each projected point differs.
+ */
 export interface CellBox {
   ground: Pt[];
   top: Pt[];
@@ -62,17 +70,46 @@ export interface CellBox {
 }
 
 /**
- * Project one cell into an extruded box. `project` maps a world point to a screen
- * point (the battle transform's `project`, or the designer's board projection);
- * `cosF`/`sinF` orient the ship; `(ox, oy)` is the cell's local centre;
- * `heightCells` is its extrusion height in cell units; `scale` is screen pixels
- * per world unit. The top quad is the ground quad lifted straight up the screen
- * by `zS = heightCells · CELL_SIZE · scale`, so a taller cell rises further —
- * the property the isometric silhouette depends on. Pure and deterministic, so
- * the geometry is unit-tested without a canvas.
+ * Allocate a fresh CellBox with 4 ground and 4 top Pt slots. Held by the caller
+ * (the draw loop keeps one in a ref) and passed to {@link isoCellBox} as the
+ * `into` scratch every call, mirroring the pooled {@link IsoCellDepth} buffer.
+ */
+export function makeCellBox(): CellBox {
+  return {
+    ground: [
+      { x: 0, y: 0 },
+      { x: 0, y: 0 },
+      { x: 0, y: 0 },
+      { x: 0, y: 0 },
+    ],
+    top: [
+      { x: 0, y: 0 },
+      { x: 0, y: 0 },
+      { x: 0, y: 0 },
+      { x: 0, y: 0 },
+    ],
+    centre: { x: 0, y: 0 },
+    zS: 0,
+  };
+}
+
+/**
+ * Project one cell into an extruded box, writing into the caller-owned `into`
+ * scratch (returned for chaining). `projectInto` writes the projected screen
+ * point into its `out` argument — the battle transform's allocation-free
+ * `t.projectInto`, rather than the allocating `t.project` — so no Pt is
+ * allocated per corner; `cosF`/`sinF` orient the ship; `(ox, oy)` is the cell's
+ * local centre; `heightCells` is its extrusion height in cell units; `scale` is
+ * screen pixels per world unit. The top quad is the ground quad lifted straight
+ * up the screen by `zS = heightCells · CELL_SIZE · scale`, so a taller cell
+ * rises further — the property the isometric silhouette depends on. Pure and
+ * deterministic — identical arithmetic in identical order to the allocating
+ * form — so the geometry is unit-tested without a canvas; only the destination
+ * of each point differs.
  */
 export function isoCellBox(
-  project: (wx: number, wy: number) => Pt,
+  projectInto: (out: Pt, wx: number, wy: number) => Pt,
+  into: CellBox,
   cosF: number,
   sinF: number,
   shipX: number,
@@ -82,15 +119,29 @@ export function isoCellBox(
   heightCells: number,
   scale: number,
 ): CellBox {
-  const ground = LOCAL_CORNERS.map(([dx, dy]) => {
+  const { ground, top, centre } = into;
+  let i = 0;
+  for (const [dx, dy] of LOCAL_CORNERS) {
     const lx = ox + dx;
     const ly = oy + dy;
-    return project(shipX + (lx * cosF - ly * sinF), shipY + (lx * sinF + ly * cosF));
-  });
-  const centre = project(shipX + (ox * cosF - oy * sinF), shipY + (ox * sinF + oy * cosF));
+    const g = ground[i];
+    if (g !== undefined) {
+      projectInto(g, shipX + (lx * cosF - ly * sinF), shipY + (lx * sinF + ly * cosF));
+    }
+    i += 1;
+  }
+  projectInto(centre, shipX + (ox * cosF - oy * sinF), shipY + (ox * sinF + oy * cosF));
   const zS = heightCells * CELL_SIZE * scale;
-  const top = ground.map((c) => ({ x: c.x, y: c.y - zS }));
-  return { ground, top, centre, zS };
+  for (let j = 0; j < 4; j += 1) {
+    const g = ground[j];
+    const tj = top[j];
+    if (g !== undefined && tj !== undefined) {
+      tj.x = g.x;
+      tj.y = g.y - zS;
+    }
+  }
+  into.zS = zS;
+  return into;
 }
 
 /**
@@ -105,15 +156,65 @@ export interface IsoCellDepth {
   depth: number;
 }
 
-/** Multiply each channel of a #rrggbb colour by `f` (0..1) to shade a face. */
+/**
+ * Multiply each channel of a #rrggbb colour by `f` (0..1) to shade a face.
+ * Deterministic on `(hex, f)`, and the iso draw path re-derives the same few
+ * (module colour × fixed factor) combinations up to four times per cell per
+ * frame, so the parsed-and-rebuilt result is memoised: the first call for a
+ * given pair parses and caches, subsequent calls are a single Map lookup. The
+ * output string is byte-identical to the uncached form, so rendered colours are
+ * unchanged.
+ */
+const shadeCache = new Map<string, string>();
 function shade(hex: string, f: number): string {
   if (hex.length !== 7 || hex.charCodeAt(0) !== 35) return hex;
+  const key = `${hex}|${f}`;
+  const cached = shadeCache.get(key);
+  if (cached !== undefined) return cached;
   const r = Math.round(Number.parseInt(hex.slice(1, 3), 16) * f);
   const g = Math.round(Number.parseInt(hex.slice(3, 5), 16) * f);
   const b = Math.round(Number.parseInt(hex.slice(5, 7), 16) * f);
   const h = (n: number) => Math.max(0, Math.min(255, n)).toString(16).padStart(2, "0");
-  return `#${h(r)}${h(g)}${h(b)}`;
+  const out = `#${h(r)}${h(g)}${h(b)}`;
+  shadeCache.set(key, out);
+  return out;
 }
+
+/**
+ * Encode a cell's integer grid offset as a single number for O(1) set membership
+ * without per-cell string allocation. Cells sit on a 1 m grid (CELL_SIZE = 1),
+ * so offsets are integers in a bounded range (|ox|, |oy| well under 2^15 even
+ * for a dreadnought); the offset shifts negative grid coords into a positive
+ * range so the pair packs into one safe-integer key.
+ */
+const CELL_KEY_OFFSET = 1 << 15;
+function cellKey(ox: number, oy: number): number {
+  return (ox + CELL_KEY_OFFSET) * (2 * CELL_KEY_OFFSET) + (oy + CELL_KEY_OFFSET);
+}
+
+/**
+ * Memoised set of every present cell offset for a given hull outline. The
+ * outline array is identity-stable per descriptor (descriptor.outline is read
+ * off the cached descriptor each frame), and the cell offsets are the same
+ * function of that descriptor, so the set is built once per topology and reused
+ * across frames — driving the boundary-only bevel clip in {@link drawIsoShipCells}.
+ */
+const presentCellsForOutline = new WeakMap<
+  ReadonlyArray<ReadonlyArray<{ x: number; y: number }>>,
+  Set<number>
+>();
+
+/**
+ * Pooled scratch for the per-cell extruded-box projection: its ground/top/centre
+ * Pt slots are rewritten in place each cell by {@link isoCellBox} (via the
+ * transform's allocation-free `projectInto`), so the per-rAF iso path allocates
+ * no geometry once warmed. Module-level because the scratch is purely internal
+ * to {@link drawIsoShipCells} — the caller never reads it back (unlike the `out`
+ * buffer) — and the rAF draw loop is single-threaded and sequential, so each
+ * cell fully consumes the scratch into canvas commands before the next
+ * overwrites it.
+ */
+const isoCellBoxScratch: CellBox = makeCellBox();
 
 /**
  * Draw one ship's cells as extruded isometric boxes. `cells` are this frame's
@@ -126,6 +227,17 @@ function shade(hex: string, f: number): string {
  * survive), so the per-rAF hot path allocates nothing once warmed — mirroring
  * the ship-level {@link orderShipsForRenderInto}. Same comparator and cell set as
  * the prior `.map().sort()`, so the visual permutation is identical.
+ *
+ * The per-cell geometry is projected into a module-level pooled {@link CellBox}
+ * scratch ({@link isoCellBoxScratch}) via the transform's allocation-free
+ * `projectInto`, so each cell, ship, and frame reuses the same ground/top/centre
+ * Pt slots — the scratch is purely internal (consumed into canvas commands
+ * before the next cell overwrites it) and the rAF draw loop is single-threaded
+ * and sequential. The bevel clip is applied only to boundary cells (those with
+ * an incomplete orthogonal neighbourhood): for a fully interior cell the
+ * bevelled outline clip is provably a no-op (its side-face quads sit strictly
+ * inside the hull outline), so the per-cell save/clip/restore triple is skipped
+ * for them.
  */
 export function drawIsoShipCells(
   ctx: CanvasRenderingContext2D,
@@ -170,10 +282,12 @@ export function drawIsoShipCells(
   // ground-footprint clip around the whole draw would crop those raised tops; a
   // true prism silhouette (front edges at ground, back edges lifted per-cell) is
   // the fully-correct fix but disproportionate here. Project each vertex with
-  // the same ship-pose + t.project the cells use. Per-cell save/clip/restore
-  // (below) keeps the back-to-front painter order intact. Trade: a slight "deck
-  // overhang" where a top face cantilevers past a bevelled wall. Render-only.
+  // the same ship-pose used for the cells. Per-cell save/clip/restore (below,
+  // boundary cells only) keeps the back-to-front painter order intact. Trade: a
+  // slight "deck overhang" where a top face cantilevers past a bevelled wall.
+  // Render-only.
   let clipPath: Path2D | undefined;
+  let present: Set<number> | undefined;
   if (outline !== undefined && outline.length > 0) {
     clipPath = new Path2D();
     for (const loop of outline) {
@@ -192,12 +306,24 @@ export function drawIsoShipCells(
       }
       clipPath.closePath();
     }
+    // Set of present cell offsets for this outline, memoised on the outline
+    // array (identity-stable per descriptor). Used below to identify boundary
+    // cells (incomplete orthogonal neighbourhood) — the only cells whose side
+    // faces the bevel clip can actually bite, so interior cells skip the
+    // save/clip/restore triple entirely.
+    present = presentCellsForOutline.get(outline);
+    if (present === undefined) {
+      present = new Set<number>();
+      for (const m of cells) present.add(cellKey(m.ox, m.oy));
+      presentCellsForOutline.set(outline, present);
+    }
   }
 
   for (const { m } of out) {
     const app = appearanceOf(m.kind);
     const { ground, top, centre, zS } = isoCellBox(
-      t.project,
+      t.projectInto,
+      isoCellBoxScratch,
       cosF,
       sinF,
       s.x,
@@ -216,8 +342,19 @@ export function drawIsoShipCells(
     // Side faces: only the two front edges (whose midpoint sits below the cell
     // centre on screen) are visible. The left/right pair gets slightly different
     // shading for a lit-from-one-side read. Clipped to the chamfered silhouette
-    // when present so armour corners bevel; the top face below stays unclipped.
-    if (clipPath !== undefined) {
+    // for boundary cells only (an edge exposed on the hull perimeter) so armour
+    // corners bevel; the top face below stays unclipped. An interior cell's
+    // side-face quads sit strictly inside the bevelled outline, so the evenodd
+    // clip is a no-op for them and the save/clip/restore is skipped.
+    let interior = true;
+    if (present !== undefined) {
+      interior =
+        present.has(cellKey(m.ox + CELL_SIZE, m.oy)) &&
+        present.has(cellKey(m.ox - CELL_SIZE, m.oy)) &&
+        present.has(cellKey(m.ox, m.oy + CELL_SIZE)) &&
+        present.has(cellKey(m.ox, m.oy - CELL_SIZE));
+    }
+    if (clipPath !== undefined && !interior) {
       ctx.save();
       ctx.clip(clipPath, "evenodd");
     }
@@ -239,7 +376,7 @@ export function drawIsoShipCells(
       ctx.closePath();
       ctx.fill();
     }
-    if (clipPath !== undefined) {
+    if (clipPath !== undefined && !interior) {
       ctx.restore();
     }
 

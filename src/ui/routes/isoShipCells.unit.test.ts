@@ -2,20 +2,29 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CELL_SIZE } from "@/domain/grid";
 import type { RenderCell } from "@/ui/cellLayout";
 import { ISO_PROJECTION, makeTransform } from "./battleCamera";
-import { drawIsoShipCells, isoCellBox, type IsoCellDepth, type Pt } from "./isoShipCells";
+import {
+  drawIsoShipCells,
+  isoCellBox,
+  makeCellBox,
+  type IsoCellDepth,
+  type Pt,
+} from "./isoShipCells";
 
 /** A canonical 2:1 isometric projection, like ISO_PROJECTION but standalone so
- *  the geometry test does not depend on the camera module. */
-const isoProject = (wx: number, wy: number): Pt => ({
-  x: (wx - wy) * 0.8,
-  y: (wx + wy) * 0.4,
-});
+ *  the geometry test does not depend on the camera module. The into-style form
+ *  writes into a caller-owned Pt (mirroring Transform.projectInto) so the
+ *  pooled-scratch isoCellBox path can be exercised without a real transform. */
+const isoProjectInto = (out: Pt, wx: number, wy: number): Pt => {
+  out.x = (wx - wy) * 0.8;
+  out.y = (wx + wy) * 0.4;
+  return out;
+};
 
 describe("isoCellBox", () => {
   it("lifts the top face straight up the screen by the height rise", () => {
     const scale = 3;
     const heightCells = 0.5;
-    const box = isoCellBox(isoProject, 1, 0, 0, 0, 0, 0, heightCells, scale);
+    const box = isoCellBox(isoProjectInto, makeCellBox(), 1, 0, 0, 0, 0, 0, heightCells, scale);
     const expectedZ = heightCells * CELL_SIZE * scale;
     expect(box.zS).toBeCloseTo(expectedZ, 9);
     for (let i = 0; i < 4; i += 1) {
@@ -30,13 +39,13 @@ describe("isoCellBox", () => {
 
   it("a taller cell rises further than a shorter one at the same scale", () => {
     const scale = 2;
-    const tall = isoCellBox(isoProject, 1, 0, 0, 0, 0, 0, 0.85, scale);
-    const short = isoCellBox(isoProject, 1, 0, 0, 0, 0, 0, 0.12, scale);
+    const tall = isoCellBox(isoProjectInto, makeCellBox(), 1, 0, 0, 0, 0, 0, 0.85, scale);
+    const short = isoCellBox(isoProjectInto, makeCellBox(), 1, 0, 0, 0, 0, 0, 0.12, scale);
     expect(tall.zS).toBeGreaterThan(short.zS);
   });
 
   it("the projected centre is the centroid of the ground quad (affine projection)", () => {
-    const box = isoCellBox(isoProject, 1, 0, 5, -3, 2, 1, 0.4, 1.5);
+    const box = isoCellBox(isoProjectInto, makeCellBox(), 1, 0, 5, -3, 2, 1, 0.4, 1.5);
     const avgX = box.ground.reduce((s, p) => s + p.x, 0) / 4;
     const avgY = box.ground.reduce((s, p) => s + p.y, 0) / 4;
     expect(box.centre.x).toBeCloseTo(avgX, 9);
@@ -47,10 +56,26 @@ describe("isoCellBox", () => {
     // Facing +y (cosF=0, sinF=1): the cell's local +x maps to world +y. The
     // centre of a cell at local (1,0) must land where world (shipX, shipY+1)
     // projects.
-    const box = isoCellBox(isoProject, 0, 1, 0, 0, 1, 0, 0.3, 1);
-    const expected = isoProject(0, 1);
-    expect(box.centre.x).toBeCloseTo(expected.x, 9);
-    expect(box.centre.y).toBeCloseTo(expected.y, 9);
+    const box = isoCellBox(isoProjectInto, makeCellBox(), 0, 1, 0, 0, 1, 0, 0.3, 1);
+    const expectedPt: Pt = { x: 0, y: 0 };
+    isoProjectInto(expectedPt, 0, 1);
+    expect(box.centre.x).toBeCloseTo(expectedPt.x, 9);
+    expect(box.centre.y).toBeCloseTo(expectedPt.y, 9);
+  });
+
+  it("writes into the caller-owned scratch and returns it (no fresh geometry)", () => {
+    // The pooled path: the same CellBox reference is mutated and handed back, so
+    // the per-rAF iso loop can hold one buffer and reuse it across every cell.
+    const scratch = makeCellBox();
+    const returned = isoCellBox(isoProjectInto, scratch, 1, 0, 0, 0, 0, 0, 0.5, 3);
+    expect(returned).toBe(scratch);
+    // Capture the first cell's projected centre before the buffer is reused.
+    const firstCentreX = returned.centre.x;
+    // A second call into the SAME scratch overwrites the first cell's geometry
+    // in place (the canonical reuse contract the draw loop relies on).
+    const second = isoCellBox(isoProjectInto, scratch, 1, 0, 0, 0, 9, 0, 0.5, 3);
+    expect(second).toBe(scratch);
+    expect(second.centre.x).not.toBeCloseTo(firstCentreX, 9);
   });
 });
 
@@ -232,6 +257,19 @@ describe("drawIsoShipCells chamfer clip (body-only outline bevel)", () => {
     ],
   ];
 
+  /** A distinct outline array (separate identity from SQUARE_OUTLINE) so the
+   *  boundary-cell cache — keyed on the outline reference — does not collide
+   *  with the single-cell test's entry. The geometry is irrelevant here: the
+   *  boundary logic keys off the cell offsets, not the outline vertices. */
+  const BLOCK_OUTLINE: ReadonlyArray<ReadonlyArray<{ x: number; y: number }>> = [
+    [
+      { x: -1, y: -1 },
+      { x: 3, y: -1 },
+      { x: 3, y: 3 },
+      { x: -1, y: 3 },
+    ],
+  ];
+
   it("applies the body-only chamfer clip (save/clip/restore) when an outline is present", () => {
     const t = makeTransform(800, 600, 3, 0, 0, ISO_PROJECTION);
     const s = { x: 100, y: 200, facing: 0 };
@@ -256,5 +294,46 @@ describe("drawIsoShipCells chamfer clip (body-only outline bevel)", () => {
     expect(clip).not.toHaveBeenCalled();
     expect(save).not.toHaveBeenCalled();
     expect(restore).not.toHaveBeenCalled();
+  });
+
+  it("skips the chamfer clip for interior cells (full orthogonal neighbourhood)", () => {
+    const t = makeTransform(800, 600, 3, 0, 0, ISO_PROJECTION);
+    const s = { x: 100, y: 200, facing: 0 };
+    const { ctx, save, clip, restore } = spyCtx();
+    const out: IsoCellDepth[] = [];
+    // A 3x3 block of cells (centres at integer grid offsets 0..2 on each axis).
+    // The centre cell (1,1) has all four orthogonal neighbours present, so its
+    // side-face quads sit strictly inside the outline and the save/clip/restore
+    // triple is skipped for it. The eight surrounding cells each expose at least
+    // one edge on the perimeter and ARE clipped. Eight clipped, one skipped.
+    const block = [
+      cellAt(0, 0), cellAt(1, 0), cellAt(2, 0),
+      cellAt(0, 1), cellAt(1, 1), cellAt(2, 1),
+      cellAt(0, 2), cellAt(1, 2), cellAt(2, 2),
+    ];
+    drawIsoShipCells(ctx, t, s, block, "#ff0000", () => false, out, BLOCK_OUTLINE);
+    expect(save).toHaveBeenCalledTimes(8);
+    expect(clip).toHaveBeenCalledWith(expect.anything(), "evenodd");
+    expect(clip).toHaveBeenCalledTimes(8);
+    expect(restore).toHaveBeenCalledTimes(8);
+  });
+
+  it("memoises the boundary set on the outline (no recompute across frames)", () => {
+    // The same outline + cell set drawn twice must clip the same cells: the
+    // boundary set is memoised on the outline reference, so the second call
+    // reuses the first call's set rather than rebuilding (and remains correct).
+    const t = makeTransform(800, 600, 3, 0, 0, ISO_PROJECTION);
+    const s = { x: 100, y: 200, facing: 0 };
+    const { ctx, save } = spyCtx();
+    const out: IsoCellDepth[] = [];
+    const block = [
+      cellAt(0, 0), cellAt(1, 0), cellAt(2, 0),
+      cellAt(0, 1), cellAt(1, 1), cellAt(2, 1),
+      cellAt(0, 2), cellAt(1, 2), cellAt(2, 2),
+    ];
+    drawIsoShipCells(ctx, t, s, block, "#ff0000", () => false, out, BLOCK_OUTLINE);
+    drawIsoShipCells(ctx, t, s, block, "#ff0000", () => false, out, BLOCK_OUTLINE);
+    // Eight boundary cells clipped on each frame → sixteen saves total.
+    expect(save).toHaveBeenCalledTimes(16);
   });
 });

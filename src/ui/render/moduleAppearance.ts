@@ -15,7 +15,7 @@
  * views so components read as 3D objects with their own silhouette.
  */
 
-import { CellKind } from "@/schema/battle";
+import type { CellKind } from "@/schema/battle";
 import { NEON_CYAN, NEON_MAGENTA, PHOSPHOR_AMBER, PHOSPHOR_GREEN } from "@/ui/theme/tokens";
 
 /**
@@ -128,12 +128,12 @@ export const MODULE_APPEARANCE: Record<CellKind, ModuleAppearance> = {
 };
 
 /**
- * Appearance for a cell kind. The snapshot's `kind` is a plain string at the
- * render boundary, so it is validated against the {@link CellKind} enum; an
- * unrecognised kind falls back to the structural-hull appearance rather than
- * vanishing. Prefer passing an already-typed {@link CellKind} where possible.
+ * Appearance for a cell kind. The render-time cell's `kind` is already typed as
+ * {@link CellKind} — validated once when the descriptor is parsed at resolve
+ * time, and carried as a typed field on {@link RenderCell} — so this is a plain
+ * table lookup with no per-call re-validation. The table is a total
+ * `Record<CellKind, …>`, so every kind resolves to a defined appearance.
  */
-export function appearanceOf(kind: string): ModuleAppearance {
-  const parsed = CellKind.safeParse(kind);
-  return parsed.success ? MODULE_APPEARANCE[parsed.data] : MODULE_APPEARANCE.hull;
+export function appearanceOf(kind: CellKind): ModuleAppearance {
+  return MODULE_APPEARANCE[kind];
 }
