@@ -9,10 +9,20 @@ import { SIM } from "./config";
 import { TICK_DURATION_SECONDS } from "./power";
 import { crewTaskOrder, type CrewTaskKind } from "./crew-priority";
 import { ammoShortfall, chargeShortfall, chooseAmmoRun, choosePowerRun, hasLiveManningHardwire, reactorWiringReach, refillHardwiredPower, resolveAmmoArrival, resolvePowerArrival } from "./crew-haul";
-import { aliveCellMap, compareByCell, crewCellKey, findCrewPath, modulesBySlot, refreshPathCache } from "./crew-pathfinding";
+import { aliveCellMap, cellNum, compareByCell, findCrewPath, modulesBySlot, refreshPathCache } from "./crew-pathfinding";
 import { edgeDirection } from "@/domain/grid";
 import type { ModuleEffect } from "@/schema/module";
 import type { SimModule, SimShip } from "./types";
+
+/**
+ * Shared empty reservation structures, reused as the no-idle stand-in so the
+ * steady-state tick (no crew idle) skips the three per-ship claim allocations
+ * and the O(crew) populate loop. They are only ever read or mutated inside
+ * `assignIdleCrewToTask`, which the idle-crew loop never calls when no crew is
+ * idle — so these instances are never written to and sharing them is safe.
+ */
+const EMPTY_CLAIM_MAP: Map<string, number> = new Map();
+const EMPTY_CLAIM_SET: Set<string> = new Set();
 
 /**
  * Advance one ship's crew by a single tick and recompute every module's
@@ -45,7 +55,9 @@ export function updateCrew(ship: SimShip): void {
   // sever a route the cache still holds. `refreshPathCache` compares the
   // alive-cell fingerprint to the cached one and clears the cache only when the
   // topology actually changed (the common no-change case is a fingerprint pass).
-  refreshPathCache(ship);
+  // The returned flag reports that change so the cell-death filter and id sort
+  // below can be skipped on an unchanged topology.
+  const topologyChanged = refreshPathCache(ship);
 
   // Reuse the cached alive-cell index across ticks; it only changes when the
   // topology does (a module dies), at which point `refreshPathCache` cleared it.
@@ -56,13 +68,34 @@ export function updateCrew(ship: SimShip): void {
   const cells = ship.aliveCells;
   const bySlot = modulesBySlot(ship);
 
-  // 1. Remove crew standing on a cell that no longer exists.
-  ship.crew = ship.crew.filter((c) => cells.has(crewCellKey(c.col, c.row)));
-
-  // Stable id order for every per-crew pass below.
-  const ordered = [...ship.crew].sort((a, b) =>
-    a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
-  );
+  // 1. Remove crew standing on a cell that no longer exists, then derive the
+  //    stable id-ordered iteration array. A removal can only follow a topology
+  //    change (the only event that kills a cell a crew member stands on), so on
+  //    an unchanged topology the filter is a same-members-same-order no-op copy
+  //    and is skipped. Crew can also be removed by vacuum death in the resource
+  //    step (which runs after `updateCrew`), so a roster-length shrink also
+  //    invalidates the cached order; the filter is still a no-op for the
+  //    survivors then, but the cached array would hold a stale member. Between
+  //    such events the sorted permutation is invariant (removal preserves
+  //    relative order and crew are never added mid-battle), so the ordered
+  //    array is cached on the ship and reused.
+  const cachedOrdered = ship.orderedCrew;
+  let ordered: SimCrew[];
+  if (
+    cachedOrdered !== undefined &&
+    !topologyChanged &&
+    cachedOrdered.length === ship.crew.length
+  ) {
+    ordered = cachedOrdered;
+  } else {
+    if (topologyChanged) {
+      ship.crew = ship.crew.filter((c) => cells.has(cellNum(c.col, c.row)));
+    }
+    ordered = [...ship.crew].sort((a, b) =>
+      a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
+    );
+    ship.orderedCrew = ordered;
+  }
 
   // 2. Resolve arrivals (pickup / deposit). A member with an empty path that is
   //    standing on its target acts on it; manning members simply hold.
@@ -70,18 +103,32 @@ export function updateCrew(ship: SimShip): void {
     resolveArrival(ship, c, bySlot, cells);
   }
 
+  // Whether any crew member is idle this tick. Computed up front because the
+  // reservation maps below and the five candidate lists further down are
+  // consumed (and the maps mutated) solely inside the idle-crew assignment
+  // loop, which never runs when no crew is idle — the steady-state case once a
+  // complement has settled into manning/hauling roles.
+  const hasIdle = ordered.some((c) => c.job === "idle");
+
   // Reservation maps so assignment never over-subscribes a station or sends two
-  // haulers to the same sink. Built from current (post-arrival) intents.
-  const claimedStations = new Map<string, number>();
-  const claimedWeapons = new Set<string>();
-  const claimedSinks = new Set<string>();
-  for (const c of ship.crew) {
-    if (c.job === "manning" && c.targetSlotId !== undefined) {
-      claimedStations.set(c.targetSlotId, (claimedStations.get(c.targetSlotId) ?? 0) + 1);
-    } else if (c.job === "haulAmmo" && c.haulSinkSlotId !== undefined) {
-      claimedWeapons.add(c.haulSinkSlotId);
-    } else if (c.job === "haulPower" && c.haulSinkSlotId !== undefined) {
-      claimedSinks.add(c.haulSinkSlotId);
+  // haulers to the same sink. Built from current (post-arrival) intents. Only
+  // allocated and populated when some crew may be assigned this tick: when no
+  // crew is idle the idle-crew loop below never calls into assignment, so the
+  // maps would be populated and discarded unread. Shared empty instances stand
+  // in for that no-idle case, skipping three allocations and an O(crew)
+  // populate loop per ship per tick.
+  const claimedStations = hasIdle ? new Map<string, number>() : EMPTY_CLAIM_MAP;
+  const claimedWeapons = hasIdle ? new Set<string>() : EMPTY_CLAIM_SET;
+  const claimedSinks = hasIdle ? new Set<string>() : EMPTY_CLAIM_SET;
+  if (hasIdle) {
+    for (const c of ship.crew) {
+      if (c.job === "manning" && c.targetSlotId !== undefined) {
+        claimedStations.set(c.targetSlotId, (claimedStations.get(c.targetSlotId) ?? 0) + 1);
+      } else if (c.job === "haulAmmo" && c.haulSinkSlotId !== undefined) {
+        claimedWeapons.add(c.haulSinkSlotId);
+      } else if (c.job === "haulPower" && c.haulSinkSlotId !== undefined) {
+        claimedSinks.add(c.haulSinkSlotId);
+      }
     }
   }
 
@@ -98,7 +145,6 @@ export function updateCrew(ship: SimShip): void {
   // every member is manning or hauling — the lists would never be read, so
   // skip the five filter+sort passes entirely. They are pure read-only
   // derivations of alive module state, so omitting them changes no result.
-  const hasIdle = ordered.some((c) => c.job === "idle");
   const stations = hasIdle
     ? ship.modules
         .filter((m) => m.alive && m.crewRequired > 0 && stationNeedsCrew(m.effect.kind))
@@ -180,17 +226,17 @@ export function updateCrew(ship: SimShip): void {
   //     least one crew member occupies one of its two bordering cells.
   //     Cells are scanned in (col, row) order; the east/south edges only (to
   //     avoid double-processing each door) drive the closing decision.
-  const crewOccupied = new Set<string>();
-  for (const c of ship.crew) crewOccupied.add(crewCellKey(c.col, c.row));
+  const crewOccupied = new Set<number>();
+  for (const c of ship.crew) crewOccupied.add(cellNum(c.col, c.row));
   for (const m of ship.modules) {
     if (!m.alive) continue;
-    const here = crewCellKey(m.col, m.row);
+    const here = cellNum(m.col, m.row);
     for (const dir of (["e", "s"] satisfies Array<"e" | "s">)) {
       if (m.edges[dir] !== "door") continue;
       if (m.edges.doorStates[dir] !== "open") continue;
       const neighborCol = dir === "e" ? m.col + 1 : m.col;
       const neighborRow = dir === "s" ? m.row + 1 : m.row;
-      const there = crewCellKey(neighborCol, neighborRow);
+      const there = cellNum(neighborCol, neighborRow);
       if (!crewOccupied.has(here) && !crewOccupied.has(there)) {
         m.edges.doorStates[dir] = "closed";
         const neighbor = cells.get(there);
@@ -247,7 +293,7 @@ export function rechargeAndConsume(ship: SimShip): void {
   const wired = ship.wiringReach;
   for (const m of ship.modules) {
     if (m.powerDraw <= 0 || !m.alive) continue;
-    if (wired.has(crewCellKey(m.col, m.row))) m.charge = SIM.chargeBufferMax;
+    if (wired.has(cellNum(m.col, m.row))) m.charge = SIM.chargeBufferMax;
   }
 
   // 1b. Explicit power conduits: a power-drawing module with a live power
@@ -322,7 +368,7 @@ export function resolveArrival(
   ship: SimShip,
   crew: SimCrew,
   bySlot: ReadonlyMap<string, SimModule>,
-  cells: ReadonlyMap<string, SimModule>,
+  cells: ReadonlyMap<number, SimModule>,
 ): void {
   if (!hasArrived(crew, bySlot)) return;
   if (crew.job === "haulAmmo") resolveAmmoArrival(ship, crew, bySlot, cells);
@@ -428,7 +474,7 @@ export function chooseStation(
   ship: SimShip,
   crew: SimCrew,
   stations: readonly SimModule[],
-  cells: ReadonlyMap<string, SimModule>,
+  cells: ReadonlyMap<number, SimModule>,
   claimed: ReadonlyMap<string, number>,
 ): { station: SimModule; path: { col: number; row: number }[] } | undefined {
   for (const station of stations) {
@@ -456,7 +502,7 @@ export function chooseStation(
  * accumulator reaches 1. At real time (factor 1) the accumulator hits 1 every
  * tick and behaviour is byte-identical to the pre-dilation path.
  */
-export function advanceCrew(crew: SimCrew, cells: ReadonlyMap<string, SimModule>, dilationFactor: number): void {
+export function advanceCrew(crew: SimCrew, cells: ReadonlyMap<number, SimModule>, dilationFactor: number): void {
   crew.moveAccumulator += dilationFactor;
   if (crew.moveAccumulator < 1) {
     // Not enough proper time has elapsed for a cell step this tick.
@@ -475,7 +521,7 @@ export function advanceCrew(crew: SimCrew, cells: ReadonlyMap<string, SimModule>
   // If the next step is no longer walkable (its cell died this tick), abandon
   // the route and drop the job; the crew member re-plans next tick from where it
   // stands. A dropped ammo run forgets its sink reservation too.
-  if (!cells.has(crewCellKey(next.col, next.row))) {
+  if (!cells.has(cellNum(next.col, next.row))) {
     abandonHaul(crew);
     return;
   }
@@ -486,12 +532,12 @@ export function advanceCrew(crew: SimCrew, cells: ReadonlyMap<string, SimModule>
   // reassignment latency — the trade-off for blast containment. (Replaces the
   // old `abandonHaul`, which could never reopen a closed door and trapped crew
   // indefinitely behind it, leaving weapons permanently unmanned.)
-  const fromMod = cells.get(crewCellKey(crew.col, crew.row));
+  const fromMod = cells.get(cellNum(crew.col, crew.row));
   const dir = fromMod !== undefined ? edgeDirection(crew, next) : undefined;
   if (dir !== undefined && fromMod !== undefined && fromMod.edges[dir] === "door") {
     const wasClosed = fromMod.edges.doorStates[dir] !== "open";
     fromMod.edges.doorStates[dir] = "open";
-    const toMod = cells.get(crewCellKey(next.col, next.row));
+    const toMod = cells.get(cellNum(next.col, next.row));
     const reverseDir = dir === "n" ? "s" : dir === "s" ? "n" : dir === "e" ? "w" : "e";
     if (toMod !== undefined && toMod.edges[reverseDir] === "door") {
       toMod.edges.doorStates[reverseDir] = "open";
@@ -528,9 +574,9 @@ export function advanceCrew(crew: SimCrew, cells: ReadonlyMap<string, SimModule>
 export function recomputeManning(ship: SimShip): void {
   if (ship.modules === undefined || ship.crew === undefined) return;
   const bySlot = modulesBySlot(ship);
-  const counts = new Map<string, number>();
+  const counts = new Map<number, number>();
   for (const c of ship.crew) {
-    const k = crewCellKey(c.col, c.row);
+    const k = cellNum(c.col, c.row);
     counts.set(k, (counts.get(k) ?? 0) + 1);
   }
   for (const m of ship.modules) {
@@ -538,7 +584,7 @@ export function recomputeManning(ship: SimShip): void {
       m.manned = true;
       continue;
     }
-    const present = counts.get(crewCellKey(m.col, m.row)) ?? 0;
+    const present = counts.get(cellNum(m.col, m.row)) ?? 0;
     if (present >= m.crewRequired) {
       m.manned = true;
       continue;
@@ -570,7 +616,7 @@ function assignIdleCrewToTask(
   kind: CrewTaskKind,
   ship: SimShip,
   crew: SimCrew,
-  cells: ReadonlyMap<string, SimModule>,
+  cells: ReadonlyMap<number, SimModule>,
   stations: readonly SimModule[],
   dryWeapons: readonly SimModule[],
   magazines: readonly SimModule[],

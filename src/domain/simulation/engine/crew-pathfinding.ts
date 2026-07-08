@@ -56,12 +56,6 @@ export function compareByCell(
   return a.row - b.row;
 }
 
-/** Canonical "col,row" cell key, matching the convention used by break-apart
- *  and the grid toolkit. */
-export function crewCellKey(col: number, row: number): string {
-  return `${col},${row}`;
-}
-
 /**
  * Encode a `(col, row)` cell as a single number for use as a cache key, avoiding
  * the per-lookup string allocation of the `"col,row"` form. Ship grid
@@ -117,9 +111,13 @@ export function aliveCellFingerprint(ship: SimShip): number {
  * the damage phase and `recomputeAggregates`) is reflected before crew plan.
  * Cheap: a single pass over the module array to recompute the fingerprint, then
  * a comparison. On no change (the vast majority of ticks) nothing happens.
+ *
+ * Returns whether the topology changed this call. `updateCrew` uses that signal
+ * to skip the per-tick crew filter+sort when no cell could have died (the
+ * steady-state case), since a crew removal only ever follows a topology change.
  */
-export function refreshPathCache(ship: SimShip): void {
-  if (ship.modules === undefined) return;
+export function refreshPathCache(ship: SimShip): boolean {
+  if (ship.modules === undefined) return false;
   const fingerprint = aliveCellFingerprint(ship);
   if (ship.topologyFingerprint !== fingerprint) {
     ship.pathCache = new Map();
@@ -127,9 +125,12 @@ export function refreshPathCache(ship: SimShip): void {
     ship.aliveCells = undefined; // topology changed: cell index is stale
     ship.resourceGraph = undefined; // topology changed: transport graph is stale
     ship.topologyFingerprint = fingerprint;
-  } else if (ship.pathCache === undefined) {
+    return true;
+  }
+  if (ship.pathCache === undefined) {
     ship.pathCache = new Map();
   }
+  return false;
 }
 
 /**
@@ -147,7 +148,7 @@ export function refreshPathCache(ship: SimShip): void {
  */
 export function findCrewPath(
   ship: SimShip,
-  cells: ReadonlyMap<string, SimModule>,
+  cells: ReadonlyMap<number, SimModule>,
   from: { col: number; row: number },
   to: { col: number; row: number },
 ): { col: number; row: number }[] | undefined {
@@ -198,12 +199,12 @@ export function findCrewPath(
  * quadratic in the open-set size.
  */
 export function computeCrewPathAStar(
-  cells: ReadonlyMap<string, SimModule>,
+  cells: ReadonlyMap<number, SimModule>,
   from: { col: number; row: number },
   to: { col: number; row: number },
 ): { col: number; row: number }[] | undefined {
-  const fromKey = crewCellKey(from.col, from.row);
-  const toKey = crewCellKey(to.col, to.row);
+  const fromKey = cellNum(from.col, from.row);
+  const toKey = cellNum(to.col, to.row);
   if (!cells.has(fromKey) || !cells.has(toKey)) return undefined;
   if (from.col === to.col && from.row === to.row) {
     return [{ col: from.col, row: from.row }];
@@ -212,8 +213,8 @@ export function computeCrewPathAStar(
   const heuristic = (col: number, row: number): number =>
     Math.abs(col - to.col) + Math.abs(row - to.row);
 
-  const gScore = new Map<string, number>();
-  const cameFrom = new Map<string, { col: number; row: number }>();
+  const gScore = new Map<number, number>();
+  const cameFrom = new Map<number, { col: number; row: number }>();
   gScore.set(fromKey, 0);
 
   // Binary min-heap of open entries, ordered by (f, row, col) — the same
@@ -223,7 +224,7 @@ export function computeCrewPathAStar(
   const heap: { col: number; row: number; f: number }[] = [
     { col: from.col, row: from.row, f: heuristic(from.col, from.row) },
   ];
-  const closed = new Set<string>();
+  const closed = new Set<number>();
 
   /** Heap comparator: lowest f, then lowest row, then lowest col. */
   const better = (
@@ -289,7 +290,7 @@ export function computeCrewPathAStar(
   for (;;) {
     const current = popHeap();
     if (current === undefined) break;
-    const currentKey = crewCellKey(current.col, current.row);
+    const currentKey = cellNum(current.col, current.row);
     if (closed.has(currentKey)) continue; // stale re-discovery: skip
     closed.add(currentKey);
 
@@ -306,7 +307,7 @@ export function computeCrewPathAStar(
         const prev = cameFrom.get(key);
         if (prev === undefined) break;
         path.push({ col: prev.col, row: prev.row });
-        key = crewCellKey(prev.col, prev.row);
+        key = cellNum(prev.col, prev.row);
       }
       path.reverse();
       return path;
@@ -324,7 +325,7 @@ export function computeCrewPathAStar(
       { col: current.col, row: current.row + 1 },
     ];
     for (const n of candidates) {
-      const nKey = crewCellKey(n.col, n.row);
+      const nKey = cellNum(n.col, n.row);
       const nMod = cells.get(nKey);
       if (nMod === undefined) continue; // not a walkable alive cell
       if (nMod.surface !== "deck") continue; // only deck is walkable
@@ -350,17 +351,21 @@ export function computeCrewPathAStar(
 }
 
 /**
- * Index a ship's alive modules by their integer cell key. This is the walkable
- * graph crew path over and the lookup used to find which module (if any) sits on
- * a given cell.
+ * Index a ship's alive deck modules by their numeric cell key (`cellNum`). This
+ * is the walkable graph crew path over and the lookup used to find which module
+ * (if any) sits on a given cell. Numeric keys avoid the per-lookup `"col,row"`
+ * string allocation the template-literal form would impose across the tens of
+ * thousands of cell lookups per tick (advanceCrew, recomputeManning, the door
+ * pass); `cellNum` is collision-free across the practical grid range, so the
+ * point lookups return identical results to the old string-keyed map.
  */
-export function aliveCellMap(ship: SimShip): Map<string, SimModule> {
-  const map = new Map<string, SimModule>();
+export function aliveCellMap(ship: SimShip): Map<number, SimModule> {
+  const map = new Map<number, SimModule>();
   if (ship.modules === undefined) return map;
   for (const m of ship.modules) {
     // Crew can only occupy deck cells: bare substrate and armor surfaces are
     // not walkable, so they are excluded from the path graph even when alive.
-    if (m.alive && m.surface === "deck") map.set(crewCellKey(m.col, m.row), m);
+    if (m.alive && m.surface === "deck") map.set(cellNum(m.col, m.row), m);
   }
   return map;
 }

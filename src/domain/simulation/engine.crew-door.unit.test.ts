@@ -1,7 +1,7 @@
 import type { CellEdges } from "@/schema/grid";
 import { describe, expect, it } from "vitest";
 import { advanceCrew } from "@/domain/simulation/engine/crew";
-import { crewCellKey } from "@/domain/simulation/engine/crew-pathfinding";
+import { cellNum } from "@/domain/simulation/engine/crew-pathfinding";
 import type { SimCrew } from "@/domain/simulation/types";
 import type { SimModule } from "@/domain/simulation/engine/types";
 
@@ -87,9 +87,9 @@ describe("advanceCrew — door traversal", () => {
       w: "door",
       doorStates: { w: "closed" },
     });
-    const cells = new Map<string, SimModule>([
-      [crewCellKey(0, 0), a],
-      [crewCellKey(1, 0), b],
+    const cells = new Map<number, SimModule>([
+      [cellNum(0, 0), a],
+      [cellNum(1, 0), b],
     ]);
     const crew: SimCrew = {
       id: "c1",
@@ -121,9 +121,9 @@ describe("advanceCrew — door traversal", () => {
   it("crosses an already-open door with no latency", () => {
     const a = cell("cell-0-0", 0, 0, { ...OPEN, e: "door", doorStates: { e: "open" } });
     const b = cell("cell-1-0", 1, 0, { ...OPEN, w: "door", doorStates: { w: "open" } });
-    const cells = new Map<string, SimModule>([
-      [crewCellKey(0, 0), a],
-      [crewCellKey(1, 0), b],
+    const cells = new Map<number, SimModule>([
+      [cellNum(0, 0), a],
+      [cellNum(1, 0), b],
     ]);
     const crew: SimCrew = {
       id: "c1",

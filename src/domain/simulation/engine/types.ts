@@ -364,21 +364,19 @@ export interface SimShip {
   /**
    * Cached wiring reach (cells within `powerWiringRadius` of any alive reactor),
    * computed once per topology change and reused every tick in between. A Set of
-   * `"col,row"` cell keys. `undefined` means not yet computed for the current
-   * topology; `refreshPathCache` clears it alongside the path cache on a
-   * fingerprint change. The wiring BFS depends only on the alive-cell graph and
-   * reactor positions, so it is stable across ticks with no module death — the
-   * common case. */
-  wiringReach?: Set<string>;
+   * numeric cell keys (`cellNum`); `refreshPathCache` clears it on a fingerprint
+   * change. Stable across ticks with no module death — the common case. */
+  wiringReach?: Set<number>;
   /**
-   * Cached index of alive modules by cell key (`"col,row"` → module), built once
-   * per topology change and reused across ticks. `updateCrew` reads it every
+   * Cached index of alive modules by numeric cell key (`cellNum` → module), built
+   * once per topology change and reused across ticks. `updateCrew` reads it every
    * tick for crew-on-cell lookups and pathfinding seeds; rebuilding it from
    * scratch each tick was a measurable per-ship cost on capital-heavy battles.
-   * `refreshPathCache` clears it alongside the path cache on a fingerprint
-   * change. The map is stable between module deaths — exactly the same
-   * invariant the path cache relies on. */
-  aliveCells?: Map<string, SimModule>;
+   * `refreshPathCache` clears it on a fingerprint change; stable between deaths. */
+  aliveCells?: Map<number, SimModule>;
+  /** Cached `ship.crew` sorted into stable id order; rebuilt on topology change
+   *  or roster shrink. Same `SimCrew` refs as `ship.crew`, mutated in place. */
+  orderedCrew?: SimCrew[];
   /** Hull base thrust, used by recomputeAggregates to recover the non-engine
    *  thrust floor. Set only when modules are present. */
   hullBaseThrust?: number;
