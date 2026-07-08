@@ -24,6 +24,7 @@ import type { SpatialHash } from "../spatial-hash";
 import type { SepBody } from "./separation";
 import type { DeploymentReference } from "./movement";
 import type { SimPulse } from "./pulses";
+import type { PenetrationPathScratch } from "./weapons";
 import type { SimMine, SimPod, SimProjectile, SimShip } from "./types";
 
 /**
@@ -157,6 +158,12 @@ export interface EngineState {
    *  subset — cleared and refilled once per PD-able projectile per tick. Same
    *  clear-and-reuse contract as {@link shipCellHashScratch}; not checkpointed. */
   pdFiringScratch: PdCandidate[];
+  /** Reusable parallel-array scratch for `penetrationPath` (weapon hits): four
+   *  buffers (mods/along/index/result) cleared and refilled once per successful
+   *  hit per tick, replacing the per-hit `{module, along}` wrapper-object and
+   *  build-array allocations. Same clear-and-reuse contract as
+   *  {@link shipCellHashScratch}; not checkpointed. */
+  penetrationPathScratch: PenetrationPathScratch;
   /** Reusable `SpatialHash<SepBody>` for `buildSeparationSnapshot` (built once
    *  per tick for the inter-ship separation field). Same clear-and-refill
    *  contract as {@link shipCellHashScratch}; the candidate walk is byte-identical
