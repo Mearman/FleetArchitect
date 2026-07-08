@@ -10,8 +10,46 @@ import { TICKS_PER_SECOND } from "../types";
 
 import { SIM } from "./config";
 import { abandonHaul } from "./crew";
-import { aliveCellMap, crewCellKey, findCrewPath, modulesBySlot } from "./crew-pathfinding";
+import { aliveCellMap, cellNum, findCrewPath, modulesBySlot } from "./crew-pathfinding";
 import type { SimModule, SimShip } from "./types";
+
+/**
+ * Per-ship "does any module carry a hardwire of this resource" flags, cached for
+ * a SimShip's lifetime. `hardwireSinks` membership is fixed at construction
+ * (populated once in setup / checkpoint restore) and never added to or removed
+ * at runtime — only the `alive` flag on a link's endpoints changes — so the
+ * existence flag is always correct with no invalidation. Mirrors the
+ * `bySlotCache` WeakMap pattern. Lets the per-tick hardwire refill loops
+ * short-circuit the whole O(modules) scan on designs that carry no hardwire of
+ * the relevant resource (the majority of crewed designs outside the Synthetic
+ * hardwire preset line), with zero cost for designs that do use the feature.
+ */
+const powerHardwirePresent = new WeakMap<SimShip, boolean>();
+const ammoHardwirePresent = new WeakMap<SimShip, boolean>();
+
+function hasHardwireOf(
+  ship: SimShip,
+  resource: "power" | "ammo",
+  cache: WeakMap<SimShip, boolean>,
+): boolean {
+  const cached = cache.get(ship);
+  if (cached !== undefined) return cached;
+  let present = false;
+  if (ship.modules !== undefined) {
+    for (const m of ship.modules) {
+      if (m.hardwireSinks === undefined) continue;
+      for (const link of m.hardwireSinks) {
+        if (link.resource === resource) {
+          present = true;
+          break;
+        }
+      }
+      if (present) break;
+    }
+  }
+  cache.set(ship, present);
+  return present;
+}
 
 /**
  * Refill every power-drawing module that has a live power hardwire to an alive
@@ -29,6 +67,11 @@ import type { SimModule, SimShip } from "./types";
  */
 export function refillHardwiredPower(ship: SimShip): void {
   if (ship.modules === undefined) return;
+  // Skip the full module scan on designs with no power hardwires: every
+  // module's `hardwireSinks` would be omitted (or carry no power link), so the
+  // loop body never fires and the scan is pure waste. The cached existence flag
+  // is a pure function of the design's fixed hardwire membership.
+  if (!hasHardwireOf(ship, "power", powerHardwirePresent)) return;
   const bySlot = modulesBySlot(ship);
   for (const sink of ship.modules) {
     if (sink.powerDraw <= 0 || !sink.alive) continue;
@@ -80,15 +123,15 @@ export function regenerateAmmo(ship: SimShip, tick: number): void {
  * crew-fed. Deterministic: BFS frontier order does not affect the resulting set,
  * and the set membership is all the caller reads.
  */
-export function reactorWiringReach(ship: SimShip): Set<string> {
-  const reach = new Set<string>();
+export function reactorWiringReach(ship: SimShip): Set<number> {
+  const reach = new Set<number>();
   if (ship.modules === undefined) return reach;
   const cells = aliveCellMap(ship);
   // Seed the frontier with every alive reactor cell at distance 0.
   let frontier: { col: number; row: number }[] = [];
   for (const m of ship.modules) {
     if (m.alive && m.effect.kind === "power") {
-      const k = crewCellKey(m.col, m.row);
+      const k = cellNum(m.col, m.row);
       if (!reach.has(k)) {
         reach.add(k);
         frontier.push({ col: m.col, row: m.row });
@@ -105,7 +148,7 @@ export function reactorWiringReach(ship: SimShip): Set<string> {
         { col: cell.col, row: cell.row + 1 },
       ];
       for (const n of neighbours) {
-        const k = crewCellKey(n.col, n.row);
+        const k = cellNum(n.col, n.row);
         if (!cells.has(k) || reach.has(k)) continue;
         reach.add(k);
         next.push(n);
@@ -123,7 +166,7 @@ export function resolveAmmoArrival(
   ship: SimShip,
   crew: SimCrew,
   bySlot: ReadonlyMap<string, SimModule>,
-  cells: ReadonlyMap<string, SimModule>,
+  cells: ReadonlyMap<number, SimModule>,
 ): void {
   if (crew.carrying === undefined) {
     const source = crew.targetSlotId !== undefined ? bySlot.get(crew.targetSlotId) : undefined;
@@ -178,7 +221,7 @@ export function resolvePowerArrival(
   ship: SimShip,
   crew: SimCrew,
   bySlot: ReadonlyMap<string, SimModule>,
-  cells: ReadonlyMap<string, SimModule>,
+  cells: ReadonlyMap<number, SimModule>,
 ): void {
   if (crew.carrying === undefined) {
     const source = crew.targetSlotId !== undefined ? bySlot.get(crew.targetSlotId) : undefined;
@@ -278,6 +321,11 @@ export function hasLiveAmmoHardwire(
  */
 export function refillHardwiredAmmo(ship: SimShip): void {
   if (ship.modules === undefined) return;
+  // Skip the full module scan on designs with no ammo hardwires: the
+  // sinks-by-magazine grouping below would stay empty and the second loop would
+  // do nothing, so the scan is pure waste. The cached existence flag is a pure
+  // function of the design's fixed hardwire membership.
+  if (!hasHardwireOf(ship, "ammo", ammoHardwirePresent)) return;
   const bySlot = modulesBySlot(ship);
 
   // Group conduit-fed sinks by their feeding magazine so a magazine's store is
@@ -360,7 +408,7 @@ export function chooseAmmoRun(
   crew: SimCrew,
   dryWeapons: readonly SimModule[],
   magazines: readonly SimModule[],
-  cells: ReadonlyMap<string, SimModule>,
+  cells: ReadonlyMap<number, SimModule>,
   claimedWeapons: ReadonlySet<string>,
 ): { source: SimModule; sink: SimModule; path: { col: number; row: number }[] } | undefined {
   if (dryWeapons.length === 0 || magazines.length === 0) return undefined;
@@ -430,7 +478,7 @@ export function choosePowerRun(
   crew: SimCrew,
   starvedSinks: readonly SimModule[],
   reactors: readonly SimModule[],
-  cells: ReadonlyMap<string, SimModule>,
+  cells: ReadonlyMap<number, SimModule>,
   claimedSinks: ReadonlySet<string>,
 ): { source: SimModule; sink: SimModule; path: { col: number; row: number }[] } | undefined {
   if (starvedSinks.length === 0 || reactors.length === 0) return undefined;
