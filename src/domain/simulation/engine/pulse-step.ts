@@ -117,10 +117,10 @@ export function stepPulses(
   for (const ship of ordered) {
     for (const unit of sensorUnitsOf(ship)) {
       if (!emitsActively(unit)) continue;
-      const range = attenuatedSensorRange(unit, anomalies);
+      const range = attenuatedSensorRange(unit.effect, unit.module, anomalies);
       if (range <= 0) continue;
-      const arc = effectiveSensorArc(unit);
-      const bearing = effectiveSensorBearing(unit);
+      const arc = effectiveSensorArc(unit.effect, unit.module);
+      const bearing = effectiveSensorBearing(unit.module, unit.ship);
       // The pulse originates at the sensor module's cell (rotated into world by
       // the ship's pose), not the ship centre — the radar dish is where the
       // ping leaves the hull.

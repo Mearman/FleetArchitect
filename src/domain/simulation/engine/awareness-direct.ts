@@ -51,7 +51,7 @@ export interface EnemiesBySide {
 export function observerMaxReceptionGain(observerSensors: readonly SensorUnit[]): number {
   let maxGain = 1; // baseline eye, gain 1 (no nebula when the early-out fires)
   for (const unit of observerSensors) {
-    const range = effectiveSensorRange(unit);
+    const range = effectiveSensorRange(unit.effect, unit.module);
     if (range <= 0) continue;
     const gain = sensorGain(range);
     if (gain > maxGain) maxGain = gain;

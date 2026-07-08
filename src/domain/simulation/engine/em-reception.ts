@@ -336,13 +336,13 @@ export function emReceives(
   const toEnemy = Math.atan2(dy, dx);
   const sensors = observerSensors ?? sensorUnitsOf(observer);
   for (const unit of sensors) {
-    const range = attenuatedSensorRange(unit, anomalies);
+    const range = attenuatedSensorRange(unit.effect, unit.module, anomalies);
     if (range <= 0) continue;
     const gain = sensorGain(range) * (unit.effect.gain ?? 1);
     if (!continuousContact(emission, dist, floor, gain)) continue;
-    const arc = effectiveSensorArc(unit);
+    const arc = effectiveSensorArc(unit.effect, unit.module);
     if (arc >= Math.PI) return true;
-    const bearing = effectiveSensorBearing(unit);
+    const bearing = effectiveSensorBearing(unit.module, unit.ship);
     if (Math.abs(angleDifference(bearing, toEnemy)) <= arc) return true;
   }
   return false;
@@ -437,15 +437,15 @@ export function mediumReceives(
   const toCell = Math.atan2(dy, dx);
   const sensors = observerSensors ?? sensorUnitsOf(observer);
   for (const unit of sensors) {
-    const range = attenuatedSensorRange(unit, anomalies);
+    const range = attenuatedSensorRange(unit.effect, unit.module, anomalies);
     if (range <= 0) continue;
     const gain = sensorGain(range) * (unit.effect.gain ?? 1);
     // `continuousContact` gates on the inverse-square received strength
     // clearing the threshold; a sensor cone further constrains the bearing.
     if (!continuousContact(strength, dist, floor, gain)) continue;
-    const arc = effectiveSensorArc(unit);
+    const arc = effectiveSensorArc(unit.effect, unit.module);
     if (arc >= Math.PI) return gain;
-    const bearing = effectiveSensorBearing(unit);
+    const bearing = effectiveSensorBearing(unit.module, unit.ship);
     if (Math.abs(angleDifference(bearing, toCell)) <= arc) return gain;
   }
   return undefined;
