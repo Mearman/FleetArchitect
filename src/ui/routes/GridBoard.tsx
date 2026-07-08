@@ -117,6 +117,11 @@ export function GridBoard({
   /** The last cell painted in the current stroke, so a drag paints each cell
    *  once as the pointer crosses it. */
   const lastPainted = useRef<string | null>(null);
+  /** The last cell reported via onHover, so hover only fires one setState per
+   *  cell crossed — not one per pointermove. Mirrors lastPainted; without it,
+   *  each move builds a fresh `{col,row}` and forces a full-grid re-render even
+   *  when the hovered cell is unchanged. */
+  const lastHovered = useRef<string | null>(null);
   const boardRef = useRef<HTMLDivElement | null>(null);
 
   // Octilinear hull outline (grown one cell over exposed deck walls, every
@@ -236,17 +241,22 @@ export function GridBoard({
   function handlePointerMove(e: ReactPointerEvent<HTMLDivElement>) {
     const c = cellAtPointer(e.clientX, e.clientY);
     if (c === null) return;
-    // Hover fires on every move (with or without the button) so the placement
-    // ghost tracks the pointer; the dedupe keeps it to one setState per cell.
-    onHover(c);
-    if (!isPainting.current || !dragPaints) return;
     const key = `${c.col},${c.row}`;
+    // Hover fires on every move (with or without the button) so the placement
+    // ghost tracks the pointer, but we dedupe by cell so jitter within one
+    // cell does not re-render the whole grid (mirrors the paint guard below).
+    if (key !== lastHovered.current) {
+      lastHovered.current = key;
+      onHover(c);
+    }
+    if (!isPainting.current || !dragPaints) return;
     if (key === lastPainted.current) return;
     lastPainted.current = key;
     onPaint(c.col, c.row);
   }
 
   function handlePointerLeave() {
+    lastHovered.current = null;
     onHover(null);
   }
 
