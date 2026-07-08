@@ -151,23 +151,29 @@ export function nearestThreat(
   ship: SimShip,
   ships: readonly SimShip[],
 ): SimShip | undefined {
-  // Sort candidates by id first so the scan order — and therefore the tie-break
-  // — is a property of the inputs, not of the live array order.
-  const enemies = ships
-    .filter((e) => e.alive && e.side !== ship.side)
-    .slice()
-    .sort((a, b) =>
-      a.instanceId < b.instanceId ? -1 : a.instanceId > b.instanceId ? 1 : 0,
-    );
+  // Single linear scan with no allocation and no sort. The tie-break must
+  // reproduce exactly what the old filter+sort+scan produced: candidates sorted
+  // ascending by instanceId, then a strict `<` scan, so on equal distances the
+  // lexicographically smaller instanceId wins. We track the current best
+  // (distSq, ship) and replace it on a strict improvement OR on an exact
+  // distance tie when the candidate's instanceId is smaller — this gives the
+  // same winner as the sorted scan regardless of the live array order, since
+  // only distSq and instanceId comparisons participate (no associative sum
+  // whose order could perturb the byte-identical-frames contract).
   let nearest: SimShip | undefined;
   let bestDistSq = Infinity;
-  for (const e of enemies) {
+  for (const e of ships) {
+    if (!e.alive || e.side === ship.side) continue;
     const dx = e.x - ship.x;
     const dy = e.y - ship.y;
     const distSq = dx * dx + dy * dy;
     if (distSq < bestDistSq) {
       bestDistSq = distSq;
       nearest = e;
+    } else if (distSq === bestDistSq && nearest !== undefined) {
+      if (e.instanceId < nearest.instanceId) {
+        nearest = e;
+      }
     }
   }
   return nearest;
