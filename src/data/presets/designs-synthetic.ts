@@ -75,7 +75,7 @@ export const syntheticDesigns: ShipDesignInput[] = [
         subdivideGrid(withEdges(syntheticGrid([
           ".#####>",
           "EXGCINe",
-          "EPG~RN#",
+          "EPG~R~#",
           "EXGCINe",
           ".#####<",
         ]), [
@@ -101,6 +101,9 @@ export const syntheticDesigns: ShipDesignInput[] = [
           // Twin precision cannon bank replaces the centre-row targeting cannon
           // — twice the throw weight at the same muzzle velocity.
           [3, 2, "syn-targeting-bank", SYNTHETIC_FOOTPRINTS.targetingBank],
+          // Grid Deflector on the centre-row sensor blister — a moderate
+          // momentum screen, the patrol frigate's first kinetic defence layer.
+          [5, 2, "syn-grid-deflector", [{ dx: 0, dy: 0 }]],
         ],
       ),
       // Hardwire ammo conduits: each slug reservoir feeds the weapons on its row
@@ -142,7 +145,7 @@ export const syntheticDesigns: ShipDesignInput[] = [
       mountMultiCell(
         subdivideGrid(withEdges(syntheticGrid([
           ".#########>",
-          "EX~GRHAINe#",
+          "EX~GRHAI~e#",
           "EPAGKHJLN##",
           "EX~GRHAINe#",
           ".#########<",
@@ -181,12 +184,15 @@ export const syntheticDesigns: ShipDesignInput[] = [
           [4, 2, "syn-coilgun-bank", SYNTHETIC_FOOTPRINTS.coilgunBank],
           [6, 2, "syn-coordination-hub", SYNTHETIC_FOOTPRINTS.coordinationHub],
           [7, 2, "syn-interceptor-grid", SYNTHETIC_FOOTPRINTS.interceptorGrid],
-          // Twin sustained cutter beam on the upper deck corridor — one band
-          // above the Cutter Lance, fed by the twin quantum cores.
-          [2, 3, "syn-twin-cutter", SYNTHETIC_FOOTPRINTS.twinCutter],
-          // Tactical blink drive on the lower deck corridor — the Collective's
-          // first phase-shift repositioning drive.
-          [2, 1, "syn-tactical-blink", SYNTHETIC_FOOTPRINTS.tacticalBlink],
+          // Decoy launcher on the upper deck corridor — false contacts that
+          // pair with the Interceptor Grid to exhaust an attacker's volley.
+          [2, 3, "syn-decoy-launcher", [{ dx: 0, dy: 0 }]],
+          // ECCM suite on the lower deck corridor — restores tracking and lock
+          // the coordinator's fleet needs to cut through enemy jamming.
+          [2, 1, "syn-eccm", [{ dx: 0, dy: 0 }]],
+          // Grid Shield on the upper sensor blister — a moderate regenerating
+          // field, the first defensive layer below the capital shield-hub.
+          [8, 1, "syn-screen-shield", [{ dx: 0, dy: 0 }]],
         ],
       ),
       // Hardwire ammo conduits: each slug reservoir feeds the kinetic battery on
@@ -294,11 +300,16 @@ export const syntheticDesigns: ShipDesignInput[] = [
           [2, 2, "syn-eccm-bastion", SYNTHETIC_FOOTPRINTS.eccmBastion],
           // Capital sensor bastion on the lower keel deck.
           [2, 4, "syn-sensor-bastion", SYNTHETIC_FOOTPRINTS.sensorBastion],
-          // Y8 phalanx-deflector and Y9 drone-launch-deck remain in the catalogue
-          // but are not mounted here: the Nexus Armada fleet budget (20 000 pts)
-          // cannot absorb five capital additions on one hull. The two omitted are
-          // the most redundant — a second defence screen alongside the existing
-          // shield-hub, and a second drone bay alongside the drone-hangar-heavy.
+          // Phalanx deflector on the upper keel corridor — a 2×2 capital
+          // momentum screen. The Network Hub and Node now field lighter defence
+          // layers (screen shield, grid deflector), which trims enough Nexus
+          // Armada budget to absorb this hull's second capital screen alongside
+          // the shield-hub.
+          [2, 1, "syn-phalanx-deflector", SYNTHETIC_FOOTPRINTS.phalanxDeflector],
+          // Y9 drone-launch-deck remains in the catalogue but is not mounted
+          // here: a second drone bay alongside the drone-hangar-heavy is the
+          // most redundant capital addition on this hull, and the Mainframe
+          // carrier already fields the launch deck as its doctrinal apex.
         ],
       ),
       // Hardwire ammo conduits: each row's slug reservoir feeds the kinetic
@@ -377,6 +388,13 @@ export const syntheticDesigns: ShipDesignInput[] = [
           [4, 1, "syn-drone-hangar-heavy", SYNTHETIC_FOOTPRINTS.droneHangarHeavy],
           [4, 3, "syn-drone-hangar-heavy", SYNTHETIC_FOOTPRINTS.droneHangarHeavy],
           [7, 2, "syn-interceptor-grid", SYNTHETIC_FOOTPRINTS.interceptorGrid],
+          // Mine-drone layer on the upper magazine-shaft corridor — precision
+          // proximity mines the carrier drops in an enemy's approach lane.
+          [2, 1, "syn-mine-drone-layer", SYNTHETIC_FOOTPRINTS.mineDroneLayer],
+          // Drone launch deck on the lower magazine-shaft corridor — the
+          // carrier's apex hangar, a twelve-drone swarm it looses before the
+          // lines close.
+          [2, 3, "syn-drone-launch-deck", SYNTHETIC_FOOTPRINTS.droneLaunchDeck],
         ],
       ),
       // Hardwire ammo conduit: the centre-row slug reservoir feeds the lone

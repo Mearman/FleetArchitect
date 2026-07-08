@@ -284,6 +284,12 @@ export const swarmDesigns: ShipDesignInput[] = [
         // Lower deck: a two-cell Spore-Mine Organ — the Swarm's first mine
         // layer, seeding static proximity mines for area denial.
         [4, 4, "swm-spore-mine-organ", SWARM_FOOTPRINTS.sporeMineOrgan],
+        // Dorsal deck: a two-cell Phase-Blink Sac — the Swarm's first tactical-
+        // jump organ, giving the cruiser a sudden short-range reposition (every
+        // other faction fields a blink drive). Col 4 is full (the three organs
+        // above), so this anchors on the nearest free `~` at coarse (5,0); the
+        // east offset stays within the anchor's own block.
+        [5, 0, "swm-blink-sac", SWARM_FOOTPRINTS.blinkSac],
       ],
     ),
     createdAt: PRESET_TIME,
@@ -312,7 +318,7 @@ export const swarmDesigns: ShipDesignInput[] = [
     // triple-nozzle corrosive battery); a Spore Battery (B) joins the upper
     // sting rank; a three-cell Metabolic Heart (H) supplants a ganglion; the
     // centreline stern drive becomes a 2×2 Tentacle Drive Mass (T); and the
-    // prow carapace screen steps up to a three-cell Barkweave Carapace (W).
+    // prow carapace screen steps up to a three-cell Bulwark Carapace.
     // Each anchor's covered cells are installed by `mountMultiCell` after
     // subdivision.
     //
@@ -324,7 +330,7 @@ export const swarmDesigns: ShipDesignInput[] = [
         "###>x~nnnkwccc",
         "#.jgfzrsBnnnwh",
         "#jgm~rfsannnwy",
-        "THmmmrfsVaOnnW",
+        "THmmmrfsVaOnn~",
         "#jgm~rfsannnwy",
         "#.jgfzrsnnnnwh",
         "###<x~nnnkwccc",
@@ -352,9 +358,12 @@ export const swarmDesigns: ShipDesignInput[] = [
         // Centreline stern: a 2×2 Tentacle Drive Mass (T) supplants the pulse
         // jet — the capital-scale bio-drive cluster.
         [0, 3, "swm-tentacle-drive-mass", SWARM_FOOTPRINTS.tentacleDriveMass],
-        // Prow momentum screen: a three-cell Barkweave Carapace (W) — the heavy
-        // deflector band, supplanting the light carapace screen.
-        [13, 3, "swm-barkweave-carapace", SWARM_FOOTPRINTS.barkweaveCarapace],
+        // Prow momentum screen: a three-cell Bulwark Carapace — the capital-
+        // grade momentum screen (twice the heavy deflector band), a direct
+        // upgrade of the barkweave on the same 1×3 footprint. The anchor cell
+        // is freed (`~`) so mountMultiCell installs it fresh, since no grid
+        // token exists for the bulwark yet.
+        [13, 3, "swm-bulwark-carapace", SWARM_FOOTPRINTS.bulwarkCarapace],
         // --- Catalogue-expansion refit: two new bio-organs grafted onto the
         // central deck column (col 4 `~` cells). ---
         // Upper deck: a 2×2 Spore-Drone Spawner — a bloated brood bay that

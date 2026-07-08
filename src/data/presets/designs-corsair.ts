@@ -302,6 +302,13 @@ export const corsairDesigns: ShipDesignInput[] = [
         // the adjacent prow deck cell. Sized to light the 15 GW cutter with
         // headroom for shields, drives, and sensors.
         [10, 4, "cor-raider-core", CORSAIR_CAPITAL_FOOTPRINTS.raiderCore],
+        // Raid mine layer: single-cell, on the free upper-mid deck cell. The
+        // Galleon already fields a holo decoy launcher (L) to spoof pursuit on
+        // the withdrawal lane; the mine layer is the complementary kinetic
+        // denial — decoys misdirect, mines punish anything that follows the
+        // retreating hull through the lane. The previously unshipped cor-mine-layer
+        // (catalogue orphan) is exercised here so a preset battle drops mines.
+        [4, 1, "cor-mine-layer", [{ dx: 0, dy: 0 }]],
       ],
     ),
     createdAt: PRESET_TIME,

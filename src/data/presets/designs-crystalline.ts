@@ -30,21 +30,23 @@ export const crystallineDesigns: ShipDesignInput[] = [
     // crystal (F, command) and two resonator cores (C×2, 10 berths for 9 crew)
     // anchor a spine carrying an adaptive shield (S), a resonance shard volley
     // (the 2-cell cry-resonance-shard-volley mounted on the former bulwark
-    // cell — a powerable capital-grade kinetic pairing with the phase lance's
-    // beam) and a phase lance (H) as the main battery, a shard vault (the
-    // 2-cell cry-shard-vault mounted on the aft deck cell — the magazine whose
-    // crew-haul resupply keeps the volley fed past its 100-round reserve), a
-    // blink drive (B), a resonance sensor (v), and a phase-cloak (K). Balanced
-    // drives — an aft resonance thruster (E) plus a forward-firing brake (e)
-    // — let it hold a kite. The flanking armour caps (##) form its brittle
-    // crystal silhouette; it relies on shields and mobility, not hull. The
-    // shard-volley and shard-vault anchors are multi-cell modules;
-    // `mountMultiCell` installs their covered cells after subdivision. Grid
-    // (12 cols × 3 rows), subdivided ×4 → 48 m frigate.
+    // cell — a powerable capital-grade kinetic pairing with the main beam) and
+    // a twin prism (the 2-cell cry-twin-prism mounted on the former phase-lance
+    // cell — the frigate-grade twin beam, the Concord's line-skirmisher upgrade
+    // over the single phase lance, feedable by the power crystal's 1.5 GW), a
+    // shard vault (the 2-cell cry-shard-vault mounted on the aft deck cell —
+    // the magazine whose crew-haul resupply keeps the volley fed past its
+    // 100-round reserve), a blink drive (B), a resonance sensor (v), and a
+    // phase-cloak (K). Balanced drives — an aft resonance thruster (E) plus a
+    // forward-firing brake (e) — let it hold a kite. The flanking armour caps
+    // (##) form its brittle crystal silhouette; it relies on shields and
+    // mobility, not hull. The twin-prism, shard-volley, and shard-vault anchors
+    // are multi-cell modules; `mountMultiCell` installs their covered cells
+    // after subdivision. Grid (12 cols × 3 rows), subdivided ×4 → 48 m frigate.
     grid: mountMultiCell(
       subdivideGrid(withEdges(crystalGrid([
         "############",
-        "EeFCCSBKv~H~",
+        "EeFCCSBKv~~~",
         "############",
       ]), [
         { col: 1, row: 1, dir: "e", kind: "door" },
@@ -57,6 +59,11 @@ export const crystallineDesigns: ShipDesignInput[] = [
         // with a paired shard-thrower battery — a capital-grade kinetic the
         // frigate's power crystal can feed (the capital beams are not).
         [9, 1, "cry-resonance-shard-volley", CRYSTALLINE_FOOTPRINTS.resonanceShardVolley],
+        // Twin Prism (2-cell) on the former phase-lance cell — the frigate-grade
+        // twin beam (900 MW at the disruptor band, no capital fold), the
+        // Concord's line-skirmisher upgrade over the single phase lance. The
+        // power crystal's 1.5 GW feeds it alongside the volley and shields.
+        [10, 1, "cry-twin-prism", CRYSTALLINE_FOOTPRINTS.twinPrism],
         // Shard Vault (2-cell) on the aft deck cell — the 600-round magazine
         // whose crew-haul resupply keeps the volley's 100-round reserve fed.
         // Same walkable row as the volley, so a crew ammo-run reaches it.
@@ -126,12 +133,15 @@ export const crystallineDesigns: ShipDesignInput[] = [
     // cry-shard-vault on the central deck — the magazine whose crew-haul
     // resupply keeps the shard battery fed), and six resonator cores (C×6, 30
     // berths for 28 crew). Balanced drives — three aft resonance thrusters
-    // (E×3) and a forward brake (e). An armour prow of crystal plate (#)
-    // caps the weapon face and a full dorsal/ventral plate band (#) wraps
-    // the hull; the interior deck relies on its shields rather than bulk. The
-    // M, I, J, N, spire-apex, spire-plus, diamond-bastion, bulwark-bastion,
-    // shard-volley, and shard-vault anchors are multi-cell capital modules;
-    // `mountMultiCell` installs each footprint's covered cells after
+    // (E×3), a twin thruster cluster (the 2-cell cry-twin-thruster-cluster on
+    // the aft deck — a gimballed drive reinforcing the stern bank so the
+    // dreadnought claws back straight-line authority alongside its blink), and
+    // a forward brake (e). An armour prow of crystal plate (#) caps the weapon
+    // face and a full dorsal/ventral plate band (#) wraps the hull; the
+    // interior deck relies on its shields rather than bulk. The M, I, J, N,
+    // spire-apex, spire-plus, diamond-bastion, bulwark-bastion, shard-volley,
+    // shard-vault, and twin-thruster-cluster anchors are multi-cell capital
+    // modules; `mountMultiCell` installs each footprint's covered cells after
     // subdivision. Grid (13 cols × 5 rows), subdivided ×12 → 156 m dreadnought.
     grid: mountMultiCell(
       subdivideGrid(withEdges(crystalGrid([
@@ -158,6 +168,11 @@ export const crystallineDesigns: ShipDesignInput[] = [
       ]), F_MONOLITH),
       F_MONOLITH,
       [
+        // Stern: a Twin Thruster Cluster (2-cell) on the aft deck cell — a
+        // gimballed 2-cell drive reinforcing the three resonance thrusters
+        // (E×3) so the dreadnought claws back straight-line authority alongside
+        // its blink. Faces aft (π) so its thrust drives the ship forward.
+        [1, 1, "cry-twin-thruster-cluster", CRYSTALLINE_FOOTPRINTS.twinThrusterCluster, Math.PI],
         // Keel: a three-cell Quantum Lattice Spire (M) replaces the single
         // quantum-lattice core as the 15 GW command power plant.
         [3, 2, "cry-quantum-spire", CRYSTALLINE_FOOTPRINTS.quantumSpire],
@@ -209,25 +224,31 @@ export const crystallineDesigns: ShipDesignInput[] = [
     // that throws phase lances and lobbed resonance shards from behind a wall
     // of adaptive shielding, then overcharges its arrays and blinks to a new
     // bearing. A quantum lattice (X, command, 5 GW) drives two phase lances
-    // (H×2) and a fixed-forward heavy shard cannon (J) — the capital
-    // multi-cell kinetic, subbed for the heavy spinal lance whose folded
-    // 150 GW draw would brown out the lattice — as the main battery, a
-    // resonance shard volley (the 2-cell cry-resonance-shard-volley mounted
-    // on the former upper resonance-cannon cell) and one resonance cannon
-    // (Y) for lobbed shard fire, an adaptive bastion (N) — the capital
-    // multi-cell shield — and an adaptive shield Mk II (D) plus a resonance
-    // bulwark Mk II (Q) for defence, a resonance mender (the 2-cell
-    // cry-resonance-mender on the central deck — Crystalline's first repair
-    // module), an overcharger (O) — the previously unfielded cry-overcharger
-    // — to surge the arrays through a brownout, a blink drive (B), a
-    // resonance sensor (v), a shard vault (the 2-cell cry-shard-vault on the
-    // central corridor — the magazine whose crew-haul resupply keeps the
-    // shard battery fed), and five resonator cores (C×5, 25 berths for 22
-    // crew). Balanced drives — three aft resonance thrusters (E×3) and a
-    // forward brake (e). Crystal plate (#) caps the prow and wraps the
-    // dorsal/ventral band; the grown-crystal interior relies on its shields
-    // and mobility, not bulk. Implies phase doctrine (evasive, long-range,
-    // blink away from trouble). The J, N, shard-volley, mender, and
+    // (H×2), a tri-prism lance (the 3-cell cry-tri-prism-lance on the weapon
+    // face — the cruiser-grade spinal beam, 1.35 GW at the disruptor band with
+    // no capital fold so the lattice feeds it alongside the phase lances), and
+    // a fixed-forward heavy shard cannon (J) — the capital multi-cell kinetic,
+    // subbed for the heavy spinal lance whose folded 150 GW draw would brown
+    // out the lattice — as the main battery, a resonance shard volley (the
+    // 2-cell cry-resonance-shard-volley mounted on the former upper
+    // resonance-cannon cell) and one resonance cannon (Y) for lobbed shard
+    // fire, an adaptive bastion (N) — the capital multi-cell shield — and an
+    // adaptive shield Mk II (D) plus a resonance bulwark Mk II (Q) for
+    // defence, a refractor grid (the 2-cell cry-refractor-grid on the weapon
+    // face — the Concord's only point-defence module, closing the PD doctrine
+    // gap so the cruiser refracts incoming ordnance alongside its shield
+    // wall), a resonance mender (the 2-cell cry-resonance-mender on the
+    // central deck — Crystalline's first repair module), an overcharger (O) —
+    // the previously unfielded cry-overcharger — to surge the arrays through a
+    // brownout, a blink drive (B), a resonance sensor (v), a shard vault (the
+    // 2-cell cry-shard-vault on the central corridor — the magazine whose
+    // crew-haul resupply keeps the shard battery fed), and five resonator
+    // cores (C×5, 25 berths for 22 crew). Balanced drives — three aft
+    // resonance thrusters (E×3) and a forward brake (e). Crystal plate (#)
+    // caps the prow and wraps the dorsal/ventral band; the grown-crystal
+    // interior relies on its shields and mobility, not bulk. Implies phase
+    // doctrine (evasive, long-range, blink away from trouble). The J,
+    // tri-prism-lance, refractor-grid, N, shard-volley, mender, and
     // shard-vault anchors are multi-cell capital modules; `mountMultiCell`
     // installs each footprint's covered cells after subdivision. Grid (11
     // cols × 5 rows), subdivided ×7 → 77 m cruiser.
@@ -258,6 +279,15 @@ export const crystallineDesigns: ShipDesignInput[] = [
         // Cannon (J) — the heaviest Concord kinetic the lattice can power
         // (the folded capital beams' draw would brown it out).
         [10, 1, "cry-shard-cannon-heavy", CRYSTALLINE_FOOTPRINTS.heavyShardCannon],
+        // Tri-Prism Lance (3-cell) on the weapon-face deck — the cruiser-grade
+        // spinal beam (1.35 GW at the disruptor band, no capital fold) the
+        // quantum lattice feeds alongside the phase lances. The line above the
+        // heavy shard cannon, complementing the kinetic prow.
+        [9, 1, "cry-tri-prism-lance", CRYSTALLINE_FOOTPRINTS.triPrismLance],
+        // Refractor Grid (2-cell) on the weapon-face deck — the Concord's only
+        // point-defence module, closing the PD doctrine gap so the cruiser can
+        // refract incoming ordnance alongside its shield wall.
+        [7, 1, "cry-refractor-grid", CRYSTALLINE_FOOTPRINTS.refractorGrid],
         // Defence: the stern adaptive shield becomes a four-cell Adaptive
         // Bastion (N), the Concord's strongest bulwark.
         [5, 3, "cry-adaptive-bastion", CRYSTALLINE_FOOTPRINTS.adaptiveBastion],

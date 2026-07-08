@@ -146,14 +146,16 @@ export const foundryDesigns: ShipDesignInput[] = [
     // Dreadnought, re-armed: siege-plasma mortars (Q) alpha, gauss cannons (H)
     // sustain, torpedoes (Y) crack plate, flak (L) and bulwark deflectors (U)
     // screen every vector — the previously unfielded capital battery. Plus
-    // repair bays (W) and mine layers (M).
+    // repair bays (W) and a mine layer (M).
     //
     // The apex hull fields the capital multi-cell kit. The stern grav drive (P)
     // becomes a three-cell Forge Drive train (J); the keel Industrial Core (X)
     // becomes the four-cell T-section Cross-Section Core command heart (Z); the
-    // centre siege-plasma (Q) becomes the 2×2 Siege Cannon Heavy (S); and the
-    // flanking bulwark deflectors (U) step up to 2×2 Bulwark Bastions (N) fore
-    // and aft. Each anchor's covered cells are installed by `mountMultiCell`
+    // centre siege-plasma (Q) becomes the 2×2 Siege Cannon Heavy (S); the fore
+    // bulwark deflector (U) steps up to a 2×2 Bulwark Bastion (N) and the aft
+    // one to a TL4 1×3 Bulwark Screen Bank — the dreadnought's deflector band.
+    // One mine layer is trimmed to cover the Screen Bank's cost delta within the
+    // fleet budget. Each anchor's covered cells are installed by `mountMultiCell`
     // after subdivision.
     grid: mountMultiCell(
       subdivideGrid(withEdges(foundryGrid([
@@ -162,7 +164,7 @@ export const foundryDesigns: ShipDesignInput[] = [
         ".##XCCW~HQG##",
         "##XCCCFWNQMY#",
         "JZCCCFW~SHGe#",
-        "##XCCCFWNQMY#",
+        "##XCCCFW~Q~Y#",
         ".##XCCW~HQG##",
         "..##XCFW~HL##",
         "...##<######.",
@@ -216,9 +218,13 @@ export const foundryDesigns: ShipDesignInput[] = [
         // Centre keel: the 2×2 Siege Cannon Heavy (S) replaces the
         // siege-plasma as the heaviest alpha strike.
         [8, 4, "fnd-siege-cannon-heavy", FOUNDRY_FOOTPRINTS.siegeCannonHeavy],
-        // Flanking momentum screens: 2×2 Bulwark Bastions (N) fore and aft.
+        // Flanking momentum screens: a 2×2 Bulwark Bastion (N) fore, and a TL4
+        // 1×3 Bulwark Screen Bank aft — the dreadnought's capital deflector
+        // band, stepping the aft screen up from the Bastion. The aft Bastion's
+        // N token is dropped to a `~` deck cell so the Screen Bank anchor
+        // installs cleanly (empty-anchor branch).
         [8, 3, "fnd-bulwark-bastion", FOUNDRY_FOOTPRINTS.bulwarkBastion],
-        [8, 5, "fnd-bulwark-bastion", FOUNDRY_FOOTPRINTS.bulwarkBastion],
+        [8, 5, "fnd-bulwark-screen-bank", FOUNDRY_FOOTPRINTS.bulwarkScreenBank],
         // Twin siege mortar: a 2×2 capital plasma battery alongside the
         // siege-plasma battery — the apex alpha strike.
         [7, 2, "fnd-twin-siege-mortar", FOUNDRY_FOOTPRINTS.twinSiegeMortar],
@@ -290,7 +296,7 @@ export const foundryDesigns: ShipDesignInput[] = [
         "..###>####.",
         ".#XCFW~MLG#",
         "#XCCW~MHAG#",
-        "PXCCFWMHAGe",
+        "~XCCFWMHAGe",
         "#XCCW~MHAG#",
         ".#XCFW~MLG#",
         "..###<####.",
@@ -328,6 +334,11 @@ export const foundryDesigns: ShipDesignInput[] = [
         // the Battleram (crew-tight) to this cruiser, where it joins the
         // heavy-cannon broadside.
         [5, 4, "fnd-gauss-turret-bank", FOUNDRY_FOOTPRINTS.gaussTurretBank],
+        // Twin grav drive: a 2-cell capital drive train (320 kN, double the
+        // singleton grav drive) on the stern, replacing the singleton grav
+        // drive. The stern P token is dropped to a `~` deck cell so the anchor
+        // installs facing aft (π) via the empty-anchor branch.
+        [0, 3, "fnd-twin-grav-drive", FOUNDRY_FOOTPRINTS.twinGravDrive, Math.PI],
       ],
     ),
     createdAt: PRESET_TIME,

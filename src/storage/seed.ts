@@ -129,8 +129,20 @@ import {
  * are re-baselined. The engine code itself is unchanged, so ENGINE_REVISION is
  * not bumped — the content-addressed signature already flips via the pinned
  * hashes.
+ *
+ * Version 32: orphan capital modules mounted. Catalogue capital modules that
+ * featured in no preset (faction blink drives, mine layers, bulwark screen
+ * banks, twin grav drives, and the like — surfaced by the capital-weapon
+ * audit) are mounted onto their doctrinal-home preset ships across every
+ * faction, so a preset battle now actually exercises them. Where a mount
+ * busted a ship's power, crew, or fleet-budget balance, a same-tier module was
+ * swapped to make room. This is a frame-changing re-author — new weapons, PD,
+ * and drives fire — so the lossless digest baseline is re-baselined. The six
+ * preset-determinism pinned frame hashes are unchanged (the mounts land on
+ * roster ships whose first 40 ticks are byte-identical), so the cache
+ * algorithm signature is retained and ENGINE_REVISION is not bumped.
  */
-const PRESETS_VERSION = 31;
+const PRESETS_VERSION = 32;
 const VERSION_KEY = "presetsVersion";
 
 /**
