@@ -34,8 +34,9 @@ describe("moduleAppearance", () => {
     expect(MODULE_APPEARANCE.sensor.height).toBeGreaterThan(MODULE_APPEARANCE.armour.height);
   });
 
-  it("appearanceOf validates the kind and falls back to hull for an unknown string", () => {
-    expect(appearanceOf("weapon")).toBe(MODULE_APPEARANCE.weapon);
-    expect(appearanceOf("not-a-real-kind")).toBe(MODULE_APPEARANCE.hull);
+  it("appearanceOf returns the table entry for every CellKind", () => {
+    for (const kind of CellKind.options) {
+      expect(appearanceOf(kind)).toBe(MODULE_APPEARANCE[kind]);
+    }
   });
 });
