@@ -335,6 +335,7 @@ function makeState(): { state: EngineState; rng: ReturnType<typeof mulberry32> }
     shipCellHashScratch: new SpatialHash<ShipCell>(),
     separationHashScratch: new SpatialHash<SepBody>(),
     collisionScratch: newCollisionScratch(),
+    pdFiringScratch: [],
   };
   // Advance the projectile counter so capture records a non-zero value.
   setProjectileCounter(1);
@@ -467,6 +468,7 @@ describe("captureCheckpoint / restoreCheckpoint", () => {
       shipCellHashScratch: new SpatialHash<ShipCell>(),
       separationHashScratch: new SpatialHash<SepBody>(),
       collisionScratch: newCollisionScratch(),
+      pdFiringScratch: [],
     };
     const second = captureCheckpoint(reState, resumedRng, restored.tick);
 

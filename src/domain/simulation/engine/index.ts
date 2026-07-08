@@ -422,7 +422,7 @@ export function* simulateBattle(
     }
 
     // 4. Projectile travel, homing, asteroid deflection, and collision.
-    state.projectiles = updateProjectiles(state.projectiles, state.byId, inputs.anomalies, rng, state.medium, state.shipCellHashScratch);
+    state.projectiles = updateProjectiles(state.projectiles, state.byId, inputs.anomalies, rng, state.medium, state.shipCellHashScratch, state.pdFiringScratch);
 
     // 4-mines. Mines (factions update). Arm down, then detonate any armed mine
     //     with an enemy in range against the nearest (via applyDamage). Runs in

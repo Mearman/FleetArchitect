@@ -166,6 +166,7 @@ export function bootstrapEngine(
       shipCellHashScratch: new SpatialHash<ShipCell>(),
       separationHashScratch: new SpatialHash<SepBody>(),
       collisionScratch: newCollisionScratch(),
+      pdFiringScratch: [],
     };
     return { state, startTick: 1 };
   }
@@ -232,6 +233,7 @@ export function bootstrapEngine(
     shipCellHashScratch: new SpatialHash<ShipCell>(),
     separationHashScratch: new SpatialHash<SepBody>(),
     collisionScratch: newCollisionScratch(),
+    pdFiringScratch: [],
   };
   return { state, startTick: restored.tick + 1 };
 }
