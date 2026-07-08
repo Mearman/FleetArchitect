@@ -18,6 +18,7 @@ import { CREW_HP, SIM } from "./config";
 import { compareByCell } from "./crew-pathfinding";
 import { recomputeAggregates, sumWeaponThrust } from "./physics";
 import { makeResourceState } from "./resource-step";
+import { buildTechCaches } from "./tech";
 import type { AnchorScalingMeta } from "./effect-scaling";
 import type { SimModule, SimShip } from "./types";
 
@@ -319,6 +320,11 @@ export function toSimShip(ship: CombatShip, rng: Rng): SimShip {
   // recomputeAggregates derive the live combat stats from the alive set.
   if (ship.modules !== undefined && ship.modules.length > 0) {
     base.modules = ship.modules.map((m) => toSimModule(m, rng));
+    // Static tech classification (aura/overcharge/brownout subsets) derived
+    // once from the built module array; effect.kind and powerDraw never change
+    // at runtime, so this cache is valid for the ship's whole life. Built here
+    // so the per-tick tech loops scan only the relevant subset.
+    base.techCaches = buildTechCaches(base.modules);
     // Carry the resolved hardwires onto the ship and index them onto the sink
     // and source SimModules so the per-tick loop can read a module's feeding
     // links directly. Omitted entirely on unhardwired designs so behaviour is
