@@ -125,6 +125,17 @@ export function viewerPiercesCloakAt(
  * acquisition range to `viewerAcquireRange(viewer) * acquisitionMultiplier`; the
  * target is acquired only within that reduced range.
  *
+ * `precomputedViewerRange` lets a caller that evaluates `isDetectable` over many
+ * contacts (e.g. `visibleEnemyViews`, `updateBoarding`) share one
+ * `viewerAcquireRange(viewer)` computation across the whole loop instead of
+ * recomputing it per signature-reduced contact — mirroring the
+ * `precomputedEnemyEmission` hoist in `awareness-direct`. It is a pure function
+ * of the viewer's own sensors, identical for every contact within one tick, so
+ * caching changes no value. Omitted by single-target callers (`fireWeapons`),
+ * which pay no benefit from hoisting. The range is only read on the signature
+ * branch, so passing it for a cloaked or non-stealth target is harmless (the
+ * early-outs return before it is touched).
+ *
  * The computation is a pure function of the two ships' module states, their
  * separation, and the tick — no rng is drawn, so the random stream is untouched
  * by stealth and stays the same length regardless of detection outcomes.
@@ -134,6 +145,7 @@ export function isDetectable(
   target: SimShip,
   distanceSq: number,
   tick: number,
+  precomputedViewerRange?: number,
 ): boolean {
   const cloak = activeCloak(target, tick);
   if (cloak !== undefined) {
@@ -144,7 +156,9 @@ export function isDetectable(
   // Fast path and opt-in guarantee: a target with no signature reduction is
   // detectable at any distance, so non-stealth targeting is unchanged.
   if (multiplier >= 1) return true;
-  const effectiveRange = viewerAcquireRange(viewer) * multiplier;
+  const viewerRange =
+    precomputedViewerRange ?? viewerAcquireRange(viewer);
+  const effectiveRange = viewerRange * multiplier;
   return distanceSq <= effectiveRange * effectiveRange;
 }
 

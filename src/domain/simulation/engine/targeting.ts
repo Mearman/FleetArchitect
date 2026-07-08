@@ -26,7 +26,7 @@
 
 import { SIM } from "./config";
 import { effectiveStance } from "./movement";
-import { isDetectable } from "./stealth";
+import { isDetectable, signatureMultiplier, viewerAcquireRange } from "./stealth";
 import type { SimShip } from "./types";
 import {
   filterVisibleByTargeting,
@@ -115,6 +115,16 @@ export function visibleEnemyViews(
   tick: number,
 ): EnemyView[] {
   const views: EnemyView[] = [];
+  // Lazily memoise the viewer's acquisition range across the contact loop. It
+  // is a pure function of the viewer's own sensors (unchanged across the loop),
+  // but is only needed for signature-reduced targets — `isDetectable`
+  // short-circuits cloaked targets via pierce-cloak and non-stealth targets via
+  // the multiplier >= 1 fast-out before the range is touched. So this stays
+  // opt-in: a non-stealth battle (no signature-reduced contact in awareness)
+  // never computes it, preserving the byte-identical fast path. Computed at most
+  // once per ship per tick regardless of how many stealthed contacts are in
+  // view. Mirrors the `precomputedEnemyEmission` hoist in `awareness-direct`.
+  let viewerRange: number | undefined;
   for (const [enemyId, contact] of ship.awareness) {
     const enemy = byId.get(enemyId);
     // The awareness set may name an enemy that has since died or that belongs to
@@ -128,7 +138,14 @@ export function visibleEnemyViews(
     // module is always detectable, so a non-stealth battle's visible set — and
     // thus its targeting — is byte-identical to before.
     const distSq = (contact.x - ship.x) ** 2 + (contact.y - ship.y) ** 2;
-    if (!isDetectable(ship, enemy, distSq, tick)) continue;
+    // Only a signature-reduced target reaches the range check inside
+    // `isDetectable`; gate the (at most once) range computation on that so the
+    // dominant cost — an O(viewer-modules) sensor scan — drops from
+    // once-per-visible-stealthed-contact to once-per-ship-per-tick.
+    if (signatureMultiplier(enemy) < 1) {
+      if (viewerRange === undefined) viewerRange = viewerAcquireRange(ship);
+      if (!isDetectable(ship, enemy, distSq, tick, viewerRange)) continue;
+    } else if (!isDetectable(ship, enemy, distSq, tick)) continue;
     views.push({
       instanceId: enemy.instanceId,
       // Position comes from the contact (the ghost's last-known x/y, or the

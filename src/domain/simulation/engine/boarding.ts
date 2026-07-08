@@ -7,7 +7,7 @@ import { SIM } from "./config";
 import { isOperational } from "./crew";
 import { recomputeAggregates } from "./physics";
 import { worldToLocal } from "./setup";
-import { isDetectable } from "./stealth";
+import { isDetectable, signatureMultiplier, viewerAcquireRange } from "./stealth";
 import { cellWorldPosition } from "@/domain/simulation/spatial-hash";
 import type { SimPod, SimShip } from "./types";
 
@@ -42,13 +42,21 @@ export function launchPods(
     const rangeSq = effect.range * effect.range;
     let target: SimShip | undefined;
     let nearestSq = Number.POSITIVE_INFINITY;
+    // Lazily memoise the viewer's acquisition range across the candidate scan
+    // (same hoist as `visibleEnemyViews`): a pure function of the boarding
+    // ship's sensors, unchanged across the loop, but only read for
+    // signature-reduced targets — so non-stealth battles pay nothing.
+    let viewerRange: number | undefined;
     for (const enemy of ships) {
       if (!enemy.alive || enemy.side === ship.side) continue;
       const dx = enemy.x - ship.x;
       const dy = enemy.y - ship.y;
       const dSq = dx * dx + dy * dy;
       if (dSq > rangeSq) continue;
-      if (!isDetectable(ship, enemy, dSq, tick)) continue;
+      if (signatureMultiplier(enemy) < 1) {
+        if (viewerRange === undefined) viewerRange = viewerAcquireRange(ship);
+        if (!isDetectable(ship, enemy, dSq, tick, viewerRange)) continue;
+      } else if (!isDetectable(ship, enemy, dSq, tick)) continue;
       // Strict-less keeps the first ship in array order on an exact tie.
       if (dSq < nearestSq) {
         target = enemy;

@@ -55,11 +55,20 @@ function anyRelationalBaseTargeting(ships: readonly SimShip[]): boolean {
  *  (for `threatsTo` / `membersOf` / `sameAs` membership scans). The filter
  *  resolves relational references ITSELF via `sortedById` — it does not call a
  *  resolver closure — so no aggregate map or resolver is held here. Built once
- *  per tick by the engine and threaded through. */
+ *  per tick by the engine and threaded through.
+ *
+ *  `referenceSets` memoises the resolved relational Sets (`membersOf` /
+ *  `threatsTo` / `sameAs`) for the lifetime of this tick. Every resolver is a
+ *  pure function of the frozen `ctx` plus the (ship, reference) pair, so two
+ *  calls that resolve the same reference produce the identical Set — caching
+ *  changes no value and no iteration order (the cache is only `.get`/`.set`,
+ *  never iterated). Lazily created on first relational resolution, so the gated
+ *  no-relational-modes case (where the filter never runs) pays nothing. */
 export interface FormationTargetingContext {
   enemies: readonly SimShip[];
   byId: ReadonlyMap<string, SimShip>;
   sortedById: readonly SimShip[];
+  referenceSets?: Map<string, Set<string>>;
 }
 
 /** Build the formation-targeting context once per tick. The filter needs only
@@ -94,14 +103,117 @@ export function buildFormationTargetingContext(
   return { enemies: ships, byId, sortedById };
 }
 
+/** Lazily create the per-tick relational-Set memo on the context. The context
+ *  is rebuilt fresh every tick, so this is invalidated for free; it is only
+ *  touched when a relational filter actually resolves (never in the gated
+ *  scalar/preset case). */
+function referenceSetCache(
+  ctx: FormationTargetingContext,
+): Map<string, Set<string>> {
+  const existing = ctx.referenceSets;
+  if (existing !== undefined) return existing;
+  const created: Map<string, Set<string>> = new Map();
+  ctx.referenceSets = created;
+  return created;
+}
+
+/** Canonical, side-identity-free string for a reference's own fields. Two
+ *  references that resolve to the same formation membership produce the same
+ *  key; distinct references key apart. The relational filters only ever act on
+ *  `friendly` / `enemy` / `enemyArchetype` / `self` (every other kind resolves
+ *  to an empty Set), but all variants are keyed so the cache never collides. */
+function referenceKey(ref: FormationReference): string {
+  switch (ref.kind) {
+    case "self":
+      return "self";
+    case "friendly":
+      return "friendly:" + ref.role;
+    case "enemy":
+      return "enemy:" + ref.role;
+    case "enemyArchetype":
+      return "enemyArchetype:" + ref.archetype;
+    case "point":
+      return "point:" + ref.pointId;
+    case "deployment":
+      return "deployment";
+    case "target":
+      return "target";
+    case "between":
+      // `between` never resolves to a non-empty Set in the filters (roleOf is
+      // undefined for it); recurse for a stable, distinct key.
+      return (
+        "between:" +
+        referenceKey(ref.a) +
+        ":" +
+        referenceKey(ref.b) +
+        ":" +
+        ref.alpha
+      );
+  }
+}
+
+/** Extra key disambiguator for `self` references. `self` is inherently
+ *  per-ship (the ship's own role/formation/identity feed the resolution), so
+ *  the ship-identity fields are folded into the key to prevent cross-contamination
+ *  between distinct ships' self-references. Appended ONLY for `self` (never for
+ *  `friendly`/`enemy`/`enemyArchetype`, where cross-ship sharing across a
+ *  squadron sharing the same resolved reference is the whole point of the
+ *  cache). Over-cautious by design: it may forgo a hit between two identical
+ *  self-referencing ships, but can never merge two distinct ones. */
+function selfReferenceSuffix(ship: SimShip): string {
+  return (
+    ":" +
+    (ship.role ?? "") +
+    ":" +
+    (ship.formationId ?? "") +
+    ":" +
+    ship.instanceId
+  );
+}
+
+/** Memoise a relational-Set resolver on the per-tick context. `resolve` is a
+ *  pure function of the frozen `ctx`, so its result is identical across callers
+ *  that share the cache key this tick; the cached Set is only ever read (`.has`)
+ *  by the filter, never mutated. */
+function memoisedReferenceSet(
+  ctx: FormationTargetingContext,
+  key: string,
+  resolve: () => Set<string>,
+): Set<string> {
+  const cache = referenceSetCache(ctx);
+  const hit = cache.get(key);
+  if (hit !== undefined) return hit;
+  const result = resolve();
+  cache.set(key, result);
+  return result;
+}
+
 /**
  * The set of enemy instanceIds that ARE members of the formation a reference
  * resolves to. Used by `membersOf` (shoot the referenced formation) and
  * `sameAs` (shoot what the referenced formation's members target). Returns the
  * empty set when the reference does not resolve to a known formation. Pure;
  * the set is built in instanceId-sorted order.
+ *
+ * Memoised per tick via {@link memoisedReferenceSet}: a pure function of the
+ * frozen `ctx` plus `(ship.side, ref)`, so every ship on the same side sharing
+ * the same enemy reference reuses one Set instead of each rebuilding it. The
+ * key carries the resolved side and reference identity but no per-ship field
+ * (`membersOf` reads only `ship.side` and `ref`), maximising cross-ship hits
+ * across a squadron targeting the same enemy formation.
  */
 function enemyMembersOfReference(
+  ship: SimShip,
+  ref: FormationReference,
+  ctx: FormationTargetingContext,
+): Set<string> {
+  const key = "membersOf:" + ship.side + ":" + referenceKey(ref);
+  return memoisedReferenceSet(ctx, key, () =>
+    resolveEnemyMembersOfReference(ship, ref, ctx),
+  );
+}
+
+function resolveEnemyMembersOfReference(
   ship: SimShip,
   ref: FormationReference,
   ctx: FormationTargetingContext,
@@ -170,8 +282,30 @@ function enemyMembersOfReference(
  * formation a reference resolves to — i.e. the enemies attacking that formation.
  * Used by `threatsTo` (protect). Returns the empty set when the reference does
  * not resolve to a known friendly formation. Pure.
+ *
+ * Memoised per tick: a pure function of the frozen `ctx` plus `(ship.side, ref)`
+ * for `friendly` references (read by every escort in a same-side squadron
+ * sharing the protectee, so they reuse one Set), and plus the ship's own
+ * role/formation/identity for `self` (inherently per-ship, so the
+ * {@link selfReferenceSuffix} keeps distinct ships' self-references apart).
  */
 function enemyThreatsToReference(
+  ship: SimShip,
+  ref: FormationReference,
+  ctx: FormationTargetingContext,
+): Set<string> {
+  const key =
+    "threatsTo:" +
+    ship.side +
+    ":" +
+    referenceKey(ref) +
+    (ref.kind === "self" ? selfReferenceSuffix(ship) : "");
+  return memoisedReferenceSet(ctx, key, () =>
+    resolveEnemyThreatsToReference(ship, ref, ctx),
+  );
+}
+
+function resolveEnemyThreatsToReference(
   ship: SimShip,
   ref: FormationReference,
   ctx: FormationTargetingContext,
@@ -209,6 +343,70 @@ function enemyThreatsToReference(
     }
   }
   return threats;
+}
+
+/**
+ * The set of enemy instanceIds targeted by the members of the friendly
+ * formation a reference resolves to — i.e. "shoot what they shoot". Used by
+ * `sameAs`. Returns the empty set when the reference resolves to no friendly
+ * formation. Pure; built in instanceId-sorted order.
+ *
+ * Memoised per tick on the same key shape as `enemyThreatsToReference`:
+ * `(ship.side, ref)` for `friendly` references (shared across a same-side
+ * squadron), plus the ship's own role/formation/identity for `self`.
+ */
+function enemySameAsReference(
+  ship: SimShip,
+  ref: FormationReference,
+  ctx: FormationTargetingContext,
+): Set<string> {
+  const key =
+    "sameAs:" +
+    ship.side +
+    ":" +
+    referenceKey(ref) +
+    (ref.kind === "self" ? selfReferenceSuffix(ship) : "");
+  return memoisedReferenceSet(ctx, key, () =>
+    resolveEnemySameAsReference(ship, ref, ctx),
+  );
+}
+
+function resolveEnemySameAsReference(
+  ship: SimShip,
+  ref: FormationReference,
+  ctx: FormationTargetingContext,
+): Set<string> {
+  // Resolve the friendly formation whose members' targets we follow.
+  const roleOf = (r: FormationReference): string | undefined => {
+    if (r.kind === "friendly") return r.role;
+    if (r.kind === "self") return ship.role;
+    return undefined;
+  };
+  const role = roleOf(ref);
+  const followFormationIds = new Set<string>();
+  if (role !== undefined) {
+    for (const s of ctx.sortedById) {
+      if (s.phantom !== undefined) continue;
+      if (s.side !== ship.side) continue;
+      if (s.role !== role) continue;
+      if (s.formationId !== undefined) followFormationIds.add(s.formationId);
+    }
+  }
+  if (ref.kind === "self" && ship.formationId !== undefined) {
+    followFormationIds.add(ship.formationId);
+  }
+  const targets = new Set<string>();
+  for (const s of ctx.sortedById) {
+    if (s.side !== ship.side) continue;
+    if (
+      s.formationId !== undefined &&
+      followFormationIds.has(s.formationId) &&
+      s.target !== undefined
+    ) {
+      targets.add(s.target);
+    }
+  }
+  return targets;
 }
 
 /**
@@ -269,40 +467,8 @@ export function filterVisibleByTargeting(
       return visible.filter((v) => threats.has(v.instanceId));
     }
     case "sameAs": {
-      // Shoot what the referenced formation's members target. Collect the
-      // targets held by the referenced formation's members, then filter visible
-      // to those.
-      const ref = mode.reference;
-      // Resolve the friendly formation whose members' targets we follow.
-      const roleOf = (r: FormationReference): string | undefined => {
-        if (r.kind === "friendly") return r.role;
-        if (r.kind === "self") return ship.role;
-        return undefined;
-      };
-      const role = roleOf(ref);
-      const followFormationIds = new Set<string>();
-      if (role !== undefined) {
-        for (const s of ctx.sortedById) {
-          if (s.phantom !== undefined) continue;
-          if (s.side !== ship.side) continue;
-          if (s.role !== role) continue;
-          if (s.formationId !== undefined) followFormationIds.add(s.formationId);
-        }
-      }
-      if (ref.kind === "self" && ship.formationId !== undefined) {
-        followFormationIds.add(ship.formationId);
-      }
-      const targets = new Set<string>();
-      for (const s of ctx.sortedById) {
-        if (s.side !== ship.side) continue;
-        if (
-          s.formationId !== undefined &&
-          followFormationIds.has(s.formationId) &&
-          s.target !== undefined
-        ) {
-          targets.add(s.target);
-        }
-      }
+      // Shoot what the referenced formation's members target.
+      const targets = enemySameAsReference(ship, mode.reference, ctx);
       return visible.filter((v) => targets.has(v.instanceId));
     }
     case "inZone":
