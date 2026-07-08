@@ -9,6 +9,7 @@ import type { DeploymentReference } from "./movement";
 import {
   EMPTY_DEPLOYMENT,
   EMPTY_POINTS,
+  NO_CONTEXTS,
   SPATIAL,
   index,
   ship,
@@ -22,7 +23,7 @@ describe("engine.formation-doctrine — GATE", () => {
     a.aiSpatial = SPATIAL;
     a.aiTargeting = { kind: "nearest" };
     a.aiFire = "holdFire";
-    stepFormationDoctrine([a, d], index([a, d]), 5, EMPTY_DEPLOYMENT, EMPTY_POINTS);
+    stepFormationDoctrine([a, d], index([a, d]), 5, EMPTY_DEPLOYMENT, EMPTY_POINTS, NO_CONTEXTS);
     expect(a.aiSpatial).toBe(SPATIAL);
     expect(a.aiTargeting).toEqual({ kind: "nearest" });
     expect(a.aiFire).toBe("holdFire");
@@ -44,7 +45,7 @@ describe("engine.formation-doctrine — GATE", () => {
     };
     const a = ship({ instanceId: "a1", side: "attacker", doctrine });
     a.aiSpatial = SPATIAL; // sentinel
-    stepFormationDoctrine([a], index([a]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS);
+    stepFormationDoctrine([a], index([a]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS, NO_CONTEXTS);
     // The ship-self rules are NOT evaluated by this pass; the sentinel survives.
     expect(a.aiSpatial).toBe(SPATIAL);
     expect(a.aiFire).toBeUndefined();
@@ -86,7 +87,7 @@ describe("engine.formation-doctrine — formationStrength", () => {
       shield: 0,
       maxShield: 0,
     });
-    stepFormationDoctrine([a1, a2], index([a1, a2]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS);
+    stepFormationDoctrine([a1, a2], index([a1, a2]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS, NO_CONTEXTS);
     expect(a1.aiSpatial).toEqual(SPATIAL);
   });
 
@@ -116,7 +117,7 @@ describe("engine.formation-doctrine — formationStrength", () => {
       formationChain: ["f1"],
       role: "line",
     });
-    stepFormationDoctrine([a1, a2], index([a1, a2]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS);
+    stepFormationDoctrine([a1, a2], index([a1, a2]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS, NO_CONTEXTS);
     expect(a1.aiSpatial).toBeUndefined();
   });
 
@@ -138,7 +139,7 @@ describe("engine.formation-doctrine — formationStrength", () => {
       role: "line",
       doctrine: { base: {}, rules: [rule] },
     });
-    stepFormationDoctrine([a1], index([a1]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS);
+    stepFormationDoctrine([a1], index([a1]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS, NO_CONTEXTS);
     expect(a1.aiFire).toBe("atWill");
   });
 });
@@ -172,7 +173,7 @@ describe("engine.formation-doctrine — formationEngaged / formationDestroyed / 
       target: "d1",
     });
     const d1 = ship({ instanceId: "d1", side: "defender" });
-    stepFormationDoctrine([a1, a2, d1], index([a1, a2, d1]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS);
+    stepFormationDoctrine([a1, a2, d1], index([a1, a2, d1]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS, NO_CONTEXTS);
     expect(a1.aiTargeting).toEqual({ kind: "threatsTo", reference: { kind: "self" } });
   });
 
@@ -203,7 +204,7 @@ describe("engine.formation-doctrine — formationEngaged / formationDestroyed / 
       role: "line",
       alive: false,
     });
-    stepFormationDoctrine([a1, d1], index([a1, d1]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS);
+    stepFormationDoctrine([a1, d1], index([a1, d1]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS, NO_CONTEXTS);
     expect(a1.aiFire).toBe("atWill");
   });
 
@@ -232,7 +233,7 @@ describe("engine.formation-doctrine — formationEngaged / formationDestroyed / 
       role: "line",
       doctrine: { base: {}, rules: [rule] },
     });
-    stepFormationDoctrine([a1, a2], index([a1, a2]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS);
+    stepFormationDoctrine([a1, a2], index([a1, a2]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS, NO_CONTEXTS);
     expect(a2.aiFire).toBe("holdFire");
   });
 });
@@ -259,7 +260,7 @@ describe("engine.formation-doctrine — range between references", () => {
       doctrine: { base: {}, rules: [rule] },
     });
     const d1 = ship({ instanceId: "d1", side: "defender", x: 100, y: 0 });
-    stepFormationDoctrine([a1, d1], index([a1, d1]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS);
+    stepFormationDoctrine([a1, d1], index([a1, d1]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS, NO_CONTEXTS);
     expect(a1.aiFire).toBe("atWill");
   });
 
@@ -283,7 +284,7 @@ describe("engine.formation-doctrine — range between references", () => {
       doctrine: { base: {}, rules: [rule] },
     });
     const d1 = ship({ instanceId: "d1", side: "defender", x: 1000, y: 0 });
-    stepFormationDoctrine([a1, d1], index([a1, d1]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS);
+    stepFormationDoctrine([a1, d1], index([a1, d1]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS, NO_CONTEXTS);
     expect(a1.aiFire).toBeUndefined();
   });
 
@@ -303,7 +304,7 @@ describe("engine.formation-doctrine — range between references", () => {
       side: "attacker",
       doctrine: { base: {}, rules: [rule] },
     });
-    stepFormationDoctrine([a1], index([a1]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS);
+    stepFormationDoctrine([a1], index([a1]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS, NO_CONTEXTS);
     expect(a1.aiFire).toBeUndefined();
   });
 
@@ -335,7 +336,7 @@ describe("engine.formation-doctrine — range between references", () => {
       doctrine: { base: {}, rules: [rule] },
     });
     const d1 = ship({ instanceId: "d1", side: "defender", x: 100, y: 0 });
-    stepFormationDoctrine([a1, d1], index([a1, d1]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS);
+    stepFormationDoctrine([a1, d1], index([a1, d1]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS, NO_CONTEXTS);
     expect(a1.aiFire).toBe("atWill");
   });
 });
@@ -357,7 +358,7 @@ describe("engine.formation-doctrine — all / any", () => {
       side: "attacker",
       doctrine: { base: {}, rules: [rule] },
     });
-    stepFormationDoctrine([a1], index([a1]), 5, EMPTY_DEPLOYMENT, EMPTY_POINTS);
+    stepFormationDoctrine([a1], index([a1]), 5, EMPTY_DEPLOYMENT, EMPTY_POINTS, NO_CONTEXTS);
     expect(a1.aiFire).toBe("atWill");
   });
 
@@ -377,7 +378,7 @@ describe("engine.formation-doctrine — all / any", () => {
       side: "attacker",
       doctrine: { base: {}, rules: [rule] },
     });
-    stepFormationDoctrine([a1], index([a1]), 5, EMPTY_DEPLOYMENT, EMPTY_POINTS);
+    stepFormationDoctrine([a1], index([a1]), 5, EMPTY_DEPLOYMENT, EMPTY_POINTS, NO_CONTEXTS);
     expect(a1.aiFire).toBeUndefined();
   });
 
@@ -397,7 +398,7 @@ describe("engine.formation-doctrine — all / any", () => {
       side: "attacker",
       doctrine: { base: {}, rules: [rule] },
     });
-    stepFormationDoctrine([a1], index([a1]), 5, EMPTY_DEPLOYMENT, EMPTY_POINTS);
+    stepFormationDoctrine([a1], index([a1]), 5, EMPTY_DEPLOYMENT, EMPTY_POINTS, NO_CONTEXTS);
     expect(a1.aiFire).toBe("atWill");
   });
 });
@@ -413,9 +414,9 @@ describe("engine.formation-doctrine — tickAfter / phase", () => {
       side: "attacker",
       doctrine: { base: {}, rules: [rule] },
     });
-    stepFormationDoctrine([a1], index([a1]), 9, EMPTY_DEPLOYMENT, EMPTY_POINTS);
+    stepFormationDoctrine([a1], index([a1]), 9, EMPTY_DEPLOYMENT, EMPTY_POINTS, NO_CONTEXTS);
     expect(a1.aiFire).toBeUndefined();
-    stepFormationDoctrine([a1], index([a1]), 10, EMPTY_DEPLOYMENT, EMPTY_POINTS);
+    stepFormationDoctrine([a1], index([a1]), 10, EMPTY_DEPLOYMENT, EMPTY_POINTS, NO_CONTEXTS);
     expect(a1.aiFire).toBe("holdFire");
   });
 
@@ -439,7 +440,7 @@ describe("engine.formation-doctrine — tickAfter / phase", () => {
       formationChain: ["fd"],
       role: "line",
     });
-    stepFormationDoctrine([a1, d1], index([a1, d1]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS);
+    stepFormationDoctrine([a1, d1], index([a1, d1]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS, NO_CONTEXTS);
     expect(a1.aiFire).toBe("atWill");
   });
 });
@@ -487,7 +488,7 @@ describe("engine.formation-doctrine — friendly/enemy role resolution", () => {
       role: "line",
       doctrine: { base: {}, rules: [rule] },
     });
-    stepFormationDoctrine([a1, a2, a3], index([a1, a2, a3]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS);
+    stepFormationDoctrine([a1, a2, a3], index([a1, a2, a3]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS, NO_CONTEXTS);
     expect(a3.aiFire).toBe("atWill");
   });
 
@@ -507,7 +508,7 @@ describe("engine.formation-doctrine — friendly/enemy role resolution", () => {
       side: "attacker",
       doctrine: { base: {}, rules: [rule] },
     });
-    stepFormationDoctrine([a1], index([a1]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS);
+    stepFormationDoctrine([a1], index([a1]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS, NO_CONTEXTS);
     expect(a1.aiFire).toBeUndefined();
   });
 });
@@ -527,7 +528,7 @@ describe("engine.formation-doctrine — first-match-wins + reset", () => {
       side: "attacker",
       doctrine: { base: {}, rules: [rule, later] },
     });
-    stepFormationDoctrine([a1], index([a1]), 5, EMPTY_DEPLOYMENT, EMPTY_POINTS);
+    stepFormationDoctrine([a1], index([a1]), 5, EMPTY_DEPLOYMENT, EMPTY_POINTS, NO_CONTEXTS);
     // First match wins: holdFire, NOT atWill.
     expect(a1.aiFire).toBe("holdFire");
   });
@@ -547,7 +548,7 @@ describe("engine.formation-doctrine — first-match-wins + reset", () => {
         ],
       },
     });
-    stepFormationDoctrine([a1], index([a1]), 5, EMPTY_DEPLOYMENT, EMPTY_POINTS);
+    stepFormationDoctrine([a1], index([a1]), 5, EMPTY_DEPLOYMENT, EMPTY_POINTS, NO_CONTEXTS);
     expect(a1.aiFire).toBe("holdFire");
     // Tick 6: a doctrine whose condition never fires at tick 6. The pass still
     // resets the field to undefined.
@@ -565,7 +566,7 @@ describe("engine.formation-doctrine — first-match-wins + reset", () => {
       },
     });
     a2.aiFire = "holdFire"; // sentinel from a prior tick
-    stepFormationDoctrine([a2], index([a2]), 6, EMPTY_DEPLOYMENT, EMPTY_POINTS);
+    stepFormationDoctrine([a2], index([a2]), 6, EMPTY_DEPLOYMENT, EMPTY_POINTS, NO_CONTEXTS);
     expect(a2.aiFire).toBeUndefined();
   });
 });
@@ -595,7 +596,7 @@ describe("engine.formation-doctrine — deployment reference", () => {
       y: 0,
       doctrine: { base: {}, rules: [rule] },
     });
-    stepFormationDoctrine([a1], index([a1]), 0, deployment, EMPTY_POINTS);
+    stepFormationDoctrine([a1], index([a1]), 0, deployment, EMPTY_POINTS, NO_CONTEXTS);
     expect(a1.aiFire).toBe("atWill");
   });
 });
@@ -625,7 +626,7 @@ describe("engine.formation-doctrine — point (waypoint) reference", () => {
       y: 0,
       doctrine: { base: {}, rules: [rule] },
     });
-    stepFormationDoctrine([a1], index([a1]), 0, EMPTY_DEPLOYMENT, points);
+    stepFormationDoctrine([a1], index([a1]), 0, EMPTY_DEPLOYMENT, points, NO_CONTEXTS);
     expect(a1.aiFire).toBe("atWill");
   });
 
@@ -651,7 +652,7 @@ describe("engine.formation-doctrine — point (waypoint) reference", () => {
       side: "attacker",
       doctrine: { base: {}, rules: [rule] },
     });
-    stepFormationDoctrine([a1], index([a1]), 0, EMPTY_DEPLOYMENT, points);
+    stepFormationDoctrine([a1], index([a1]), 0, EMPTY_DEPLOYMENT, points, NO_CONTEXTS);
     expect(a1.aiFire).toBeUndefined();
   });
 
@@ -684,7 +685,7 @@ describe("engine.formation-doctrine — point (waypoint) reference", () => {
       y: 0,
       doctrine: { base: {}, rules: [rule] },
     });
-    stepFormationDoctrine([a1], index([a1]), 0, EMPTY_DEPLOYMENT, points);
+    stepFormationDoctrine([a1], index([a1]), 0, EMPTY_DEPLOYMENT, points, NO_CONTEXTS);
     expect(a1.aiFire).toBe("atWill");
   });
 });

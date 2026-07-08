@@ -15,6 +15,7 @@ import type { DoctrineRule } from "@/schema/ai";
 import {
   EMPTY_DEPLOYMENT,
   EMPTY_POINTS,
+  NO_CONTEXTS,
   SPATIAL,
   index,
   ship,
@@ -38,7 +39,7 @@ describe("engine.formation-doctrine — friendlyInLineOfFire", () => {
     });
     const a2 = ship({ instanceId: "a2", side: "attacker", x: 500, y: 0 });
     const d1 = ship({ instanceId: "d1", side: "defender", x: 1000, y: 0 });
-    stepFormationDoctrine([a1, a2, d1], index([a1, a2, d1]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS);
+    stepFormationDoctrine([a1, a2, d1], index([a1, a2, d1]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS, NO_CONTEXTS);
     expect(a1.aiFire).toBe("holdFire");
   });
 
@@ -55,7 +56,7 @@ describe("engine.formation-doctrine — friendlyInLineOfFire", () => {
     });
     const a2 = ship({ instanceId: "a2", side: "attacker", x: 500, y: 100 });
     const d1 = ship({ instanceId: "d1", side: "defender", x: 1000, y: 0 });
-    stepFormationDoctrine([a1, a2, d1], index([a1, a2, d1]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS);
+    stepFormationDoctrine([a1, a2, d1], index([a1, a2, d1]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS, NO_CONTEXTS);
     expect(a1.aiFire).toBeUndefined();
   });
 
@@ -71,7 +72,7 @@ describe("engine.formation-doctrine — friendlyInLineOfFire", () => {
     });
     const a2 = ship({ instanceId: "a2", side: "attacker", x: 500, y: 100 });
     const d1 = ship({ instanceId: "d1", side: "defender", x: 1000, y: 0 });
-    stepFormationDoctrine([a1, a2, d1], index([a1, a2, d1]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS);
+    stepFormationDoctrine([a1, a2, d1], index([a1, a2, d1]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS, NO_CONTEXTS);
     expect(a1.aiFire).toBe("holdFire");
   });
 
@@ -94,6 +95,7 @@ describe("engine.formation-doctrine — friendlyInLineOfFire", () => {
       0,
       EMPTY_DEPLOYMENT,
       EMPTY_POINTS,
+      NO_CONTEXTS,
     );
     expect(a1.aiFire).toBeUndefined();
   });
@@ -108,7 +110,7 @@ describe("engine.formation-doctrine — friendlyInLineOfFire", () => {
       doctrine: { base: {}, rules: [rule] },
     });
     const a2 = ship({ instanceId: "a2", side: "attacker", x: 500, y: 0 });
-    stepFormationDoctrine([a1, a2], index([a1, a2]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS);
+    stepFormationDoctrine([a1, a2], index([a1, a2]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS, NO_CONTEXTS);
     expect(a1.aiFire).toBeUndefined();
   });
 
@@ -129,6 +131,7 @@ describe("engine.formation-doctrine — friendlyInLineOfFire", () => {
       0,
       EMPTY_DEPLOYMENT,
       EMPTY_POINTS,
+      NO_CONTEXTS,
     );
     expect(a1.aiFire).toBeUndefined();
   });
@@ -146,7 +149,7 @@ describe("engine.formation-doctrine — friendlyProximity", () => {
     });
     // 30 m away — within the 50 m threshold.
     const a2 = ship({ instanceId: "a2", side: "attacker", x: 30, y: 0 });
-    stepFormationDoctrine([a1, a2], index([a1, a2]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS);
+    stepFormationDoctrine([a1, a2], index([a1, a2]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS, NO_CONTEXTS);
     expect(a1.aiSpatial).toBe(SPATIAL);
   });
 
@@ -160,7 +163,7 @@ describe("engine.formation-doctrine — friendlyProximity", () => {
       doctrine: { base: {}, rules: [rule] },
     });
     const a2 = ship({ instanceId: "a2", side: "attacker", x: 60, y: 0 });
-    stepFormationDoctrine([a1, a2], index([a1, a2]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS);
+    stepFormationDoctrine([a1, a2], index([a1, a2]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS, NO_CONTEXTS);
     expect(a1.aiSpatial).toBeUndefined();
   });
 
@@ -174,7 +177,7 @@ describe("engine.formation-doctrine — friendlyProximity", () => {
       doctrine: { base: {}, rules: [rule] },
     });
     const a2 = ship({ instanceId: "a2", side: "attacker", x: 60, y: 0 });
-    stepFormationDoctrine([a1, a2], index([a1, a2]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS);
+    stepFormationDoctrine([a1, a2], index([a1, a2]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS, NO_CONTEXTS);
     expect(a1.aiSpatial).toBe(SPATIAL);
   });
 
@@ -190,7 +193,7 @@ describe("engine.formation-doctrine — friendlyProximity", () => {
     // Only an enemy and a dead friendly — neither counts.
     const d1 = ship({ instanceId: "d1", side: "defender", x: 10, y: 0 });
     const dead = ship({ instanceId: "dead", side: "attacker", x: 10, y: 0, alive: false });
-    stepFormationDoctrine([a1, d1, dead], index([a1, d1, dead]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS);
+    stepFormationDoctrine([a1, d1, dead], index([a1, d1, dead]), 0, EMPTY_DEPLOYMENT, EMPTY_POINTS, NO_CONTEXTS);
     expect(a1.aiSpatial).toBeUndefined();
   });
 });

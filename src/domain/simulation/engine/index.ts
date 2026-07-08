@@ -259,15 +259,15 @@ export function* simulateBattle(
 
     // 0c. AI interpreter (Phase 7 wiring). Evaluate each ship's stance + rules
     //     and write the hold-fire decision onto `aiHoldFire` (read by the
-    //     weapon-fire step). Runs after awareness and before targeting. Pure:
-    //     deterministic ship order, pure predicates, first-match rule wins. A
-    //     ship with no rules evaluates to holdFire=false.
-    stepAi(state.ships, state.byId);
+    //     weapon-fire step). Pure: deterministic ship order, pure predicates,
+    //     first-match rule wins; a rule-less ship is holdFire=false. Returns the
+    //     per-ship TriggerContext map so 0d reuses it (no second fractions/hypot/module scan).
+    const triggerContexts = stepAi(state.ships, state.byId);
     // 0d. Formation-doctrine pass. Evaluates unified rules whose conditions are
     //     formation/spatial/temporal/boolean kinds (the kinds `stepAi` leaves
     //     unsatisfied), writing the resolved axes onto `ai*` fields. GATED to a
     //     no-op for fleets with no formation condition, so presets are byte-identical.
-    stepFormationDoctrine(state.ships, state.byId, tick, state.deployment, state.points);
+    stepFormationDoctrine(state.ships, state.byId, tick, state.deployment, state.points, triggerContexts);
 
     // 1. Targeting. Phase D: build the formation-targeting context once per tick
     //    so an `aiTargeting` override can filter/score candidates by relational

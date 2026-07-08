@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { desiredPoint, cohesionCentroidFor, ownFormationCentroid } from "./formation-movement";
 import { buildAggregates, makeResolver } from "./formation-doctrine";
+import { buildFormationReferenceIndex } from "./formation-reference-index";
 import type { SpatialObjective } from "@/schema/ai";
 import type { SimShip } from "./types";
 import type { DeploymentReference } from "./movement";
@@ -91,7 +92,13 @@ function resolverFor(ships: readonly SimShip[]) {
     );
   const byId = new Map(ships.map((s) => [s.instanceId, s]));
   const aggregates = buildAggregates(sorted);
-  const resolve = makeResolver(sorted, byId, aggregates, DEPLOYMENT, new Map());
+  const resolve = makeResolver(
+    buildFormationReferenceIndex(sorted),
+    byId,
+    aggregates,
+    DEPLOYMENT,
+    new Map(),
+  );
   return { sorted, byId, aggregates, resolve };
 }
 

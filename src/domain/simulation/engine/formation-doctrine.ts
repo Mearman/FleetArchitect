@@ -21,13 +21,18 @@
 import { shipSelfSatisfied, type TriggerContext } from "@/domain/simulation/engine/ai";
 import type { SimShip } from "@/domain/simulation/engine/types";
 import type { DeploymentReference } from "@/domain/simulation/engine/movement";
+import {
+  buildFormationReferenceIndex,
+  formationOfArchetype,
+  formationsOfRole,
+  type FormationReferenceIndex,
+} from "./formation-reference-index";
 import type {
   Condition,
   DoctrineAction,
   FormationReference,
   ModuleKind,
 } from "@/schema/ai";
-import type { ShipClassification } from "@/schema/armor";
 
 // ---------------------------------------------------------------------------
 // Gate
@@ -203,74 +208,22 @@ export interface Point {
   y: number;
 }
 
-/** Resolve the formation(s) on a side matching a role. Returns the formation ids
- *  in instanceId-sorted order of their first member. Pure. */
-function formationsOfRole(
-  side: "attacker" | "defender",
-  role: string,
-  sortedById: readonly SimShip[],
-): string[] {
-  const ids: string[] = [];
-  const seen = new Set<string>();
-  for (const ship of sortedById) {
-    if (ship.phantom !== undefined) continue;
-    if (ship.side !== side) continue;
-    if (ship.role !== role) continue;
-    if (ship.formationId === undefined) continue;
-    if (seen.has(ship.formationId)) continue;
-    seen.add(ship.formationId);
-    ids.push(ship.formationId);
-  }
-  return ids;
-}
-
-/** Resolve the formation on the enemy side whose heaviest member's
- *  classification matches `archetype`. "Heaviest" = greatest current mass among
- *  alive members (deterministic: instanceId tie-break via the sorted input).
- *  Returns the first such formation id, or undefined. Pure. */
-function formationOfArchetype(
-  ownerSide: "attacker" | "defender",
-  archetype: ShipClassification,
-  sortedById: readonly SimShip[],
-): string | undefined {
-  const enemySide: "attacker" | "defender" = ownerSide === "attacker" ? "defender" : "attacker";
-  // Group enemy ships by formationId, tracking each formation's heaviest member.
-  const heaviestByFormation = new Map<string, { mass: number; classification: ShipClassification }>();
-  for (const ship of sortedById) {
-    if (ship.phantom !== undefined) continue;
-    if (ship.side !== enemySide) continue;
-    if (!ship.alive) continue;
-    if (ship.formationId === undefined) continue;
-    const prev = heaviestByFormation.get(ship.formationId);
-    if (prev === undefined || ship.mass > prev.mass) {
-      heaviestByFormation.set(ship.formationId, {
-        mass: ship.mass,
-        classification: ship.classification,
-      });
-    }
-  }
-  for (const [formationId, info] of heaviestByFormation) {
-    if (info.classification === archetype) return formationId;
-  }
-  return undefined;
-}
-
 /** A pure resolver closure: given a FormationReference and the ship it is being
- *  resolved for, return the world point or undefined. Closes over the sorted
- *  ship list, the aggregate map, the id index, and the deployment reference.
+ *  resolved for, return the world point or undefined. Closes over the reference
+ *  index, the aggregate map, the id index, and the deployment reference.
  *  Exported so the Phase D movement consumer can resolve a spatial objective's
  *  reference to the same world point the pass itself used. */
 export interface ResolveReference {
   (ref: FormationReference, ship: SimShip): Point | undefined;
 }
 
-/** Build the resolver closure from the sorted ship list, the byId index, the
- *  per-formation aggregates, the deployment reference, and the named-waypoint
- *  map. The Phase D movement consumer calls this once per tick (the same way
- *  the pass does) so a spatial objective's `reference` resolves to the identical
- *  world point the pass used to evaluate its conditions. Pure. */
+/** Build the resolver closure from the tick-invariant reference index, the byId
+ *  index, the per-formation aggregates, the deployment reference, and the
+ *  named-waypoint map. The Phase D movement consumer calls this once per tick
+ *  (the same way the pass does) so a spatial objective's `reference` resolves to
+ *  the identical world point the pass used to evaluate its conditions. Pure. */
 export function makeResolver(
-  sortedById: readonly SimShip[],
+  referenceIndex: FormationReferenceIndex,
   byId: ReadonlyMap<string, SimShip>,
   aggregates: ReadonlyMap<string, FormationAggregate>,
   deployment: DeploymentReference,
@@ -281,7 +234,7 @@ export function makeResolver(
       case "self":
         return { x: ship.x, y: ship.y };
       case "friendly": {
-        const ids = formationsOfRole(ship.side, ref.role, sortedById);
+        const ids = formationsOfRole(ship.side, ref.role, referenceIndex);
         const id = ids[0];
         if (id === undefined) return undefined;
         const agg = aggregates.get(id);
@@ -292,7 +245,7 @@ export function makeResolver(
       case "enemy": {
         const enemySide: "attacker" | "defender" =
           ship.side === "attacker" ? "defender" : "attacker";
-        const ids = formationsOfRole(enemySide, ref.role, sortedById);
+        const ids = formationsOfRole(enemySide, ref.role, referenceIndex);
         const id = ids[0];
         if (id === undefined) return undefined;
         const agg = aggregates.get(id);
@@ -301,7 +254,7 @@ export function makeResolver(
           : undefined;
       }
       case "enemyArchetype": {
-        const id = formationOfArchetype(ship.side, ref.archetype, sortedById);
+        const id = formationOfArchetype(ship.side, ref.archetype, referenceIndex);
         if (id === undefined) return undefined;
         const agg = aggregates.get(id);
         return agg !== undefined && agg.memberCount > 0
@@ -350,6 +303,14 @@ interface FormationContext {
   self: TriggerContext;
   byId: ReadonlyMap<string, SimShip>;
   sortedById: readonly SimShip[];
+  /** Tick-invariant (side, role)/(side, archetype) reference index, built once
+   *  per tick so {@link aggregateForReference} resolves friendly/enemy/
+   *  enemyArchetype formation ids by O(1) lookup. */
+  referenceIndex: FormationReferenceIndex;
+  /** Aggregate formation ids in formationId-sorted order, computed once per
+   *  tick (hoisted out of {@link derivePhase}) so the `phase` condition does
+   *  not re-sort the aggregate keys on every evaluation. */
+  sortedFormationIds: readonly string[];
 }
 
 /** Look up the aggregate for a formation reference, or undefined when the
@@ -368,22 +329,23 @@ function aggregateForReference(
   // formation centroid — can yield an aggregate. For simplicity and because the
   // schema's formation-state conditions are authored against formation
   // references, we resolve the formation id by replaying the same role/archetype
-  // lookup the resolver uses, then read its aggregate.
+  // lookup the resolver uses (against the tick-invariant index), then read its
+  // aggregate.
   switch (ref.kind) {
     case "friendly": {
-      const ids = formationsOfRole(ship.side, ref.role, ctx.sortedById);
+      const ids = formationsOfRole(ship.side, ref.role, ctx.referenceIndex);
       const id = ids[0];
       return id !== undefined ? ctx.aggregates.get(id) : undefined;
     }
     case "enemy": {
       const enemySide: "attacker" | "defender" =
         ship.side === "attacker" ? "defender" : "attacker";
-      const ids = formationsOfRole(enemySide, ref.role, ctx.sortedById);
+      const ids = formationsOfRole(enemySide, ref.role, ctx.referenceIndex);
       const id = ids[0];
       return id !== undefined ? ctx.aggregates.get(id) : undefined;
     }
     case "enemyArchetype": {
-      const id = formationOfArchetype(ship.side, ref.archetype, ctx.sortedById);
+      const id = formationOfArchetype(ship.side, ref.archetype, ctx.referenceIndex);
       return id !== undefined ? ctx.aggregates.get(id) : undefined;
     }
     case "self": {
@@ -423,10 +385,13 @@ function derivePhase(
   let enemyFormationCount = 0;
   let enemyEngaged = 0;
   // Iterate the aggregate map's entries in formationId-sorted order so the
-  // sums are deterministic. The aggregate map is keyed by formationId; we sort
-  // its keys here once. (Aggregates are point-looked-up elsewhere; this is the
-  // only place the map is iterated for summation, and it is sorted.)
-  const formationIds = [...ctx.aggregates.keys()].sort();
+  // sums are deterministic. The sorted id list is a tick-invariant function of
+  // `aggregates` (built once per tick by the caller), hoisted out of this
+  // per-call path so a `phase` condition does not re-allocate and re-sort the
+  // aggregate keys on every evaluation. (Aggregates are point-looked-up
+  // elsewhere; this is the only place the map is iterated for summation, and it
+  // is sorted.)
+  const formationIds = ctx.sortedFormationIds;
   // To attribute a formation to a side we need a member; look it up via byId on
   // the flagship id recorded in the aggregate.
   for (const id of formationIds) {
@@ -725,6 +690,16 @@ export function stepFormationDoctrine(
   tick: number,
   deployment: DeploymentReference,
   points: ReadonlyMap<string, Point>,
+  /** Per-ship ship-self {@link TriggerContext} map built by `stepAi` earlier
+   *  this same tick (keyed by instanceId, populated for ships whose doctrine
+   *  has at least one rule). Reused here so the shield/structure fractions, the
+   *  target hypot, and the destroyed-module scan that `stepAi` already paid for
+   *  are not recomputed per ship. Empty in tests (where `stepAi` did not run);
+   *  the local cache-miss builder below then reproduces the same values. The
+   *  one field that genuinely diverges — `outclassed` — is overridden back to
+   *  the hardcoded `false` this pass has always used, so a `moduleDestroyed`
+   *  or boolean-combo leaf never sees `stepAi`'s real outclassed value. */
+  triggerContexts: ReadonlyMap<string, TriggerContext>,
 ): void {
   // GATE: zero cost + zero writes for fleets with no formation conditions.
   if (!anyFormationCondition(ships)) return;
@@ -738,7 +713,14 @@ export function stepFormationDoctrine(
     );
 
   const aggregates = buildAggregates(sortedById);
-  const resolve = makeResolver(sortedById, byId, aggregates, deployment, points);
+  // Tick-invariant reference index (side, role)/(side, archetype) + the
+  // formationId-sorted aggregate key list, each built once here so per-ship
+  // reference resolutions and the `phase` condition are O(1) lookups instead of
+  // fresh O(ships) rescans / re-sorts (single pass; identical encounter order,
+  // no arithmetic reordering).
+  const referenceIndex = buildFormationReferenceIndex(sortedById);
+  const sortedFormationIds = [...aggregates.keys()].sort();
+  const resolve = makeResolver(referenceIndex, byId, aggregates, deployment, points);
 
   for (const ship of sortedById) {
     // Reset this tick's transient fields regardless of phantom status / doctrine
@@ -749,31 +731,53 @@ export function stepFormationDoctrine(
     // Phantoms carry no doctrine of their own.
     if (ship.phantom !== undefined) continue;
     if (!ship.alive) continue;
+    // A rule-less ship evaluates no condition this tick (the loop below is
+    // empty), so it needs no ship-self context — skip the build/lookup. The ai*
+    // resets above still run; this only drops the (unread) context build.
+    if (ship.doctrine.rules.length === 0) continue;
 
     // Build the ship-self context once per ship so ship-self leaves inside an
-    // all/any combo reuse it. Mirrors stepAi's buildContext, kept local so this
-    // module stays self-contained.
-    const target =
-      ship.target !== undefined ? byId.get(ship.target) : undefined;
-    const targetRange =
-      target !== undefined
-        ? Math.hypot(target.x - ship.x, target.y - ship.y)
-        : undefined;
-    const destroyed = new Set<ModuleKind>();
-    if (ship.modules !== undefined) {
-      for (const m of ship.modules) {
-        if (!m.alive) destroyed.add(m.kind);
+    // all/any combo reuse it. Primary path: reuse the TriggerContext `stepAi`
+    // already built for this ship this tick (shield/structure fractions, target
+    // hypot, destroyed-module scan), overriding `outclassed` back to the
+    // hardcoded `false` this pass has always used — `stepAi` computes a real
+    // outclassed from fleet-strength totals, and a doctrine nesting an
+    // `outclassed` leaf inside `all`/`any` here must NOT silently see that real
+    // value. Cache-miss fallback (tests without `stepAi`) rebuilds locally.
+    let self: TriggerContext;
+    const cached = triggerContexts.get(ship.instanceId);
+    if (cached !== undefined) {
+      self = {
+        shieldFraction: cached.shieldFraction,
+        structureFraction: cached.structureFraction,
+        targetRange: cached.targetRange,
+        targetClassification: cached.targetClassification,
+        destroyedModuleKinds: cached.destroyedModuleKinds,
+        outclassed: false,
+      };
+    } else {
+      const target =
+        ship.target !== undefined ? byId.get(ship.target) : undefined;
+      const targetRange =
+        target !== undefined
+          ? Math.hypot(target.x - ship.x, target.y - ship.y)
+          : undefined;
+      const destroyed = new Set<ModuleKind>();
+      if (ship.modules !== undefined) {
+        for (const m of ship.modules) {
+          if (!m.alive) destroyed.add(m.kind);
+        }
       }
+      self = {
+        shieldFraction: ship.maxShield > 0 ? ship.shield / ship.maxShield : 0,
+        structureFraction:
+          ship.maxStructure > 0 ? ship.structure / ship.maxStructure : 0,
+        targetRange,
+        targetClassification: target?.classification,
+        destroyedModuleKinds: destroyed,
+        outclassed: false,
+      };
     }
-    const self: TriggerContext = {
-      shieldFraction: ship.maxShield > 0 ? ship.shield / ship.maxShield : 0,
-      structureFraction:
-        ship.maxStructure > 0 ? ship.structure / ship.maxStructure : 0,
-      targetRange,
-      targetClassification: target?.classification,
-      destroyedModuleKinds: destroyed,
-      outclassed: false,
-    };
 
     const ctx: FormationContext = {
       tick,
@@ -782,6 +786,8 @@ export function stepFormationDoctrine(
       self,
       byId,
       sortedById,
+      referenceIndex,
+      sortedFormationIds,
     };
 
     for (const rule of ship.doctrine.rules) {
