@@ -99,8 +99,19 @@ export function launchPods(
  * stats immediately. Deterministic: pods step in array (creation) order; every
  * distance/order choice is a pure function of state, no rng.
  */
-export function updatePods(pods: readonly SimPod[], ships: readonly SimShip[]): SimPod[] {
-  const byId = new Map(ships.map((s) => [s.instanceId, s]));
+export function updatePods(
+  pods: readonly SimPod[],
+  byId: ReadonlyMap<string, SimShip>,
+): SimPod[] {
+  // Boarding is opt-in: a battle with no boarding modules never grows the pods
+  // array, so most ticks (and most battles) reach `updatePods` with nothing in
+  // flight. Skip the survivor allocation entirely in that case. Reuses the
+  // engine's already-maintained id index (`state.byId`, rebuilt only when ship
+  // count changes) instead of rebuilding a private Map every tick — every
+  // sibling stepper (updateProjectiles, stepAi, moveShips, ...) reads that same
+  // index, so this is byte-identical to the prior fresh Map: same keys, same
+  // SimShip references, same `.get` results, same iteration order over `pods`.
+  if (pods.length === 0) return [];
   const survivors: SimPod[] = [];
   for (const pod of pods) {
     const target = byId.get(pod.targetInstanceId);
