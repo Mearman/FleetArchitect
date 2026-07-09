@@ -693,14 +693,14 @@ export function* simulateBattle(
       }
     }
 
-    // 5c. Arena medium: per-tick sources, then diffuse and decay. `tick` seeds
-    //     the per-cell birthTicks the sustained-radiation startup light-lag gates.
-    //     The projectile-medium entries are cleared and refilled into the pooled
-    //     scratch each tick (no `.map` allocation) — same entries, same order.
+    // 5c. Arena medium: per-tick sources, then diffuse and decay. `tick` seeds the
+    //     birthTicks the sustained-radiation light-lag gates. Each entry carries
+    //     prevX/prevY = the pre-move position (the move is `p.x += p.vx`) so the
+    //     wake deposits along the swept path. Refilled into pooled scratch, same order.
     const pMedium = state.projectileMediumScratch;
     pMedium.length = 0;
     for (const p of state.projectiles) {
-      pMedium.push({ x: p.x, y: p.y, powered: p.powered, burnTicks: p.burnTicks, thrust: p.thrust, mass: p.mass });
+      pMedium.push({ x: p.x, y: p.y, prevX: p.x - p.vx, prevY: p.y - p.vy, powered: p.powered, burnTicks: p.burnTicks, thrust: p.thrust, mass: p.mass });
     }
     state.medium = stepArenaMediumFromState(state.medium, state.ships, state.debris, pMedium, inputs.anomalies, state.asteroidSourceCells, tick);
     // 5d. Exhaust/plume particles: step the live plume IN PLACE (transport +
