@@ -26,7 +26,7 @@ import { bootstrapEngine } from "./bootstrap";
 import { captureCheckpoint } from "./checkpoint";
 import type { EngineCheckpoint } from "@/schema/checkpoint";
 import { leadingSide } from "./outcome";
-import { stepArenaMediumFromState } from "./medium-setup";
+import { refillImpactScratchFromBeams, stepArenaMediumFromState } from "./medium-setup";
 import { collectMediumEmissions } from "./medium-emissions";
 import { ageBeams } from "./beams";
 import { stepPlume } from "./particle-sources";
@@ -694,14 +694,14 @@ export function* simulateBattle(
     }
 
     // 5c. Arena medium: per-tick sources, then diffuse and decay. `tick` seeds the
-    //     birthTicks the sustained-radiation light-lag gates. Each entry carries
-    //     prevX/prevY = the pre-move position (the move is `p.x += p.vx`) so the
-    //     wake deposits along the swept path. Refilled into pooled scratch, same order.
+    //     birthTicks the sustained-radiation light-lag gates. Projectile entries
+    //     carry prevX/prevY (pre-move) for a swept wake; impacts refill from beams.
     const pMedium = state.projectileMediumScratch;
     pMedium.length = 0;
     for (const p of state.projectiles) {
       pMedium.push({ x: p.x, y: p.y, prevX: p.x - p.vx, prevY: p.y - p.vy, powered: p.powered, burnTicks: p.burnTicks, thrust: p.thrust, mass: p.mass });
     }
+    refillImpactScratchFromBeams(state.beams, state.impactMediumScratch);
     state.medium = stepArenaMediumFromState(state.medium, state.ships, state.debris, pMedium, inputs.anomalies, state.asteroidSourceCells, tick, state.impactMediumScratch);
     // 5d. Exhaust/plume particles: step the live plume IN PLACE (transport +
     //     cool + cull) and gather this tick's emissions — no RNG, deterministic.
