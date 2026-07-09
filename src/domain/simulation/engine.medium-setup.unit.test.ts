@@ -5,14 +5,17 @@ import {
   EXCITATION_DECAY_TIMESCALE_S,
   MEDIUM_BOUNDARY_EPS_LOSS_PER_S,
   MEDIUM_BOUNDARY_VENT_VELOCITY_M_PER_S,
+  MEDIUM_DT_S,
   MEDIUM_MAX_VELOCITY_M_PER_S,
   MEDIUM_PITCH_M_DEFAULT,
   buildMediumField,
   type MediumField,
 } from "@/domain/simulation/engine/medium-field";
 import {
+  IMPACT_EPS_VIS_COUPLING,
   PROJECTILE_WAKE_EPS_COUPLING,
   computeArenaMediumSources,
+  type MediumImpactEntry,
   type ProjectileMediumEntry,
 } from "@/domain/simulation/engine/medium-setup";
 
@@ -67,6 +70,7 @@ describe("projectile wake deposit", () => {
       [],
       [],
       buffers,
+      [],
     );
     expect(result.epsVisSrc[15] ?? 0).toBeGreaterThan(0);
     expect(result.epsVisSrc[16] ?? 0).toBeGreaterThan(0);
@@ -95,8 +99,40 @@ describe("projectile wake deposit", () => {
       [],
       [],
       buffers,
+      [],
     );
     const sum = (result.epsVisSrc[15] ?? 0) + (result.epsVisSrc[16] ?? 0) + (result.epsVisSrc[17] ?? 0);
     expect(sum).toBeCloseTo(PROJECTILE_WAKE_EPS_COUPLING, 10);
+  });
+});
+
+describe("impact burst deposit", () => {
+  it("injects an epsVis burst at the impact cell, not into the signature substrate", () => {
+    const f = wideField();
+    const n = f.cellCount;
+    const buffers = {
+      rho: new Float64Array(n),
+      eps: new Float64Array(n),
+      epsVisSrc: new Float64Array(n),
+      mxSrc: new Float64Array(n),
+      mySrc: new Float64Array(n),
+    };
+    // Impact at (1000, 0) → col 7, row 1 → flat index 17.
+    const impacts: MediumImpactEntry[] = [{ x: 1000, y: 0, energyJ: 1e6 }];
+    const result = computeArenaMediumSources(
+      f,
+      new Float64Array(n),
+      [],
+      [],
+      [],
+      [],
+      [],
+      buffers,
+      impacts,
+    );
+    // Deposit = strike energy × coupling × dt, into epsVis only (renderer).
+    expect(result.epsVisSrc[17] ?? 0).toBeCloseTo(1e6 * IMPACT_EPS_VIS_COUPLING * MEDIUM_DT_S, 10);
+    // Never the signature substrate (eps) — impacts must not feed AI.
+    expect(result.eps[17] ?? 0).toBe(0);
   });
 });

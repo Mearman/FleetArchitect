@@ -148,6 +148,20 @@ export interface ProjectileMediumEntry {
 }
 
 /**
+ * An impact's contribution to the medium: a beam strike or projectile hit dumps
+ * energy at a world point. Extracted at the call site (the weapons step) so this
+ * leaf stays decoupled from the damage pipeline. The energy thermalises into the
+ * VISUAL `epsVis` substrate (renderer-only — never feeds AI signatures), giving
+ * the impact a flash in the unified glow renderer.
+ */
+export interface MediumImpactEntry {
+  x: number;
+  y: number;
+  /** Strike energy (joules) — beam `damageJ` or projectile warhead/kinetic energy. */
+  energyJ: number;
+}
+
+/**
  * Build the arena medium field and its ISM-seeded initial state.
  *
  * The grid spans the deployment bounding box (every ship's centre ± its
@@ -352,6 +366,15 @@ export const ASTEROID_PARTULATE_PER_CELL_KG = 5e-13;
 export const PROJECTILE_WAKE_RHO_COUPLING = 0.0005;
 export const PROJECTILE_WAKE_EPS_COUPLING = 0.002;
 
+/**
+ * Fraction of an impact's strike energy that thermalises into the visual epsVis
+ * substrate at the impact cell. A beam strike or projectile hit dumps energy at
+ * a point; a fraction becomes a brief, bright flash in the unified glow renderer.
+ * Set to the exhaust thermal fraction ({@link THERMAL_EPS_COUPLING_FRACTION}) for
+ * parity with a rocket plume of the same energy. epsVis only — never feeds AI.
+ */
+export const IMPACT_EPS_VIS_COUPLING = THERMAL_EPS_COUPLING_FRACTION;
+
 // ============================================================================
 // Cell <-> world position mapping
 // ============================================================================
@@ -489,6 +512,7 @@ export function computeArenaMediumSources(
   anomalies: readonly BattleAnomalyKind[],
   asteroidSourceCells: readonly number[],
   buffers: MediumSourceBuffers,
+  impacts: ReadonlyArray<MediumImpactEntry>,
 ): MediumSources {
   const { rho, eps, epsVisSrc, mxSrc, mySrc } = buffers;
   // Clear in place (the buffers carry the previous tick's sources) then deposit
@@ -499,7 +523,7 @@ export function computeArenaMediumSources(
   epsVisSrc.fill(0);
   mxSrc.fill(0);
   mySrc.fill(0);
-  depositMediumSources(field, liveRho, ships, debris, projectiles, anomalies, asteroidSourceCells, rho, eps, epsVisSrc, mxSrc, mySrc);
+  depositMediumSources(field, liveRho, ships, debris, projectiles, anomalies, asteroidSourceCells, rho, eps, epsVisSrc, mxSrc, mySrc, impacts);
   return { rho, eps, epsVisSrc, mxSrc, mySrc };
 }
 
@@ -518,6 +542,7 @@ export function computeArenaMediumSourcesReference(
   projectiles: ReadonlyArray<ProjectileMediumEntry>,
   anomalies: readonly BattleAnomalyKind[],
   asteroidSourceCells: readonly number[],
+  impacts: ReadonlyArray<MediumImpactEntry>,
 ): MediumSources {
   const cellCount = field.cellCount;
   const rho = new Float64Array(cellCount);
@@ -525,7 +550,7 @@ export function computeArenaMediumSourcesReference(
   const epsVisSrc = new Float64Array(cellCount);
   const mxSrc = new Float64Array(cellCount);
   const mySrc = new Float64Array(cellCount);
-  depositMediumSources(field, liveRho, ships, debris, projectiles, anomalies, asteroidSourceCells, rho, eps, epsVisSrc, mxSrc, mySrc);
+  depositMediumSources(field, liveRho, ships, debris, projectiles, anomalies, asteroidSourceCells, rho, eps, epsVisSrc, mxSrc, mySrc, impacts);
   return { rho, eps, epsVisSrc, mxSrc, mySrc };
 }
 
@@ -580,6 +605,7 @@ export function stepArenaMediumFromState(
   anomalies: readonly BattleAnomalyKind[],
   asteroidSourceCells: readonly number[],
   tick: number,
+  impacts: ReadonlyArray<MediumImpactEntry>,
 ): ArenaMedium {
   return stepArenaMedium(
     medium,
@@ -592,6 +618,7 @@ export function stepArenaMediumFromState(
       anomalies,
       asteroidSourceCells,
       medium.sourceBuffers,
+      impacts,
     ),
     tick,
   );

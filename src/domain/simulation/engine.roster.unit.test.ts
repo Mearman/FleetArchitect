@@ -150,6 +150,7 @@ function stateWith(ships: SimShip[]): EngineState {
     aliveAtTickStartScratch: new Set(),
     aliveRealSortedScratch: [],
     projectileMediumScratch: [],
+    impactMediumScratch: [],
     awarenessScratch: freshAwarenessScratch(),
     shipCellHashScratch: new SpatialHash<ShipCell>(),
     separationHashScratch: new SpatialHash<SepBody>(),

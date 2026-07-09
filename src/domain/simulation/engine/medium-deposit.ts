@@ -21,6 +21,7 @@ import {
   BODY_DRAG_COEFFICIENT,
   DEBRIS_SHED_FRACTION_PER_TICK,
   EXHAUST_RHO_COUPLING,
+  IMPACT_EPS_VIS_COUPLING,
   MEDIUM_EXHAUST_VELOCITY_M_PER_S,
   NEBULA_FILL_FRACTION_PER_TICK,
   NEBULA_TARGET_CELL_KG,
@@ -29,6 +30,7 @@ import {
   THERMAL_EPS_COUPLING_FRACTION,
   WAKE_EPS_COUPLING,
   mediumCellIndex,
+  type MediumImpactEntry,
   type ProjectileMediumEntry,
 } from "./medium-setup";
 import { cellWorldPositionCs } from "@/domain/simulation/spatial-hash";
@@ -59,6 +61,7 @@ export function depositMediumSources(
   epsVisSrc: Float64Array,
   mxSrc: Float64Array,
   mySrc: Float64Array,
+  impacts: ReadonlyArray<MediumImpactEntry>,
 ): void {
   const cellCount = field.cellCount;
 
@@ -172,6 +175,19 @@ export function depositMediumSources(
       rho[idx] = (rho[idx] ?? 0) + mainDepositKg;
       eps[idx] = (eps[idx] ?? 0) + epsDepositJ;
     }
+  }
+
+  // --- Impact bursts: a beam strike or projectile hit dumps energy at a point;
+  // a fraction thermalises into the visual substrate for a brief flash. epsVis
+  // only — never feeds AI signatures or dazzle. Iteration in array order. ---
+  for (const impact of impacts) {
+    const idx = mediumCellIndex(
+      field,
+      Math.floor(impact.x / field.config.pitchM + field.config.widthM / 2),
+      Math.floor(impact.y / field.config.pitchM + field.config.heightM / 2),
+    );
+    if (idx === null) continue;
+    epsVisSrc[idx] = (epsVisSrc[idx] ?? 0) + impact.energyJ * IMPACT_EPS_VIS_COUPLING * MEDIUM_DT_S;
   }
 
   // --- Nebula anomaly: fill every cell toward a dense target, proportional to

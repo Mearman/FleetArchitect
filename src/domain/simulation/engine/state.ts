@@ -16,7 +16,7 @@ import type { SimBeam } from "./beams";
 import type { Debris } from "./debris";
 import type { Emission } from "./emissions";
 import type { ParticleStore } from "./exhaust-particles";
-import type { ArenaMedium, ProjectileMediumEntry } from "./medium-setup";
+import type { ArenaMedium, MediumImpactEntry, ProjectileMediumEntry } from "./medium-setup";
 import type { AwarenessScratch } from "./awareness";
 import type { PdCandidate } from "./point-defence";
 import type { CollisionScratch, ShipCell } from "./collision";
@@ -146,6 +146,10 @@ export interface EngineState {
   aliveAtTickStartScratch: Set<string>;
   aliveRealSortedScratch: SimShip[];
   projectileMediumScratch: ProjectileMediumEntry[];
+  /** Reusable scratch of this tick's impact points (beam strikes, projectile
+   *  hits) for the medium impact-burst deposit. Cleared and refilled each tick
+   *  like {@link projectileMediumScratch}; not captured on the checkpoint. */
+  impactMediumScratch: MediumImpactEntry[];
   /** Reusable scratch for the awareness comms-flood (`propagateContacts`):
    *  per-ship pool/received/linkedSlots/adjacency Maps + the inner-loop buffers,
    *  cleared-and-reused across ticks. Not captured on the checkpoint. */
