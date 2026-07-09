@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { BattleFrame, MediumSnapshot } from "@/schema/battle";
 import {
+  EPS_HALFSAT_J,
   RHO_AMPLIFIER_CAP,
   RHO_REF_KG,
   densityAmplifier,
+  mediumCellIntensity,
+  particleCellBrightness,
+  particleEffectiveEps,
   resolveMediumField,
   sampleMediumRho,
 } from "./mediumShared";
@@ -182,5 +186,22 @@ describe("sampleMediumRho", () => {
     // (floor of the scaled coordinate), never between values.
     expect(sampleMediumRho(field, -0.4, 0)).toBe(11);
     expect(sampleMediumRho(field, 0.4, 0)).toBe(22);
+  });
+});
+
+describe("particle brightness truth", () => {
+  it("a particle's brightness is the one shared tone-map on its effective eps", () => {
+    // The particle glows by the SAME mediumCellIntensity as a grid cell, on its
+    // energy scaled into the field's brightness range — not a self-luminous
+    // intensity. A typical thruster parcel (~2e7 J / 5 ≈ EPS_HALFSAT) reads mid-range.
+    const energyJ = 2e7;
+    const rho = 1e-13;
+    const fxGain = 1;
+    expect(particleCellBrightness(energyJ, rho, fxGain)).toBeCloseTo(
+      mediumCellIntensity(particleEffectiveEps(energyJ), rho, fxGain),
+      12,
+    );
+    // Sanity: that effective eps sits at the half-saturation point (mid-range).
+    expect(particleEffectiveEps(energyJ)).toBeCloseTo(EPS_HALFSAT_J, 5);
   });
 });

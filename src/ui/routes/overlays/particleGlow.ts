@@ -1,7 +1,7 @@
 import {
-  densityAmplifier,
   fxGainFor,
   paletteSample,
+  particleCellBrightness,
   readFxLevel,
   resolveMediumField,
   sampleMediumRho,
@@ -145,10 +145,6 @@ function drawParticleGlow(c: OverlayCtx): void {
 
   const screen = { x: 0, y: 0 };
   for (const p of particles) {
-    // Colour tracks the particle's own energy/temperature only — the same calc
-    // as before, renamed. Brightness/radius below additionally fold in the local
-    // ambient density (denser gas glows brighter for the same energy).
-    const colorT = Math.max(0, Math.min(1, p.intensity * fxGain));
     t.projectInto(screen, p.x, p.y);
     const sx = screen.x;
     const sy = screen.y;
@@ -156,17 +152,18 @@ function drawParticleGlow(c: OverlayCtx): void {
     // off-screen particles.
     if (sx < 0 || sx >= width || sy < 0 || sy >= height) continue;
 
+    // One brightness truth: the particle glows by the SAME tone-map as a grid
+    // cell — `mediumCellIntensity` on its effective eps and the local density —
+    // not a self-luminous intensity. Colour and radius both track this brightness.
     const rho = field === undefined ? 0 : sampleMediumRho(field, p.x, p.y);
-    const amp = densityAmplifier(rho);
-    const dispI = Math.max(0, Math.min(1, colorT * amp)); // density-amplified brightness
-    if (dispI < PARTICLE_DRAW_THRESHOLD) continue; // threshold checked POST-amplification
+    const dispI = Math.max(0, Math.min(1, particleCellBrightness(p.energyJ, rho, fxGain)));
+    if (dispI < PARTICLE_DRAW_THRESHOLD) continue;
 
     const radius = PARTICLE_RADIUS_PX * (0.4 + 0.6 * dispI);
     // Blit the nearest-bucket sprite (drawImage is far cheaper than
     // createRadialGradient + 3 addColorStop + arc/fill per particle). The bucket
-    // — and therefore the baked-in palette colour — is keyed to colorT ONLY, so
-    // density changes brightness/size without shifting the spectral colour.
-    const bucket = Math.min(ATLAS_BUCKETS - 1, Math.round(colorT * (ATLAS_BUCKETS - 1)));
+    // — and therefore the baked-in palette colour — is keyed to the brightness.
+    const bucket = Math.min(ATLAS_BUCKETS - 1, Math.round(dispI * (ATLAS_BUCKETS - 1)));
     const bucketIntensity = bucket / (ATLAS_BUCKETS - 1);
     const sprite = atlas === null ? undefined : atlas[bucket];
     if (sprite === undefined) continue;
