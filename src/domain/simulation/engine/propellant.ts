@@ -41,9 +41,12 @@ export const EXHAUST_VELOCITY_M_PER_S = REFERENCE_ISP_S * STANDARD_GRAVITY_M_PER
  */
 export const PROPELLANT_FLOW_SPEED_M_PER_S = 1.0;
 
-/** Per-engine thrust command, newtons. Map: engine cell index → thrust being
- *  produced. The caller derives this from the live throttle / module state. */
-export type EngineThrustMap = ReadonlyMap<number, number>;
+/** Per-engine thrust command, newtons. Dense array indexed by engine cell index
+ *  → thrust being produced. The caller derives this from the live throttle /
+ *  module state. Typed array (not a Map): the index space is dense (0..n-1) and
+ *  the propellant substance reads it once per face in the FTCS integration loop,
+ *  where a direct index read replaces a per-face Map hash. */
+export type EngineThrustMap = Float64Array;
 
 /** Pipe adjacency: the set of unordered cell-pair keys identifying plumbed
  *  edges. Use `pipeKey` to build a key; fuel flows along these edges toward
@@ -98,8 +101,8 @@ export function makePropellantSubstance(
       // this guard removes); when neither is burning, the pipe is idle.
       if (face.to === undefined) return 0;
       if (!pipes.has(pipeKey(face.from, face.to))) return 0;
-      const burnTo = engineThrust.get(face.to) ?? 0;
-      const burnFrom = engineThrust.get(face.from) ?? 0;
+      const burnTo = engineThrust[face.to] ?? 0;
+      const burnFrom = engineThrust[face.from] ?? 0;
       // Exactly one end burns, or the antisymmetry breaks — skip the both-burn
       // and neither-burn cases here.
       if ((burnTo > 0) === (burnFrom > 0)) return 0;
@@ -125,7 +128,7 @@ export function makePropellantSubstance(
     },
     boundaryFlux: (cell, phi, out) => {
       out.cell = cell;
-      const thrust = engineThrust.get(cell) ?? 0;
+      const thrust = engineThrust[cell] ?? 0;
       if (thrust <= 0) {
         out.scalarFlux = 0;
         out.momentumX = 0;
