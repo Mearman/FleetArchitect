@@ -24,16 +24,14 @@ import type { BattleFrame, MediumSnapshot } from "@/schema/battle";
 // space (ε ≈ 0) stays dark regardless of ρ, which is why a quiescent nebula is
 // invisible until something lights it up.
 //
-// Two overlays render this field and share the helpers below:
-//   - `mediumGlow.ts`    — broad AMBIENT glow: one soft radial-gradient blob per
-//                          excited cell (the coarse field view).
-//   - `mediumTrails.ts`  — sharp ANALYTIC per-entity streaks (exhaust/plume
-//                          streamers) whose brightness is sampled from the same
-//                          field, so the two overlays stay visually consistent.
+// One overlay renders this field and shares the helpers below:
+//   - `battleGlow.ts` — the unified battlefield glow: the ambient field (one
+//                       texel per cell, smoothed) PLUS the live particles, both
+//                       through the one brightness truth below.
 //
 // Keeping the palette, the FX-level reader, the field resolution, and the
-// brightness mapping here means both overlays draw from one definition of
-// "how bright is this cell" — denser medium = brighter, identically, in both.
+// brightness mapping here means the field and the particles draw from one
+// definition of "how bright is this energy here".
 
 // ---------------------------------------------------------------------------
 // Cell <-> world mapping (re-derived UI-side — mirrors the engine convention)
@@ -56,8 +54,8 @@ import type { BattleFrame, MediumSnapshot } from "@/schema/battle";
  * grid. Mirrors the engine's `worldToMediumCell` convention
  * (`col = floor(wx / pitchM + widthM / 2)`), re-derived UI-side because the
  * renderer cannot import the engine. Used to sample the medium field at a world
- * point (the analytic trails in `mediumTrails.ts`); the ambient glow in
- * `mediumGlow.ts` rasterises the whole field instead, so it does not call this.
+ * point (the particle splat in `battleGlow.ts`); the field raster scan iterates
+ * cells directly, so it does not call this.
  */
 export function worldToCellIndex(
   field: MediumSnapshot,
