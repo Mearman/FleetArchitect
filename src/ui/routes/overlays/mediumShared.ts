@@ -173,9 +173,33 @@ export function glowEdgeFade(
  */
 export function mediumCellIntensity(eps: number, rho: number, fxGain: number): number {
   if (eps <= 0) return 0;
-  const amp = Math.min(RHO_AMPLIFIER_CAP, 1 + rho / RHO_REF_KG);
+  const amp = densityAmplifier(rho);
   const effEps = eps * amp;
   return (fxGain * effEps) / (effEps + EPS_HALFSAT_J);
+}
+
+/**
+ * Divisor mapping a particle's raw emitted energy (Joules — a point packet) into
+ * the field's effective-eps brightness range, so the particle renders through the
+ * SAME {@link mediumCellIntensity} tone-map as a grid cell: one brightness truth.
+ * An authored scale (a typical thruster parcel's ~2e7 J lands mid-range against
+ * {@link EPS_HALFSAT_J}); tuned in the calibration cycle for the dynamic range.
+ */
+export const PARTICLE_ENERGY_TO_EFFECTIVE_EPS = 5;
+
+/** A particle's effective cell excitation: its raw energy scaled into the field's
+ *  brightness range, feeding {@link mediumCellIntensity} so the particle glows by
+ *  the same truth as a grid cell. */
+export function particleEffectiveEps(energyJ: number): number {
+  return energyJ / PARTICLE_ENERGY_TO_EFFECTIVE_EPS;
+}
+
+/** A particle's display brightness through the ONE shared tone-map: its effective
+ *  eps and the local density amplifier, saturating against {@link EPS_HALFSAT_J}.
+ *  Identical to a grid cell's {@link mediumCellIntensity} — the particle is no
+ *  longer "self-luminous with its own intensity". */
+export function particleCellBrightness(energyJ: number, rho: number, fxGain: number): number {
+  return mediumCellIntensity(particleEffectiveEps(energyJ), rho, fxGain);
 }
 
 /**
