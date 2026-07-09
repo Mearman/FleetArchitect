@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { BattleFrame, MediumSnapshot } from "@/schema/battle";
 import {
   EPS_HALFSAT_J,
+  INTENSITY_DRAW_THRESHOLD,
   RHO_AMPLIFIER_CAP,
   RHO_REF_KG,
   densityAmplifier,
@@ -203,5 +204,16 @@ describe("particle brightness truth", () => {
     );
     // Sanity: that effective eps sits at the half-saturation point (mid-range).
     expect(particleEffectiveEps(energyJ)).toBeCloseTo(EPS_HALFSAT_J, 5);
+  });
+});
+
+describe("glow dynamic-range calibration", () => {
+  it("a sustained drive plume reads bright and a wake particle clears the draw threshold", () => {
+    // Bright end: a sustained drive-plume field cell (eps ~2e6 J, 3x rho-amplified
+    // in dense medium) reads >= 0.5 through the one tone-map.
+    expect(mediumCellIntensity(2e6, RHO_REF_KG * 2, 1)).toBeGreaterThanOrEqual(0.5);
+    // A fresh wake particle (KE ~1e8 J) through the unified particle truth clears
+    // the draw threshold, so the trail's bright sprite thread is visible.
+    expect(particleCellBrightness(1e8, 0, 1)).toBeGreaterThanOrEqual(INTENSITY_DRAW_THRESHOLD);
   });
 });
