@@ -223,8 +223,8 @@ describe("engine.medium-field — reference vs optimised equivalence", () => {
       { id: "d1", x: 0, y: 0, velX: 0, velY: 0, mass: 5, radius: 1, salvageable: true },
     ];
     const projectiles: ProjectileMediumEntry[] = [
-      { x: 0, y: 0, powered: true, burnTicks: 5, thrust: 50, mass: 2 },
-      { x: 600, y: 0, powered: false, burnTicks: 0, thrust: 0, mass: 1 },
+      { x: 0, y: 0, prevX: -500, prevY: 0, powered: true, burnTicks: 5, thrust: 50, mass: 2 },
+      { x: 600, y: 0, prevX: 0, prevY: 0, powered: false, burnTicks: 0, thrust: 0, mass: 1 },
     ];
     const anomalies: BattleAnomalyKind[] = ["nebula"];
     const asteroidDiscs = [{ x: 0, y: 0, r: 500 }];
