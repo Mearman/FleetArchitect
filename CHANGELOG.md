@@ -1,3 +1,41 @@
+## [1.60.2](https://github.com/Mearman/FleetArchitect/compare/v1.60.1...v1.60.2) (2026-07-09)
+
+
+### Bug Fixes
+
+* **sim:** capture narrowed modules const for chain-reaction cell-index thunk ([9d8b04f](https://github.com/Mearman/FleetArchitect/commit/9d8b04f623d3b9a6116432b4790702d72d242180))
+
+
+### Performance Improvements
+
+* **sim:** cache effect-scaling slotId map on modules array ([e0361d7](https://github.com/Mearman/FleetArchitect/commit/e0361d74fdab07166ca1f730338d7e256af55316))
+* **sim:** cache transport substances, flatten thermal map lookups ([978fe7c](https://github.com/Mearman/FleetArchitect/commit/978fe7cb54284c3f9415edf5b0c994714bbcab5b))
+* **sim:** compute collision pairkey once per contact in sort ([83b6aa6](https://github.com/Mearman/FleetArchitect/commit/83b6aa6b88ab667fe698746b865e609e1ca7fd0f))
+* **sim:** crew empty-fast-paths, cached order, int cell keys ([87b7273](https://github.com/Mearman/FleetArchitect/commit/87b727379f63a202b6c3751a352db3bd5481d623))
+* **sim:** defer chain-reaction cell-index build to pending path ([0dde705](https://github.com/Mearman/FleetArchitect/commit/0dde705282502df86fe14dbf6df56b06526b4f11))
+* **sim:** drop per-overflow nearest-module rescan in damage fallback ([992e830](https://github.com/Mearman/FleetArchitect/commit/992e8302f5e3e5d05d2652ee0028dadd0fdc616e))
+* **sim:** drop redundant weaponCooldowns spread in captureCheckpoint ([c693c1c](https://github.com/Mearman/FleetArchitect/commit/c693c1c5711a360f4ab1cbd4470a27d348b0c028))
+* **sim:** fuse three ship.modules passes into one ([9b01290](https://github.com/Mearman/FleetArchitect/commit/9b012903cb07609356f24c64f64075c94443e285))
+* **sim:** gate no-op pulse ticks and advance pulses in place ([8fcb82a](https://github.com/Mearman/FleetArchitect/commit/8fcb82a52156490e09cace594da0588cbf268607))
+* **sim:** hoist cell-volume multiply out of density gradient closure ([d49124e](https://github.com/Mearman/FleetArchitect/commit/d49124e1d1c146ccb7d9ffb2610943cc8caa53d7))
+* **sim:** hoist nozzle trig, merge particle gather, cache medium ids ([6fbec6e](https://github.com/Mearman/FleetArchitect/commit/6fbec6eed8093e84ba203faf08f2a1e88f4e4112))
+* **sim:** hoist salvage structural claimability out of per-pair loop ([e7e4c84](https://github.com/Mearman/FleetArchitect/commit/e7e4c84a726acabfd3eca8f6450177f67695b227))
+* **sim:** hoist viewerAcquireRange + memoise relational ref sets ([f1301bd](https://github.com/Mearman/FleetArchitect/commit/f1301bd0ce65420d4e2b5019f8b054bc6f59db70))
+* **sim:** index formation refs, reuse trigger context, hoist phase list ([c5bd160](https://github.com/Mearman/FleetArchitect/commit/c5bd160ab2c606896dce19ef14160ad9019d630f))
+* **sim:** inline sensor scan in sight reach and coverage ([fb489c2](https://github.com/Mearman/FleetArchitect/commit/fb489c205e01035786b57c309e9e4a309ae4fd35))
+* **sim:** numeric cell keys + cache snapshot capability flags ([3986bbc](https://github.com/Mearman/FleetArchitect/commit/3986bbc5363add1551d5c3203b501e6aaaeb26fb))
+* **sim:** per-side enemy list for drone homing in stepPhantoms ([43aa01f](https://github.com/Mearman/FleetArchitect/commit/43aa01fa36b6fc69cb639877575f0c7012d0cdce))
+* **sim:** precompute aura/overcharge/brownout module classification ([6f36183](https://github.com/Mearman/FleetArchitect/commit/6f36183b6cfe229b57408976342fab322900b4e0))
+* **sim:** reorder PD gates, cache hasAliveCommand, pool firing array ([0931a82](https://github.com/Mearman/FleetArchitect/commit/0931a822bfbe63c7ac03678295d75d1f025b7150))
+* **sim:** reuse byId index and skip map build in updatePods ([1213927](https://github.com/Mearman/FleetArchitect/commit/12139278bb41ff686fda9c49a71134aa7c6b836d))
+* **sim:** reuse penetration-path scratch buffers per weapon hit ([7b56586](https://github.com/Mearman/FleetArchitect/commit/7b5658621dfc39095af32717f08823af6570b036))
+* **sim:** reuse transport ping-pong buffers across ticks ([3f7f4fe](https://github.com/Mearman/FleetArchitect/commit/3f7f4fe5e0337c621b50ff63189d4ba123ea1dfa))
+* **sim:** share sensorUnitsOf, pool ship.awareness + cluster partition ([7df5369](https://github.com/Mearman/FleetArchitect/commit/7df53698112ebc7880385ab2190e71c17e4d8ce9))
+* **sim:** single-pass nearestThreat, drop per-retreat sort ([093330f](https://github.com/Mearman/FleetArchitect/commit/093330f5df4a39e85288dc4b54c0160f12064cba))
+* **sim:** skip destroyed-module scan when doctrine ignores it ([344d412](https://github.com/Mearman/FleetArchitect/commit/344d4128f98f866e68bc64d1588f30c19556227c))
+* **ui:** dedupe designer hover setState on cell change ([4938ff6](https://github.com/Mearman/FleetArchitect/commit/4938ff6e94419d900b1610cf8cb58b11887106f9))
+* **ui:** pool iso cell geometry and skip interior bevel clips ([5244602](https://github.com/Mearman/FleetArchitect/commit/52446026cebc81aff0bc7fd8f3d3f2c107878e08))
+
 ## [1.60.1](https://github.com/Mearman/FleetArchitect/compare/v1.60.0...v1.60.1) (2026-07-08)
 
 
