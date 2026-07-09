@@ -36,6 +36,7 @@ import type { EngineCheckpoint } from "@/schema/checkpoint";
 import type { BattleAnomalyKind } from "@/schema/battle";
 import type { SimShip } from "./types";
 import type { Debris } from "./debris";
+import type { SimBeam } from "./beams";
 
 /**
  * The live arena medium carried on the {@link EngineState}: the static
@@ -159,6 +160,22 @@ export interface MediumImpactEntry {
   y: number;
   /** Strike energy (joules) — beam `damageJ` or projectile warhead/kinetic energy. */
   energyJ: number;
+}
+
+/**
+ * Refill the per-tick impact scratch from this tick's active beams: each beam's
+ * strike point + deposited energy becomes one impact entry. Clears the scratch
+ * first (clear-and-reuse, no allocation). Beam strikes are the primary impact
+ * glow source; projectile-hit capture is deferred (a round's wake already glows).
+ */
+export function refillImpactScratchFromBeams(
+  beams: readonly SimBeam[],
+  scratch: MediumImpactEntry[],
+): void {
+  scratch.length = 0;
+  for (const b of beams) {
+    scratch.push({ x: b.targetX, y: b.targetY, energyJ: b.damageJ });
+  }
 }
 
 /**

@@ -15,9 +15,11 @@ import {
   IMPACT_EPS_VIS_COUPLING,
   PROJECTILE_WAKE_EPS_COUPLING,
   computeArenaMediumSources,
+  refillImpactScratchFromBeams,
   type MediumImpactEntry,
   type ProjectileMediumEntry,
 } from "@/domain/simulation/engine/medium-setup";
+import type { SimBeam } from "@/domain/simulation/engine/beams";
 
 /**
  * Projectile wake deposit: a fast round must deposit its wake excitation along
@@ -134,5 +136,19 @@ describe("impact burst deposit", () => {
     expect(result.epsVisSrc[17] ?? 0).toBeCloseTo(1e6 * IMPACT_EPS_VIS_COUPLING * MEDIUM_DT_S, 10);
     // Never the signature substrate (eps) — impacts must not feed AI.
     expect(result.eps[17] ?? 0).toBe(0);
+  });
+});
+
+describe("impact scratch refill", () => {
+  it("clears and refills the scratch from each beam's strike point + energy", () => {
+    const beams: SimBeam[] = [
+      { sourceId: "a", sourceX: 0, sourceY: 0, targetX: 1000, targetY: 0, kind: "beam", damageJ: 5e6, emissionTicks: 3 },
+      { sourceId: "b", sourceX: 0, sourceY: 0, targetX: 500, targetY: 500, kind: "beam", damageJ: 2e6, emissionTicks: 2 },
+    ];
+    const scratch: MediumImpactEntry[] = [{ x: 999, y: 999, energyJ: 1 }];
+    refillImpactScratchFromBeams(beams, scratch);
+    expect(scratch).toHaveLength(2);
+    expect(scratch[0]).toStrictEqual({ x: 1000, y: 0, energyJ: 5e6 });
+    expect(scratch[1]).toStrictEqual({ x: 500, y: 500, energyJ: 2e6 });
   });
 });
