@@ -1,3 +1,14 @@
+# [1.61.0](https://github.com/Mearman/FleetArchitect/compare/v1.60.3...v1.61.0) (2026-07-09)
+
+
+### Features
+
+* **sim:** couple cooling particles into the medium field ([444c5fb](https://github.com/Mearman/FleetArchitect/commit/444c5fb2dd9bd4a3d7c26b4b0337898e5be3536c))
+* **sim:** deposit impact bursts into the medium field ([e3ac1b4](https://github.com/Mearman/FleetArchitect/commit/e3ac1b44bd9d454354ac14043251e2c2f77e76f3))
+* **sim:** deposit projectile wake along the swept path ([7df1bd1](https://github.com/Mearman/FleetArchitect/commit/7df1bd1322e34cae3307a8216a927d0f6053f0dd))
+* **sim:** wire beam strikes into the impact-burst deposit ([c404aa1](https://github.com/Mearman/FleetArchitect/commit/c404aa1d547cff8610ac571ececc6a0fa090d540))
+* **ui:** unify particle glow on the one shared brightness truth ([61b8cf0](https://github.com/Mearman/FleetArchitect/commit/61b8cf0f7d86128c5aa10ef858b25e04a1d02aee))
+
 ## [1.60.3](https://github.com/Mearman/FleetArchitect/compare/v1.60.2...v1.60.3) (2026-07-09)
 
 
