@@ -57,17 +57,19 @@ export interface ResourceState {
 
 /** Reusable per-tick scratch pooled on `ResourceState.scratch`, cleared (not
  *  reallocated) at the top of every `resourceStep` call. `engineThrust`,
- *  `crewMap`, and `deckCells` are read only via `.get()`/`.has()` in the
- *  propellant/atmosphere substances — never iterated — and `crewOrder` is
- *  iterated locally, so clearing + refilling in fixed module-array order is
- *  lossless and no value survives across ticks. */
+ *  `crewMap`, and `deckCells` are dense typed arrays indexed by the module's
+ *  dense φ-index (0..n-1) — read only by direct index in the propellant/atmosphere
+ *  substances, never iterated — so `.fill(0)` + refilling in fixed module-array
+ *  order is lossless and no value survives across ticks. Typed arrays (not
+ *  Maps/Sets) because the index space is dense and every access is a per-face
+ *  hash in the FTCS integration loop; a direct index read replaces the hash. */
 export interface ResourceScratch {
   /** Dense φ-index → alive engine thrust command (N) this tick. */
-  engineThrust: Map<number, number>;
+  engineThrust: Float64Array;
   /** Dense φ-index → crew count on that cell this tick. */
-  crewMap: Map<number, number>;
-  /** Dense φ-indices of alive deck cells this tick. */
-  deckCells: Set<number>;
+  crewMap: Int32Array;
+  /** Dense φ-index → 1 if an alive deck cell this tick, else 0. */
+  deckCells: Uint8Array;
   /** Refilled and re-sorted by crew id each tick. */
   crewOrder: SimCrew[];
 }

@@ -43,7 +43,7 @@ describe("atmosphere substance", () => {
   });
 
   it("diffuses gas between two open cells and conserves total mass", () => {
-    const substance = makeAtmosphereSubstance(new Map(), new Map(), new Set());
+    const substance = makeAtmosphereSubstance(new Int32Array(0), new Map(), new Uint8Array(0));
     const faces = [
       { from: 0, to: 1, nx: 1, ny: 0, area: 1, open: true, boundary: false },
       { from: 1, to: 0, nx: -1, ny: 0, area: 1, open: true, boundary: false },
@@ -59,8 +59,8 @@ describe("atmosphere substance", () => {
   });
 
   it("drains gas from a crewed cell at n * crew-O2-consumption per second", () => {
-    const crew = new Map([[0, 2]]); // two crew in cell 0
-    const substance = makeAtmosphereSubstance(crew, new Map(), new Set());
+    const crew = Int32Array.of(2); // two crew in cell 0
+    const substance = makeAtmosphereSubstance(crew, new Map(), new Uint8Array(0));
     const result = stepTransportField(
       { substance, faces: [], boundaryCells: [] },
       [STANDARD_CELL_GAS_MASS_KG],
@@ -76,7 +76,7 @@ describe("atmosphere substance", () => {
     // One cell venting along +x. Mass lost per tick = rate·dt;
     // rate = ρ·A·v_e. Recoil impulse = rate·v_e·dt along -x.
     const vents = new Map([[0, { nx: 1, ny: 0 }]]);
-    const substance = makeAtmosphereSubstance(new Map(), vents, new Set());
+    const substance = makeAtmosphereSubstance(new Int32Array(0), vents, new Uint8Array(0));
     const phi = [STANDARD_CELL_GAS_MASS_KG];
     const result = stepTransportField(
       { substance, faces: [], boundaryCells: [0] },
@@ -93,7 +93,7 @@ describe("atmosphere substance", () => {
 
   it("stops venting once the cell is empty (no negative mass)", () => {
     const vents = new Map([[0, { nx: 1, ny: 0 }]]);
-    const substance = makeAtmosphereSubstance(new Map(), vents, new Set());
+    const substance = makeAtmosphereSubstance(new Int32Array(0), vents, new Uint8Array(0));
     let phi = [STANDARD_CELL_GAS_MASS_KG];
     // Vent for many ticks to drain the cell.
     for (let i = 0; i < 1000; i += 1) {

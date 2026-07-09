@@ -108,7 +108,7 @@ export const VENT_EXHAUST_VELOCITY_M_PER_S = 343;
  * Per-cell crew count map: cell index → number of crew present. Each crewed
  * cell subtracts `n · CREW_O2_CONSUMPTION_KG_PER_S` from the local gas mass.
  */
-export type CrewMap = ReadonlyMap<number, number>;
+export type CrewMap = Int32Array;
 
 /** Per-cell vent mask: which boundary cells are breached and venting to
  *  space. A breached cell vents its gas at `VENT_EXHAUST_VELOCITY_M_PER_S`
@@ -134,7 +134,7 @@ export function pressureFromMass(massKg: number): number {
  *  cell never advects gas into a solid armour/hull cell (which holds no void),
  *  nor a solid cell into a deck. Venting a breached deck cell to vacuum is the
  *  boundary-flux path, not advection. */
-export type DeckMask = ReadonlySet<number>;
+export type DeckMask = Uint8Array;
 
 /**
  * Build an atmosphere substance configuration.
@@ -181,7 +181,7 @@ export function makeAtmosphereSubstance(
     // or a face touching a non-deck (solid) cell, carries no advection — a
     // breached cell's outflux to vacuum is the vent boundary flux below.
     if (face.to === undefined) return 0;
-    if (!decks.has(face.from) || !decks.has(face.to)) return 0;
+    if (decks[face.from] !== 1 || decks[face.to] !== 1) return 0;
     const pFrom = pressureFromMass(phi[face.from] ?? 0);
     const pTo = pressureFromMass(phi[face.to] ?? 0);
     const u =
@@ -198,7 +198,7 @@ export function makeAtmosphereSubstance(
     nonNegative: true,
     floor: 0,
     source: (cell) =>
-      -(crew.get(cell) ?? 0) * CREW_O2_CONSUMPTION_KG_PER_S,
+      -(crew[cell] ?? 0) * CREW_O2_CONSUMPTION_KG_PER_S,
     boundaryFlux: (cell, phi, out) => {
       out.cell = cell;
       const vent = vents.get(cell);

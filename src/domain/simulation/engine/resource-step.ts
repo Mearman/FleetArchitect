@@ -495,7 +495,9 @@ function runResourceStep(
   // checkpoint restore rebuilds the state without it (and without
   // resourceGraph), so both re-warm together.
   if (state.scratch === undefined) {
-    state.scratch = { engineThrust: new Map(), crewMap: new Map(), deckCells: new Set(), crewOrder: [] };
+    // Dense typed arrays sized to n (invariant for the ship's lifetime).
+    const scratchN = state.thermal.length;
+    state.scratch = { engineThrust: new Float64Array(scratchN), crewMap: new Int32Array(scratchN), deckCells: new Uint8Array(scratchN), crewOrder: [] };
   }
   // Persistent per-substance transport ping-pong buffers, reused every tick
   // (mirrors ArenaMedium.work). Lazily built, never serialised — a checkpoint
@@ -509,9 +511,9 @@ function runResourceStep(
   const graph = transportGraph(ship, state, scratch);
   const idx = makeIdx(state);
 
-  scratch.engineThrust.clear();
-  scratch.crewMap.clear();
-  scratch.deckCells.clear();
+  scratch.engineThrust.fill(0);
+  scratch.crewMap.fill(0);
+  scratch.deckCells.fill(0);
   scratch.crewOrder.length = 0;
 
   // Resource consequences are recomputed fresh every tick: clear the previous
@@ -574,13 +576,13 @@ function runResourceStep(
     if (!m.alive) continue;
     if (m.effect.kind === "engine" && throttle > 0) {
       const i = idx(m);
-      if (i !== undefined) engineThrust.set(i, m.effect.thrust * throttle);
+      if (i !== undefined) engineThrust[i] = m.effect.thrust * throttle;
     }
     // Deck cells are NOT folded into the cached graph: the overheat pass above
     // can kill a deck cell mid-tick after the graph is fetched.
     if (isDeck(m)) {
       const i = idx(m);
-      if (i !== undefined) deckCells.add(i);
+      if (i !== undefined) deckCells[i] = 1;
     }
     if (m.effect.kind === "power") {
       net += m.effect.output;
@@ -625,7 +627,7 @@ function runResourceStep(
   if (ship.crew !== undefined) {
     for (const c of ship.crew) {
       const i = state.moduleIndex.get(cellKey(c.col, c.row));
-      if (i !== undefined) crewMap.set(i, (crewMap.get(i) ?? 0) + 1);
+      if (i !== undefined) crewMap[i] = (crewMap[i] ?? 0) + 1;
     }
   }
   // Vents: the live vent mask from the alive-cell topology (empty for an intact,

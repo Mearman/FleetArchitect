@@ -15,6 +15,15 @@ import {
   stepTransportField,
 } from "@/domain/simulation/engine/transport-field";
 
+/** Build a dense engine-thrust array from sparse [cellIndex, thrust] entries,
+ *  matching how `resourceStep` populates `ResourceScratch.engineThrust`. */
+function thrustMap(entries: [number, number][]): Float64Array {
+  const n = entries.length === 0 ? 0 : Math.max(...entries.map((e) => e[0])) + 1;
+  const a = new Float64Array(n);
+  for (const [i, v] of entries) a[i] = v;
+  return a;
+}
+
 /**
  * Propellant substance physics. φ = fuel mass per cell (kg).
  * Advection-only along the pipe graph; engine burn is a boundary flux that
@@ -42,7 +51,7 @@ describe("propellant substance", () => {
   it("drains fuel and reports thrust = dm·v_e along -normal", () => {
     // One engine cell producing 1000 N along +y (nozzle normal +y, so the
     // ship is pushed along -y).
-    const engineThrust = new Map([[0, 1000]]);
+    const engineThrust = thrustMap([[0, 1000]]);
     const exhaust = new Map([[0, { nx: 0, ny: 1 }]]);
     const substance = makePropellantSubstance(
       engineThrust,
@@ -63,7 +72,7 @@ describe("propellant substance", () => {
   });
 
   it("flames out when the tank is dry", () => {
-    const engineThrust = new Map([[0, 1000]]);
+    const engineThrust = thrustMap([[0, 1000]]);
     const exhaust = new Map([[0, { nx: 0, ny: 1 }]]);
     const substance = makePropellantSubstance(
       engineThrust,
@@ -80,7 +89,7 @@ describe("propellant substance", () => {
 
   it("flows along a plumbed edge toward a burning engine", () => {
     // Cell 0 (tank) → cell 1 (burning engine), plumbed.
-    const engineThrust = new Map([[1, 1000]]);
+    const engineThrust = thrustMap([[1, 1000]]);
     const exhaust = new Map([[1, { nx: 0, ny: 1 }]]);
     const pipes = new Set([pipeKey(0, 1)]);
     const substance = makePropellantSubstance(engineThrust, pipes, exhaust);
@@ -101,7 +110,7 @@ describe("propellant substance", () => {
 
   it("does not flow when no engine is burning downstream", () => {
     const pipes = new Set([pipeKey(0, 1)]);
-    const substance = makePropellantSubstance(new Map(), pipes, new Map());
+    const substance = makePropellantSubstance(thrustMap([]), pipes, new Map());
     const faces = [
       { from: 0, to: 1, nx: 1, ny: 0, area: 1, open: true, boundary: false },
       { from: 1, to: 0, nx: -1, ny: 0, area: 1, open: true, boundary: false },
