@@ -51,6 +51,10 @@ export interface ExhaustParticle {
   vy: number;
   /** Normalised glow intensity [0, 1]; decays with cooling. */
   intensity: number;
+  /** Real emitted energy (Joules); decays with cooling. Drives the residual
+   *  epsVis deposit (a cooling parcel radiates into the field) and the unified
+   *  brightness truth (`mediumCellIntensity(effectiveEps, …)`). */
+  energyJ: number;
   /** Seconds since emission; the lifetime cull signal. */
   age: number;
 }
@@ -74,6 +78,7 @@ export interface ParticleStore {
   readonly vy: Float64Array;
   readonly intensity: Float64Array;
   readonly age: Float64Array;
+  readonly energyJ: Float64Array;
   /** Live particle count; the live set is slots `[0, count)`. */
   count: number;
 }
@@ -87,6 +92,7 @@ export function createParticleStore(): ParticleStore {
     vy: new Float64Array(MAX_LIVE_PARTICLES),
     intensity: new Float64Array(MAX_LIVE_PARTICLES),
     age: new Float64Array(MAX_LIVE_PARTICLES),
+    energyJ: new Float64Array(MAX_LIVE_PARTICLES),
     count: 0,
   };
 }
@@ -112,6 +118,7 @@ export function particleStoreFromParticles(
     store.vx[i] = p.vx;
     store.vy[i] = p.vy;
     store.intensity[i] = p.intensity;
+    store.energyJ[i] = p.energyJ;
     store.age[i] = p.age;
   }
   store.count = n;
@@ -133,6 +140,7 @@ export function particlesFromStore(store: ParticleStore): ExhaustParticle[] {
       vx: store.vx[i] ?? 0,
       vy: store.vy[i] ?? 0,
       intensity: store.intensity[i] ?? 0,
+      energyJ: store.energyJ[i] ?? 0,
       age: store.age[i] ?? 0,
     });
   }
@@ -151,7 +159,7 @@ export function particlesFromStore(store: ParticleStore): ExhaustParticle[] {
  * age (mirroring the prior `stepped.age < lifetime` check).
  */
 export function stepParticleStore(store: ParticleStore, dt: number): void {
-  const { x, y, vx, vy, intensity, age } = store;
+  const { x, y, vx, vy, intensity, energyJ, age } = store;
   // Cool as it radiates: intensity fades over the cooling timescale. Computed
   // once per tick (dt is constant across the live set).
   const cooling = Math.exp(-dt / EXHAUST_COOLING_TIMESCALE_S);
@@ -166,6 +174,7 @@ export function stepParticleStore(store: ParticleStore, dt: number): void {
     const vxr = vx[r] ?? 0;
     const vyr = vy[r] ?? 0;
     const ir = intensity[r] ?? 0;
+    const er = energyJ[r] ?? 0;
     const ar = age[r] ?? 0;
     const na = ar + dt;
     if (na < EXHAUST_PARTICLE_LIFETIME_S) {
@@ -174,6 +183,7 @@ export function stepParticleStore(store: ParticleStore, dt: number): void {
       vx[w] = vxr;
       vy[w] = vyr;
       intensity[w] = ir * cooling;
+      energyJ[w] = er * cooling;
       age[w] = na;
       w += 1;
     }
@@ -195,7 +205,7 @@ export function appendParticles(
   store: ParticleStore,
   emissions: readonly ExhaustParticle[],
 ): void {
-  const { x, y, vx, vy, intensity, age } = store;
+  const { x, y, vx, vy, intensity, energyJ, age } = store;
   const survivorCount = store.count;
   const emissionCount = emissions.length;
   const total = survivorCount + emissionCount;
@@ -210,6 +220,7 @@ export function appendParticles(
       vx[w] = p.vx;
       vy[w] = p.vy;
       intensity[w] = p.intensity;
+      energyJ[w] = p.energyJ;
       age[w] = p.age;
       w += 1;
     }
@@ -229,6 +240,7 @@ export function appendParticles(
     vx.copyWithin(0, dropSurvivors, survivorCount);
     vy.copyWithin(0, dropSurvivors, survivorCount);
     intensity.copyWithin(0, dropSurvivors, survivorCount);
+    energyJ.copyWithin(0, dropSurvivors, survivorCount);
     age.copyWithin(0, dropSurvivors, survivorCount);
   }
   const keptSurvivors = survivorCount - dropSurvivors;
@@ -303,6 +315,7 @@ export function pushExhaustParticles(
     vx: dirX * exhaustSpeed,
     vy: dirY * exhaustSpeed,
     intensity: particleIntensityFromEnergy(energyJ, EXHAUST_ENERGY_HALFSAT_J),
+    energyJ,
     age: 0,
   });
 }
@@ -383,6 +396,7 @@ export function pushBeamChannelParticles(
       vx: 0,
       vy: 0,
       intensity,
+      energyJ,
       age: 0,
     });
   }
@@ -422,6 +436,7 @@ export function pushProjectileWakeParticles(
     vx: 0,
     vy: 0,
     intensity: particleIntensityFromEnergy(energyJ, WAKE_ENERGY_HALFSAT_J),
+    energyJ,
     age: 0,
   });
 }
@@ -471,6 +486,7 @@ export function pushImpactBurstParticles(
       vx: Math.cos(angle) * IMPACT_BURST_SPEED_M_PER_S,
       vy: Math.sin(angle) * IMPACT_BURST_SPEED_M_PER_S,
       intensity,
+      energyJ,
       age: 0,
     });
   }

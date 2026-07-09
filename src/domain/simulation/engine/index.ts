@@ -702,7 +702,7 @@ export function* simulateBattle(
       pMedium.push({ x: p.x, y: p.y, prevX: p.x - p.vx, prevY: p.y - p.vy, powered: p.powered, burnTicks: p.burnTicks, thrust: p.thrust, mass: p.mass });
     }
     refillImpactScratchFromBeams(state.beams, state.impactMediumScratch);
-    state.medium = stepArenaMediumFromState(state.medium, state.ships, state.debris, pMedium, inputs.anomalies, state.asteroidSourceCells, tick, state.impactMediumScratch);
+    state.medium = stepArenaMediumFromState(state.medium, state.ships, state.debris, pMedium, inputs.anomalies, state.asteroidSourceCells, tick, state.impactMediumScratch, state.particles);
     // 5d. Exhaust/plume particles: step the live plume IN PLACE (transport +
     //     cool + cull) and gather this tick's emissions — no RNG, deterministic.
     stepPlume(state.particles, state.ships, state.beams, state.projectiles);

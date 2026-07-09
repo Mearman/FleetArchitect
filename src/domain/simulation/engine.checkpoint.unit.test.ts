@@ -293,6 +293,7 @@ function makeState(): { state: EngineState; rng: ReturnType<typeof mulberry32> }
     vx: 3000,
     vy: 0,
     intensity: 0.7,
+    energyJ: 4.2e7,
     age: 0.4,
   };
 

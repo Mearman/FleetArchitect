@@ -16,6 +16,7 @@
 
 import { MEDIUM_DT_S, type MediumField } from "./medium-field";
 import { rasterSegmentCells } from "./medium-raster";
+import { EXHAUST_COOLING_TIMESCALE_S, type ParticleStore } from "./exhaust-particles";
 import {
   ASTEROID_PARTULATE_PER_CELL_KG,
   BODY_DRAG_COEFFICIENT,
@@ -25,6 +26,7 @@ import {
   MEDIUM_EXHAUST_VELOCITY_M_PER_S,
   NEBULA_FILL_FRACTION_PER_TICK,
   NEBULA_TARGET_CELL_KG,
+  PARTICLE_RESIDUAL_EPS_VIS_COUPLING,
   PROJECTILE_WAKE_EPS_COUPLING,
   PROJECTILE_WAKE_RHO_COUPLING,
   THERMAL_EPS_COUPLING_FRACTION,
@@ -62,6 +64,7 @@ export function depositMediumSources(
   mxSrc: Float64Array,
   mySrc: Float64Array,
   impacts: ReadonlyArray<MediumImpactEntry>,
+  particles: ParticleStore,
 ): void {
   const cellCount = field.cellCount;
 
@@ -188,6 +191,25 @@ export function depositMediumSources(
     );
     if (idx === null) continue;
     epsVisSrc[idx] = (epsVisSrc[idx] ?? 0) + impact.energyJ * IMPACT_EPS_VIS_COUPLING * MEDIUM_DT_S;
+  }
+
+  // --- Particle residual: a cooling parcel bleeds a fraction of its radiated
+  // energy (`energyJ × (1 − cooling)`) into the visual substrate at its cell, so
+  // lingering glow becomes field-emergent and fills the gaps between per-tick
+  // deposits (a continuous trail). The store holds the pre-step particles at
+  // this point (the plume steps after the medium step), so this is the energy
+  // about to radiate this tick. epsVis only — never feeds AI. Store order. ---
+  const residualFraction = 1 - Math.exp(-MEDIUM_DT_S / EXHAUST_COOLING_TIMESCALE_S);
+  for (let i = 0; i < particles.count; i += 1) {
+    const eJ = particles.energyJ[i] ?? 0;
+    if (eJ <= 0) continue;
+    const idx = mediumCellIndex(
+      field,
+      Math.floor((particles.x[i] ?? 0) / field.config.pitchM + field.config.widthM / 2),
+      Math.floor((particles.y[i] ?? 0) / field.config.pitchM + field.config.heightM / 2),
+    );
+    if (idx === null) continue;
+    epsVisSrc[idx] = (epsVisSrc[idx] ?? 0) + eJ * residualFraction * PARTICLE_RESIDUAL_EPS_VIS_COUPLING;
   }
 
   // --- Nebula anomaly: fill every cell toward a dense target, proportional to

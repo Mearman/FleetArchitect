@@ -20,6 +20,7 @@ import {
   type ProjectileMediumEntry,
 } from "@/domain/simulation/engine/medium-setup";
 import type { SimBeam } from "@/domain/simulation/engine/beams";
+import { createParticleStore, particleStoreFromParticles } from "@/domain/simulation/engine/exhaust-particles";
 
 /**
  * Projectile wake deposit: a fast round must deposit its wake excitation along
@@ -73,6 +74,7 @@ describe("projectile wake deposit", () => {
       [],
       buffers,
       [],
+      createParticleStore(),
     );
     expect(result.epsVisSrc[15] ?? 0).toBeGreaterThan(0);
     expect(result.epsVisSrc[16] ?? 0).toBeGreaterThan(0);
@@ -102,6 +104,7 @@ describe("projectile wake deposit", () => {
       [],
       buffers,
       [],
+      createParticleStore(),
     );
     const sum = (result.epsVisSrc[15] ?? 0) + (result.epsVisSrc[16] ?? 0) + (result.epsVisSrc[17] ?? 0);
     expect(sum).toBeCloseTo(PROJECTILE_WAKE_EPS_COUPLING, 10);
@@ -131,6 +134,7 @@ describe("impact burst deposit", () => {
       [],
       buffers,
       impacts,
+      createParticleStore(),
     );
     // Deposit = strike energy × coupling × dt, into epsVis only (renderer).
     expect(result.epsVisSrc[17] ?? 0).toBeCloseTo(1e6 * IMPACT_EPS_VIS_COUPLING * MEDIUM_DT_S, 10);
@@ -150,5 +154,36 @@ describe("impact scratch refill", () => {
     expect(scratch).toHaveLength(2);
     expect(scratch[0]).toStrictEqual({ x: 1000, y: 0, energyJ: 5e6 });
     expect(scratch[1]).toStrictEqual({ x: 500, y: 500, energyJ: 2e6 });
+  });
+});
+
+describe("particle residual deposit", () => {
+  it("deposits a cooling particle's residual energy into epsVis at its cell", () => {
+    const f = wideField();
+    const n = f.cellCount;
+    const buffers = {
+      rho: new Float64Array(n),
+      eps: new Float64Array(n),
+      epsVisSrc: new Float64Array(n),
+      mxSrc: new Float64Array(n),
+      mySrc: new Float64Array(n),
+    };
+    // A cooling particle at (1000, 0) → col 7, row 1 → flat index 17.
+    const particles = particleStoreFromParticles([
+      { x: 1000, y: 0, vx: 0, vy: 0, intensity: 0.5, energyJ: 1e7, age: 0 },
+    ]);
+    const result = computeArenaMediumSources(
+      f,
+      new Float64Array(n),
+      [],
+      [],
+      [],
+      [],
+      [],
+      buffers,
+      [],
+      particles,
+    );
+    expect(result.epsVisSrc[17] ?? 0).toBeGreaterThan(0);
   });
 });

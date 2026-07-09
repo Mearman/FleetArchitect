@@ -11,6 +11,7 @@ import {
   stepMediumField,
   stepMediumFieldReference,
 } from "@/domain/simulation/engine/medium-stepper";
+import { createParticleStore } from "@/domain/simulation/engine/exhaust-particles";
 import {
   computeArenaMediumSources,
   computeArenaMediumSourcesReference,
@@ -231,11 +232,11 @@ describe("engine.medium-field — reference vs optimised equivalence", () => {
     const asteroidSourceCells = computeAsteroidSourceCells(field, asteroidDiscs);
 
     const ref = computeArenaMediumSourcesReference(
-      field, liveRho, [], debris, projectiles, anomalies, asteroidSourceCells, [],
+      field, liveRho, [], debris, projectiles, anomalies, asteroidSourceCells, [], createParticleStore(),
     );
     const opt = computeArenaMediumSources(
       field, liveRho, [], debris, projectiles, anomalies, asteroidSourceCells,
-      freshBuffers(field), [],
+      freshBuffers(field), [], createParticleStore(),
     );
     expect([...opt.rho]).toEqual([...ref.rho]);
     expect([...opt.eps]).toEqual([...ref.eps]);
@@ -273,7 +274,7 @@ describe("engine.medium-field — reference vs optimised equivalence", () => {
     ];
 
     // First call deposits debris mass into the centre cell.
-    const first = computeArenaMediumSources(field, liveRho, [], debris, [], [], [], buffers, []);
+    const first = computeArenaMediumSources(field, liveRho, [], debris, [], [], [], buffers, [], createParticleStore());
     const centreIdx = Math.floor(field.cellCount / 2);
     const firstCentre = first.rho[centreIdx] ?? 0;
     // Second call on a DIFFERENT debris position must not carry the centre's
@@ -281,8 +282,8 @@ describe("engine.medium-field — reference vs optimised equivalence", () => {
     const debris2: Debris[] = [
       { id: "d2", x: 600, y: 0, velX: 0, velY: 0, mass: 3, radius: 1, salvageable: true },
     ];
-    const opt = computeArenaMediumSources(field, liveRho, [], debris2, [], [], [], buffers, []);
-    const ref = computeArenaMediumSourcesReference(field, liveRho, [], debris2, [], [], [], []);
+    const opt = computeArenaMediumSources(field, liveRho, [], debris2, [], [], [], buffers, [], createParticleStore());
+    const ref = computeArenaMediumSourcesReference(field, liveRho, [], debris2, [], [], [], [], createParticleStore());
     expect([...opt.rho]).toEqual([...ref.rho]);
 
     // Sanity: the centre cell that held the first deposit must be zero now

@@ -467,6 +467,7 @@ function particleSnapshotsFromStore(store: ParticleStore): ParticleSnapshot[] {
       vx: store.vx[i] ?? 0,
       vy: store.vy[i] ?? 0,
       intensity: store.intensity[i] ?? 0,
+      energyJ: store.energyJ[i] ?? 0,
       age: store.age[i] ?? 0,
     });
   }
