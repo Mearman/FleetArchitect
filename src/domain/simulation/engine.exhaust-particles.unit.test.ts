@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { MEDIUM_DT_S } from "./engine/medium-field";
 import {
   BEAM_ENERGY_HALFSAT_J,
+  EXHAUST_COOLING_TIMESCALE_S,
   EXHAUST_ENERGY_HALFSAT_J,
   EXHAUST_PARTICLE_LIFETIME_S,
   IMPACT_ENERGY_HALFSAT_J,
@@ -39,7 +40,7 @@ describe("engine.exhaust-particles", () => {
   it("advances an exhaust particle by velocity · dt (material transports, it does not pool)", () => {
     // A particle just emitted at x=1000 moving at 3000 m/s in +x.
     const store = particleStoreFromParticles([
-      { x: 1000, y: 0, vx: 3000, vy: 0, intensity: 1, age: 0 },
+      { x: 1000, y: 0, vx: 3000, vy: 0, intensity: 1, energyJ: 1e6, age: 0 },
     ]);
     stepParticleStore(store, MEDIUM_DT_S);
 
@@ -111,7 +112,7 @@ describe("engine.exhaust-particles", () => {
 
   it("an exhaust particle's intensity decays as it cools (the glow fades behind the engine)", () => {
     const store = particleStoreFromParticles([
-      { x: 0, y: 0, vx: 3000, vy: 0, intensity: 1, age: 0 },
+      { x: 0, y: 0, vx: 3000, vy: 0, intensity: 1, energyJ: 1e6, age: 0 },
     ]);
     stepParticleStore(store, MEDIUM_DT_S);
     // Cooled a little this tick (dimmer) but still radiating (not gone).
@@ -121,7 +122,7 @@ describe("engine.exhaust-particles", () => {
 
   it("a stepped particle ages (so stale plume parcels can be culled by lifetime)", () => {
     const store = particleStoreFromParticles([
-      { x: 0, y: 0, vx: 3000, vy: 0, intensity: 1, age: 0 },
+      { x: 0, y: 0, vx: 3000, vy: 0, intensity: 1, energyJ: 1e6, age: 0 },
     ]);
     stepParticleStore(store, MEDIUM_DT_S);
     expect(store.age[0] ?? 0).toBeCloseTo(MEDIUM_DT_S, 9);
@@ -132,9 +133,9 @@ describe("engine.exhaust-particles", () => {
     // one stale (past lifetime) in the middle — the compaction must drop only
     // the stale one and keep the two fresh ones in their original relative order.
     const store = particleStoreFromParticles([
-      { x: 10, y: 0, vx: 1000, vy: 0, intensity: 1, age: 0.1 },
-      { x: 99, y: 0, vx: 1000, vy: 0, intensity: 0.01, age: EXHAUST_PARTICLE_LIFETIME_S + 1 },
-      { x: 20, y: 0, vx: 1000, vy: 0, intensity: 1, age: 0.2 },
+      { x: 10, y: 0, vx: 1000, vy: 0, intensity: 1, energyJ: 1e6, age: 0.1 },
+      { x: 99, y: 0, vx: 1000, vy: 0, intensity: 0.01, energyJ: 1e3, age: EXHAUST_PARTICLE_LIFETIME_S + 1 },
+      { x: 20, y: 0, vx: 1000, vy: 0, intensity: 1, energyJ: 1e6, age: 0.2 },
     ]);
     stepParticleStore(store, MEDIUM_DT_S);
     // The stale middle parcel is gone; the two fresh ones survive, aged by one
@@ -239,12 +240,12 @@ describe("engine.exhaust-particles", () => {
   it("appendParticles concatenates emissions at the tail when under capacity", () => {
     // Survivors [A, B] (distinct x to track order), two new emissions [C, D].
     const store = particleStoreFromParticles([
-      { x: 1, y: 0, vx: 0, vy: 0, intensity: 0.5, age: 0.1 },
-      { x: 2, y: 0, vx: 0, vy: 0, intensity: 0.5, age: 0.1 },
+      { x: 1, y: 0, vx: 0, vy: 0, intensity: 0.5, energyJ: 1e6, age: 0.1 },
+      { x: 2, y: 0, vx: 0, vy: 0, intensity: 0.5, energyJ: 1e6, age: 0.1 },
     ]);
     appendParticles(store, [
-      { x: 3, y: 0, vx: 0, vy: 0, intensity: 0.9, age: 0 },
-      { x: 4, y: 0, vx: 0, vy: 0, intensity: 0.9, age: 0 },
+      { x: 3, y: 0, vx: 0, vy: 0, intensity: 0.9, energyJ: 1e6, age: 0 },
+      { x: 4, y: 0, vx: 0, vy: 0, intensity: 0.9, energyJ: 1e6, age: 0 },
     ]);
     // Survivors keep their slots; emissions land at the tail in gather order.
     expect(store.count).toBe(4);
@@ -259,14 +260,14 @@ describe("engine.exhaust-particles", () => {
     // dropped (oldest) and kept (newest) slots are unambiguous.
     const survivors: ExhaustParticle[] = [];
     for (let i = 0; i < MAX_LIVE_PARTICLES; i += 1) {
-      survivors.push({ x: i + 1, y: 0, vx: 0, vy: 0, intensity: 0.5, age: 0.1 });
+      survivors.push({ x: i + 1, y: 0, vx: 0, vy: 0, intensity: 0.5, energyJ: 1e6, age: 0.1 });
     }
     const store = particleStoreFromParticles(survivors);
     // Three new emissions appended → total MAX + 3 → drop the 3 oldest survivors.
     appendParticles(store, [
-      { x: MAX_LIVE_PARTICLES + 1, y: 0, vx: 0, vy: 0, intensity: 0.9, age: 0 },
-      { x: MAX_LIVE_PARTICLES + 2, y: 0, vx: 0, vy: 0, intensity: 0.9, age: 0 },
-      { x: MAX_LIVE_PARTICLES + 3, y: 0, vx: 0, vy: 0, intensity: 0.9, age: 0 },
+      { x: MAX_LIVE_PARTICLES + 1, y: 0, vx: 0, vy: 0, intensity: 0.9, energyJ: 1e6, age: 0 },
+      { x: MAX_LIVE_PARTICLES + 2, y: 0, vx: 0, vy: 0, intensity: 0.9, energyJ: 1e6, age: 0 },
+      { x: MAX_LIVE_PARTICLES + 3, y: 0, vx: 0, vy: 0, intensity: 0.9, energyJ: 1e6, age: 0 },
     ]);
     expect(store.count).toBe(MAX_LIVE_PARTICLES);
     // The three oldest survivors (x = 1, 2, 3) were dropped; the kept set runs
@@ -283,12 +284,21 @@ describe("engine.exhaust-particles", () => {
     // The checkpoint boundary: capture materialises to plain records, restore
     // rebuilds the store. Order and every double must survive the round trip.
     const original: ExhaustParticle[] = [
-      { x: -90.5, y: 12.25, vx: 3000, vy: -0.001, intensity: 0.7, age: 0.4 },
-      { x: 0, y: 0, vx: 0, vy: 0, intensity: 0, age: 0 },
-      { x: 1e9, y: -1e9, vx: 8.6e9, vy: 1, intensity: 0.999, age: 5.999 },
+      { x: -90.5, y: 12.25, vx: 3000, vy: -0.001, intensity: 0.7, energyJ: 4.2e7, age: 0.4 },
+      { x: 0, y: 0, vx: 0, vy: 0, intensity: 0, energyJ: 0, age: 0 },
+      { x: 1e9, y: -1e9, vx: 8.6e9, vy: 1, intensity: 0.999, energyJ: 8.6e9, age: 5.999 },
     ];
     const store = particleStoreFromParticles(original);
     expect(particlesFromStore(store)).toEqual(original);
+  });
+
+  it("a particle's energyJ decays with cooling (so its residual radiation fades)", () => {
+    const store = particleStoreFromParticles([
+      { x: 0, y: 0, vx: 0, vy: 0, intensity: 1, energyJ: 1e7, age: 0 },
+    ]);
+    stepParticleStore(store, MEDIUM_DT_S);
+    const cooling = Math.exp(-MEDIUM_DT_S / EXHAUST_COOLING_TIMESCALE_S);
+    expect(store.energyJ[0] ?? 0).toBeCloseTo(1e7 * cooling, 9);
   });
 });
 

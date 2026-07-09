@@ -37,6 +37,7 @@ import type { BattleAnomalyKind } from "@/schema/battle";
 import type { SimShip } from "./types";
 import type { Debris } from "./debris";
 import type { SimBeam } from "./beams";
+import type { ParticleStore } from "./exhaust-particles";
 
 /**
  * The live arena medium carried on the {@link EngineState}: the static
@@ -392,6 +393,16 @@ export const PROJECTILE_WAKE_EPS_COUPLING = 0.002;
  */
 export const IMPACT_EPS_VIS_COUPLING = THERMAL_EPS_COUPLING_FRACTION;
 
+/**
+ * Fraction of a cooling particle's radiated energy (its `energyJ × (1 − cooling)`
+ * per tick) that thermalises into the visual epsVis substrate in the cell it
+ * occupies. This couples the Lagrangian particle representation into the
+ * Eulerian field: a cooling parcel bleeds its glow into the medium, so lingering
+ * glow becomes field-emergent and fills the gaps between per-tick deposits (a
+ * continuous trail). epsVis only — never feeds AI. Tuned in the calibration cycle.
+ */
+export const PARTICLE_RESIDUAL_EPS_VIS_COUPLING = 0.01;
+
 // ============================================================================
 // Cell <-> world position mapping
 // ============================================================================
@@ -530,6 +541,7 @@ export function computeArenaMediumSources(
   asteroidSourceCells: readonly number[],
   buffers: MediumSourceBuffers,
   impacts: ReadonlyArray<MediumImpactEntry>,
+  particles: ParticleStore,
 ): MediumSources {
   const { rho, eps, epsVisSrc, mxSrc, mySrc } = buffers;
   // Clear in place (the buffers carry the previous tick's sources) then deposit
@@ -540,7 +552,7 @@ export function computeArenaMediumSources(
   epsVisSrc.fill(0);
   mxSrc.fill(0);
   mySrc.fill(0);
-  depositMediumSources(field, liveRho, ships, debris, projectiles, anomalies, asteroidSourceCells, rho, eps, epsVisSrc, mxSrc, mySrc, impacts);
+  depositMediumSources(field, liveRho, ships, debris, projectiles, anomalies, asteroidSourceCells, rho, eps, epsVisSrc, mxSrc, mySrc, impacts, particles);
   return { rho, eps, epsVisSrc, mxSrc, mySrc };
 }
 
@@ -560,6 +572,7 @@ export function computeArenaMediumSourcesReference(
   anomalies: readonly BattleAnomalyKind[],
   asteroidSourceCells: readonly number[],
   impacts: ReadonlyArray<MediumImpactEntry>,
+  particles: ParticleStore,
 ): MediumSources {
   const cellCount = field.cellCount;
   const rho = new Float64Array(cellCount);
@@ -567,7 +580,7 @@ export function computeArenaMediumSourcesReference(
   const epsVisSrc = new Float64Array(cellCount);
   const mxSrc = new Float64Array(cellCount);
   const mySrc = new Float64Array(cellCount);
-  depositMediumSources(field, liveRho, ships, debris, projectiles, anomalies, asteroidSourceCells, rho, eps, epsVisSrc, mxSrc, mySrc, impacts);
+  depositMediumSources(field, liveRho, ships, debris, projectiles, anomalies, asteroidSourceCells, rho, eps, epsVisSrc, mxSrc, mySrc, impacts, particles);
   return { rho, eps, epsVisSrc, mxSrc, mySrc };
 }
 
@@ -623,6 +636,7 @@ export function stepArenaMediumFromState(
   asteroidSourceCells: readonly number[],
   tick: number,
   impacts: ReadonlyArray<MediumImpactEntry>,
+  particles: ParticleStore,
 ): ArenaMedium {
   return stepArenaMedium(
     medium,
@@ -636,6 +650,7 @@ export function stepArenaMediumFromState(
       asteroidSourceCells,
       medium.sourceBuffers,
       impacts,
+      particles,
     ),
     tick,
   );
