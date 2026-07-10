@@ -4,6 +4,7 @@ import {
   PARTICLE_COOLING_TIMESCALE_S,
   PARTICLE_LIFETIME_S,
   PARTICLE_RAMP_IN_S,
+  computeParticleBridges,
   particleRenderState,
   smoothstep,
   type ParticleRenderState,
@@ -124,5 +125,111 @@ describe("smoothstep", () => {
     expect(smoothstep(3, 3, 2)).toBe(0);
     expect(smoothstep(3, 3, 3)).toBe(1);
     expect(smoothstep(3, 3, 4)).toBe(1);
+  });
+});
+
+describe("computeParticleBridges", () => {
+  // The engine's per-tick cooling: each tick multiplies energyJ by exactly one
+  // exp(-dt/tau) factor, so a chain of consecutive wake beads built by repeating
+  // that factor has ages 0, dt, 2*dt, ... and the exact prediction the bridge
+  // matcher uses.
+  const dt = 1 / 30;
+  const cooling = Math.exp(-dt / PARTICLE_COOLING_TIMESCALE_S);
+
+  it("recovers a 3-bead wake chain as 2 OLDER->YOUNGER bridges in order", () => {
+    // Build a synthetic single chain by repeating the cooling factor once per
+    // tick of age, ages 0, dt, 2*dt, all stationary at the same spot.
+    const e0 = 1e7;
+    const e1 = e0 * cooling;
+    const e2 = e1 * cooling;
+    const particles: ParticleSnapshot[] = [
+      { x: 0, y: 0, vx: 0, vy: 0, intensity: 0.5, energyJ: e0, age: 0 },
+      { x: 0, y: 0, vx: 0, vy: 0, intensity: 0.5, energyJ: e1, age: dt },
+      { x: 0, y: 0, vx: 0, vy: 0, intensity: 0.5, energyJ: e2, age: 2 * dt },
+    ];
+    const bridges = computeParticleBridges(particles);
+    expect(bridges).toHaveLength(2);
+    // Convention: fromIndex = OLDER (larger age), toIndex = YOUNGER (smaller age).
+    // The age-dt bead (index 1) is the older endpoint of the youngest pair, and
+    // the age-2dt bead (index 2) is the older endpoint of the next pair.
+    expect(bridges).toContainEqual({ fromIndex: 1, toIndex: 0 });
+    expect(bridges).toContainEqual({ fromIndex: 2, toIndex: 1 });
+  });
+
+  it("routes each younger bead to the older bead in its OWN spatial chain", () => {
+    // Two interleaved chains of IDENTICAL starting energy but different
+    // positions, so at each age the two chains' beads are energy-tied and only
+    // spatial distance can tell them apart.
+    const e0 = 1e7;
+    const e1 = e0 * cooling;
+    const e2 = e1 * cooling;
+    // Chain A beads at x=0,1,2; chain B beads at x=1000,1001,1002 — same ages and
+    // energies per age, ordered A then B within each age group.
+    const particles: ParticleSnapshot[] = [
+      { x: 0, y: 0, vx: 0, vy: 0, intensity: 0.5, energyJ: e0, age: 0 },
+      { x: 1000, y: 0, vx: 0, vy: 0, intensity: 0.5, energyJ: e0, age: 0 },
+      { x: 1, y: 0, vx: 0, vy: 0, intensity: 0.5, energyJ: e1, age: dt },
+      { x: 1001, y: 0, vx: 0, vy: 0, intensity: 0.5, energyJ: e1, age: dt },
+      { x: 2, y: 0, vx: 0, vy: 0, intensity: 0.5, energyJ: e2, age: 2 * dt },
+      { x: 1002, y: 0, vx: 0, vy: 0, intensity: 0.5, energyJ: e2, age: 2 * dt },
+    ];
+    const bridges = computeParticleBridges(particles);
+    expect(bridges).toHaveLength(4);
+    // Each bridge must connect two beads in the SAME chain (A: indices 0,2,4;
+    // B: indices 1,3,5). Assert by chain membership rather than exact index, so
+    // the test pins the spatial-disambiguation property the matcher guarantees.
+    const chainA = new Set([0, 2, 4]);
+    const chainB = new Set([1, 3, 5]);
+    for (const b of bridges) {
+      const inA = chainA.has(b.fromIndex) && chainA.has(b.toIndex);
+      const inB = chainB.has(b.fromIndex) && chainB.has(b.toIndex);
+      expect(inA || inB).toBe(true);
+    }
+    // And the older->younger age convention holds on every bridge.
+    for (const b of bridges) {
+      const from = particles[b.fromIndex];
+      const to = particles[b.toIndex];
+      // Bridge endpoints always reference valid array indices; the guard narrows
+      // for the age comparison without an assertion cast.
+      expect(from).toBeDefined();
+      expect(to).toBeDefined();
+      if (from !== undefined && to !== undefined) {
+        expect(from.age).toBeGreaterThan(to.age);
+      }
+    }
+  });
+
+  it("never bridges a particle with non-zero velocity", () => {
+    // A stationary chain plus a MOVING particle whose energy is engineered to
+    // match the cooling prediction exactly — the moving particle must still be
+    // excluded from every bridge endpoint.
+    const e0 = 1e7;
+    const e1 = e0 * cooling;
+    const particles: ParticleSnapshot[] = [
+      { x: 0, y: 0, vx: 0, vy: 0, intensity: 0.5, energyJ: e0, age: 0 },
+      // Moving particle at the older age with the exactly-predicted energy.
+      { x: 0.5, y: 0, vx: 5, vy: 0, intensity: 0.5, energyJ: e1, age: dt },
+    ];
+    const bridges = computeParticleBridges(particles);
+    expect(bridges).toHaveLength(0);
+  });
+
+  it("returns an empty array for empty or single-particle input", () => {
+    expect(computeParticleBridges([])).toEqual([]);
+    expect(
+      computeParticleBridges([
+        { x: 0, y: 0, vx: 0, vy: 0, intensity: 0.5, energyJ: 1e7, age: 0 },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("leaves a younger bead unbridged when no older energy matches closely", () => {
+    // Two stationary beads at adjacent ages but energies that violate the
+    // cooling law by far more than the 1e-6 threshold -> no bridge.
+    const particles: ParticleSnapshot[] = [
+      { x: 0, y: 0, vx: 0, vy: 0, intensity: 0.5, energyJ: 1e7, age: 0 },
+      { x: 1, y: 0, vx: 0, vy: 0, intensity: 0.5, energyJ: 3e3, age: dt },
+    ];
+    expect(computeParticleBridges(particles)).toEqual([]);
   });
 });
