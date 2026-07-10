@@ -280,6 +280,39 @@ describe("engine.exhaust-particles", () => {
     expect(xs).toEqual(expected);
   });
 
+  it("appendParticles writes each emission's energyJ in the over-capacity path (not just under-capacity)", () => {
+    // Regression guard for a bug where the over-capacity branch wrote x/y/vx/vy
+    // /intensity/age for newly appended emissions but OMITTED energyJ, so once
+    // the live store reached MAX_LIVE_PARTICLES every new particle's energyJ
+    // was left at a stale slot value (0 in a sustained busy battle) and the
+    // whole glow collapsed to zero brightness. Survivors and emissions must use
+    // DISTINCT energies so a stale survivor value cannot masquerade as the
+    // emission's intended energyJ (the original over-capacity test's identical
+    // 1e6 on both masked the bug).
+    const survivors: ExhaustParticle[] = [];
+    for (let i = 0; i < MAX_LIVE_PARTICLES; i += 1) {
+      survivors.push({ x: i + 1, y: 0, vx: 0, vy: 0, intensity: 0.5, energyJ: 1e6, age: 0.1 });
+    }
+    const store = particleStoreFromParticles(survivors);
+    // Three emissions at a DISTINCT energy (7e7) so the stale survivor value
+    // (1e6) is distinguishable from the intended one (7e7).
+    const emissionEnergy = 7e7;
+    appendParticles(store, [
+      { x: MAX_LIVE_PARTICLES + 1, y: 0, vx: 0, vy: 0, intensity: 0.9, energyJ: emissionEnergy, age: 0 },
+      { x: MAX_LIVE_PARTICLES + 2, y: 0, vx: 0, vy: 0, intensity: 0.9, energyJ: emissionEnergy, age: 0 },
+      { x: MAX_LIVE_PARTICLES + 3, y: 0, vx: 0, vy: 0, intensity: 0.9, energyJ: emissionEnergy, age: 0 },
+    ]);
+    // The three emissions land in the final three slots (the oldest three
+    // survivors were dropped from the front); each must carry its OWN energyJ,
+    // not the stale value left in the slot by the dropped survivor.
+    const tailEnergies = [
+      store.energyJ[store.count - 3] ?? 0,
+      store.energyJ[store.count - 2] ?? 0,
+      store.energyJ[store.count - 1] ?? 0,
+    ];
+    expect(tailEnergies).toEqual([emissionEnergy, emissionEnergy, emissionEnergy]);
+  });
+
   it("particlesFromStore round-trips through particleStoreFromStore in order", () => {
     // The checkpoint boundary: capture materialises to plain records, restore
     // rebuilds the store. Order and every double must survive the round trip.
