@@ -83,7 +83,7 @@ describe("transport-field primitives", () => {
         coefficient: 1.0,
       };
       const field = twoCellField(substance);
-      let phi: number[] = [10, 0];
+      let phi: Float64Array = Float64Array.of(10, 0);
       for (let i = 0; i < 200; i += 1) {
         phi = stepTransportField(field, phi).phi;
       }
@@ -176,7 +176,7 @@ describe("transport-field primitives", () => {
         floor: 0,
       };
       const field: TransportField = { substance, faces, boundaryCells: [] };
-      let phi = [1, 0, 0, 0, 0];
+      let phi: Float64Array = Float64Array.of(1, 0, 0, 0, 0);
       const initialTotal = totalScalar(phi);
       for (let tick = 0; tick < 50; tick += 1) {
         phi = stepTransportField(field, phi).phi;

@@ -128,8 +128,8 @@ describe("engine.transport-field — reference vs optimised equivalence", () => 
     };
     const field: TransportField = { substance, faces, boundaryCells: [] };
 
-    let refPhi: number[] = [1, 0, 0, 0, 0];
-    let optPhi: number[] = [1, 0, 0, 0, 0];
+    let refPhi: Float64Array = Float64Array.of(1, 0, 0, 0, 0);
+    let optPhi: Float64Array = Float64Array.of(1, 0, 0, 0, 0);
     const initialTotal = totalScalar(refPhi);
     for (let tick = 0; tick < 50; tick += 1) {
       const refResult = stepTransportFieldReference(field, refPhi);
@@ -265,8 +265,8 @@ describe("engine.transport-field — reference vs optimised equivalence", () => 
     ];
     const field: TransportField = { substance, faces, boundaryCells: [0] };
 
-    let refPhi: number[] = [10, 0];
-    let optPhi: number[] = [10, 0];
+    let refPhi: Float64Array = Float64Array.of(10, 0);
+    let optPhi: Float64Array = Float64Array.of(10, 0);
     const work = createTransportWorkBuffers(optPhi.length);
     for (let tick = 0; tick < 60; tick += 1) {
       // Optimised path: feed its own output back in (φ aliases a work buffer),

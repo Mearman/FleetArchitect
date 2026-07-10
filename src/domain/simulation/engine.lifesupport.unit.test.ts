@@ -94,7 +94,7 @@ describe("atmosphere substance", () => {
   it("stops venting once the cell is empty (no negative mass)", () => {
     const vents = new Map([[0, { nx: 1, ny: 0 }]]);
     const substance = makeAtmosphereSubstance(new Int32Array(0), vents, new Uint8Array(0));
-    let phi = [STANDARD_CELL_GAS_MASS_KG];
+    let phi: Float64Array = Float64Array.of(STANDARD_CELL_GAS_MASS_KG);
     // Vent for many ticks to drain the cell.
     for (let i = 0; i < 1000; i += 1) {
       phi = stepTransportField(

@@ -175,7 +175,7 @@ export function makeAtmosphereSubstance(
   // when the field is uniform). Gating on a live breach keeps an undamaged ship
   // at one cheap diffusion sub-step and resolves a real decompression stably.
   const breached = vents.size > 0;
-  const velocity = (face: TransportFace, phi: readonly number[]): number => {
+  const velocity = (face: TransportFace, phi: Float64Array): number => {
     // Pressure-gradient flow between two deck cells: positive (out of `from`)
     // when `from` holds the higher pressure. A boundary face (no `to` cell),
     // or a face touching a non-deck (solid) cell, carries no advection — a

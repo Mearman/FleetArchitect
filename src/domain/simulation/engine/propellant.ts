@@ -88,7 +88,7 @@ export function makePropellantSubstance(
     maxVelocity: PROPELLANT_FLOW_SPEED_M_PER_S,
     nonNegative: true,
     floor: 0,
-    velocity: (face: TransportFace, phi: readonly number[]): number => {
+    velocity: (face: TransportFace, phi: Float64Array): number => {
       // Flow along a plumbed edge from a feeding cell toward a burning engine
       // that needs fuel. The closure MUST be antisymmetric — `v(from→to)` and
       // `v(to→from)` opposite — or the upwind integrator (which only ever

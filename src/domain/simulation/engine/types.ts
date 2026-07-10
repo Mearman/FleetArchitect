@@ -18,12 +18,12 @@ import type { ResourceTransportWork } from "./transport-field";
 import type { TechCaches } from "./tech";
 
 /**
- * Per-ship resource state (Phase 12). The three transport-field φ arrays —
- * thermal (temperature, K), propellant (fuel mass, kg), atmosphere (gas mass,
- * kg) — plus the power energy buffer. Advanced each tick by `resourceStep`,
- * which also enforces the consequences: overheat module destruction, energy-buffer
- * brownout load-shedding, dry-tank engine flame-out, and (via the airtightness
- * vent mask) decompression and crew vacuum exposure.
+ * Per-ship resource state. The three transport-field φ arrays — thermal
+ * (temperature, K), propellant (fuel mass, kg), atmosphere (gas mass, kg) —
+ * plus the power energy buffer. Advanced each tick by `resourceStep`, which
+ * also enforces overheat destruction, energy-buffer brownout load-shedding,
+ * dry-tank engine flame-out, and (via the airtightness vent mask)
+ * decompression and crew vacuum exposure.
  *
  * Cell indexing is module-sparse: `n = number of modules`, indices are
  * assigned in sorted (col, row) order, and `moduleIndex` maps "col,row" keys
@@ -33,25 +33,28 @@ import type { TechCaches } from "./tech";
 export interface ResourceState {
   /** Sparse cell-to-index map: `"col,row"` → dense φ index (0..n−1). */
   moduleIndex: ReadonlyMap<string, number>;
-  thermal: number[];
-  propellant: number[];
-  atmosphere: number[];
+  /** Temperature per cell (K). `Float64Array`: the transport stepper ping-pongs
+   *  persistent work buffers (see `transportWork`) and returns a `Float64Array`
+   *  result, so the live state is held unboxed to remove per-tick boxing churn.
+   *  Boxed `number[]` is materialised only at the checkpoint boundary. */
+  thermal: Float64Array;
+  /** Fuel mass per cell (kg). `Float64Array` (see `thermal`). */
+  propellant: Float64Array;
+  /** Gas mass per cell (kg). `Float64Array` (see `thermal`). */
+  atmosphere: Float64Array;
   powerBuffer: EnergyBuffer;
   /**
    * Per-cell thermal heat capacity (J/K), keyed by dense φ index — `cell mass ×
    * the faction material's specific heat`. The thermal field divides each watt
-   * source and radiative flux by this to get a kelvin-per-second rate. Built
-   * ONCE in `makeResourceState` (a cell's mass is fixed for the battle) and
-   * reused every tick rather than rebuilt.
+   * source and radiative flux by this for a kelvin-per-second rate. Built once
+   * in `makeResourceState` (cell mass is fixed for the battle) and reused.
    */
   heatCapacity: ReadonlyMap<number, number>;
   /** Pooled per-tick scratch (see {@link ResourceScratch}); cleared, not
    *  reallocated, each call. Lazily allocated; never serialised. */
   scratch?: ResourceScratch;
   /** Persistent per-substance transport ping-pong buffers, reused every tick
-   *  so the FTCS integrator allocates nothing per call (mirrors
-   *  `ArenaMedium.work`). Lazily allocated; never serialised — a checkpoint
-   *  restore rebuilds ResourceState without these. */
+   *  so the FTCS integrator allocates nothing. Lazily allocated; never serialised. */
   transportWork?: ResourceTransportWork;
 }
 
@@ -60,9 +63,8 @@ export interface ResourceState {
  *  `crewMap`, and `deckCells` are dense typed arrays indexed by the module's
  *  dense φ-index (0..n-1) — read only by direct index in the propellant/atmosphere
  *  substances, never iterated — so `.fill(0)` + refilling in fixed module-array
- *  order is lossless and no value survives across ticks. Typed arrays (not
- *  Maps/Sets) because the index space is dense and every access is a per-face
- *  hash in the FTCS integration loop; a direct index read replaces the hash. */
+ *  order is lossless and no value survives across ticks. Typed arrays (not Maps)
+ *  because the index space is dense and every FTCS face access is a direct read. */
 export interface ResourceScratch {
   /** Dense φ-index → alive engine thrust command (N) this tick. */
   engineThrust: Float64Array;
@@ -74,8 +76,8 @@ export interface ResourceScratch {
   crewOrder: SimCrew[];
 }
 
-/** Cached transport graph for a ship's current topology (Phase 12 wiring).
- *  Rebuilt when the alive-cell fingerprint changes. */
+/** Cached transport graph for a ship's current topology.
+ *  Rebuilt by `resourceStep` when the alive-cell fingerprint changes. */
 export interface CachedTransportGraph {
   graph: RectangularTransportGraph;
   fingerprint: number;
@@ -196,7 +198,7 @@ export interface SimShip {
   thrust: number;
   turnRate: number;
   /**
-   * Effective engine throttle actually applied this tick (Phase 12 fuel model):
+   * Effective engine throttle actually applied this tick (resource-step fuel model):
    * the fraction of rated thrust the movement step commanded from the main
    * engines, including any afterburner multiplier, or 0 on a tick the ship did
    * not fire its engines (coasting, holding station, or still turning onto its
@@ -473,18 +475,18 @@ export interface SimShip {
     speed: number;
   };
   /**
-   * Per-ship resource state (Phase 12 wiring, use-deferred). The thermal,
-   * propellant, atmosphere, and power fields advanced each tick by
-   * `resourceStep`. Present only on modular ships; `undefined` on the legacy
-   * aggregated path and phantoms. Built once in `toSimShip`; values computed
-   * but no consequence is enforced.
+   * Per-ship resource state: thermal, propellant, atmosphere, and power fields
+   * advanced each tick by `resourceStep`, which also enforces dry-tank
+   * flame-out, brownout load-shedding, overheat destruction, and live
+   * airtightness. Present only on modular ships; `undefined` on the legacy
+   * aggregated path and phantoms. Built once in `toSimShip`.
    */
   resource?: ResourceState;
   /**
-   * Cached transport graph for the ship's current cell topology (Phase 12
-   * wiring). Rebuilt lazily by `resourceStep` when the topology fingerprint
-   * changes; cleared alongside the path cache by `refreshPathCache` so a
-   * module death or chunk split invalidates it.
+   * Cached transport graph for the ship's current cell topology. Rebuilt lazily
+   * by `resourceStep` when the topology fingerprint changes; cleared alongside
+   * the path cache by `refreshPathCache` so a module death or chunk split
+   * invalidates it.
    */
   resourceGraph?: CachedTransportGraph;
   /** Current count of alive modules, recomputed each tick by
@@ -601,26 +603,24 @@ export interface SimModule {
    */
   powered: boolean;
   /**
-   * Resource consequence (Phase 12): the energy buffer ran dry this tick and the
-   * grid shed this module to fit reactor output plus stored charge. Distinct from
-   * `powered` (the instantaneous reactor-vs-draw brownout in `recomputeAggregates`):
-   * this is the capacitor-bank brownout enforced by `resourceStep` after the energy
-   * buffer is stepped, shedding modules in a fixed priority order (weapons, then
-   * sensors, shields, engines; never the bridge, quarters, reactor, or repair). A
-   * power-cut module is non-functional this tick exactly as an unpowered one is, so
-   * the functional gate (`isOperational`) and every consumer treat it the same.
-   * Recomputed fresh each tick: `resourceStep` clears it before re-evaluating, so a
-   * ship whose buffer is healthy never carries a cut and behaves exactly as before.
+   * Resource consequence: the energy buffer ran dry this tick and the grid shed
+   * this module to fit reactor output plus stored charge. Distinct from `powered`
+   * (the instantaneous reactor-vs-draw brownout in `recomputeAggregates`): this
+   * is the capacitor-bank brownout `resourceStep` enforces after stepping the
+   * buffer, shedding in fixed priority (weapons, sensors, shields, engines;
+   * never bridge, quarters, reactor, repair). A power-cut module is
+   * non-functional this tick, so `isOperational` and every consumer treat it as
+   * unpowered. Recomputed fresh each tick, so a healthy-buffer ship never
+   * carries a cut.
    */
   powerCut: boolean;
   /**
-   * Resource consequence (Phase 12): an engine cell whose propellant tank ran dry
-   * this tick. Set by `resourceStep` after the propellant transport step for any
+   * Resource consequence: an engine cell whose propellant tank ran dry this
+   * tick. Set by `resourceStep` after the propellant step for any
    * thrust-producing engine whose cell holds no fuel; a fuel-starved engine
-   * produces no thrust and no geometric torque this tick (the movement and
-   * aggregate paths skip it), modelling a flame-out. Only ever set on engine
-   * modules; recomputed fresh each tick (cleared before re-evaluation), so a fully
-   * fuelled ship never carries it and moves exactly as before.
+   * produces no thrust or torque this tick (movement and aggregate paths skip
+   * it), modelling a flame-out. Only set on engines; recomputed fresh each
+   * tick, so a fully fuelled ship never carries it.
    */
   fuelStarved: boolean;
   /**
@@ -784,7 +784,7 @@ export interface SimModule {
    *  reactor or magazine) has its blast processed, so each detonates at most
    *  once per battle. Non-volatile modules keep `false`. Not snapshotted. */
   exploded: boolean;
-  /** Dense transport index (Phase 12): cached copy of the value
+  /** Dense transport index: cached copy of the value
    *  `ResourceState.moduleIndex` maps this module's `"col,row"` cell to, written
    *  once by `makeResourceState`. Read by `resourceStep` (production); the
    *  oracle `resourceStepReference` re-hashes the map. See `resource-step.ts`. */
