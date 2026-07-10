@@ -1,3 +1,13 @@
+# [1.62.0](https://github.com/Mearman/FleetArchitect/compare/v1.61.0...v1.62.0) (2026-07-10)
+
+
+### Features
+
+* **ui:** blur and supersample the field glow to erase the cell lattice ([7372679](https://github.com/Mearman/FleetArchitect/commit/7372679d701cf089b0ee4ee5dd2116187c6f4ad0))
+* **ui:** cross-fade the medium field between consecutive emissions ([c8233d0](https://github.com/Mearman/FleetArchitect/commit/c8233d0c7a7a93acf36fb0e063dfda36d7a301d4))
+* **ui:** give the battle glow sub-tick particle continuity ([5177491](https://github.com/Mearman/FleetArchitect/commit/5177491c791896ab6d8675a40a3ee20d2eaf184f))
+* **ui:** streak and bridge particle glow into continuous trails ([d3d5fda](https://github.com/Mearman/FleetArchitect/commit/d3d5fdab69c1cf4d613db6751a6779aaf9b5f7db))
+
 # [1.61.0](https://github.com/Mearman/FleetArchitect/compare/v1.60.3...v1.61.0) (2026-07-09)
 
 
