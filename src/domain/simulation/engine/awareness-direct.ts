@@ -162,6 +162,15 @@ export function buildDirectContacts(
       ? Math.sqrt(observer.velX * observer.velX + observer.velY * observer.velY)
       : 0;
     const observerMaxGain = earlyOut ? observerMaxReceptionGain(observerSensors) : 1;
+    // Hoist the observer's dazzle accumulator into a local scalar across the
+    // enemy loop: identical enemy iteration order keeps the FP addition
+    // sequence byte-identical, and the Map is written once per observer after
+    // the loop instead of get/set per non-occluded enemy. The entry is seeded
+    // to 0 for every alive ship in `computeAwareness` (`observer` ∈ `alive`),
+    // so the read is always defined — the same seeded-invariant as
+    // `observerSensors` above, which lets the dead per-enemy undefined guard
+    // be dropped.
+    let observerDazzle = dazzleAccum.get(observer.instanceId)!;
     for (const enemy of enemies) {
       // Hoisted once per pair: the enemy's continuous emission strength feeds
       // the early-out's strict bound (next) AND the full emission product (after
@@ -190,13 +199,7 @@ export function buildDirectContacts(
       // Sensor dazzle: a strong emission raises the observer's saturation for
       // subsequent ticks, whatever its origin. Accumulated even when the enemy
       // does not form a contact this tick.
-      const accum = dazzleAccum.get(observer.instanceId);
-      if (accum !== undefined) {
-        dazzleAccum.set(
-          observer.instanceId,
-          accum + hullDazzleContribution(observer, enemy, anomalies, emission),
-        );
-      }
+      observerDazzle += hullDazzleContribution(observer, enemy, anomalies, emission);
       if (!emReceives(observer, enemy, anomalies, observerSensors, emission)) continue;
       // Relativistic aberration: a moving observer measures the contact's
       // bearing swept toward its direction of travel. Stationary → identity.
@@ -218,6 +221,7 @@ export function buildDirectContacts(
         origin: observer.instanceId,
       });
     }
+    dazzleAccum.set(observer.instanceId, observerDazzle);
     directContacts.set(observer.instanceId, list);
   }
   return directContacts;

@@ -329,6 +329,11 @@ function collectMediumContacts(
     // Precomputed per observer this tick; `observer` ∈ `alive` and
     // `sensorsByShip` is built from that set, so the entry is always present.
     const observerSensors = sensorsByShip.get(observer.instanceId)!;
+    // Hoist the dazzle accumulator into a local scalar: identical emission
+    // (row-major) iteration keeps the FP sum byte-identical, and the Map is
+    // written once after the loop. Seeded to 0 for every alive ship and only
+    // set (never deleted), so the read is always defined.
+    let observerDazzle = dazzleAccum.get(observer.instanceId)!;
     for (const emission of mediumEmissions) {
       // An occluder between the observer and the radiating cell blocks the
       // light path, exactly as it blocks continuous ship-ship reception.
@@ -336,13 +341,7 @@ function collectMediumContacts(
       // Sensor dazzle (phase 5): a bright medium-cell emission raises the
       // observer's saturation, source-agnostic. This pass only ADDS to entries
       // the main loop already seeded.
-      const accum = dazzleAccum.get(observer.instanceId);
-      if (accum !== undefined) {
-        dazzleAccum.set(
-          observer.instanceId,
-          accum + mediumDazzleContribution(observer, emission),
-        );
-      }
+      observerDazzle += mediumDazzleContribution(observer, emission);
       if (mediumReceives(observer, emission, tick, anomalies, observerSensors) === undefined) continue;
       out.push({
         // Synthetic cell id; never matches a real ship instanceId, so
@@ -361,6 +360,7 @@ function collectMediumContacts(
         origin: observer.instanceId,
       });
     }
+    dazzleAccum.set(observer.instanceId, observerDazzle);
   }
   out.sort((p, q) => {
     if (p.origin !== q.origin) return p.origin < q.origin ? -1 : 1;
