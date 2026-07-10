@@ -214,11 +214,11 @@ export function makeResourceState(ship: SimShip): ResourceState | undefined {
     if (i !== undefined) m.transportIndex = i;
   }
 
-  // Thermal: every cell starts at cabin temperature.
-  const thermal = new Array<number>(n).fill(CABIN_TEMPERATURE_K);
+  // Thermal: every cell starts at cabin temperature; `Float64Array` avoids boxing churn.
+  const thermal = new Float64Array(n).fill(CABIN_TEMPERATURE_K);
 
-  // Atmosphere: deck cells hold a standard cell's worth of gas.
-  const atmosphere = new Array<number>(n).fill(0);
+  // Atmosphere: deck cells hold a standard cell's gas; `Float64Array` is zero-init.
+  const atmosphere = new Float64Array(n);
   for (const m of sorted) {
     if (isDeck(m)) {
       const i = moduleIndex.get(cellKey(m.col, m.row));
@@ -230,7 +230,7 @@ export function makeResourceState(ship: SimShip): ResourceState | undefined {
   // continuous burn at its own rated thrust. Burn rate is `thrust / v_e`, so the
   // tank is `burnRate · endurance`. Sizing per engine (not splitting one ship-wide
   // Δv) fuels each nozzle to the same endurance in a mixed-thrust fit.
-  const propellant = new Array<number>(n).fill(0);
+  const propellant = new Float64Array(n);
   for (const m of sorted) {
     if (m.effect.kind !== "engine" || m.effect.thrust <= 0) continue;
     const i = moduleIndex.get(cellKey(m.col, m.row));

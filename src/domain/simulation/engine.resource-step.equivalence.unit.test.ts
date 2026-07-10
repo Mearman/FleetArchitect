@@ -393,8 +393,12 @@ describe("engine.resource-step — reference vs optimised equivalence", () => {
     const initialThermal = [...(sanity.resource?.thermal ?? [])];
     const initialPropellant = [...(sanity.resource?.propellant ?? [])];
     for (let t = 0; t < 20; t += 1) resourceStep(sanity);
-    expect(sanity.resource?.thermal, "thermal must evolve").not.toEqual(initialThermal);
-    expect(sanity.resource?.propellant, "propellant must burn down").not.toEqual(initialPropellant);
+    // Compare as plain arrays: the live resource arrays are `Float64Array`, so a
+    // direct `toEqual` against the `number[]` snapshot would mismatch on the
+    // constructor alone and make `.not.toEqual` trivially pass. Spreading both
+    // sides restores a value comparison.
+    expect(Array.from(sanity.resource?.thermal ?? []), "thermal must evolve").not.toEqual(initialThermal);
+    expect(Array.from(sanity.resource?.propellant ?? []), "propellant must burn down").not.toEqual(initialPropellant);
   });
 
   // -------------------------------------------------------------------------

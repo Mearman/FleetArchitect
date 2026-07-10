@@ -140,9 +140,13 @@ function snapshotShip(s: SimShip): CheckpointShip {
       // Map so it matches the checkpoint type (and structuredClone copies it
       // again, severing the alias). The mapping is fixed for the ship's life.
       moduleIndex: new Map(s.resource.moduleIndex),
-      thermal: s.resource.thermal,
-      propellant: s.resource.propellant,
-      atmosphere: s.resource.atmosphere,
+      // The live φ arrays are `Float64Array` (unboxed for the transport
+      // stepper); the checkpoint schema stores plain `number[]`, so materialise
+      // here. `Array.from` copies the IEEE-754 doubles element-by-element, so the
+      // resumed battle continues byte-identically from the live values.
+      thermal: Array.from(s.resource.thermal),
+      propellant: Array.from(s.resource.propellant),
+      atmosphere: Array.from(s.resource.atmosphere),
       powerBuffer: s.resource.powerBuffer,
     };
   }
@@ -469,9 +473,12 @@ function restoreShip(s: CheckpointShip): SimShip {
     const modules = ship.modules ?? [];
     ship.resource = {
       moduleIndex: s.resource.moduleIndex,
-      thermal: s.resource.thermal,
-      propellant: s.resource.propellant,
-      atmosphere: s.resource.atmosphere,
+      // Rebox the checkpoint's plain `number[]` into the live `Float64Array`
+      // representation. `Float64Array.from` copies the IEEE-754 doubles
+      // element-by-element, so restore is byte-identical to capture.
+      thermal: Float64Array.from(s.resource.thermal),
+      propellant: Float64Array.from(s.resource.propellant),
+      atmosphere: Float64Array.from(s.resource.atmosphere),
       powerBuffer: s.resource.powerBuffer,
       heatCapacity: buildHeatCapacity(modules, s.resource.moduleIndex, ship.faction),
     };

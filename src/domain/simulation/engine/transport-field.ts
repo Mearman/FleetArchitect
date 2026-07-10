@@ -13,10 +13,15 @@
  * force, so venting gas and exhausting propellant produce recoil by the same
  * mechanism.
  *
- * Use-deferred (Phase 12): the field is honestly simulated in real SI units
- * but is not wired into the tick loop. Gameplay *use* (overheat shutdown,
- * asphyxiation, dry-tank, balancing) is a later pass on top of this honest
- * model.
+ * Wired into the tick loop and enforced every tick: `resourceStep`
+ * advances all three substances (thermal, propellant, atmosphere) once per
+ * tick and enforces their consequences — overheat module destruction, dry-tank
+ * engine flame-out (`fuelStarved`), energy-buffer brownout load-shedding
+ * (`powerCut`), and decompression venting recoil plus crew vacuum exposure.
+ * `movement.ts` applies the medium's gas drag from the same tick's fields. The
+ * field is honestly simulated in real SI units; what remains a later pass is
+ * surface *presentation* (the fuel/thermal UI readouts), not the physics or its
+ * gameplay effects.
  *
  * Scheme notes
  * ------------
@@ -167,13 +172,13 @@ export interface TransportSubstance {
    * caller derives this from a pressure gradient (atmosphere) or a piped
    * flow direction (propellant).
    */
-  readonly velocity?: (face: TransportFace, phi: readonly number[]) => number;
+  readonly velocity?: (face: TransportFace, phi: Float64Array) => number;
   /**
    * Local reaction source/sink S for cell `cell`, in φ-units per second.
    * Positive adds φ (a reactor heat source); negative removes it (crew O₂
    * consumption, engine burn).
    */
-  readonly source?: (cell: number, phi: readonly number[]) => number;
+  readonly source?: (cell: number, phi: Float64Array) => number;
   /**
    * If true, the integrator clamps each cell's φ to `≥ floor` after every
    * sub-step. Mass-like substances (atmosphere, propellant) set this with
@@ -196,7 +201,7 @@ export interface TransportSubstance {
    */
   readonly boundaryFlux?: (
     cell: number,
-    phi: readonly number[],
+    phi: Float64Array,
     out: BoundaryFlux,
   ) => void;
 }
@@ -325,8 +330,11 @@ export function transportSubSteps(substance: TransportSubstance): number {
 
 /** Result of advancing a transport field by one tick. */
 export interface TransportStepResult {
-  /** New φ values, same length as the input. */
-  phi: number[];
+  /** New φ values, same length as the input. A `Float64Array` holding the same
+   *  IEEE-754 doubles the boxed `number[]` representation did — switching the
+   *  stepper's internal ping-pong buffers to `Float64Array` removes the per-tick
+   *  boxing/allocation churn while preserving every value bit-for-bit. */
+  phi: Float64Array;
   /** Accumulated reaction force on the hull over the tick, Newtons. */
   momentumX: number;
   momentumY: number;
@@ -335,7 +343,7 @@ export interface TransportStepResult {
 }
 
 /**
- * Persistent ping-pong work buffers for the transport stepper: two `number[]`
+ * Persistent ping-pong work buffers for the transport stepper: two `Float64Array`
  * buffers per substance, owned by the ship's `ResourceState` (one pair each for
  * thermal / propellant / atmosphere) and reused every tick so the FTCS step
  * allocates nothing per call. Each tick the stepper copies the input φ into the
@@ -344,24 +352,25 @@ export interface TransportStepResult {
  * array), and a fresh state aliases neither and lands in buffer A — then
  * ping-pongs between the two across sub-steps. The post-step state aliases
  * whichever buffer the last sub-step wrote. Mirrors `MediumWorkBuffers`
- * (medium-field.ts); the manual element copy is the `number[]` equivalent of
- * the TypedArray `.set` the medium stepper relies on.
+ * (medium-field.ts): `Float64Array` holds the same IEEE-754 doubles the boxed
+ * `number[]` did, so the cross-copy via `.set` is bit-exact against the manual
+ * element loop it replaces — the production path stays byte-identical to the
+ * oracle.
  */
 export interface TransportWorkBuffers {
   /** First ping-pong buffer (length = field cell count). */
-  readonly a: number[];
+  readonly a: Float64Array;
   /** Second ping-pong buffer (length = field cell count). */
-  readonly b: number[];
+  readonly b: Float64Array;
 }
 
 /** Allocate a fresh {@link TransportWorkBuffers} pair for a field of `n` cells.
  *  The stepper overwrites every index before reading it (the copy fills the
- *  start buffer, each sub-step fills its `next` buffer), so the arrays are left
- *  sparse (`new Array(n)`) rather than zero-filled — matching the existing
- *  per-call `new Array(n)` allocation this replaces. Called once per substance
- *  per ship; reused every tick. */
+ *  start buffer, each sub-step fills its `next` buffer), so the zero-fill a
+ *  `Float64Array` carries by default is never observed. Called once per
+ *  substance per ship; reused every tick. */
 export function createTransportWorkBuffers(n: number): TransportWorkBuffers {
-  return { a: new Array<number>(n), b: new Array<number>(n) };
+  return { a: new Float64Array(n), b: new Float64Array(n) };
 }
 
 /**
@@ -432,7 +441,7 @@ export function createResourceTransportWork(n: number): ResourceTransportWork {
  */
 export function stepTransportField(
   field: TransportField,
-  phi: readonly number[],
+  phi: ArrayLike<number>,
   options?: { diagnostics?: boolean },
   work?: TransportWorkBuffers,
 ): TransportStepResult {
@@ -452,7 +461,7 @@ export function stepTransportField(
  */
 export function stepTransportFieldReference(
   field: TransportField,
-  phi: readonly number[],
+  phi: ArrayLike<number>,
   options?: { diagnostics?: boolean },
 ): TransportStepResult {
   return runTransportStep(field, phi, options, false, undefined);
@@ -466,21 +475,22 @@ export function stepTransportFieldReference(
  *  - `reuse = false` (reference): allocates a fresh `next = current.slice()`
  *    every sub-step — the naive O(subSteps) allocation pattern.
  *  - `reuse = true`, `work` supplied (production): copies φ once into the
- *    persistent buffer it does NOT alias, then ping-pongs between the two
- *    `work` buffers across sub-steps — no per-call allocation.
- *  - `reuse = true`, `work` omitted: allocates a per-call `phi.slice()` +
- *    `new Array(n)` pair, then ping-pongs between them across sub-steps.
+ *    persistent buffer it does NOT alias via `.set`, then ping-pongs between the
+ *    two `work` buffers across sub-steps — no per-call allocation.
+ *  - `reuse = true`, `work` omitted: allocates a per-call `Float64Array.from(phi)`
+ *    + `new Float64Array(n)` pair, then ping-pongs between them across sub-steps.
  *
  * The inner cell loop is identical in all paths: it reads only from `current`
  * and writes every cell of `next`, so the computed values — and therefore the
  * post-step φ array, accumulated momentum, and diagnostics — are byte-identical
- * regardless of which array objects hold `current` and `next`. Ping-pong
- * safety: `current` and `next` are always distinct arrays (bufA vs bufB),
- * matching the slice() path's read-from-current / write-to-next discipline, so
- * no cell ever reads a half-written value. The persistent-buffer copy is a
- * value-for-value copy of the IEEE-754 doubles on a dense array, bit-exact
- * against `slice()` — the same bit-exactness the medium stepper's `.set`
- * relies on — so the production path is byte-identical to the oracle.
+ * regardless of which `Float64Array` objects hold `current` and `next`.
+ * Ping-pong safety: `current` and `next` are always distinct arrays (bufA vs
+ * bufB), matching the slice() path's read-from-current / write-to-next
+ * discipline, so no cell ever reads a half-written value. The persistent-buffer
+ * copy is a value-for-value copy of the IEEE-754 doubles, bit-exact against
+ * `slice()` — `.set` and `Float64Array.from` copy element-by-element in index
+ * order over the same doubles the boxed `number[]` held — so the production
+ * path is byte-identical to the oracle.
  *
  * Boundary flux: the substance writes into the integrator-owned `scratch`
  * BoundaryFlux (out-param contract), reused across every boundary cell and
@@ -490,7 +500,7 @@ export function stepTransportFieldReference(
  */
 function runTransportStep(
   field: TransportField,
-  phi: readonly number[],
+  phi: ArrayLike<number>,
   options: { diagnostics?: boolean } | undefined,
   reuse: boolean,
   work: TransportWorkBuffers | undefined,
@@ -507,25 +517,27 @@ function runTransportStep(
   // alias (always a cross-copy: the live state aliases one work buffer from the
   // previous tick's result, so the other is distinct; a fresh state aliases
   // neither and lands in buffer A) and ping-pong between the two — zero
-  // per-call allocation. Without `work` the optimised path falls back to a
-  // per-call `phi.slice()` + `new Array(n)` pair. The reference path always
-  // slices fresh every sub-step.
-  let bufA: number[];
-  let bufB: number[];
-  let current: number[];
+  // per-call allocation. `.set` copies the IEEE-754 doubles element-by-element
+  // in index order, bit-exact against the manual loop it replaces. Without
+  // `work` the optimised path falls back to a per-call `Float64Array.from(phi)`
+  // + `new Float64Array(n)` pair. The reference path copies fresh once and
+  // slices a fresh `next` every sub-step.
+  let bufA: Float64Array;
+  let bufB: Float64Array;
+  let current: Float64Array;
   if (reuse && work !== undefined) {
     bufA = work.a;
     bufB = work.b;
     current = phi === bufA ? bufB : bufA;
-    for (let i = 0; i < n; i += 1) current[i] = phi[i]!;
+    current.set(phi);
   } else if (reuse) {
-    bufA = phi.slice();
-    bufB = new Array<number>(n);
+    bufA = Float64Array.from(phi);
+    bufB = new Float64Array(n);
     current = bufA;
   } else {
-    // Reference path: the slice() branch is always taken so bufB is never read
-    // (aliased to bufA to avoid a pointless allocation in the naive baseline).
-    bufA = phi.slice();
+    // Reference path: bufB is never read (aliased to bufA to avoid a pointless
+    // allocation in the naive baseline); each sub-step slices a fresh `next`.
+    bufA = Float64Array.from(phi);
     bufB = bufA;
     current = bufA;
   }
@@ -634,7 +646,7 @@ function runTransportStep(
  * only sources and boundary fluxes change the total. Tests use this to assert
  * conservation: for a closed field with no sources, the total is invariant.
  */
-export function totalScalar(phi: readonly number[]): number {
+export function totalScalar(phi: ArrayLike<number>): number {
   let sum = 0;
   for (let i = 0; i < phi.length; i += 1) sum += phi[i] ?? 0;
   return sum;

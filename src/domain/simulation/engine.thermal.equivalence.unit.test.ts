@@ -79,8 +79,8 @@ function assertEquivalent(config: Config, ticks: number): void {
     boundaryCells: config.boundaryCells,
   });
 
-  let refPhi = [...config.phi];
-  let optPhi = [...config.phi];
+  let refPhi: Float64Array = Float64Array.from(config.phi);
+  let optPhi: Float64Array = Float64Array.from(config.phi);
   for (let t = 0; t < ticks; t += 1) {
     const refResult = stepTransportField(makeField(referenceSubstance), refPhi);
     const optResult = stepTransportField(makeField(optimisedSubstance), optPhi);
