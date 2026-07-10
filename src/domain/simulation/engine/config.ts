@@ -640,11 +640,11 @@ export const SIM = {
   /**
    * Kinetic ship-ship collision damage (realism overhaul, Phase 4). The
    * fraction of a collision's kinetic energy converted into structural damage,
-   * split across the contact-side modules of each ship. The rest is taken up by
-   * the elastic restitution impulse (handled separately by the collision step).
-   * KE is the relativistic `(γ − 1) * reducedMass * c²`, which reduces to the
-   * Newtonian `0.5 * reducedMass * v²` at sub-light speeds and stays finite at
-   * the speed limit. In the same energy-equivalent units as module HP, so a fast
+   * split across the contact-side modules. The contact restitution coefficient
+   * is derived from this as `e = √(1 − f)`, closing the energy ledger. KE is
+   * the relativistic `(γ − 1) * reducedMass * c²`, reducing to the Newtonian
+   * `0.5 * reducedMass * v²` at sub-light speeds and staying finite at the
+   * speed limit. In the same energy-equivalent units as module HP, so a fast
    * heavy ram is devastating and a gentle nudge is negligible.
    *
    * Classification: authored catalogue content

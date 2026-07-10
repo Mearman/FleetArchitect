@@ -6,12 +6,26 @@
 import { CELL_SIZE } from "@/domain/grid";
 import { SpatialHash, cellWorldPositionCs } from "@/domain/simulation/spatial-hash";
 
+import { SIM } from "./config";
 import { applyImpact } from "./damage-impact";
 import { ramImpactProfile } from "./impact-profile";
 import { outerWorldLoop, polygonsContact } from "./poly-collision";
 import { localPointToWorld, worldToLocal } from "./setup";
 import type { SimModule, SimShip } from "./types";
 import { applyImpulse } from "./weapons";
+
+/**
+ * Restitution coefficient for ship-ship contacts, derived from the collision
+ * damage fraction so the collision energy ledger closes. When a fraction `f`
+ * of the contact kinetic energy is dissipated as structural damage (via
+ * {@link applyCollisionDamage}), the post-bounce kinetic energy must be
+ * `(1 − f)` of the pre-impact value. Since kinetic energy scales with the
+ * square of velocity, the restitution coefficient (the ratio of separating to
+ * approach speed along the contact normal) is `e = √(1 − f)`. With `f = 0.3`,
+ * `e ≈ 0.837`: the energy budgeted as hull damage is removed from the bounce
+ * rather than spent twice.
+ */
+const COLLISION_RESTITUTION = Math.sqrt(1 - SIM.collisionDamageFraction);
 
 /** A ship cell placed in the broad-phase: the owning ship, the cell, and its
  *  world-space centre at the moment the hash was built. */
@@ -582,9 +596,11 @@ export function applyCollisionDamage(contacts: readonly ShipContact[]): void {
 }
 
 /**
- * Resolve a single ship-vs-ship contact: an elastic impulse along the normal
- * plus positional separation. `(px, py)` is the contact point in world space,
- * `(nx, ny)` the unit normal from `a` toward `b`, and `depth` the penetration.
+ * Resolve a single ship-vs-ship contact: a restitution impulse along the
+ * normal (e = √(1 − collisionDamageFraction), so the energy dissipated as
+ * damage is not also spent on the bounce) plus positional separation.
+ * `(px, py)` is the contact point in world space, `(nx, ny)` the unit normal
+ * from `a` toward `b`, and `depth` the penetration.
  */
 export function resolveContact(
   a: SimShip,
@@ -622,18 +638,20 @@ export function resolveContact(
   const approach = rvx * nx + rvy * ny;
 
   if (approach < 0) {
-    // Elastic (restitution 1) impulse magnitude along the normal. The
-    // rotational terms (r × n)²/I add the contact's resistance to spin into
-    // the effective mass, so a glancing hit off-centre transfers less linear
-    // momentum and more spin — consistent with the rigid-body model.
+    // Restitution impulse along the normal: e = √(1 − collisionDamageFraction),
+    // so the fraction of contact kinetic energy budgeted as structural damage
+    // (by applyCollisionDamage) is subtracted from the bounce rather than
+    // counted twice. The rotational terms (r × n)²/I add the contact's
+    // resistance to spin into the effective mass, so a glancing hit off-centre
+    // transfers less linear momentum and more spin — consistent with the
+    // rigid-body model.
     const ia = a.momentOfInertia > 0 ? a.momentOfInertia : Infinity;
     const ib = b.momentOfInertia > 0 ? b.momentOfInertia : Infinity;
     const raCrossN = rax * ny - ray * nx;
     const rbCrossN = rbx * ny - rby * nx;
     const invEffectiveMass =
       1 / ma + 1 / mb + (raCrossN * raCrossN) / ia + (rbCrossN * rbCrossN) / ib;
-    const restitution = 1;
-    const j = (-(1 + restitution) * approach) / invEffectiveMass;
+    const j = (-(1 + COLLISION_RESTITUTION) * approach) / invEffectiveMass;
     // Equal and opposite impulses at the shared contact point. applyImpulse
     // wants the impulse in world coordinates and the application point in the
     // ship's local frame, so convert the world contact point per ship.

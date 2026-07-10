@@ -167,6 +167,16 @@ export function computeOccluders(
  *   d² = |PA - t·(BA)|²  where t = clamp(dot(PA, BA) / |BA|², 0, 1)
  * A segment is blocked when d² ≤ r² for any disc. Pure, float-only, and
  * deterministic — no branching on RNG.
+ *
+ * NOTE: this is a straight-line (Euclidean) test. Near a black hole,
+ * gravitational lensing bends both weapon beams (optics.ts) and — in
+ * principle — sensor sightlines, so a target behind the well could be visible
+ * along a curved geodesic even when the straight segment is occluded. Sensor
+ * occlusion does not model this: the deflection at combat sensor ranges is
+ * microradians, so the straight-line approximation is physically wrong but
+ * functionally irrelevant. A curved-ray variant would require a
+ * piecewise-linear polyline through the gravitational field and changes at
+ * every call site (awareness-direct.ts, awareness.ts, sensors.ts).
  */
 export function segmentBlocked(
   ax: number,

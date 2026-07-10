@@ -6,7 +6,10 @@
  *
  * Spawning on destruction and per-tick drift are wired into the battle tick
  * loop (`engine/index.ts`): a destroyed hull leaves one fragment carrying its
- * centre-of-mass momentum, advanced each tick.
+ * centre-of-mass momentum, advanced each tick. In a black-hole battle the
+ * per-tick step also applies the gravitational field to the fragment (debris
+ * as a mass-less test particle — pulled by the well and by ships, but not
+ * pulling back); in open space the fragment drifts at constant velocity.
  *
  * Kinetic hazard (Phase 12): each tick, any debris fragment whose bounding
  * disc overlaps a ship's bounding disc transfers kinetic energy to that ship's
@@ -20,6 +23,9 @@
  */
 
 import type { Vec2 } from "@/schema/primitives";
+
+import { buildGravityField, gravityAcceleration } from "./gravity";
+import type { SimShip } from "./types";
 
 /** A persistent piece of wreckage. Mass in kg; position/velocity in world m
  *  and m/tick (matching the sim's units). `radius` is its bounding radius for
@@ -79,14 +85,58 @@ export function spawnDebris(
   };
 }
 
-/** Advance a debris entity one tick: pure Newtonian drift — position advances
- *  by velocity, velocity is unchanged (no drag, no gravity here; body-list
- *  gravity is added when debris is wired into the integrator). Returns a new
- *  entity; the input is not mutated (deterministic, snapshot-friendly). */
-export function stepDebris(debris: Debris): Debris {
+/** Advance a debris entity one tick: Newtonian drift under the gravitational
+ *  acceleration `gravity` (world units per tick², summed over the per-tick
+ *  N-body field — the black hole and every alive ship, treating debris as a
+ *  mass-less test particle that is pulled but does not pull back). When
+ *  `gravity` is omitted (no black-hole anomaly, so no field) the fragment
+ *  drifts frictionlessly at constant velocity. The integration is semi-implicit
+ *  (symplectic) Euler — velocity first, then position with the new velocity —
+ *  matching the scheme ships use, so orbital drift near the well is stable.
+ *  Returns a new entity; the input is not mutated (deterministic,
+ *  snapshot-friendly). */
+export function stepDebris(
+  debris: Debris,
+  gravity?: { ax: number; ay: number },
+): Debris {
+  if (gravity === undefined) {
+    return {
+      ...debris,
+      x: debris.x + debris.velX,
+      y: debris.y + debris.velY,
+    };
+  }
+  const velX = debris.velX + gravity.ax;
+  const velY = debris.velY + gravity.ay;
   return {
     ...debris,
-    x: debris.x + debris.velX,
-    y: debris.y + debris.velY,
+    velX,
+    velY,
+    x: debris.x + velX,
+    y: debris.y + velY,
   };
+}
+
+/** Advance every fragment in `debris` one tick, mutating the array in place.
+ *  In a black-hole battle (`hasBlackHole` true) the gravitational field is built
+ *  fresh from the current ship positions and each fragment is accelerated as a
+ *  mass-less test particle — pulled by the well and by every alive ship, but not
+ *  pulling back (wreckage mass is negligible). The field uses the same
+ *  simultaneous-snapshot convention as the ship gravity step. Without a black
+ *  hole the field is not built and every fragment drifts frictionlessly. */
+export function stepDebrisField(
+  debris: Debris[],
+  ships: readonly SimShip[],
+  hasBlackHole: boolean,
+): void {
+  if (debris.length === 0) return;
+  const field = hasBlackHole ? buildGravityField(ships) : undefined;
+  for (let i = 0; i < debris.length; i++) {
+    const d = debris[i];
+    if (d === undefined) continue;
+    debris[i] = stepDebris(
+      d,
+      field !== undefined ? gravityAcceleration(field, d.id, d.x, d.y) : undefined,
+    );
+  }
 }
