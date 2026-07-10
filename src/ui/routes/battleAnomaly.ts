@@ -25,10 +25,14 @@ const BLACK_HOLE_TIDAL_RADIUS = BLACK_HOLE_TIDAL_RADIUS_M;
 const BH_TIDAL_STROKE = "rgba(255,43,214,0.45)";
 /** Magenta-violet glow falling off from the lethal edge into the tidal zone. */
 const BH_GLOW_START = "rgba(180,60,200,0.35)";
+/** Transparent outer edge of the glow, fading fully out at the tidal ring. */
+const BH_GLOW_END = "rgba(180,60,200,0)";
 /** Deep magenta base tint across the nebula battlefield. */
 const NEBULA_BASE_TINT = "rgba(140,0,160,0.10)";
 /** Magenta blob gradient start for nebula texture. */
 const NEBULA_BLOB_START = "rgba(200,60,220,0.14)";
+/** Transparent outer edge of a nebula blob. */
+const NEBULA_BLOB_END = "rgba(200,60,220,0)";
 /** Minimum asteroid shade alpha. */
 const ASTEROID_ALPHA_BASE = 0.35;
 /** Asteroid shade alpha variation range. */
@@ -42,6 +46,63 @@ const ASTEROID_ALPHA_RANGE = 0.3;
 export function hash01(n: number): number {
   const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
   return x - Math.floor(x);
+}
+
+/**
+ * Cached radial-gradient helper for the anomaly layer. `createRadialGradient` is
+ * a relatively expensive Canvas 2D call, and the black-hole glow plus the
+ * nebula's blobs rebuild identical gradients every rAF; this memoises them by
+ * their world-space parameters so a steady view pays only a `Map.get` per blob.
+ *
+ * Per MDN, gradient coordinates are global — painted in the coordinate space
+ * current at fill time, not fixed at creation — so a gradient built once with a
+ * given circle and stop list renders identically on every frame it is reused:
+ * the per-frame world transform applied by `withWorldTransform` is what maps it
+ * to screen. The map is held under a context-identity guard so a canvas remount
+ * (a fresh context) drops the stale entry rather than reusing a gradient bound
+ * to the old context — mirroring the cached-gradient pattern in
+ * `battleBackdrop.ts`.
+ */
+let radialGradientCache: {
+  ctx: CanvasRenderingContext2D;
+  map: Map<string, CanvasGradient>;
+} | null = null;
+
+/** A colour stop: gradient offset paired with a CSS colour string. */
+type RadialColourStop = readonly [number, string];
+
+function cachedRadialGradient(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  r0: number,
+  r1: number,
+  stops: readonly RadialColourStop[],
+): CanvasGradient {
+  // Key on the full circle geometry plus every stop (offset and colour) so two
+  // visually distinct gradients never share an entry. Template literals
+  // serialise the numbers losslessly (shortest round-trip), so equal parameters
+  // — e.g. the deterministic per-blob radius — always collide.
+  let stopsKey = "";
+  for (const [offset, colour] of stops) {
+    stopsKey += `${offset}|${colour};`;
+  }
+  const key = `${cx},${cy},${r0},${r1}|${stopsKey}`;
+  if (radialGradientCache === null || radialGradientCache.ctx !== ctx) {
+    radialGradientCache = { ctx, map: new Map() };
+  }
+  // Bind the narrowed map to a local so the non-null narrowing survives the
+  // createRadialGradient call below (a module-level let is widened across any
+  // call, so the unaliased field access would type as possibly-null).
+  const map = radialGradientCache.map;
+  const hit = map.get(key);
+  if (hit !== undefined) return hit;
+  const grad = ctx.createRadialGradient(cx, cy, r0, cx, cy, r1);
+  for (const [offset, colour] of stops) {
+    grad.addColorStop(offset, colour);
+  }
+  map.set(key, grad);
+  return grad;
 }
 
 /**
@@ -91,16 +152,17 @@ function drawBlackHole(ctx: CanvasRenderingContext2D, t: Transform): void {
   // Outer glow falling off from the lethal edge into the tidal zone, drawn in a
   // world-space frame so the gradient becomes an iso ellipse.
   withWorldTransform(ctx, t, 0, 0, () => {
-    const glow = ctx.createRadialGradient(
+    const glow = cachedRadialGradient(
+      ctx,
       0,
       0,
       BLACK_HOLE_LETHAL_RADIUS,
-      0,
-      0,
       BLACK_HOLE_TIDAL_RADIUS,
+      [
+        [0, BH_GLOW_START],
+        [1, BH_GLOW_END],
+      ],
     );
-    glow.addColorStop(0, BH_GLOW_START);
-    glow.addColorStop(1, "rgba(180,60,200,0)");
     ctx.fillStyle = glow;
     ctx.beginPath();
     ctx.arc(0, 0, BLACK_HOLE_TIDAL_RADIUS, 0, Math.PI * 2);
@@ -152,9 +214,10 @@ function drawNebula(ctx: CanvasRenderingContext2D, t: Transform, bounds: Bounds)
     // the soft blob tilts into an ellipse and scales with the view.
     const radiusW = (0.12 + hash01(i + 17) * 0.12) * Math.min(rangeX, rangeY);
     withWorldTransform(ctx, t, wx, wy, () => {
-      const blob = ctx.createRadialGradient(0, 0, 0, 0, 0, radiusW);
-      blob.addColorStop(0, NEBULA_BLOB_START);
-      blob.addColorStop(1, "rgba(200,60,220,0)");
+      const blob = cachedRadialGradient(ctx, 0, 0, 0, radiusW, [
+        [0, NEBULA_BLOB_START],
+        [1, NEBULA_BLOB_END],
+      ]);
       ctx.fillStyle = blob;
       ctx.beginPath();
       ctx.arc(0, 0, radiusW, 0, Math.PI * 2);
