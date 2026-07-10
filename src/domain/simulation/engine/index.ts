@@ -33,7 +33,7 @@ import { stepPlume } from "./particle-sources";
 import { updateCrew } from "./crew";
 import { refillHardwiredAmmo, regenerateAmmo } from "./crew-haul";
 import { resourceStep } from "./resource-step";
-import { spawnDebris, stepDebris } from "./debris";
+import { spawnDebris, stepDebrisField } from "./debris";
 import { claimHulls, collectDebris, isClaimed, summariseSalvage } from "./salvage";
 import { resolveChainReactions } from "./chain-reaction";
 import { splitBreakApart } from "./damage";
@@ -631,12 +631,9 @@ export function* simulateBattle(
         ),
       );
     }
-    // Advance every drifting fragment one tick (pure Newtonian drift). Done in
-    // place over the array; `stepDebris` returns a fresh entity per fragment.
-    for (let i = 0; i < state.debris.length; i++) {
-      const d = state.debris[i];
-      if (d !== undefined) state.debris[i] = stepDebris(d);
-    }
+    // Advance every fragment one tick (with gravitational pull in a black-hole
+    // battle; otherwise frictionless drift).
+    stepDebrisField(state.debris, state.ships, hasAnomaly(inputs.anomalies, "blackHole"));
 
     // 5. Shield regeneration.
     const regenFactor = hasAnomaly(inputs.anomalies, "nebula") ? SIM.nebulaRegenFactor : 1;

@@ -190,6 +190,16 @@ export function buildDirectContacts(
       ) {
         continue;
       }
+      // NOTE: sensor occlusion is a straight-line segment test. Beams already
+      // bend via gravitational lensing (optics.ts lensingDeflection) near a black
+      // hole, but sensor sightlines do not — a target whose straight-line path
+      // grazes the well is marked occluded even though light (and thus a sensor
+      // return) would curve around it. The deflection at sensor ranges (tens of
+      // km) from a stellar-mass black hole is microradians, so this is physically
+      // wrong but functionally irrelevant for gameplay. A curved-ray variant of
+      // segmentBlocked (piecewise-linear through the field) would close the gap
+      // but is a large refactor across the three call sites (here, awareness.ts
+      // medium contacts, and sensors.ts comms links).
       if (segmentBlocked(observer.x, observer.y, enemy.x, enemy.y, occluders)) continue;
       // Hoisted once per pair: the full emission product (enemy strength ×
       // relativistic + gravitational reception shift) feeds both the dazzle
