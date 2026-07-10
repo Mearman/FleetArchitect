@@ -6,7 +6,12 @@ import {
   mediumCellIntensity,
   paletteSample,
 } from "./mediumShared";
-import { blurGridInPlace, computeIntensityGrid, supersampleToRgba } from "./fieldRaster";
+import {
+  blurGridInPlace,
+  computeIntensityGrid,
+  emissionCrossfadeAlpha,
+  supersampleToRgba,
+} from "./fieldRaster";
 
 /**
  * The field-raster maths (computeIntensityGrid → blurGridInPlace →
@@ -239,5 +244,57 @@ describe("supersampleToRgba", () => {
     const high = 0.9;
     expect(alphaAt(high)).toBe(clampByte(Math.round(f32(high) * 255)));
     expect(alphaAt(high)).toBeGreaterThan(0);
+  });
+});
+
+describe("emissionCrossfadeAlpha", () => {
+  /**
+   * The cross-fade factor blends the medium field between consecutive emissions
+   * (every RESOURCE_EVERY = 6 ticks) so the glow evolves smoothly instead of
+   * stepping. `f` is the current buffer's alpha: 0 right at the current
+   * emission tick (still looks like the previous field, no pop), ramping to 1 by
+   * the next emission (span = currentTick - previousTick).
+   */
+
+  it("returns 1 when previousTick is undefined (battle start, no prior emission)", () => {
+    expect(emissionCrossfadeAlpha(0, 0, undefined)).toBe(1);
+    expect(emissionCrossfadeAlpha(6, 6, undefined)).toBe(1);
+    // A fractional tickF partway through the first stride still draws the
+    // current buffer alone, since there is nothing to fade from.
+    expect(emissionCrossfadeAlpha(3.5, 0, undefined)).toBe(1);
+  });
+
+  it("returns 0 exactly at tickF === currentTick when a previous emission exists", () => {
+    // The moment the current emission lands: the current buffer contributes
+    // nothing, so the field looks exactly like the previous emission (no pop).
+    expect(emissionCrossfadeAlpha(6, 6, 0)).toBe(0);
+    expect(emissionCrossfadeAlpha(12, 12, 6)).toBe(0);
+  });
+
+  it("ramps linearly to 1 as tickF approaches currentTick + span", () => {
+    // span = currentTick - previousTick = 6. At tickF = currentTick + span the
+    // current buffer is at full strength; the next emission then lands and the
+    // roles swap (what was current becomes previous).
+    expect(emissionCrossfadeAlpha(12, 6, 0)).toBe(1);
+    // Midway through the span, the two buffers contribute equally.
+    expect(emissionCrossfadeAlpha(9, 6, 0)).toBeCloseTo(0.5, 10);
+    // One third of the way through.
+    expect(emissionCrossfadeAlpha(8, 6, 0)).toBeCloseTo(1 / 3, 10);
+  });
+
+  it("is clamped to [0, 1] for tickF outside the expected range", () => {
+    // Below currentTick (before the current emission landed) clamps to 0.
+    expect(emissionCrossfadeAlpha(5, 6, 0)).toBe(0);
+    // Above currentTick + span (past the next emission point) clamps to 1.
+    expect(emissionCrossfadeAlpha(13, 6, 0)).toBe(1);
+    // Well above the span.
+    expect(emissionCrossfadeAlpha(100, 6, 0)).toBe(1);
+  });
+
+  it("returns 1 when span is non-positive (degenerate currentTick <= previousTick)", () => {
+    // currentTick === previousTick: no span to fade across, draw current only.
+    expect(emissionCrossfadeAlpha(6, 6, 6)).toBe(1);
+    // currentTick < previousTick (should not occur; defensive) draws current only.
+    expect(emissionCrossfadeAlpha(5, 5, 6)).toBe(1);
   });
 });
