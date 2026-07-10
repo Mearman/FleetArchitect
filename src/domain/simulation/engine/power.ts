@@ -1,5 +1,5 @@
 /**
- * Phase 12 — Power economy (underlying resource simulation; use deferred).
+ * Power economy: the underlying energy-buffer simulation.
  *
  * Per-tick reactor output versus module draw, accumulated into a ship-level
  * energy buffer measured in joules. This module is a **pure** stepper: given
@@ -19,10 +19,9 @@
  *
  * The buffer is a finite capacitor bank: it cannot hold negative charge and
  * cannot exceed its rated capacity. Hitting either bound is modelled as a
- * hard clamp. **Use is deferred** (Phase 12): no brownout, no reactor trip,
- * no module-idle behaviour is enforced here. The clamp merely keeps the state
- * physically valid; callers that want to act on a deficit read `buffer.energy`
- * and decide for themselves.
+ * hard clamp. Consequences of a deficit (brownout load-shedding in a fixed
+ * priority order) are enforced by the caller (`resourceStep`) after the
+ * buffer is stepped — this stepper is responsible only for the physics.
  *
  * Determinism. The stepper is a pure function of its inputs with no rng and a
  * fixed iteration order (sources then sinks, in array order). Two same-input
@@ -73,7 +72,7 @@ export type EnergyBuffer = z.infer<typeof EnergyBuffer>;
  * The complete power-budget input for one ship: the live terminals (reactors
  * and powered modules) and the capacitor bank state. All values are in SI
  * units (watts, joules). This is the shape the integration step will assemble
- * each tick from the ship's fitted modules once Phase 12 is wired in.
+ * each tick from the ship's fitted modules for the resource step.
  */
 export const PowerBudget = z.object({
   /** Current energy store. */
@@ -104,8 +103,9 @@ export function netPower(terminals: readonly PowerTerminal[]): number {
  * `TICK_DURATION_SECONDS`. The clamp models the physical bounds of a
  * capacitor bank: charge cannot go negative (no borrowing from nowhere) and
  * cannot exceed the rated capacity (excess dissipates). Hitting a bound does
- * **not** trigger any gameplay consequence here — brownout, reactor trip and
- * module-idle behaviour are deferred to a later pass (Phase 12, use deferred).
+ * **not** trigger any gameplay consequence here — brownout load-shedding,
+ * module-idle behaviour, and fuel flame-out are enforced by `resourceStep`
+ * after it steps this buffer.
  *
  * Pure: a deterministic function of `buffer` and `netWatts` with no rng.
  */
@@ -129,7 +129,7 @@ export function stepEnergyBuffer(
  * `stepEnergyBuffer(budget.buffer, netPower(budget.terminals))`. Returns the
  * post-step buffer only; the terminals are not modified (a caller that wants
  * to mutate module state on a deficit does so from its own read of the
- * result — deferred behaviour).
+ * result — consequences are enforced by `resourceStep`).
  */
 export function stepPowerBudget(budget: PowerBudget): EnergyBuffer {
   return stepEnergyBuffer(budget.buffer, netPower(budget.terminals));
