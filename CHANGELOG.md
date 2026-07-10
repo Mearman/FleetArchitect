@@ -1,3 +1,10 @@
+## [1.62.1](https://github.com/Mearman/FleetArchitect/compare/v1.62.0...v1.62.1) (2026-07-10)
+
+
+### Bug Fixes
+
+* **sim:** write energyJ for particles appended past capacity ([6e38a13](https://github.com/Mearman/FleetArchitect/commit/6e38a137a0366bfef373ad96ab9edd1b2d100c08))
+
 # [1.62.0](https://github.com/Mearman/FleetArchitect/compare/v1.61.0...v1.62.0) (2026-07-10)
 
 
