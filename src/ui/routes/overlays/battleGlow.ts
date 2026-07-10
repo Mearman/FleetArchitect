@@ -6,10 +6,17 @@ import {
   paletteSample,
   particleCellBrightness,
   readFxLevel,
-  resolveMediumField,
+  resolveMediumFrame,
+  resolveParticlesFrame,
   sampleMediumRho,
 } from "./mediumShared";
-import type { BattleFrame, MediumSnapshot, ParticleSnapshot } from "@/schema/battle";
+import {
+  particleRenderState,
+  smoothstep,
+  type ParticleRenderState,
+} from "./particleDynamics";
+import { TICKS_PER_SECOND } from "@/domain/simulation/types";
+import type { MediumSnapshot, ParticleSnapshot } from "@/schema/battle";
 import type { OverlayCtx, OverlayDef } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -169,43 +176,50 @@ function glowAtlasSprites(): readonly HTMLCanvasElement[] | null {
   return glowAtlas;
 }
 
-function resolveParticles(
-  frames: readonly BattleFrame[],
-  tick: number,
-): ParticleSnapshot[] | undefined {
-  const start = Math.min(Math.max(0, Math.floor(tick)), frames.length - 1);
-  for (let i = start; i >= 0; i -= 1) {
-    const f = frames[i];
-    if (f === undefined) continue;
-    if (f.particles !== undefined && f.particles.length > 0) return f.particles;
-  }
-  return undefined;
-}
-
 /** Splat each live particle as a prerendered additive sprite, brightened by the
- *  ONE shared tone-map on its effective eps + the local density. */
+ *  ONE shared tone-map on its effective eps + the local density. Each particle
+ *  is advanced in closed form from its emission tick to the current fractional
+ *  display tick (tickF) so position and cooling are continuous across the
+ *  snapshot stride instead of stepping; a ramp-in alpha avoids pop-in and a
+ *  smoothstep fade knee replaces the old hard brightness cutoff. */
 function drawParticleGlow(
   c: OverlayCtx,
   particles: ParticleSnapshot[],
   field: MediumSnapshot | undefined,
   fxGain: number,
+  dtSinceS: number,
 ): void {
   const { ctx, t } = c;
   const width = t.width;
   const height = t.height;
   const atlas = glowAtlasSprites();
   const screen = { x: 0, y: 0 };
+  // One reused scratch render-state per call, allocated once outside the loop
+  // (no per-particle allocation), matching the pooling convention used
+  // throughout useBattleCanvas.ts.
+  const scratch: ParticleRenderState = { x: 0, y: 0, energyJ: 0, ageS: 0, rampAlpha: 0 };
 
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
   for (const p of particles) {
-    t.projectInto(screen, p.x, p.y);
+    // Advance the closed-form physics from the emission tick to now; skip if the
+    // particle is past its lifetime (engine cull signal).
+    if (!particleRenderState(p, dtSinceS, scratch)) continue;
+    t.projectInto(screen, scratch.x, scratch.y);
     const sx = screen.x;
     const sy = screen.y;
     if (sx < 0 || sx >= width || sy < 0 || sy >= height) continue;
-    const rho = field === undefined ? 0 : sampleMediumRho(field, p.x, p.y);
-    const dispI = Math.max(0, Math.min(1, particleCellBrightness(p.energyJ, rho, fxGain)));
-    if (dispI < PARTICLE_DRAW_THRESHOLD) continue;
+    const rho = field === undefined ? 0 : sampleMediumRho(field, scratch.x, scratch.y);
+    const baseI = Math.max(0, Math.min(1, particleCellBrightness(scratch.energyJ, rho, fxGain)));
+    // Early-continue on genuinely negligible base brightness (a cooled-out
+    // particle) so no draw call is wasted, then fade smoothly across a knee at
+    // the old hard cutoff so particles near the threshold fade rather than pop.
+    if (baseI < PARTICLE_DRAW_THRESHOLD * 0.1) continue;
+    const fade = smoothstep(PARTICLE_DRAW_THRESHOLD, PARTICLE_DRAW_THRESHOLD * 2, baseI);
+    // rampAlpha ramps the particle in over its first display tick; fade eases
+    // the low-brightness knee. Both fold into the final display intensity that
+    // drives radius, sprite bucket, and draw alpha.
+    const dispI = baseI * scratch.rampAlpha * fade;
     const radius = PARTICLE_RADIUS_PX * (0.4 + 0.6 * dispI);
     const bucket = Math.min(ATLAS_BUCKETS - 1, Math.round(dispI * (ATLAS_BUCKETS - 1)));
     const bucketIntensity = bucket / (ATLAS_BUCKETS - 1);
@@ -226,11 +240,21 @@ function drawBattleGlow(c: OverlayCtx): void {
   const fx = readFxLevel();
   if (fx === "off") return;
   const fxGain = fxGainFor(fx);
-  const field = resolveMediumField(c.frames, c.tick);
-  const particles = resolveParticles(c.frames, c.tick);
+  // Resolve the emission frames (the nearest AT-OR-BEFORE tick carrying each
+  // substrate) rather than bare fields, so the particle path can read the actual
+  // emission tick to advance sub-tick physics between snapshots.
+  const mediumFrame = resolveMediumFrame(c.frames, c.tick);
+  const particlesFrame = resolveParticlesFrame(c.frames, c.tick);
+  const field = mediumFrame === undefined ? undefined : mediumFrame.medium;
+  const particles = particlesFrame === undefined ? undefined : particlesFrame.particles;
   if (field === undefined && (particles === undefined || particles.length === 0)) return;
   if (field !== undefined) drawFieldGlow(c, field, fxGain);
-  if (particles !== undefined && particles.length > 0) drawParticleGlow(c, particles, field, fxGain);
+  // dtSinceS is always >= 0: particlesFrame.tick <= floor(tickF) because the
+  // resolver walks backward from the current tick for the nearest emission.
+  if (particlesFrame !== undefined && particles !== undefined && particles.length > 0) {
+    const dtSinceS = (c.tickF - particlesFrame.tick) / TICKS_PER_SECOND;
+    drawParticleGlow(c, particles, field, fxGain, dtSinceS);
+  }
 }
 
 /** Overlay definition: the unified battlefield glow (medium field + particles),

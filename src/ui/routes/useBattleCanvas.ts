@@ -98,15 +98,13 @@ export function useBattleCanvas({
   const isoDepthBufferRef = useRef<IsoCellDepth[]>([]);
   // Reusable render-order buffer; avoids the per-frame `[...ships]` allocation.
   const renderOrderRef = useRef<ShipSnapshot[]>([]);
-  // Pooled fog-of-war ship-position map and value scratch: reuses the Map backing
-  // store and value objects (clear + repopulate keeps no stale positions for newly
-  // dead ships) instead of allocating per alive ship every frame.
+  // Pooled fog-of-war ship-position map + value scratch: reuses the Map and its
+  // {x,y} objects (clear+repopulate drops stale positions for newly-dead ships).
   const fogShipPosRef = useRef<Map<string, { x: number; y: number }>>(new Map());
   const fogPosScratchRef = useRef<{ x: number; y: number }[]>([]);
   // Reusable battle-camera Transform: built once, rewritten in place per frame
-  // (resolveViewTransformInto), so the per-rAF draw pays no Transform/closure
-  // allocation. The closures read the scalar fields at call time, so the in-place
-  // update is visible to every consumer this frame.
+  // (resolveViewTransformInto) so the per-rAF draw pays no Transform/closure
+  // allocation; closures read scalar fields directly, so the rewrite is visible.
   const transformRef = useRef<Transform | null>(null);
   // Per-battle formation colour per instance id, derived once (descriptors never
   // mutate); a no-op (byte-identical frames) for a pre-formation battle.
@@ -115,7 +113,8 @@ export function useBattleCanvas({
     [descriptors],
   );
   return useCallback(
-    (frame: BattleFrame, tick: number, frames: readonly BattleFrame[]) => {
+    (frame: BattleFrame, tickF: number, frames: readonly BattleFrame[]) => {
+      const tick = Math.floor(tickF);
       const canvas = canvasRef.current;
       if (canvas === null) return;
       const ctx = canvas.getContext("2d");
@@ -200,6 +199,7 @@ export function useBattleCanvas({
             t,
             followId,
             tick,
+            tickF,
             frames,
             descriptors,
             inScope: state.scope === "all" ? IN_SCOPE_ALL : inScopeActive,

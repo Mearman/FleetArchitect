@@ -22,6 +22,10 @@ export type OverlayScope = "active" | "all";
  * - `t`          The world-to-screen transform (scale, centre, sx/sy) in effect.
  * - `followId`   The currently followed ship's instance id, or null when none.
  * - `tick`       The integer sim-tick position of the nearest discrete frame.
+ * - `tickF`      The fractional sim-tick position (e.g. 42.7) at the current
+ *                playback instant, alongside `tick`. Overlays that advance
+ *                sub-tick physics (e.g. particle glow) use this instead of the
+ *                floored `tick` so motion doesn't visibly step between frames.
  * - `frames`     The full discrete frame history (for trail-style overlays that
  *                need to reach back across ticks without re-deriving playback).
  * - `descriptors` Static per-ship layout (cells + outline), keyed by instance id,
@@ -36,6 +40,7 @@ export interface OverlayCtx {
   t: Transform;
   followId: string | null;
   tick: number;
+  tickF: number;
   frames: readonly BattleFrame[];
   descriptors: DescriptorMap;
   inScope: (ship: ShipSnapshot) => boolean;

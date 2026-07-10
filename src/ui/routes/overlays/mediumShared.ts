@@ -201,33 +201,13 @@ export function particleCellBrightness(energyJ: number, rho: number, fxGain: num
 }
 
 /**
- * Sample the medium glow intensity at a world point — {@link mediumCellIntensity}
- * at the cell containing `(wx, wy)`. Used by the analytic trails overlay; the
- * ambient glow rasterises the whole field instead (so it does not call this).
- */
-export function sampleMediumIntensity(
-  field: MediumSnapshot,
-  wx: number,
-  wy: number,
-  fxGain: number,
-): number {
-  const idx = worldToCellIndex(field, wx, wy);
-  if (idx < 0) return 0;
-  const eps = (field.epsVis ?? field.eps)[idx];
-  if (eps === undefined || eps <= 0) return 0; // nothing deposited → dark
-  const rho = field.rho[idx] ?? 0;
-  return mediumCellIntensity(eps, rho, fxGain);
-}
-
-/**
  * Sample the raw AMBIENT mass density ρ (kg per cell) at a world point — the
- * `rho` substrate only, 0 outside the grid. Unlike {@link sampleMediumIntensity},
- * which returns the ε-driven fused glow intensity, this returns the raw ρ
- * component alone. Callers that have their OWN independently-sourced brightness
- * (e.g. `particleGlow`'s self-luminous weapon particles, whose energy is the
- * particle's own `intensity`, not the medium field's ε) sample ρ directly and
+ * `rho` substrate only, 0 outside the grid. Callers that have their OWN
+ * independently-sourced brightness (e.g. the particle glow, whose energy is the
+ * particle's own `energyJ`, not the medium field's ε) sample ρ directly and
  * apply {@link densityAmplifier} to it, rather than double-counting the medium
- * field's separately-rendered ε contribution via `sampleMediumIntensity`.
+ * field's separately-rendered ε contribution. The ambient glow rasterises the
+ * whole field directly via {@link mediumCellIntensity}, so it does not call this.
  */
 export function sampleMediumRho(
   field: MediumSnapshot,
@@ -358,30 +338,66 @@ export function paletteSample(t: number): [number, number, number] {
 // directions and across battles.
 
 /**
- * Resolve the medium field for a given tick from the discrete frame history:
- * the snapshot of the most recent emission tick AT OR BEFORE `tick`. Pure
- * function of `(frames, tick)` — deterministic, so forward and backward scrub to
- * the same tick return the identical field object, regardless of playback order.
+ * Resolve the FRAME that carries the medium field for a given tick from the
+ * discrete frame history: the snapshot of the most recent emission tick AT OR
+ * BEFORE `tick`. Pure function of `(frames, tick)` — deterministic, so forward
+ * and backward scrub to the same tick return the identical frame object,
+ * regardless of playback order.
+ *
+ * Returns the FRAME (not just its `.medium` field) so a caller can read both
+ * the field AND the actual emission tick (`frame.tick`, which may be earlier
+ * than the requested tick) without a second lookup — the sub-tick particle
+ * dynamics need that emission tick to advance closed-form physics between
+ * emissions.
  *
  * The scan starts at `tick` and walks backward; because tick 0 always carries a
  * field (0 is an emission tick) it terminates within `RESOURCE_EVERY - 1` steps.
  * Returns `undefined` only when no frame in range has a field (a vacuum-anomaly
  * battle, or a replay recorded before the medium existed) — a clean early-return
  * rather than a sentinel.
- *
- * Both medium overlays call this independently with the same `(frames, tick)`,
- * so they always read the identical field and stay visually consistent without
- * sharing mutable state.
  */
-export function resolveMediumField(
+export function resolveMediumFrame(
   frames: readonly BattleFrame[],
   tick: number,
-): MediumSnapshot | undefined {
+): BattleFrame | undefined {
   const start = Math.min(Math.max(0, Math.floor(tick)), frames.length - 1);
   for (let i = start; i >= 0; i -= 1) {
     const f = frames[i];
     if (f === undefined) continue;
-    if (f.medium !== undefined) return f.medium;
+    if (f.medium !== undefined) return f;
+  }
+  return undefined;
+}
+
+/**
+ * Resolve the FRAME that carries the live particle set for a given tick from
+ * the discrete frame history: the nearest frame AT OR BEFORE `tick` with a
+ * non-empty `particles` array. Pure function of `(frames, tick)` — deterministic
+ * under forward/backward scrub, exactly like {@link resolveMediumFrame}.
+ *
+ * Returns the FRAME (not just its `.particles` array) so the caller can read
+ * the actual emission tick (`frame.tick`) to advance each particle's closed-form
+ * physics for the elapsed fraction since the emission. Without the tick, the
+ * sub-tick particle dynamics (see `particleDynamics.ts`) could not compute the
+ * dt to advance.
+ *
+ * The scan walks backward from `tick`; particles are emitted every tick, so a
+ * non-empty frame is found within a few steps of any tick where fire is live.
+ * Returns `undefined` when no frame in range carries particles (a quiet battle
+ * phase, or a vacuum-anomaly battle) — and crucially, the walk-back does NOT
+ * reach arbitrarily far back: it returns the nearest emission, so once a
+ * battle's fire stops the glow fades with the last emission's cooling lifetime
+ * instead of freezing on indefinitely stale particles.
+ */
+export function resolveParticlesFrame(
+  frames: readonly BattleFrame[],
+  tick: number,
+): BattleFrame | undefined {
+  const start = Math.min(Math.max(0, Math.floor(tick)), frames.length - 1);
+  for (let i = start; i >= 0; i -= 1) {
+    const f = frames[i];
+    if (f === undefined) continue;
+    if (f.particles !== undefined && f.particles.length > 0) return f;
   }
   return undefined;
 }

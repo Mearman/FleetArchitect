@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { BattleFrame, MediumSnapshot } from "@/schema/battle";
+import type { BattleFrame, MediumSnapshot, ParticleSnapshot } from "@/schema/battle";
 import {
   EPS_HALFSAT_J,
   INTENSITY_DRAW_THRESHOLD,
@@ -9,29 +9,42 @@ import {
   mediumCellIntensity,
   particleCellBrightness,
   particleEffectiveEps,
-  resolveMediumField,
+  resolveMediumFrame,
+  resolveParticlesFrame,
   sampleMediumRho,
 } from "./mediumShared";
 
 /**
- * The medium overlays resolve the field per-tick via {@link resolveMediumField}
+ * The medium overlays resolve the field per-tick via {@link resolveMediumFrame}
  * rather than a module-scoped "last-seen" cache. These tests pin the contract
  * that makes that scrub-safe: the field is a PURE FUNCTION OF THE TICK, so
- * forward and backward scrub to the same tick resolve to the identical field
+ * forward and backward scrub to the same tick resolve to the identical frame
  * regardless of which frames were rendered beforehand.
  *
  * Frames carry `medium` only on emission ticks (every RESOURCE_EVERY ticks);
- * ticks between emissions carry none. The resolver must return the most recent
- * emission AT OR BEFORE the requested tick.
+ * ticks between emissions carry none. The resolver must return the frame of the
+ * most recent emission AT OR BEFORE the requested tick — the frame (not just the
+ * field) so the caller also gets the actual emission tick for sub-tick dynamics.
  */
 
-/** Minimal frame carrying only the fields `resolveMediumField` reads. */
+/** Minimal frame carrying only the fields `resolveMediumFrame` reads. */
 function makeFrame(tick: number, medium?: MediumSnapshot): BattleFrame {
   return {
     tick,
     ships: [],
     projectiles: [],
     ...(medium !== undefined ? { medium } : {}),
+  };
+}
+
+/** A minimal frame carrying only a non-empty particle set, for
+ *  `resolveParticlesFrame`. */
+function makeParticlesFrame(tick: number, particles?: ParticleSnapshot[]): BattleFrame {
+  return {
+    tick,
+    ships: [],
+    projectiles: [],
+    ...(particles !== undefined ? { particles } : {}),
   };
 }
 
@@ -47,7 +60,14 @@ function makeField(tag: number): MediumSnapshot {
   };
 }
 
-describe("resolveMediumField", () => {
+/** A distinguishable single-particle array so particle tests can assert WHICH
+ *  emission was resolved by identity. The particle's fields are arbitrary but
+ *  unique per tag (carried in x/intensity/energy) so a wrong emission is caught. */
+function makeParticles(tag: number): ParticleSnapshot[] {
+  return [{ x: tag, y: 0, vx: 0, vy: 0, intensity: tag, energyJ: tag, age: 0 }];
+}
+
+describe("resolveMediumFrame", () => {
   it("returns the most recent emission at or before the tick", () => {
     // Emissions at ticks 0 and 6; ticks 1-5 and 7-8 carry no medium.
     const a = makeField(1);
@@ -64,14 +84,17 @@ describe("resolveMediumField", () => {
       makeFrame(8),
     ];
 
-    expect(resolveMediumField(frames, 8)).toBe(b); // after emission 6
-    expect(resolveMediumField(frames, 6)).toBe(b); // exactly on emission 6
-    expect(resolveMediumField(frames, 5)).toBe(a); // between 0 and 6 -> earlier
-    expect(resolveMediumField(frames, 1)).toBe(a); // just after emission 0
-    expect(resolveMediumField(frames, 0)).toBe(a); // first emission
+    expect(resolveMediumFrame(frames, 8)?.medium).toBe(b); // after emission 6
+    expect(resolveMediumFrame(frames, 8)?.tick).toBe(6); // the emission tick
+    expect(resolveMediumFrame(frames, 6)?.medium).toBe(b); // exactly on emission 6
+    expect(resolveMediumFrame(frames, 6)?.tick).toBe(6);
+    expect(resolveMediumFrame(frames, 5)?.medium).toBe(a); // between 0 and 6 -> earlier
+    expect(resolveMediumFrame(frames, 5)?.tick).toBe(0);
+    expect(resolveMediumFrame(frames, 1)?.medium).toBe(a); // just after emission 0
+    expect(resolveMediumFrame(frames, 0)?.medium).toBe(a); // first emission
   });
 
-  it("is order-independent: scrub forward then backward resolves the same field", () => {
+  it("is order-independent: scrub forward then backward resolves the same frame", () => {
     // The core determinism assertion the scrub bug violated. A forward-only
     // "last-seen" cache would, after visiting tick 13 (emission 12 = c), return
     // c for tick 9; after visiting tick 0 (emission 0 = a), return a for tick 9.
@@ -97,34 +120,133 @@ describe("resolveMediumField", () => {
     ];
 
     // Scrub forward past emission 12, then back to tick 9: still emission 6.
-    resolveMediumField(frames, 13);
-    expect(resolveMediumField(frames, 9)).toBe(b);
+    resolveMediumFrame(frames, 13);
+    expect(resolveMediumFrame(frames, 9)?.medium).toBe(b);
 
     // Scrub all the way back to tick 0, then forward to tick 9: still emission 6.
-    resolveMediumField(frames, 0);
-    expect(resolveMediumField(frames, 9)).toBe(b);
+    resolveMediumFrame(frames, 0);
+    expect(resolveMediumFrame(frames, 9)?.medium).toBe(b);
 
     // Repeated resolution at the same tick is stable.
-    expect(resolveMediumField(frames, 9)).toBe(resolveMediumField(frames, 9));
+    expect(resolveMediumFrame(frames, 9)).toBe(resolveMediumFrame(frames, 9));
   });
 
   it("clamps the tick to the available frame range", () => {
     const a = makeField(1);
     const frames: BattleFrame[] = [makeFrame(0, a), makeFrame(1)];
 
-    expect(resolveMediumField(frames, -5)).toBe(a); // before start -> clamp to 0
-    expect(resolveMediumField(frames, 99)).toBe(a); // past end -> clamp, scan back to 0
+    expect(resolveMediumFrame(frames, -5)?.medium).toBe(a); // before start -> clamp to 0
+    expect(resolveMediumFrame(frames, 99)?.medium).toBe(a); // past end -> clamp, scan back to 0
   });
 
   it("returns undefined when no frame carries a medium field", () => {
     // A vacuum-anomaly battle (or a pre-medium replay): no frame has a field.
     const frames: BattleFrame[] = [makeFrame(0), makeFrame(1), makeFrame(2)];
 
-    expect(resolveMediumField(frames, 2)).toBeUndefined();
+    expect(resolveMediumFrame(frames, 2)).toBeUndefined();
   });
 
   it("returns undefined for an empty frame history", () => {
-    expect(resolveMediumField([], 0)).toBeUndefined();
+    expect(resolveMediumFrame([], 0)).toBeUndefined();
+  });
+});
+
+describe("resolveParticlesFrame", () => {
+  // Mirrors the resolveMediumFrame contract for the particle set: a PURE
+  // function of (frames, tick) that returns the nearest frame AT OR BEFORE the
+  // tick carrying a NON-EMPTY particles array — returning the frame (not just
+  // .particles) so the caller also gets the emission tick for sub-tick dynamics.
+
+  it("returns the most recent non-empty particle emission at or before the tick", () => {
+    // Emissions at ticks 0 and 6; ticks 1-5 and 7-8 carry no particles.
+    const a = makeParticles(1);
+    const b = makeParticles(2);
+    const frames: BattleFrame[] = [
+      makeParticlesFrame(0, a),
+      makeParticlesFrame(1),
+      makeParticlesFrame(2),
+      makeParticlesFrame(3),
+      makeParticlesFrame(4),
+      makeParticlesFrame(5),
+      makeParticlesFrame(6, b),
+      makeParticlesFrame(7),
+      makeParticlesFrame(8),
+    ];
+
+    expect(resolveParticlesFrame(frames, 8)?.particles).toBe(b); // after emission 6
+    expect(resolveParticlesFrame(frames, 8)?.tick).toBe(6); // the emission tick
+    expect(resolveParticlesFrame(frames, 6)?.particles).toBe(b); // exactly on emission 6
+    expect(resolveParticlesFrame(frames, 5)?.particles).toBe(a); // between 0 and 6
+    expect(resolveParticlesFrame(frames, 1)?.particles).toBe(a); // just after emission 0
+    expect(resolveParticlesFrame(frames, 0)?.particles).toBe(a); // first emission
+  });
+
+  it("skips frames with an empty (zero-length) particle array", () => {
+    // An empty array is treated as "no particles" — the walk continues backward,
+    // matching the resolver's non-empty contract.
+    const a = makeParticles(1);
+    const frames: BattleFrame[] = [
+      makeParticlesFrame(0, a),
+      makeParticlesFrame(1, []),
+      makeParticlesFrame(2),
+    ];
+
+    // Tick 2 and 1 carry no usable particles; resolves back to tick 0's emission.
+    expect(resolveParticlesFrame(frames, 2)?.particles).toBe(a);
+    expect(resolveParticlesFrame(frames, 2)?.tick).toBe(0);
+  });
+
+  it("is order-independent: scrub forward then backward resolves the same frame", () => {
+    const a = makeParticles(1);
+    const b = makeParticles(2);
+    const c = makeParticles(3);
+    const frames: BattleFrame[] = [
+      makeParticlesFrame(0, a),
+      makeParticlesFrame(1),
+      makeParticlesFrame(2),
+      makeParticlesFrame(3),
+      makeParticlesFrame(4),
+      makeParticlesFrame(5),
+      makeParticlesFrame(6, b),
+      makeParticlesFrame(7),
+      makeParticlesFrame(8),
+      makeParticlesFrame(9),
+      makeParticlesFrame(10),
+      makeParticlesFrame(11),
+      makeParticlesFrame(12, c),
+      makeParticlesFrame(13),
+    ];
+
+    resolveParticlesFrame(frames, 13);
+    expect(resolveParticlesFrame(frames, 9)?.particles).toBe(b);
+
+    resolveParticlesFrame(frames, 0);
+    expect(resolveParticlesFrame(frames, 9)?.particles).toBe(b);
+
+    expect(resolveParticlesFrame(frames, 9)).toBe(resolveParticlesFrame(frames, 9));
+  });
+
+  it("clamps the tick to the available frame range", () => {
+    const a = makeParticles(1);
+    const frames: BattleFrame[] = [makeParticlesFrame(0, a), makeParticlesFrame(1)];
+
+    expect(resolveParticlesFrame(frames, -5)?.particles).toBe(a); // before start -> clamp to 0
+    expect(resolveParticlesFrame(frames, 99)?.particles).toBe(a); // past end -> clamp
+  });
+
+  it("returns undefined when no frame carries a non-empty particle set", () => {
+    // A quiet battle phase (fire stopped) or a vacuum-anomaly battle.
+    const frames: BattleFrame[] = [
+      makeParticlesFrame(0),
+      makeParticlesFrame(1, []),
+      makeParticlesFrame(2),
+    ];
+
+    expect(resolveParticlesFrame(frames, 2)).toBeUndefined();
+  });
+
+  it("returns undefined for an empty frame history", () => {
+    expect(resolveParticlesFrame([], 0)).toBeUndefined();
   });
 });
 
