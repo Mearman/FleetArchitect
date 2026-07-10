@@ -254,6 +254,7 @@ export function appendParticles(
     vx[w] = p.vx;
     vy[w] = p.vy;
     intensity[w] = p.intensity;
+    energyJ[w] = p.energyJ;
     age[w] = p.age;
     w += 1;
   }
