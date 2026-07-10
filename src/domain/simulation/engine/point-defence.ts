@@ -21,6 +21,19 @@ export interface PdCandidate {
   readonly effect: PointDefenseEffect;
 }
 
+/** A PD candidate that has cleared every per-projectile gate, augmented with
+ *  its tracking-rate margin for the physical hit-chance model. The margin is
+ *  `1 − omega / (tracking + pdTrackingEpsilon)`: 1 for a radial inbounder the
+ *  mount tracks trivially, 0 at its gimbal limit. It scales the authored
+ *  hitChance so a mount with rate headroom is likely to connect while one near
+ *  its tracking limit is not. */
+export interface FiringCandidate {
+  readonly ship: SimShip;
+  readonly module: SimModule;
+  readonly effect: PointDefenseEffect;
+  readonly trackingMargin: number;
+}
+
 /** Per-side buckets of PD candidates, built once per tick. Each bucket holds
  *  only PD mounts that were alive at tick start — a dead mount never recovers,
  *  so excluding it here is lossless — in the same ship-major walk order the
@@ -58,11 +71,15 @@ export function buildPdCandidates(byId: Map<string, SimShip>): PdBuckets {
 /**
  * Roll for a point-defence intercept (true if the projectile was shot down).
  * In-range, online, off-cooldown PD modules on the opposing side stack their
- * authored per-module hitChance as a survival product
- * `1 - Π(1 - hitChance)`, capped at `SIM.pdMaxStackedChance`; only modular
- * ships carry PD, and PD needs an alive command module. A single rng draw
- * resolves the stack, keeping the rng stream length independent of how many PD
- * modules fire.
+ * per-module hit chances as a survival product `1 - Π(1 - p_i)`, capped at
+ * `SIM.pdMaxStackedChance`; only modular ships carry PD, and PD needs an alive
+ * command module. A single rng draw resolves the stack, keeping the rng stream
+ * length independent of how many PD modules fire.
+ *
+ * Per-module chance `p_i` is the physical hit model: the authored `hitChance`
+ * scaled by the tracking-rate margin `1 − omega / (tracking + epsilon)`. A
+ * mount with lots of rate headroom (slow-crossing or radial target) fires near
+ * its authored accuracy; a mount near its gimbal limit fires near zero.
  *
  * Two deterministic filters gate which candidates fire, both preserving the
  * single-draw contract:
@@ -102,7 +119,7 @@ export function tryPointDefenseIntercept(
   /** Reusable scratch for the firing subset (`state.pdFiringScratch`) — cleared
    *  at the top of each call. When omitted a fresh array is allocated. Same
    *  clear-and-reuse contract as `cellHashScratch` in `updateProjectiles`. */
-  firingScratch?: PdCandidate[],
+  firingScratch?: FiringCandidate[],
 ): boolean {
   // Collect in-range, online, off-cooldown PD modules. A single rng draw
   // resolves the stacked chance — keeps the stream length independent of how
@@ -132,32 +149,40 @@ export function tryPointDefenseIntercept(
     const dx = ship.x - p.x;
     const dy = ship.y - p.y;
     if (fastHypot(dx, dy) > cand.effect.range) continue;
-    // Lead-aim gate: a mount can only follow a projectile whose traverse
-    // across it stays within the mount's `tracking` (plus the radial-inbound
-    // epsilon). `cross = dx·p.vy − dy·p.vx` is the 2-D r×v; |cross|/r² is the
-    // angular rate. No rng — a deterministic geometric filter that composes
-    // with the hitChance stack below.
+    // Lead-aim gate + tracking-rate margin: a mount can only follow a
+    // projectile whose traverse across it stays within the mount's `tracking`
+    // (plus the radial-inbound epsilon). `cross = dx·p.vy − dy·p.vx` is the
+    // 2-D r×v; |cross|/r² is the angular rate. No rng — a deterministic
+    // geometric filter. The margin `1 − omega / limit` (1 at omega 0, 0 at the
+    // limit) then scales the authored hitChance so a mount with rate headroom
+    // is likely to connect while one near its gimbal limit is not.
     const r2 = dx * dx + dy * dy;
+    let trackingMargin = 1; // r2 == 0: projectile on the mount, trivially tracked
     if (r2 > 0) {
       const cross = dx * p.vy - dy * p.vx;
       const omega = Math.abs(cross) / r2;
-      if (omega > cand.effect.tracking + SIM.pdTrackingEpsilon) continue;
+      const trackingLimit = cand.effect.tracking + SIM.pdTrackingEpsilon;
+      if (omega > trackingLimit) continue;
+      trackingMargin = 1 - omega / trackingLimit;
     }
     if (ship !== lastShip) {
       lastShip = ship;
       lastShipHasCommand = hasAliveCommand(ship);
     }
     if (!lastShipHasCommand) continue; // no bridge → no coordination
-    firing.push(cand);
+    firing.push({ ...cand, trackingMargin });
   }
   if (firing.length === 0) return false;
   // Stack per-module hit chances: each candidate multiplies the projectile's
-  // survival by (1 - its authored hitChance), so a faction's PD accuracy
-  // (Synthetic 0.7 vs Swarm 0.35) actually matters. pdHitChancePerModule is the
+  // survival by (1 - its effective chance), where the effective chance is the
+  // authored hitChance scaled by the tracking-rate margin. A faction's PD
+  // accuracy (Synthetic 0.7 vs Swarm 0.35) sets the ceiling; the margin sets
+  // how close to that ceiling each mount gets. pdHitChancePerModule is the
   // fallback for a module that omits the field.
   let survival = 1;
   for (const cand of firing) {
-    survival *= 1 - (cand.effect.hitChance ?? SIM.pdHitChancePerModule);
+    const base = cand.effect.hitChance ?? SIM.pdHitChancePerModule;
+    survival *= 1 - base * cand.trackingMargin;
   }
   const stacked = 1 - survival;
   const capped = Math.min(stacked, SIM.pdMaxStackedChance);
