@@ -15,7 +15,7 @@ import type { BattleInputs } from "../types";
 import { CELL_CONTACT_DISTANCE, buildShipCellHash, nearestCellAlongSegment } from "./collision";
 import type { ShipCell } from "./collision";
 import { SIM, GAS_DRAG_CROSS_SECTION_PROJECTILE_M2, claimProjectileId } from "./config";
-import { buildPdCandidates, tryPointDefenseIntercept, type PdCandidate } from "./point-defence";
+import { buildPdCandidates, tryPointDefenseIntercept, type PdCandidate, type PdBuckets } from "./point-defence";
 import { TICKS_PER_SECOND } from "../types";
 import { POWERED_SPAWN_FRACTION_OF_CRUISE } from "@/data/catalog/ordnance-motor";
 import { ACCEL_PER_TICK_FROM_SI } from "../types";
@@ -572,20 +572,21 @@ export function updateProjectiles(
   // positions so a projectile strikes a cell where it actually is.
   const cellHash = buildShipCellHash(byId.values(), cellHashScratch);
   // PD candidates built once per tick (lazily, on the first interceptable
-  // projectile) in walk order — see buildPdCandidates / tryPointDefenseIntercept.
-  let pdCandidates: PdCandidate[] | undefined;
+  // projectile) as per-side buckets — see buildPdCandidates. Each projectile
+  // iterates only the opposing side's bucket.
+  let pdBySide: PdBuckets | undefined;
 
   for (const p of projectiles) {
     // Point-defence intercept: PD modules on the opposing side get a chance
-    // to shoot down the projectile before it moves on this tick. Only
-    // missiles and torpedoes are PD-able; beams and plasma travel too fast
-    // to intercept. Multiple PD modules within range stack their per-tick
-    // hit chance (1 - (1-p)^n) up to `pdMaxStackedChance`. An unpowered,
-    // cooling, or destroyed PD module contributes nothing. PD requires the
-    // defending ship to have an alive command module — coordination matters.
+    // to shoot down the projectile before it moves on this tick. Only missiles
+    // and torpedoes are PD-able. Multiple PD modules in range stack their
+    // per-tick hit chance (1-(1-p)^n) up to `pdMaxStackedChance`. An unpowered,
+    // cooling, or destroyed PD contributes nothing; PD needs an alive command module.
     if (p.kind === "missile" || p.kind === "torpedo") {
-      if (pdCandidates === undefined) pdCandidates = buildPdCandidates(byId);
-      if (tryPointDefenseIntercept(p, pdCandidates, rng, pdFiringScratch)) continue;
+      if (pdBySide === undefined) pdBySide = buildPdCandidates(byId);
+      // Side gate is structural: byte-identical (same candidates, walk order).
+      const enemyPd = p.ownerSide === "attacker" ? pdBySide.defender : pdBySide.attacker;
+      if (tryPointDefenseIntercept(p, enemyPd, rng, pdFiringScratch)) continue;
     }
 
     // Finite-burn motor: a powered projectile with fuel remaining accelerates

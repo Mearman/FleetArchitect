@@ -5,7 +5,6 @@
  * model grows (projectile HP, lead-aim).
  */
 
-import type { BattleSide } from "@/schema/battle";
 import type { PointDefenseEffect } from "@/schema/module";
 import { hasAliveCommand } from "./alive-modules";
 import { SIM } from "./config";
@@ -22,18 +21,38 @@ export interface PdCandidate {
   readonly effect: PointDefenseEffect;
 }
 
-/** Enumerate every PD module on every modular ship once per tick in walk
- *  order, so the per-projectile loop iterates only PD modules. */
-export function buildPdCandidates(byId: Map<string, SimShip>): PdCandidate[] {
-  const candidates: PdCandidate[] = [];
+/** Per-side buckets of PD candidates, built once per tick. Each bucket holds
+ *  only PD mounts that were alive at tick start — a dead mount never recovers,
+ *  so excluding it here is lossless — in the same ship-major walk order the
+ *  former single-list build produced, so a side's firing candidates still
+ *  accumulate in identical order. The per-projectile loop still re-checks
+ *  `ship.alive`/`m.alive` because a missile impact earlier in the projectile
+ *  loop can kill a PD mount before a later missile's PD roll. */
+export interface PdBuckets {
+  readonly attacker: readonly PdCandidate[];
+  readonly defender: readonly PdCandidate[];
+}
+
+/** Enumerate every alive PD module on every alive modular ship once per tick,
+ *  partitioned by side in walk order, so the per-projectile loop iterates only
+ *  the opposing side's pre-filtered mounts. Byte-identical to the former
+ *  single-list build plus the per-projectile side gate: each side's candidates
+ *  land in its bucket in the same relative order, and mounts dead at tick start
+ *  are excluded (they would have been skipped by the alive gate every time). */
+export function buildPdCandidates(byId: Map<string, SimShip>): PdBuckets {
+  const attacker: PdCandidate[] = [];
+  const defender: PdCandidate[] = [];
   for (const [, ship] of byId) {
     if (ship.modules === undefined) continue; // legacy ships don't run PD
+    if (!ship.alive) continue; // dead at tick start: permanently out of the fight
+    const bucket = ship.side === "attacker" ? attacker : defender;
     for (const m of ship.modules) {
       if (m.effect.kind !== "pointDefense") continue;
-      candidates.push({ ship, module: m, effect: m.effect });
+      if (!m.alive) continue; // destroyed mount: never fires this tick
+      bucket.push({ ship, module: m, effect: m.effect });
     }
   }
-  return candidates;
+  return { attacker, defender };
 }
 
 /**
@@ -62,22 +81,29 @@ export function buildPdCandidates(byId: Map<string, SimShip>): PdCandidate[] {
  *    a screen that deals < 120 cumulative damage; a missile (hp 30) dies to a
  *    couple of typical hits. Only one rng draw is consumed either way.
  *
- * `pdCandidates` (buildPdCandidates, once per tick) gives the structural PD
- * set in walk order; per-projectile gates are re-applied here so this is
- * byte-identical to the former ship×module walk. The count, lead-aim, and
- * cooldown passes share one collection (lossless: nothing mutates between them
- * within a single projectile until the damage step, which runs after the draw).
+ * `enemyPdCandidates` is the opposing side's PD bucket from `buildPdCandidates`
+ * (once per tick): the side gate is structural there, and mounts dead at tick
+ * start are already excluded. Per-projectile gates are re-applied here so this
+ * is byte-identical to the former ship×module walk — including the alive gate,
+ * which must run per projectile because a missile impact earlier in
+ * `updateProjectiles`' loop can kill a PD mount before a later missile's roll.
+ * The count, lead-aim, and cooldown passes share one collection (lossless:
+ * nothing mutates between them within a single projectile until the damage
+ * step, which runs after the draw).
  */
 export function tryPointDefenseIntercept(
   p: SimProjectile,
-  pdCandidates: readonly PdCandidate[],
+  /** The opposing side's PD candidates for this tick (the enemy bucket from
+   *  `buildPdCandidates`, pre-filtered to alive-at-tick-start). Side is
+   *  structural — the caller selects the enemy bucket — so there is no side
+   *  gate in the loop. */
+  enemyPdCandidates: readonly PdCandidate[],
   rng: () => number,
   /** Reusable scratch for the firing subset (`state.pdFiringScratch`) — cleared
    *  at the top of each call. When omitted a fresh array is allocated. Same
    *  clear-and-reuse contract as `cellHashScratch` in `updateProjectiles`. */
   firingScratch?: PdCandidate[],
 ): boolean {
-  const enemySide: BattleSide = p.ownerSide === "attacker" ? "defender" : "attacker";
   // Collect in-range, online, off-cooldown PD modules. A single rng draw
   // resolves the stacked chance — keeps the stream length independent of how
   // many PD modules fire.
@@ -86,7 +112,7 @@ export function tryPointDefenseIntercept(
   // `hasAliveCommand` linear-scans ship.modules, so it is O(cells). The cheap
   // O(1) gates (module state, cooldown, range, lead-aim) run first so a
   // candidate already excluded by a trivial check never pays that scan.
-  // pdCandidates is built ship-major (buildPdCandidates walks byId), so a
+  // The enemy bucket is built ship-major (buildPdCandidates walks byId), so a
   // ship's candidates are contiguous; cache the bridge-alive result per ship
   // to compute it once per (ship, projectile) instead of once per PD module.
   // Nothing mutates module alive/hp between candidates in this collection loop
@@ -94,9 +120,12 @@ export function tryPointDefenseIntercept(
   // so the cached value is valid for the whole loop.
   let lastShip: SimShip | undefined;
   let lastShipHasCommand = false;
-  for (const cand of pdCandidates) {
+  for (const cand of enemyPdCandidates) {
     const ship = cand.ship;
-    if (!ship.alive || ship.side !== enemySide) continue;
+    // Side is structural (the caller passes the enemy bucket); alive is
+    // re-checked because a missile impact earlier in updateProjectiles' loop
+    // can kill this mount before this projectile's roll.
+    if (!ship.alive) continue;
     const m = cand.module;
     if (!m.alive || !m.powered || m.powerCut || !m.manned || !isCharged(m)) continue;
     if (m.cooldown > 0) continue;
