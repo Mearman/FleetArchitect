@@ -14,9 +14,14 @@ import {
   type ParticleBridge,
   type ParticleRenderState,
 } from "./particleDynamics";
-import { blurGridInPlace, computeIntensityGrid, supersampleToRgba } from "./fieldRaster";
+import {
+  blurGridInPlace,
+  computeIntensityGrid,
+  emissionCrossfadeAlpha,
+  supersampleToRgba,
+} from "./fieldRaster";
 import { TICKS_PER_SECOND } from "@/domain/simulation/types";
-import type { MediumSnapshot, ParticleSnapshot } from "@/schema/battle";
+import type { BattleFrame, MediumSnapshot, ParticleSnapshot } from "@/schema/battle";
 import type { OverlayCtx, OverlayDef } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -65,12 +70,25 @@ type GlowBuffer = {
   rasterFxGain: number | undefined;
 };
 
-let glowBuffer: GlowBuffer | undefined;
-let glowBufferKey = "";
+/** One cached raster slot: a supersampled offscreen buffer plus the
+ *  `${widthM}x${heightM}` key it was allocated for. Two slots are held —
+ *  `currSlot` for the most-recent emission and `prevSlot` for the one before —
+ *  so the field can be CROSS-FADED between consecutive emissions instead of
+ *  stepping every RESOURCE_EVERY ticks. Each slot caches its rasterisation on
+ *  the field reference + FX gain independently, the same identity-keyed caching
+ *  discipline the single-buffer version used. */
+type GlowSlot = { buffer: GlowBuffer | undefined; key: string };
 
-function ensureGlowBuffer(widthM: number, heightM: number): GlowBuffer | undefined {
+const currSlot: GlowSlot = { buffer: undefined, key: "" };
+const prevSlot: GlowSlot = { buffer: undefined, key: "" };
+
+function ensureGlowBuffer(
+  widthM: number,
+  heightM: number,
+  slot: GlowSlot,
+): GlowBuffer | undefined {
   const key = `${widthM}x${heightM}`;
-  if (glowBuffer !== undefined && key === glowBufferKey) return glowBuffer;
+  if (slot.buffer !== undefined && key === slot.key) return slot.buffer;
   const cellCount = widthM * heightM;
   const canvasW = widthM * FIELD_SUPERSAMPLE;
   const canvasH = heightM * FIELD_SUPERSAMPLE;
@@ -79,7 +97,7 @@ function ensureGlowBuffer(widthM: number, heightM: number): GlowBuffer | undefin
   canvas.height = canvasH;
   const ctx = canvas.getContext("2d");
   if (ctx === null) return undefined;
-  glowBuffer = {
+  slot.buffer = {
     canvas,
     ctx,
     imageData: ctx.createImageData(canvasW, canvasH),
@@ -88,24 +106,23 @@ function ensureGlowBuffer(widthM: number, heightM: number): GlowBuffer | undefin
     rasterField: undefined,
     rasterFxGain: undefined,
   };
-  glowBufferKey = key;
-  return glowBuffer;
+  slot.key = key;
+  return slot.buffer;
 }
 
-/** Rasterise the field through the pure fieldRaster pipeline (per-cell
- *  intensity -> binomial blur -> supersample) into the cached buffer, then blit
- *  it additively aligned to the grid's world rectangle. Rasterisation is cached
- *  on the resolved field reference + FX gain (the field is constant between
- *  emissions), so the ~20k-cell scan runs once per emission, not per rAF. */
-function drawFieldGlow(c: OverlayCtx, field: MediumSnapshot, fxGain: number): void {
-  const { ctx, t } = c;
-  const { widthM, heightM, pitchM } = field;
-  const cellCount = widthM * heightM;
-  const glowEps = field.epsVis ?? field.eps;
-  if (field.rho.length < cellCount || glowEps.length < cellCount) return;
-  const buf = ensureGlowBuffer(widthM, heightM);
-  if (buf === undefined) return;
-
+/** Rasterise `field` through the pure fieldRaster pipeline (per-cell intensity
+ *  -> binomial blur -> supersample) into `buf`, reusing the cached raster when
+ *  the field reference + FX gain are unchanged (the field is constant between
+ *  emissions, so the ~20k-cell scan runs once per emission, not per rAF). Shared
+ *  by the current and previous emission slots so the pipeline is not duplicated
+ *  inline twice. */
+function rasteriseField(
+  field: MediumSnapshot,
+  fxGain: number,
+  buf: GlowBuffer,
+  widthM: number,
+  heightM: number,
+): void {
   if (buf.rasterField !== field || buf.rasterFxGain !== fxGain) {
     computeIntensityGrid(field, fxGain, buf.intensity);
     blurGridInPlace(buf.intensity, widthM, heightM, buf.blurScratch);
@@ -121,6 +138,64 @@ function drawFieldGlow(c: OverlayCtx, field: MediumSnapshot, fxGain: number): vo
     buf.ctx.putImageData(buf.imageData, 0, 0);
     buf.rasterField = field;
     buf.rasterFxGain = fxGain;
+  }
+}
+
+/** Rasterise the field through the pure fieldRaster pipeline into the cached
+ *  buffer and blit it additively aligned to the grid's world rectangle. To avoid
+ *  the field visibly STEPPING every RESOURCE_EVERY ticks (the engine emits
+ *  `medium` only on those ticks), the blit CROSS-FADES between the previous and
+ *  current emission buffers: at the moment a new emission lands the overlay
+ *  still looks exactly like the previous one (alpha 0 on the new buffer), then
+ *  ramps linearly to the new one over the span until the NEXT emission, when the
+ *  roles swap. The fade factor is {@link emissionCrossfadeAlpha}, a pure function
+ *  of `(tickF, currentTick, previousTick)`, so this stays scrub-safe (no
+ *  last-seen state — everything is re-derived from the frame history each call,
+ *  exactly like `resolveMediumFrame`). Rasterisation is cached on the resolved
+ *  field reference + FX gain per slot, so the ~20k-cell scan runs once per
+ *  emission, not per rAF. When the two emissions' grids differ in shape (arena
+ *  bounds changed between them) the cross-fade is skipped and only the current
+ *  buffer draws, rather than cross-fading non-aligned buffers. */
+function drawFieldGlow(
+  c: OverlayCtx,
+  field: MediumSnapshot,
+  currentTick: number,
+  prevFrame: BattleFrame | undefined,
+  fxGain: number,
+): void {
+  const { ctx, t } = c;
+  const { widthM, heightM, pitchM } = field;
+  const cellCount = widthM * heightM;
+  const glowEps = field.epsVis ?? field.eps;
+  if (field.rho.length < cellCount || glowEps.length < cellCount) return;
+
+  const prevField = prevFrame?.medium;
+  const prevTick = prevFrame?.tick;
+  // Cross-fade only when the previous emission's grid is the same shape (arena
+  // bounds unchanged between the two emissions); mismatched grids fall back to
+  // current-only rather than cross-fading non-aligned buffers.
+  const canCrossfade =
+    prevField !== undefined &&
+    prevTick !== undefined &&
+    prevField.widthM === widthM &&
+    prevField.heightM === heightM;
+  const f = canCrossfade
+    ? emissionCrossfadeAlpha(c.tickF, currentTick, prevTick)
+    : 1;
+
+  const currBuf = ensureGlowBuffer(widthM, heightM, currSlot);
+  if (currBuf === undefined) return;
+  rasteriseField(field, fxGain, currBuf, widthM, heightM);
+
+  // Resolve and rasterise the previous-emission buffer only while it actually
+  // contributes (f < 1); at f === 1 the current buffer is drawn alone, so there
+  // is no previous rasterisation or draw call to make.
+  let prevBuf: GlowBuffer | undefined = undefined;
+  if (canCrossfade && f < 1 && prevField !== undefined) {
+    prevBuf = ensureGlowBuffer(widthM, heightM, prevSlot);
+    if (prevBuf !== undefined) {
+      rasteriseField(prevField, fxGain, prevBuf, widthM, heightM);
+    }
   }
 
   const p0 = t.project((-widthM / 2) * pitchM, (-heightM / 2) * pitchM);
@@ -139,12 +214,19 @@ function drawFieldGlow(c: OverlayCtx, field: MediumSnapshot, fxGain: number): vo
     p0.x,
     p0.y,
   );
-  // Draw the supersampled buffer scaled into the field's cell-space rect
-  // [0,widthM]x[0,heightM]; the transform above maps that rect onto the world
-  // rectangle. The explicit destination rect keeps the world mapping fixed
-  // regardless of the buffer's pixel dimensions, so the FIELD_SUPERSAMPLE
-  // upsample softens the glow without rescaling it on screen.
-  ctx.drawImage(buf.canvas, 0, 0, widthM, heightM);
+  // Draw the previous buffer (fading out) then the current one (fading in),
+  // both under "lighter" so the cross-fade is an additive blend, both scaled
+  // into the same cell-space rect [0,widthM]x[0,heightM] (the transform above
+  // maps it onto the world rectangle). At f === 0 the current buffer draws at
+  // alpha 0 (a no-op) so the field looks exactly like the previous emission; at
+  // f === 1 the previous buffer is skipped. globalAlpha is scoped by the
+  // save/restore so it never leaks into later overlays this frame.
+  if (prevBuf !== undefined && f < 1) {
+    ctx.globalAlpha = 1 - f;
+    ctx.drawImage(prevBuf.canvas, 0, 0, widthM, heightM);
+  }
+  ctx.globalAlpha = f;
+  ctx.drawImage(currBuf.canvas, 0, 0, widthM, heightM);
   ctx.restore();
 }
 
@@ -456,7 +538,15 @@ function drawBattleGlow(c: OverlayCtx): void {
   const field = mediumFrame === undefined ? undefined : mediumFrame.medium;
   const particles = particlesFrame === undefined ? undefined : particlesFrame.particles;
   if (field === undefined && (particles === undefined || particles.length === 0)) return;
-  if (field !== undefined) drawFieldGlow(c, field, fxGain);
+  if (mediumFrame !== undefined && field !== undefined) {
+    // Resolve the emission strictly before the current one (walks backward from
+    // currentTick - 1) so the field can cross-fade between consecutive emissions
+    // instead of stepping every RESOURCE_EVERY ticks. Returns undefined when the
+    // current emission is the very first (tick 0), in which case the cross-fade
+    // falls back to current-only.
+    const prevFrame = resolveMediumFrame(c.frames, mediumFrame.tick - 1);
+    drawFieldGlow(c, field, mediumFrame.tick, prevFrame, fxGain);
+  }
   // dtSinceS is always >= 0: particlesFrame.tick <= floor(tickF) because the
   // resolver walks backward from the current tick for the nearest emission.
   if (particlesFrame !== undefined && particles !== undefined && particles.length > 0) {

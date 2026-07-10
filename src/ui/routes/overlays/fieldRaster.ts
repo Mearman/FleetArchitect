@@ -242,3 +242,39 @@ export function supersampleToRgba(
     }
   }
 }
+
+// ---------------------------------------------------------------------------
+// Emission cross-fade factor (pure, scrub-safe)
+// ---------------------------------------------------------------------------
+
+/**
+ * The cross-fade alpha for the medium field between two consecutive emissions:
+ * how far (in [0, 1]) the display has progressed from the PREVIOUS emission's
+ * field toward the CURRENT one. `0` exactly at `tickF === currentTick` — the
+ * moment the current emission lands, the overlay still looks like the previous
+ * field (the current buffer contributes nothing), so there is no pop — ramping
+ * LINEARLY to `1` by `tickF === currentTick + span`, where
+ * `span = currentTick - previousTick` is the gap to the next emission; at that
+ * point the roles swap and the old "current" becomes the new "previous".
+ *
+ * Returns `1` (current-only, no fade) when `previousTick` is `undefined` (battle
+ * start — no prior emission to fade from) or when `span <= 0` (degenerate). The
+ * result is clamped to [0, 1] so a `tickF` outside the expected
+ * `[currentTick, currentTick + span]` range (defensive — should not occur in
+ * practice, since the resolver keeps `tickF` within one emission stride) still
+ * yields a valid alpha.
+ *
+ * Pure function of `(tickF, currentTick, previousTick)` — no carried state, so
+ * it is identical under forward and backward timeline scrub, the same property
+ * `resolveMediumFrame`/`resolveParticlesFrame` rely on for scrub safety.
+ */
+export function emissionCrossfadeAlpha(
+  tickF: number,
+  currentTick: number,
+  previousTick: number | undefined,
+): number {
+  if (previousTick === undefined) return 1;
+  const span = currentTick - previousTick;
+  if (span <= 0) return 1;
+  return Math.max(0, Math.min(1, (tickF - currentTick) / span));
+}
