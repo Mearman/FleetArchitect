@@ -51,9 +51,11 @@
  * `Date`, or nondeterministic dispatch. Two calls with identical inputs
  * produce bit-identical outputs.
  *
- * Use-deferred: the field is honestly simulated in real SI units but is NOT
- * wired into the tick loop. Wiring (thrusters → ρ source, beams → ε source,
- * signature readout) is a later pass on top of this honest model.
+ * The field is stepped every tick by `stepArenaMedium` (medium-setup.ts),
+ * which injects per-tick sources (thruster exhaust into ρ and momentum,
+ * beam strikes and muzzle flashes into ε, projectile wakes into εVis) and
+ * advances the FTCS integrator. The awareness phase reads ε for sensor
+ * signatures and dazzle; the renderer reads εVis for glow visualisation.
  */
 
 // ============================================================================

@@ -374,8 +374,10 @@ export function toSimShip(ship: CombatShip, rng: Rng): SimShip {
     // the value carried into the opening snapshot's bookkeeping.
     base.px = base.velX * base.mass;
     base.py = base.velY * base.mass;
-    // Per-ship resource state (Phase 12 wiring, use-deferred). Built after
-    // recomputeAggregates so the initial fuel load derives from settled dry mass.
+    // Per-ship resource state (thermal, propellant, atmosphere, power buffer).
+    // Built after recomputeAggregates so the initial fuel load derives from
+    // settled dry mass. Advanced each tick by resourceStep, which enforces
+    // flame-out, brownout, overheat destruction, and decompression.
     base.resource = makeResourceState(base);
   }
   return base;
@@ -426,8 +428,8 @@ export function toSimModule(m: ResolvedModule, rng: Rng): SimModule {
     charge: m.powerDraw > 0 ? SIM.chargeBufferMax : 0,
     alive: true,
     powered: true,
-    // Resource consequences (Phase 12) start clear: the energy buffer is full and
-    // tanks are fuelled at spawn, so no module is grid-shed or flamed out. Both are
+    // Resource consequences start clear: the energy buffer is full and tanks are
+    // fuelled at spawn, so no module is grid-shed or flamed out. Both are
     // recomputed fresh each tick by `resourceStep`.
     powerCut: false,
     fuelStarved: false,
