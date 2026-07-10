@@ -15,7 +15,7 @@ import type { BattleInputs } from "../types";
 import { CELL_CONTACT_DISTANCE, buildShipCellHash, nearestCellAlongSegment } from "./collision";
 import type { ShipCell } from "./collision";
 import { SIM, GAS_DRAG_CROSS_SECTION_PROJECTILE_M2, claimProjectileId } from "./config";
-import { buildPdCandidates, tryPointDefenseIntercept, type PdCandidate, type PdBuckets } from "./point-defence";
+import { buildPdCandidates, tryPointDefenseIntercept, type FiringCandidate, type PdBuckets } from "./point-defence";
 import { TICKS_PER_SECOND } from "../types";
 import { POWERED_SPAWN_FRACTION_OF_CRUISE } from "@/data/catalog/ordnance-motor";
 import { ACCEL_PER_TICK_FROM_SI } from "../types";
@@ -556,7 +556,7 @@ export function updateProjectiles(
   /** Reusable PD firing-subset scratch (`state.pdFiringScratch`) — cleared and
    *  refilled by `tryPointDefenseIntercept` per projectile. Same clear-and-reuse
    *  contract as `cellHashScratch`. When omitted a fresh array is allocated. */
-  pdFiringScratch?: PdCandidate[],
+  pdFiringScratch?: FiringCandidate[],
   /** Reusable penetration-path scratch (`state.penetrationPathScratch`) —
    *  cleared and refilled by `penetrationPath` per projectile hit. Same
    *  clear-and-reuse contract as `cellHashScratch`. When omitted a fresh scratch

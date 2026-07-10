@@ -18,7 +18,7 @@ import type { Emission } from "./emissions";
 import type { ParticleStore } from "./exhaust-particles";
 import type { ArenaMedium, MediumImpactEntry, ProjectileMediumEntry } from "./medium-setup";
 import type { AwarenessScratch } from "./awareness";
-import type { PdCandidate } from "./point-defence";
+import type { FiringCandidate } from "./point-defence";
 import type { CollisionScratch, ShipCell } from "./collision";
 import type { SpatialHash } from "../spatial-hash";
 import type { SepBody } from "./separation";
@@ -158,10 +158,11 @@ export interface EngineState {
    *  tick: ship-ship collision + projectile-cell hits). Entry objects recycled
    *  via the free-list; cleared-and-reused across ticks. Not checkpointed. */
   shipCellHashScratch: SpatialHash<ShipCell>;
-  /** Reusable `PdCandidate[]` scratch for `tryPointDefenseIntercept`'s firing
-   *  subset — cleared and refilled once per PD-able projectile per tick. Same
-   *  clear-and-reuse contract as {@link shipCellHashScratch}; not checkpointed. */
-  pdFiringScratch: PdCandidate[];
+  /** Reusable `FiringCandidate[]` scratch for `tryPointDefenseIntercept`'s
+   *  firing subset — cleared and refilled once per PD-able projectile per tick.
+   *  Same clear-and-reuse contract as {@link shipCellHashScratch}; not
+   *  checkpointed. */
+  pdFiringScratch: FiringCandidate[];
   /** Reusable parallel-array scratch for `penetrationPath` (weapon hits): four
    *  buffers (mods/along/index/result) cleared and refilled once per successful
    *  hit per tick, replacing the per-hit `{module, along}` wrapper-object and
