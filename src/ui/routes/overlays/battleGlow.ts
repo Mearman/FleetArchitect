@@ -1,8 +1,5 @@
 import {
-  INTENSITY_DRAW_THRESHOLD,
   fxGainFor,
-  glowEdgeFade,
-  mediumCellIntensity,
   paletteSample,
   particleCellBrightness,
   readFxLevel,
@@ -17,6 +14,7 @@ import {
   type ParticleBridge,
   type ParticleRenderState,
 } from "./particleDynamics";
+import { blurGridInPlace, computeIntensityGrid, supersampleToRgba } from "./fieldRaster";
 import { TICKS_PER_SECOND } from "@/domain/simulation/types";
 import type { MediumSnapshot, ParticleSnapshot } from "@/schema/battle";
 import type { OverlayCtx, OverlayDef } from "./types";
@@ -34,20 +32,35 @@ import type { OverlayCtx, OverlayDef } from "./types";
 // separate self-luminous render path and no analytic streak bolt-on. Drawn
 // beneath the ship layer so hulls sit on top of their own glow.
 //
-// The field is rasterised one texel per cell into a cached offscreen buffer and
-// blitted smoothed + additively (bilinear turns the lattice into a continuous
-// haze); the particles are blitted as prerendered additive sprites. The two
-// compose additively in the same pass. The physical model, cell↔world mapping,
-// brightness formula, and tuning constants live in `./mediumShared.ts`.
+// The field is rasterised into a cached offscreen buffer through the pure
+// pipeline in `./fieldRaster.ts`: per-cell intensity (the ONE brightness truth)
+// is binomially blurred (so the one-texel-per-cell grid no longer reads as a
+// lattice) then supersampled and bilinearly blitted additively, so cell edges
+// disappear into a continuous haze; the particles are blitted as prerendered
+// additive sprites. The two compose additively in the same pass. The physical
+// model, cell↔world mapping, brightness formula, and tuning constants live in
+// `./mediumShared.ts`.
 
 // ---------------------------------------------------------------------------
-// Field glow buffer (one texel per cell, cached on field identity)
+// Field glow buffer (supersampled, cached on field identity)
 // ---------------------------------------------------------------------------
+
+/** Supersamples the field raster before the bilinear canvas blit so cell edges
+ *  disappear instead of showing as a lattice. The backing buffer is allocated
+ *  at `widthM * FIELD_SUPERSAMPLE` × `heightM * FIELD_SUPERSAMPLE` texels, then
+ *  drawn scaled into the field's cell-space rectangle so the world mapping is
+ *  independent of the buffer's pixel dimensions. */
+const FIELD_SUPERSAMPLE = 2;
 
 type GlowBuffer = {
   canvas: HTMLCanvasElement;
   ctx: CanvasRenderingContext2D;
   imageData: ImageData;
+  /** Pooled per-cell intensity grid (widthM * heightM), written by
+   *  computeIntensityGrid then blurred in place. Reused across emissions. */
+  intensity: Float32Array;
+  /** Pooled scratch for the separable blur pass (widthM * heightM). */
+  blurScratch: Float32Array;
   rasterField: MediumSnapshot | undefined;
   rasterFxGain: number | undefined;
 };
@@ -58,15 +71,20 @@ let glowBufferKey = "";
 function ensureGlowBuffer(widthM: number, heightM: number): GlowBuffer | undefined {
   const key = `${widthM}x${heightM}`;
   if (glowBuffer !== undefined && key === glowBufferKey) return glowBuffer;
+  const cellCount = widthM * heightM;
+  const canvasW = widthM * FIELD_SUPERSAMPLE;
+  const canvasH = heightM * FIELD_SUPERSAMPLE;
   const canvas = document.createElement("canvas");
-  canvas.width = widthM;
-  canvas.height = heightM;
+  canvas.width = canvasW;
+  canvas.height = canvasH;
   const ctx = canvas.getContext("2d");
   if (ctx === null) return undefined;
   glowBuffer = {
     canvas,
     ctx,
-    imageData: ctx.createImageData(widthM, heightM),
+    imageData: ctx.createImageData(canvasW, canvasH),
+    intensity: new Float32Array(cellCount),
+    blurScratch: new Float32Array(cellCount),
     rasterField: undefined,
     rasterFxGain: undefined,
   };
@@ -74,50 +92,32 @@ function ensureGlowBuffer(widthM: number, heightM: number): GlowBuffer | undefin
   return glowBuffer;
 }
 
-/** Rasterise the field one texel per cell into the cached buffer, then blit it
- *  smoothed + additively aligned to the grid's world rectangle. Rasterisation
- *  is cached on the resolved field reference + FX gain (the field is constant
- *  between emissions), so the ~20k-cell scan runs once per emission, not per rAF. */
+/** Rasterise the field through the pure fieldRaster pipeline (per-cell
+ *  intensity -> binomial blur -> supersample) into the cached buffer, then blit
+ *  it additively aligned to the grid's world rectangle. Rasterisation is cached
+ *  on the resolved field reference + FX gain (the field is constant between
+ *  emissions), so the ~20k-cell scan runs once per emission, not per rAF. */
 function drawFieldGlow(c: OverlayCtx, field: MediumSnapshot, fxGain: number): void {
   const { ctx, t } = c;
-  const { rho, eps, epsVis, widthM, heightM, pitchM } = field;
-  const glowEps = epsVis ?? eps;
+  const { widthM, heightM, pitchM } = field;
   const cellCount = widthM * heightM;
-  if (rho.length < cellCount || glowEps.length < cellCount) return;
+  const glowEps = field.epsVis ?? field.eps;
+  if (field.rho.length < cellCount || glowEps.length < cellCount) return;
   const buf = ensureGlowBuffer(widthM, heightM);
   if (buf === undefined) return;
 
   if (buf.rasterField !== field || buf.rasterFxGain !== fxGain) {
-    const data = buf.imageData.data;
-    for (let i = 0; i < cellCount; i += 1) {
-      const epsHere = glowEps[i];
-      const p = i * 4;
-      if (epsHere === undefined || epsHere <= 0) {
-        data[p] = 0;
-        data[p + 1] = 0;
-        data[p + 2] = 0;
-        data[p + 3] = 0;
-        continue;
-      }
-      const rhoHere = rho[i] ?? 0;
-      const col = i % widthM;
-      const row = Math.floor(i / widthM);
-      const intensity =
-        mediumCellIntensity(epsHere, rhoHere, fxGain) *
-        glowEdgeFade(col, row, widthM, heightM);
-      if (intensity < INTENSITY_DRAW_THRESHOLD) {
-        data[p] = 0;
-        data[p + 1] = 0;
-        data[p + 2] = 0;
-        data[p + 3] = 0;
-        continue;
-      }
-      const [r, g, b] = paletteSample(intensity);
-      data[p] = r;
-      data[p + 1] = g;
-      data[p + 2] = b;
-      data[p + 3] = Math.round(intensity * 255);
-    }
+    computeIntensityGrid(field, fxGain, buf.intensity);
+    blurGridInPlace(buf.intensity, widthM, heightM, buf.blurScratch);
+    supersampleToRgba(
+      buf.intensity,
+      widthM,
+      heightM,
+      FIELD_SUPERSAMPLE,
+      buf.canvas.width,
+      buf.canvas.height,
+      buf.imageData.data,
+    );
     buf.ctx.putImageData(buf.imageData, 0, 0);
     buf.rasterField = field;
     buf.rasterFxGain = fxGain;
@@ -139,7 +139,12 @@ function drawFieldGlow(c: OverlayCtx, field: MediumSnapshot, fxGain: number): vo
     p0.x,
     p0.y,
   );
-  ctx.drawImage(buf.canvas, 0, 0);
+  // Draw the supersampled buffer scaled into the field's cell-space rect
+  // [0,widthM]x[0,heightM]; the transform above maps that rect onto the world
+  // rectangle. The explicit destination rect keeps the world mapping fixed
+  // regardless of the buffer's pixel dimensions, so the FIELD_SUPERSAMPLE
+  // upsample softens the glow without rescaling it on screen.
+  ctx.drawImage(buf.canvas, 0, 0, widthM, heightM);
   ctx.restore();
 }
 
