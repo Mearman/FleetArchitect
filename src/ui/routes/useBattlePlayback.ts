@@ -28,7 +28,7 @@ export interface UseBattlePlaybackProps {
    *  read the current edge for the delivered-rate bar without a stale closure. */
   computedTicksRef: React.RefObject<number>;
   hasFrames: boolean;
-  drawFrame: (frame: BattleFrame, tick: number, frames: readonly BattleFrame[]) => void;
+  drawFrame: (frame: BattleFrame, tickF: number, frames: readonly BattleFrame[]) => void;
   statusOpen: boolean;
   canvasSize: { width: number; height: number } | null;
 }
@@ -243,7 +243,7 @@ export function useBattlePlayback({
       const fractionalTick = playbackTimeRef.current * TICKS_PER_SECOND;
       const frames = framesRef.current;
       const frame = interpolateFrame(frames, fractionalTick);
-      drawFrameRef.current(frame, Math.floor(fractionalTick), frames);
+      drawFrameRef.current(frame, fractionalTick, frames);
 
       // Mirror the discrete-nearest frame into state for the status panel, but
       // only when the panel is open and the integer tick has moved — avoiding a
@@ -338,7 +338,7 @@ export function useBattlePlayback({
     const fractionalTick = playbackTimeRef.current * TICKS_PER_SECOND;
     const frames = framesRef.current;
     const frame = interpolateFrame(frames, fractionalTick);
-    drawFrame(frame, Math.floor(fractionalTick), frames);
+    drawFrame(frame, fractionalTick, frames);
   }, [canvasSize, hasFrames, drawFrame, framesRef, playbackTimeRef]);
 
   return {

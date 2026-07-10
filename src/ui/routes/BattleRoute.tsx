@@ -456,7 +456,7 @@ export function BattleRoute() {
     playback.setPlaybackTime(newTime);
     const frames = framesRef.current;
     const frame = interpolateFrame(frames, val);
-    drawFrame(frame, Math.floor(val), frames);
+    drawFrame(frame, val, frames);
   };
 
   const setupContent = (
