@@ -90,3 +90,173 @@ export function particleRenderState(
   out.rampAlpha = smoothstep(0, PARTICLE_RAMP_IN_S, out.ageS);
   return out.ageS < PARTICLE_LIFETIME_S;
 }
+
+// ---------------------------------------------------------------------------
+// Wake/beam bead bridging (renderer-only)
+// ---------------------------------------------------------------------------
+//
+// Projectile wake and beam-channel parcels are spawned with vx = vy = 0
+// (src/domain/simulation/engine/exhaust-particles.ts `pushProjectileWakeParticles`):
+// the medium does not carry the round's velocity, so a moving round leaves one
+// STATIONARY wake parcel per tick along its track. Streaking cannot join those
+// (they do not move), so the trail reads as a chain of evenly-spaced dots — the
+// confirmed "spotty/discontiguous trail" symptom. Bridging links each bead to
+// its cooled continuation (the same physical emission one tick older) so the
+// renderer can draw one stretched sprite between them, turning the bead chain
+// into a continuous ribbon. The match is recovered from the EXACT one-step
+// cooling relationship between consecutive ages, not from any stored id.
+
+/** A bridge between two stationary wake/beam beads: indices into the ORIGINAL
+ *  `particles` array passed to {@link computeParticleBridges}. The renderer
+ *  draws one stretched sprite between the two beads' advanced positions so their
+ *  glow reads as a continuous trail instead of two dots.
+ *
+ *  Convention: `fromIndex` is the OLDER bead (larger `.age`, emitted earlier,
+ *  cooled more, LOWER `energyJ`); `toIndex` is the YOUNGER bead (smaller `.age`,
+ *  emitted later, cooled less, HIGHER `energyJ`). The two are consecutive beads
+ *  of one trail, the same physical emission observed one cooling step apart. */
+export interface ParticleBridge {
+  /** Original-array index of the OLDER bead (larger age, lower energy). */
+  fromIndex: number;
+  /** Original-array index of the YOUNGER bead (smaller age, higher energy). */
+  toIndex: number;
+}
+
+/** Relative-error threshold below which an older bead is accepted as the cooled
+ *  continuation of a younger one. Same-emission matches agree to ~1e-13
+ *  relative (one `exp(-dt/tau)` step from a shared emission energy, computed in
+ *  the same float order on both sides); the nearest WRONG-parcel match (a
+ *  different trail's bead at the same age, whose emission energy differs) is
+ *  ~1.7% away. 1e-6 sits many orders below the wrong-match floor and many
+ *  above the right-match's floating-point noise, so it cleanly separates
+ *  genuine continuation from coincidence. */
+const BRIDGE_REL_ERROR_THRESHOLD = 1e-6;
+
+/** Absolute band around the minimum relative error within which two eligible
+ *  older candidates count as tied. Genuine-continuation matches cluster at
+ *  ~1e-13, so a 1e-9 band folds their floating-point noise together while
+ *  remaining far below the 1e-6 eligibility floor (and the ~1.7% wrong-match
+ *  level). Ties are broken by nearest spatial distance, so a younger bead joins
+ *  its OWN trail when several same-weapon trails share the same emission
+ *  energy and therefore the same cooled value at each age. */
+const BRIDGE_REL_ERROR_TIE_BAND = 1e-9;
+
+/** One eligible older match for a younger bead: its original index, the relative
+ *  error of its energy against the cooling prediction, and its squared distance
+ *  from the younger bead. Used transiently within a single younger-bead match. */
+interface BridgeCandidate {
+  readonly index: number;
+  readonly relErr: number;
+  readonly distSq: number;
+}
+
+/**
+ * Compute the bridges between stationary wake/beam beads that are the SAME
+ * physical emission one cooling step apart, so the renderer can draw one
+ * stretched sprite between each pair instead of a chain of disconnected dots.
+ *
+ * Pure and deterministic (no `Math.random`, no `Date`): stationary-particle
+ * INDICES are partitioned into same-`.age` emission groups by one left-to-right
+ * pass (within one snapshot a particle's age is `(now - emissionTick) * dt`, so
+ * bit-identical age marks the same emission tick; the `Map` preserves insertion
+ * order so each group keeps the original array order). Only STATIONARY
+ * particles (|vx|,|vy| <= 1e-9) participate — moving particles are joined by
+ * velocity streaks, not bridges, and bridging one would double-paint it. For
+ * each pair of ADJACENT age groups (younger = smaller age, older = larger age),
+ * every younger bead is greedily matched to its best still-unclaimed older
+ * partner: the older energy closest to the exact one-step prediction
+ * `E_younger * exp(-(age_older - age_younger) / PARTICLE_COOLING_TIMESCALE_S)`,
+ * accepting only sub-{@link BRIDGE_REL_ERROR_THRESHOLD} relative error and
+ * breaking energy-ties (within {@link BRIDGE_REL_ERROR_TIE_BAND}) by nearest
+ * Euclidean distance, then lowest original index. A middle-aged bead
+ * participates as the older endpoint of one pair and the younger endpoint of
+ * the next, so a chain links end to end.
+ *
+ * Returns the flat bridge list ordered oldest-adjacent-pair first, then younger
+ * bead original-index order within each pair. Empty when fewer than two
+ * stationary age groups exist.
+ */
+export function computeParticleBridges(
+  particles: readonly ParticleSnapshot[],
+): ParticleBridge[] {
+  // Partition stationary-particle indices into same-age emission groups. One
+  // left-to-right pass; the Map preserves insertion order so within-group order
+  // is the original array order.
+  const groups = new Map<number, number[]>();
+  for (let i = 0; i < particles.length; i += 1) {
+    const p = particles[i];
+    if (p === undefined) continue;
+    if (Math.abs(p.vx) > 1e-9 || Math.abs(p.vy) > 1e-9) continue;
+    const group = groups.get(p.age);
+    if (group === undefined) groups.set(p.age, [i]);
+    else group.push(i);
+  }
+  if (groups.size < 2) return [];
+
+  // Distinct ages present among stationary beads, ascending (consecutive
+  // emission ticks, oldest first).
+  const ages = Array.from(groups.keys()).sort((a, b) => a - b);
+
+  const bridges: ParticleBridge[] = [];
+  // Match each adjacent age pair independently: the younger group (smaller age)
+  // seeks its cooled continuation in the older group (larger age). A middle-aged
+  // bead is the older endpoint here and the younger endpoint in the next pair,
+  // so a chain links end to end — the claimed-set is per-pair, not global.
+  for (let g = 0; g < ages.length - 1; g += 1) {
+    const youngerAge = ages[g];
+    const olderAge = ages[g + 1];
+    if (youngerAge === undefined || olderAge === undefined) continue;
+    const youngerGroup = groups.get(youngerAge);
+    const olderGroup = groups.get(olderAge);
+    if (youngerGroup === undefined || olderGroup === undefined) continue;
+
+    // One cooling factor per pair: the exact energy ratio between a younger
+    // bead and its same-emission continuation at the older age.
+    const coolingFactor = Math.exp(
+      -(olderAge - youngerAge) / PARTICLE_COOLING_TIMESCALE_S,
+    );
+    const claimed = new Set<number>();
+
+    for (const yi of youngerGroup) {
+      const y = particles[yi];
+      if (y === undefined) continue;
+      const predictedEnergyJ = y.energyJ * coolingFactor;
+
+      // Collect older candidates whose energy matches the cooling prediction
+      // below the threshold, tracking the best (minimum) relative error.
+      const eligible: BridgeCandidate[] = [];
+      let minRelErr = Infinity;
+      for (const oi of olderGroup) {
+        if (claimed.has(oi)) continue;
+        const o = particles[oi];
+        if (o === undefined) continue;
+        const relErr =
+          Math.abs(o.energyJ - predictedEnergyJ) / predictedEnergyJ;
+        if (relErr >= BRIDGE_REL_ERROR_THRESHOLD) continue;
+        const dx = o.x - y.x;
+        const dy = o.y - y.y;
+        eligible.push({ index: oi, relErr, distSq: dx * dx + dy * dy });
+        if (relErr < minRelErr) minRelErr = relErr;
+      }
+      if (eligible.length === 0) continue;
+
+      // Among candidates tied with the best energy match (within the FP-noise
+      // band of the minimum relative error), pick the nearest by distance, then
+      // the lowest original index for full determinism.
+      let bestIndex = -1;
+      let bestDistSq = Infinity;
+      for (const cand of eligible) {
+        if (cand.relErr > minRelErr + BRIDGE_REL_ERROR_TIE_BAND) continue;
+        if (cand.distSq < bestDistSq || (cand.distSq === bestDistSq && cand.index < bestIndex)) {
+          bestIndex = cand.index;
+          bestDistSq = cand.distSq;
+        }
+      }
+      if (bestIndex >= 0) {
+        claimed.add(bestIndex);
+        bridges.push({ fromIndex: bestIndex, toIndex: yi });
+      }
+    }
+  }
+  return bridges;
+}
