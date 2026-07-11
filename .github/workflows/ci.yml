@@ -37,7 +37,7 @@ jobs:
       # real algorithm change via the pinned-frame-hash signature baked into
       # every cache key.
       - name: Cache battle results
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .cache/sim
           key: sim-cache-${{ runner.os }}-node26-${{ hashFiles('src/domain/simulation/**/*.ts', 'src/domain/cache/algorithm-signature.ts') }}
