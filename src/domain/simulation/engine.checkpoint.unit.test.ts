@@ -15,7 +15,7 @@ import { freshAwarenessScratch } from "@/domain/simulation/engine/awareness";
 import { SpatialHash } from "@/domain/simulation/spatial-hash";
 import { newCollisionScratch } from "@/domain/simulation/engine/collision";
 import type { ShipCell } from "@/domain/simulation/engine/collision";
-import { freshPenetrationPathScratch } from "@/domain/simulation/engine/weapons";
+import { freshPenetrationPathScratch } from "@/domain/simulation/engine/penetration-path";
 import type { SepBody } from "@/domain/simulation/engine/separation";
 import type { SimBeam } from "@/domain/simulation/engine/beams";
 import { particleStoreFromParticles, type ExhaustParticle } from "@/domain/simulation/engine/exhaust-particles";
@@ -314,6 +314,7 @@ function makeState(): { state: EngineState; rng: ReturnType<typeof mulberry32> }
     emissions: [emission],
     debris: [debris],
     beams: [beam],
+    pendingBeamImpacts: [],
     particles: particleStoreFromParticles([particle]),
     medium: buildArenaMedium(ships),
     chunkSeq: 1,
@@ -449,6 +450,7 @@ describe("captureCheckpoint / restoreCheckpoint", () => {
       emissions: restored.emissions,
       debris: restored.debris,
       beams: restored.beams,
+      pendingBeamImpacts: restored.pendingBeamImpacts,
       particles: restored.particles,
       medium: restoreArenaMedium(restored.medium, restored.ships),
       chunkSeq: restored.chunkSeq,

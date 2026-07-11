@@ -12,7 +12,7 @@
 
 import type { Disc } from "@/domain/occluders";
 import type { BattleSide } from "@/schema/battle";
-import type { SimBeam } from "./beams";
+import type { SimBeam, PendingBeamImpact } from "./beams";
 import type { Debris } from "./debris";
 import type { Emission } from "./emissions";
 import type { ParticleStore } from "./exhaust-particles";
@@ -24,7 +24,7 @@ import type { SpatialHash } from "../spatial-hash";
 import type { SepBody } from "./separation";
 import type { DeploymentReference } from "./movement";
 import type { SimPulse } from "./pulses";
-import type { PenetrationPathScratch } from "./weapons";
+import type { PenetrationPathScratch } from "./penetration-path";
 import type { SimMine, SimPod, SimProjectile, SimShip } from "./types";
 
 /**
@@ -74,6 +74,13 @@ export interface EngineState {
    *  lingers for a few ticks so the renderer can draw it as a line. Damages at
    *  the moment of emission; the carried objects are pure render state. */
   beams: SimBeam[];
+  /** Beam emissions whose light front has not yet reached the fire-time range
+   *  (retarded-time / finite-speed-of-light beams). Created only when
+   *  `floor(range / c) > 0` — at battlefield scales `range << c` so this stays
+   *  empty and beams resolve same-tick (byte-identical to hitscan). Processed
+   *  at the top of each tick by `applyDueBeamImpacts`; checkpointed so resume
+   *  reproduces the deferred strike. */
+  pendingBeamImpacts: PendingBeamImpact[];
   /**
    * Live exhaust/plume particles — the actual transferred material radiating as
    * it moves and cools (engine exhaust, beam channels, projectile wakes, impact

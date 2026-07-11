@@ -26,7 +26,7 @@ import type { Rng } from "@/domain/simulation/rng";
 import { freshAwarenessScratch } from "./awareness";
 import { newCollisionScratch } from "./collision";
 import type { ShipCell } from "./collision";
-import { freshPenetrationPathScratch } from "./weapons";
+import { freshPenetrationPathScratch } from "./penetration-path";
 import { SpatialHash } from "../spatial-hash";
 import type { SepBody } from "./separation";
 import type { EngineState } from "./state";
@@ -124,6 +124,9 @@ export function bootstrapEngine(
       // lingers a few ticks then expires. Empty until a beam weapon fires, so a
       // battle with no beam weapons keeps it empty and emits no `beams` snapshots.
       beams: [],
+      // Retarded-time beams still in flight (delay > 0 at light-second range).
+      // Empty at battlefield scale where range << c — beams resolve same-tick.
+      pendingBeamImpacts: [],
       // Exhaust/plume particles. Empty until a weapon source emits; stepped in
       // place on the fixed-capacity store each tick. A battle with no firing
       // weapons keeps it empty.
@@ -201,6 +204,7 @@ export function bootstrapEngine(
     emissions: restored.emissions,
     debris: restored.debris,
     beams: restored.beams,
+    pendingBeamImpacts: restored.pendingBeamImpacts,
     particles: restored.particles,
     medium,
     // Asteroid discs are a pure function of (anomalies, seed); the seed is

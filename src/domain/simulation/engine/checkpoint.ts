@@ -252,6 +252,7 @@ export function captureCheckpoint(
     emissions: state.emissions,
     debris: state.debris,
     beams: state.beams,
+    pendingBeamImpacts: state.pendingBeamImpacts,
     // The live store is materialised to plain records at the capture boundary
     // (the checkpoint schema stores `{x,y,vx,vy,intensity,age}` objects). The
     // final structuredClone severs the alias to the records; the store's
@@ -501,6 +502,7 @@ export interface RestoredEngine {
   emissions: EngineState["emissions"];
   debris: EngineState["debris"];
   beams: EngineState["beams"];
+  pendingBeamImpacts: EngineState["pendingBeamImpacts"];
   particles: EngineState["particles"];
   deployment: EngineState["deployment"];
   /** The captured medium field config + state arrays, or undefined on a
@@ -541,6 +543,7 @@ export function restoreCheckpoint(cp: EngineCheckpoint): RestoredEngine {
     emissions: clone.emissions,
     debris: clone.debris,
     beams: clone.beams,
+    pendingBeamImpacts: clone.pendingBeamImpacts ?? [],
     // Rebuild the live store from the checkpoint's plain records (absent on a
     // pre-particle checkpoint → empty store). `particleStoreFromParticles` copies
     // up to MAX_LIVE_PARTICLES in order, matching the per-tick cap the running

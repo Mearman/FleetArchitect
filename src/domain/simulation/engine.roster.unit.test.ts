@@ -17,7 +17,7 @@ import { freshAwarenessScratch } from "@/domain/simulation/engine/awareness";
 import { SpatialHash } from "@/domain/simulation/spatial-hash";
 import { newCollisionScratch } from "@/domain/simulation/engine/collision";
 import type { ShipCell } from "@/domain/simulation/engine/collision";
-import { freshPenetrationPathScratch } from "@/domain/simulation/engine/weapons";
+import { freshPenetrationPathScratch } from "@/domain/simulation/engine/penetration-path";
 import type { SepBody } from "@/domain/simulation/engine/separation";
 import {
   refreshRosterIncremental,
@@ -131,6 +131,7 @@ function stateWith(ships: SimShip[]): EngineState {
     emissions: [],
     debris: [],
     beams: [],
+    pendingBeamImpacts: [],
     particles: createParticleStore(),
     medium: buildArenaMedium(ships),
     chunkSeq: 0,
