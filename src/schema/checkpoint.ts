@@ -409,6 +409,29 @@ const CheckpointBeam = z.object({
   emissionTicks: z.number(),
 });
 
+/** A retarded-time beam emission whose light front has not yet reached its
+ *  fire-time range (`PendingBeamImpact`). Created only when
+ *  `floor(range / c) > 0` (light-second-scale engagements); absent at
+ *  battlefield scale where beams resolve same-tick. Optional with a default so
+ *  checkpoints written before the field existed (CHECKPOINT_VERSION 13) still
+ *  parse without a version bump. */
+const CheckpointPendingBeamImpact = z.object({
+  sourceId: z.string(),
+  targetId: z.string(),
+  originX: z.number(),
+  originY: z.number(),
+  dirX: z.number(),
+  dirY: z.number(),
+  damageJ: z.number(),
+  shieldPiercing: z.number(),
+  armourPiercing: z.number(),
+  deflectorPiercing: z.number(),
+  weaponType: WeaponType,
+  sourceX: z.number(),
+  sourceY: z.number(),
+  applyAtTick: z.number(),
+});
+
 /** One live exhaust/plume particle (engine exhaust, beam channel, projectile
  *  wake, impact ejecta) — captured so a resumed battle's plume continues from
  *  the live set rather than re-emerging from zero. */
@@ -494,6 +517,7 @@ export const EngineCheckpoint = z.object({
   emissions: z.array(CheckpointEmission),
   debris: z.array(CheckpointDebris),
   beams: z.array(CheckpointBeam),
+  pendingBeamImpacts: z.array(CheckpointPendingBeamImpact).default([]),
   particles: z.array(CheckpointParticle).optional(),
   /**
    * Arena medium field at the checkpoint tick: the resolved {@link

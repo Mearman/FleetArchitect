@@ -29,6 +29,7 @@ import { leadingSide } from "./outcome";
 import { refillImpactScratchFromBeams, stepArenaMediumFromState } from "./medium-setup";
 import { collectMediumEmissions } from "./medium-emissions";
 import { ageBeams } from "./beams";
+import { applyDueBeamImpacts } from "./beam-retardation";
 import { stepPlume } from "./particle-sources";
 import { updateCrew } from "./crew";
 import { refillHardwiredAmmo, regenerateAmmo } from "./crew-haul";
@@ -399,8 +400,10 @@ export function* simulateBattle(
     //    The newly fired projectiles are pushed in place onto the existing
     //    array rather than `concat`-allocating a fresh one — same contents,
     //    same order (existing entries preserved, new ones appended), byte-
-    //    identical snapshot output.
-    for (const p of fireWeapons(state.ships, state.byId, rng, tick, inputs.anomalies, state.beams, state.penetrationPathScratch)) {
+    //    identical snapshot output. Retarded-time beam impacts arriving this
+    //    tick are applied first (a no-op at battlefield scale).
+    applyDueBeamImpacts(state, tick, state.penetrationPathScratch);
+    for (const p of fireWeapons(state.ships, state.byId, rng, tick, inputs.anomalies, state.beams, state.pendingBeamImpacts, state.penetrationPathScratch)) {
       state.projectiles.push(p);
     }
 

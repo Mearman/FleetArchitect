@@ -40,6 +40,41 @@ export interface SimBeam {
 }
 
 /**
+ * A beam emission whose light front has not yet reached its fire-time range.
+ * Created when `floor(range / c) > 0` (light-second-scale engagements); at
+ * battlefield scales `range << c` so this is never used and beams resolve
+ * same-tick (byte-identical to hitscan). Carried across ticks and checkpointed
+ * so resume reproduces the deferred strike.
+ */
+export interface PendingBeamImpact {
+  /** Instance id of the ship that fired the beam (for the render record). */
+  sourceId: string;
+  /** Instance id of the target the beam was aimed at (re-resolved on arrival). */
+  targetId: string;
+  /** Emitter world position at fire time (the ray origin for re-resolution). */
+  originX: number;
+  originY: number;
+  /** Unit strike direction at fire time (lensing already baked in). */
+  dirX: number;
+  dirY: number;
+  /** Range-scaled damage computed at fire time (Joules). */
+  damageJ: number;
+  /** Fraction (0..1) of energy bypassing the shield. */
+  shieldPiercing: number;
+  /** Fraction (0..1) bypassing armour reduction. */
+  armourPiercing: number;
+  /** Fraction (0..1) of momentum bypassing the deflector (resolved at fire time). */
+  deflectorPiercing: number;
+  /** Weapon type that produced the beam, for the render record colour lookup. */
+  weaponType: WeaponType;
+  /** Muzzle world position at fire time (the render line's source endpoint). */
+  sourceX: number;
+  sourceY: number;
+  /** Absolute tick at which the light front reaches the fire-time range. */
+  applyAtTick: number;
+}
+
+/**
  * Age every beam's emission by one tick, dropping expired entries. Mutates each
  * survivor's `emissionTicks` in place and returns the survivors in input order,
  * so two same-seed runs emit byte-identical beam arrays. Empty input returns an

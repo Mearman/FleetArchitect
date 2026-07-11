@@ -3,10 +3,9 @@
  * intercept, penetration path, and the per-tick projectile update.
  */
 
-import { CELL_SIZE } from "@/domain/grid";
 import { ranged } from "@/domain/simulation/rng";
 import type { Rng } from "@/domain/simulation/rng";
-import { type SpatialHash, cellWorldPosition, cellWorldPositionCs } from "@/domain/simulation/spatial-hash";
+import { type SpatialHash, cellWorldPosition } from "@/domain/simulation/spatial-hash";
 import type { BattleAnomalyKind } from "@/schema/battle";
 import { hasAnomaly } from "@/domain/anomaly";
 import type { WeaponEffect } from "@/schema/module";
@@ -33,7 +32,9 @@ import { isRetreating } from "./movement";
 import { hasAliveCommand } from "./physics";
 import { angleDifference, slewTurret, steer } from "./setup";
 import { attackerEccmRestore, isDetectable, netTrackingReduction, targetEcm } from "./stealth";
-import type { SimBeam } from "./beams";
+import type { SimBeam, PendingBeamImpact } from "./beams";
+import { penetrationPath, type PenetrationPathScratch } from "./penetration-path";
+import { queueIfRetarded } from "./beam-retardation";
 import type { SimModule, SimProjectile, SimShip } from "./types";
 import type { MediumField, MediumState } from "./medium-field";
 import { sampleLocalRhoKgPerM3 } from "./medium-setup";
@@ -215,6 +216,7 @@ export function fireWeapons(
   tick: number,
   anomalies: readonly BattleAnomalyKind[],
   beams: SimBeam[],
+  pendingBeamImpacts: PendingBeamImpact[],
   penetrationPathScratch?: PenetrationPathScratch,
 ): SimProjectile[] {
   const fired: SimProjectile[] = [];
@@ -302,7 +304,7 @@ export function fireWeapons(
         // Firing drops a cloak for `decloakTicks`: record the tick so the
         // stealth gate exposes a cloaked ship while the window is open.
         ship.lastFiredTick = tick;
-        fireOne(ship, weapon, m.turretAngle, m.x, m.y, target, rng, fired, ship.auraAccuracyBonus, anomalies, beams, penetrationPathScratch);
+        fireOne(ship, weapon, m.turretAngle, m.x, m.y, target, rng, fired, ship.auraAccuracyBonus, anomalies, beams, tick, pendingBeamImpacts, penetrationPathScratch);
       }
       continue;
     }
@@ -326,7 +328,7 @@ export function fireWeapons(
       // Legacy aggregated path reads facing off the weapon effect (default 0).
       // No per-module muzzle position, so the recoil lever arm is the ship's
       // origin (0, 0) — the legacy CoM.
-      fireOne(ship, weapon, weapon.facing ?? 0, 0, 0, target, rng, fired, ship.auraAccuracyBonus, anomalies, beams, penetrationPathScratch);
+      fireOne(ship, weapon, weapon.facing ?? 0, 0, 0, target, rng, fired, ship.auraAccuracyBonus, anomalies, beams, tick, pendingBeamImpacts, penetrationPathScratch);
     }
   }
   // Phase D: reset the per-tick "was fired upon" flag AFTER every ship has made
@@ -364,6 +366,8 @@ export function fireOne(
   accuracyBonus: number,
   anomalies: readonly BattleAnomalyKind[],
   beams: SimBeam[],
+  tick: number,
+  pendingBeamImpacts: PendingBeamImpact[],
   penetrationPathScratch?: PenetrationPathScratch,
 ): void {
   if (weapon.projectileSpeed <= 0) {
@@ -431,15 +435,17 @@ export function fireOne(
     // penetrationPath would treat as "all cells behind the entry" → empty path.
     // In that case fall back to applyModuleDamage's nearest-alive heuristic.
     const beamPath = outline !== undefined ? penetrationPath(target, ix, iy, dirX, dirY, penetrationPathScratch) : undefined;
-    applyImpact(target, beamImpactProfile({ damageJ: damage, shieldPiercing: weapon.shieldPiercing, armourPiercing: weapon.armourPiercing, deflectorPiercing: weapon.deflectorPiercing ?? DEFLECTOR_PIERCING_DEFAULT.beam }), ix, iy, strikeAngle, beamPath, dirX, dirY);
-    // Emit a visible beam event so the renderer can draw the line. The source is
-    // the firing gun cell's WORLD position (rotated by the ship's heading), not
-    // the ship centre: a beam leaves the gun that fired it, so an off-centre
-    // turret's beam originates at the turret, not deep inside the hull. The
-    // target is the strike point on the target's hull. Damage is applied once
-    // above; this record is pure render state, carried for a few ticks while the
-    // line fades.
+    // Muzzle world position — needed for both the retarded-time pending-impact
+    // record (delay > 0) and the render beam (delay 0). The firing ship's
+    // position is untouched by damaging the target, so this is the same value
+    // whether computed before or after applyImpact.
     const source = cellWorldPosition(ship.x, ship.y, ship.facing, muzzleLocalX, muzzleLocalY);
+    // Retarded time: at light-second range the beam's energy is still in flight.
+    // At battlefield scales range << c so floor(range/c) is 0 and the helper
+    // returns false — the beam resolves same-tick, byte-identical to hitscan.
+    if (queueIfRetarded(pendingBeamImpacts, tick, range, ship, target, source, dirX, dirY, damage, weapon)) return;
+    applyImpact(target, beamImpactProfile({ damageJ: damage, shieldPiercing: weapon.shieldPiercing, armourPiercing: weapon.armourPiercing, deflectorPiercing: weapon.deflectorPiercing ?? DEFLECTOR_PIERCING_DEFAULT.beam }), ix, iy, strikeAngle, beamPath, dirX, dirY);
+    // Emit a visible beam event so the renderer can draw the line.
     beams.push({
       sourceId: ship.instanceId,
       sourceX: source.wx,
@@ -455,93 +461,6 @@ export function fireOne(
       spawnProjectile(ship, weapon, weaponFacing, muzzleLocalX, muzzleLocalY, target, rng, accuracyBonus),
     );
   }
-}
-
-/** Reusable parallel-array scratch for {@link penetrationPath}: avoids the
- *  per-hit `{module, along}` wrapper-object + build-array allocation on every
- *  weapon connection. Four buffers cleared-and-refilled each call; the returned
- *  `result` is a BORROW overwritten on the next call, so callers must consume
- *  it synchronously (both call sites pass it straight to {@link applyImpact},
- *  which iterates it within the call). Same clear-and-reuse contract as the
- *  other per-tick scratches on {@link EngineState}; not checkpointed. */
-export interface PenetrationPathScratch {
-  /** Candidate modules in ship iteration order (parallel to {@link along}). */
-  mods: SimModule[];
-  /** Per-candidate projection along the firing direction (parallel to {@link mods}). */
-  along: number[];
-  /** Sort index over {@link mods}/{@link along}, stable-sorted by {@link along}. */
-  index: number[];
-  /** Borrowed result: modules reordered front-to-back. Overwritten each call. */
-  result: SimModule[];
-}
-
-export function freshPenetrationPathScratch(): PenetrationPathScratch {
-  return { mods: [], along: [], index: [], result: [] };
-}
-
-/**
- * Penetration path for a projectile-vs-cell hit: the alive cells of the struck
- * ship that lie on the projectile's line, ordered front to back along its
- * travel direction. The frontmost cell is the one the broad-phase found; cells
- * behind it (further along `(vx, vy)`) and within half a cell of the line of
- * fire follow, so armour-piercing overflow carries straight through the hull
- * rather than scattering to whichever module happens to be nearest. The
- * direction must be a unit vector.
- *
- * Lossless buffer reuse: when `scratch` is supplied (production, threaded from
- * {@link EngineState.penetrationPathScratch}), the prior `{module, along}`
- * wrapper objects and build array are replaced by four reused parallel arrays.
- * Equivalence to the old wrapper sort is exact: candidates are pushed in the
- * same ship-iteration order with bit-identical `along` floats, then an index
- * array `[0..n)` is stable-sorted by the same `along[a] - along[b]` comparator.
- * `Array.prototype.sort` is spec-stable and the index starts in iteration
- * order, so tied `along` values resolve in the same order as the prior stable
- * wrapper sort — byte-identical module-damage-application order on exact ties.
- */
-export function penetrationPath(
-  ship: SimShip,
-  hitWx: number,
-  hitWy: number,
-  dirX: number,
-  dirY: number,
-  scratch?: PenetrationPathScratch,
-): SimModule[] {
-  if (ship.modules === undefined) return [];
-  // Reuse the parallel-array scratch when supplied; otherwise allocate (tests
-  // that pass no scratch get the prior fresh-allocation behaviour).
-  const sc = scratch ?? freshPenetrationPathScratch();
-  const mods = sc.mods;
-  const along = sc.along;
-  mods.length = 0;
-  along.length = 0;
-  // Projection of the hit point along the travel direction; the path is every
-  // cell at or beyond it, within half a cell laterally.
-  const hitAlong = hitWx * dirX + hitWy * dirY;
-  // cos/sin of the ship's facing are invariant across its cells.
-  const cosF = Math.cos(ship.facing);
-  const sinF = Math.sin(ship.facing);
-  for (const m of ship.modules) {
-    if (!m.alive) continue;
-    const { wx, wy } = cellWorldPositionCs(ship.x, ship.y, cosF, sinF, m.x, m.y);
-    const a = wx * dirX + wy * dirY;
-    if (a < hitAlong - CELL_SIZE / 2) continue; // in front of the entry cell
-    const perp = Math.abs((wx - hitWx) * -dirY + (wy - hitWy) * dirX);
-    if (perp > CELL_SIZE / 2) continue; // off the line of fire
-    mods.push(m);
-    along.push(a);
-  }
-  const n = mods.length;
-  // Build the sort index [0..n) and stable-sort it by `along`. The index starts
-  // in ship-iteration order, so a stable sort resolves tied `along` values in
-  // the same order the prior wrapper sort did — byte-identical overflow order.
-  const idx = sc.index;
-  idx.length = n;
-  for (let i = 0; i < n; i += 1) idx[i] = i;
-  idx.sort((l, r) => along[l]! - along[r]!);
-  const out = sc.result;
-  out.length = 0;
-  for (const j of idx) out.push(mods[j]!);
-  return out;
 }
 
 export function updateProjectiles(

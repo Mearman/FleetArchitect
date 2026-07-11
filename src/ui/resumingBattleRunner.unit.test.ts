@@ -71,6 +71,7 @@ function checkpoint(tick: number): EngineCheckpoint {
     emissions: [],
     debris: [],
     beams: [],
+    pendingBeamImpacts: [],
     particles: [],
   };
 }
