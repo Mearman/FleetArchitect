@@ -127,8 +127,12 @@ export const RHO_REF_KG = 5e-13;
  *  the exhaust self-amplification blow-out. */
 export const RHO_AMPLIFIER_CAP = 3;
 
-/** Cells below this normalised intensity are skipped entirely. Bounds paint
- *  count on a 20k-cell grid to the few cells that actually glow. */
+/** Normalised intensity below which a whole ANALYTIC element is skipped as
+ *  invisible — the plume-streak pass drops a projectile whose entire ribbon
+ *  peaks under this (`plumeStreaks.ts`). NOT used by the field raster: the
+ *  field's alpha scales continuously with intensity (`fieldRaster.ts`), because
+ *  a per-texel visibility cliff slices a dim near-threshold field into isolated
+ *  per-cell dots. */
 export const INTENSITY_DRAW_THRESHOLD = 0.02;
 
 /** Number of cell-rows at each grid edge over which the ambient glow fades from

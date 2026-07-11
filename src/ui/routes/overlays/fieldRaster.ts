@@ -1,11 +1,5 @@
 import type { MediumSnapshot } from "@/schema/battle";
-import {
-  INTENSITY_DRAW_THRESHOLD,
-  glowEdgeFade,
-  mediumCellIntensity,
-  paletteSample,
-} from "./mediumShared";
-import { smoothstep } from "./particleDynamics";
+import { glowEdgeFade, mediumCellIntensity, paletteSample } from "./mediumShared";
 
 // ---------------------------------------------------------------------------
 // Field rasterisation (pure, unit-testable)
@@ -17,33 +11,36 @@ import { smoothstep } from "./particleDynamics";
 // pooling in `battleGlow.ts`):
 //
 //   1. computeIntensityGrid — the ONE brightness truth (mediumCellIntensity ×
-//      glowEdgeFade) per cell into a Float32Array, WITHOUT the draw-threshold
-//      cliff (small nonzero values survive so the blur has something to work
-//      with at region edges).
-//   2. blurGridInPlace — two separable [1,2,1]/4 binomial passes (a cheap
-//      Gaussian approximation, sigma ~1 cell) so the one-texel-per-cell raster
-//      no longer reads as a lattice.
+//      glowEdgeFade) per cell into a Float32Array (small nonzero values survive
+//      so the blur has something to work with at region edges).
+//   2. blurGridInPlace — a two-pass separable binomial blur (effective
+//      [1,4,6,4,1]/16 per axis, sigma ~1.4 cells) so an excited cell the 500 m
+//      grid cannot resolve renders as a soft point-spread blob and near-adjacent
+//      cells merge into continuous haze, instead of reading as a lattice.
 //   3. supersampleToRgba — bilinearly upsample the blurred grid at `factor`
-//      texels per cell into RGBA, applying the draw-threshold as a
-//      POST-interpolation smoothstep knee (region edges fade smoothly instead
-//      of lattice-aligned contrast steps).
+//      texels per cell into RGBA with alpha proportional to intensity
+//      (`round(sampled * 255)`). There is NO visibility threshold: a physical
+//      diffusing medium fades continuously to nothing, and an artificial knee
+//      slices a dim near-threshold field into isolated per-cell dots (the
+//      confirmed "lattice of maroon dots" artefact).
 
-/** A texel whose smoothstep knee alpha falls below this is written fully
- *  transparent and skips the palette lookup — the cheap early-out that
- *  preserves the original raster's "skip fully-dark texels" performance
- *  characteristic on the wide dark ISM background. */
-const ALPHA_CUTOFF = 1e-4;
+/** A texel whose sampled intensity falls below this is written fully
+ *  transparent and skips the palette lookup. This is the byte-quantisation
+ *  floor — the intensity at which `round(sampled * 255)` rounds to 0 anyway —
+ *  NOT an artistic visibility threshold, so it introduces no cliff. It
+ *  preserves the raster's "skip fully-dark texels" early-out on the wide dark
+ *  ISM background. */
+const ALPHA_CUTOFF = 1 / 510;
 
 /**
  * Compute the continuous glow intensity for every cell of `field` into the
  * caller-provided `out` Float32Array (sized `widthM * heightM`). This is the
  * SAME brightness truth the old inline raster used —
- * `mediumCellIntensity(eps, rho, fxGain) * glowEdgeFade(col, row)` — but it
- * does NOT apply {@link INTENSITY_DRAW_THRESHOLD}: that hard per-cell cliff
- * moved to a post-interpolation smoothstep knee in {@link supersampleToRgba},
- * so the small nonzero intensities at a region's edge survive here for the blur
- * to spread. A cell with no excitation (`epsVis`/`eps` undefined or <= 0) reads
- * exactly 0.
+ * `mediumCellIntensity(eps, rho, fxGain) * glowEdgeFade(col, row)` — with no
+ * visibility threshold anywhere in the pipeline: small nonzero intensities at a
+ * region's edge survive here for the blur to spread, and the supersample stage
+ * scales alpha continuously with intensity. A cell with no excitation
+ * (`epsVis`/`eps` undefined or <= 0) reads exactly 0.
  *
  * Allocation-free: the caller pools `out` (the same pooling convention as
  * `GlowBuffer`'s `ImageData`). No draw-threshold cliff is applied here.
@@ -79,17 +76,36 @@ export function computeIntensityGrid(
 }
 
 /**
- * Blur `grid` in place with two separable passes of a [1,2,1]/4 binomial
- * kernel (a cheap discrete Gaussian approximation, sigma ~1 cell): a
+ * Blur `grid` in place with TWO rounds of a separable [1,2,1]/4 binomial
+ * kernel — an effective [1,4,6,4,1]/16 per axis (a cheap discrete Gaussian
+ * approximation, sigma ~1.4 cells, support radius 2). Each round runs a
  * horizontal pass reading `grid` into `scratch`, then a vertical pass reading
  * `scratch` back into `grid`. Both buffers are `widthM * heightM` and
- * caller-provided (no allocation). Neighbours are clamped at the grid edge by
- * REPEATING the edge value (edge extension), never wrapped across rows or
- * columns, so a hot corner does not leak onto the opposite edge. The kernel
- * conserves total energy for any region whose support does not touch the
- * clamped boundary.
+ * caller-provided (no allocation).
+ *
+ * Two rounds, not one: the raster is one texel per 500 m medium cell, so an
+ * excited cell the grid cannot resolve must render as a soft point-spread blob
+ * wide enough to bridge a one-cell gap to its neighbour — with a single pass
+ * (support radius 1) two cells one apart stay disconnected and a sparse dim
+ * field reads as a lattice of isolated dots.
+ *
+ * Neighbours are clamped at the grid edge by REPEATING the edge value (edge
+ * extension), never wrapped across rows or columns, so a hot corner does not
+ * leak onto the opposite edge. The kernel conserves total energy for any
+ * region whose support does not touch the clamped boundary.
  */
 export function blurGridInPlace(
+  grid: Float32Array,
+  widthM: number,
+  heightM: number,
+  scratch: Float32Array,
+): void {
+  blurRoundInPlace(grid, widthM, heightM, scratch);
+  blurRoundInPlace(grid, widthM, heightM, scratch);
+}
+
+/** One separable [1,2,1]/4 H+V round of {@link blurGridInPlace}. */
+function blurRoundInPlace(
   grid: Float32Array,
   widthM: number,
   heightM: number,
@@ -194,18 +210,20 @@ function sampleBilinear(
  * texels per cell into the caller-provided RGBA byte buffer. For each output
  * texel `(ox, oy)` the fractional source-grid coordinate is
  * `((ox + 0.5) / factor - 0.5, (oy + 0.5) / factor - 0.5)`; the grid is
- * bilinearly sampled there, then the draw-threshold is applied as a
- * POST-interpolation smoothstep knee
- * `smoothstep(thr*0.5, thr*1.5, sampled)` so region edges fade smoothly
- * instead of showing the lattice-aligned hard cliff of the old per-cell cut.
+ * bilinearly sampled there and alpha scales continuously with the sampled
+ * intensity — `round(sampled * 255)`, no visibility threshold. A diffusing
+ * medium fades continuously to nothing; the previous smoothstep knee at
+ * `INTENSITY_DRAW_THRESHOLD` was a visibility cliff that sliced a dim
+ * near-threshold field into isolated per-cell dots (cells whose blurred centre
+ * cleared the knee survived as blobs while their surroundings dropped to zero).
  *
  * `outWidth = widthM * factor` and `outHeight = heightM * factor` (the caller
  * computes and passes them — they are not recomputed inside). A texel whose
- * knee alpha is below {@link ALPHA_CUTOFF} is written fully transparent
- * `(0,0,0,0)` and skips the palette lookup (cheap early-out, preserving the
- * original raster's skip-fully-dark-texels performance). Otherwise RGB comes
- * from `paletteSample(sampled)` and alpha is `round(sampled * a * 255)` — the
- * original `round(intensity * 255)` convention, now knee-scaled.
+ * sampled intensity is below {@link ALPHA_CUTOFF} (the byte-quantisation floor,
+ * where the alpha byte would round to 0 anyway) is written fully transparent
+ * `(0,0,0,0)` and skips the palette lookup — the cheap early-out on the wide
+ * dark ISM background, with no cliff introduced. Otherwise RGB comes from
+ * `paletteSample(sampled)` and alpha is `round(sampled * 255)`.
  */
 export function supersampleToRgba(
   grid: Float32Array,
@@ -221,13 +239,8 @@ export function supersampleToRgba(
       const gx = (ox + 0.5) / factor - 0.5;
       const gy = (oy + 0.5) / factor - 0.5;
       const sampled = sampleBilinear(grid, widthM, heightM, gx, gy);
-      const a = smoothstep(
-        INTENSITY_DRAW_THRESHOLD * 0.5,
-        INTENSITY_DRAW_THRESHOLD * 1.5,
-        sampled,
-      );
       const p = (ox + oy * outWidth) * 4;
-      if (a < ALPHA_CUTOFF) {
+      if (sampled < ALPHA_CUTOFF) {
         outData[p] = 0;
         outData[p + 1] = 0;
         outData[p + 2] = 0;
@@ -238,7 +251,7 @@ export function supersampleToRgba(
       outData[p] = r;
       outData[p + 1] = g;
       outData[p + 2] = b;
-      outData[p + 3] = Math.round(sampled * a * 255);
+      outData[p + 3] = Math.round(sampled * 255);
     }
   }
 }
