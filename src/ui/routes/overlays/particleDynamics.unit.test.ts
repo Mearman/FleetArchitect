@@ -232,4 +232,47 @@ describe("computeParticleBridges", () => {
     ];
     expect(computeParticleBridges(particles)).toEqual([]);
   });
+
+  it("bridges an accelerating round's wake into one chain (energy grows per tick)", () => {
+    // A burning missile ACCELERATES under thrust, so each tick's wake bead is
+    // emitted with a HIGHER kinetic energy than the one before it (speed rising
+    // ~5% per tick -> KE rising ~10.25% per tick). The beads are still one
+    // physical trail — laid one-per-tick along the path, 150 m apart — and must
+    // bridge into a continuous ribbon. The constant-emission cooling prediction
+    // (E_older = E_younger * cooling) is violated by ~9% here, far above the
+    // 1e-6 same-emission threshold, so a matcher keyed only on that prediction
+    // leaves the trail as a beaded chain — the confirmed "discontiguous
+    // projectile trail" artefact.
+    const speedGrowthPerTick = 1.05;
+    const keGrowthPerTick = speedGrowthPerTick * speedGrowthPerTick; // ~1.1025
+    const stepM = 150; // per-tick world displacement along the trail
+    const beads = 6;
+    const keNow = 1e7; // KE at the most-recent (age 0) tick
+    const particles: ParticleSnapshot[] = [];
+    for (let k = 0; k < beads; k += 1) {
+      // Bead emitted `k` ticks ago: its emission KE was lower (the missile was
+      // slower), and it has cooled `k` times since.
+      const emissionKe = keNow / Math.pow(keGrowthPerTick, k);
+      const energyJ = emissionKe * Math.pow(cooling, k);
+      particles.push({
+        x: 0,
+        y: -k * stepM,
+        vx: 0,
+        vy: 0,
+        intensity: 0.5,
+        energyJ,
+        age: k * dt,
+      });
+    }
+    const bridges = computeParticleBridges(particles);
+    // Six beads in one trail -> five older->younger links, chaining end to end.
+    expect(bridges).toHaveLength(beads - 1);
+    // Every bead except the youngest (age 0) and the oldest (age (beads-1)*dt)
+    // is both a `from` (older endpoint) and a `to` (younger endpoint), so the
+    // chain is connected end to end with no orphan.
+    const froms = new Set(bridges.map((b) => b.fromIndex));
+    const tos = new Set(bridges.map((b) => b.toIndex));
+    expect(tos.size).toBe(beads - 1);
+    expect(froms.size).toBe(beads - 1);
+  });
 });

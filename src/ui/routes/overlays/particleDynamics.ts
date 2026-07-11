@@ -122,23 +122,33 @@ export interface ParticleBridge {
   toIndex: number;
 }
 
-/** Relative-error threshold below which an older bead is accepted as the cooled
- *  continuation of a younger one. Same-emission matches agree to ~1e-13
- *  relative (one `exp(-dt/tau)` step from a shared emission energy, computed in
- *  the same float order on both sides); the nearest WRONG-parcel match (a
- *  different trail's bead at the same age, whose emission energy differs) is
- *  ~1.7% away. 1e-6 sits many orders below the wrong-match floor and many
- *  above the right-match's floating-point noise, so it cleanly separates
- *  genuine continuation from coincidence. */
-const BRIDGE_REL_ERROR_THRESHOLD = 1e-6;
+/** Relative-error threshold below which an older bead is accepted as a
+ *  continuation of a younger one in the SAME trail. The prediction
+ *  `E_younger * cooling` assumes a CONSTANT emission energy (a throttled
+ *  thruster or a beam's steady channel), which holds for exhaust and beam
+ *  channels but NOT for a projectile wake: a round under thrust ACCELERATES, so
+ *  each tick's wake bead is emitted with a different kinetic energy and the
+ *  older bead drifts past the strict prediction by the per-tick speed change
+ *  (a missile gaining ~5%/tick in speed drifts ~9%). A tight threshold
+ *  (the former 1e-6) leaves every accelerating round's wake un-bridged, so it
+ *  renders as a beaded chain — the "discontiguous projectile trail" artefact.
+ *
+ *  Loose, not tight: same-trail disambiguation from a DIFFERENT trail's bead at
+ *  the same age is done by the NEAREST-DISTANCE tiebreak (the two-chain test
+ *  pins this), not by energy. Energy only filters out a different EMISSION
+ *  CLASS — a wake bead vs an impact burst, or two different weapons' wakes —
+ *  whose energies differ by orders of magnitude. 0.5 admits any per-tick
+ *  emission drift a physically-plausible round can produce (a ~1.4× speed
+ *  change in one tick) while still rejecting a factor-3000+ mismatch (a 3e3 J
+ *  impact fragment next to a 1e7 J wake bead reads ~0.9997 relative error). */
+const BRIDGE_REL_ERROR_THRESHOLD = 0.5;
 
 /** Absolute band around the minimum relative error within which two eligible
- *  older candidates count as tied. Genuine-continuation matches cluster at
- *  ~1e-13, so a 1e-9 band folds their floating-point noise together while
- *  remaining far below the 1e-6 eligibility floor (and the ~1.7% wrong-match
- *  level). Ties are broken by nearest spatial distance, so a younger bead joins
- *  its OWN trail when several same-weapon trails share the same emission
- *  energy and therefore the same cooled value at each age. */
+ *  older candidates count as tied (then broken by nearest spatial distance, then
+ *  lowest index). 1e-9 folds floating-point noise together so two older beads
+ *  whose energies agree to ~1e-13 (the same cooled value) both stay in the
+ *  running and the nearest one wins — a younger bead joins its OWN trail when
+ *  several trails share the same cooled value at a given age. */
 const BRIDGE_REL_ERROR_TIE_BAND = 1e-9;
 
 /** One eligible older match for a younger bead: its original index, the relative
