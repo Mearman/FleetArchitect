@@ -161,13 +161,22 @@ export interface MediumImpactEntry {
   y: number;
   /** Strike energy (joules) — beam `damageJ` or projectile warhead/kinetic energy. */
   energyJ: number;
+  /** Channel origin (a beam's firing-gun cell), when this impact is the strike
+   *  end of a beam's hitscan channel. Present only for beam impacts; a plain
+   *  point impact (no channel) omits it. When present, the deposit also rasters
+   *  the source→strike segment into the visual substrate so the whole channel
+   *  glows, not just the strike point. */
+  sourceX?: number;
+  sourceY?: number;
 }
 
 /**
  * Refill the per-tick impact scratch from this tick's active beams: each beam's
- * strike point + deposited energy becomes one impact entry. Clears the scratch
- * first (clear-and-reuse, no allocation). Beam strikes are the primary impact
- * glow source; projectile-hit capture is deferred (a round's wake already glows).
+ * strike point + deposited energy becomes one impact entry, carrying the beam's
+ * source point too so the deposit can raster the whole channel (not just the
+ * strike point) into the visual substrate. Clears the scratch first
+ * (clear-and-reuse, no allocation). Beam strikes are the primary impact glow
+ * source; projectile-hit capture is deferred (a round's wake already glows).
  */
 export function refillImpactScratchFromBeams(
   beams: readonly SimBeam[],
@@ -175,7 +184,13 @@ export function refillImpactScratchFromBeams(
 ): void {
   scratch.length = 0;
   for (const b of beams) {
-    scratch.push({ x: b.targetX, y: b.targetY, energyJ: b.damageJ });
+    scratch.push({
+      x: b.targetX,
+      y: b.targetY,
+      energyJ: b.damageJ,
+      sourceX: b.sourceX,
+      sourceY: b.sourceY,
+    });
   }
 }
 
@@ -392,6 +407,18 @@ export const PROJECTILE_WAKE_EPS_COUPLING = 0.002;
  * parity with a rocket plume of the same energy. epsVis only — never feeds AI.
  */
 export const IMPACT_EPS_VIS_COUPLING = THERMAL_EPS_COUPLING_FRACTION;
+
+/**
+ * Fraction of a beam's strike energy that thermalises into the visual epsVis
+ * substrate ALONG ITS CHANNEL (the source→strike segment), distributed across
+ * the swept cells so a hitscan beam reads as a continuous ionised line rather
+ * than the single point flash {@link IMPACT_EPS_VIS_COUPLING} gives the strike
+ * cell. A beam physically ionises the whole path it cuts through, not just
+ * where it lands. Set to the same thermal fraction as the point impact so a
+ * beam's channel and its strike flash compose to a physically comparable total
+ * brightness. epsVis only — never feeds AI signatures.
+ */
+export const BEAM_CHANNEL_EPS_VIS_COUPLING = THERMAL_EPS_COUPLING_FRACTION;
 
 /**
  * Fraction of a cooling particle's radiated energy (its `energyJ × (1 − cooling)`

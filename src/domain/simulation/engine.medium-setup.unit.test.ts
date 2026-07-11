@@ -12,6 +12,7 @@ import {
   type MediumField,
 } from "@/domain/simulation/engine/medium-field";
 import {
+  BEAM_CHANNEL_EPS_VIS_COUPLING,
   IMPACT_EPS_VIS_COUPLING,
   PROJECTILE_WAKE_EPS_COUPLING,
   computeArenaMediumSources,
@@ -143,6 +144,102 @@ describe("impact burst deposit", () => {
   });
 });
 
+describe("beam channel deposit", () => {
+  it("distributes epsVis along the full channel, not only the strike point", () => {
+    const f = wideField();
+    const n = f.cellCount;
+    const buffers = {
+      rho: new Float64Array(n),
+      eps: new Float64Array(n),
+      epsVisSrc: new Float64Array(n),
+      mxSrc: new Float64Array(n),
+      mySrc: new Float64Array(n),
+    };
+    // Channel source (0, 0) → strike (1000, 0) crosses cols 5, 6, 7 on row 1
+    // → flat indices 15, 16, 17 (17 is also the strike cell).
+    const impacts: MediumImpactEntry[] = [
+      { x: 1000, y: 0, energyJ: 1e6, sourceX: 0, sourceY: 0 },
+    ];
+    const result = computeArenaMediumSources(
+      f,
+      new Float64Array(n),
+      [],
+      [],
+      [],
+      [],
+      [],
+      buffers,
+      impacts,
+      createParticleStore(),
+    );
+    expect(result.epsVisSrc[15] ?? 0).toBeGreaterThan(0);
+    expect(result.epsVisSrc[16] ?? 0).toBeGreaterThan(0);
+  });
+
+  it("conserves the per-tick channel energy across the swept cells", () => {
+    const f = wideField();
+    const n = f.cellCount;
+    const buffers = {
+      rho: new Float64Array(n),
+      eps: new Float64Array(n),
+      epsVisSrc: new Float64Array(n),
+      mxSrc: new Float64Array(n),
+      mySrc: new Float64Array(n),
+    };
+    const impacts: MediumImpactEntry[] = [
+      { x: 1000, y: 0, energyJ: 1e6, sourceX: 0, sourceY: 0 },
+    ];
+    const result = computeArenaMediumSources(
+      f,
+      new Float64Array(n),
+      [],
+      [],
+      [],
+      [],
+      [],
+      buffers,
+      impacts,
+      createParticleStore(),
+    );
+    // Sum across the swept channel cells (15, 16, 17) equals the channel
+    // coupling exactly — the point-burst deposit at the strike cell (17) is a
+    // separate effect asserted below, not part of this sum.
+    const channelSum =
+      (result.epsVisSrc[15] ?? 0) + (result.epsVisSrc[16] ?? 0) + (result.epsVisSrc[17] ?? 0) -
+      1e6 * IMPACT_EPS_VIS_COUPLING * MEDIUM_DT_S;
+    expect(channelSum).toBeCloseTo(1e6 * BEAM_CHANNEL_EPS_VIS_COUPLING * MEDIUM_DT_S, 10);
+  });
+
+  it("never deposits channel energy into the signature substrate (eps)", () => {
+    const f = wideField();
+    const n = f.cellCount;
+    const buffers = {
+      rho: new Float64Array(n),
+      eps: new Float64Array(n),
+      epsVisSrc: new Float64Array(n),
+      mxSrc: new Float64Array(n),
+      mySrc: new Float64Array(n),
+    };
+    const impacts: MediumImpactEntry[] = [
+      { x: 1000, y: 0, energyJ: 1e6, sourceX: 0, sourceY: 0 },
+    ];
+    const result = computeArenaMediumSources(
+      f,
+      new Float64Array(n),
+      [],
+      [],
+      [],
+      [],
+      [],
+      buffers,
+      impacts,
+      createParticleStore(),
+    );
+    expect(result.eps[15] ?? 0).toBe(0);
+    expect(result.eps[16] ?? 0).toBe(0);
+  });
+});
+
 describe("impact scratch refill", () => {
   it("clears and refills the scratch from each beam's strike point + energy", () => {
     const beams: SimBeam[] = [
@@ -152,8 +249,8 @@ describe("impact scratch refill", () => {
     const scratch: MediumImpactEntry[] = [{ x: 999, y: 999, energyJ: 1 }];
     refillImpactScratchFromBeams(beams, scratch);
     expect(scratch).toHaveLength(2);
-    expect(scratch[0]).toStrictEqual({ x: 1000, y: 0, energyJ: 5e6 });
-    expect(scratch[1]).toStrictEqual({ x: 500, y: 500, energyJ: 2e6 });
+    expect(scratch[0]).toStrictEqual({ x: 1000, y: 0, energyJ: 5e6, sourceX: 0, sourceY: 0 });
+    expect(scratch[1]).toStrictEqual({ x: 500, y: 500, energyJ: 2e6, sourceX: 0, sourceY: 0 });
   });
 });
 
