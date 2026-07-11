@@ -45,6 +45,10 @@ interface Config {
   sources: Map<number, number>;
   radiators: Set<number>;
   heatCapacity: Map<number, number>;
+  /** Per-tick transient source (watts) per cell — the weapon/engine waste-heat
+   *  layer the resource step deposits each tick. Defaults to all-zero when
+   *  omitted (the substance-path equivalence does not depend on it). */
+  transientSources?: Float64Array;
   /** Boundary cell indices (must include every radiator cell so the integrator
    *  invokes its boundary flux; may also include non-radiator cells to exercise
    *  the zero-flux branch). */
@@ -62,15 +66,19 @@ function assertEquivalent(config: Config, ticks: number): void {
     config.heatCapacity,
     config.phi.length,
   );
+  const transient =
+    config.transientSources ?? new Float64Array(config.phi.length);
   const referenceSubstance = makeThermalSubstanceReference(
     config.sources,
     config.radiators,
     config.heatCapacity,
+    transient,
   );
   const optimisedSubstance = makeThermalSubstance(
     arrays.sources,
     arrays.radiators,
     arrays.heatCapacity,
+    transient,
   );
 
   const makeField = (substance: TransportField["substance"]): TransportField => ({
@@ -158,6 +166,29 @@ describe("engine.thermal — array substance vs Map/Set reference (oracle)", () 
     assertEquivalent(
       {
         sources: new Map([[0, 5e7]]),
+        radiators: new Set([2]),
+        heatCapacity: new Map([
+          [0, 1e6],
+          [2, 8e5],
+        ]),
+        boundaryCells: [0, 2],
+        faces: [...link(0, 1, 1, 0), ...link(1, 2, 1, 0)],
+        phi: [300, 300, 300],
+      },
+      30,
+    );
+  });
+
+  it("topology source + per-tick transient source: identical over many ticks", () => {
+    // Cell 0 carries BOTH a topology-cached reactor source AND a per-tick
+    // transient (weapon/engine waste heat); cell 2 is the radiator. Guards the
+    // source callback summing the two layers identically in both paths, the
+    // production closure reading two typed-array indices and the reference
+    // mixing a Map.get with a typed-array index.
+    assertEquivalent(
+      {
+        sources: new Map([[0, 5e7]]),
+        transientSources: new Float64Array([8e7, 0, 3e7]),
         radiators: new Set([2]),
         heatCapacity: new Map([
           [0, 1e6],

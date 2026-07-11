@@ -1,45 +1,37 @@
 /**
  * The per-tick resource step. Advances the transport-field substances —
- * thermal, propellant, atmosphere — and the power energy buffer for each ship,
- * so the honest underlying simulation runs every tick underneath the gameplay
- * layer.
+ * thermal, propellant, atmosphere — and the power energy buffer for each ship.
  *
- * VALUES are exposed on the ship's `resource` field, and the resource
- * CONSEQUENCES are enforced:
- *
+ * CONSEQUENCES enforced every tick:
  *  - Dry-tank flame-out (Gate 1): an alive engine whose cell holds no fuel is
- *    marked `fuelStarved` (movement/aggregates skip it) until fuel returns.
- *  - Brownout (Gate 2): when stored charge plus reactor output cannot meet the
- *    draw, the grid sheds load in a fixed priority (weapons/PD, sensors,
- *    shields, engines; never bridge/quarters/reactor/repair), marking each shed
- *    module `powerCut`.
+ *    marked `fuelStarved` until fuel returns.
+ *  - Brownout (Gate 2): when charge plus reactor output cannot meet draw, the
+ *    grid sheds load in fixed priority (weapons/PD, sensors, shields, engines).
  *  - Overheat shutdown (Gate 3): an alive cell over `SIM.overheatThresholdK` is
- *    destroyed through the battle-damage death path (break-apart, venting,
- *    next-tick chain reaction all follow).
- *  - Live airtightness: a deck cell breached by a destroyed neighbour vents its
- *    gas to vacuum — recoiling the hull and exposing crew to vacuum damage. An
- *    intact, sealed hull never vents (empty vent mask), so undamaged ships are
- *    unchanged.
+ *    destroyed through the battle-damage death path.
+ *  - Live airtightness: a deck cell breached by a destroyed neighbour vents gas
+ *    to vacuum (recoiling the hull, exposing crew). An intact hull never vents.
  *
  * `fuelStarved`/`powerCut` are recomputed fresh every tick, and the step ends by
- * re-deriving aggregates so later steps (and next tick's movement/firing) read
- * stats reflecting the cuts. A ship with a full buffer, fuelled tanks, and cool
+ * re-deriving aggregates. A ship with a full buffer, fuelled tanks, and cool
  * radiator-equipped cells carries no consequence and behaves exactly as before.
  *
- * Determinism: the transport graph (and its vent mask), the materialised thermal
- * typed arrays, and the three transport substances are rebuilt only on a
- * topology change (cached on the ship, cleared by `refreshPathCache`); the
- * per-tick substance inputs (engine thrust, crew map, deck mask) are rebuilt
- * into pooled scratch maps each tick in module array order; crew are processed
- * in stable id order; the integrator is the existing pure `stepTransportField`.
+ * Determinism: the transport graph, materialised thermal arrays, and three
+ * transport substances are rebuilt only on a topology change (cached on the
+ * ship); per-tick substance inputs (engine thrust, crew map, deck mask, weapon/
+ * engine transient heat) are rebuilt into pooled scratch each tick in module
+ * array order; crew are processed in stable id order.
  *
  * Cell indexing: modules are sorted by (row, col), numbered 0..n−1, and
- * `ResourceState.moduleIndex` maps `"col,row"` to that index. Only alive module
- * cells participate, keeping n proportional to the module count, not the
- * rectangular footprint.
+ * `moduleIndex` maps `"col,row"` to that index. Only alive module cells
+ * participate, keeping n proportional to module count, not the footprint.
  */
 
-import { reactorWasteHeatWatts } from "@/data/catalog/combat-scale";
+import {
+  engineWasteHeatWatts,
+  reactorWasteHeatWatts,
+  weaponWasteHeatWatts,
+} from "@/data/catalog/combat-scale";
 import { specificHeat } from "@/data/catalog/physics";
 import {
   CABIN_TEMPERATURE_K,
@@ -286,14 +278,12 @@ function transportGraph(
   const boundaryIndices = new Set<number>();
   const FACE_AREA = 1; // 1 m² for a unit-grid face
 
-  // Vent breach accumulation. A deck cell vents to vacuum across an open edge/
-  // door whose neighbour is no longer an alive sealing cell (the airtightness
-  // condition in interior.ts, evaluated live against the alive set). A cell with
-  // several breached faces sums their outward normals (opposite breaches cancel
-  // recoil). Empty for an intact, sealed hull.
+  // Vent breach accumulation: a deck cell vents across an open edge/door whose
+  // neighbour is no longer an alive sealing cell. Multiple breached faces sum
+  // their outward normals (opposite breaches cancel recoil). Empty when intact.
   const ventAccum = new Map<number, { nx: number; ny: number }>();
 
-  // Whether a cell's edge in `edgeKey` is open to flow (open edge / open door).
+  // Whether a cell's edge is open to flow (open edge / open door).
   const edgeOpen = (m: SimModule, edgeKey: "e" | "w" | "n" | "s"): boolean => {
     const edge = m.edges[edgeKey];
     if (edge === "open") return true;
@@ -301,13 +291,10 @@ function transportGraph(
     return false;
   };
 
-  // Whether a cell's edge passes transport (gas/heat/fuel). An open edge or any
-  // door (a shut door still leaks) carries flow; a wall does not. A shared face
-  // requires BOTH cells' facing edges to pass: edges are authored per cell with
-  // no symmetry constraint, so a one-sided `open`/`door` against a neighbour's
-  // `wall` would make the two half-faces disagree and break finite-volume
-  // conservation (one-way inflow accumulates mass to Infinity → NaN). Requiring
-  // both edges makes the face symmetric by construction.
+  // Whether a cell's edge passes transport. An open edge or any door (a shut door
+  // still leaks) carries flow; a wall does not. A shared face requires BOTH
+  // cells' edges to pass, so one-sided open/door against a neighbour's wall cannot
+  // break finite-volume conservation (one-way inflow → Infinity → NaN).
   const facePasses = (m: SimModule, edgeKey: "e" | "w" | "n" | "s"): boolean => {
     const edge = m.edges[edgeKey];
     return edge === "open" || edge === "door";
@@ -350,19 +337,16 @@ function transportGraph(
         boundaryIndices.add(fromIdx);
       }
       // Breach detection: a deck cell vents where a neighbour module that
-      // existed at battle start (`toIdx` present) has since died, leaving an
-      // open edge/door facing the gap. An open edge toward a position that never
-      // held a module is original hull geometry, not a breach. A live neighbour
-      // still seals; a wall/closed-door holds against vacuum (matching
-      // interior.ts). So a breach opens exactly when battle damage destroys the
-      // cell that was sealing this edge.
+      // existed at battle start (`toIdx` present) has since died, leaving an open
+      // edge/door facing the gap. An open edge toward a position that never held a
+      // module is original hull geometry, not a breach. A breach opens exactly
+      // when battle damage destroys the sealing cell.
       const neighbourDied = toIdx !== undefined && !neighbourAlive;
       if (isDeck(fromM) && neighbourDied && edgeOpen(fromM, edgeKey)) {
         const prev = ventAccum.get(fromIdx);
         if (prev === undefined) ventAccum.set(fromIdx, { nx, ny });
         else ventAccum.set(fromIdx, { nx: prev.nx + nx, ny: prev.ny + ny });
-        // A breached cell is a boundary cell (the atmosphere/thermal boundary
-        // flux acts only on boundary cells) even though a module index entry
+        // A breached cell is a boundary cell even though a module index entry
         // still sits beyond it.
         boundaryIndices.add(fromIdx);
       }
@@ -418,6 +402,7 @@ function transportGraph(
     thermalArrays.sources,
     thermalArrays.radiators,
     thermalArrays.heatCapacity,
+    scratch.transientSources,
   );
   const propellantSubstance = makePropellantSubstance(
     scratch.engineThrust,
@@ -497,7 +482,7 @@ function runResourceStep(
   if (state.scratch === undefined) {
     // Dense typed arrays sized to n (invariant for the ship's lifetime).
     const scratchN = state.thermal.length;
-    state.scratch = { engineThrust: new Float64Array(scratchN), crewMap: new Int32Array(scratchN), deckCells: new Uint8Array(scratchN), crewOrder: [] };
+    state.scratch = { engineThrust: new Float64Array(scratchN), crewMap: new Int32Array(scratchN), deckCells: new Uint8Array(scratchN), crewOrder: [], transientSources: new Float64Array(scratchN) };
   }
   // Persistent per-substance transport ping-pong buffers, reused every tick
   // (mirrors ArenaMedium.work). Lazily built, never serialised — a checkpoint
@@ -515,6 +500,7 @@ function runResourceStep(
   scratch.crewMap.fill(0);
   scratch.deckCells.fill(0);
   scratch.crewOrder.length = 0;
+  scratch.transientSources.fill(0);
 
   // Resource consequences are recomputed fresh every tick: clear the previous
   // tick's flame-out and grid-shed verdicts before the substance steps re-derive
@@ -525,12 +511,32 @@ function runResourceStep(
     m.powerCut = false;
   }
 
+  // --- Transient thermal sources (weapon + engine waste heat) ---
+  // Per-tick heat layered on top of the cached reactor waste heat. A recharging
+  // weapon (cooldown > 0 after firing) contributes its average waste-heat power;
+  // a burning engine (throttle > 0) contributes its nozzle-loss fraction. Both
+  // are zero when idle. Built before the thermal step (the cached substance's
+  // source callback sums this with the reactor watts); fixed module-array order
+  // keeps accumulation into shared cells deterministic.
+  const transient = scratch.transientSources;
+  const throttleForHeat = ship.engineThrottle;
+  for (const m of ship.modules) {
+    if (!m.alive) continue;
+    const i = idx(m);
+    if (i === undefined) continue;
+    if ((m.effect.kind === "weapon" || m.effect.kind === "pointDefense") && m.cooldown > 0) {
+      transient[i] = (transient[i] ?? 0) + weaponWasteHeatWatts(m.effect.damage, m.effect.cooldown);
+    }
+    if (m.effect.kind === "engine" && throttleForHeat > 0 && m.effect.thrust > 0) {
+      transient[i] = (transient[i] ?? 0) + engineWasteHeatWatts(m.powerDraw * throttleForHeat);
+    }
+  }
+
   // --- Thermal substance ---
-  // Heat sources (alive reactors' WASTE heat, not electrical output — see
-  // `reactorWasteHeatWatts`) and per-cell heat capacity are folded into the
-  // cached graph as dense typed arrays (`graph.thermalArrays`), stable across
-  // the topology window. The radiator surface is `graph.boundaryCellSet`. The
-  // thermal substance itself is cached on the graph and reused every tick.
+  // Reactor WASTE heat and heat capacity are folded into the cached graph
+  // (`graph.thermalArrays`); the radiator surface is `graph.boundaryCellSet`.
+  // The cached substance's source callback adds the per-tick weapon/engine
+  // transient built above to the cached reactor watts.
   const thermalField: TransportField = {
     substance: graph.thermalSubstance,
     faces: graph.faces,
@@ -543,8 +549,7 @@ function runResourceStep(
   // Gate 3 — Overheat shutdown. An alive cell over the failure threshold is
   // killed through the battle-damage death path (HPs zeroed, `alive` cleared) so
   // every downstream effect follows: aggregates drop it, break-apart (4c)
-  // re-evaluates connectivity, the vent mask treats it as a dead neighbour next
-  // graph rebuild, a volatile cell detonates next tick. Iterated in fixed
+  // re-evaluates connectivity, a volatile cell detonates next tick. Fixed
   // module-array order, no RNG.
   for (const m of ship.modules) {
     if (!m.alive) continue;
@@ -559,15 +564,11 @@ function runResourceStep(
   }
 
   // --- Propellant substance ---
-  // Per-tick engine thrust command: each alive engine's rated thrust scaled by
-  // `ship.engineThrottle`. Exhaust normals are folded into the cached graph
-  // (`graph.exhaust`); only the magnitude is rebuilt here.
-  // Fused single pass over ship.modules (was three O(modules) scans): builds
-  // engineThrust, the deckCells mask, and the net-power running sum. Aliveness
-  // is stable from the overheat pass above through to the power budget below
-  // (transport steps and crew-vacuum pass touch fields/crew, not module.alive),
-  // and fixed module-array order throughout keeps Map/Set insertion order and
-  // the source-before-sink net order byte-identical to the old three-loop path.
+  // Fused single pass over ship.modules: builds engineThrust (alive engine ×
+  // throttle), the deckCells mask, and the net-power running sum. Aliveness is
+  // stable from the overheat pass through to the power budget (transport steps
+  // touch fields/crew, not module.alive); fixed module-array order keeps
+  // Map/Set insertion order and the source-before-sink net order byte-identical.
   const throttle = ship.engineThrottle;
   const engineThrust = scratch.engineThrust;
   const deckCells = scratch.deckCells;
@@ -647,16 +648,14 @@ function runResourceStep(
 
   // Vent recoil: net reaction force from gas escaping every breach, applied at
   // the mass-weighted centroid of the venting cells (an off-centre breach pushes
-  // and spins). The field returns SI impulse (kg·m·s⁻¹); the engine's momentum
-  // is per-tick (velocity in metres/tick), so scale by `TRANSPORT_DT_S` and
-  // rotate ship-local → world axes for `applyImpulse` (application point stays
-  // in the ship-local design frame).
+  // and spins). The field returns SI impulse; scale by `TRANSPORT_DT_S` and
+  // rotate ship-local → world axes for `applyImpulse`.
   if (
     graph.ventMask.size > 0 &&
     (atmosphereResult.momentumX !== 0 || atmosphereResult.momentumY !== 0)
   ) {
-    // Centroid of the breached cells in ship-local coordinates. Iterated in
-    // vent-mask insertion order (deterministic: module index is sorted).
+    // Centroid of the breached cells in ship-local coordinates (vent-mask
+    // insertion order is deterministic: module index is sorted).
     let cx = 0;
     let cy = 0;
     let count = 0;
@@ -672,7 +671,6 @@ function runResourceStep(
       cy /= count;
       const localImpulseX = atmosphereResult.momentumX * TRANSPORT_DT_S;
       const localImpulseY = atmosphereResult.momentumY * TRANSPORT_DT_S;
-      // Rotate the ship-local impulse into world axes for `applyImpulse`.
       const cos = Math.cos(ship.facing);
       const sin = Math.sin(ship.facing);
       const worldImpulseX = localImpulseX * cos - localImpulseY * sin;

@@ -178,11 +178,19 @@ export function materialiseThermalInputs(
  * the final value directly with no per-call branch. Byte-identical to
  * {@link makeThermalSubstanceReference}; the equivalence test
  * (`engine.thermal.equivalence.unit.test.ts`) proves it.
+ *
+ * `transientSources` is the PER-TICK source layer: weapon and engine waste heat
+ * the resource step deposits each tick (topology-INVARIANT reactor waste heat
+ * stays in the cached `sources` array). Captured by reference, so the cached
+ * substance reads the live per-tick contents the resource step clears and
+ * refills every tick — exactly as the propellant/atmosphere substances capture
+ * their per-tick scratch maps.
  */
 export function makeThermalSubstance(
   sources: Float64Array,
   radiators: Uint8Array,
   heatCapacity: Float64Array,
+  transientSources: Float64Array,
 ): TransportSubstance {
   return {
     name: "thermal",
@@ -197,10 +205,12 @@ export function makeThermalSubstance(
     floor: SPACE_TEMPERATURE_K,
     // Source is a heat power (W); divide by the cell's heat capacity (J/K) to
     // get the temperature rate (K/s) the field integrates: dT/dt = P / C. The
-    // heatCapacity array is materialised for every dense cell index, so the
-    // index is always in range.
+    // cached `sources` array carries topology-invariant reactor waste heat; the
+    // `transientSources` array carries the per-tick weapon/engine waste heat the
+    // resource step refills each tick. Both arrays are materialised for every
+    // dense cell index, so the index is always in range.
     source: (cell) => {
-      const watts = sources[cell] ?? 0;
+      const watts = (sources[cell] ?? 0) + (transientSources[cell] ?? 0);
       return watts === 0 ? 0 : watts / heatCapacity[cell]!;
     },
     boundaryFlux: (cell, phi, out) => {
@@ -243,6 +253,7 @@ export function makeThermalSubstanceReference(
   sources: ThermalSourceMap,
   radiators: RadiatorMask,
   heatCapacity: HeatCapacityMap,
+  transientSources: Float64Array,
 ): TransportSubstance {
   const capacityOf = (cell: number): number => {
     const c = heatCapacity.get(cell);
@@ -254,7 +265,7 @@ export function makeThermalSubstanceReference(
     nonNegative: true,
     floor: SPACE_TEMPERATURE_K,
     source: (cell) => {
-      const watts = sources.get(cell) ?? 0;
+      const watts = (sources.get(cell) ?? 0) + (transientSources[cell] ?? 0);
       return watts === 0 ? 0 : watts / capacityOf(cell);
     },
     boundaryFlux: (cell, phi, out) => {
