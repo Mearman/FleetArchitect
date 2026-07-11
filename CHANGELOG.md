@@ -1,3 +1,10 @@
+## [1.63.1](https://github.com/Mearman/FleetArchitect/compare/v1.63.0...v1.63.1) (2026-07-11)
+
+
+### Bug Fixes
+
+* **ui:** fade the field glow continuously instead of slicing it into dots ([f4e251e](https://github.com/Mearman/FleetArchitect/commit/f4e251eacb2114fd681fd0f43d28fcc5f0bdd4df))
+
 # [1.63.0](https://github.com/Mearman/FleetArchitect/compare/v1.62.1...v1.63.0) (2026-07-11)
 
 
