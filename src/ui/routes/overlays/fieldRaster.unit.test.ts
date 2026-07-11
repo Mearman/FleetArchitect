@@ -132,7 +132,32 @@ describe("blurGridInPlace", () => {
     }
   });
 
-  it("conserves total energy (the [1,2,1]/4 kernel preserves the grid sum)", () => {
+  it("spreads an isolated hot cell to distance 2 (the two-pass PSF bridges a one-cell gap)", () => {
+    // An excited cell the 500 m grid cannot resolve must render as a soft
+    // point-spread blob wide enough that two cells with one dark cell between
+    // them merge into connected haze. One [1,2,1]/4 pass has support radius 1
+    // (distance 2 stays exactly 0 — the confirmed dot-lattice artefact); the
+    // two-pass [1,4,6,4,1]/16 kernel reaches distance 2 at 6/256 of the source.
+    const widthM = 7;
+    const heightM = 7;
+    const grid = new Float32Array(widthM * heightM);
+    const scratch = new Float32Array(widthM * heightM);
+    const hot = 1;
+    grid[3 * widthM + 3] = hot;
+
+    blurGridInPlace(grid, widthM, heightM, scratch);
+
+    const at = (col: number, row: number): number =>
+      grid[row * widthM + col] ?? 0;
+    // Distance 2 along each axis carries (1/16)·(6/16) = 6/256 of the source.
+    const expected = (hot * 6) / 256;
+    expect(at(5, 3)).toBeCloseTo(expected, 6);
+    expect(at(1, 3)).toBeCloseTo(expected, 6);
+    expect(at(3, 5)).toBeCloseTo(expected, 6);
+    expect(at(3, 1)).toBeCloseTo(expected, 6);
+  });
+
+  it("conserves total energy (the binomial kernel preserves the grid sum)", () => {
     // A centred hot pixel whose support does not reach the clamped boundary, so
     // the kernel is exactly energy-conserving.
     const widthM = 7;
@@ -208,16 +233,16 @@ describe("supersampleToRgba", () => {
     expect(first).toEqual(expected);
   });
 
-  it("applies the draw-threshold knee: far-below is transparent, far-above near-full, transition monotonic", () => {
+  it("fades continuously with no visibility cliff: alpha tracks intensity down to the quantisation floor", () => {
     // A 1x1 grid sampled at factor 2 -> a 2x2 block whose every texel resolves
-    // to the single cell value, so we can read the knee response from one texel.
+    // to the single cell value, so we can read the alpha response from one texel.
     const widthM = 1;
     const heightM = 1;
     const factor = 2;
     const outWidth = widthM * factor;
     const outHeight = heightM * factor;
 
-    /** Knee alpha for a uniform single-cell intensity, read from texel (0,0). */
+    /** Output alpha for a uniform single-cell intensity, read from texel (0,0). */
     const alphaAt = (intensity: number): number => {
       const grid = new Float32Array([intensity]);
       const out = new Uint8ClampedArray(outWidth * outHeight * 4);
@@ -225,22 +250,25 @@ describe("supersampleToRgba", () => {
       return out[3] ?? 0;
     };
 
+    // No artistic threshold: alpha = round(intensity * 255) at EVERY intensity,
+    // so a dim field fades continuously instead of being sliced into per-cell
+    // dots by a visibility cliff. A dim value near the old knee (0.01) is
+    // faintly visible, not zero.
     const thr = INTENSITY_DRAW_THRESHOLD;
-    // Well below the knee -> fully transparent.
-    expect(alphaAt(thr * 0.1)).toBe(0);
-    // Across the knee -> monotonic non-decreasing.
+    expect(alphaAt(thr * 0.5)).toBe(clampByte(Math.round(f32(thr * 0.5) * 255)));
+    expect(alphaAt(thr * 0.5)).toBeGreaterThan(0);
+    // Monotonic non-decreasing across the dim range.
     const samples = [thr * 0.5, thr, thr * 1.5, thr * 3];
-    let prev = alphaAt(samples[0] ?? 0);
+    let prev = 0;
     for (const s of samples) {
-      if (s === undefined) continue;
       const a = alphaAt(s);
       expect(a).toBeGreaterThanOrEqual(prev);
       prev = a;
     }
-    // Well above the knee -> near-full alpha scaled by the intensity. The
-    // smoothstep is saturated to 1 there, so alpha = round(intensity * 255);
-    // derive the expected byte from the Float32-stored value (the grid rounds
-    // 0.9 to its Float32 representation) through the clamped assignment.
+    // Only below the byte-quantisation floor (where the alpha byte would round
+    // to 0 anyway) is the texel written fully transparent.
+    expect(alphaAt(1 / 1024)).toBe(0);
+    // Bright intensities keep the original alpha convention unchanged.
     const high = 0.9;
     expect(alphaAt(high)).toBe(clampByte(Math.round(f32(high) * 255)));
     expect(alphaAt(high)).toBeGreaterThan(0);
