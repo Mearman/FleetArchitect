@@ -1,3 +1,10 @@
+## [1.63.2](https://github.com/Mearman/FleetArchitect/compare/v1.63.1...v1.63.2) (2026-07-11)
+
+
+### Bug Fixes
+
+* **ui:** bridge accelerating rounds' wake beads into continuous ribbons ([20a4d32](https://github.com/Mearman/FleetArchitect/commit/20a4d329c995dcaaa21a91004fd5f1969fdc5f1c))
+
 ## [1.63.1](https://github.com/Mearman/FleetArchitect/compare/v1.63.0...v1.63.1) (2026-07-11)
 
 
