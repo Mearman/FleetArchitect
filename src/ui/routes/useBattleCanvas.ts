@@ -10,6 +10,7 @@ import { drawAnomaly } from "./battleAnomaly";
 import { drawBackdropCached, vignetteGradient } from "./battleBackdrop";
 import { drawFogAndAwareness } from "./battleFog";
 import { appendWorldArc, pathWorldCircle } from "./battleProject";
+import { drawProjectiles } from "./battleProjectiles";
 import type { Bounds, Camera, Transform } from "./battleCamera";
 import { makeTransform, resolveViewTransformInto } from "./battleCamera";
 import {
@@ -210,16 +211,10 @@ export function useBattleCanvas({
       // Under-ship layer: focus ring, sensor coverage, movement trail.
       drawOverlays(UNDER_SHIP_IDS);
 
-      // Projectiles (kinetic rounds: cannon, missile, torpedo) drawn as dots at
-      // their interpolated position; beams are hitscan, rendered separately.
-      const pp = { x: 0, y: 0 };
-      for (const p of frame.projectiles) {
-        const colour = PROJECTILE_COLOUR[p.kind];
-        if (colour === undefined) continue;
-        t.projectInto(pp, p.x, p.y);
-        ctx.fillStyle = colour;
-        ctx.fillRect(pp.x - 1, pp.y - 1, 2.5, 2.5);
-      }
+      // Projectiles (kinetic rounds: cannon, missile, torpedo) drawn as short
+      // streaks so a fast round reads as a contiguous line; beams are hitscan
+      // and rendered separately. See battleProjectiles.ts.
+      drawProjectiles(ctx, t, frame, tick, frames);
 
       // The projection's pure 2x2 delta map (its basis vectors): the screen delta
       // for one world unit along x and along y. Flat is the identity, so the
