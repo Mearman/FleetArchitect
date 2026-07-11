@@ -74,6 +74,12 @@ export interface ResourceScratch {
   deckCells: Uint8Array;
   /** Refilled and re-sorted by crew id each tick. */
   crewOrder: SimCrew[];
+  /** Dense φ-index → per-tick transient thermal source (W): weapon and engine
+   *  waste heat deposited this tick, added to the cached reactor sources by the
+   *  thermal substance's source callback. Cleared and rebuilt in fixed
+   *  module-array order every tick before the thermal step. Captured by
+   *  reference by the cached substance, like `engineThrust`/`crewMap`. */
+  transientSources: Float64Array;
 }
 
 /** Cached transport graph for a ship's current topology.
@@ -419,30 +425,23 @@ export interface SimShip {
   awareness: Map<string, Contact>;
   /**
    * Sensor saturation (battlefield-medium phase 5): how blinded this ship's
-   * receiver currently is, on a [0, ∞) scale where 0 is fully recovered. An
-   * intense incident emission above the dazzle threshold boosts this
-   * ({@link dazzleBoost}); it then multiplies the receiver's effective noise
-   * floor by `(1 + sensorSaturation)` ({@link effectiveReceiverFloor}), so a
-   * saturated sensor loses its weaker contacts until it recovers. Decayed once
-   * per tick at the top of the awareness phase by {@link SATURATION_DECAY_FACTOR}
-   * (timescale {@link SATURATION_RECOVERY_TICKS}), and the per-tick boost from
-   * the observer's received emissions is added AFTER the reception pass, so a
-   * flash on tick T raises the floor on ticks T+1 onward. Source-agnostic: any
-   * strong received emission (hull, pulse, medium-cell) dazzles. Initialised to
-   * 0 in `toSimShip`/phantom/chunk; carried across ticks and captured by the
-   * checkpoint so resume preserves the blinded state.
+   * receiver is, on a [0, ∞) scale (0 = recovered). An intense incident emission
+   * boosts this ({@link dazzleBoost}); it multiplies the receiver's effective
+   * noise floor by `(1 + sensorSaturation)` ({@link effectiveReceiverFloor}), so
+   * a saturated sensor loses weaker contacts until it recovers. Decayed per tick
+   * by {@link SATURATION_DECAY_FACTOR} (timescale {@link SATURATION_RECOVERY_TICKS});
+   * the per-tick boost from received emissions is added after the reception pass,
+   * so a flash on tick T raises the floor on T+1 onward. Initialised to 0;
+   * captured by the checkpoint so resume preserves the blinded state.
    */
   sensorSaturation: number;
    /**
-   * Stealth detectability (factions update). The most recent tick on which this
-   * ship fired any weapon, used by the cloak rule: a cloaked ship drops its
-   * cloak for `decloakTicks` after firing, so it is detectable while
+   * Stealth detectability (factions update). The most recent tick this ship fired
+   * any weapon, used by the cloak rule: a cloaked ship drops its cloak for
+   * `decloakTicks` after firing, so it is detectable while
    * `currentTick - lastFiredTick < decloakTicks`. Initialised to
-   * `Number.NEGATIVE_INFINITY` ("never fired") so a ship that has not yet fired
-   * is fully cloaked, and so the subtraction can never spuriously place a recent
-   * shot inside the decloak window. Only read for ships carrying a cloak module;
-   * a non-cloak ship's value is never consulted, and it is never snapshotted, so
-   * carrying it changes no frame output for existing battles.
+   * `Number.NEGATIVE_INFINITY` ("never fired"). Only read for ships carrying a
+   * cloak module; never snapshotted, so carrying it changes no frame output.
    */
   lastFiredTick: number;
   /**

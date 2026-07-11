@@ -59,7 +59,7 @@ describe("thermal substance", () => {
     //   phi1_new = phi1 + D·(phi0 − phi1)·dt
     // (one open face each way, unit area and pitch).
     const inputs = materialiseThermalInputs(new Map(), new Set(), new Map(), 2);
-    const substance = makeThermalSubstance(inputs.sources, inputs.radiators, inputs.heatCapacity);
+    const substance = makeThermalSubstance(inputs.sources, inputs.radiators, inputs.heatCapacity, new Float64Array(inputs.sources.length));
     const faces = [
       { from: 0, to: 1, nx: 1, ny: 0, area: 1, open: true, boundary: false },
       { from: 1, to: 0, nx: -1, ny: 0, area: 1, open: true, boundary: false },
@@ -92,7 +92,7 @@ describe("thermal substance", () => {
       new Map([[0, heatCapacityJperK]]),
       1,
     );
-    const substance = makeThermalSubstance(inputs.sources, inputs.radiators, inputs.heatCapacity);
+    const substance = makeThermalSubstance(inputs.sources, inputs.radiators, inputs.heatCapacity, new Float64Array(inputs.sources.length));
     const dt = 1 / 30;
     const phi = [300];
     const expected = 300 + (powerWatts / heatCapacityJperK) * dt;
@@ -113,7 +113,7 @@ describe("thermal substance", () => {
       new Map([[0, 1e6]]),
       1,
     );
-    const substance = makeThermalSubstance(inputs.sources, inputs.radiators, inputs.heatCapacity);
+    const substance = makeThermalSubstance(inputs.sources, inputs.radiators, inputs.heatCapacity, new Float64Array(inputs.sources.length));
     const phi = [400];
     const result = stepTransportField(
       { substance, faces: [], boundaryCells: [0] },
@@ -163,7 +163,7 @@ describe("thermal substance", () => {
       new Map([[0, 1e6]]),
       1,
     );
-    const substance = makeThermalSubstance(inputs.sources, inputs.radiators, inputs.heatCapacity);
+    const substance = makeThermalSubstance(inputs.sources, inputs.radiators, inputs.heatCapacity, new Float64Array(inputs.sources.length));
     const result = stepTransportField(
       { substance, faces: [], boundaryCells: [0] },
       [400],
