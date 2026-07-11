@@ -1,3 +1,32 @@
+# [1.63.0](https://github.com/Mearman/FleetArchitect/compare/v1.62.1...v1.63.0) (2026-07-11)
+
+
+### Bug Fixes
+
+* **sim:** close collision energy ledger and pull debris into N-body gravity ([ec40f14](https://github.com/Mearman/FleetArchitect/commit/ec40f147b29719a38eed12c1cdf151a06cb81e57))
+* **sim:** raster beam channels into the visual medium field ([1bc46a5](https://github.com/Mearman/FleetArchitect/commit/1bc46a5f7c56e50ff4d582027bc69703048840a2))
+* **ui:** render kinetic projectiles as contiguous streaks ([7d5cd5c](https://github.com/Mearman/FleetArchitect/commit/7d5cd5c2efd016c3b3bfe9a8811cfee2c31eb0ac))
+* **ui:** render projectile plumes as continuous ribbons, not beaded dots ([20513da](https://github.com/Mearman/FleetArchitect/commit/20513daaa125b6eb04975709bf08014b8b41fd84))
+* **ui:** scale the projectile marker streak to the round's speed ([567557a](https://github.com/Mearman/FleetArchitect/commit/567557aa3950114619caafb7ef7924bb3f6d0e8b))
+
+
+### Features
+
+* **playback:** ease speed to the sim's delivered rate, drop hard buffering ([18bb0ba](https://github.com/Mearman/FleetArchitect/commit/18bb0bac302dc2fca8025da6bdb06cefb3bf9eb6))
+* **sim:** apply beam damage at the retarded time fire_tick + range/c ([92c6543](https://github.com/Mearman/FleetArchitect/commit/92c6543fce808729ccbc076a088ee7ce24167e8d))
+* **sim:** deposit weapon and thruster waste heat into the thermal field ([3253e1e](https://github.com/Mearman/FleetArchitect/commit/3253e1e0191b2db70389192d78e94a90b798c914))
+* **sim:** derive PD hit chance from tracking-rate margin ([6cd4113](https://github.com/Mearman/FleetArchitect/commit/6cd411360f55b0aba22634f374a8d0b58bc03296))
+* **sim:** pace overdrive-off worker to real-time 1x ([3a55182](https://github.com/Mearman/FleetArchitect/commit/3a55182d283d7ed42e8ec72742847bf46c1bbfb0))
+* **sim:** scale armour thickness by projectile incidence angle ([c2723f8](https://github.com/Mearman/FleetArchitect/commit/c2723f8234f7426d949f289d9dbd5bff79147b6c))
+
+
+### Performance Improvements
+
+* **sim:** hoist dazzle accumulator to scalar in awareness loops ([6571282](https://github.com/Mearman/FleetArchitect/commit/657128289073a76d24990629d88c1f9acae2affa))
+* **sim:** hoist point-defence candidates to per-side buckets ([1d76adc](https://github.com/Mearman/FleetArchitect/commit/1d76adcff664ecbf5fa94ffe9352e60f7f28a5e8))
+* **sim:** hold transport-field phi as Float64Array, not number[] ([db69b94](https://github.com/Mearman/FleetArchitect/commit/db69b943d2e8e2517c522503cd14ba2299c85f69))
+* **ui:** cache anomaly radial gradients ([af9bff0](https://github.com/Mearman/FleetArchitect/commit/af9bff0daa4b6656ee794fa97371ca63eadacb7e))
+
 ## [1.62.1](https://github.com/Mearman/FleetArchitect/compare/v1.62.0...v1.62.1) (2026-07-10)
 
 
