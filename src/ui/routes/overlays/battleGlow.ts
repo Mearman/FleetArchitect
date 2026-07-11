@@ -23,6 +23,7 @@ import {
 import { TICKS_PER_SECOND } from "@/domain/simulation/types";
 import type { BattleFrame, MediumSnapshot, ParticleSnapshot } from "@/schema/battle";
 import type { OverlayCtx, OverlayDef } from "./types";
+import { drawPlumeStreaks } from "./plumeStreaks";
 
 // ---------------------------------------------------------------------------
 // Battlefield glow: the ONE overlay over the medium field
@@ -546,6 +547,10 @@ function drawBattleGlow(c: OverlayCtx): void {
     // falls back to current-only.
     const prevFrame = resolveMediumFrame(c.frames, mediumFrame.tick - 1);
     drawFieldGlow(c, field, mediumFrame.tick, prevFrame, fxGain);
+    // Continuous ε-sampled plume ribbons for in-flight projectiles, layered
+    // over the field glow and under the particle texture — fills the gaps
+    // between wake beads so a fast round's trail reads continuous, not beaded.
+    drawPlumeStreaks(c, field, fxGain);
   }
   // dtSinceS is always >= 0: particlesFrame.tick <= floor(tickF) because the
   // resolver walks backward from the current tick for the nearest emission.
