@@ -21,7 +21,7 @@ jobs:
     name: Lint and test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.0
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
@@ -56,7 +56,7 @@ jobs:
       contents: write
       issues: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.0
         with:
           # semantic-release analyses the full commit history since the last release.
           fetch-depth: 0
@@ -92,7 +92,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.0
         with:
           # Check out the latest main (the release commit semantic-release just
           # pushed), not the trigger commit, so the build resolves the new tag.
