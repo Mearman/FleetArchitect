@@ -431,7 +431,7 @@ export function fireOne(
     // penetrationPath would treat as "all cells behind the entry" → empty path.
     // In that case fall back to applyModuleDamage's nearest-alive heuristic.
     const beamPath = outline !== undefined ? penetrationPath(target, ix, iy, dirX, dirY, penetrationPathScratch) : undefined;
-    applyImpact(target, beamImpactProfile({ damageJ: damage, shieldPiercing: weapon.shieldPiercing, armourPiercing: weapon.armourPiercing, deflectorPiercing: weapon.deflectorPiercing ?? DEFLECTOR_PIERCING_DEFAULT.beam }), ix, iy, strikeAngle, beamPath);
+    applyImpact(target, beamImpactProfile({ damageJ: damage, shieldPiercing: weapon.shieldPiercing, armourPiercing: weapon.armourPiercing, deflectorPiercing: weapon.deflectorPiercing ?? DEFLECTOR_PIERCING_DEFAULT.beam }), ix, iy, strikeAngle, beamPath, dirX, dirY);
     // Emit a visible beam event so the renderer can draw the line. The source is
     // the firing gun cell's WORLD position (rotated by the ship's heading), not
     // the ship centre: a beam leaves the gun that fired it, so an off-centre
@@ -778,7 +778,7 @@ export function updateProjectiles(
       const profile = p.kind === "cannon"
         ? kineticImpactProfile({ massKg: p.mass, speedMps, shieldPiercing: p.shieldPiercing, armourPiercing: p.armourPiercing, deflectorPiercing: p.deflectorPiercing })
         : warheadImpactProfile({ massKg: p.mass, speedMps, energyJ: p.damage, shieldPiercing: p.shieldPiercing, armourPiercing: p.armourPiercing, deflectorPiercing: p.deflectorPiercing });
-      applyImpact(hit, profile, hitWx, hitWy, shotAngle, path);
+      applyImpact(hit, profile, hitWx, hitWy, shotAngle, path, dirX, dirY);
       // Hit impulse: the target absorbs the projectile's momentum RELATIVE to
       // itself at the impact point — delta_v = +m_p * (v_p − v_target) / M_target.
       // A target moving with the projectile feels only the relative impact; the
