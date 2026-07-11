@@ -19,6 +19,7 @@ import { rasterSegmentCells } from "./medium-raster";
 import { EXHAUST_COOLING_TIMESCALE_S, type ParticleStore } from "./exhaust-particles";
 import {
   ASTEROID_PARTULATE_PER_CELL_KG,
+  BEAM_CHANNEL_EPS_VIS_COUPLING,
   BODY_DRAG_COEFFICIENT,
   DEBRIS_SHED_FRACTION_PER_TICK,
   EXHAUST_RHO_COUPLING,
@@ -40,6 +41,28 @@ import type { BattleAnomalyKind } from "@/schema/battle";
 import { hasAnomaly } from "@/domain/anomaly";
 import type { SimShip } from "./types";
 import type { Debris } from "./debris";
+
+/**
+ * Split `total` evenly across `cells` and add each share into `epsVisSrc`, the
+ * shared tail of every swept-path deposit (projectile wake, beam channel):
+ * raster a segment into the cells it crosses, then distribute a per-tick
+ * budget across them so a fast-crossed segment reads as a continuous line
+ * instead of a chain of per-cell dots. A no-op for an empty `cells` (the
+ * segment fell entirely outside the grid).
+ */
+function distributeEpsVisAcrossCells(
+  epsVisSrc: Float64Array,
+  cells: readonly number[],
+  total: number,
+): void {
+  if (cells.length === 0) return;
+  const perCell = total / cells.length;
+  for (let i = 0; i < cells.length; i += 1) {
+    const c = cells[i];
+    if (c === undefined) continue;
+    epsVisSrc[c] = (epsVisSrc[c] ?? 0) + perCell;
+  }
+}
 
 /**
  * Shared medium-source deposit core. Writes the per-tick sources (thruster
@@ -157,14 +180,7 @@ export function depositMediumSources(
     rho[idx] = (rho[idx] ?? 0) + PROJECTILE_WAKE_RHO_COUPLING;
     eps[idx] = (eps[idx] ?? 0) + PROJECTILE_WAKE_EPS_COUPLING;
     const wakeCells = rasterSegmentCells(field, pos.prevX, pos.prevY, pos.x, pos.y);
-    if (wakeCells.length > 0) {
-      const wakePerCell = PROJECTILE_WAKE_EPS_COUPLING / wakeCells.length;
-      for (let i = 0; i < wakeCells.length; i += 1) {
-        const c = wakeCells[i];
-        if (c === undefined) continue;
-        epsVisSrc[c] = (epsVisSrc[c] ?? 0) + wakePerCell;
-      }
-    }
+    distributeEpsVisAcrossCells(epsVisSrc, wakeCells, PROJECTILE_WAKE_EPS_COUPLING);
     // Burning-motor plume (powered rounds with fuel). The motor force is
     // `F = thrust · mass` (thrust is an acceleration in m·s⁻²); the mass-flow
     // and jet-power derivations are identical to the ship-exhaust path above,
@@ -191,6 +207,22 @@ export function depositMediumSources(
     );
     if (idx === null) continue;
     epsVisSrc[idx] = (epsVisSrc[idx] ?? 0) + impact.energyJ * IMPACT_EPS_VIS_COUPLING * MEDIUM_DT_S;
+  }
+
+  // --- Beam channel: a beam ionises the WHOLE path it cuts through, not just
+  // where it strikes. When an impact carries a channel origin (a beam's firing
+  // cell), raster the source→strike segment and distribute a fraction of the
+  // strike energy across the swept cells, so the channel reads as a continuous
+  // line in the field glow instead of only lighting the strike point. epsVis
+  // only — never feeds AI signatures. Iteration in array order. ---
+  for (const impact of impacts) {
+    if (impact.sourceX === undefined || impact.sourceY === undefined) continue;
+    const channelCells = rasterSegmentCells(field, impact.sourceX, impact.sourceY, impact.x, impact.y);
+    distributeEpsVisAcrossCells(
+      epsVisSrc,
+      channelCells,
+      impact.energyJ * BEAM_CHANNEL_EPS_VIS_COUPLING * MEDIUM_DT_S,
+    );
   }
 
   // --- Particle residual: a cooling parcel bleeds a fraction of its radiated
