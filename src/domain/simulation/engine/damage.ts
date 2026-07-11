@@ -16,6 +16,7 @@ import { recomputeAggregatesWithScaling } from "./effect-scaling";
 import { comTangentialVelocity, localCentreOfMass } from "./physics";
 import { buildTechCaches } from "./tech";
 import { angleDifference, normaliseAngle, worldToLocal } from "./setup";
+import { adjacentFaceCos, armourContext, armourThicknessMult } from "./directional-armour";
 import type { SimModule, SimShip } from "./types";
 
 /**
@@ -48,10 +49,13 @@ export function applyModuleDamage(
   path?: readonly SimModule[],
   eFrac = 1,
   pFrac = 1,
+  shotDirX?: number,
+  shotDirY?: number,
 ): void {
   // Transform the world-space impact point into ship-local (design)
   // coordinates so it lines up with module.x/module.y.
   const local = worldToLocal(ship, impactX, impactY);
+  const actx = armourContext(ship.facing, shotDirX, shotDirY);
 
   // A directional shield covering the shot intercepts before any structural
   // cell is touched, regardless of which routing the structure uses.
@@ -73,6 +77,8 @@ export function applyModuleDamage(
       const cell = path[i];
       if (cell === undefined) continue;
       if (!cell.alive || cell === shield) continue;
+      // Directional armour: entry-face cos(θ) (best-face for impact cell/gap; the shared face for a step, which grazes off-centre).
+      let entryCos = actx.bestCos;
       // Wall / door edge stopping: before the projectile enters this cell, check
       // the edge on the previous cell in the direction of travel. An edge that is
       // grid-adjacent (|dCol| + |dRow| === 1) and carries a wall or closed door
@@ -89,6 +95,7 @@ export function applyModuleDamage(
             else if (dCol === -1) dir = "w";
             else if (dRow === 1)  dir = "s";
             else                  dir = "n";
+            entryCos = adjacentFaceCos(actx, dCol, dRow);
             const edgeKind = prev.edges[dir];
             if (edgeKind === "wall") {
               remaining -= SIM.wallStopping;
@@ -103,7 +110,7 @@ export function applyModuleDamage(
           }
         }
       }
-      remaining = damageCell(cell, remaining, armourPiercing, eFrac, pFrac);
+      remaining = damageCell(cell, remaining, armourPiercing, eFrac, pFrac, armourThicknessMult(actx, entryCos));
       if (remaining <= 0) return; // this cell absorbed the rest
     }
     // Overflow past the last cell on the path falls to the hull structure.
@@ -117,6 +124,7 @@ export function applyModuleDamage(
   // damageCell only mutates the cell it is passed, so no module other than the
   // one being damaged flips alive mid-call; the alive set captured once is
   // stable and can be walked in selection order without a rescan per step.
+  const fbMult = armourThicknessMult(actx, actx.bestCos);
   if (ship.modules !== undefined) {
     if (local === undefined) {
       // No impact point: nearestAliveModule returns the first alive module in
@@ -125,7 +133,7 @@ export function applyModuleDamage(
       for (const m of ship.modules) {
         if (remaining <= 0) return;
         if (!m.alive) continue;
-        remaining = damageCell(m, remaining, armourPiercing, eFrac, pFrac);
+        remaining = damageCell(m, remaining, armourPiercing, eFrac, pFrac, fbMult);
       }
     } else {
       // First target via one linear scan, so a hit absorbed by the nearest
@@ -133,11 +141,11 @@ export function applyModuleDamage(
       // distance order once and advance along it, replacing the per-step rescan.
       const target = nearestAliveModule(ship, local);
       if (target !== undefined) {
-        remaining = damageCell(target, remaining, armourPiercing, eFrac, pFrac);
+        remaining = damageCell(target, remaining, armourPiercing, eFrac, pFrac, fbMult);
         if (remaining > 0) {
           for (const m of aliveModulesByDistance(ship.modules, local)) {
             if (remaining <= 0) return;
-            remaining = damageCell(m, remaining, armourPiercing, eFrac, pFrac);
+            remaining = damageCell(m, remaining, armourPiercing, eFrac, pFrac, fbMult);
           }
         }
       }
@@ -150,7 +158,7 @@ export function applyModuleDamage(
  *  the leftover that spills onward. `eFrac`/`pFrac` are the hit's energy/momentum
  *  split (default 1/1): energy ablates the passive coating (`surfaceHp`), momentum
  *  depletes the finite reactive plate (`reactiveHp`); both overflow to substrate. */
-function damageCell(cell: SimModule, amount: number, armourPiercing: number, eFrac = 1, pFrac = 1): number {
+function damageCell(cell: SimModule, amount: number, armourPiercing: number, eFrac = 1, pFrac = 1, thicknessMult = 1): number {
   const pierce = 1 - armourPiercing;
   const ePart = amount * eFrac; // energy stream
   const pPart = amount * pFrac; // momentum stream
@@ -159,7 +167,7 @@ function damageCell(cell: SimModule, amount: number, armourPiercing: number, eFr
   // Energy → ablative surface coating (ePart is the energy fraction; surfaceReduction is not re-scaled by eFrac).
   if (ePart > 0) {
     if (cell.surfaceHp > 0) {
-      const sRed = Math.min(cell.surfaceReduction * pierce, 1);
+      const sRed = Math.min(cell.surfaceReduction * pierce * thicknessMult, 1);
       cell.surfaceHp -= ePart * (1 - sRed);
       if (cell.surfaceHp <= 0) {
         overflow += -cell.surfaceHp;
@@ -174,7 +182,7 @@ function damageCell(cell: SimModule, amount: number, armourPiercing: number, eFr
   // Momentum → finite reactive plate; emptying it arms the cooldown.
   if (pPart > 0) {
     if (cell.reactiveHp > 0) {
-      const cancel = Math.min(pPart * Math.min(cell.reactiveReduction * pierce, 1), cell.reactiveHp);
+      const cancel = Math.min(pPart * Math.min(cell.reactiveReduction * pierce * thicknessMult, 1), cell.reactiveHp);
       cell.reactiveHp -= cancel;
       if (cell.reactiveHp === 0) cell.reactiveCharge = cell.reactiveWindow;
       overflow += pPart - cancel;

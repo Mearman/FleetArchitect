@@ -29,6 +29,8 @@ export function applyImpact(
   impactY?: number,
   shotAngle?: number,
   path?: readonly SimModule[],
+  shotDirX?: number,
+  shotDirY?: number,
 ): void {
   // Layer 1 — shield (energy screen, joules). Inert when maxShield === 0.
   const eBypass = profile.energyJ * profile.shieldPiercing;
@@ -66,7 +68,7 @@ export function applyImpact(
   const pFrac = totalPreArmour > 0 ? kineticEq / totalPreArmour : 0;
 
   if (ship.modules !== undefined) {
-    applyModuleDamage(ship, rawStructure, profile.armourPiercing, impactX, impactY, shotAngle, path, eFrac, pFrac);
+    applyModuleDamage(ship, rawStructure, profile.armourPiercing, impactX, impactY, shotAngle, path, eFrac, pFrac, shotDirX, shotDirY);
     return;
   }
   // Legacy aggregated path (no modules): ship-wide armour, uniform reduction.
