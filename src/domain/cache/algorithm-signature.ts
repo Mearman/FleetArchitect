@@ -60,12 +60,12 @@ export const PINNED_FRAME_HASHES: readonly [
   string,
   string,
 ] = [
-  "b52b41899f9e7f4ad3c2d4abb94e23d64d4e41644292cf9e7d047a5f72b96ad5",
-  "5c4133162dbe152db0b48f12ff32ddaa47f3e064068cfae82d217f6af365ae0e",
-  "6b9eb5f4fc540ace9c1f3eefa9c97698fd8cddb38c877956c23ecb5e4197524a",
-  "7d8a9a80d114c3bdbe18bec23808fc79739873fca6acaa679ed25b1231aee185",
-  "de97bce23deac5e857c324e19c0cf7a478befc385b0055b56a29df104a16aca8",
-  "4c29d46b1bff6605c56c87f396ac16efe357bf3ca7fcbc1e971b07c9ee6ef4ec",
+  "abb486a6eb4d9f064b712ef41110a7311f4cb1c3809c99adac999c1a09c3c7d4",
+  "f60a5620bde8f2847cde7470712c618dd698baf0a94e9badb4053ed9f4b022d6",
+  "c3f21a15be0793a07bc3ac249646bc971eb3e0e567157dfb20257e8de1fb4802",
+  "28dc3271d80e708a4889a8cb56e8d7cce771022ebf204aa43af821b0b18c4929",
+  "ebc567437f544bdc11ac629d0feeda1fd33b23a3e46ec8cfa6394c1b37e210b6",
+  "51b09544a51b5330efa4df40c66749b421247ba06dc2f76bf5e063e292ac0eee",
 ];
 
 /**
@@ -100,7 +100,7 @@ let cachedSignature: Promise<string> | undefined;
  * entries are missed. Bump on any engine/catalog change that moves frames at
  * longer horizons but leaves the 40-tick preset hashes unchanged.
  */
-const ENGINE_REVISION = "fix-launcher-manning-1";
+const ENGINE_REVISION = "weapon-thruster-heat-1";
 
 export function engineAlgorithmSignature(): Promise<string> {
   if (cachedSignature !== undefined) return cachedSignature;
