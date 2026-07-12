@@ -42,3 +42,17 @@ root.render(
 void seedPresets().catch((error) => {
   console.error("Failed to seed starter content:", error);
 });
+
+// Register a service worker in production so a regular refresh always loads the
+// latest deploy (network-first for the HTML document — see public/sw.js).
+// Skipped in dev, where Vite serves source modules directly and a worker would
+// cache stale transformed output. BASE_URL carries the project-page base path
+// (/FleetArchitect/ in CI), so the worker is scoped to the app, not the domain
+// root.
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  navigator.serviceWorker
+    .register(`${import.meta.env.BASE_URL}sw.js`)
+    .catch((error) => {
+      console.error("Service worker registration failed:", error);
+    });
+}
