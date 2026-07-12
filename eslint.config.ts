@@ -6,7 +6,7 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["dist", "coverage", "pnpm-lock.yaml", ".claude"],
+    ignores: ["dist", "coverage", "pnpm-lock.yaml", ".claude", "public"],
   },
   {
     // Pin the TSConfig root so the parser isn't confused by stray
