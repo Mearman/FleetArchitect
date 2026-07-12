@@ -214,7 +214,16 @@ function inputs(ships: CombatShip[]): BattleInputs {
 }
 
 describe("engine.beam-retarded-time", () => {
-  it("a beam at range > c defers damage by floor(range/c) ticks", () => {
+  // Staged at 2 light-ticks of range, this battle runs on a light-second-scale
+  // arena whose medium field makes each tick far heavier than a normal preset
+  // engagement. It is genuinely slow (normally well under the default 30s, but
+  // a loaded CI runner can push it past 30s and flake the gate), so give it a
+  // generous timeout rather than tightening the scenario and risking the
+  // acquisition timing the assertion depends on.
+  it(
+    "a beam at range > c defers damage by floor(range/c) ticks",
+    { timeout: 120_000 },
+    () => {
     const result = runBattle(inputs([attacker(), defender()]));
 
     // Find the first tick where the defender's structure drops — that is the
