@@ -1,3 +1,15 @@
+# [1.64.0](https://github.com/Mearman/FleetArchitect/compare/v1.63.2...v1.64.0) (2026-07-12)
+
+
+### Bug Fixes
+
+* **deps:** revert @commitlint/config-conventional to 21.0.2 ([a46669d](https://github.com/Mearman/FleetArchitect/commit/a46669d56b5bdaf8438361d554d3e78191c674a9))
+
+
+### Features
+
+* **battle:** carry the current sim tick in the URL as ?t= ([4a27a07](https://github.com/Mearman/FleetArchitect/commit/4a27a0732a5c71c5967c06f7dea62f24eca5843c))
+
 ## [1.63.2](https://github.com/Mearman/FleetArchitect/compare/v1.63.1...v1.63.2) (2026-07-11)
 
 
