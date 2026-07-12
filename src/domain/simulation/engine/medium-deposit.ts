@@ -29,6 +29,7 @@ import {
   NEBULA_TARGET_CELL_KG,
   PARTICLE_RESIDUAL_EPS_VIS_COUPLING,
   PROJECTILE_WAKE_EPS_COUPLING,
+  PROJECTILE_WAKE_EPS_VIS_ENERGY_FRACTION,
   PROJECTILE_WAKE_RHO_COUPLING,
   THERMAL_EPS_COUPLING_FRACTION,
   WAKE_EPS_COUPLING,
@@ -36,6 +37,7 @@ import {
   type MediumImpactEntry,
   type ProjectileMediumEntry,
 } from "./medium-setup";
+import { TICKS_PER_SECOND } from "@/domain/simulation/types";
 import { cellWorldPositionCs } from "@/domain/simulation/spatial-hash";
 import type { BattleAnomalyKind } from "@/schema/battle";
 import { hasAnomaly } from "@/domain/anomaly";
@@ -179,8 +181,19 @@ export function depositMediumSources(
     // leaves a continuous trail instead of per-tick dots.
     rho[idx] = (rho[idx] ?? 0) + PROJECTILE_WAKE_RHO_COUPLING;
     eps[idx] = (eps[idx] ?? 0) + PROJECTILE_WAKE_EPS_COUPLING;
+    // Visual substrate: the round's REAL kinetic energy, deposited continuously
+    // along the swept prev→current segment so the trail carries actual energy
+    // BETWEEN its tick positions (not a flat token). The field-glow raster and
+    // the plume ribbon then render it as a continuous glow instead of per-tick
+    // dots. epsVis only — the signature `eps` deposit above is unchanged.
     const wakeCells = rasterSegmentCells(field, pos.prevX, pos.prevY, pos.x, pos.y);
-    distributeEpsVisAcrossCells(epsVisSrc, wakeCells, PROJECTILE_WAKE_EPS_COUPLING);
+    const speedMps = Math.hypot(pos.x - pos.prevX, pos.y - pos.prevY) * TICKS_PER_SECOND;
+    const kineticEnergyJ = 0.5 * Math.max(pos.mass, 1e-6) * speedMps * speedMps;
+    distributeEpsVisAcrossCells(
+      epsVisSrc,
+      wakeCells,
+      kineticEnergyJ * PROJECTILE_WAKE_EPS_VIS_ENERGY_FRACTION,
+    );
     // Burning-motor plume (powered rounds with fuel). The motor force is
     // `F = thrust · mass` (thrust is an acceleration in m·s⁻²); the mass-flow
     // and jet-power derivations are identical to the ship-exhaust path above,

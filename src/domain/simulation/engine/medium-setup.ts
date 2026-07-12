@@ -400,6 +400,24 @@ export const PROJECTILE_WAKE_RHO_COUPLING = 0.0005;
 export const PROJECTILE_WAKE_EPS_COUPLING = 0.002;
 
 /**
+ * Fraction of a projectile's kinetic energy that thermalises into the VISUAL
+ * epsVis substrate ALONG ITS SWEPT PATH (between consecutive tick positions)
+ * each tick. This is the continuous substrate: it carries the round's real
+ * energy between its per-tick positions so the trail reads as a continuous glow
+ * (rendered by the field-glow raster and the plume ribbon), not a chain of
+ * per-tick dots. Without it the energy lived only in the discrete wake splat
+ * and the swept path held a flat token ({@link PROJECTILE_WAKE_EPS_COUPLING})
+ * that was invisible at field scale.
+ *
+ * Mirrors the renderer's particle→effective-eps coupling
+ * (`1 / PARTICLE_ENERGY_TO_EFFECTIVE_EPS = 1/5` in `mediumShared.ts`), so the
+ * field's brightness along the trail matches the splat's brightness. epsVis
+ * only — never feeds AI signatures; the {@link PROJECTILE_WAKE_EPS_COUPLING}
+ * signature deposit is unchanged and stays fixed regardless of KE.
+ */
+export const PROJECTILE_WAKE_EPS_VIS_ENERGY_FRACTION = 1 / 5;
+
+/**
  * Fraction of an impact's strike energy that thermalises into the visual epsVis
  * substrate at the impact cell. A beam strike or projectile hit dumps energy at
  * a point; a fraction becomes a brief, bright flash in the unified glow renderer.
