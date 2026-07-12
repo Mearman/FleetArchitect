@@ -15,6 +15,7 @@ import {
   BEAM_CHANNEL_EPS_VIS_COUPLING,
   IMPACT_EPS_VIS_COUPLING,
   PROJECTILE_WAKE_EPS_COUPLING,
+  PROJECTILE_WAKE_EPS_VIS_ENERGY_FRACTION,
   computeArenaMediumSources,
   refillImpactScratchFromBeams,
   type MediumImpactEntry,
@@ -22,6 +23,7 @@ import {
 } from "@/domain/simulation/engine/medium-setup";
 import type { SimBeam } from "@/domain/simulation/engine/beams";
 import { createParticleStore, particleStoreFromParticles } from "@/domain/simulation/engine/exhaust-particles";
+import { TICKS_PER_SECOND } from "@/domain/simulation/types";
 
 /**
  * Projectile wake deposit: a fast round must deposit its wake excitation along
@@ -82,7 +84,46 @@ describe("projectile wake deposit", () => {
     expect(result.epsVisSrc[17] ?? 0).toBeGreaterThan(0);
   });
 
-  it("conserves the per-tick wake energy across the swept cells", () => {
+  it("scales the swept epsVis deposit with the round's kinetic energy", () => {
+    // The wake's CONTINUOUS substrate (epsVis along the swept path) must carry
+    // the round's real kinetic energy, not a flat token — otherwise the energy
+    // exists only at the discrete per-tick splat and the trail reads as dots.
+    // Two rounds on the same path at the same speed, one 4× the mass → 4× the
+    // KE → ~4× the swept epsVis.
+    const f = wideField();
+    const n = f.cellCount;
+    const runSum = (mass: number) => {
+      const buffers = {
+        rho: new Float64Array(n),
+        eps: new Float64Array(n),
+        epsVisSrc: new Float64Array(n),
+        mxSrc: new Float64Array(n),
+        mySrc: new Float64Array(n),
+      };
+      const projectiles: ProjectileMediumEntry[] = [
+        { x: 1000, y: 0, prevX: 0, prevY: 0, powered: false, burnTicks: 0, thrust: 0, mass },
+      ];
+      const result = computeArenaMediumSources(
+        f,
+        new Float64Array(n),
+        [],
+        [],
+        projectiles,
+        [],
+        [],
+        buffers,
+        [],
+        createParticleStore(),
+      );
+      return (result.epsVisSrc[15] ?? 0) + (result.epsVisSrc[16] ?? 0) + (result.epsVisSrc[17] ?? 0);
+    };
+    const light = runSum(1);
+    const heavy = runSum(4);
+    expect(light).toBeGreaterThan(0);
+    expect(heavy / light).toBeCloseTo(4, 6);
+  });
+
+  it("conserves the swept epsVis deposit as KE × coupling across the swept cells", () => {
     const f = wideField();
     const n = f.cellCount;
     const buffers = {
@@ -92,8 +133,9 @@ describe("projectile wake deposit", () => {
       mxSrc: new Float64Array(n),
       mySrc: new Float64Array(n),
     };
+    const mass = 1;
     const projectiles: ProjectileMediumEntry[] = [
-      { x: 1000, y: 0, prevX: 0, prevY: 0, powered: false, burnTicks: 0, thrust: 0, mass: 1 },
+      { x: 1000, y: 0, prevX: 0, prevY: 0, powered: false, burnTicks: 0, thrust: 0, mass },
     ];
     const result = computeArenaMediumSources(
       f,
@@ -107,8 +149,45 @@ describe("projectile wake deposit", () => {
       [],
       createParticleStore(),
     );
+    const speedMps = Math.hypot(1000, 0) * TICKS_PER_SECOND;
+    const kineticEnergyJ = 0.5 * mass * speedMps * speedMps;
     const sum = (result.epsVisSrc[15] ?? 0) + (result.epsVisSrc[16] ?? 0) + (result.epsVisSrc[17] ?? 0);
-    expect(sum).toBeCloseTo(PROJECTILE_WAKE_EPS_COUPLING, 10);
+    expect(sum).toBeCloseTo(kineticEnergyJ * PROJECTILE_WAKE_EPS_VIS_ENERGY_FRACTION, 6);
+  });
+
+  it("leaves the signature (eps) wake deposit fixed regardless of kinetic energy", () => {
+    // The energy-proportional deposit is VISUAL ONLY (epsVis, renderer). The
+    // signature substrate (eps, feeds AI/sensors) must stay at the fixed coupling
+    // so a faster round is no easier to detect — no gameplay change.
+    const f = wideField();
+    const n = f.cellCount;
+    const epsAt = (mass: number) => {
+      const buffers = {
+        rho: new Float64Array(n),
+        eps: new Float64Array(n),
+        epsVisSrc: new Float64Array(n),
+        mxSrc: new Float64Array(n),
+        mySrc: new Float64Array(n),
+      };
+      const projectiles: ProjectileMediumEntry[] = [
+        { x: 1000, y: 0, prevX: 0, prevY: 0, powered: false, burnTicks: 0, thrust: 0, mass },
+      ];
+      const result = computeArenaMediumSources(
+        f,
+        new Float64Array(n),
+        [],
+        [],
+        projectiles,
+        [],
+        [],
+        buffers,
+        [],
+        createParticleStore(),
+      );
+      return result.eps[17] ?? 0;
+    };
+    expect(epsAt(1)).toBeCloseTo(PROJECTILE_WAKE_EPS_COUPLING, 10);
+    expect(epsAt(4)).toBeCloseTo(PROJECTILE_WAKE_EPS_COUPLING, 10);
   });
 });
 
