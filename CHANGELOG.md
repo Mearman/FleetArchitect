@@ -1,3 +1,10 @@
+## [1.65.1](https://github.com/Mearman/FleetArchitect/compare/v1.65.0...v1.65.1) (2026-07-12)
+
+
+### Bug Fixes
+
+* **sim:** deposit the round's real kinetic energy into the wake's visual field ([63b33e2](https://github.com/Mearman/FleetArchitect/commit/63b33e214939aa551ea83e30300f1e8c751e32c7))
+
 # [1.65.0](https://github.com/Mearman/FleetArchitect/compare/v1.64.0...v1.65.0) (2026-07-12)
 
 
