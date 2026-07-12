@@ -1,3 +1,10 @@
+# [1.65.0](https://github.com/Mearman/FleetArchitect/compare/v1.64.0...v1.65.0) (2026-07-12)
+
+
+### Features
+
+* **sw:** network-first service worker so refresh loads the latest deploy ([5da4da9](https://github.com/Mearman/FleetArchitect/commit/5da4da96c169927b89a7d9d7553bf6461b92d477))
+
 # [1.64.0](https://github.com/Mearman/FleetArchitect/compare/v1.63.2...v1.64.0) (2026-07-12)
 
 
