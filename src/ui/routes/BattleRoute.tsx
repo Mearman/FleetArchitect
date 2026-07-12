@@ -24,6 +24,8 @@ import { TICKS_PER_SECOND } from "@/domain/simulation/types";
 import { useFleets, useFormationTemplates, useShipDesigns } from "@/ui/hooks/storage";
 import { normaliseAnomalies } from "@/schema/battle";
 import type { BattleAnomalyKind, BattleFrame } from "@/schema/battle";
+import type { Fleet } from "@/schema/fleet";
+import type { ShipDesign } from "@/schema/ship";
 import type { DescriptorMap } from "@/ui/cellLayout";
 import { interpolateFrame } from "@/ui/interpolateFrame";
 import { usePreferences } from "@/ui/preferences/usePreferences";
@@ -99,6 +101,11 @@ export function BattleRoute() {
   const cameraRef = useRef<Camera>(DEFAULT_CAMERA);
   const framesRef = useRef<BattleFrame[]>([]);
   const playbackTimeRef = useRef(0);
+  /** Playback tick a shared link (`?t=`) asked to open at. Set by every battle
+   *  start (undefined for a manual engage = start from 0) and consumed ONCE by
+   *  whichever auto-start path fires: `onFirstBatch` (whenBuffered) or the
+   *  on-completion effect (onComplete). */
+  const initialTickRef = useRef<number | null>(null);
   const descriptorsRef = useRef<DescriptorMap>(new Map());
 
   /**
@@ -127,8 +134,10 @@ export function BattleRoute() {
 
   // Mirror the battle config to/from the URL so the address bar is the
   // shareable scenario: a complete local matchup is encoded into the path, and
-  // an externally-pasted /battle/<payload> link replays that exact battle.
-  useBattleUrlSync({
+  // an externally-pasted /battle/<payload> link replays that exact battle. The
+  // tick (`?t=`) is written on discrete events (scrub/pause) and read once on
+  // replay to seek playback to the shared moment.
+  const { writeTick, clearTick } = useBattleUrlSync({
     fleets,
     designs,
     templates,
@@ -138,8 +147,8 @@ export function BattleRoute() {
     seed,
     setAnomalies,
     setSeed,
-    startBattle: (attacker, defender, chosenAnomalies, chosenSeed, allDesigns) => {
-      void simulation.startBattle(attacker, defender, chosenAnomalies, chosenSeed, allDesigns);
+    startBattle: (attacker, defender, chosenAnomalies, chosenSeed, allDesigns, initialTick) => {
+      startRun(attacker, defender, chosenAnomalies, chosenSeed, allDesigns, initialTick);
     },
     autoStart: prefs.autoStartComputationOnLoad,
     onSharedBattleHeld,
@@ -236,13 +245,23 @@ export function BattleRoute() {
         playback.setPlaying(false);
       },
       onFirstBatch: () => {
-        playback.setPlaybackTime(0);
         camera.setCamera(DEFAULT_CAMERA);
         // Only auto-start playback on the first batch when the user has it on
         // AND wants it to trigger when the buffer is ready. The "onComplete"
         // mode is handled by the completion effect below.
-        if (prefs.autoStartPlayback && prefs.playbackStartMode === "whenBuffered") {
-          playback.setPlaying(true);
+        if (prefs.playbackStartMode === "whenBuffered") {
+          // Consume the shared `?t=` tick here (start playback at that moment);
+          // the onComplete branch leaves it for the completion effect.
+          const startTick = initialTickRef.current ?? 0;
+          initialTickRef.current = null;
+          const startTime = startTick / TICKS_PER_SECOND;
+          playbackTimeRef.current = startTime;
+          playback.setPlaybackTime(startTime);
+          if (prefs.autoStartPlayback) {
+            playback.setPlaying(true);
+          }
+        } else {
+          playback.setPlaybackTime(0);
         }
       },
     };
@@ -260,8 +279,13 @@ export function BattleRoute() {
     if (autoStartedResultIdRef.current === simulation.result.id) return;
     autoStartedResultIdRef.current = simulation.result.id;
     if (prefs.autoStartPlayback && prefs.playbackStartMode === "onComplete") {
-      playbackTimeRef.current = 0;
-      playback.setPlaybackTime(0);
+      // Consume the shared `?t=` tick here (onComplete left it for us): start
+      // at the shared moment rather than rewinding to 0.
+      const startTick = initialTickRef.current ?? 0;
+      initialTickRef.current = null;
+      const startTime = startTick / TICKS_PER_SECOND;
+      playbackTimeRef.current = startTime;
+      playback.setPlaybackTime(startTime);
       playback.setPlaying(true);
     }
   }, [simulation.result, prefs, playback]);
@@ -281,6 +305,22 @@ export function BattleRoute() {
   );
 
   // --- Engage / auto-roll handlers ----------------------------------------
+  /** Start a run, stashing an optional shared `?t=` tick to seek to once the
+   *  first batch lands. `initialTick` is undefined for a manual engage (start
+   *  from 0); the hook passes it when replaying a `?t=` link. Hoisted so the
+   *  `useBattleUrlSync` `startBattle` callback above can reference it. */
+  function startRun(
+    attacker: Fleet,
+    defender: Fleet,
+    chosenAnomalies: BattleAnomalyKind[],
+    chosenSeed: number,
+    allDesigns: ShipDesign[],
+    initialTick?: number,
+  ) {
+    initialTickRef.current = initialTick ?? null;
+    void simulation.startBattle(attacker, defender, chosenAnomalies, chosenSeed, allDesigns);
+  }
+
   function engage() {
     if (fleets === undefined || designs === undefined) return;
     const attacker = fleets.find((f) => f.id === attackerId);
@@ -293,7 +333,8 @@ export function BattleRoute() {
       });
       return;
     }
-    void simulation.startBattle(attacker, defender, normaliseAnomalies(anomalies), seed, designs);
+    clearTick();
+    startRun(attacker, defender, normaliseAnomalies(anomalies), seed, designs);
     setHeldMatchup(null);
   }
 
@@ -331,7 +372,8 @@ export function BattleRoute() {
     setAttackerId(attacker.id);
     setDefenderId(defender.id);
     setSeed(chosenSeed);
-    void simulation.startBattle(attacker, defender, chosenAnomalies, chosenSeed, designs);
+    clearTick();
+    startRun(attacker, defender, chosenAnomalies, chosenSeed, designs);
     notifications.show({
       title: "AI vs AI",
       message: `${attacker.name} vs ${defender.name}.`,
@@ -345,8 +387,14 @@ export function BattleRoute() {
    */
   const onTogglePlay = () => {
     if (simulation.result !== null && currentTick >= simulation.result.ticks) {
+      // At the end: restart from the top, and the URL tick goes with it.
       playbackTimeRef.current = 0;
       playback.setPlaybackTime(0);
+      clearTick();
+    } else if (playback.playing) {
+      // Pausing: pin the current tick into the URL so the address bar (and any
+      // copied link) carries this moment.
+      writeTick(currentTick);
     }
     playback.setPlaying((p) => !p);
   };
@@ -400,6 +448,7 @@ export function BattleRoute() {
     const newTime = val / TICKS_PER_SECOND;
     playbackTimeRef.current = newTime;
     playback.setPlaybackTime(newTime);
+    writeTick(Math.floor(val));
     const frames = framesRef.current;
     const frame = interpolateFrame(frames, val);
     drawFrame(frame, val, frames);
@@ -482,12 +531,13 @@ export function BattleRoute() {
                         onClick={() => {
                           const m = heldMatchup;
                           setHeldMatchup(null);
-                          void simulation.startBattle(
+                          startRun(
                             m.attacker,
                             m.defender,
                             m.anomalies,
                             m.seed,
                             m.designs,
+                            m.initialTick,
                           );
                         }}
                       >
