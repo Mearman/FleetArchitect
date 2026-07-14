@@ -23,7 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.0
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v6.4.0
         with:
           node-version: 26
           cache: pnpm
@@ -61,7 +61,7 @@ jobs:
           # semantic-release analyses the full commit history since the last release.
           fetch-depth: 0
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v6.4.0
         with:
           node-version: 26
           cache: pnpm
@@ -100,7 +100,7 @@ jobs:
           # Full history + tags so the build can resolve the release tag.
           fetch-depth: 0
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v6.4.0
         with:
           node-version: 26
           cache: pnpm
