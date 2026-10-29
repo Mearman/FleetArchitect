@@ -1,5 +1,7 @@
 # Fleet Architect
 
+[![GitHub](https://img.shields.io/badge/GitHub-181717?logo=github&logoColor=white)](https://github.com/Mearman/FleetArchitect) [![Release](https://img.shields.io/github/v/release/Mearman/FleetArchitect)](https://github.com/Mearman/FleetArchitect/releases/latest) [![CI](https://img.shields.io/github/actions/workflow/status/Mearman/FleetArchitect/ci.yml?branch=main)](https://github.com/Mearman/FleetArchitect/actions)
+
 A modern, browser-based reimagining of [Gratuitous Space Battles][gsb]. Design
 individual spaceships, compose them into fleets with a doctrine, and watch a
 deterministic autonomous space battle play out. You don't fly the ships — you
